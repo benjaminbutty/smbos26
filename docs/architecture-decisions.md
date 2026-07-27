@@ -158,3 +158,53 @@ temporarily invalid state.
   transactionally.
 - Object-scoped locks are the integrity boundary between Field configuration,
   Object archival and Record validation; unrelated Objects do not contend.
+
+## ADR-004 - Constrained experience grammar with a static Milestone 3 public boundary
+
+**Status:** Accepted for v0.1
+
+**Date:** 27 July 2026
+
+### Context
+
+Milestone 3 must turn graph metadata into ordinary operating software without
+allowing experience JSON to become executable or leaving direct PostgREST
+writes as a validation bypass. It must also establish a draft/public Page
+distinction without prematurely building Milestone 4 public Record operations
+or the Milestone 5 version engine.
+
+### Decision
+
+- Views support only `table`, `list`, `cards` and `detail` grammars with an
+  exact allow-list of configuration properties.
+- Forms contain an ordered, unique list of Object Field keys plus optional
+  business labels, help text, safe defaults and hidden state. A create Form
+  must cover every active required Field that lacks a Field default.
+- Pages contain only `heading`, `text`, `image`, `button`, `view`, `form` and
+  `divider` blocks. Text is rendered as text; image/button URLs use constrained
+  safe schemes; no block accepts HTML, CSS or JavaScript.
+- Zod validates normal server operations and PostgreSQL triggers repeat the
+  grammar and reference checks. Active definitions may reference only active
+  same-tenant Objects, Fields, Forms and Views.
+- Experience validation shares the Milestone 2 Object lock boundary with Field
+  mutations. Archiving or changing graph/configuration that would invalidate
+  active experience configuration is rejected explicitly.
+- `pages.status` provides the minimum `draft | published` distinction for this
+  milestone. It does not claim versioned configuration publishing.
+- Anonymous access uses one narrow security-definer resolver that returns only
+  a matching `public` + `published` static Page. Published public Pages
+  containing View or Form blocks are rejected in Milestone 3. Anonymous users
+  receive no table access to Pages, experience configuration or generic
+  Records.
+
+### Consequences
+
+- The runtime remains deterministic and can render every configuration the
+  supported mutation boundary can activate.
+- Owner/Admin configuration writes and Staff operational reads remain governed
+  by RLS even when PostgREST is used directly.
+- Public read-only Record Views and public Form submissions remain deferred
+  until narrow server resolvers and the later preorder transaction boundary
+  are implemented.
+- Full draft configuration versions, publish pointers and rollback remain
+  Milestone 5 work; Milestone 3 Page status is intentionally smaller.

@@ -1,0 +1,870 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
+
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import postgres from "postgres";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+import {
+  createExperienceService,
+  ExperienceServiceError,
+  resolvePublicPage,
+} from "../../src/core/experience/service";
+import type {
+  Database,
+  Enums,
+  Json,
+  Tables,
+} from "../../src/db/supabase/database.types";
+import { FormRenderer } from "../../src/runtime/forms/form-renderer";
+import { submitExperienceForm } from "../../src/runtime/forms/submission";
+import {
+  getLocalSupabaseSettings,
+  type LocalSupabaseSettings,
+} from "./support/local-supabase";
+
+vi.mock("server-only", () => ({}));
+
+type Client = SupabaseClient<Database>;
+type Business = Tables<"businesses">;
+type ObjectDefinition = Tables<"object_definitions">;
+type FieldDefinition = Tables<"field_definitions">;
+type ExperienceForm = Tables<"forms">;
+type ExperienceView = Tables<"views">;
+
+interface TestIdentity {
+  client: Client;
+  user: User;
+}
+
+interface FieldInput {
+  key: string;
+  label: string;
+  fieldType: Enums<"graph_field_type">;
+  required?: boolean;
+  defaultValue?: Json | null;
+  settings?: Json;
+  position?: number;
+}
+
+const password = "Milestone-3-test-password!";
+const createdUserIds: string[] = [];
+
+let admin: Client;
+let anonymous: Client;
+let databaseUrl: string;
+let ownerA: TestIdentity;
+let ownerB: TestIdentity;
+let administratorA: TestIdentity;
+let staffA: TestIdentity;
+let businessA: Business;
+let businessB: Business;
+let cateringObject: ObjectDefinition;
+let businessBObject: ObjectDefinition;
+let cateringFields: FieldDefinition[];
+let createForm: ExperienceForm;
+let editForm: ExperienceForm;
+let tableView: ExperienceView;
+let businessBView: ExperienceView;
+
+async function createIdentity(
+  label: string,
+  settings: LocalSupabaseSettings,
+): Promise<TestIdentity> {
+  const email = `m3-${Date.now()}-${label}-${crypto.randomUUID()}@example.test`;
+  const { data: created, error: createError } =
+    await admin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+
+  if (createError || !created.user) {
+    throw createError ?? new Error(`Could not create identity ${label}`);
+  }
+
+  createdUserIds.push(created.user.id);
+  const client = createClient<Database>(
+    settings.apiUrl,
+    settings.publishableKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+  const { error: signInError } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+  if (signInError) {
+    throw signInError;
+  }
+
+  return { client, user: created.user };
+}
+
+async function createOwnedBusiness(
+  identity: TestIdentity,
+  name: string,
+): Promise<Business> {
+  const { data, error } = await identity.client.rpc("create_business", {
+    business_name: name,
+    requested_business_type: "test",
+    requested_timezone: "Europe/London",
+  });
+  if (error || !data) {
+    throw error ?? new Error(`Could not create ${name}`);
+  }
+
+  return data;
+}
+
+async function createObject(
+  client: Client,
+  businessId: string,
+  key: string,
+  singularLabel: string,
+): Promise<ObjectDefinition> {
+  const { data, error } = await client
+    .from("object_definitions")
+    .insert({
+      business_id: businessId,
+      key,
+      singular_label: singularLabel,
+      plural_label:
+        singularLabel === "Catering Enquiry"
+          ? "Catering Enquiries"
+          : `${singularLabel}s`,
+      description: "",
+      kind: "custom",
+    })
+    .select("*")
+    .single();
+  if (error || !data) {
+    throw error ?? new Error(`Could not create Object ${key}`);
+  }
+
+  return data;
+}
+
+async function createFields(
+  client: Client,
+  businessId: string,
+  objectDefinitionId: string,
+  fields: FieldInput[],
+): Promise<FieldDefinition[]> {
+  const { data, error } = await client
+    .from("field_definitions")
+    .insert(
+      fields.map((field, index) => ({
+        business_id: businessId,
+        object_definition_id: objectDefinitionId,
+        key: field.key,
+        label: field.label,
+        field_type: field.fieldType,
+        required: field.required ?? false,
+        settings_json: field.settings ?? {},
+        position: field.position ?? index,
+        ...(field.defaultValue === undefined
+          ? {}
+          : { default_value: field.defaultValue }),
+      })),
+    )
+    .select("*");
+  if (error || !data) {
+    throw error ?? new Error("Could not create Fields");
+  }
+
+  return data;
+}
+
+const cateringFormFields = [
+  { field: "company_name" },
+  { field: "event_date" },
+  { field: "guest_count" },
+  { field: "budget" },
+  { field: "notes" },
+  { field: "status" },
+];
+
+describe("Milestone 3 experience runtime", () => {
+  beforeAll(async () => {
+    const settings = getLocalSupabaseSettings();
+    databaseUrl = settings.databaseUrl;
+    admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    });
+    anonymous = createClient<Database>(
+      settings.apiUrl,
+      settings.publishableKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          persistSession: false,
+        },
+      },
+    );
+
+    [ownerA, ownerB, administratorA, staffA] = await Promise.all([
+      createIdentity("owner-a", settings),
+      createIdentity("owner-b", settings),
+      createIdentity("admin-a", settings),
+      createIdentity("staff-a", settings),
+    ]);
+    businessA = await createOwnedBusiness(
+      ownerA,
+      `Experience A ${crypto.randomUUID()}`,
+    );
+    businessB = await createOwnedBusiness(
+      ownerB,
+      `Experience B ${crypto.randomUUID()}`,
+    );
+    const { error: membershipError } = await admin
+      .from("business_memberships")
+      .insert([
+        {
+          business_id: businessA.id,
+          user_id: administratorA.user.id,
+          role: "admin",
+        },
+        {
+          business_id: businessA.id,
+          user_id: staffA.user.id,
+          role: "staff",
+        },
+        {
+          business_id: businessB.id,
+          user_id: administratorA.user.id,
+          role: "staff",
+        },
+      ]);
+    if (membershipError) {
+      throw membershipError;
+    }
+
+    cateringObject = await createObject(
+      ownerA.client,
+      businessA.id,
+      "catering_enquiry",
+      "Catering Enquiry",
+    );
+    cateringFields = await createFields(
+      ownerA.client,
+      businessA.id,
+      cateringObject.id,
+      [
+        {
+          key: "company_name",
+          label: "Company",
+          fieldType: "short_text",
+          required: true,
+        },
+        {
+          key: "event_date",
+          label: "Event date",
+          fieldType: "date",
+          required: true,
+        },
+        {
+          key: "guest_count",
+          label: "Guests",
+          fieldType: "number",
+          required: true,
+        },
+        {
+          key: "budget",
+          label: "Budget",
+          fieldType: "currency",
+          settings: { currency: "GBP" },
+        },
+        { key: "notes", label: "Notes", fieldType: "long_text" },
+        {
+          key: "status",
+          label: "Status",
+          fieldType: "status",
+          defaultValue: "New",
+          settings: { options: ["New", "Contacted", "Booked"] },
+        },
+      ],
+    );
+
+    businessBObject = await createObject(
+      ownerB.client,
+      businessB.id,
+      "private_item",
+      "Private Item",
+    );
+    await createFields(ownerB.client, businessB.id, businessBObject.id, [
+      {
+        key: "name",
+        label: "Name",
+        fieldType: "short_text",
+        required: true,
+      },
+    ]);
+    const { data, error } = await ownerB.client
+      .from("views")
+      .insert({
+        business_id: businessB.id,
+        key: "private_items",
+        name: "Private Items",
+        view_type: "table",
+        object_definition_id: businessBObject.id,
+        audience: "internal",
+        config_json: { fields: ["name"] },
+      })
+      .select("*")
+      .single();
+    if (error || !data) {
+      throw error ?? new Error("Could not create Business B View");
+    }
+    businessBView = data;
+  });
+
+  afterAll(async () => {
+    if (admin && businessA && businessB) {
+      await admin
+        .from("businesses")
+        .delete()
+        .in("id", [businessA.id, businessB.id]);
+    }
+    if (admin) {
+      for (const userId of createdUserIds) {
+        await admin.auth.admin.deleteUser(userId);
+      }
+    }
+  });
+
+  it("lets an Owner create Forms and a configured Table View", async () => {
+    const experience = createExperienceService(ownerA.client, {
+      businessId: businessA.id,
+    });
+    createForm = await experience.createForm({
+      key: "catering_create",
+      name: "New catering enquiry",
+      objectDefinitionId: cateringObject.id,
+      mode: "create",
+      config: {
+        fields: cateringFormFields,
+        submit_label: "Add enquiry",
+      },
+    });
+    editForm = await experience.createForm({
+      key: "catering_edit",
+      name: "Edit catering enquiry",
+      objectDefinitionId: cateringObject.id,
+      mode: "edit",
+      config: {
+        fields: cateringFormFields,
+        submit_label: "Save enquiry",
+      },
+    });
+    tableView = await experience.createView({
+      key: "catering_enquiries",
+      name: "Catering Enquiries",
+      viewType: "table",
+      objectDefinitionId: cateringObject.id,
+      config: {
+        fields: [
+          "company_name",
+          "event_date",
+          "guest_count",
+          "budget",
+          "status",
+        ],
+        title_field: "company_name",
+        create_form_key: createForm.key,
+        edit_form_key: editForm.key,
+      },
+    });
+
+    expect(tableView.business_id).toBe(businessA.id);
+    expect(tableView.config_json).toMatchObject({
+      fields: ["company_name", "event_date", "guest_count", "budget", "status"],
+      include_archived: false,
+    });
+  });
+
+  it("lets an Admin create and modify experience configuration", async () => {
+    const experience = createExperienceService(administratorA.client, {
+      businessId: businessA.id,
+    });
+    const list = await experience.createView({
+      key: "catering_list",
+      name: "Enquiry list",
+      viewType: "list",
+      objectDefinitionId: cateringObject.id,
+      config: {
+        primary_field: "company_name",
+        secondary_fields: ["event_date", "status"],
+      },
+    });
+    const updated = await experience.updateView({
+      viewDefinitionId: list.id,
+      changes: { name: "Catering enquiry list" },
+    });
+
+    expect(updated.name).toBe("Catering enquiry list");
+  });
+
+  it("prevents Staff from mutating experience configuration", async () => {
+    const { error: insertError } = await staffA.client.from("forms").insert({
+      business_id: businessA.id,
+      key: "staff_form",
+      name: "Staff Form",
+      object_definition_id: cateringObject.id,
+      mode: "edit",
+      audience: "internal",
+      config_json: { fields: cateringFormFields },
+    });
+    expect(insertError).not.toBeNull();
+    const { data: absentForm } = await admin
+      .from("forms")
+      .select("id")
+      .eq("business_id", businessA.id)
+      .eq("key", "staff_form");
+    expect(absentForm).toEqual([]);
+
+    const { data: updated, error: updateError } = await staffA.client
+      .from("views")
+      .update({ name: "Changed by Staff" })
+      .eq("id", tableView.id)
+      .select("id");
+    expect(updateError).toBeNull();
+    expect(updated).toEqual([]);
+  });
+
+  it("isolates experience configuration between Businesses", async () => {
+    const { data: hidden, error: readError } = await ownerA.client
+      .from("views")
+      .select("id")
+      .eq("id", businessBView.id);
+    expect(readError).toBeNull();
+    expect(hidden).toEqual([]);
+
+    const { data: changed, error: updateError } = await ownerA.client
+      .from("views")
+      .update({ name: "Intrusion" })
+      .eq("id", businessBView.id)
+      .select("id");
+    expect(updateError).toBeNull();
+    expect(changed).toEqual([]);
+  });
+
+  it("rejects cross-tenant Object references structurally", async () => {
+    const sql = postgres(databaseUrl, { max: 1 });
+    try {
+      await expect(
+        sql`
+          insert into public.views (
+            business_id,
+            key,
+            name,
+            view_type,
+            object_definition_id,
+            config_json,
+            audience,
+            is_active
+          )
+          values (
+            ${businessA.id}::uuid,
+            'cross_tenant_view',
+            'Cross tenant',
+            'table',
+            ${businessBObject.id}::uuid,
+            '{"fields":["name"]}'::jsonb,
+            'internal',
+            false
+          )
+        `,
+      ).rejects.toMatchObject({
+        code: "23503",
+        constraint_name: "views_tenant_object_fkey",
+      });
+
+      await expect(
+        sql`
+          insert into public.forms (
+            business_id,
+            key,
+            name,
+            object_definition_id,
+            mode,
+            config_json,
+            audience,
+            is_active
+          )
+          values (
+            ${businessA.id}::uuid,
+            'cross_tenant_form',
+            'Cross tenant',
+            ${businessBObject.id}::uuid,
+            'edit',
+            '{"fields":[{"field":"name"}]}'::jsonb,
+            'internal',
+            false
+          )
+        `,
+      ).rejects.toMatchObject({
+        code: "23503",
+        constraint_name: "forms_tenant_object_fkey",
+      });
+    } finally {
+      await sql.end();
+    }
+  });
+
+  it("rejects invalid field references and arbitrary configuration", async () => {
+    const { error: viewError } = await ownerA.client.from("views").insert({
+      business_id: businessA.id,
+      key: "invalid_field_view",
+      name: "Invalid field",
+      view_type: "table",
+      object_definition_id: cateringObject.id,
+      audience: "internal",
+      config_json: { fields: ["not_a_field"] },
+    });
+    expect(viewError?.code).toBe("23514");
+
+    const { error: formError } = await ownerA.client.from("forms").insert({
+      business_id: businessA.id,
+      key: "invalid_field_form",
+      name: "Invalid field",
+      object_definition_id: cateringObject.id,
+      mode: "edit",
+      audience: "internal",
+      config_json: { fields: [{ field: "not_a_field" }] },
+    });
+    expect(formError?.code).toBe("23514");
+
+    const { error: arbitraryError } = await ownerA.client.from("views").insert({
+      business_id: businessA.id,
+      key: "arbitrary_view",
+      name: "Arbitrary",
+      view_type: "table",
+      object_definition_id: cateringObject.id,
+      audience: "internal",
+      config_json: { fields: ["company_name"], javascript: "alert(1)" },
+    });
+    expect(arbitraryError?.code).toBe("22023");
+  });
+
+  it("rejects graph changes that would break active Views or Forms", async () => {
+    const notesField = cateringFields.find(({ key }) => key === "notes");
+    if (!notesField) {
+      throw new Error("Notes Field missing");
+    }
+
+    const { error: archiveError } = await ownerA.client
+      .from("field_definitions")
+      .update({ is_active: false })
+      .eq("id", notesField.id);
+    expect(archiveError?.code).toBe("23514");
+
+    const { data: retained } = await ownerA.client
+      .from("field_definitions")
+      .select("is_active")
+      .eq("id", notesField.id)
+      .single();
+    expect(retained?.is_active).toBe(true);
+
+    const { error: objectArchiveError } = await ownerA.client
+      .from("object_definitions")
+      .update({ is_active: false })
+      .eq("id", cateringObject.id);
+    expect(objectArchiveError?.code).toBe("23514");
+  });
+
+  it("creates and edits generic Records through configured Forms", async () => {
+    const createData = new FormData();
+    createData.set("company_name", "Integration Ltd");
+    createData.set("event_date", "2026-11-21");
+    createData.set("guest_count", "72");
+    createData.set("budget", "3600");
+    createData.set("notes", "Dinner");
+    createData.set("status", "New");
+    createData.set("business_id", businessB.id);
+    createData.set("created_by", ownerB.user.id);
+
+    const created = await submitExperienceForm(
+      ownerA.client,
+      { businessId: businessA.id },
+      { formKey: createForm.key, formData: createData },
+    );
+    expect(created.business_id).toBe(businessA.id);
+    expect(created.created_by).toBe(ownerA.user.id);
+    expect(created.data_json).toMatchObject({
+      company_name: "Integration Ltd",
+      guest_count: 72,
+      budget: 3600,
+    });
+    expect(created.data_json).not.toHaveProperty("business_id");
+    expect(created.data_json).not.toHaveProperty("created_by");
+
+    const editData = new FormData();
+    editData.set("company_name", "Integration Ltd");
+    editData.set("event_date", "2026-11-21");
+    editData.set("guest_count", "75");
+    editData.set("budget", "3750");
+    editData.set("notes", "Dinner and drinks");
+    editData.set("status", "Contacted");
+    const updated = await submitExperienceForm(
+      ownerA.client,
+      { businessId: businessA.id },
+      { formKey: editForm.key, formData: editData, recordId: created.id },
+    );
+
+    expect(updated.data_json).toMatchObject({
+      guest_count: 75,
+      notes: "Dinner and drinks",
+      status: "Contacted",
+    });
+    expect(updated.created_by).toBe(ownerA.user.id);
+  });
+
+  it("does not let a tenant-scoped service switch Businesses by identifier", async () => {
+    const experienceA = createExperienceService(administratorA.client, {
+      businessId: businessA.id,
+    });
+    await expect(
+      experienceA.getViewById(businessBView.id),
+    ).rejects.toBeInstanceOf(ExperienceServiceError);
+
+    const experienceB = createExperienceService(administratorA.client, {
+      businessId: businessB.id,
+    });
+    expect((await experienceB.getViewById(businessBView.id)).id).toBe(
+      businessBView.id,
+    );
+  });
+
+  it("renders configured Pages internally and keeps drafts/internal Pages private", async () => {
+    const { data: internalPage, error: internalError } = await ownerA.client
+      .from("pages")
+      .insert({
+        business_id: businessA.id,
+        key: "catering_workspace",
+        title: "Catering workspace",
+        slug: "catering-workspace",
+        audience: "internal",
+        status: "draft",
+        layout_json: {
+          blocks: [
+            { type: "heading", text: "Catering Enquiries", level: 1 },
+            { type: "view", view_key: tableView.key },
+            { type: "form", form_key: createForm.key },
+          ],
+        },
+      })
+      .select("*")
+      .single();
+    expect(internalError).toBeNull();
+    expect(internalPage?.status).toBe("draft");
+
+    const { data: publicDraft, error: draftError } = await ownerA.client
+      .from("pages")
+      .insert({
+        business_id: businessA.id,
+        key: "public_draft",
+        title: "Coming soon",
+        slug: "coming-soon",
+        audience: "public",
+        status: "draft",
+        layout_json: {
+          blocks: [{ type: "text", text: "Not published yet." }],
+        },
+      })
+      .select("*")
+      .single();
+    expect(draftError).toBeNull();
+    expect(publicDraft?.status).toBe("draft");
+
+    expect(
+      await resolvePublicPage(
+        anonymous,
+        businessA.slug,
+        internalPage?.slug ?? "",
+      ),
+    ).toBeNull();
+    expect(
+      await resolvePublicPage(
+        anonymous,
+        businessA.slug,
+        publicDraft?.slug ?? "",
+      ),
+    ).toBeNull();
+  });
+
+  it("publicly resolves only public and published static Pages", async () => {
+    const { data: published, error } = await ownerA.client
+      .from("pages")
+      .insert({
+        business_id: businessA.id,
+        key: "public_information",
+        title: "Catering information",
+        slug: "catering-information",
+        audience: "public",
+        status: "published",
+        layout_json: {
+          blocks: [
+            { type: "heading", text: "Catering from Bedford Bakery", level: 1 },
+            { type: "text", text: "Talk to our team about your next event." },
+            {
+              type: "button",
+              label: "Email us",
+              href: "mailto:catering@example.test",
+            },
+          ],
+        },
+      })
+      .select("*")
+      .single();
+    expect(error).toBeNull();
+
+    const resolved = await resolvePublicPage(
+      anonymous,
+      businessA.slug,
+      published?.slug ?? "",
+    );
+    expect(resolved?.business.name).toBe(businessA.name);
+    expect(resolved?.page.layout.blocks).toHaveLength(3);
+
+    const { error: unsafePublishError } = await ownerA.client
+      .from("pages")
+      .insert({
+        business_id: businessA.id,
+        key: "unsafe_public_write",
+        title: "Unsafe",
+        slug: "unsafe",
+        audience: "public",
+        status: "published",
+        layout_json: {
+          blocks: [{ type: "form", form_key: createForm.key }],
+        },
+      });
+    expect(unsafePublishError?.code).toBe("23514");
+  });
+
+  it("does not give anonymous callers broad configuration or Record access", async () => {
+    const records = await anonymous.from("records").select("*");
+    expect(records.error?.code).toBe("42501");
+
+    const views = await anonymous.from("views").select("*");
+    expect(views.error?.code).toBe("42501");
+
+    const forms = await anonymous.from("forms").select("*");
+    expect(forms.error?.code).toBe("42501");
+  });
+
+  it("proves Order Occasion is added, rendered, and submitted by configuration only", async () => {
+    const orderObject = await createObject(
+      ownerA.client,
+      businessA.id,
+      "experience_order",
+      "Order",
+    );
+    await createFields(ownerA.client, businessA.id, orderObject.id, [
+      {
+        key: "order_number",
+        label: "Order number",
+        fieldType: "short_text",
+        required: true,
+      },
+    ]);
+    const experience = createExperienceService(ownerA.client, {
+      businessId: businessA.id,
+    });
+    const orderForm = await experience.createForm({
+      key: "experience_order_create",
+      name: "New order",
+      objectDefinitionId: orderObject.id,
+      mode: "create",
+      config: { fields: [{ field: "order_number" }] },
+    });
+    const before = new FormData();
+    before.set("order_number", "ORD-001");
+    const firstOrder = await submitExperienceForm(
+      ownerA.client,
+      { businessId: businessA.id },
+      { formKey: orderForm.key, formData: before },
+    );
+    expect(firstOrder.data_json).toEqual({ order_number: "ORD-001" });
+
+    await createFields(ownerA.client, businessA.id, orderObject.id, [
+      {
+        key: "occasion",
+        label: "Occasion",
+        fieldType: "short_text",
+      },
+    ]);
+    await experience.updateForm({
+      formDefinitionId: orderForm.id,
+      changes: {
+        config: {
+          fields: [
+            { field: "order_number" },
+            {
+              field: "occasion",
+              label: "What is the occasion?",
+              help_text: "Optional",
+            },
+          ],
+        },
+      },
+    });
+
+    const configured = await experience.loadForm(orderForm.key);
+    const html = renderToStaticMarkup(
+      createElement(FormRenderer, {
+        bundle: configured,
+        action: "/submit",
+      }),
+    );
+    expect(html).toContain("What is the occasion?");
+
+    const after = new FormData();
+    after.set("order_number", "ORD-002");
+    after.set("occasion", "Anniversary");
+    const secondOrder = await submitExperienceForm(
+      ownerA.client,
+      { businessId: businessA.id },
+      { formKey: orderForm.key, formData: after },
+    );
+    expect(secondOrder.data_json).toEqual({
+      occasion: "Anniversary",
+      order_number: "ORD-002",
+    });
+  });
+
+  it("keeps the Catering demo out of domain-specific runtime source", () => {
+    const sourceFiles = readdirSync(join(process.cwd(), "src"), {
+      recursive: true,
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name.toLowerCase());
+
+    expect(
+      sourceFiles.some(
+        (name) =>
+          name.includes("catering-enquiry") ||
+          name.includes("catering_enquiry") ||
+          name.includes("cateringenquiry"),
+      ),
+    ).toBe(false);
+  });
+});

@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 interface AppShellProps {
@@ -6,6 +9,12 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
+  const pathname = usePathname();
+
+  if (pathname.startsWith("/app/")) {
+    return <div className="app-frame workspace-frame">{children}</div>;
+  }
+
   return (
     <div className="app-frame">
       <header className="site-header">
@@ -29,7 +38,7 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
       {children}
 
       <footer className="site-footer">
-        SMBOS v0.1 · Multi-tenant foundation
+        SMBOS v0.1 · Business software shaped around your work
       </footer>
     </div>
   );

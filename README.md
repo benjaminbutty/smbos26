@@ -1,8 +1,9 @@
 # SMBOS
 
 SMBOS is an AI-native operating system for small physical businesses. The
-repository currently contains the Milestone 1 multi-tenant foundation:
-email/password accounts, private business workspaces, and locations.
+repository currently contains the Milestone 3 experience runtime: authenticated
+business workspaces rendered from tenant-safe graph and experience
+configuration.
 
 The product and architecture sources of truth are:
 
@@ -10,26 +11,28 @@ The product and architecture sources of truth are:
 - [`docs/architecture-decisions.md`](docs/architecture-decisions.md)
 - [`AGENTS.md`](AGENTS.md)
 
-## Milestone 1 scope
+## Milestone 3 scope
 
 Included:
 
 - Supabase email/password authentication using cookie-based SSR
 - globally addressable businesses with fixed Owner, Admin, and Staff roles
-- locations uniquely addressable within a business
-- PostgreSQL Row Level Security for all tenant-owned tables
-- server-side tenant resolution for `/app/[businessSlug]/...`
-- transactional initial business and Owner membership creation
-- authenticated PostgreSQL/RLS integration tests
-- GitHub Actions CI using the same local Supabase workflow
+- metadata-driven Objects, Fields, Relationships, and generic Records
+- tenant-safe View, Form, and Page configuration
+- generic Table, List, Cards, Detail, Field, Form, and Page renderers
+- generated internal workspace navigation and normal create/edit Record flows
+- authenticated draft Page preview and static published public Pages
+- PostgreSQL validation and RLS for every tenant-owned table
+- real PostgreSQL/RLS/integrity integration tests
 
 Not included:
 
-- the configurable object/graph system
 - preorder functionality
 - AI provider calls or builder behavior
-- invitations, social authentication, magic links, or passwordless login
-- custom expansion or narrowing of fixed role permissions
+- public Record queries or public Form submissions
+- relationship Form controls
+- configuration versioning, change sets, or publishing versions
+- workflow/rule execution
 
 ## Requirements
 
@@ -75,6 +78,30 @@ Supabase project using the CLI defaults.
 5. Open [http://localhost:3000](http://localhost:3000). The health endpoint is
    available at [http://localhost:3000/health](http://localhost:3000/health).
 
+## Local visual demo
+
+The demo bootstrap is deliberately local-only. It reads credentials from the
+running Supabase CLI and refuses any host/port other than this repository's
+local `127.0.0.1:5532x` stack.
+
+```bash
+npm run supabase:start
+npm run supabase:reset
+npm run demo:seed
+npm run dev
+```
+
+Sign in at [http://localhost:3000/sign-in](http://localhost:3000/sign-in):
+
+- Email: `demo@smbos.local`
+- Password: `Local-demo-2026!`
+
+Open the generated
+[Catering Enquiries workspace](http://localhost:3000/app/bedford-bakery-demo/workspace/catering-enquiries).
+The Object, Fields, two Records, Table/Detail Views, and create/edit Forms are
+all generic graph and experience configuration. There is no Catering-specific
+runtime component, route, or persistence function.
+
 ## Local Supabase
 
 Start the Docker-based local stack:
@@ -108,21 +135,24 @@ validating from a clean state.
 
 ## Quality commands
 
-| Command                    | Purpose                                        |
-| -------------------------- | ---------------------------------------------- |
-| `npm test`                 | Run fast unit and route tests                  |
-| `npm run test:integration` | Exercise real auth identities and RLS          |
-| `npm run test:watch`       | Run unit tests in watch mode                   |
-| `npm run typecheck`        | Generate route types and run TypeScript        |
-| `npm run lint`             | Run ESLint                                     |
-| `npm run format`           | Format supported files with Prettier           |
-| `npm run format:check`     | Verify formatting without changing files       |
-| `npm run build`            | Create a production Next.js build              |
-| `npm run check`            | Run formatting, types, linting, and unit tests |
-| `npm run supabase:start`   | Start the local Supabase stack                 |
-| `npm run supabase:status`  | Show local Supabase service details            |
-| `npm run supabase:reset`   | Recreate and migrate the local database        |
-| `npm run supabase:stop`    | Stop the local Supabase stack                  |
+| Command                    | Purpose                                          |
+| -------------------------- | ------------------------------------------------ |
+| `npm test`                 | Run fast unit and route tests                    |
+| `npm run test:integration` | Exercise real auth identities and RLS            |
+| `npm run test:experience`  | Run the Milestone 3 experience integration suite |
+| `npm run test:graph`       | Run the Milestone 2 graph integrity suite        |
+| `npm run test:watch`       | Run unit tests in watch mode                     |
+| `npm run typecheck`        | Generate route types and run TypeScript          |
+| `npm run lint`             | Run ESLint                                       |
+| `npm run format`           | Format supported files with Prettier             |
+| `npm run format:check`     | Verify formatting without changing files         |
+| `npm run build`            | Create a production Next.js build                |
+| `npm run check`            | Run formatting, types, linting, and unit tests   |
+| `npm run supabase:start`   | Start the local Supabase stack                   |
+| `npm run supabase:status`  | Show local Supabase service details              |
+| `npm run supabase:reset`   | Recreate and migrate the local database          |
+| `npm run supabase:stop`    | Stop the local Supabase stack                    |
+| `npm run demo:seed`        | Create the local-only generated UI demo          |
 
 Run the integration suite after Supabase is started and reset:
 
