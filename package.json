@@ -19,11 +19,13 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:graph": "vitest run --config vitest.integration.config.ts tests/integration/graph.test.ts",
     "test:watch": "vitest",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",
     "supabase:reset": "supabase db reset --local",
+    "supabase:lint": "supabase db lint --local --level warning",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {

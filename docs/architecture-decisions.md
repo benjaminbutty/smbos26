@@ -83,3 +83,55 @@ anchored to the UUID and membership, not to the slug.
 - Display names can evolve independently without changing established URLs.
 - Slug correction or rename is intentionally deferred until aliases and
   redirects can preserve historical links.
+
+## ADR-003 - PostgreSQL is the authoritative graph integrity boundary
+
+**Status:** Accepted for v0.1
+
+**Date:** 27 July 2026
+
+### Context
+
+Graph records are exposed through authenticated Supabase/PostgREST access.
+Application validation alone would leave a second mutation path able to persist
+invalid JSON or cross-tenant references. Relationship cardinality must also
+remain correct when two requests arrive concurrently.
+
+### Decision
+
+- Every graph table carries `business_id`.
+- Tenant-owned references use composite foreign keys that include
+  `business_id`, backed by tenant-and-ID unique constraints on their parents.
+- A `BEFORE INSERT OR UPDATE` trigger validates complete `records.data_json`
+  against active field definitions. It applies configured defaults, rejects
+  unknown or archived writable fields, and derives `created_by` from
+  `auth.uid()`.
+- Server record updates use a narrow security-invoker RPC that merges a patch
+  before the trigger validates the resulting complete record. Direct
+  PostgREST updates remain safe because the same trigger validates them.
+- Record-relationship inserts lock their relationship-definition row before
+  checking record object types and cardinality. The lock deliberately
+  serializes writes for one relationship definition so concurrent requests
+  cannot both pass a stale cardinality check.
+- Normal authenticated roles receive no Record delete permission. Archiving is
+  represented by `record_status = 'archived'`.
+
+### Archive behavior
+
+- Archived objects reject new records and data changes, but their historical
+  records remain readable and can be archived.
+- Archived fields remain readable in historical JSON but cannot be added or
+  changed.
+- Archived relationship definitions reject new edges; existing edges remain
+  readable and removable.
+
+### Consequences
+
+- The database is the reusable deterministic validation service and protects
+  callers that bypass the TypeScript service layer.
+- Composite tenant keys add deliberate redundancy to every graph reference.
+- Cardinality enforcement is coarse-grained per relationship definition. This
+  is simple and safe for v0.1; finer advisory locks can replace it if measured
+  write contention justifies the extra complexity.
+- Configuration changes that would invalidate existing Records are rejected
+  transactionally.
