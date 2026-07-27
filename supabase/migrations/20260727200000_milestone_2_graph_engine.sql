@@ -398,6 +398,21 @@ begin
       using errcode = '22023';
   end if;
 
+  if old.is_active and not new.is_active and exists (
+    select 1
+    from public.relationship_definitions as relationship_definition
+    where relationship_definition.business_id = old.business_id
+      and relationship_definition.is_active
+      and (
+        relationship_definition.source_object_definition_id = old.id
+        or relationship_definition.target_object_definition_id = old.id
+      )
+  ) then
+    raise exception
+      'Objects referenced by active relationships cannot be archived'
+      using errcode = '23514';
+  end if;
+
   return new;
 end;
 $$;
@@ -420,6 +435,12 @@ begin
         using errcode = '22023';
     end if;
 
+    perform 1
+    from public.object_definitions as object_definition
+    where object_definition.business_id = new.business_id
+      and object_definition.id = new.object_definition_id
+    for update;
+
     if new.field_type is distinct from old.field_type
       and exists (
         select 1
@@ -437,6 +458,14 @@ begin
     and not private.graph_options_are_valid(new.settings_json) then
     raise exception 'Select, multi-select and status fields require valid options'
       using errcode = '22023';
+  end if;
+
+  if tg_op = 'INSERT' then
+    perform 1
+    from public.object_definitions as object_definition
+    where object_definition.business_id = new.business_id
+      and object_definition.id = new.object_definition_id
+    for update;
   end if;
 
   if new.default_value is not null
@@ -491,6 +520,10 @@ returns trigger
 language plpgsql
 set search_path = ''
 as $$
+declare
+  expected_object_count integer;
+  locked_object_count integer := 0;
+  locked_object record;
 begin
   if tg_op = 'UPDATE' then
     if new.business_id is distinct from old.business_id
@@ -516,24 +549,38 @@ begin
     end if;
   end if;
 
-  if new.is_active and (
-    not exists (
-      select 1
-      from public.object_definitions as source_object
-      where source_object.business_id = new.business_id
-        and source_object.id = new.source_object_definition_id
-        and source_object.is_active
-    )
-    or not exists (
-      select 1
-      from public.object_definitions as target_object
-      where target_object.business_id = new.business_id
-        and target_object.id = new.target_object_definition_id
-        and target_object.is_active
-    )
-  ) then
-    raise exception 'Active relationships require active source and target objects'
-      using errcode = '23514';
+  if new.is_active then
+    expected_object_count := case
+      when new.source_object_definition_id
+        = new.target_object_definition_id then 1
+      else 2
+    end;
+
+    for locked_object in
+      select object_definition.id, object_definition.is_active
+      from public.object_definitions as object_definition
+      where object_definition.business_id = new.business_id
+        and object_definition.id in (
+          new.source_object_definition_id,
+          new.target_object_definition_id
+        )
+      order by object_definition.id
+      for share
+    loop
+      locked_object_count := locked_object_count + 1;
+
+      if not locked_object.is_active then
+        raise exception
+          'Active relationships require active source and target objects'
+          using errcode = '23514';
+      end if;
+    end loop;
+
+    if locked_object_count <> expected_object_count then
+      raise exception
+        'Active relationships require active source and target objects'
+        using errcode = '23514';
+    end if;
   end if;
 
   return new;
@@ -559,7 +606,8 @@ begin
   into object_is_active
   from public.object_definitions as object_definition
   where object_definition.business_id = new.business_id
-    and object_definition.id = new.object_definition_id;
+    and object_definition.id = new.object_definition_id
+  for share;
 
   if not found then
     raise exception 'Record object does not belong to the record business'
@@ -1084,7 +1132,16 @@ grant execute on function public.remove_graph_relationship(uuid)
   to authenticated;
 
 comment on function private.validate_graph_record() is
-  'Authoritative PostgREST-safe record validation and created_by derivation.';
+  'Locks the parent Object in share mode before authoritative PostgREST-safe record validation and created_by derivation.';
 
 comment on function private.validate_record_relationship() is
   'Locks each relationship definition to serialize cardinality checks.';
+
+comment on function private.validate_field_definition() is
+  'Locks the parent Object exclusively so Field changes serialize with Record validation.';
+
+comment on function private.protect_object_definition_identity() is
+  'Protects immutable identity and prevents archival while active Relationships reference the Object.';
+
+comment on function private.validate_relationship_definition() is
+  'Share-locks active source and target Objects so archival cannot race Relationship configuration.';

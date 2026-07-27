@@ -109,6 +109,14 @@ remain correct when two requests arrive concurrently.
 - Server record updates use a narrow security-invoker RPC that merges a patch
   before the trigger validates the resulting complete record. Direct
   PostgREST updates remain safe because the same trigger validates them.
+- Record validation takes a shared row lock on its parent Object definition.
+  Field-definition mutations take an exclusive lock on the same Object row.
+  Object archival uses its normal conflicting update lock. This serializes
+  configuration and operational writes per Object while allowing concurrent
+  Record writes that only hold compatible shared locks.
+- Active relationship definitions take shared locks on their source and target
+  Objects. An Object cannot be archived while an active relationship
+  definition references it, and no configuration change silently cascades.
 - Record-relationship inserts lock their relationship-definition row before
   checking record object types and cardinality. The lock deliberately
   serializes writes for one relationship definition so concurrent requests
@@ -125,6 +133,15 @@ remain correct when two requests arrive concurrently.
 - Archived relationship definitions reject new edges; existing edges remain
   readable and removable.
 
+### Required relationship metadata
+
+`relationship_definitions.is_required` is retained as graph metadata in
+Milestone 2. Storage-level enforcement is deferred until SMBOS has a
+transactional operation that can create a Record and all of its required
+relationships atomically. Enforcing it on standalone Record insertion would
+make valid creation impossible, while enforcing it later would expose a
+temporarily invalid state.
+
 ### Consequences
 
 - The database is the reusable deterministic validation service and protects
@@ -135,3 +152,5 @@ remain correct when two requests arrive concurrently.
   write contention justifies the extra complexity.
 - Configuration changes that would invalidate existing Records are rejected
   transactionally.
+- Object-scoped locks are the integrity boundary between Field configuration,
+  Object archival and Record validation; unrelated Objects do not contend.

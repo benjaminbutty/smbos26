@@ -1119,6 +1119,202 @@ describe("metadata-driven graph engine", () => {
     });
   });
 
+  it("serializes Field changes against Record validation in both lock orders", async () => {
+    const concurrentObject = await createObject(
+      ownerA.client,
+      businessA.id,
+      "concurrent_field_configuration",
+      "Concurrent Field Configuration",
+    );
+    const [statusField] = await createFields(
+      ownerA.client,
+      businessA.id,
+      concurrentObject.id,
+      [
+        {
+          key: "status",
+          label: "Status",
+          fieldType: "status",
+          required: true,
+          settings: { options: ["Open", "Closed"] },
+        },
+      ],
+    );
+    if (!statusField) {
+      throw new Error("Concurrent status Field was not created");
+    }
+
+    const recordId = crypto.randomUUID();
+    const recordSql = postgres(databaseUrl, { max: 1 });
+    const configurationSql = postgres(databaseUrl, { max: 1 });
+    let announceRecordValidation: () => void = () => {};
+    let announceConfigurationReady: () => void = () => {};
+    const recordHasValidated = new Promise<void>((resolve) => {
+      announceRecordValidation = resolve;
+    });
+    const configurationIsReady = new Promise<void>((resolve) => {
+      announceConfigurationReady = resolve;
+    });
+
+    try {
+      const recordWrite = recordSql.begin(async (transaction) => {
+        await transaction`
+          insert into public.records (
+            id,
+            business_id,
+            object_definition_id,
+            data_json
+          )
+          values (
+            ${recordId}::uuid,
+            ${businessA.id}::uuid,
+            ${concurrentObject.id}::uuid,
+            '{"status":"Open"}'::jsonb
+          )
+        `;
+        announceRecordValidation();
+        await configurationIsReady;
+        await transaction`select pg_sleep(0.2)`;
+      });
+
+      const configurationWrite = configurationSql.begin(async (transaction) => {
+        await recordHasValidated;
+        announceConfigurationReady();
+        await transaction`
+            update public.field_definitions
+            set settings_json = '{"options":["Closed"]}'::jsonb
+            where business_id = ${businessA.id}::uuid
+              and id = ${statusField.id}::uuid
+          `;
+      });
+
+      const results = await Promise.allSettled([
+        recordWrite,
+        configurationWrite,
+      ]);
+
+      expect(results[0]).toMatchObject({ status: "fulfilled" });
+      expect(results[1]).toMatchObject({
+        reason: { code: "22023" },
+        status: "rejected",
+      });
+
+      const [finalField] = await recordSql`
+        select settings_json
+        from public.field_definitions
+        where id = ${statusField.id}::uuid
+      `;
+      const [finalRecord] = await recordSql`
+        select data_json
+        from public.records
+        where id = ${recordId}::uuid
+      `;
+
+      expect(finalField?.settings_json).toEqual({
+        options: ["Open", "Closed"],
+      });
+      expect(finalRecord?.data_json).toEqual({ status: "Open" });
+
+      const configurationFirstObject = await createObject(
+        ownerA.client,
+        businessA.id,
+        "concurrent_configuration_first",
+        "Concurrent Configuration First",
+      );
+      const [configurationFirstField] = await createFields(
+        ownerA.client,
+        businessA.id,
+        configurationFirstObject.id,
+        [
+          {
+            key: "status",
+            label: "Status",
+            fieldType: "status",
+            required: true,
+            settings: { options: ["Open", "Closed"] },
+          },
+        ],
+      );
+      if (!configurationFirstField) {
+        throw new Error("Configuration-first status Field was not created");
+      }
+
+      const rejectedRecordId = crypto.randomUUID();
+      let announceConfigurationMutation: () => void = () => {};
+      let announceRecordAttempt: () => void = () => {};
+      const configurationHasMutated = new Promise<void>((resolve) => {
+        announceConfigurationMutation = resolve;
+      });
+      const recordIsReady = new Promise<void>((resolve) => {
+        announceRecordAttempt = resolve;
+      });
+
+      const configurationFirstWrite = configurationSql.begin(
+        async (transaction) => {
+          await transaction`
+            update public.field_definitions
+            set settings_json = '{"options":["Closed"]}'::jsonb
+            where business_id = ${businessA.id}::uuid
+              and id = ${configurationFirstField.id}::uuid
+          `;
+          announceConfigurationMutation();
+          await recordIsReady;
+          await transaction`select pg_sleep(0.2)`;
+        },
+      );
+
+      const rejectedRecordWrite = recordSql.begin(async (transaction) => {
+        await configurationHasMutated;
+        announceRecordAttempt();
+        await transaction`
+          insert into public.records (
+            id,
+            business_id,
+            object_definition_id,
+            data_json
+          )
+          values (
+            ${rejectedRecordId}::uuid,
+            ${businessA.id}::uuid,
+            ${configurationFirstObject.id}::uuid,
+            '{"status":"Open"}'::jsonb
+          )
+        `;
+      });
+
+      const configurationFirstResults = await Promise.allSettled([
+        configurationFirstWrite,
+        rejectedRecordWrite,
+      ]);
+
+      expect(configurationFirstResults[0]).toMatchObject({
+        status: "fulfilled",
+      });
+      expect(configurationFirstResults[1]).toMatchObject({
+        reason: { code: "22023" },
+        status: "rejected",
+      });
+
+      const [configurationFirstFinalField] = await configurationSql`
+        select settings_json
+        from public.field_definitions
+        where id = ${configurationFirstField.id}::uuid
+      `;
+      const [rejectedRecord] = await recordSql`
+        select id
+        from public.records
+        where id = ${rejectedRecordId}::uuid
+      `;
+
+      expect(configurationFirstFinalField?.settings_json).toEqual({
+        options: ["Closed"],
+      });
+      expect(rejectedRecord).toBeUndefined();
+    } finally {
+      await Promise.all([recordSql.end(), configurationSql.end()]);
+    }
+  });
+
   it("handles archived configuration without corrupting historical data", async () => {
     const archiveObject = await createObject(
       ownerA.client,
@@ -1229,6 +1425,12 @@ describe("metadata-driven graph engine", () => {
       throw new Error("Archive proof edge was not created");
     }
 
+    const { error: referencedObjectArchiveError } = await ownerA.client
+      .from("object_definitions")
+      .update({ is_active: false })
+      .eq("id", archiveObject.id);
+    expect(referencedObjectArchiveError?.code).toBe("23514");
+
     const { error: archiveRelationshipError } = await ownerA.client
       .from("relationship_definitions")
       .update({ is_active: false })
@@ -1243,18 +1445,26 @@ describe("metadata-driven graph engine", () => {
     );
     expect(archivedRelationshipWrite.error?.code).toBe("23514");
 
+    const { error: archiveObjectError } = await ownerA.client
+      .from("object_definitions")
+      .update({ is_active: false })
+      .eq("id", archiveObject.id);
+    expect(archiveObjectError).toBeNull();
+
+    const { data: historicalEdges, error: historicalEdgesError } =
+      await ownerA.client
+        .from("record_relationships")
+        .select("id")
+        .eq("id", existingEdge.id);
+    expect(historicalEdgesError).toBeNull();
+    expect(historicalEdges).toEqual([{ id: existingEdge.id }]);
+
     const { data: removedEdge, error: removeEdgeError } =
       await ownerA.client.rpc("remove_graph_relationship", {
         target_record_relationship_id: existingEdge.id,
       });
     expect(removeEdgeError).toBeNull();
     expect(removedEdge).toBe(true);
-
-    const { error: archiveObjectError } = await ownerA.client
-      .from("object_definitions")
-      .update({ is_active: false })
-      .eq("id", archiveObject.id);
-    expect(archiveObjectError).toBeNull();
 
     const { error: newRecordError } = await ownerA.client.rpc(
       "create_graph_record",

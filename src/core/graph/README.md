@@ -10,5 +10,15 @@ PostgreSQL is authoritative for tenant consistency, record validation,
 schemas here validate operation shapes early, while database triggers protect
 the same invariants from direct PostgREST callers.
 
+Record validation and Field configuration changes serialize through locks on
+their shared Object definition. Record writers use compatible shared locks, so
+normal concurrent writes remain possible. Active Relationships likewise keep
+their source and target Objects from being archived until the Relationship is
+archived explicitly.
+
+`relationship_definitions.is_required` is metadata only in Milestone 2.
+Storage enforcement is deferred until a future transactional operation can
+create a Record and its required Relationships atomically.
+
 Business concepts belong in object, field and relationship definitions. Do not
 add concept-specific service functions or persistence models.
