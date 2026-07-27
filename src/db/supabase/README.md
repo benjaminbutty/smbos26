@@ -1,10 +1,15 @@
 # Supabase boundary
 
-Supabase clients, generated database types, and tenant-scoped data access
-functions belong here starting in Milestone 1.
+`client.ts` creates the browser client, `server.ts` creates the cookie-aware
+server client, and `proxy.ts` refreshes authentication cookies using the
+official SSR adapter.
 
-The future implementation must enforce tenant isolation server-side and
-through PostgreSQL Row Level Security. Browser code must never receive a
-service-role credential.
+`database.types.ts` is generated from the local migration set:
 
-No Supabase SDK or database client is part of Milestone 0.
+```bash
+supabase gen types typescript --local
+```
+
+Application code uses only the public URL and publishable key. A
+secret/service-role credential must never be added to this directory or
+exposed to browser code.

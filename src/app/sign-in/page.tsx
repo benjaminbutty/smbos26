@@ -1,0 +1,54 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
+
+import { signIn } from "../../auth/actions";
+import { Notice } from "../../components/notice";
+import { readSearchParam, type SearchParams } from "../../lib/search-params";
+
+interface SignInPageProps {
+  searchParams: SearchParams;
+}
+
+export default async function SignInPage({
+  searchParams,
+}: Readonly<SignInPageProps>): Promise<ReactNode> {
+  const [error, message] = await Promise.all([
+    readSearchParam(searchParams, "error"),
+    readSearchParam(searchParams, "message"),
+  ]);
+
+  return (
+    <main className="narrow-page">
+      <section className="panel">
+        <p className="eyebrow">Welcome back</p>
+        <h1 className="page-title">Sign in</h1>
+        <p className="muted">Access the businesses you work with.</p>
+
+        {error ? <Notice kind="error">{error}</Notice> : null}
+        {message ? <Notice kind="message">{message}</Notice> : null}
+
+        <form action={signIn} className="stack-form">
+          <label>
+            Email
+            <input autoComplete="email" name="email" required type="email" />
+          </label>
+          <label>
+            Password
+            <input
+              autoComplete="current-password"
+              minLength={8}
+              name="password"
+              required
+              type="password"
+            />
+          </label>
+          <button type="submit">Sign in</button>
+        </form>
+
+        <p className="form-footer">
+          New to SMBOS? <Link href="/sign-up">Create an account</Link>
+        </p>
+      </section>
+    </main>
+  );
+}

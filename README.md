@@ -1,7 +1,8 @@
 # SMBOS
 
-SMBOS is an AI-native operating system for small physical businesses. This
-repository currently contains the Milestone 0 engineering foundation only.
+SMBOS is an AI-native operating system for small physical businesses. The
+repository currently contains the Milestone 1 multi-tenant foundation:
+email/password accounts, private business workspaces, and locations.
 
 The product and architecture sources of truth are:
 
@@ -9,30 +10,30 @@ The product and architecture sources of truth are:
 - [`docs/architecture-decisions.md`](docs/architecture-decisions.md)
 - [`AGENTS.md`](AGENTS.md)
 
-## Milestone 0 scope
+## Milestone 1 scope
 
 Included:
 
-- Next.js App Router application with strict TypeScript
-- minimal responsive application shell
-- JSON health endpoint at `/health`
-- validated environment configuration
-- ESLint and Prettier
-- Vitest test setup
-- pinned Supabase CLI configuration for Docker-based local development and CI
-- reserved Supabase and AI provider integration boundaries
+- Supabase email/password authentication using cookie-based SSR
+- globally addressable businesses with fixed Owner, Admin, and Staff roles
+- locations uniquely addressable within a business
+- PostgreSQL Row Level Security for all tenant-owned tables
+- server-side tenant resolution for `/app/[businessSlug]/...`
+- transactional initial business and Owner membership creation
+- authenticated PostgreSQL/RLS integration tests
+- GitHub Actions CI using the same local Supabase workflow
 
 Not included:
 
-- authentication or multi-tenancy
-- SMBOS database schema, application migrations, or Supabase clients
 - the configurable object/graph system
 - preorder functionality
 - AI provider calls or builder behavior
+- invitations, social authentication, magic links, or passwordless login
+- custom expansion or narrowing of fixed role permissions
 
 ## Requirements
 
-- Node.js 20.19+, 22.13+, or 24+ (the latest active LTS is recommended)
+- Node.js 22.13+ or 24+ (the latest active LTS is recommended)
 - npm 10 or newer
 - Docker Desktop, Docker Engine, or another Docker-compatible runtime
 
@@ -49,22 +50,29 @@ Supabase project using the CLI defaults.
    npm install
    ```
 
-2. Create a local environment file:
+2. Start the local Supabase stack:
+
+   ```bash
+   npm run supabase:start
+   npm run supabase:reset
+   ```
+
+3. Create a local environment file:
 
    ```bash
    cp .env.example .env.local
    ```
 
-   The default values are sufficient for Milestone 0. Supabase and AI values
-   may remain empty.
+   The checked-in public values target the local stack. They are not secrets.
+   Leave the future AI values empty.
 
-3. Start the development server:
+4. Start the development server:
 
    ```bash
    npm run dev
    ```
 
-4. Open [http://localhost:3000](http://localhost:3000). The health endpoint is
+5. Open [http://localhost:3000](http://localhost:3000). The health endpoint is
    available at [http://localhost:3000/health](http://localhost:3000/health).
 
 ## Local Supabase
@@ -94,26 +102,35 @@ Stop the local stack when finished:
 npm run supabase:stop
 ```
 
-Milestone 0 contains no SMBOS application schema. The reset command is kept as
-the standard migration workflow now so the same entry point can run real
-PostgreSQL/RLS integration tests locally and in CI from Milestone 1 onward.
+The reset command destroys local data, recreates the database, applies every
+migration, and runs `supabase/seed.sql`. Use it before the RLS suite when
+validating from a clean state.
 
 ## Quality commands
 
-| Command                   | Purpose                                   |
-| ------------------------- | ----------------------------------------- |
-| `npm test`                | Run the automated test suite once         |
-| `npm run test:watch`      | Run tests in watch mode                   |
-| `npm run typecheck`       | Generate route types and run TypeScript   |
-| `npm run lint`            | Run ESLint                                |
-| `npm run format`          | Format supported files with Prettier      |
-| `npm run format:check`    | Verify formatting without changing files  |
-| `npm run build`           | Create a production Next.js build         |
-| `npm run check`           | Run formatting, types, linting, and tests |
-| `npm run supabase:start`  | Start the local Supabase stack            |
-| `npm run supabase:status` | Show local Supabase service details       |
-| `npm run supabase:reset`  | Recreate and migrate the local database   |
-| `npm run supabase:stop`   | Stop the local Supabase stack             |
+| Command                    | Purpose                                        |
+| -------------------------- | ---------------------------------------------- |
+| `npm test`                 | Run fast unit and route tests                  |
+| `npm run test:integration` | Exercise real auth identities and RLS          |
+| `npm run test:watch`       | Run unit tests in watch mode                   |
+| `npm run typecheck`        | Generate route types and run TypeScript        |
+| `npm run lint`             | Run ESLint                                     |
+| `npm run format`           | Format supported files with Prettier           |
+| `npm run format:check`     | Verify formatting without changing files       |
+| `npm run build`            | Create a production Next.js build              |
+| `npm run check`            | Run formatting, types, linting, and unit tests |
+| `npm run supabase:start`   | Start the local Supabase stack                 |
+| `npm run supabase:status`  | Show local Supabase service details            |
+| `npm run supabase:reset`   | Recreate and migrate the local database        |
+| `npm run supabase:stop`    | Stop the local Supabase stack                  |
+
+Run the integration suite after Supabase is started and reset:
+
+```bash
+npm run supabase:start
+npm run supabase:reset
+npm run test:integration
+```
 
 To verify the production server locally:
 
@@ -124,20 +141,23 @@ npm start
 
 ## Environment variables
 
-Environment values are parsed in `src/env.ts`. Empty optional integration
-values are normalized to `undefined`; partially configured integrations fail
-validation.
+Environment values are parsed in `src/env.ts`. Deployment builds require both
+public Supabase values. Empty future AI values are normalized to `undefined`;
+partially configured AI integrations fail validation.
 
 | Variable                               | Required now | Visibility  |
 | -------------------------------------- | ------------ | ----------- |
 | `NEXT_PUBLIC_APP_URL`                  | No           | Browser     |
-| `NEXT_PUBLIC_SUPABASE_URL`             | No           | Browser     |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | No           | Browser     |
+| `NEXT_PUBLIC_SUPABASE_URL`             | Yes          | Browser     |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes          | Browser     |
 | `AI_PROVIDER`                          | No           | Server only |
 | `AI_PROVIDER_API_KEY`                  | No           | Server only |
 
-Never expose a Supabase service-role credential or an AI provider API key
-through a `NEXT_PUBLIC_` variable.
+The publishable key is designed for browser use; PostgreSQL RLS is the
+authorization boundary. Never expose a Supabase secret/service-role credential
+or an AI provider API key through a `NEXT_PUBLIC_` variable. Service-role
+credentials are used only by the test fixture to create and clean up isolated
+test identities.
 
 ## Repository structure
 
@@ -145,40 +165,46 @@ through a `NEXT_PUBLIC_` variable.
 src/
 ├── ai/providers/       Future structured AI provider adapters
 ├── app/                Next.js App Router routes and global styles
-├── auth/               Future authentication and authorization boundary
+├── auth/               Authentication actions and authorization helpers
 ├── components/         Shared user-interface components
 ├── core/               Future metadata-driven business graph
-├── db/supabase/        Future Supabase application integration
+├── db/supabase/        SSR/browser clients and generated database types
 ├── lib/                Shared application utilities
 ├── runtime/            Future deterministic experience runtime
 └── env.ts              Environment schema and parser
 supabase/
 ├── config.toml         Local Supabase CLI configuration
-├── migrations/        Reserved for Milestone 1 database migrations
-└── seed.sql            Empty Milestone 0 reset hook
-tests/                  Automated tests
+├── migrations/        Versioned PostgreSQL schema and RLS policies
+└── seed.sql            Local reset hook
+tests/
+├── integration/       Real Supabase Auth and PostgreSQL RLS tests
+└── *.test.ts          Fast unit and route tests
 ```
 
 The future graph engine and experience runtime should be added under the
 boundaries defined in the build specification when their milestones begin.
 
-## Integration boundaries
+## Security model
 
-The Supabase and AI directories intentionally contain documentation rather
-than placeholder clients. This keeps Milestone 0 free of unused provider
-dependencies and prevents accidental production calls before authentication,
-tenant scoping, RLS, and structured tool contracts exist.
+- Protected requests authenticate on the server.
+- A route slug is resolved through RLS, then membership is explicitly verified
+  against the stable business UUID.
+- Fixed capabilities are centralized in `src/auth/capabilities.ts`.
+- Database policies independently restrict every tenant read and mutation.
+- Business creation derives the user from `auth.uid()` and atomically creates
+  the business and its first Owner membership.
+- Business slugs are generated by PostgreSQL, globally unique, and immutable.
 
-## Confirmed Milestone 1 guardrails
+`permissions_json` is reserved and ignored in v0.1. Owner/Admin may manage
+locations; Staff may read them. Admin cannot change ownership.
 
-These decisions are documented here for the next milestone but are not
-implemented in this scaffold:
+Owner-facing team provisioning is explicitly deferred beyond Milestone 1.
+Future membership UI must use a controlled invitation/account-resolution flow;
+it must never ask for or expose raw authentication user IDs as the membership
+mechanism.
 
-- Tenant routes use `/app/[businessSlug]/...`. The slug is for routing and
-  display only; server code must resolve it to a stable business ID and verify
-  the authenticated user's membership before tenant access.
-- Authorization starts with fixed Owner, Admin, and Staff role defaults.
-  `permissions_json` remains available in the future schema, but v0.1 will not
-  support custom permission expansion or narrowing.
-- Tenant isolation requires real PostgreSQL RLS integration tests against the
-  Docker-based local Supabase environment, using the same workflow in CI.
+## Route model
+
+Tenant routes use `/app/[businessSlug]/...`. The slug is a routing/display
+identifier only. It is never accepted as authorization and is resolved
+server-side to the permanent business UUID before access.

@@ -16,15 +16,20 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
           SMBOS
         </Link>
 
-        <Link className="header-link" href="/health">
-          System health
-        </Link>
+        <nav className="public-nav" aria-label="Account">
+          <Link className="header-link" href="/sign-in">
+            Sign in
+          </Link>
+          <Link className="button button-small" href="/sign-up">
+            Get started
+          </Link>
+        </nav>
       </header>
 
       {children}
 
       <footer className="site-footer">
-        SMBOS v0.1 · Milestone 0 foundation
+        SMBOS v0.1 · Multi-tenant foundation
       </footer>
     </div>
   );
