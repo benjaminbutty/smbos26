@@ -1,0 +1,2 @@
+-- Intentionally empty for Milestone 0.
+-- Development seed data will be added only when a later milestone requires it.
