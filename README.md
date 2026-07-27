@@ -104,7 +104,7 @@ PostgreSQL/RLS integration tests locally and in CI from Milestone 1 onward.
 | ------------------------- | ----------------------------------------- |
 | `npm test`                | Run the automated test suite once         |
 | `npm run test:watch`      | Run tests in watch mode                   |
-| `npm run typecheck`       | Run strict TypeScript checks              |
+| `npm run typecheck`       | Generate route types and run TypeScript   |
 | `npm run lint`            | Run ESLint                                |
 | `npm run format`          | Format supported files with Prettier      |
 | `npm run format:check`    | Verify formatting without changing files  |
