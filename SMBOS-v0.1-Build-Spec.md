@@ -1,0 +1,2095 @@
+# SMBOS v0.1 Build Specification
+
+**Status:** Build-ready draft  
+**Date:** 27 July 2026  
+**First vertical slice:** Pre-order for physical SMBs  
+**Purpose:** Source of truth for the first working SMBOS repository and Codex implementation sequence.
+
+---
+
+## 0. Executive summary
+
+SMBOS is not an AI app builder for technical users. It is an AI-native operating system for small physical businesses that lets an owner describe what they need in ordinary business language and receive a working, safe, editable business system.
+
+The core product idea is deliberately simple on the surface:
+
+> **Tell SMBOS what your business needs to do. SMBOS builds and evolves the system around your business.**
+
+The complexity is hidden underneath. SMBOS provides a small set of platform primitives - objects, fields, relationships, views, forms, pages, rules, actions and workflows - and an AI builder that can safely compose those primitives. The business owner should not need to understand any of those terms.
+
+The first proof is a pre-order system. A cafe, bakery or restaurant should be able to say:
+
+> "I want customers to preorder our Mother's Day boxes, choose one of two shops and a collection slot, no payment, maximum 10 orders per slot, with 48 hours' notice."
+
+SMBOS should create the necessary business objects, fields, relationships, public page, form, rules, admin views and confirmation workflow. The owner should then be able to say:
+
+> "Remove Sunday collection and add an optional dietary requirements field."
+
+That change must happen without a code change, database migration or developer deployment.
+
+### v0.1 architectural rule
+
+> **Businesses may create unlimited business concepts using SMBOS primitives. Only SMBOS creates new platform primitives.**
+
+AI may create a custom object such as `Equipment`, `Pet`, `Maintenance Job` or `Catering Enquiry`. AI may add fields, relationships, views and workflows. AI may not invent executable code, arbitrary SQL, a new primitive type or a new system capability.
+
+### v0.1 technical shape
+
+- **Web/runtime:** Next.js + TypeScript
+- **Database/Auth:** Supabase/PostgreSQL + Row Level Security
+- **Hosting:** Vercel
+- **Transactional email:** Resend (or equivalent behind an adapter)
+- **AI:** LLM with structured tool/function calling
+- **Data model:** Stable multi-tenant platform tables + metadata definitions + generic records in JSONB + explicit relationship edges
+- **Change model:** AI proposes a structured change set -> validator -> preview/diff -> apply transaction -> version -> publish
+
+The engine is the product. Pre-order is the first vertical slice through it.
+
+---
+
+## 1. Product thesis and non-negotiable principles
+
+### 1.1 Target customer
+
+Initial focus: owner-operators and small teams running physical businesses such as cafes, bakeries, restaurants, salons, barbers, independent hotels, dog groomers, florists, studios, gyms, venues, trades and independent retail.
+
+These users commonly operate through a mixture of specialist SaaS, email, spreadsheets, WhatsApp, paper, POS tools and ad-hoc processes. Many existing flexible platforms are powerful but assume that the user understands databases, workflows, views or application-building concepts.
+
+SMBOS must not require that knowledge.
+
+### 1.2 Product principle: business language in, working system out
+
+The default interaction is not:
+
+- Create a table.
+- Add a relation.
+- Configure a workflow.
+- Select a database field type.
+
+It is:
+
+> "I need to take Christmas preorders from our two shops."
+
+The AI should ask only the minimum business questions needed to make the system useful.
+
+### 1.3 Hidden sophistication
+
+The underlying system can be highly structured, but the owner-facing interface should avoid exposing technical architecture unless the user explicitly asks for advanced control.
+
+Avoid in primary UI:
+
+- Object schema
+- Foreign keys
+- JSON
+- Relationship cardinality
+- Workflow nodes
+- SQL
+- Database terminology
+- Prompt engineering
+
+Use instead:
+
+- Customers
+- Products
+- Orders
+- Bookings
+- "What would you like to change?"
+- "Who should see this?"
+- "When should this be available?"
+
+### 1.4 AI is the configuration interface, not the runtime
+
+The AI can decide how to configure SMBOS. It is not responsible for executing arbitrary production application logic.
+
+Runtime behaviour must be deterministic and implemented by platform code.
+
+### 1.5 Opinionated surface, flexible core
+
+The architecture may support almost arbitrary business graphs. The onboarding experience should not feel like a blank canvas.
+
+Templates and industry knowledge should provide sensible starting concepts. The user can then extend or change them conversationally.
+
+### 1.6 Persistent business graph
+
+SMBOS should not create isolated mini-apps with duplicate customers and duplicate data. New capabilities should connect to the business's existing graph wherever appropriate.
+
+Example:
+
+```text
+Customer
+  |- places -> Order
+  |- makes -> Booking
+  |- submits -> Catering Enquiry
+
+Order -> Location
+Booking -> Location
+Catering Enquiry -> Location
+```
+
+### 1.7 Safe change over magical change
+
+AI-generated changes must be explainable, previewable and reversible.
+
+Every configuration change must:
+
+1. be expressed as a structured change set;
+2. pass schema and permission validation;
+3. show a human-readable diff for material changes;
+4. be applied transactionally;
+5. create a configuration version;
+6. be reversible.
+
+### 1.8 Location is first-class
+
+Physical business is an intentional wedge. `Location` is a platform-level concept rather than merely another optional custom object.
+
+This allows consistent scoping of products, orders, bookings, staff, availability and future inventory.
+
+---
+
+## 2. Vocabulary: what users can create versus what SMBOS owns
+
+### 2.1 Primitive
+
+A primitive is a fundamental capability implemented and controlled by SMBOS.
+
+v0.1 primitives:
+
+**Graph/Data**
+- Object
+- Field
+- Relationship
+- Record
+
+**Experience**
+- View
+- Form
+- Page
+
+**Behaviour**
+- Rule
+- Action
+- Workflow
+
+**Platform**
+- Business
+- Location
+- User/Permission
+
+Users do not normally see the term "primitive".
+
+### 2.2 Object
+
+An object is a business concept that can have records.
+
+Examples:
+
+- Customer
+- Product
+- Order
+- Pet
+- Room
+- Catering Enquiry
+- Equipment
+- Maintenance Job
+
+AI may create objects.
+
+### 2.3 Field
+
+A field describes a piece of information on an object.
+
+Examples:
+
+- Customer.email
+- Order.collection_date
+- Pet.breed
+- MaintenanceJob.priority
+
+AI may create and modify fields within allowed field types.
+
+### 2.4 Relationship
+
+A relationship describes how records from two objects connect.
+
+Examples:
+
+- Customer places Order
+- Order collected_at Location
+- Customer owns Pet
+- Maintenance Job belongs_to Room
+
+AI may create and modify relationship definitions.
+
+### 2.5 Record
+
+A record is one real instance of an object.
+
+Examples:
+
+- Customer record: Sarah Smith
+- Product record: Afternoon Tea Box
+- Location record: Bedford
+
+### 2.6 Semantic type
+
+An object may optionally carry a platform-recognised semantic type such as `customer`, `product`, `order` or `booking`.
+
+This allows SMBOS to provide richer defaults without forcing every business into the same rigid schema.
+
+Example:
+
+```text
+Object label: Clients
+Semantic type: customer
+```
+
+The business can call it "Clients" while the platform still understands it as customer-like.
+
+---
+
+## 3. v0 goal, boundaries and success condition
+
+### 3.1 Goal
+
+Build the smallest version of SMBOS that proves all of the following:
+
+1. A business can sign up and have isolated tenant data.
+2. A working pre-order system can run on SMBOS primitives.
+3. The pre-order system can be modified by changing configuration rather than application code.
+4. AI can safely create and modify that configuration through controlled tools.
+5. A new adjacent business concept can be added without building a new software module.
+6. A published customer-facing page and an internal operating view both use the same underlying graph.
+
+### 3.2 Reference business
+
+Use a fictional business for repeatable development and tests:
+
+**Bedford Bakery**
+
+Locations:
+- Bedford
+- Milton Keynes
+
+Products:
+- Afternoon Tea Box - £30
+- Celebration Box - £25
+- Kids Afternoon Tea - £15
+
+Pre-order requirements:
+- Saturday and Sunday collection
+- 11:00-16:00
+- 30-minute slots
+- maximum 10 orders per slot per location
+- 48-hour order cutoff
+- customer name, email and phone
+- optional dietary requirements
+- no online payment
+- email confirmation
+- staff order-management view
+
+### 3.3 Explicit non-goals for v0
+
+Do not build:
+
+- payments
+- native mobile apps
+- POS integrations
+- inventory deduction
+- accounting
+- billing/subscriptions
+- marketplace integrations
+- SMS
+- advanced analytics
+- freeform page design
+- drag-and-drop workflow canvas
+- arbitrary custom code
+- arbitrary API execution
+- user-defined SQL
+- enterprise IAM
+- full visual database builder
+- template marketplace
+- autonomous background agents
+
+The v0 should be capable of extension later without implementing these now.
+
+---
+
+## 4. First user journey
+
+### 4.1 Onboarding
+
+1. User creates account.
+2. User creates business name.
+3. User selects a broad business type or chooses Other.
+4. User adds one or more physical locations, or skips if not relevant.
+5. SMBOS asks: **"What would you like your business to be able to do?"**
+
+Example user response:
+
+> "I want customers to preorder afternoon tea boxes and collect them from either shop."
+
+### 4.2 AI discovery
+
+AI should ask at most the minimum questions required to build a credible first version. For the reference flow:
+
+- What products can customers preorder?
+- When can customers collect?
+- Is there a limit per collection slot?
+- Do customers pay online or at collection?
+
+Do not ask technical questions such as "Should Product be a separate object?"
+
+### 4.3 Proposed build
+
+AI shows a business-language summary:
+
+```text
+I'm going to create:
+- your preorder product list
+- a customer preorder form
+- collection slots for Bedford and Milton Keynes
+- a maximum of 10 orders per slot
+- an orders screen for staff
+- confirmation emails
+
+Orders will close 48 hours before collection.
+```
+
+Buttons:
+- Preview
+- Build
+
+### 4.4 Preview and publish
+
+The user sees a live customer preview plus a simple explanation of any assumptions.
+
+They can say:
+
+> "Make phone optional."
+
+AI proposes a diff and the preview updates.
+
+When satisfied:
+
+- Publish
+- public URL becomes live
+
+### 4.5 Day-to-day operation
+
+The business does not need to chat with AI to operate the process.
+
+Generated admin views should support routine work:
+
+- Today's orders
+- Upcoming orders
+- Products
+- Customers
+
+AI remains available for changes and questions.
+
+---
+
+## 5. Primitive specification v0.1
+
+### 5.1 Object
+
+Purpose: define a business concept.
+
+Required properties:
+
+```text
+id
+business_id
+key                 stable machine key
+singular_label
+plural_label
+description
+kind                template | custom
+semantic_type       optional recognised meaning
+icon                 optional
+is_active
+created_at
+updated_at
+```
+
+Rules:
+
+- `key` is immutable after creation.
+- labels may change without breaking references.
+- AI may create `custom` objects.
+- AI may not create platform objects such as Business, Location or User.
+- deletion is soft/archive by default.
+
+### 5.2 Field
+
+Purpose: define structured data on an object.
+
+Required properties:
+
+```text
+id
+business_id
+object_definition_id
+key
+label
+type
+required
+default_value
+settings_json
+position
+is_active
+```
+
+v0 field types:
+
+- short_text
+- long_text
+- number
+- currency
+- boolean
+- date
+- datetime
+- email
+- phone
+- url
+- select
+- multi_select
+- file
+- status
+
+Field behaviour is defined by `settings_json`. Example for a select:
+
+```json
+{
+  "options": ["New", "Confirmed", "Ready", "Collected", "Cancelled"]
+}
+```
+
+Rules:
+
+- field `key` is immutable;
+- labels can change;
+- type-changing an existing populated field is a material migration and is outside normal AI edits in v0;
+- AI should create a new field instead of performing unsafe coercion.
+
+### 5.3 Relationship
+
+Purpose: describe connections between objects.
+
+Required properties:
+
+```text
+id
+business_id
+key
+source_object_definition_id
+target_object_definition_id
+source_label
+target_label
+cardinality           one_to_one | one_to_many | many_to_many
+is_required
+is_active
+```
+
+Example:
+
+```text
+key: customer_places_order
+source: Customer
+target: Order
+source label: places
+target label: customer
+cardinality: one_to_many
+```
+
+### 5.4 Record
+
+Purpose: hold actual business data.
+
+Required properties:
+
+```text
+id
+business_id
+object_definition_id
+data_json
+record_status
+created_by
+created_at
+updated_at
+```
+
+`data_json` uses stable field keys:
+
+```json
+{
+  "name": "Afternoon Tea Box",
+  "price": 30,
+  "status": "Active"
+}
+```
+
+Validation occurs against active field definitions before write.
+
+### 5.5 View
+
+Purpose: display records to staff or customers.
+
+v0 view types:
+
+- table
+- list
+- cards
+- detail
+- calendar
+- metric
+
+Properties:
+
+```text
+id
+business_id
+key
+name
+view_type
+object_definition_id
+config_json
+audience             internal | public
+is_active
+```
+
+`config_json` may define:
+
+- fields shown
+- sort
+- filters
+- grouping
+- card title/subtitle/image
+- allowed row actions
+
+No arbitrary JavaScript.
+
+### 5.6 Form
+
+Purpose: create or update records.
+
+Properties:
+
+```text
+id
+business_id
+key
+name
+object_definition_id
+mode                 create | edit
+config_json
+audience             internal | public
+is_active
+```
+
+`config_json` defines ordered fields, labels/help text, hidden defaults and submit behaviour.
+
+Relationships can be collected by form controls, for example selecting a Location or Product.
+
+### 5.7 Page
+
+Purpose: arrange content, views and forms into a usable surface.
+
+v0 block types:
+
+- heading
+- text
+- image
+- button
+- view
+- form
+- divider
+
+Properties:
+
+```text
+id
+business_id
+key
+title
+slug
+audience             internal | public
+layout_json
+status               draft | published
+```
+
+No pixel-level builder in v0. Pages are ordered sections/blocks.
+
+### 5.8 Rule
+
+Purpose: express deterministic constraints and conditional behaviour without executable code.
+
+Rules use a constrained JSON DSL.
+
+v0 rule families:
+
+- required/validation
+- visibility
+- availability
+- cutoff
+- capacity
+- allowed date/time window
+- location scoping
+- simple conditional default/status
+
+Example capacity rule:
+
+```json
+{
+  "type": "capacity",
+  "object": "order",
+  "group_by": ["location", "collection_date", "collection_time"],
+  "max_records": 10,
+  "where": {"status": ["New", "Confirmed"]}
+}
+```
+
+Example cutoff rule:
+
+```json
+{
+  "type": "cutoff",
+  "field": "collection_datetime",
+  "minimum_notice_hours": 48
+}
+```
+
+Rules are interpreted by platform code. They are never eval'd as user code.
+
+### 5.9 Action
+
+Purpose: a platform-controlled capability that can be invoked by users, workflows or AI.
+
+v0 action registry:
+
+- create_record
+- update_record
+- archive_record
+- set_status
+- send_email
+- publish_page
+- notify_user
+
+Actions are implemented in code and registered with schemas.
+
+AI may select/configure an action. AI may not define executable action code.
+
+### 5.10 Workflow
+
+Purpose: trigger actions from business events.
+
+Structure:
+
+```text
+TRIGGER
+  -> optional CONDITIONS
+  -> one or more ACTIONS
+```
+
+v0 triggers:
+
+- record_created
+- record_updated
+- status_changed
+
+v0 example:
+
+```text
+WHEN Order is created
+IF status = Confirmed
+DO send confirmation email
+DO notify location staff
+```
+
+Scheduled/background workflows are deferred unless required for the first preorder slice.
+
+### 5.11 Business
+
+Purpose: tenant boundary.
+
+Properties include:
+
+```text
+id
+name
+slug
+business_type
+timezone
+settings_json
+```
+
+Every tenant-owned definition, configuration and record must carry `business_id`.
+
+### 5.12 Location
+
+Purpose: first-class physical operating location.
+
+Properties include:
+
+```text
+id
+business_id
+name
+slug
+address_json
+timezone
+opening_hours_json
+settings_json
+is_active
+```
+
+Location may be referenced from graph records through a protected platform relationship mechanism.
+
+### 5.13 User / Permission
+
+v0 roles:
+
+- owner
+- admin
+- staff
+
+Minimum permissions:
+
+- view data
+- create/update operational records
+- manage products/content
+- change configuration
+- publish
+- manage users
+
+Owner has all permissions. Staff cannot modify the graph/configuration by default.
+
+---
+
+## 6. Data and meta-schema
+
+### 6.1 Architecture choice
+
+Use a **stable platform schema with a metadata-driven business graph**.
+
+Do not create physical SQL tables for every customer-created object in v0.
+
+Rationale:
+
+- creating `Catering Enquiry` should not require a migration;
+- AI changes must be transactional configuration changes;
+- schemas vary greatly between small businesses;
+- JSONB plus definitions is sufficient for v0 volumes;
+- explicit edges preserve graph relationships;
+- the model can evolve later toward generated indexes/materialised projections where needed.
+
+### 6.2 Platform tables
+
+#### `businesses`
+
+```text
+id uuid pk
+name text
+slug text unique
+business_type text
+timezone text
+settings_json jsonb
+created_at timestamptz
+updated_at timestamptz
+```
+
+#### `business_memberships`
+
+```text
+id uuid pk
+business_id uuid fk
+user_id uuid
+role text
+permissions_json jsonb
+created_at timestamptz
+unique(business_id, user_id)
+```
+
+#### `locations`
+
+```text
+id uuid pk
+business_id uuid fk
+name text
+slug text
+address_json jsonb
+opening_hours_json jsonb
+timezone text
+settings_json jsonb
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+```
+
+### 6.3 Graph metadata tables
+
+#### `object_definitions`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+singular_label text
+plural_label text
+description text
+kind text
+semantic_type text null
+icon text null
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+unique(business_id, key)
+```
+
+#### `field_definitions`
+
+```text
+id uuid pk
+business_id uuid fk
+object_definition_id uuid fk
+key text
+label text
+field_type text
+required boolean
+default_value jsonb null
+settings_json jsonb
+position int
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+unique(object_definition_id, key)
+```
+
+#### `relationship_definitions`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+source_object_definition_id uuid fk
+target_object_definition_id uuid fk
+source_label text
+target_label text
+cardinality text
+is_required boolean
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+unique(business_id, key)
+```
+
+### 6.4 Graph data tables
+
+#### `records`
+
+```text
+id uuid pk
+business_id uuid fk
+object_definition_id uuid fk
+data_json jsonb
+record_status text default 'active'
+created_by uuid null
+created_at timestamptz
+updated_at timestamptz
+```
+
+Required indexes:
+
+- `(business_id, object_definition_id)`
+- GIN index on `data_json`
+- `(business_id, created_at)`
+
+Do not prematurely create dynamic per-field indexes in v0. Add indexing only after real query evidence.
+
+#### `record_relationships`
+
+```text
+id uuid pk
+business_id uuid fk
+relationship_definition_id uuid fk
+source_record_id uuid fk
+target_record_id uuid fk
+created_at timestamptz
+unique(relationship_definition_id, source_record_id, target_record_id)
+```
+
+Relationships to `Location` can initially use a reserved platform field/reference type or a dedicated `record_location_links` table. Prefer the dedicated link table if it keeps permission and filtering logic clearer.
+
+### 6.5 Experience tables
+
+#### `views`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+name text
+view_type text
+object_definition_id uuid fk
+config_json jsonb
+audience text
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+```
+
+#### `forms`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+name text
+object_definition_id uuid fk
+mode text
+config_json jsonb
+audience text
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+```
+
+#### `pages`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+title text
+slug text
+audience text
+layout_json jsonb
+status text
+created_at timestamptz
+updated_at timestamptz
+unique(business_id, slug)
+```
+
+### 6.6 Behaviour tables
+
+#### `rules`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+name text
+rule_type text
+scope_json jsonb
+config_json jsonb
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+```
+
+#### `workflows`
+
+```text
+id uuid pk
+business_id uuid fk
+key text
+name text
+trigger_json jsonb
+conditions_json jsonb
+actions_json jsonb
+is_active boolean
+created_at timestamptz
+updated_at timestamptz
+```
+
+#### `workflow_runs`
+
+Keep a minimal audit trail:
+
+```text
+id uuid pk
+business_id uuid fk
+workflow_id uuid fk
+trigger_record_id uuid null
+status text
+result_json jsonb
+started_at timestamptz
+completed_at timestamptz null
+```
+
+### 6.7 AI/configuration tables
+
+#### `change_sets`
+
+```text
+id uuid pk
+business_id uuid fk
+requested_by uuid
+user_request text
+status text              proposed | validated | applied | rejected
+operations_json jsonb
+human_summary text
+validation_json jsonb
+created_at timestamptz
+applied_at timestamptz null
+```
+
+#### `config_versions`
+
+Store a version number and a deterministic snapshot or snapshot reference of definitions/configuration required to roll back.
+
+```text
+id uuid pk
+business_id uuid fk
+version int
+change_set_id uuid null
+snapshot_json jsonb
+created_by uuid
+created_at timestamptz
+```
+
+For v0 volume, snapshotting configuration is acceptable and much simpler than an event-sourced architecture.
+
+### 6.8 Why not generate customer SQL schemas/tables?
+
+Because the v0 promise is conversational evolution. A statement such as:
+
+> "We also hire equipment and I need to track returns."
+
+must be solvable by metadata writes, not DDL migrations.
+
+Later, if scale requires it, SMBOS can create optimised projections or indexes behind the scenes while retaining the same logical model.
+
+---
+
+## 7. Runtime architecture
+
+### 7.1 High-level flow
+
+```text
+                         BUSINESS OWNER
+                               |
+                               v
+                         AI BUILDER UI
+                               |
+                   proposed structured changes
+                               |
+                               v
+                    CHANGE VALIDATION LAYER
+                               |
+                               v
+                       BUSINESS GRAPH + CONFIG
+                               |
+                  +------------+------------+
+                  |                         |
+                  v                         v
+            INTERNAL RUNTIME           PUBLIC RUNTIME
+             staff/admin                 customer
+```
+
+### 7.2 Single application repository
+
+Start with one Next.js TypeScript application rather than microservices or a monorepo.
+
+Suggested routes:
+
+```text
+/app/...                         authenticated operating UI
+/app/builder                     AI builder + preview
+/p/[businessSlug]/[pageSlug]     published public page
+/api/...                         controlled server endpoints
+```
+
+### 7.3 Runtime renderer
+
+Build reusable React components that render configuration:
+
+- FieldRenderer
+- FormRenderer
+- TableView
+- CardView
+- ListView
+- DetailView
+- CalendarView
+- PageRenderer
+- RuleEvaluator
+
+The renderer receives validated configuration. It does not execute LLM-generated code.
+
+### 7.4 Operational admin shell
+
+The system should generate usable navigation from configured internal views/pages.
+
+For the preorder slice the user might see:
+
+```text
+Home
+Orders
+Products
+Customers
+Settings
+Ask SMBOS
+```
+
+Routine operations must be fast and direct. AI is primarily the building/change interface, not a mandatory chat layer for every task.
+
+### 7.5 Public runtime
+
+Public pages should render only published configuration.
+
+A draft config change must not affect live customer pages until publish is explicitly applied.
+
+Recommended v0 model:
+
+```text
+Draft configuration -> Preview
+Published configuration -> Public runtime
+```
+
+Publishing can point the business to a selected config version rather than duplicating every table.
+
+---
+
+## 8. AI builder architecture
+
+### 8.1 Role of AI
+
+The AI performs four jobs:
+
+1. understand the user's business-language request;
+2. inspect the current business graph/configuration;
+3. produce a structured proposed change set using supported operations;
+4. explain the result in ordinary language.
+
+AI does not directly:
+
+- issue arbitrary SQL;
+- edit application source code;
+- run `eval` or generated scripts;
+- bypass permissions;
+- alter system primitives;
+- publish material changes without an explicit user action.
+
+### 8.2 Context supplied to the model
+
+For each builder request, provide:
+
+- business summary
+- locations
+- current object definitions
+- field definitions
+- relationship definitions
+- relevant pages/views/forms
+- active rules/workflows
+- platform action registry
+- current draft version
+- user role/permissions
+
+Do not send unnecessary tenant records or PII if definitions are sufficient.
+
+### 8.3 Change-set model
+
+The LLM should produce operations rather than raw desired state.
+
+Example:
+
+```json
+{
+  "operations": [
+    {
+      "op": "create_field",
+      "object_key": "order",
+      "field": {
+        "key": "occasion",
+        "label": "Occasion",
+        "type": "short_text",
+        "required": false
+      }
+    },
+    {
+      "op": "add_form_field",
+      "form_key": "public_preorder",
+      "field_key": "occasion",
+      "position": 6
+    }
+  ],
+  "summary": "Add an optional Occasion question to every preorder."
+}
+```
+
+The application validates and applies this. The model never writes directly to the database.
+
+### 8.4 AI tool/API contracts
+
+Initial builder operations:
+
+#### Graph
+
+- `create_object`
+- `update_object_labels`
+- `archive_object`
+- `create_field`
+- `update_field`
+- `archive_field`
+- `create_relationship`
+- `update_relationship`
+
+#### Experience
+
+- `create_view`
+- `update_view`
+- `create_form`
+- `update_form`
+- `create_page`
+- `update_page`
+
+#### Behaviour
+
+- `create_rule`
+- `update_rule`
+- `create_workflow`
+- `update_workflow`
+
+#### Data/setup
+
+- `create_record`
+- `update_record`
+- `create_location`
+- `update_location`
+
+#### Change management
+
+- `validate_change_set`
+- `apply_change_set`
+- `revert_to_version`
+- `publish_version`
+
+The LLM may request these operations. The server owns implementation, validation and permission checks.
+
+### 8.5 Validation layer
+
+Every proposed operation must validate:
+
+- tenant match
+- user permission
+- referenced object/field/view exists
+- stable key uniqueness
+- field type supported
+- relationship references supported objects
+- configuration conforms to JSON schema
+- rule type supported
+- workflow action exists in action registry
+- change does not archive required platform components
+- change does not silently destroy populated data
+
+### 8.6 Preview/diff
+
+Material changes should display a simple business-language diff.
+
+Example:
+
+```text
+You're changing your preorder setup:
+
+- Sunday collection: Available -> Unavailable
+- Phone number: Required -> Optional
+- New order question: Occasion (optional)
+
+Existing orders will not be changed.
+```
+
+The underlying structured diff can be more detailed for logs.
+
+### 8.7 Undo
+
+`Undo that` should revert to the previous configuration version where possible.
+
+Records created through normal business operation should not be deleted by a configuration rollback. Rollback affects definitions/configuration unless the user separately asks to change records.
+
+---
+
+## 9. Pre-order reference implementation
+
+### 9.1 Template-created objects
+
+Seed the first preorder template with these object definitions:
+
+#### Customer
+
+Semantic type: `customer`
+
+Fields:
+
+- name - short_text, required
+- email - email, required
+- phone - phone, required initially
+
+#### Product
+
+Semantic type: `product`
+
+Fields:
+
+- name - short_text, required
+- description - long_text
+- image - file
+- price - currency, required
+- status - status, required (`Active`, `Inactive`)
+
+#### Order
+
+Semantic type: `order`
+
+Fields:
+
+- order_number - short_text
+- collection_date - date, required
+- collection_time - short_text or datetime-derived slot, required
+- dietary_requirements - long_text, optional
+- status - status (`New`, `Confirmed`, `Ready`, `Collected`, `Cancelled`)
+- created_at_display - derived at runtime, not necessarily persisted as custom field
+
+#### Order Item
+
+Fields:
+
+- quantity - number, required
+- unit_price - currency, required
+
+### 9.2 Relationships
+
+```text
+Customer   --places------> Order          one_to_many
+Order      --contains----> Order Item     one_to_many
+Order Item --product-----> Product        many_to_one equivalent via definition
+Order      --location----> Location       many_to_one platform link
+```
+
+For relationship cardinality in v0, model `many_to_one` using the inverse of `one_to_many` if keeping the enum minimal.
+
+### 9.3 Records
+
+Seed Product records for Bedford Bakery:
+
+- Afternoon Tea Box - £30
+- Celebration Box - £25
+- Kids Afternoon Tea - £15
+
+Seed two Locations:
+
+- Bedford
+- Milton Keynes
+
+### 9.4 Public page
+
+`/p/bedford-bakery/preorder`
+
+Blocks:
+
+1. Heading - "Preorder for collection"
+2. Text - collection/cutoff summary
+3. Product cards view
+4. Preorder form
+
+### 9.5 Preorder form
+
+The UI can look like a conventional basket/checkout experience even though the underlying configuration is generic.
+
+Fields/steps:
+
+1. Products and quantity
+2. Location
+3. Collection date
+4. Collection time
+5. Name
+6. Email
+7. Phone
+8. Dietary requirements
+9. Submit
+
+Submission transaction:
+
+1. validate public page is published;
+2. validate product availability;
+3. validate collection rule/cutoff;
+4. validate slot capacity in database transaction;
+5. create/reuse Customer record where appropriate;
+6. create Order record;
+7. create Order Item records and relationships;
+8. connect Location;
+9. execute `Order created` workflow;
+10. return confirmation.
+
+### 9.6 Rules
+
+Reference rules:
+
+- collection days: Saturday/Sunday
+- collection hours: 11:00-16:00
+- slot interval: 30 minutes
+- capacity: 10 accepted orders per location/date/time
+- cutoff: 48 hours
+- only active Products visible
+
+`slot interval` may be implemented as a specialised configuration within the preorder form/date-time control rather than a universal rule primitive if that keeps v0 simpler. The architectural rule is to expose it through configuration, not hard-code it to Bedford Bakery.
+
+### 9.7 Workflow
+
+```text
+WHEN Order created
+DO send confirmation email to customer
+DO notify relevant location/admin
+```
+
+Email content is a template/configuration, not LLM-generated at send time.
+
+### 9.8 Internal views
+
+Minimum:
+
+**Orders** - table
+- order number
+- customer
+- collection date/time
+- location
+- item summary
+- status
+
+**Today's collections** - filtered table/list
+
+**Products** - cards or table with simple edit
+
+**Customers** - table/detail
+
+### 9.9 Required conversational change tests
+
+Without source-code changes, AI must be able to execute:
+
+1. "Make phone optional."
+2. "Add an optional Occasion field."
+3. "Remove Sunday collection."
+4. "Change the cutoff from 48 to 72 hours."
+5. "Add Cambridge as another collection location."
+6. "Kids Afternoon Tea shouldn't be available at Bedford."
+7. "Rename Celebration Box to Celebration Platter."
+8. "Undo the last change."
+
+Test 6 may expose the need for product-location availability. Implement this as configuration/relationship data, not a Bedford-specific conditional in source code.
+
+---
+
+## 10. Extensibility proof: create something that was not pre-built
+
+After preorder works, do not immediately add more preorder features.
+
+Ask SMBOS:
+
+> "We also take corporate catering enquiries. I want company name, event date, number of guests, budget and notes, and I want them in a separate screen."
+
+Expected AI plan:
+
+- create object `Catering Enquiry`
+- add fields: company_name, event_date, guest_count, budget, notes, status
+- create relationship to Customer where useful
+- create relationship to Location if required
+- create public form
+- create internal table view
+- create page or add form to an existing page
+
+This must require **no new platform primitive**.
+
+Second extensibility test:
+
+> "We hire out our private room and want customers to request a date."
+
+If existing primitives are insufficient for availability/resource scheduling, document the gap. Do not immediately hard-code a `Private Room` module. Consider whether a new reusable platform capability such as `Scheduling/Availability` is justified.
+
+This is how future primitives should be discovered.
+
+---
+
+## 11. Security and tenancy
+
+### 11.1 Tenant isolation
+
+Every tenant-owned table must contain `business_id` and enforce tenant isolation through PostgreSQL/Supabase Row Level Security.
+
+A user may access a business only through an active membership.
+
+Never rely only on frontend filtering.
+
+### 11.2 AI security boundary
+
+AI receives a tenant-scoped context and can only invoke tenant-scoped server operations.
+
+The server must derive or verify `business_id`; do not trust a model-provided business identifier.
+
+### 11.3 Public pages
+
+Published pages expose only explicitly public views/forms/fields.
+
+The browser must not receive broad service-role database credentials.
+
+Public writes should go through a narrow server endpoint/RPC that:
+
+- identifies the published business/page;
+- validates form schema;
+- validates rules;
+- rate-limits submissions;
+- performs transactional capacity checks;
+- writes only allowed object/relationship types.
+
+### 11.4 PII
+
+v0 pre-order PII:
+
+- name
+- email
+- phone
+- order details
+
+Collect only what the business configures and needs.
+
+Do not store payment card data in v0.
+
+### 11.5 Auditability
+
+At minimum log:
+
+- configuration change sets
+- who applied them
+- configuration versions
+- publish events
+- workflow execution status
+
+Operational record history can be added later if required; do not build a full event-sourcing platform in v0.
+
+### 11.6 Failure behaviour
+
+If AI fails or is unavailable:
+
+- the published business system must continue to operate;
+- staff must still be able to view/manage orders;
+- customers must still be able to submit valid preorders;
+- only system modification/building is degraded.
+
+This is a critical architecture requirement.
+
+---
+
+## 12. Required screens for v0
+
+### 12.1 Authentication
+
+- Sign up
+- Log in
+- Reset password if easy through provider defaults
+
+### 12.2 Business onboarding
+
+- business name
+- broad business type
+- locations
+- primary intent prompt
+
+### 12.3 Home
+
+Simple operational summary:
+
+- orders today
+- upcoming collections
+- quick links
+- Ask SMBOS input
+
+Avoid dashboard-building complexity.
+
+### 12.4 Builder
+
+Desktop-first v0 layout:
+
+```text
++----------------------------+----------------------+
+|                            | Ask SMBOS            |
+|        LIVE PREVIEW        |                      |
+|                            | conversation         |
+|                            |                      |
+|                            | [type request...]    |
++----------------------------+----------------------+
+| Preview version 12                  [Publish]      |
++---------------------------------------------------+
+```
+
+Mobile can stack preview and chat.
+
+### 12.5 Operational generated screens
+
+- Orders
+- Products
+- Customers
+
+Generated from Views, but v0 styling can be opinionated and consistent.
+
+### 12.6 Settings
+
+Only essential:
+
+- Business
+- Locations
+- Users
+- Published page link
+
+Do not expose raw primitive editors as the default settings experience.
+
+---
+
+## 13. Build sequence
+
+The implementation should be vertical and testable. Do not ask Codex to "build SMBOS" in one task.
+
+### Milestone 0 - Repository and engineering guardrails
+
+Deliverables:
+
+- Next.js + TypeScript app
+- lint/format/test commands
+- environment validation
+- Supabase local/dev connection
+- `/docs/SMBOS-v0.1-Build-Spec.md`
+- project instructions/AGENTS.md
+- CI or at least repeatable test command
+
+Exit criteria:
+
+- app boots locally;
+- tests run;
+- database migrations can be applied from clean state.
+
+### Milestone 1 - Multi-tenant platform foundation
+
+Build:
+
+- businesses
+- memberships
+- locations
+- auth
+- RLS policies
+- simple admin shell
+
+Tests:
+
+- Business A user cannot read/write Business B data;
+- staff cannot access configuration mutation endpoints;
+- owner can manage their locations.
+
+### Milestone 2 - Graph engine
+
+Build:
+
+- object_definitions
+- field_definitions
+- relationship_definitions
+- records
+- record_relationships
+- validation service
+- basic internal record CRUD API
+
+Seed:
+
+- Customer
+- Product
+- Order
+- Order Item
+
+Exit criterion:
+
+A test can create a completely new custom object and records without a database migration.
+
+### Milestone 3 - Experience runtime
+
+Build:
+
+- View definitions
+- Form definitions
+- Page definitions
+- Table/List/Card renderers
+- generic FormRenderer
+- PageRenderer
+- draft/public distinction
+
+Exit criterion:
+
+Adding a new custom field to Order and adding it to the form requires configuration only.
+
+### Milestone 4 - Preorder vertical slice
+
+Build:
+
+- Bedford Bakery seed
+- public preorder page
+- product selection/basket interaction
+- customer/order/order-item writes
+- location and slot selection
+- order admin view
+- rule evaluator for cutoff/capacity/availability
+- confirmation email workflow
+
+Exit criterion:
+
+A real end-to-end preorder can be placed and appears in staff Orders.
+
+### Milestone 5 - Change/version engine
+
+Build:
+
+- change_sets
+- validation
+- human-readable diff
+- config_versions
+- preview version
+- apply
+- publish
+- revert configuration
+
+Exit criterion:
+
+Phone can be changed from required to optional via structured change set and reverted without code changes.
+
+### Milestone 6 - AI builder
+
+Build:
+
+- AI context builder
+- structured tool schemas
+- planner prompt
+- operation generation
+- validation feedback loop
+- builder chat UI
+- preview integration
+
+Exit criterion:
+
+Natural-language requests in the required conversational change tests produce valid change sets and working previews.
+
+### Milestone 7 - Extensibility proof
+
+Run the Catering Enquiry test.
+
+Exit criterion:
+
+AI creates the object, fields, relationship, public form and staff view with existing primitives and no source-code change.
+
+At this point v0 has proven the product thesis.
+
+---
+
+## 14. Acceptance tests
+
+### 14.1 Product acceptance
+
+A non-technical tester should be able to:
+
+1. create a business;
+2. describe the preorder need in ordinary language;
+3. answer a small number of business questions;
+4. preview the resulting system;
+5. publish it;
+6. submit a customer order;
+7. see the order internally;
+8. change the system conversationally;
+9. undo a change.
+
+They should never need to understand objects, fields or relationships.
+
+### 14.2 Architecture acceptance
+
+Pass only if:
+
+- tenant data is isolated by RLS;
+- new custom objects require no SQL migration;
+- custom fields require no source-code change;
+- AI has no arbitrary SQL/code tool;
+- runtime works when AI is unavailable;
+- published config is separated from draft config;
+- changes are versioned/reversible;
+- workflows use registered platform actions only.
+
+### 14.3 Preorder acceptance
+
+Pass only if:
+
+- product listing renders from graph records;
+- only active/available products appear;
+- collection location can be selected;
+- invalid dates/times are unavailable;
+- 48-hour cutoff is enforced server-side;
+- slot capacity is enforced transactionally;
+- duplicate concurrent submissions cannot exceed capacity;
+- order and items are stored correctly;
+- customer receives confirmation;
+- staff see the order immediately;
+- status can be changed to Ready/Collected/Cancelled.
+
+### 14.4 AI change acceptance
+
+Each request below must work without code changes:
+
+```text
+Make phone optional.
+Add an optional Occasion question.
+Remove Sunday collections.
+Change the cutoff to 72 hours.
+Add Cambridge as a location.
+Don't sell Kids Afternoon Tea at Bedford.
+Rename Celebration Box to Celebration Platter.
+Undo that.
+```
+
+### 14.5 Extensibility acceptance
+
+Prompt:
+
+```text
+We also take corporate catering enquiries. I need company name,
+event date, number of guests, budget and notes, and I want them
+on a separate screen.
+```
+
+Pass if AI creates the necessary graph and experience using existing primitives.
+
+---
+
+## 15. Repository structure
+
+Keep the first repo boring and navigable.
+
+```text
+/
+|- docs/
+|  |- SMBOS-v0.1-Build-Spec.md
+|  |- architecture-decisions.md
+|
+|- src/
+|  |- app/
+|  |  |- app/                 authenticated routes
+|  |  |- p/                   public routes
+|  |  |- api/                 controlled endpoints
+|  |
+|  |- core/
+|  |  |- graph/
+|  |  |- definitions/
+|  |  |- records/
+|  |  |- relationships/
+|  |
+|  |- runtime/
+|  |  |- forms/
+|  |  |- views/
+|  |  |- pages/
+|  |  |- rules/
+|  |  |- workflows/
+|  |
+|  |- ai/
+|  |  |- context/
+|  |  |- tools/
+|  |  |- planner/
+|  |  |- changes/
+|  |
+|  |- db/
+|  |- auth/
+|  |- components/
+|  |- lib/
+|
+|- supabase/
+|  |- migrations/
+|  |- seed.sql
+|
+|- tests/
+|  |- tenancy/
+|  |- graph/
+|  |- runtime/
+|  |- preorder/
+|  |- ai/
+|
+|- AGENTS.md
+|- package.json
+```
+
+Avoid introducing services/packages until the codebase genuinely needs the boundary.
+
+---
+
+## 16. Codex operating rules
+
+Put the following principles into `AGENTS.md` or equivalent repository instructions.
+
+### 16.1 Source of truth
+
+Before implementing a feature, read:
+
+1. `docs/SMBOS-v0.1-Build-Spec.md`
+2. `docs/architecture-decisions.md`
+3. the relevant existing tests
+
+Do not silently diverge from the spec.
+
+### 16.2 Implementation discipline
+
+For each milestone/task:
+
+1. state the implementation approach;
+2. identify files/tables affected;
+3. implement the smallest complete change;
+4. add/update tests;
+5. run typecheck, lint and tests;
+6. summarise what changed and any architectural tension discovered.
+
+### 16.3 Architectural invariants
+
+Codex must not:
+
+- add customer-specific hard-coded conditions;
+- create a new SQL table for every custom object;
+- allow AI-generated arbitrary code execution;
+- bypass RLS using client-side service credentials;
+- duplicate Customer/Product/Order data into separate isolated modules;
+- add a new primitive merely to solve one niche example;
+- add infrastructure such as queues/caches/microservices without a demonstrated requirement.
+
+### 16.4 Preferred decision rule
+
+When a new requirement appears:
+
+> First ask whether it can be represented using existing primitives and configuration.
+
+Only propose a new platform capability if the requirement is broadly reusable and cannot be expressed safely with the current model.
+
+---
+
+## 17. Suggested first Codex tasks
+
+Do not run all of these as one prompt.
+
+### Task 1 - Bootstrap
+
+```text
+Read docs/SMBOS-v0.1-Build-Spec.md in full.
+Create the initial Next.js TypeScript application structure described in the spec.
+Add lint, typecheck and test commands and environment validation.
+Do not implement domain features yet.
+Return the files changed and commands run.
+```
+
+### Task 2 - Tenant schema
+
+```text
+Implement Milestone 1 from the build spec: businesses, memberships and locations.
+Create Supabase migrations and RLS policies.
+Add automated tests proving a user belonging only to Business A cannot read or write Business B data.
+Do not use frontend filtering as a security control.
+```
+
+### Task 3 - Graph metadata
+
+```text
+Implement object_definitions, field_definitions and relationship_definitions exactly as described in Milestone 2.
+Add validation schemas and repository/service functions.
+Use stable immutable keys and tenant-scoped uniqueness.
+Add tests.
+```
+
+### Task 4 - Generic records
+
+```text
+Implement generic records and record_relationships.
+Validate data_json against active field definitions before write.
+Demonstrate in a test that a new custom object named Catering Enquiry and its records can be created without adding a migration or source-code-specific model.
+```
+
+Continue milestone by milestone. Do not ask the coding agent to invent product behaviour not specified here.
+
+---
+
+## 18. Decisions locked for v0.1
+
+These should not be repeatedly reopened during implementation unless evidence proves them wrong.
+
+1. Physical SMB is the initial wedge.
+2. Location is first-class.
+3. AI is the primary system-building/editing interface.
+4. Routine daily operation uses normal generated UI, not mandatory chat.
+5. AI composes controlled primitives; it does not generate production code.
+6. Businesses can create custom objects, fields, relationships, views, forms, pages, rules and workflows.
+7. Businesses cannot create new platform primitives.
+8. Custom domain objects are metadata-driven and do not require per-object SQL migrations.
+9. Configuration changes are proposed, validated, versioned and reversible.
+10. Draft and published configuration are distinct.
+11. Runtime must continue working if the AI layer is unavailable.
+12. Preorder is the first vertical slice, not the final product category.
+13. The first post-preorder test is an unrelated custom concept such as Catering Enquiry.
+
+---
+
+## 19. Open decisions to resolve during implementation, not before it
+
+These are deliberately left flexible because real code/use will provide better evidence.
+
+### 19.1 Location relationship storage
+
+Either:
+
+- dedicated platform links to Location; or
+- a protected reference-field mechanism.
+
+Choose the simpler secure implementation and document it.
+
+### 19.2 Slot representation
+
+A 30-minute collection slot may be:
+
+- generated from availability configuration at runtime; or
+- stored as records in a reusable availability object.
+
+For v0, prefer runtime generation unless the need for stored slots emerges.
+
+### 19.3 Customer deduplication
+
+Initial heuristic may reuse a customer by normalised email within a business. Do not build full identity resolution in v0.
+
+### 19.4 Search/indexing
+
+Start with PostgreSQL JSONB indexing and normal tenant/object indexes. Add field-level indexes only when real queries require them.
+
+### 19.5 Scheduling as a future primitive/capability
+
+Do not add scheduling simply because bookings are anticipated. Test the private-room use case after preorder and only then decide whether scheduling/availability deserves a reusable platform capability.
+
+---
+
+## 20. Definition of "v0 complete"
+
+v0 is complete when we can perform this demo from a clean business account:
+
+1. Create **Bedford Bakery**.
+2. Tell SMBOS:
+   > "I want customers to preorder afternoon tea boxes from Bedford and Milton Keynes. They collect Saturday or Sunday between 11 and 4. Give us 48 hours' notice and don't take more than 10 orders per half-hour slot. No payment."
+3. SMBOS proposes and builds the system.
+4. Preview shows a usable customer preorder journey.
+5. Publish it.
+6. Place a real test order through the public page.
+7. See it immediately in the internal Orders view.
+8. Tell SMBOS:
+   > "Make phone optional and add Occasion."
+9. Preview and apply the change.
+10. Tell SMBOS:
+    > "Actually remove Sunday collection."
+11. Preview and apply.
+12. Tell SMBOS:
+    > "Undo that."
+13. Sunday returns.
+14. Tell SMBOS:
+    > "We also take corporate catering enquiries. I need company name, event date, guest count, budget and notes in a separate screen."
+15. SMBOS creates that new concept using existing primitives without a developer or deployment.
+
+If this works reliably, the project has proven the central SMBOS thesis:
+
+> **A non-technical small-business owner can build and evolve software around their own business simply by describing what they need.**
