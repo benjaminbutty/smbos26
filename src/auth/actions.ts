@@ -49,7 +49,11 @@ export async function signUp(formData: FormData): Promise<never> {
   const { data, error } = await supabase.auth.signUp(credentials.data);
 
   if (error) {
-    redirectWithMessage("/sign-up", "error", error.message);
+    redirectWithMessage(
+      "/sign-up",
+      "error",
+      "We could not create your account. Please try again.",
+    );
   }
 
   if (!data.session) {

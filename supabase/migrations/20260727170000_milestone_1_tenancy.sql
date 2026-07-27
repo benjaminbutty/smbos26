@@ -127,14 +127,21 @@ for each row execute function private.protect_membership_identity();
 create function private.ensure_business_has_owner()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
-  if exists (
-    select 1
-    from public.businesses
-    where id = old.business_id
-  ) and not exists (
+  -- Serialize membership changes for one tenant before checking its Owners.
+  perform 1
+  from public.businesses
+  where id = old.business_id
+  for update;
+
+  if not found then
+    return null;
+  end if;
+
+  if not exists (
     select 1
     from public.business_memberships
     where business_id = old.business_id

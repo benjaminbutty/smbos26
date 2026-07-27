@@ -198,6 +198,11 @@ boundaries defined in the build specification when their milestones begin.
 `permissions_json` is reserved and ignored in v0.1. Owner/Admin may manage
 locations; Staff may read them. Admin cannot change ownership.
 
+Owner-facing team provisioning is explicitly deferred beyond Milestone 1.
+Future membership UI must use a controlled invitation/account-resolution flow;
+it must never ask for or expose raw authentication user IDs as the membership
+mechanism.
+
 ## Route model
 
 Tenant routes use `/app/[businessSlug]/...`. The slug is a routing/display

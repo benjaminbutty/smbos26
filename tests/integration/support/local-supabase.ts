@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 export interface LocalSupabaseSettings {
   apiUrl: string;
+  databaseUrl: string;
   publishableKey: string;
   serviceRoleKey: string;
 }
@@ -33,14 +34,15 @@ export function getLocalSupabaseSettings(): LocalSupabaseSettings {
   });
   const values = parseEnvironmentOutput(output);
   const apiUrl = values.API_URL;
+  const databaseUrl = values.DB_URL;
   const publishableKey = values.PUBLISHABLE_KEY ?? values.ANON_KEY;
   const serviceRoleKey = values.SERVICE_ROLE_KEY;
 
-  if (!apiUrl || !publishableKey || !serviceRoleKey) {
+  if (!apiUrl || !databaseUrl || !publishableKey || !serviceRoleKey) {
     throw new Error(
       "Local Supabase is running but did not report all required test credentials.",
     );
   }
 
-  return { apiUrl, publishableKey, serviceRoleKey };
+  return { apiUrl, databaseUrl, publishableKey, serviceRoleKey };
 }
