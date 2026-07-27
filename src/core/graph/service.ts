@@ -276,6 +276,7 @@ export function createGraphService(
     async createRecord(input) {
       const value = createRecordSchema.parse(input);
       const { data, error } = await client.rpc("create_graph_record", {
+        expected_business_id: businessId,
         target_object_definition_id: value.objectDefinitionId,
         requested_data: value.data,
         requested_record_status: value.recordStatus,
@@ -288,6 +289,7 @@ export function createGraphService(
       const value = updateRecordSchema.parse(input);
       const args: Database["public"]["Functions"]["update_graph_record"]["Args"] =
         {
+          expected_business_id: businessId,
           target_record_id: value.recordId,
           data_patch: value.dataPatch,
         };
@@ -302,6 +304,7 @@ export function createGraphService(
 
     async archiveRecord(recordId) {
       const { data, error } = await client.rpc("archive_graph_record", {
+        expected_business_id: businessId,
         target_record_id: z.uuid().parse(recordId),
       });
 
@@ -311,6 +314,7 @@ export function createGraphService(
     async createRecordRelationship(input) {
       const value = createRecordRelationshipSchema.parse(input);
       const { data, error } = await client.rpc("create_graph_relationship", {
+        expected_business_id: businessId,
         target_relationship_definition_id: value.relationshipDefinitionId,
         target_source_record_id: value.sourceRecordId,
         target_target_record_id: value.targetRecordId,
@@ -321,6 +325,7 @@ export function createGraphService(
 
     async removeRecordRelationship(recordRelationshipId) {
       const { data, error } = await client.rpc("remove_graph_relationship", {
+        expected_business_id: businessId,
         target_record_relationship_id: z.uuid().parse(recordRelationshipId),
       });
 

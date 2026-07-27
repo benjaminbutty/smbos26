@@ -3,7 +3,9 @@
 This module is the generic server boundary for SMBOS graph configuration and
 operational data. Callers provide an authenticated Supabase client and a
 server-resolved Business ID; the service never accepts `business_id` or
-`created_by` in record input.
+`created_by` in record input. Every operational RPC receives that resolved
+Business ID explicitly and matches resource UUIDs within it, so an identifier
+cannot switch a tenant-scoped service into another Business.
 
 PostgreSQL is authoritative for tenant consistency, record validation,
 `created_by` derivation, relationship type checks and cardinality. The Zod

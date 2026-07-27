@@ -109,6 +109,10 @@ remain correct when two requests arrive concurrently.
 - Server record updates use a narrow security-invoker RPC that merges a patch
   before the trigger validates the resulting complete record. Direct
   PostgREST updates remain safe because the same trigger validates them.
+- Every operational graph RPC requires the server-resolved Business ID and
+  resolves its supplied Object, Record, Relationship definition or edge using
+  both that Business ID and the supplied UUID. An identifier can never select
+  a different tenant, including when one user belongs to both Businesses.
 - Record validation takes a shared row lock on its parent Object definition.
   Field-definition mutations take an exclusive lock on the same Object row.
   Object archival uses its normal conflicting update lock. This serializes

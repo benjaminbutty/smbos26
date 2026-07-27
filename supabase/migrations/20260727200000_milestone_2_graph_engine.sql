@@ -899,6 +899,7 @@ to authenticated
 using (private.is_business_member(business_id));
 
 create function public.create_graph_record(
+  expected_business_id uuid,
   target_object_definition_id uuid,
   requested_data jsonb default '{}'::jsonb,
   requested_record_status public.graph_record_status default 'active'
@@ -909,15 +910,14 @@ security invoker
 set search_path = ''
 as $$
 declare
-  target_business_id uuid;
   created_record public.records;
 begin
-  select object_definition.business_id
-  into target_business_id
-  from public.object_definitions as object_definition
-  where object_definition.id = target_object_definition_id;
-
-  if target_business_id is null then
+  if not exists (
+    select 1
+    from public.object_definitions as object_definition
+    where object_definition.business_id = expected_business_id
+      and object_definition.id = target_object_definition_id
+  ) then
     raise exception 'Object definition not found'
       using errcode = 'P0002';
   end if;
@@ -929,7 +929,7 @@ begin
     record_status
   )
   values (
-    target_business_id,
+    expected_business_id,
     target_object_definition_id,
     requested_data,
     requested_record_status
@@ -941,6 +941,7 @@ end;
 $$;
 
 create function public.update_graph_record(
+  expected_business_id uuid,
   target_record_id uuid,
   data_patch jsonb default '{}'::jsonb,
   requested_record_status public.graph_record_status default null
@@ -962,7 +963,8 @@ begin
   select record_value.*
   into existing_record
   from public.records as record_value
-  where record_value.id = target_record_id
+  where record_value.business_id = expected_business_id
+    and record_value.id = target_record_id
   for update;
 
   if not found then
@@ -970,21 +972,25 @@ begin
       using errcode = 'P0002';
   end if;
 
-  update public.records
+  update public.records as record_value
   set
     data_json = existing_record.data_json || data_patch,
     record_status = coalesce(
       requested_record_status,
       existing_record.record_status
     )
-  where id = target_record_id
-  returning * into updated_record;
+  where record_value.business_id = expected_business_id
+    and record_value.id = target_record_id
+  returning record_value.* into updated_record;
 
   return updated_record;
 end;
 $$;
 
-create function public.archive_graph_record(target_record_id uuid)
+create function public.archive_graph_record(
+  expected_business_id uuid,
+  target_record_id uuid
+)
 returns public.records
 language plpgsql
 security invoker
@@ -993,10 +999,11 @@ as $$
 declare
   archived_record public.records;
 begin
-  update public.records
+  update public.records as record_value
   set record_status = 'archived'
-  where id = target_record_id
-  returning * into archived_record;
+  where record_value.business_id = expected_business_id
+    and record_value.id = target_record_id
+  returning record_value.* into archived_record;
 
   if not found then
     raise exception 'Record not found'
@@ -1008,6 +1015,7 @@ end;
 $$;
 
 create function public.create_graph_relationship(
+  expected_business_id uuid,
   target_relationship_definition_id uuid,
   target_source_record_id uuid,
   target_target_record_id uuid
@@ -1018,15 +1026,14 @@ security invoker
 set search_path = ''
 as $$
 declare
-  target_business_id uuid;
   created_relationship public.record_relationships;
 begin
-  select relationship_definition.business_id
-  into target_business_id
-  from public.relationship_definitions as relationship_definition
-  where relationship_definition.id = target_relationship_definition_id;
-
-  if target_business_id is null then
+  if not exists (
+    select 1
+    from public.relationship_definitions as relationship_definition
+    where relationship_definition.business_id = expected_business_id
+      and relationship_definition.id = target_relationship_definition_id
+  ) then
     raise exception 'Relationship definition not found'
       using errcode = 'P0002';
   end if;
@@ -1038,7 +1045,7 @@ begin
     target_record_id
   )
   values (
-    target_business_id,
+    expected_business_id,
     target_relationship_definition_id,
     target_source_record_id,
     target_target_record_id
@@ -1050,6 +1057,7 @@ end;
 $$;
 
 create function public.remove_graph_relationship(
+  expected_business_id uuid,
   target_record_relationship_id uuid
 )
 returns boolean
@@ -1061,7 +1069,8 @@ declare
   removed_count integer;
 begin
   delete from public.record_relationships
-  where id = target_record_relationship_id;
+  where business_id = expected_business_id
+    and id = target_record_relationship_id;
 
   get diagnostics removed_count = row_count;
   return removed_count = 1;
@@ -1096,39 +1105,47 @@ grant usage on type public.graph_record_status to authenticated, service_role;
 
 revoke all on function public.create_graph_record(
   uuid,
+  uuid,
   jsonb,
   public.graph_record_status
 ) from public;
 revoke all on function public.update_graph_record(
   uuid,
+  uuid,
   jsonb,
   public.graph_record_status
 ) from public;
-revoke all on function public.archive_graph_record(uuid) from public;
+revoke all on function public.archive_graph_record(uuid, uuid) from public;
 revoke all on function public.create_graph_relationship(
+  uuid,
   uuid,
   uuid,
   uuid
 ) from public;
-revoke all on function public.remove_graph_relationship(uuid) from public;
+revoke all on function public.remove_graph_relationship(uuid, uuid)
+  from public;
 
 grant execute on function public.create_graph_record(
+  uuid,
   uuid,
   jsonb,
   public.graph_record_status
 ) to authenticated;
 grant execute on function public.update_graph_record(
   uuid,
+  uuid,
   jsonb,
   public.graph_record_status
 ) to authenticated;
-grant execute on function public.archive_graph_record(uuid) to authenticated;
+grant execute on function public.archive_graph_record(uuid, uuid)
+  to authenticated;
 grant execute on function public.create_graph_relationship(
+  uuid,
   uuid,
   uuid,
   uuid
 ) to authenticated;
-grant execute on function public.remove_graph_relationship(uuid)
+grant execute on function public.remove_graph_relationship(uuid, uuid)
   to authenticated;
 
 comment on function private.validate_graph_record() is

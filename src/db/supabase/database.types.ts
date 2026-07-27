@@ -445,7 +445,7 @@ export type Database = {
     };
     Functions: {
       archive_graph_record: {
-        Args: { target_record_id: string };
+        Args: { expected_business_id: string; target_record_id: string };
         Returns: {
           business_id: string;
           created_at: string;
@@ -488,6 +488,7 @@ export type Database = {
       };
       create_graph_record: {
         Args: {
+          expected_business_id: string;
           requested_data?: Json;
           requested_record_status?: Database["public"]["Enums"]["graph_record_status"];
           target_object_definition_id: string;
@@ -511,6 +512,7 @@ export type Database = {
       };
       create_graph_relationship: {
         Args: {
+          expected_business_id: string;
           target_relationship_definition_id: string;
           target_source_record_id: string;
           target_target_record_id: string;
@@ -557,12 +559,16 @@ export type Database = {
         };
       };
       remove_graph_relationship: {
-        Args: { target_record_relationship_id: string };
+        Args: {
+          expected_business_id: string;
+          target_record_relationship_id: string;
+        };
         Returns: boolean;
       };
       update_graph_record: {
         Args: {
           data_patch?: Json;
+          expected_business_id: string;
           requested_record_status?: Database["public"]["Enums"]["graph_record_status"];
           target_record_id: string;
         };

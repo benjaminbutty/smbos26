@@ -210,10 +210,12 @@ async function createRelationshipDefinition(
 
 async function createRecord(
   client: Client,
+  businessId: string,
   objectDefinitionId: string,
   data: Json,
 ): Promise<GraphRecord> {
   const { data: created, error } = await client.rpc("create_graph_record", {
+    expected_business_id: businessId,
     target_object_definition_id: objectDefinitionId,
     requested_data: data,
   });
@@ -227,11 +229,13 @@ async function createRecord(
 
 async function createEdge(
   client: Client,
+  businessId: string,
   relationshipDefinitionId: string,
   sourceRecordId: string,
   targetRecordId: string,
 ) {
   return client.rpc("create_graph_relationship", {
+    expected_business_id: businessId,
     target_relationship_definition_id: relationshipDefinitionId,
     target_source_record_id: sourceRecordId,
     target_target_record_id: targetRecordId,
@@ -275,6 +279,11 @@ describe("metadata-driven graph engine", () => {
       {
         business_id: businessA.id,
         user_id: staffA.user.id,
+        role: "staff",
+      },
+      {
+        business_id: businessB.id,
+        user_id: administratorA.user.id,
         role: "staff",
       },
     ]);
@@ -494,6 +503,7 @@ describe("metadata-driven graph engine", () => {
     ]);
     const privateRecord = await createRecord(
       ownerB.client,
+      businessB.id,
       businessBPrivateObject.id,
       {
         name: "Business B only",
@@ -530,6 +540,175 @@ describe("metadata-driven graph engine", () => {
         data_json: { name: "Intrusion" },
       });
     expect(forgedTenantError?.code).toBe("42501");
+  });
+
+  it("binds operational RPC identifiers to an explicit Business context", async () => {
+    const businessBTargetObject = await createObject(
+      ownerB.client,
+      businessB.id,
+      "tenant_context_target",
+      "Tenant Context Target",
+    );
+    await createFields(ownerB.client, businessB.id, businessBTargetObject.id, [
+      {
+        key: "name",
+        label: "Name",
+        fieldType: "short_text",
+        required: true,
+      },
+    ]);
+    const businessBSourceRecord = await createRecord(
+      ownerB.client,
+      businessB.id,
+      businessBPrivateObject.id,
+      { name: "Business B source" },
+    );
+    const businessBTargetRecord = await createRecord(
+      ownerB.client,
+      businessB.id,
+      businessBTargetObject.id,
+      { name: "Business B target" },
+    );
+    const businessBRelationship = await createRelationshipDefinition(
+      ownerB.client,
+      businessB.id,
+      "tenant_context_relationship",
+      businessBPrivateObject.id,
+      businessBTargetObject.id,
+      "many_to_many",
+    );
+    const { data: businessBEdge, error: businessBEdgeError } = await createEdge(
+      ownerB.client,
+      businessB.id,
+      businessBRelationship.id,
+      businessBSourceRecord.id,
+      businessBTargetRecord.id,
+    );
+    expect(businessBEdgeError).toBeNull();
+    if (!businessBEdge) {
+      throw new Error("Business B tenant-context edge was not created");
+    }
+
+    const { error: wrongCreateError } = await administratorA.client.rpc(
+      "create_graph_record",
+      {
+        expected_business_id: businessA.id,
+        target_object_definition_id: businessBPrivateObject.id,
+        requested_data: { name: "Wrong Business context" },
+      },
+    );
+    expect(wrongCreateError?.code).toBe("P0002");
+
+    const { error: wrongUpdateError } = await administratorA.client.rpc(
+      "update_graph_record",
+      {
+        expected_business_id: businessA.id,
+        target_record_id: businessBSourceRecord.id,
+        data_patch: { name: "Wrong Business update" },
+      },
+    );
+    expect(wrongUpdateError?.code).toBe("P0002");
+
+    const { error: wrongArchiveError } = await administratorA.client.rpc(
+      "archive_graph_record",
+      {
+        expected_business_id: businessA.id,
+        target_record_id: businessBSourceRecord.id,
+      },
+    );
+    expect(wrongArchiveError?.code).toBe("P0002");
+
+    const { data: unchangedRecord, error: unchangedRecordError } =
+      await administratorA.client
+        .from("records")
+        .select("data_json, record_status")
+        .eq("business_id", businessB.id)
+        .eq("id", businessBSourceRecord.id)
+        .single();
+    expect(unchangedRecordError).toBeNull();
+    expect(unchangedRecord).toMatchObject({
+      data_json: { name: "Business B source" },
+      record_status: "active",
+    });
+
+    const { error: wrongRelationshipCreateError } =
+      await administratorA.client.rpc("create_graph_relationship", {
+        expected_business_id: businessA.id,
+        target_relationship_definition_id: businessBRelationship.id,
+        target_source_record_id: businessBSourceRecord.id,
+        target_target_record_id: businessBTargetRecord.id,
+      });
+    expect(wrongRelationshipCreateError?.code).toBe("P0002");
+
+    const { data: wrongRemoveResult, error: wrongRemoveError } =
+      await administratorA.client.rpc("remove_graph_relationship", {
+        expected_business_id: businessA.id,
+        target_record_relationship_id: businessBEdge.id,
+      });
+    expect(wrongRemoveError).toBeNull();
+    expect(wrongRemoveResult).toBe(false);
+
+    const { data: retainedEdge, error: retainedEdgeError } =
+      await administratorA.client
+        .from("record_relationships")
+        .select("id")
+        .eq("business_id", businessB.id)
+        .eq("id", businessBEdge.id)
+        .single();
+    expect(retainedEdgeError).toBeNull();
+    expect(retainedEdge?.id).toBe(businessBEdge.id);
+
+    const { data: normalRecord, error: normalCreateError } =
+      await administratorA.client.rpc("create_graph_record", {
+        expected_business_id: businessB.id,
+        target_object_definition_id: businessBPrivateObject.id,
+        requested_data: { name: "Correct Business context" },
+      });
+    expect(normalCreateError).toBeNull();
+    expect(normalRecord?.business_id).toBe(businessB.id);
+    if (!normalRecord) {
+      throw new Error("Dual-member Business B Record was not created");
+    }
+
+    const { data: normalUpdatedRecord, error: normalUpdateError } =
+      await administratorA.client.rpc("update_graph_record", {
+        expected_business_id: businessB.id,
+        target_record_id: normalRecord.id,
+        data_patch: { name: "Correct Business update" },
+      });
+    expect(normalUpdateError).toBeNull();
+    expect(normalUpdatedRecord?.data_json).toMatchObject({
+      name: "Correct Business update",
+    });
+
+    const { data: normalEdge, error: normalEdgeError } =
+      await administratorA.client.rpc("create_graph_relationship", {
+        expected_business_id: businessB.id,
+        target_relationship_definition_id: businessBRelationship.id,
+        target_source_record_id: normalRecord.id,
+        target_target_record_id: businessBTargetRecord.id,
+      });
+    expect(normalEdgeError).toBeNull();
+    expect(normalEdge?.business_id).toBe(businessB.id);
+    if (!normalEdge) {
+      throw new Error("Dual-member Business B edge was not created");
+    }
+
+    const { data: normalRemoveResult, error: normalRemoveError } =
+      await administratorA.client.rpc("remove_graph_relationship", {
+        expected_business_id: businessB.id,
+        target_record_relationship_id: normalEdge.id,
+      });
+    expect(normalRemoveError).toBeNull();
+    expect(normalRemoveResult).toBe(true);
+
+    const { data: normalArchivedRecord, error: normalArchiveError } =
+      await administratorA.client.rpc("archive_graph_record", {
+        expected_business_id: businessB.id,
+        target_record_id: normalRecord.id,
+      });
+    expect(normalArchiveError).toBeNull();
+    expect(normalArchivedRecord?.record_status).toBe("archived");
   });
 
   it("rejects cross-tenant parent mismatches with database constraints", async () => {
@@ -678,6 +857,7 @@ describe("metadata-driven graph engine", () => {
     const { error: requiredError } = await ownerA.client.rpc(
       "create_graph_record",
       {
+        expected_business_id: businessA.id,
         target_object_definition_id: validationObject.id,
         requested_data: {},
       },
@@ -687,15 +867,21 @@ describe("metadata-driven graph engine", () => {
     const { error: unknownError } = await ownerA.client.rpc(
       "create_graph_record",
       {
+        expected_business_id: businessA.id,
         target_object_definition_id: validationObject.id,
         requested_data: { name: "Known", surprise: true },
       },
     );
     expect(unknownError?.code).toBe("22023");
 
-    const validRecord = await createRecord(ownerA.client, validationObject.id, {
-      name: "Complete",
-    });
+    const validRecord = await createRecord(
+      ownerA.client,
+      businessA.id,
+      validationObject.id,
+      {
+        name: "Complete",
+      },
+    );
     const { error: incompleteUpdateError } = await ownerA.client
       .from("records")
       .update({ data_json: {} })
@@ -740,6 +926,7 @@ describe("metadata-driven graph engine", () => {
 
     for (const invalidData of invalidCases) {
       const { error } = await ownerA.client.rpc("create_graph_record", {
+        expected_business_id: businessA.id,
         target_object_definition_id: validationObject.id,
         requested_data: invalidData,
       });
@@ -776,6 +963,7 @@ describe("metadata-driven graph engine", () => {
     const { data: updated, error: updateError } = await ownerA.client.rpc(
       "update_graph_record",
       {
+        expected_business_id: businessA.id,
         target_record_id: created.id,
         data_patch: { count: 5 },
       },
@@ -800,23 +988,39 @@ describe("metadata-driven graph engine", () => {
   });
 
   it("enforces Relationship source and target Object types", async () => {
-    const customer = await createRecord(ownerA.client, customerObject.id, {
-      name: "Customer One",
-      email: "customer-one@example.test",
-      phone: "01234567890",
-    });
-    const order = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-24",
-      collection_time: "12:00",
-    });
-    const product = await createRecord(ownerA.client, productObject.id, {
-      name: "Tea Box",
-      price: 30,
-      status: "Active",
-    });
+    const customer = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "Customer One",
+        email: "customer-one@example.test",
+        phone: "01234567890",
+      },
+    );
+    const order = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-24",
+        collection_time: "12:00",
+      },
+    );
+    const product = await createRecord(
+      ownerA.client,
+      businessA.id,
+      productObject.id,
+      {
+        name: "Tea Box",
+        price: 30,
+        status: "Active",
+      },
+    );
 
     const validEdge = await createEdge(
       ownerA.client,
+      businessA.id,
       customerPlacesOrder.id,
       customer.id,
       order.id,
@@ -825,6 +1029,7 @@ describe("metadata-driven graph engine", () => {
 
     const invalidEdge = await createEdge(
       ownerA.client,
+      businessA.id,
       customerPlacesOrder.id,
       product.id,
       order.id,
@@ -854,13 +1059,19 @@ describe("metadata-driven graph engine", () => {
     );
     const businessBCustomer = await createRecord(
       ownerB.client,
+      businessB.id,
       businessBCustomerObject.id,
       { name: "Business B Customer" },
     );
-    const businessAOrder = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-25",
-      collection_time: "12:30",
-    });
+    const businessAOrder = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-25",
+        collection_time: "12:30",
+      },
+    );
     const sql = postgres(databaseUrl, { max: 1 });
 
     try {
@@ -908,27 +1119,48 @@ describe("metadata-driven graph engine", () => {
       passportObject.id,
       "one_to_one",
     );
-    const customerOne = await createRecord(ownerA.client, customerObject.id, {
-      name: "One",
-      email: "one@example.test",
-      phone: "1",
-    });
-    const customerTwo = await createRecord(ownerA.client, customerObject.id, {
-      name: "Two",
-      email: "two@example.test",
-      phone: "2",
-    });
-    const passportOne = await createRecord(ownerA.client, passportObject.id, {
-      number: "P1",
-    });
-    const passportTwo = await createRecord(ownerA.client, passportObject.id, {
-      number: "P2",
-    });
+    const customerOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "One",
+        email: "one@example.test",
+        phone: "1",
+      },
+    );
+    const customerTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "Two",
+        email: "two@example.test",
+        phone: "2",
+      },
+    );
+    const passportOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      passportObject.id,
+      {
+        number: "P1",
+      },
+    );
+    const passportTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      passportObject.id,
+      {
+        number: "P2",
+      },
+    );
 
     expect(
       (
         await createEdge(
           ownerA.client,
+          businessA.id,
           definition.id,
           customerOne.id,
           passportOne.id,
@@ -939,6 +1171,7 @@ describe("metadata-driven graph engine", () => {
       (
         await createEdge(
           ownerA.client,
+          businessA.id,
           definition.id,
           customerOne.id,
           passportTwo.id,
@@ -949,6 +1182,7 @@ describe("metadata-driven graph engine", () => {
       (
         await createEdge(
           ownerA.client,
+          businessA.id,
           definition.id,
           customerTwo.id,
           passportOne.id,
@@ -958,29 +1192,50 @@ describe("metadata-driven graph engine", () => {
   });
 
   it("enforces one-to-many cardinality while allowing multiple targets", async () => {
-    const customerOne = await createRecord(ownerA.client, customerObject.id, {
-      name: "One-to-many One",
-      email: "otm-one@example.test",
-      phone: "1",
-    });
-    const customerTwo = await createRecord(ownerA.client, customerObject.id, {
-      name: "One-to-many Two",
-      email: "otm-two@example.test",
-      phone: "2",
-    });
-    const orderOne = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-26",
-      collection_time: "13:00",
-    });
-    const orderTwo = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-26",
-      collection_time: "13:30",
-    });
+    const customerOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "One-to-many One",
+        email: "otm-one@example.test",
+        phone: "1",
+      },
+    );
+    const customerTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "One-to-many Two",
+        email: "otm-two@example.test",
+        phone: "2",
+      },
+    );
+    const orderOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-26",
+        collection_time: "13:00",
+      },
+    );
+    const orderTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-26",
+        collection_time: "13:30",
+      },
+    );
 
     expect(
       (
         await createEdge(
           ownerA.client,
+          businessA.id,
           customerPlacesOrder.id,
           customerOne.id,
           orderOne.id,
@@ -991,6 +1246,7 @@ describe("metadata-driven graph engine", () => {
       (
         await createEdge(
           ownerA.client,
+          businessA.id,
           customerPlacesOrder.id,
           customerOne.id,
           orderTwo.id,
@@ -1001,6 +1257,7 @@ describe("metadata-driven graph engine", () => {
       (
         await createEdge(
           ownerA.client,
+          businessA.id,
           customerPlacesOrder.id,
           customerTwo.id,
           orderOne.id,
@@ -1018,40 +1275,63 @@ describe("metadata-driven graph engine", () => {
       orderObject.id,
       "many_to_many",
     );
-    const productOne = await createRecord(ownerA.client, productObject.id, {
-      name: "Product One",
-      price: 10,
-      status: "Active",
-    });
-    const productTwo = await createRecord(ownerA.client, productObject.id, {
-      name: "Product Two",
-      price: 12,
-      status: "Active",
-    });
-    const orderOne = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-27",
-      collection_time: "14:00",
-    });
-    const orderTwo = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-27",
-      collection_time: "14:30",
-    });
+    const productOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      productObject.id,
+      {
+        name: "Product One",
+        price: 10,
+        status: "Active",
+      },
+    );
+    const productTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      productObject.id,
+      {
+        name: "Product Two",
+        price: 12,
+        status: "Active",
+      },
+    );
+    const orderOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-27",
+        collection_time: "14:00",
+      },
+    );
+    const orderTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-27",
+        collection_time: "14:30",
+      },
+    );
 
     const edges = await Promise.all([
       createEdge(
         ownerA.client,
+        businessA.id,
         productOrderManyToMany.id,
         productOne.id,
         orderOne.id,
       ),
       createEdge(
         ownerA.client,
+        businessA.id,
         productOrderManyToMany.id,
         productOne.id,
         orderTwo.id,
       ),
       createEdge(
         ownerA.client,
+        businessA.id,
         productOrderManyToMany.id,
         productTwo.id,
         orderOne.id,
@@ -1062,20 +1342,35 @@ describe("metadata-driven graph engine", () => {
   });
 
   it("serializes concurrent writes before enforcing cardinality", async () => {
-    const customerOne = await createRecord(ownerA.client, customerObject.id, {
-      name: "Concurrent One",
-      email: "concurrent-one@example.test",
-      phone: "1",
-    });
-    const customerTwo = await createRecord(ownerA.client, customerObject.id, {
-      name: "Concurrent Two",
-      email: "concurrent-two@example.test",
-      phone: "2",
-    });
-    const order = await createRecord(ownerA.client, orderObject.id, {
-      collection_date: "2026-12-28",
-      collection_time: "15:00",
-    });
+    const customerOne = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "Concurrent One",
+        email: "concurrent-one@example.test",
+        phone: "1",
+      },
+    );
+    const customerTwo = await createRecord(
+      ownerA.client,
+      businessA.id,
+      customerObject.id,
+      {
+        name: "Concurrent Two",
+        email: "concurrent-two@example.test",
+        phone: "2",
+      },
+    );
+    const order = await createRecord(
+      ownerA.client,
+      businessA.id,
+      orderObject.id,
+      {
+        collection_date: "2026-12-28",
+        collection_time: "15:00",
+      },
+    );
 
     async function insertConcurrently(sourceRecordId: string): Promise<void> {
       const sql = postgres(databaseUrl, { max: 1 });
@@ -1343,10 +1638,15 @@ describe("metadata-driven graph engine", () => {
     if (!nameField || !legacyField) {
       throw new Error("Archive fields were not created");
     }
-    const existing = await createRecord(ownerA.client, archiveObject.id, {
-      name: "Before archive",
-      legacy: "Retained",
-    });
+    const existing = await createRecord(
+      ownerA.client,
+      businessA.id,
+      archiveObject.id,
+      {
+        name: "Before archive",
+        legacy: "Retained",
+      },
+    );
 
     const { error: archiveFieldError } = await ownerA.client
       .from("field_definitions")
@@ -1357,6 +1657,7 @@ describe("metadata-driven graph engine", () => {
     const { data: updated, error: updateError } = await ownerA.client.rpc(
       "update_graph_record",
       {
+        expected_business_id: businessA.id,
         target_record_id: existing.id,
         data_patch: { name: "After field archive" },
       },
@@ -1367,6 +1668,7 @@ describe("metadata-driven graph engine", () => {
     const { error: archivedFieldWriteError } = await ownerA.client.rpc(
       "update_graph_record",
       {
+        expected_business_id: businessA.id,
         target_record_id: existing.id,
         data_patch: { legacy: "Changed" },
       },
@@ -1376,6 +1678,7 @@ describe("metadata-driven graph engine", () => {
     const { error: archivedFieldCreateError } = await ownerA.client.rpc(
       "create_graph_record",
       {
+        expected_business_id: businessA.id,
         target_object_definition_id: archiveObject.id,
         requested_data: { name: "New", legacy: "No longer writable" },
       },
@@ -1398,11 +1701,13 @@ describe("metadata-driven graph engine", () => {
     ]);
     const archiveTargetOne = await createRecord(
       ownerA.client,
+      businessA.id,
       archiveTargetObject.id,
       { name: "Target one" },
     );
     const archiveTargetTwo = await createRecord(
       ownerA.client,
+      businessA.id,
       archiveTargetObject.id,
       { name: "Target two" },
     );
@@ -1416,6 +1721,7 @@ describe("metadata-driven graph engine", () => {
     );
     const { data: existingEdge, error: existingEdgeError } = await createEdge(
       ownerA.client,
+      businessA.id,
       archiveRelationship.id,
       existing.id,
       archiveTargetOne.id,
@@ -1439,6 +1745,7 @@ describe("metadata-driven graph engine", () => {
 
     const archivedRelationshipWrite = await createEdge(
       ownerA.client,
+      businessA.id,
       archiveRelationship.id,
       existing.id,
       archiveTargetTwo.id,
@@ -1461,6 +1768,7 @@ describe("metadata-driven graph engine", () => {
 
     const { data: removedEdge, error: removeEdgeError } =
       await ownerA.client.rpc("remove_graph_relationship", {
+        expected_business_id: businessA.id,
         target_record_relationship_id: existingEdge.id,
       });
     expect(removeEdgeError).toBeNull();
@@ -1469,6 +1777,7 @@ describe("metadata-driven graph engine", () => {
     const { error: newRecordError } = await ownerA.client.rpc(
       "create_graph_record",
       {
+        expected_business_id: businessA.id,
         target_object_definition_id: archiveObject.id,
         requested_data: { name: "Too late" },
       },
@@ -1477,6 +1786,7 @@ describe("metadata-driven graph engine", () => {
 
     const { data: archivedRecord, error: archiveRecordError } =
       await ownerA.client.rpc("archive_graph_record", {
+        expected_business_id: businessA.id,
         target_record_id: existing.id,
       });
     expect(archiveRecordError).toBeNull();
@@ -1520,19 +1830,29 @@ describe("metadata-driven graph engine", () => {
       },
     ]);
 
-    const first = await createRecord(ownerA.client, cateringEnquiry.id, {
-      company_name: "Acme Ltd",
-      event_date: "2026-11-10",
-      guest_count: 80,
-      budget: 4000,
-      notes: "Lunch service",
-    });
-    const second = await createRecord(ownerA.client, cateringEnquiry.id, {
-      company_name: "Example Co",
-      event_date: "2026-12-05",
-      guest_count: 45,
-      status: "Contacted",
-    });
+    const first = await createRecord(
+      ownerA.client,
+      businessA.id,
+      cateringEnquiry.id,
+      {
+        company_name: "Acme Ltd",
+        event_date: "2026-11-10",
+        guest_count: 80,
+        budget: 4000,
+        notes: "Lunch service",
+      },
+    );
+    const second = await createRecord(
+      ownerA.client,
+      businessA.id,
+      cateringEnquiry.id,
+      {
+        company_name: "Example Co",
+        event_date: "2026-12-05",
+        guest_count: 45,
+        status: "Contacted",
+      },
+    );
 
     const { data: records, error } = await ownerA.client
       .from("records")
