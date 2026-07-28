@@ -354,6 +354,16 @@ validation, projection application, preview or rollback.
   `is_active` archival state. Runtime/public resolvers and compatibility checks
   ignore inactive rows. Page draft/published status remains separate from
   archival state.
+- Public preorder submission locks and rechecks the active published Page,
+  active preorder experience, active allowed-Location association and active
+  Location in that fixed order before entering the retained atomic M4
+  transaction. Concurrent archival therefore cannot admit a submission from a
+  stale pre-archive check.
+- Page archival blocks new public activity but does not cancel operational work
+  already committed. Confirmation email claiming uses immutable Business and
+  preorder identity plus the submission idempotency token; it does not depend
+  on the Page remaining active, published, at the same slug or configured with
+  the preorder block.
 - Individual version updates and deletes are rejected. Business deletion still
   cascades its version history and head. Owner/Admin may read history and the
   head; Staff and anonymous callers may not; authenticated callers have no

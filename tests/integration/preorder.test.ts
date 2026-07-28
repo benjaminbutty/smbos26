@@ -8,13 +8,17 @@ import {
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
-import postgres from "postgres";
+import postgres, { type Sql } from "postgres";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createExperienceService } from "../../src/core/experience/service";
 import { defaultPreorderEmailAdapter } from "../../src/core/preorder/email";
+import {
+  claimPreorderConfirmationEmail,
+  completePreorderConfirmationEmail,
+} from "../../src/core/preorder/service";
 import {
   publicPreorderCatalogueSchema,
   publicPreorderResultSchema,
@@ -55,6 +59,12 @@ interface OtherTenantFixture {
   object: ObjectDefinition;
   relationship: RelationshipDefinition;
   record: ProductRecord;
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  reject(error: unknown): void;
+  resolve(value: T): void;
 }
 
 const password = "Milestone-4-test-password!";
@@ -143,6 +153,62 @@ function asObject(value: Json): Record<string, Json | undefined> {
 
 function requestHash(): string {
   return createHash("sha256").update(crypto.randomUUID(), "utf8").digest("hex");
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve: (value: T) => void = () => {};
+  let reject: (error: unknown) => void = () => {};
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function waitForDatabaseLock(
+  observer: Sql,
+  applicationName: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const waiting = await observer<{ wait_event_type: string | null }[]>`
+      select activity.wait_event_type
+      from pg_catalog.pg_stat_activity as activity
+      where activity.application_name = ${applicationName}
+        and activity.state = 'active'
+    `;
+    if (waiting.some(({ wait_event_type }) => wait_event_type === "Lock")) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(
+    `Timed out waiting for ${applicationName} to block on a row lock.`,
+  );
+}
+
+async function submitRawThroughDatabase(
+  connection: Sql,
+  applicationName: string,
+  submission: PublicPreorderSubmission,
+): Promise<PublicPreorderResult> {
+  return connection.begin(async (transaction) => {
+    await transaction`
+      select set_config('application_name', ${applicationName}, true)
+    `;
+    const [submitted] = await transaction<{ result: Json }[]>`
+      select public.submit_public_preorder(
+        ${businessSlug},
+        ${pageSlug},
+        ${preorderKey},
+        ${transaction.json(submission as unknown as Json)}::jsonb,
+        ${requestHash()}
+      ) as result
+    `;
+    if (!submitted) {
+      throw new Error("Concurrent submission returned no result.");
+    }
+    return publicPreorderResultSchema.parse(submitted.result);
+  });
 }
 
 async function resolveCatalogue(): Promise<PublicPreorderCatalogue> {
@@ -1090,6 +1156,169 @@ describe("Milestone 4 preorder", () => {
     }
   });
 
+  it("waits for a concurrent Page archive and rejects the stale submission", async () => {
+    const page = requireData(
+      await owner
+        .from("pages")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("slug", pageSlug)
+        .single(),
+      "Could not load the preorder Page",
+    );
+    const input = baseSubmission(0);
+    const archiveConnection = postgres(databaseUrl, { max: 1 });
+    const submissionConnection = postgres(databaseUrl, { max: 1 });
+    const observer = postgres(databaseUrl, { max: 1 });
+    const archiveLocked = createDeferred<void>();
+    const releaseArchive = createDeferred<void>();
+    const submissionApplication = `m5-page-submit-${crypto.randomUUID()}`;
+    let archivePromise: Promise<unknown> | undefined;
+    let submissionPromise: Promise<PublicPreorderResult> | undefined;
+    let submissionSettled = false;
+
+    try {
+      archivePromise = archiveConnection.begin(async (transaction) => {
+        await transaction`
+          update public.pages
+          set is_active = false
+          where business_id = ${business.id}::uuid
+            and id = ${page.id}::uuid
+        `;
+        archiveLocked.resolve(undefined);
+        await releaseArchive.promise;
+      });
+      void archivePromise.catch((error) => archiveLocked.reject(error));
+      await archiveLocked.promise;
+
+      submissionPromise = submitRawThroughDatabase(
+        submissionConnection,
+        submissionApplication,
+        input,
+      ).finally(() => {
+        submissionSettled = true;
+      });
+      await waitForDatabaseLock(observer, submissionApplication);
+      expect(submissionSettled).toBe(false);
+
+      releaseArchive.resolve(undefined);
+      await archivePromise;
+      expect(await submissionPromise).toEqual({
+        ok: false,
+        code: "not_found",
+      });
+
+      const { count } = await admin
+        .from("preorder_submissions")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id)
+        .eq("idempotency_token", input.idempotency_token);
+      expect(count).toBe(0);
+    } finally {
+      releaseArchive.resolve(undefined);
+      await Promise.allSettled(
+        [archivePromise, submissionPromise].filter(
+          (promise): promise is Promise<unknown> => promise !== undefined,
+        ),
+      );
+      await Promise.all([
+        archiveConnection.end(),
+        submissionConnection.end(),
+        observer.end(),
+      ]);
+      const restored = await owner
+        .from("pages")
+        .update({ is_active: true })
+        .eq("business_id", business.id)
+        .eq("id", page.id);
+      expect(restored.error).toBeNull();
+    }
+  });
+
+  it("waits for a concurrent allowed-Location archive and rejects the stale submission", async () => {
+    const miltonKeynes = locations["Milton Keynes"];
+    if (!miltonKeynes) {
+      throw new Error("Milton Keynes Location is missing.");
+    }
+    const association = requireData(
+      await owner
+        .from("preorder_experience_locations")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", miltonKeynes.id)
+        .single(),
+      "Could not load the allowed Location association",
+    );
+    const input = baseSubmission(0, { locationId: miltonKeynes.id });
+    const archiveConnection = postgres(databaseUrl, { max: 1 });
+    const submissionConnection = postgres(databaseUrl, { max: 1 });
+    const observer = postgres(databaseUrl, { max: 1 });
+    const archiveLocked = createDeferred<void>();
+    const releaseArchive = createDeferred<void>();
+    const submissionApplication = `m5-location-submit-${crypto.randomUUID()}`;
+    let archivePromise: Promise<unknown> | undefined;
+    let submissionPromise: Promise<PublicPreorderResult> | undefined;
+    let submissionSettled = false;
+
+    try {
+      archivePromise = archiveConnection.begin(async (transaction) => {
+        await transaction`
+          update public.preorder_experience_locations
+          set is_active = false
+          where business_id = ${business.id}::uuid
+            and id = ${association.id}::uuid
+        `;
+        archiveLocked.resolve(undefined);
+        await releaseArchive.promise;
+      });
+      void archivePromise.catch((error) => archiveLocked.reject(error));
+      await archiveLocked.promise;
+
+      submissionPromise = submitRawThroughDatabase(
+        submissionConnection,
+        submissionApplication,
+        input,
+      ).finally(() => {
+        submissionSettled = true;
+      });
+      await waitForDatabaseLock(observer, submissionApplication);
+      expect(submissionSettled).toBe(false);
+
+      releaseArchive.resolve(undefined);
+      await archivePromise;
+      expect(await submissionPromise).toEqual({
+        ok: false,
+        code: "invalid_location",
+      });
+
+      const { count } = await admin
+        .from("preorder_submissions")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id)
+        .eq("idempotency_token", input.idempotency_token);
+      expect(count).toBe(0);
+    } finally {
+      releaseArchive.resolve(undefined);
+      await Promise.allSettled(
+        [archivePromise, submissionPromise].filter(
+          (promise): promise is Promise<unknown> => promise !== undefined,
+        ),
+      );
+      await Promise.all([
+        archiveConnection.end(),
+        submissionConnection.end(),
+        observer.end(),
+      ]);
+      const restored = await owner
+        .from("preorder_experience_locations")
+        .update({ is_active: true })
+        .eq("business_id", business.id)
+        .eq("id", association.id);
+      expect(restored.error).toBeNull();
+    }
+  });
+
   it("canonically snapshots preorder configuration without operational rows", async () => {
     const sql = postgres(databaseUrl, { max: 1 });
     try {
@@ -1826,6 +2055,128 @@ describe("Milestone 4 preorder", () => {
       "Could not load idempotent capacity",
     );
     expect(counter.reservation_count).toBe(1);
+  });
+
+  it("delivers committed confirmation emails after the Page is archived", async () => {
+    const page = requireData(
+      await owner
+        .from("pages")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("slug", pageSlug)
+        .single(),
+      "Could not load the preorder Page",
+    );
+    const deliveredInput = baseSubmission(7);
+    const failedInput = baseSubmission(8);
+    const deliveredOrder = await submitRaw(deliveredInput);
+    const failedOrder = await submitRaw(failedInput);
+    expect(deliveredOrder.ok).toBe(true);
+    expect(failedOrder.ok).toBe(true);
+    if (!deliveredOrder.ok || !failedOrder.ok) {
+      throw new Error("Expected both Orders to commit before Page archival.");
+    }
+    expect(deliveredOrder.email_status).toBe("pending");
+    expect(failedOrder.email_status).toBe("pending");
+
+    const legacyClaim = await admin.rpc("claim_preorder_confirmation_email", {
+      requested_business_slug: businessSlug,
+      requested_page_slug: pageSlug,
+      requested_preorder_key: preorderKey,
+      requested_idempotency_token: deliveredInput.idempotency_token,
+    } as never);
+    expect(legacyClaim.error).not.toBeNull();
+
+    try {
+      const archived = await owner
+        .from("pages")
+        .update({ is_active: false })
+        .eq("business_id", business.id)
+        .eq("id", page.id);
+      expect(archived.error).toBeNull();
+
+      const deliveredClaim = await claimPreorderConfirmationEmail(
+        admin,
+        businessSlug,
+        preorderKey,
+        deliveredInput.idempotency_token,
+      );
+      expect(deliveredClaim).toEqual(deliveredOrder.confirmation);
+      expect(
+        await claimPreorderConfirmationEmail(
+          admin,
+          businessSlug,
+          preorderKey,
+          deliveredInput.idempotency_token,
+        ),
+      ).toBeNull();
+
+      const failedClaim = await claimPreorderConfirmationEmail(
+        admin,
+        businessSlug,
+        preorderKey,
+        failedInput.idempotency_token,
+      );
+      expect(failedClaim).toEqual(failedOrder.confirmation);
+
+      expect(
+        await completePreorderConfirmationEmail(
+          admin,
+          businessSlug,
+          preorderKey,
+          deliveredInput.idempotency_token,
+          { succeeded: true },
+        ),
+      ).toBe(true);
+      expect(
+        await completePreorderConfirmationEmail(
+          admin,
+          businessSlug,
+          preorderKey,
+          failedInput.idempotency_token,
+          { succeeded: false, error: "Provider unavailable." },
+        ),
+      ).toBe(true);
+
+      const { data: emailStates, error: emailStateError } = await admin
+        .from("preorder_submissions")
+        .select("email_status, email_error, idempotency_token")
+        .eq("business_id", business.id)
+        .in("idempotency_token", [
+          deliveredInput.idempotency_token,
+          failedInput.idempotency_token,
+        ])
+        .order("idempotency_token");
+      expect(emailStateError).toBeNull();
+      expect(emailStates).toEqual(
+        [
+          {
+            email_status: "delivered",
+            email_error: null,
+            idempotency_token: deliveredInput.idempotency_token,
+          },
+          {
+            email_status: "failed",
+            email_error: "Provider unavailable.",
+            idempotency_token: failedInput.idempotency_token,
+          },
+        ].sort((left, right) =>
+          left.idempotency_token.localeCompare(right.idempotency_token),
+        ),
+      );
+
+      expect(await submitRaw(baseSubmission(0))).toEqual({
+        ok: false,
+        code: "not_found",
+      });
+    } finally {
+      const restored = await owner
+        .from("pages")
+        .update({ is_active: true })
+        .eq("business_id", business.id)
+        .eq("id", page.id);
+      expect(restored.error).toBeNull();
+    }
   });
 
   it("delivers authoritative email data after commit and preserves Orders on delivery failure", async () => {

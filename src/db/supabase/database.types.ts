@@ -1113,7 +1113,6 @@ export type Database = {
         Args: {
           requested_business_slug: string;
           requested_idempotency_token: string;
-          requested_page_slug: string;
           requested_preorder_key: string;
         };
         Returns: Json;

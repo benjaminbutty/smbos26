@@ -183,7 +183,6 @@ export async function submitPublicPreorder(
 export async function claimPreorderConfirmationEmail(
   client: SupabaseClient<Database>,
   businessSlug: string,
-  pageSlug: string,
   preorderKey: string,
   idempotencyToken: string,
 ): Promise<PublicPreorderConfirmation | null> {
@@ -191,7 +190,6 @@ export async function claimPreorderConfirmationEmail(
     "claim_preorder_confirmation_email",
     {
       requested_business_slug: businessSlug,
-      requested_page_slug: pageSlug,
       requested_preorder_key: preorderKey,
       requested_idempotency_token: z.uuid().parse(idempotencyToken),
     },

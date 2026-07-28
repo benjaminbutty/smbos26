@@ -224,6 +224,164 @@ describe("Milestone 5 Phase 1 configuration baselines", () => {
     });
   });
 
+  it("rolls back Business creation when baseline insertion fails", async () => {
+    const rejectedBusinessName = `Rejected Baseline ${crypto.randomUUID()}`;
+    const [before] = await sql<
+      {
+        businesses: number;
+        heads: number;
+        memberships: number;
+        versions: number;
+      }[]
+    >`
+      select
+        (select count(*)::integer from public.businesses) as businesses,
+        (
+          select count(*)::integer
+          from public.business_configuration_heads
+        ) as heads,
+        (
+          select count(*)::integer
+          from public.business_memberships
+        ) as memberships,
+        (
+          select count(*)::integer
+          from public.configuration_versions
+        ) as versions
+    `;
+
+    try {
+      await sql`
+        create table private.test_configuration_baseline_failures (
+          business_name text primary key
+        )
+      `;
+      await sql`
+        insert into private.test_configuration_baseline_failures (
+          business_name
+        )
+        values (${rejectedBusinessName})
+      `;
+      await sql.unsafe(`
+        create function private.test_reject_configuration_baseline()
+        returns trigger
+        language plpgsql
+        set search_path = ''
+        as $$
+        begin
+          if exists (
+            select 1
+            from public.businesses as business
+            join private.test_configuration_baseline_failures as failure
+              on failure.business_name = business.name
+            where business.id = new.business_id
+          ) then
+            raise exception 'Forced configuration baseline failure'
+              using errcode = 'P0001';
+          end if;
+
+          return new;
+        end;
+        $$;
+
+        create trigger configuration_versions_test_reject_baseline
+        before insert on public.configuration_versions
+        for each row
+        execute function private.test_reject_configuration_baseline();
+      `);
+
+      const rejected = await owner.client.rpc("create_business", {
+        business_name: rejectedBusinessName,
+        requested_business_type: "test",
+        requested_timezone: "Europe/London",
+      });
+      expect(rejected.data).toBeNull();
+      expect(rejected.error).toMatchObject({
+        code: "P0001",
+        message: "Forced configuration baseline failure",
+      });
+
+      const [after] = await sql<
+        {
+          businesses: number;
+          heads: number;
+          memberships: number;
+          versions: number;
+        }[]
+      >`
+        select
+          (select count(*)::integer from public.businesses) as businesses,
+          (
+            select count(*)::integer
+            from public.business_configuration_heads
+          ) as heads,
+          (
+            select count(*)::integer
+            from public.business_memberships
+          ) as memberships,
+          (
+            select count(*)::integer
+            from public.configuration_versions
+          ) as versions
+      `;
+      expect(after).toEqual(before);
+
+      const [rejectedRows] = await sql<
+        {
+          businesses: number;
+          heads: number;
+          memberships: number;
+          versions: number;
+        }[]
+      >`
+        select
+          (
+            select count(*)::integer
+            from public.businesses
+            where name = ${rejectedBusinessName}
+          ) as businesses,
+          (
+            select count(*)::integer
+            from public.business_configuration_heads as head
+            join public.businesses as business
+              on business.id = head.business_id
+            where business.name = ${rejectedBusinessName}
+          ) as heads,
+          (
+            select count(*)::integer
+            from public.business_memberships as membership
+            join public.businesses as business
+              on business.id = membership.business_id
+            where business.name = ${rejectedBusinessName}
+          ) as memberships,
+          (
+            select count(*)::integer
+            from public.configuration_versions as version
+            join public.businesses as business
+              on business.id = version.business_id
+            where business.name = ${rejectedBusinessName}
+          ) as versions
+      `;
+      expect(rejectedRows).toEqual({
+        businesses: 0,
+        heads: 0,
+        memberships: 0,
+        versions: 0,
+      });
+    } finally {
+      await sql`
+        drop trigger if exists configuration_versions_test_reject_baseline
+        on public.configuration_versions
+      `;
+      await sql`
+        drop function if exists private.test_reject_configuration_baseline()
+      `;
+      await sql`
+        drop table if exists private.test_configuration_baseline_failures
+      `;
+    }
+  });
+
   it("captures a configured pre-existing Business as its Version 1 backfill", async () => {
     const configuredBusinessId = crypto.randomUUID();
     const alphaObjectId = crypto.randomUUID();

@@ -69,7 +69,6 @@ export async function processPreorderSubmission(options: {
   const claimed = await claimPreorderConfirmationEmail(
     options.client,
     options.businessSlug,
-    options.pageSlug,
     options.preorderKey,
     input.idempotency_token,
   );
