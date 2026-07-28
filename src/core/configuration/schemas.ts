@@ -261,6 +261,41 @@ export const semanticDiffSchema = z
   })
   .strict();
 
+export const configurationValidationIssueSchema = z
+  .object({
+    code: z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[a-z][a-z0-9_]*$/),
+    message: z.string().trim().min(1).max(300),
+  })
+  .strict();
+
+const configurationValidationResultBaseSchema = z
+  .object({
+    schema_version: z.literal(1),
+    base_version_id: z.uuid(),
+    base_head_revision: z.number().int().positive(),
+    candidate_checksum: z.string().regex(/^[a-f0-9]{64}$/),
+    warnings: z.array(configurationValidationIssueSchema).max(50),
+  })
+  .strict();
+
+export const configurationValidationResultSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    configurationValidationResultBaseSchema.extend({
+      outcome: z.literal("valid"),
+      errors: z.array(configurationValidationIssueSchema).length(0),
+    }),
+    configurationValidationResultBaseSchema.extend({
+      outcome: z.literal("invalid"),
+      errors: z.array(configurationValidationIssueSchema).min(1).max(50),
+    }),
+  ],
+);
+
 export type ConfigurationOperation = z.infer<
   typeof configurationOperationSchema
 >;
@@ -268,3 +303,6 @@ export type ProposeConfigurationChangeInput = z.input<
   typeof proposeConfigurationChangeSchema
 >;
 export type SemanticDiff = z.infer<typeof semanticDiffSchema>;
+export type ConfigurationValidationResult = z.infer<
+  typeof configurationValidationResultSchema
+>;

@@ -72,6 +72,7 @@ let operations: ConfigurationOperation[];
 let proposal: ChangeSet;
 let liveSnapshotBeforeProposal: Json;
 let headBeforeProposal: Tables<"business_configuration_heads">;
+let compatibilityRecordId: string;
 
 function asSnapshot(value: Json): SnapshotV1 {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -216,7 +217,7 @@ async function synchronizeTestBaseline(): Promise<void> {
 function setObjectFrom(
   configuredObject: JsonObject,
   isActive: boolean,
-): ConfigurationOperation {
+): Extract<ConfigurationOperation, { op: "set_object" }> {
   return {
     op: "set_object",
     key: requiredString(configuredObject.key, "Object key"),
@@ -237,6 +238,75 @@ function setObjectFrom(
         ? null
         : requiredString(configuredObject.icon, "Object icon"),
     is_active: isActive,
+  };
+}
+
+function setFieldFrom(
+  configuredField: JsonObject,
+  overrides: Partial<Extract<ConfigurationOperation, { op: "set_field" }>> = {},
+): Extract<ConfigurationOperation, { op: "set_field" }> {
+  return {
+    op: "set_field",
+    object_key: requiredString(configuredField.object_key, "Field Object key"),
+    key: requiredString(configuredField.key, "Field key"),
+    label: requiredString(configuredField.label, "Field label"),
+    field_type: requiredString(
+      configuredField.field_type,
+      "Field type",
+    ) as Extract<ConfigurationOperation, { op: "set_field" }>["field_type"],
+    required: requiredBoolean(configuredField.required, "Field required"),
+    default_value: configuredField.default_value ?? null,
+    settings_json: (configuredField.settings_json ?? {}) as Record<
+      string,
+      Json
+    >,
+    position: Number(configuredField.position),
+    is_active: requiredBoolean(configuredField.is_active, "Field active"),
+    ...overrides,
+  };
+}
+
+function setRelationshipFrom(
+  configuredRelationship: JsonObject,
+  overrides: Partial<
+    Extract<ConfigurationOperation, { op: "set_relationship" }>
+  > = {},
+): Extract<ConfigurationOperation, { op: "set_relationship" }> {
+  return {
+    op: "set_relationship",
+    key: requiredString(configuredRelationship.key, "Relationship key"),
+    source_object_key: requiredString(
+      configuredRelationship.source_object_key,
+      "Relationship source Object",
+    ),
+    target_object_key: requiredString(
+      configuredRelationship.target_object_key,
+      "Relationship target Object",
+    ),
+    source_label: requiredString(
+      configuredRelationship.source_label,
+      "Relationship source label",
+    ),
+    target_label: requiredString(
+      configuredRelationship.target_label,
+      "Relationship target label",
+    ),
+    cardinality: requiredString(
+      configuredRelationship.cardinality,
+      "Relationship cardinality",
+    ) as Extract<
+      ConfigurationOperation,
+      { op: "set_relationship" }
+    >["cardinality"],
+    is_required: requiredBoolean(
+      configuredRelationship.is_required,
+      "Relationship required",
+    ),
+    is_active: requiredBoolean(
+      configuredRelationship.is_active,
+      "Relationship active",
+    ),
+    ...overrides,
   };
 }
 
@@ -423,7 +493,7 @@ async function expectEngineError(
   }
 }
 
-describe("Milestone 5 Phase 2A configuration proposals", () => {
+describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
   beforeAll(async () => {
     settings = getLocalSupabaseSettings();
     await seedDemo();
@@ -503,6 +573,24 @@ describe("Milestone 5 Phase 2A configuration proposals", () => {
         kind: "custom",
         is_active: false,
       },
+      {
+        business_id: business.id,
+        key: "compatibility_probe",
+        singular_label: "Compatibility probe",
+        plural_label: "Compatibility probes",
+        description: "",
+        kind: "custom",
+        is_active: true,
+      },
+      {
+        business_id: business.id,
+        key: "compatibility_child",
+        singular_label: "Compatibility child",
+        plural_label: "Compatibility children",
+        description: "",
+        kind: "custom",
+        is_active: true,
+      },
     ]);
     if (probes.error) {
       throw probes.error;
@@ -514,6 +602,164 @@ describe("Milestone 5 Phase 2A configuration proposals", () => {
     locations.forEach((location) =>
       locationsByName.set(location.name, location),
     );
+
+    const configuredObjects = requireData(
+      await admin
+        .from("object_definitions")
+        .select("*")
+        .eq("business_id", business.id)
+        .in("key", ["compatibility_probe", "compatibility_child"]),
+      "Could not load compatibility Objects",
+    );
+    const probeObject = configuredObjects.find(
+      ({ key }) => key === "compatibility_probe",
+    );
+    const childObject = configuredObjects.find(
+      ({ key }) => key === "compatibility_child",
+    );
+    if (!probeObject || !childObject) {
+      throw new Error("Missing compatibility Objects.");
+    }
+
+    const fixtureFields = await owner.client.from("field_definitions").insert([
+      {
+        business_id: business.id,
+        object_definition_id: probeObject.id,
+        key: "value",
+        label: "Value",
+        field_type: "short_text",
+        required: true,
+        settings_json: {},
+        position: 0,
+      },
+      {
+        business_id: business.id,
+        object_definition_id: probeObject.id,
+        key: "category",
+        label: "Category",
+        field_type: "select",
+        required: false,
+        settings_json: { options: ["Alpha", "Beta"] },
+        position: 1,
+      },
+      {
+        business_id: business.id,
+        object_definition_id: childObject.id,
+        key: "name",
+        label: "Name",
+        field_type: "short_text",
+        required: true,
+        settings_json: {},
+        position: 0,
+      },
+    ]);
+    if (fixtureFields.error) {
+      throw fixtureFields.error;
+    }
+
+    const relationship = requireData(
+      await owner.client
+        .from("relationship_definitions")
+        .insert({
+          business_id: business.id,
+          key: "compatibility_probe_has_child",
+          source_object_definition_id: probeObject.id,
+          target_object_definition_id: childObject.id,
+          source_label: "Children",
+          target_label: "Probe",
+          cardinality: "one_to_many",
+          is_required: false,
+          is_active: true,
+        })
+        .select()
+        .single(),
+      "Could not create compatibility Relationship",
+    );
+    const probeRecord = requireData(
+      await owner.client.rpc("create_graph_record", {
+        expected_business_id: business.id,
+        target_object_definition_id: probeObject.id,
+        requested_data: { value: "stored", category: "Beta" },
+      }),
+      "Could not create compatibility Record",
+    );
+    compatibilityRecordId = probeRecord.id;
+    const childRecord = requireData(
+      await owner.client.rpc("create_graph_record", {
+        expected_business_id: business.id,
+        target_object_definition_id: childObject.id,
+        requested_data: { name: "Stored child" },
+      }),
+      "Could not create compatibility child Record",
+    );
+    requireData(
+      await owner.client.rpc("create_graph_relationship", {
+        expected_business_id: business.id,
+        target_relationship_definition_id: relationship.id,
+        target_source_record_id: probeRecord.id,
+        target_target_record_id: childRecord.id,
+      }),
+      "Could not create compatibility edge",
+    );
+
+    const form = requireData(
+      await owner.client
+        .from("forms")
+        .insert({
+          business_id: business.id,
+          key: "compatibility_probe_create",
+          name: "New compatibility probe",
+          object_definition_id: probeObject.id,
+          mode: "create",
+          config_json: {
+            fields: [{ field: "value" }, { field: "category" }],
+          },
+          audience: "internal",
+          is_active: true,
+        })
+        .select()
+        .single(),
+      "Could not create compatibility Form",
+    );
+    const view = requireData(
+      await owner.client
+        .from("views")
+        .insert({
+          business_id: business.id,
+          key: "compatibility_probes",
+          name: "Compatibility probes",
+          object_definition_id: probeObject.id,
+          view_type: "table",
+          config_json: {
+            fields: ["value", "category"],
+            create_form_key: form.key,
+            include_archived: false,
+          },
+          audience: "internal",
+          is_active: true,
+        })
+        .select()
+        .single(),
+      "Could not create compatibility View",
+    );
+    const fixturePage = await owner.client.from("pages").insert({
+      business_id: business.id,
+      key: "compatibility_workspace",
+      title: "Compatibility workspace",
+      slug: "compatibility-workspace",
+      audience: "internal",
+      layout_json: {
+        blocks: [
+          { type: "view", view_key: view.key },
+          { type: "form", form_key: form.key },
+        ],
+      },
+      status: "draft",
+      is_active: true,
+    });
+    if (fixturePage.error) {
+      throw fixturePage.error;
+    }
   }, 90_000);
 
   afterAll(async () => {
@@ -782,6 +1028,687 @@ describe("Milestone 5 Phase 2A configuration proposals", () => {
     );
   });
 
+  it("verifies actor context before mutation and rejects no-op proposals", async () => {
+    const [before] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.configuration_change_sets
+      where business_id = ${business.id}::uuid
+    `;
+    if (!before) {
+      throw new Error("Could not count configuration proposals.");
+    }
+
+    const mismatched = await owner.client.rpc("propose_configuration_change", {
+      expected_business_id: business.id,
+      expected_actor_id: staff.user.id,
+      requested_title: "Mismatched actor",
+      requested_description: null as unknown as string,
+      requested_operations: [
+        {
+          ...setObjectFrom(
+            entity(baselineSnapshot.object_definitions, "archive_probe"),
+            true,
+          ),
+          singular_label: "Mismatched actor probe",
+        },
+      ],
+    });
+    expect(mismatched.error?.message).toContain(
+      "configuration_actor_context_mismatch",
+    );
+
+    const ownerService = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const unchangedCustomer = entity(
+      baselineSnapshot.object_definitions,
+      "customer",
+    );
+    await expectEngineError(
+      ownerService.proposeChangeSet({
+        title: "Repeat existing state",
+        description: null,
+        operations: [
+          setObjectFrom(
+            unchangedCustomer,
+            requiredBoolean(
+              unchangedCustomer.is_active,
+              "Customer active state",
+            ),
+          ),
+        ],
+      }),
+      "configuration_proposal_no_changes",
+    );
+
+    const abandonTarget = await ownerService.proposeChangeSet({
+      title: "Actor-safe abandonment",
+      description: null,
+      operations: [
+        {
+          ...setObjectFrom(
+            entity(baselineSnapshot.object_definitions, "archive_probe"),
+            true,
+          ),
+          singular_label: "Actor-safe probe",
+        },
+      ],
+    });
+    const wrongAbandon = await owner.client.rpc(
+      "abandon_configuration_change_set",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: staff.user.id,
+        requested_change_set_id: abandonTarget.id,
+      },
+    );
+    expect(wrongAbandon.error?.message).toContain(
+      "configuration_actor_context_mismatch",
+    );
+    const wrongValidation = await owner.client.rpc(
+      "validate_configuration_change",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: staff.user.id,
+        requested_change_set_id: abandonTarget.id,
+      },
+    );
+    expect(wrongValidation.error?.message).toContain(
+      "configuration_actor_context_mismatch",
+    );
+    expect((await ownerService.getChangeSet(abandonTarget.id)).status).toBe(
+      "proposed",
+    );
+
+    const [after] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.configuration_change_sets
+      where business_id = ${business.id}::uuid
+    `;
+    expect(after?.count).toBe(before.count + 1);
+  });
+
+  it("validates a compatible multi-entity candidate invisibly and releases every sandbox lock", async () => {
+    const ownerService = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const snapshotBefore = await currentLiveSnapshot();
+    const headBefore = await currentHead();
+    const recordBefore = requireData(
+      await admin
+        .from("records")
+        .select("*")
+        .eq("id", compatibilityRecordId)
+        .single(),
+      "Could not load compatibility Record",
+    );
+    const [versionCountBefore] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.configuration_versions
+      where business_id = ${business.id}::uuid
+    `;
+    const [walBefore] = await sql<{ lsn: string }[]>`
+      select pg_current_wal_lsn()::text as lsn
+    `;
+    const advisoryKey = 5200260728;
+    const blocker = postgres(settings.databaseUrl, { max: 1 });
+    let validationPromise:
+      | Promise<Awaited<ReturnType<typeof ownerService.validateChangeSet>>>
+      | undefined;
+
+    try {
+      await sql`
+        create function private.test_pause_configuration_projector()
+        returns trigger
+        language plpgsql
+        set search_path = ''
+        as $$
+        begin
+          if old.is_active and not new.is_active then
+            perform pg_advisory_xact_lock(5200260728);
+          end if;
+          return new;
+        end;
+        $$
+      `;
+      await sql`
+        create trigger test_pause_configuration_projector
+        before update on public.pages
+        for each row execute function
+          private.test_pause_configuration_projector()
+      `;
+
+      await blocker.begin(async (transaction) => {
+        await transaction`select pg_advisory_xact_lock(${advisoryKey})`;
+        validationPromise = ownerService.validateChangeSet(proposal.id);
+
+        let waiting = false;
+        for (let attempt = 0; attempt < 100 && !waiting; attempt += 1) {
+          const [lock] = await sql<{ waiting: boolean }[]>`
+            select exists (
+              select 1
+              from pg_locks
+              where locktype = 'advisory'
+                and not granted
+            ) as waiting
+          `;
+          waiting = lock?.waiting ?? false;
+          if (!waiting) {
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+        }
+        expect(waiting).toBe(true);
+
+        const visiblePage = requireData(
+          await admin
+            .from("pages")
+            .select("is_active, slug")
+            .eq("business_id", business.id)
+            .eq("key", "public_preorder")
+            .single(),
+          "Could not inspect the live Page during validation",
+        );
+        expect(visiblePage).toMatchObject({
+          is_active: true,
+          slug: "preorder",
+        });
+      });
+      if (!validationPromise) {
+        throw new Error("Validation did not start.");
+      }
+      proposal = await validationPromise;
+    } finally {
+      await blocker.end();
+      await sql`
+        drop trigger if exists test_pause_configuration_projector
+        on public.pages
+      `;
+      await sql`
+        drop function if exists
+          private.test_pause_configuration_projector()
+      `;
+    }
+
+    expect({
+      status: proposal.status,
+      validation: proposal.validation_result_json,
+    }).toMatchObject({
+      status: "validated",
+      validation: { outcome: "valid" },
+    });
+    expect(proposal.validation_result_json).toMatchObject({
+      schema_version: 1,
+      outcome: "valid",
+      base_version_id: proposal.base_version_id,
+      base_head_revision: proposal.base_head_revision,
+      candidate_checksum: proposal.candidate_checksum,
+      errors: [],
+      warnings: [],
+    });
+    expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+    expect(await currentHead()).toEqual(headBefore);
+    const [versionCountAfter] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.configuration_versions
+      where business_id = ${business.id}::uuid
+    `;
+    expect(versionCountAfter?.count).toBe(versionCountBefore?.count);
+    expect(
+      requireData(
+        await admin
+          .from("records")
+          .select("*")
+          .eq("id", compatibilityRecordId)
+          .single(),
+        "Could not reload compatibility Record",
+      ),
+    ).toEqual(recordBefore);
+
+    const validatedAt = proposal.validated_at;
+    const retried = await ownerService.validateChangeSet(proposal.id);
+    expect(retried.status).toBe("validated");
+    expect(retried.validated_at).toBe(validatedAt);
+    expect(retried.validation_result_json).toEqual(
+      proposal.validation_result_json,
+    );
+
+    await sql.begin(async (transaction) => {
+      await transaction.unsafe("set local lock_timeout = '1s'");
+      await transaction`
+        select id
+        from public.pages
+        where business_id = ${business.id}::uuid
+        order by id
+        for update
+      `;
+    });
+    const [walAfter] = await sql<{ bytes: number }[]>`
+      select pg_wal_lsn_diff(
+        pg_current_wal_lsn(),
+        ${walBefore?.lsn ?? "0/0"}::pg_lsn
+      )::bigint::float8 as bytes
+    `;
+    expect(walAfter?.bytes).toBeGreaterThan(0);
+  });
+
+  it("rejects incompatible Records, required Fields, options, and Relationship shape without changing live state", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const valueField = entity(
+      baselineSnapshot.field_definitions.filter(
+        (field) => field.object_key === "compatibility_probe",
+      ),
+      "value",
+    );
+    const categoryField = entity(
+      baselineSnapshot.field_definitions.filter(
+        (field) => field.object_key === "compatibility_probe",
+      ),
+      "category",
+    );
+    const relationship = entity(
+      baselineSnapshot.relationship_definitions,
+      "compatibility_probe_has_child",
+    );
+    const createForm = entity(
+      baselineSnapshot.forms,
+      "compatibility_probe_create",
+    );
+    const snapshotBefore = await currentLiveSnapshot();
+    const headBefore = await currentHead();
+    const recordBefore = requireData(
+      await admin
+        .from("records")
+        .select("*")
+        .eq("id", compatibilityRecordId)
+        .single(),
+      "Could not load compatibility Record before rejection",
+    );
+
+    const cases: {
+      title: string;
+      operations: ConfigurationOperation[];
+      expectedCode: string;
+    }[] = [
+      {
+        title: "Incompatible populated Field type",
+        operations: [setFieldFrom(valueField, { field_type: "number" })],
+        expectedCode: "existing_records_incompatible",
+      },
+      {
+        title: "Required Field without existing values",
+        operations: [
+          {
+            op: "set_field",
+            object_key: "compatibility_probe",
+            key: "required_later",
+            label: "Required later",
+            field_type: "short_text",
+            required: true,
+            default_value: null,
+            settings_json: {},
+            position: 2,
+            is_active: true,
+          },
+          {
+            op: "set_form",
+            key: requiredString(createForm.key, "Form key"),
+            name: requiredString(createForm.name, "Form name"),
+            object_key: requiredString(createForm.object_key, "Form Object"),
+            mode: "create",
+            config_json: {
+              fields: [
+                { field: "value", hidden: false },
+                { field: "category", hidden: false },
+                { field: "required_later", hidden: false },
+              ],
+            },
+            audience: "internal",
+            is_active: true,
+          },
+        ],
+        expectedCode: "existing_records_incompatible",
+      },
+      {
+        title: "Remove a selected option",
+        operations: [
+          setFieldFrom(categoryField, {
+            settings_json: { options: ["Alpha"] },
+          }),
+        ],
+        expectedCode: "existing_records_incompatible",
+      },
+      {
+        title: "Change a populated Relationship shape",
+        operations: [
+          setRelationshipFrom(relationship, {
+            cardinality: "one_to_one",
+          }),
+        ],
+        expectedCode: "existing_relationships_incompatible",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const changeSet = await service.proposeChangeSet({
+        title: testCase.title,
+        description: null,
+        operations: testCase.operations,
+      });
+      const rejected = await service.validateChangeSet(changeSet.id);
+      expect(rejected.status).toBe("rejected");
+      expect(rejected.validation_result_json).toMatchObject({
+        outcome: "invalid",
+        errors: [
+          {
+            code: testCase.expectedCode,
+          },
+        ],
+      });
+      expect(rejected.validated_by).toBe(owner.user.id);
+      expect(rejected.closed_by).toBe(owner.user.id);
+      expect(rejected.validated_at).toBe(rejected.closed_at);
+      expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+      expect(await currentHead()).toEqual(headBefore);
+      await expectEngineError(
+        service.validateChangeSet(changeSet.id),
+        "configuration_change_set_not_validatable",
+      );
+    }
+    expect(
+      requireData(
+        await admin
+          .from("records")
+          .select("*")
+          .eq("id", compatibilityRecordId)
+          .single(),
+        "Could not reload compatibility Record after rejection",
+      ),
+    ).toEqual(recordBefore);
+  });
+
+  it("defensively rejects invalid View, Form, Page, and preorder candidates inside the sandbox", async () => {
+    const baseCandidate = asSnapshot(proposal.candidate_snapshot_json);
+    const tamperedCandidates: {
+      candidate: SnapshotV1;
+      expectedCode: string;
+    }[] = [];
+
+    const invalidView = structuredClone(baseCandidate);
+    entity(invalidView.views, "catering_enquiries").config_json = {
+      fields: ["missing_field"],
+      include_archived: false,
+    };
+    tamperedCandidates.push({
+      candidate: invalidView,
+      expectedCode: "experience_configuration_incompatible",
+    });
+
+    const invalidForm = structuredClone(baseCandidate);
+    entity(invalidForm.forms, "catering_enquiry_create").config_json = {
+      fields: [{ field: "missing_field" }],
+    };
+    tamperedCandidates.push({
+      candidate: invalidForm,
+      expectedCode: "experience_configuration_incompatible",
+    });
+
+    const invalidPage = structuredClone(baseCandidate);
+    entity(invalidPage.pages, "catering_workspace").layout_json = {
+      blocks: [{ type: "view", view_key: "missing_view" }],
+    };
+    tamperedCandidates.push({
+      candidate: invalidPage,
+      expectedCode: "page_configuration_incompatible",
+    });
+
+    const invalidPreorder = structuredClone(baseCandidate);
+    const preorder = entity(
+      invalidPreorder.preorder_experiences,
+      "bakery_preorder",
+    );
+    const config = structuredClone(preorder.config_json) as JsonObject;
+    const mappings = config.field_mappings as JsonObject;
+    const product = mappings.product as JsonObject;
+    product.price = "missing_price";
+    preorder.config_json = config;
+    tamperedCandidates.push({
+      candidate: invalidPreorder,
+      expectedCode: "preorder_configuration_incompatible",
+    });
+
+    const snapshotBefore = await currentLiveSnapshot();
+    for (const testCase of tamperedCandidates) {
+      const [result] = await sql<{ result: JsonObject }[]>`
+        select private.validate_configuration_candidate_in_sandbox_v1(
+          ${business.id}::uuid,
+          ${proposal.base_version_id}::uuid,
+          ${proposal.base_head_revision}::bigint,
+          ${proposal.candidate_checksum},
+          ${sql.json(testCase.candidate as unknown as Json)}::jsonb
+        ) as result
+      `;
+      expect(result?.result).toMatchObject({
+        outcome: "invalid",
+        errors: [{ code: testCase.expectedCode }],
+      });
+      expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+    }
+  });
+
+  it("rejects a proposal when an allowed Location becomes inactive after proposal", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const preorderOperation = operations.find(
+      (operation) => operation.op === "set_preorder_experience",
+    );
+    if (
+      !preorderOperation ||
+      preorderOperation.op !== "set_preorder_experience"
+    ) {
+      throw new Error("Missing preorder operation.");
+    }
+    const changeSet = await service.proposeChangeSet({
+      title: "Location eligibility recheck",
+      description: null,
+      operations: [
+        {
+          ...preorderOperation,
+          config_json: {
+            ...preorderOperation.config_json,
+            schedule: {
+              ...preorderOperation.config_json.schedule,
+              slot_capacity: 9,
+            },
+          },
+        },
+      ],
+    });
+    const bedford = locationsByName.get("Bedford");
+    if (!bedford) {
+      throw new Error("Missing Bedford Location.");
+    }
+    const snapshotBefore = await currentLiveSnapshot();
+    let locationRestoreError: unknown;
+
+    try {
+      const archived = await owner.client
+        .from("locations")
+        .update({ is_active: false })
+        .eq("business_id", business.id)
+        .eq("id", bedford.id);
+      if (archived.error) {
+        throw archived.error;
+      }
+      const rejected = await service.validateChangeSet(changeSet.id);
+      expect(rejected.status).toBe("rejected");
+      expect(rejected.validation_result_json).toMatchObject({
+        outcome: "invalid",
+        errors: [{ code: "location_ineligible" }],
+      });
+      expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+    } finally {
+      const restored = await owner.client
+        .from("locations")
+        .update({ is_active: true })
+        .eq("business_id", business.id)
+        .eq("id", bedford.id);
+      locationRestoreError = restored.error;
+    }
+    if (locationRestoreError) {
+      throw locationRestoreError;
+    }
+  });
+
+  it("serializes concurrent validation and detects privileged replay tampering", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const probe = entity(baselineSnapshot.object_definitions, "restore_probe");
+    const concurrent = await service.proposeChangeSet({
+      title: "Concurrent validation",
+      description: null,
+      operations: [
+        {
+          ...setObjectFrom(probe, true),
+          singular_label: "Concurrently validated probe",
+        },
+      ],
+    });
+    const [first, second] = await Promise.all([
+      service.validateChangeSet(concurrent.id),
+      service.validateChangeSet(concurrent.id),
+    ]);
+    expect(first.status).toBe("validated");
+    expect(second.status).toBe("validated");
+    expect(first.validated_at).toBe(second.validated_at);
+    expect(first.validation_result_json).toEqual(second.validation_result_json);
+
+    const tampered = await service.proposeChangeSet({
+      title: "Tamper detection",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "tamper_probe",
+          singular_label: "Tamper probe",
+          plural_label: "Tamper probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    await sql.begin(async (transaction) => {
+      await transaction.unsafe("set local session_replication_role = replica");
+      await transaction`
+        update public.configuration_change_sets
+        set id_allocations_json = jsonb_build_object(
+          'object:tamper_probe',
+          gen_random_uuid()
+        )
+        where business_id = ${business.id}::uuid
+          and id = ${tampered.id}::uuid
+      `;
+    });
+    await expectEngineError(
+      service.validateChangeSet(tampered.id),
+      "configuration_candidate_replay_mismatch",
+    );
+    expect((await service.getChangeSet(tampered.id)).status).toBe("proposed");
+  });
+
+  it("fails closed on projection divergence and marks a stale base conflicted", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const probe = entity(baselineSnapshot.object_definitions, "archive_probe");
+    const divergent = await service.proposeChangeSet({
+      title: "Projection divergence",
+      description: null,
+      operations: [
+        {
+          ...setObjectFrom(probe, true),
+          plural_label: "Divergence probes",
+        },
+      ],
+    });
+    const probeId = requiredString(probe.id, "Probe ID");
+    const originalLabel = requiredString(
+      probe.singular_label,
+      "Probe singular label",
+    );
+    let projectionRestoreError: unknown;
+    try {
+      const changed = await owner.client
+        .from("object_definitions")
+        .update({ singular_label: "Unversioned divergence" })
+        .eq("business_id", business.id)
+        .eq("id", probeId);
+      if (changed.error) {
+        throw changed.error;
+      }
+      await expectEngineError(
+        service.validateChangeSet(divergent.id),
+        "configuration_projection_out_of_sync",
+      );
+      expect((await service.getChangeSet(divergent.id)).status).toBe(
+        "proposed",
+      );
+    } finally {
+      const restored = await owner.client
+        .from("object_definitions")
+        .update({ singular_label: originalLabel })
+        .eq("business_id", business.id)
+        .eq("id", probeId);
+      projectionRestoreError = restored.error;
+    }
+    if (projectionRestoreError) {
+      throw projectionRestoreError;
+    }
+
+    const stale = await service.proposeChangeSet({
+      title: "Stale validation",
+      description: null,
+      operations: [
+        {
+          ...setObjectFrom(probe, true),
+          plural_label: "Stale probes",
+        },
+      ],
+    });
+    const snapshotBeforeConflict = await currentLiveSnapshot();
+    try {
+      await sql`
+        update public.business_configuration_heads
+        set head_revision = head_revision + 1
+        where business_id = ${business.id}::uuid
+      `;
+      const conflicted = await service.validateChangeSet(stale.id);
+      expect(conflicted).toMatchObject({
+        status: "conflicted",
+        closed_by: owner.user.id,
+        validation_result_json: null,
+        validated_by: null,
+      });
+      expect(await currentLiveSnapshot()).toEqual(snapshotBeforeConflict);
+    } finally {
+      await sql`
+        update public.business_configuration_heads
+        set head_revision = ${headBeforeProposal.head_revision}
+        where business_id = ${business.id}::uuid
+      `;
+    }
+  });
+
   it("rejects caller-controlled IDs and immutable identity replacement", async () => {
     const raw = owner.client as SupabaseClient<Database>;
     const relationship = entity(
@@ -795,6 +1722,7 @@ describe("Milestone 5 Phase 2A configuration proposals", () => {
       "bakery_preorder",
     );
     const baseProposal = {
+      expected_actor_id: owner.user.id,
       expected_business_id: business.id,
       requested_description: "",
       requested_title: "Rejected identity replacement",
@@ -1023,17 +1951,20 @@ describe("Milestone 5 Phase 2A configuration proposals", () => {
       title: "Admin proposal",
       description: null,
       operations: [
-        setObjectFrom(
-          entity(baselineSnapshot.object_definitions, "archive_probe"),
-          true,
-        ),
+        {
+          ...setObjectFrom(
+            entity(baselineSnapshot.object_definitions, "archive_probe"),
+            true,
+          ),
+          singular_label: "Admin proposal probe",
+        },
       ],
     });
     expect(adminProposal.requested_by).toBe(administrator.user.id);
 
     const liveBefore = await currentLiveSnapshot();
     const headBefore = await currentHead();
-    const abandoned = await adminService.abandonChangeSet(proposal.id);
+    const abandoned = await adminService.abandonChangeSet(adminProposal.id);
     expect(abandoned).toMatchObject({
       closed_by: administrator.user.id,
       status: "abandoned",
@@ -1041,7 +1972,7 @@ describe("Milestone 5 Phase 2A configuration proposals", () => {
     expect(await currentLiveSnapshot()).toEqual(liveBefore);
     expect(await currentHead()).toEqual(headBefore);
     await expectEngineError(
-      ownerService.abandonChangeSet(proposal.id),
+      ownerService.abandonChangeSet(adminProposal.id),
       "configuration_change_set_not_abandonable",
     );
   });

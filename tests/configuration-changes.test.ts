@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  configurationValidationResultSchema,
   configurationOperationsSchema,
   proposeConfigurationChangeSchema,
 } from "../src/core/configuration/schemas";
@@ -230,6 +231,51 @@ describe("configuration change operation grammar", () => {
         description: null,
         operations: [operations[0]],
         candidate_snapshot_json: {},
+      }),
+    ).toThrow();
+  });
+
+  it("strictly validates owner-facing configuration validation results", () => {
+    const base = {
+      schema_version: 1,
+      base_version_id: "00000000-0000-4000-8000-000000000002",
+      base_head_revision: 1,
+      candidate_checksum: "a".repeat(64),
+      warnings: [],
+    };
+    expect(
+      configurationValidationResultSchema.parse({
+        ...base,
+        outcome: "valid",
+        errors: [],
+      }),
+    ).toMatchObject({ outcome: "valid" });
+    expect(
+      configurationValidationResultSchema.parse({
+        ...base,
+        outcome: "invalid",
+        errors: [
+          {
+            code: "existing_records_incompatible",
+            message:
+              "This change is not compatible with existing business information.",
+          },
+        ],
+      }),
+    ).toMatchObject({ outcome: "invalid" });
+    expect(() =>
+      configurationValidationResultSchema.parse({
+        ...base,
+        outcome: "valid",
+        errors: [{ code: "raw_sql", message: "select * from records" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      configurationValidationResultSchema.parse({
+        ...base,
+        outcome: "invalid",
+        errors: [],
+        internal_function: "private.project_configuration_candidate_v1",
       }),
     ).toThrow();
   });

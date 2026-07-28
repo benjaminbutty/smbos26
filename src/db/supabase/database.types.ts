@@ -1214,7 +1214,11 @@ export type Database = {
     };
     Functions: {
       abandon_configuration_change_set: {
-        Args: { expected_business_id: string; requested_change_set_id: string };
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_change_set_id: string;
+        };
         Returns: {
           applied_at: string | null;
           applied_by: string | null;
@@ -1516,6 +1520,7 @@ export type Database = {
       };
       propose_configuration_change: {
         Args: {
+          expected_actor_id: string;
           expected_business_id: string;
           requested_description: string;
           requested_operations: Json;
@@ -1620,6 +1625,47 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      validate_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_change_set_id: string;
+        };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
           isOneToOne: true;
           isSetofReturn: false;
         };

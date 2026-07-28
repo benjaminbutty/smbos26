@@ -371,6 +371,10 @@ validation, projection application, preview or rollback.
 - Phase 1 deliberately leaves existing configuration mutation paths open.
   Therefore it does not yet assert that the active normalized projection always
   equals the active immutable snapshot.
+- Phase 2B remains transitional for the same reason. An unversioned
+  configuration write after proposal creation can make projection/head
+  equality fail closed during validation. Phase 3 must close those mutation
+  paths; Phase 2B does not use broad permanent locks to simulate that boundary.
 
 ### Locked follow-up boundaries
 
@@ -467,3 +471,74 @@ Business head.
 - Snapshot/projection compatibility with existing operational Records remains
   the critical Phase 2B boundary; Phase 2A structural checks must not be
   presented as that proof.
+
+## ADR-008 - Authoritative compatibility validation in a rollback-only projection sandbox
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 2B)
+
+**Date:** 28 July 2026
+
+### Context
+
+A structurally valid Phase 2A candidate can still be incompatible with live
+operational data. Examples include changing a populated Field type, adding a
+required Field that existing Records cannot satisfy, removing a selected
+option, or changing the cardinality of a Relationship that already has edges.
+The M2-M4 PostgreSQL triggers are already the authoritative integrity boundary;
+reimplementing them in TypeScript or in a second weaker validator would create
+divergent rules.
+
+Validation must exercise those constraints without exposing or committing a
+parallel draft graph.
+
+### Decision
+
+- Every mutating configuration RPC accepts an `expected_actor_id` and verifies
+  `auth.uid()`, exact actor-context equality and current Owner/Admin membership
+  before writing. A complete proposal that produces no semantic or canonical
+  change is rejected before insertion.
+- `validate_configuration_change` locks the Business head and then its change
+  set, verifies the base version/revision, replays immutable operations and
+  trusted allocations, checks every stored engine output, and proves the live
+  projection still equals the active immutable version.
+- One private static table-specific projector materialises complete candidates.
+  It parks Pages, preorder experiences, Views, Forms and Relationships before
+  graph changes; inserts new Objects inactive; applies Fields; restores target
+  Objects and Relationships; restores Forms, Views, preorder associations and
+  experiences; and restores Pages last. It never hard-deletes configuration.
+- The projector runs inside a PL/pgSQL exception block. A distinct success
+  sentinel deliberately raises after final deferred constraints and canonical
+  projection equality succeed. Both the sentinel and authoritative integrity
+  errors roll the subtransaction back. The outer transaction commits only a
+  structured lifecycle result.
+- `validated` stores a strict valid result plus actor/time. Deterministic
+  incompatibility becomes `rejected` with a bounded owner-safe error and closure
+  metadata. A stale base becomes `conflicted`. Unexpected engine or transient
+  failures leave the proposal unchanged. Revalidating an already validated row
+  returns its stored result without changing timestamps.
+- Owner-facing validation results contain only allow-listed codes and plain
+  language. PostgreSQL diagnostics are captured only for internal
+  classification; raw SQL, table/function names, stack traces and internal
+  identifiers are not persisted in the result.
+- Candidate Location eligibility is rechecked immediately before and inside
+  projection. A Location becoming inactive after proposal is an operational
+  incompatibility and cannot be recreated or reactivated by validation.
+
+### Consequences
+
+- Current M2-M4 triggers validate the exact candidate projection against live
+  Records, edges, Locations and preorder constructability without duplicating
+  those rules in TypeScript.
+- MVCC prevents other sessions from observing parked rows, and rollback removes
+  every temporary projection write and lock. The active head, versions and
+  operational Records remain unchanged.
+- Validation takes an exclusive Business-head lock and temporarily writes and
+  locks the Business's active configuration rows. Rolled-back writes still
+  generate WAL. This is proportionate for v0.1 configuration sizes but is a
+  deliberate scaling limit to measure before supporting large tenants or
+  frequent automated validation.
+- Direct authenticated configuration mutation remains open only until Phase 3.
+  Projection divergence therefore remains an explicit engine-state failure,
+  not an owner rejection.
+- Phase 2B does not apply candidates, create versions, advance heads, close
+  direct mutation, implement rollback/preview/UI, or convert the Bedford demo.

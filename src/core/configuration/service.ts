@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { Database } from "../../db/supabase/database.types";
 import {
+  configurationValidationResultSchema,
   proposeConfigurationChangeSchema,
   semanticDiffSchema,
   type ProposeConfigurationChangeInput,
@@ -35,29 +36,38 @@ function engineErrorCode(error: PostgrestErrorShape): string {
   return match?.[0] ?? error.code ?? "configuration_request_failed";
 }
 
+const engineErrorMessages: Readonly<Record<string, string>> = {
+  configuration_actor_context_mismatch:
+    "The authenticated configuration actor did not match the trusted request context.",
+  configuration_candidate_replay_failed:
+    "The stored configuration proposal could not be reproduced safely.",
+  configuration_candidate_replay_mismatch:
+    "The stored configuration proposal failed its integrity check.",
+  configuration_change_set_not_validatable:
+    "This configuration proposal can no longer be validated.",
+  configuration_owner_or_admin_required:
+    "Owner or Admin access is required for configuration changes.",
+  configuration_projection_out_of_sync:
+    "Configuration changed outside the version engine. No proposal was changed.",
+  configuration_proposal_no_changes:
+    "The proposal does not change the current configuration.",
+  configuration_validation_engine_failure:
+    "Configuration validation could not complete safely.",
+};
+
 export class ConfigurationChangeServiceError extends Error {
   readonly code: string;
   override readonly cause: unknown;
 
   constructor(message: string, error: PostgrestErrorShape | unknown) {
-    super(
-      typeof error === "object" &&
-        error !== null &&
-        "message" in error &&
-        typeof error.message === "string"
-        ? `${message} ${error.message}${
-            "details" in error && typeof error.details === "string"
-              ? ` (${error.details})`
-              : ""
-          }`
-        : message,
-    );
-    this.name = "ConfigurationChangeServiceError";
-    this.cause = error;
-    this.code =
+    const code =
       typeof error === "object" && error !== null
         ? engineErrorCode(error as PostgrestErrorShape)
         : "configuration_request_failed";
+    super(engineErrorMessages[code] ?? message);
+    this.name = "ConfigurationChangeServiceError";
+    this.cause = error;
+    this.code = code;
   }
 }
 
@@ -72,6 +82,28 @@ function assertTrustedResponse(
     );
   }
   semanticDiffSchema.parse(changeSet.semantic_diff_json);
+  if (changeSet.validation_result_json !== null) {
+    const result = configurationValidationResultSchema.parse(
+      changeSet.validation_result_json,
+    );
+    if (
+      (changeSet.status === "validated" && result.outcome !== "valid") ||
+      (changeSet.status === "rejected" && result.outcome !== "invalid")
+    ) {
+      throw new ConfigurationChangeServiceError(
+        "The configuration validation response was inconsistent.",
+        { message: "configuration_response_validation_mismatch" },
+      );
+    }
+  } else if (
+    changeSet.status === "validated" ||
+    changeSet.status === "rejected"
+  ) {
+    throw new ConfigurationChangeServiceError(
+      "The configuration validation response was incomplete.",
+      { message: "configuration_response_validation_missing" },
+    );
+  }
   return changeSet;
 }
 
@@ -98,6 +130,7 @@ export class ConfigurationChangeService {
       "propose_configuration_change",
       {
         expected_business_id: this.#businessId,
+        expected_actor_id: this.#actorId,
         requested_title: proposal.title,
         requested_description: proposal.description as string,
         requested_operations: proposal.operations,
@@ -156,12 +189,33 @@ export class ConfigurationChangeService {
       "abandon_configuration_change_set",
       {
         expected_business_id: this.#businessId,
+        expected_actor_id: this.#actorId,
         requested_change_set_id: changeSetIdSchema.parse(changeSetId),
       },
     );
     if (error || !data) {
       throw new ConfigurationChangeServiceError(
         "Could not abandon the configuration proposal.",
+        error,
+      );
+    }
+    return assertTrustedResponse(data, this.#businessId);
+  }
+
+  async validateChangeSet(
+    changeSetId: string,
+  ): Promise<ConfigurationChangeSet> {
+    const { data, error } = await this.#client.rpc(
+      "validate_configuration_change",
+      {
+        expected_business_id: this.#businessId,
+        expected_actor_id: this.#actorId,
+        requested_change_set_id: changeSetIdSchema.parse(changeSetId),
+      },
+    );
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not validate the configuration proposal.",
         error,
       );
     }
