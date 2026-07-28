@@ -7,6 +7,7 @@ export default defineConfig({
       "tests/configuration-changes.test.ts",
       "tests/integration/configuration-changes.test.ts",
     ],
+    testNamePattern: /^(?!.*\[application\]).*$/,
     fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 30_000,

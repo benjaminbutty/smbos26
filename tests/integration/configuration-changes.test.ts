@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
 import {
@@ -18,7 +19,12 @@ import {
   semanticDiffSchema,
   type ConfigurationOperation,
 } from "../../src/core/configuration/schemas";
-import { preorderConfigSchema } from "../../src/core/preorder/schemas";
+import {
+  preorderConfigSchema,
+  publicPreorderCatalogueSchema,
+  publicPreorderResultSchema,
+  type PublicPreorderSubmission,
+} from "../../src/core/preorder/schemas";
 import type {
   Database,
   Json,
@@ -39,6 +45,12 @@ type JsonObject = Record<string, Json | undefined>;
 interface Identity {
   client: Client;
   user: User;
+}
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  reject(error: unknown): void;
+  resolve(value: T): void;
 }
 
 interface SnapshotV1 {
@@ -116,6 +128,69 @@ function requireData<T>(
     throw new Error(`${message}: ${result.error?.message ?? "No data"}`);
   }
   return result.data as NonNullable<T>;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve: (value: T) => void = () => {};
+  let reject: (error: unknown) => void = () => {};
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
+
+async function waitForDatabaseLock(
+  observer: Sql,
+  applicationName: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    const waiting = await observer<{ wait_event_type: string | null }[]>`
+      select activity.wait_event_type
+      from pg_catalog.pg_stat_activity as activity
+      where activity.application_name = ${applicationName}
+        and activity.state = 'active'
+    `;
+    if (waiting.some(({ wait_event_type }) => wait_event_type === "Lock")) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(
+    `Timed out waiting for ${applicationName} to block on a database lock.`,
+  );
+}
+
+async function applyThroughDatabase(
+  connection: Sql,
+  applicationName: string,
+  actorId: string,
+  changeSetId: string,
+): Promise<ChangeSet> {
+  return connection.begin(async (transaction) => {
+    await transaction`
+      select
+        set_config('application_name', ${applicationName}, true),
+        set_config('request.jwt.claim.sub', ${actorId}, true),
+        set_config('request.jwt.claim.role', 'authenticated', true)
+    `;
+    const [applied] = await transaction<ChangeSet[]>`
+      select result.*
+      from public.apply_configuration_change(
+        ${business.id}::uuid,
+        ${actorId}::uuid,
+        ${changeSetId}::uuid
+      ) as result
+    `;
+    if (!applied) {
+      throw new Error("Configuration application returned no row.");
+    }
+    return applied;
+  });
+}
+
+function requestHash(): string {
+  return createHash("sha256").update(crypto.randomUUID(), "utf8").digest("hex");
 }
 
 async function signIn(email: string, password: string): Promise<Identity> {
@@ -2072,11 +2147,16 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
     const snapshotBeforeConflict = await currentLiveSnapshot();
     try {
-      await sql`
-        update public.business_configuration_heads
-        set head_revision = head_revision + 1
-        where business_id = ${business.id}::uuid
-      `;
+      await sql.begin(async (transaction) => {
+        await transaction.unsafe(
+          "set local session_replication_role = replica",
+        );
+        await transaction`
+          update public.business_configuration_heads
+          set head_revision = head_revision + 1
+          where business_id = ${business.id}::uuid
+        `;
+      });
       const conflicted = await service.validateChangeSet(stale.id);
       expect(conflicted).toMatchObject({
         status: "conflicted",
@@ -2086,11 +2166,16 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       });
       expect(await currentLiveSnapshot()).toEqual(snapshotBeforeConflict);
     } finally {
-      await sql`
-        update public.business_configuration_heads
-        set head_revision = ${headBeforeProposal.head_revision}
-        where business_id = ${business.id}::uuid
-      `;
+      await sql.begin(async (transaction) => {
+        await transaction.unsafe(
+          "set local session_replication_role = replica",
+        );
+        await transaction`
+          update public.business_configuration_heads
+          set head_revision = ${headBeforeProposal.head_revision}
+          where business_id = ${business.id}::uuid
+        `;
+      });
     }
   });
 
@@ -2388,5 +2473,1211 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       .delete()
       .eq("id", proposal.id);
     expect(deleted.error).not.toBeNull();
+  });
+
+  it("[application] applies an Owner proposal atomically and retries idempotently", async () => {
+    await synchronizeTestBaseline();
+    baselineSnapshot = asSnapshot(await currentLiveSnapshot());
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const headBefore = await currentHead();
+    const [recordCountBefore] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.records
+      where business_id = ${business.id}::uuid
+    `;
+    const changeSet = await service.proposeChangeSet({
+      title: "Apply Owner configuration",
+      description: "Phase 3A Owner application proof.",
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_owner_probe",
+          singular_label: "Owner application probe",
+          plural_label: "Owner application probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    const validated = await service.validateChangeSet(changeSet.id);
+    expect(validated).toMatchObject({
+      status: "validated",
+      validated_by: owner.user.id,
+    });
+    const storedValidation = validated.validation_result_json;
+    const validatedAt = validated.validated_at;
+
+    const applied = await service.applyChangeSet(changeSet.id);
+    expect(applied).toMatchObject({
+      status: "applied",
+      applied_by: owner.user.id,
+      closed_at: null,
+      closed_by: null,
+      validated_at: validatedAt,
+      validation_result_json: storedValidation,
+    });
+    expect(applied.applied_version_id).not.toBeNull();
+
+    const headAfter = await currentHead();
+    expect(headAfter).toMatchObject({
+      active_version_id: applied.applied_version_id,
+      head_revision: headBefore.head_revision + 1,
+    });
+    const version = requireData(
+      await admin
+        .from("configuration_versions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("id", applied.applied_version_id as string)
+        .single(),
+      "Could not load applied configuration version",
+    );
+    expect(version).toMatchObject({
+      kind: "change",
+      version_number: Number(headAfter.head_revision),
+      parent_version_id: headBefore.active_version_id,
+      restored_from_version_id: null,
+      source_change_set_id: applied.id,
+      snapshot_schema_version: 1,
+      snapshot_json: applied.candidate_snapshot_json,
+      snapshot_checksum: applied.candidate_checksum,
+      created_by: owner.user.id,
+    });
+    expect(await currentLiveSnapshot()).toEqual(
+      applied.candidate_snapshot_json,
+    );
+    const [liveChecksum] = await sql<{ checksum: string }[]>`
+      select private.configuration_snapshot_checksum_v1(
+        private.configuration_snapshot_v1(${business.id}::uuid)
+      ) as checksum
+    `;
+    expect(liveChecksum?.checksum).toBe(applied.candidate_checksum);
+    expect(version.snapshot_checksum).toBe(liveChecksum?.checksum);
+    const [recordCountAfter] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.records
+      where business_id = ${business.id}::uuid
+    `;
+    expect(recordCountAfter?.count).toBe(recordCountBefore?.count);
+
+    const versionCountBeforeRetry = await admin
+      .from("configuration_versions")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id);
+    expect(versionCountBeforeRetry.error).toBeNull();
+    const retried = await service.applyChangeSet(changeSet.id);
+    expect(retried).toMatchObject({
+      status: "applied",
+      applied_version_id: applied.applied_version_id,
+      applied_at: applied.applied_at,
+      applied_by: applied.applied_by,
+    });
+    expect(await currentHead()).toEqual(headAfter);
+    const versionCountAfterRetry = await admin
+      .from("configuration_versions")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id);
+    expect(versionCountAfterRetry.error).toBeNull();
+    expect(versionCountAfterRetry.count).toBe(versionCountBeforeRetry.count);
+  });
+
+  it("[application] allows Admin application and denies Staff, cross-Business, actor mismatch, and non-validated states", async () => {
+    const ownerService = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const adminService = new ConfigurationChangeService(administrator.client, {
+      actorId: administrator.user.id,
+      businessId: business.id,
+    });
+    const staffService = new ConfigurationChangeService(staff.client, {
+      actorId: staff.user.id,
+      businessId: business.id,
+    });
+    const otherTenantService = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: otherBusiness.id,
+    });
+    const proposed = await ownerService.proposeChangeSet({
+      title: "Application permission probe",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_permission_probe",
+          singular_label: "Permission probe",
+          plural_label: "Permission probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    const headBefore = await currentHead();
+    const snapshotBefore = await currentLiveSnapshot();
+
+    await expectEngineError(
+      staffService.applyChangeSet(proposed.id),
+      "configuration_owner_or_admin_required",
+    );
+    await expectEngineError(
+      otherTenantService.applyChangeSet(proposed.id),
+      "configuration_change_set_not_found",
+    );
+    const mismatched = await owner.client.rpc("apply_configuration_change", {
+      expected_actor_id: administrator.user.id,
+      expected_business_id: business.id,
+      requested_change_set_id: proposed.id,
+    });
+    expect(mismatched.error?.message).toContain(
+      "configuration_actor_context_mismatch",
+    );
+    await expectEngineError(
+      ownerService.applyChangeSet(proposed.id),
+      "configuration_change_set_not_applicable",
+    );
+
+    const abandonedProposal = await ownerService.proposeChangeSet({
+      title: "Abandoned application probe",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_abandoned_probe",
+          singular_label: "Abandoned probe",
+          plural_label: "Abandoned probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    await ownerService.abandonChangeSet(abandonedProposal.id);
+    await expectEngineError(
+      ownerService.applyChangeSet(abandonedProposal.id),
+      "configuration_change_set_not_applicable",
+    );
+    expect(await currentHead()).toEqual(headBefore);
+    expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+
+    const adminProposal = await adminService.proposeChangeSet({
+      title: "Admin application",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_admin_probe",
+          singular_label: "Admin application probe",
+          plural_label: "Admin application probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    await adminService.validateChangeSet(adminProposal.id);
+    const applied = await adminService.applyChangeSet(adminProposal.id);
+    expect(applied).toMatchObject({
+      status: "applied",
+      applied_by: administrator.user.id,
+    });
+  });
+
+  it("[application] serializes duplicate and competing applications", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const duplicate = await service.proposeChangeSet({
+      title: "Concurrent duplicate application",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_duplicate_probe",
+          singular_label: "Duplicate probe",
+          plural_label: "Duplicate probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    await service.validateChangeSet(duplicate.id);
+    const headBeforeDuplicate = await currentHead();
+    const [first, second] = await Promise.all([
+      service.applyChangeSet(duplicate.id),
+      service.applyChangeSet(duplicate.id),
+    ]);
+    expect(first.status).toBe("applied");
+    expect(second.status).toBe("applied");
+    expect(first.applied_version_id).toBe(second.applied_version_id);
+    expect(first.applied_at).toBe(second.applied_at);
+    expect((await currentHead()).head_revision).toBe(
+      headBeforeDuplicate.head_revision + 1,
+    );
+    const duplicateVersions = requireData(
+      await admin
+        .from("configuration_versions")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("source_change_set_id", duplicate.id),
+      "Could not load duplicate application versions",
+    );
+    expect(duplicateVersions).toHaveLength(1);
+
+    const proposalA = await service.proposeChangeSet({
+      title: "Same-base proposal A",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_competing_a",
+          singular_label: "Competing A",
+          plural_label: "Competing A records",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    const proposalB = await service.proposeChangeSet({
+      title: "Same-base proposal B",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_competing_b",
+          singular_label: "Competing B",
+          plural_label: "Competing B records",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    const validatedA = await service.validateChangeSet(proposalA.id);
+    const validatedB = await service.validateChangeSet(proposalB.id);
+    const [resultA, resultB] = await Promise.all([
+      service.applyChangeSet(proposalA.id),
+      service.applyChangeSet(proposalB.id),
+    ]);
+    const applied = resultA.status === "applied" ? resultA : resultB;
+    const conflicted = resultA.status === "conflicted" ? resultA : resultB;
+    const priorValidation =
+      conflicted.id === validatedA.id ? validatedA : validatedB;
+    expect(applied.status).toBe("applied");
+    expect(conflicted).toMatchObject({
+      status: "conflicted",
+      closed_by: owner.user.id,
+      validation_result_json: priorValidation.validation_result_json,
+      validated_by: priorValidation.validated_by,
+      validated_at: priorValidation.validated_at,
+      applied_version_id: null,
+    });
+    const conflictedVersions = requireData(
+      await admin
+        .from("configuration_versions")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("source_change_set_id", conflicted.id),
+      "Could not inspect conflicted proposal versions",
+    );
+    expect(conflictedVersions).toHaveLength(0);
+    expect(await currentLiveSnapshot()).toEqual(
+      applied.candidate_snapshot_json,
+    );
+  });
+
+  it("[application] rejects application-time incompatibility without changing projection, version, head, or Records", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const fixture = await service.proposeChangeSet({
+      title: "Create application compatibility fixture",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "phase_3_compatibility",
+          singular_label: "Application compatibility record",
+          plural_label: "Application compatibility records",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+        {
+          op: "set_field",
+          object_key: "phase_3_compatibility",
+          key: "value",
+          label: "Value",
+          field_type: "short_text",
+          required: true,
+          default_value: null,
+          settings_json: {},
+          position: 0,
+          is_active: true,
+        },
+      ],
+    });
+    await service.validateChangeSet(fixture.id);
+    await service.applyChangeSet(fixture.id);
+    const current = asSnapshot(await currentLiveSnapshot());
+    const field = entity(
+      current.field_definitions.filter(
+        (candidateField) =>
+          candidateField.object_key === "phase_3_compatibility",
+      ),
+      "value",
+    );
+    const changeSet = await service.proposeChangeSet({
+      title: "Change field after validation",
+      description: null,
+      operations: [
+        setFieldFrom(field, {
+          field_type: "number",
+        }),
+      ],
+    });
+    const validated = await service.validateChangeSet(changeSet.id);
+    expect(validated.status).toBe("validated");
+
+    const configuredObject = entity(
+      current.object_definitions,
+      "phase_3_compatibility",
+    );
+    const createdRecord = requireData(
+      await owner.client.rpc("create_graph_record", {
+        expected_business_id: business.id,
+        requested_data: { value: "old format" },
+        target_object_definition_id: requiredString(
+          configuredObject.id,
+          "Compatibility Object ID",
+        ),
+      }),
+      "Could not insert application-time compatibility Record",
+    );
+    const snapshotBefore = await currentLiveSnapshot();
+    const headBefore = await currentHead();
+    const versionsBefore = await admin
+      .from("configuration_versions")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id);
+    const rejected = await service.applyChangeSet(changeSet.id);
+
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      applied_version_id: null,
+      closed_by: owner.user.id,
+      validated_by: owner.user.id,
+    });
+    expect(rejected.validation_result_json).toMatchObject({
+      outcome: "invalid",
+      errors: [
+        {
+          code: "existing_records_incompatible",
+        },
+      ],
+    });
+    expect(rejected.validated_at).toBe(rejected.closed_at);
+    expect(rejected.validation_result_json).not.toEqual(
+      validated.validation_result_json,
+    );
+    expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+    expect(await currentHead()).toEqual(headBefore);
+    const versionsAfter = await admin
+      .from("configuration_versions")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id);
+    expect(versionsAfter.count).toBe(versionsBefore.count);
+    expect(
+      requireData(
+        await admin
+          .from("records")
+          .select("data_json")
+          .eq("business_id", business.id)
+          .eq("id", createdRecord.id)
+          .single(),
+        "Application-time compatibility Record was lost",
+      ).data_json,
+    ).toEqual({ value: "old format" });
+    await expectEngineError(
+      service.applyChangeSet(changeSet.id),
+      "configuration_change_set_not_applicable",
+    );
+  });
+
+  it("[application] fails closed on immutable replay tampering and projection divergence", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+
+    for (const tamperKind of [
+      "operations",
+      "allocation",
+      "display_context",
+    ] as const) {
+      const changeSet = await service.proposeChangeSet({
+        title: `Application ${tamperKind} tamper`,
+        description: null,
+        operations: [
+          {
+            op: "set_object",
+            key: `phase_3_${tamperKind}_tamper`,
+            singular_label: "Tamper probe",
+            plural_label: "Tamper probes",
+            description: "",
+            icon: null,
+            is_active: true,
+          },
+        ],
+      });
+      await service.validateChangeSet(changeSet.id);
+      const snapshotBefore = await currentLiveSnapshot();
+      const headBefore = await currentHead();
+      await sql.begin(async (transaction) => {
+        await transaction.unsafe(
+          "set local session_replication_role = replica",
+        );
+        if (tamperKind === "operations") {
+          await transaction`
+            update public.configuration_change_sets
+            set operations_json = jsonb_set(
+              operations_json,
+              '{0,singular_label}',
+              '"Tampered replay probe"'::jsonb
+            )
+            where business_id = ${business.id}::uuid
+              and id = ${changeSet.id}::uuid
+          `;
+        } else if (tamperKind === "allocation") {
+          await transaction`
+            update public.configuration_change_sets
+            set id_allocations_json = jsonb_build_object(
+              ${`object:phase_3_${tamperKind}_tamper`}::text,
+              gen_random_uuid()
+            )
+            where business_id = ${business.id}::uuid
+              and id = ${changeSet.id}::uuid
+          `;
+        } else {
+          await transaction`
+            update public.configuration_change_sets
+            set display_context_json = jsonb_build_object(
+              'schema_version',
+              1,
+              'locations',
+              jsonb_build_object(
+                ${otherLocation.id}::text,
+                jsonb_build_object('name', 'Other Location')
+              )
+            )
+            where business_id = ${business.id}::uuid
+              and id = ${changeSet.id}::uuid
+          `;
+        }
+      });
+      await expectEngineError(
+        service.applyChangeSet(changeSet.id),
+        tamperKind === "display_context"
+          ? "configuration_candidate_replay_failed"
+          : "configuration_candidate_replay_mismatch",
+      );
+      expect((await service.getChangeSet(changeSet.id)).status).toBe(
+        "validated",
+      );
+      expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+      expect(await currentHead()).toEqual(headBefore);
+    }
+
+    const current = asSnapshot(await currentLiveSnapshot());
+    const probe = entity(current.object_definitions, "phase_3_owner_probe");
+    const divergent = await service.proposeChangeSet({
+      title: "Application projection divergence",
+      description: null,
+      operations: [
+        {
+          ...setObjectFrom(probe, true),
+          plural_label: "Owner application divergence probes",
+        },
+      ],
+    });
+    await service.validateChangeSet(divergent.id);
+    const headBefore = await currentHead();
+    const originalLabel = requiredString(
+      probe.singular_label,
+      "Owner probe label",
+    );
+    let restoreError: unknown;
+    try {
+      const changed = await owner.client
+        .from("object_definitions")
+        .update({ singular_label: "Unversioned application divergence" })
+        .eq("business_id", business.id)
+        .eq("id", requiredString(probe.id, "Owner probe ID"));
+      if (changed.error) {
+        throw changed.error;
+      }
+      await expectEngineError(
+        service.applyChangeSet(divergent.id),
+        "configuration_projection_out_of_sync",
+      );
+      expect((await service.getChangeSet(divergent.id)).status).toBe(
+        "validated",
+      );
+      expect(await currentHead()).toEqual(headBefore);
+    } finally {
+      const restored = await owner.client
+        .from("object_definitions")
+        .update({ singular_label: originalLabel })
+        .eq("business_id", business.id)
+        .eq("id", requiredString(probe.id, "Owner probe ID"));
+      restoreError = restored.error;
+    }
+    if (restoreError) {
+      throw restoreError;
+    }
+  });
+
+  it("[application] rolls back projection, version, head, and lifecycle at all three injected failure points", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const failurePoints = [
+      "before_version",
+      "before_head",
+      "before_applied_status",
+    ] as const;
+
+    for (const failurePoint of failurePoints) {
+      const changeSet = await service.proposeChangeSet({
+        title: `Atomic failure ${failurePoint}`,
+        description: null,
+        operations: [
+          {
+            op: "set_object",
+            key: `phase_3_failure_${failurePoint}`,
+            singular_label: "Atomic failure probe",
+            plural_label: "Atomic failure probes",
+            description: "",
+            icon: null,
+            is_active: true,
+          },
+        ],
+      });
+      await service.validateChangeSet(changeSet.id);
+      const snapshotBefore = await currentLiveSnapshot();
+      const headBefore = await currentHead();
+      const versionsBefore = await admin
+        .from("configuration_versions")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id);
+      const recordsBefore = await admin
+        .from("records")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id);
+
+      try {
+        await sql`
+          create function private.test_fail_configuration_application()
+          returns trigger
+          language plpgsql
+          set search_path = ''
+          as $$
+          begin
+            raise exception 'test_atomic_application_failure'
+              using errcode = 'P0001';
+          end;
+          $$
+        `;
+        if (failurePoint === "before_version") {
+          await sql`
+            create trigger test_fail_configuration_application
+            before insert on public.configuration_versions
+            for each row
+            when (new.kind = 'change')
+            execute function
+              private.test_fail_configuration_application()
+          `;
+        } else if (failurePoint === "before_head") {
+          await sql`
+            create trigger test_fail_configuration_application
+            before update on public.business_configuration_heads
+            for each row execute function
+              private.test_fail_configuration_application()
+          `;
+        } else {
+          await sql`
+            create trigger test_fail_configuration_application
+            before update on public.configuration_change_sets
+            for each row
+            when (new.status = 'applied')
+            execute function
+              private.test_fail_configuration_application()
+          `;
+        }
+
+        await expect(
+          service.applyChangeSet(changeSet.id),
+        ).rejects.toBeInstanceOf(ConfigurationChangeServiceError);
+      } finally {
+        if (failurePoint === "before_version") {
+          await sql`
+            drop trigger if exists test_fail_configuration_application
+            on public.configuration_versions
+          `;
+        } else if (failurePoint === "before_head") {
+          await sql`
+            drop trigger if exists test_fail_configuration_application
+            on public.business_configuration_heads
+          `;
+        } else {
+          await sql`
+            drop trigger if exists test_fail_configuration_application
+            on public.configuration_change_sets
+          `;
+        }
+        await sql`
+          drop function if exists
+            private.test_fail_configuration_application()
+        `;
+      }
+
+      expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+      expect(await currentHead()).toEqual(headBefore);
+      expect((await service.getChangeSet(changeSet.id)).status).toBe(
+        "validated",
+      );
+      const versionsAfter = await admin
+        .from("configuration_versions")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id);
+      const recordsAfter = await admin
+        .from("records")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id);
+      expect(versionsAfter.count).toBe(versionsBefore.count);
+      expect(recordsAfter.count).toBe(recordsBefore.count);
+    }
+  });
+
+  it("[application] serializes both Record/application race orderings through existing Object locks", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const installFixture = async (key: string): Promise<SnapshotV1> => {
+      const fixture = await service.proposeChangeSet({
+        title: `Install ${key}`,
+        description: null,
+        operations: [
+          {
+            op: "set_object",
+            key,
+            singular_label: "Race record",
+            plural_label: "Race records",
+            description: "",
+            icon: null,
+            is_active: true,
+          },
+          {
+            op: "set_field",
+            object_key: key,
+            key: "value",
+            label: "Value",
+            field_type: "short_text",
+            required: true,
+            default_value: null,
+            settings_json: {},
+            position: 0,
+            is_active: true,
+          },
+        ],
+      });
+      await service.validateChangeSet(fixture.id);
+      await service.applyChangeSet(fixture.id);
+      return asSnapshot(await currentLiveSnapshot());
+    };
+    const proposeNumberField = async (
+      snapshot: SnapshotV1,
+      objectKey: string,
+    ): Promise<ChangeSet> => {
+      const field = entity(
+        snapshot.field_definitions.filter(
+          (candidateField) => candidateField.object_key === objectKey,
+        ),
+        "value",
+      );
+      const changeSet = await service.proposeChangeSet({
+        title: `Change ${objectKey} value to number`,
+        description: null,
+        operations: [
+          setFieldFrom(field, {
+            field_type: "number",
+          }),
+        ],
+      });
+      return service.validateChangeSet(changeSet.id);
+    };
+
+    const firstKey = "phase_3_record_first";
+    const firstSnapshot = await installFixture(firstKey);
+    const firstObject = entity(firstSnapshot.object_definitions, firstKey);
+    const recordFirstProposal = await proposeNumberField(
+      firstSnapshot,
+      firstKey,
+    );
+    const recordConnection = postgres(settings.databaseUrl, { max: 1 });
+    const applicationConnection = postgres(settings.databaseUrl, { max: 1 });
+    const recordInserted = createDeferred<string>();
+    const releaseRecord = createDeferred<void>();
+    const applicationName = `m5-application-waits-${crypto.randomUUID()}`;
+    let recordPromise: Promise<string> | undefined;
+    try {
+      recordPromise = recordConnection.begin(async (transaction) => {
+        await transaction`
+          select set_config(
+            'application_name',
+            'm5-record-write-first',
+            true
+          )
+        `;
+        const [inserted] = await transaction<{ id: string }[]>`
+          insert into public.records (
+            business_id,
+            object_definition_id,
+            data_json
+          )
+          values (
+            ${business.id}::uuid,
+            ${requiredString(firstObject.id, "Record-first Object ID")}::uuid,
+            ${recordConnection.json({ value: "old format" })}::jsonb
+          )
+          returning id
+        `;
+        if (!inserted) {
+          throw new Error("Record-first insert returned no row.");
+        }
+        recordInserted.resolve(inserted.id);
+        await releaseRecord.promise;
+        return inserted.id;
+      });
+      const recordId = await recordInserted.promise;
+      const applicationPromise = applyThroughDatabase(
+        applicationConnection,
+        applicationName,
+        owner.user.id,
+        recordFirstProposal.id,
+      );
+      await waitForDatabaseLock(sql, applicationName);
+      releaseRecord.resolve();
+      expect(await recordPromise).toBe(recordId);
+      const rejected = await applicationPromise;
+      expect(rejected).toMatchObject({
+        status: "rejected",
+        applied_version_id: null,
+      });
+      expect(rejected.validation_result_json).toMatchObject({
+        outcome: "invalid",
+        errors: [{ code: "existing_records_incompatible" }],
+      });
+      expect(
+        requireData(
+          await admin
+            .from("records")
+            .select("id")
+            .eq("business_id", business.id)
+            .eq("id", recordId)
+            .single(),
+          "Record-first row did not survive rejected application",
+        ).id,
+      ).toBe(recordId);
+    } finally {
+      releaseRecord.resolve();
+      await recordPromise?.catch(() => undefined);
+      await recordConnection.end();
+      await applicationConnection.end();
+    }
+
+    const secondKey = "phase_3_application_first";
+    const secondSnapshot = await installFixture(secondKey);
+    const secondObject = entity(secondSnapshot.object_definitions, secondKey);
+    const applicationFirstProposal = await proposeNumberField(
+      secondSnapshot,
+      secondKey,
+    );
+    const blocker = postgres(settings.databaseUrl, { max: 1 });
+    const applicationFirstConnection = postgres(settings.databaseUrl, {
+      max: 1,
+    });
+    const waitingRecordConnection = postgres(settings.databaseUrl, { max: 1 });
+    const pauseKey = 5300260728;
+    const applicationFirstName = `m5-application-first-${crypto.randomUUID()}`;
+    const waitingRecordName = `m5-record-waits-${crypto.randomUUID()}`;
+    let applicationPromise: Promise<ChangeSet> | undefined;
+    let waitingRecord:
+      Promise<{ ok: true } | { error: unknown; ok: false }> | undefined;
+    try {
+      await sql`
+        create function private.test_pause_application_object()
+        returns trigger
+        language plpgsql
+        set search_path = ''
+        as $$
+        begin
+          perform pg_advisory_xact_lock(5300260728);
+          return new;
+        end;
+        $$
+      `;
+      await sql`
+        create trigger test_pause_application_object
+        before update on public.object_definitions
+        for each row
+        when (
+          new.key = 'phase_3_application_first'
+          and old.is_active
+          and not new.is_active
+        )
+        execute function
+          private.test_pause_application_object()
+      `;
+
+      await blocker.begin(async (transaction) => {
+        await transaction`select pg_advisory_xact_lock(${pauseKey})`;
+        applicationPromise = applyThroughDatabase(
+          applicationFirstConnection,
+          applicationFirstName,
+          owner.user.id,
+          applicationFirstProposal.id,
+        );
+        await waitForDatabaseLock(sql, applicationFirstName);
+
+        waitingRecord = waitingRecordConnection
+          .begin(async (recordTransaction) => {
+            await recordTransaction`
+              select set_config(
+                'application_name',
+                ${waitingRecordName},
+                true
+              )
+            `;
+            await recordTransaction`
+              insert into public.records (
+                business_id,
+                object_definition_id,
+                data_json
+              )
+              values (
+                ${business.id}::uuid,
+                ${requiredString(secondObject.id, "Application-first Object ID")}::uuid,
+                ${waitingRecordConnection.json({
+                  value: "old format",
+                })}::jsonb
+              )
+            `;
+          })
+          .then(
+            () => ({ ok: true as const }),
+            (error: unknown) => ({ error, ok: false as const }),
+          );
+        await waitForDatabaseLock(sql, waitingRecordName);
+      });
+      if (!applicationPromise || !waitingRecord) {
+        throw new Error("Application-first race did not start.");
+      }
+      const applied = await applicationPromise;
+      expect(applied.status).toBe("applied");
+      const recordOutcome = await waitingRecord;
+      expect(recordOutcome.ok).toBe(false);
+      if (!recordOutcome.ok) {
+        expect(String(recordOutcome.error)).toContain(
+          "Invalid value for field",
+        );
+      }
+      const staleRecords = requireData(
+        await admin
+          .from("records")
+          .select("id")
+          .eq("business_id", business.id)
+          .eq(
+            "object_definition_id",
+            requiredString(secondObject.id, "Application-first Object ID"),
+          ),
+        "Could not inspect application-first Records",
+      );
+      expect(staleRecords).toHaveLength(0);
+    } finally {
+      await sql`
+        drop trigger if exists test_pause_application_object
+        on public.object_definitions
+      `;
+      await sql`
+        drop function if exists private.test_pause_application_object()
+      `;
+      await blocker.end();
+      await applicationFirstConnection.end();
+      await waitingRecordConnection.end();
+    }
+  });
+
+  it("[application] preserves an accepted preorder when Page application waits behind public locks", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const current = asSnapshot(await currentLiveSnapshot());
+    const page = entity(current.pages, "public_preorder");
+    const changeSet = await service.proposeChangeSet({
+      title: "Draft public preorder Page",
+      description: null,
+      operations: [
+        {
+          op: "set_page",
+          key: "public_preorder",
+          title: requiredString(page.title, "Public Page title"),
+          slug: requiredString(page.slug, "Public Page slug"),
+          audience: "public",
+          layout_json: page.layout_json as {
+            blocks: [{ preorder_key: string; type: "preorder" }];
+          },
+          status: "draft",
+          is_active: requiredBoolean(page.is_active, "Public Page active"),
+        },
+      ],
+    });
+    await service.validateChangeSet(changeSet.id);
+
+    const [catalogueRow] = await sql<{ catalogue: Json }[]>`
+      select public.resolve_public_preorder(
+        ${demoBusinessSlug},
+        'preorder',
+        'bakery_preorder'
+      ) as catalogue
+    `;
+    if (!catalogueRow) {
+      throw new Error("Public preorder catalogue returned no row.");
+    }
+    const catalogue = publicPreorderCatalogueSchema.parse(
+      catalogueRow.catalogue,
+    );
+    const location = catalogue.preorder.locations.find(({ slots }) =>
+      slots.some(({ available }) => available),
+    );
+    const slot = location?.slots.find(({ available }) => available);
+    const product = catalogue.preorder.products[0];
+    if (!location || !slot || !product) {
+      throw new Error("No preorder product, Location, or slot for race test.");
+    }
+    const idempotencyToken = crypto.randomUUID();
+    const submission: PublicPreorderSubmission = {
+      idempotency_token: idempotencyToken,
+      location_id: location.id,
+      collection_at: slot.collection_at,
+      items: [{ product_id: product.id, quantity: 1 }],
+      fields: {
+        customer: {
+          name: "Phase Three Customer",
+          email: "phase-three@example.test",
+          phone: "01234 567890",
+        },
+        order: {
+          dietary_requirements: "None",
+          occasion: "Atomic application",
+        },
+      },
+      website: "",
+    };
+    const submissionConnection = postgres(settings.databaseUrl, { max: 1 });
+    const applicationConnection = postgres(settings.databaseUrl, { max: 1 });
+    const accepted = createDeferred<Json>();
+    const releaseSubmission = createDeferred<void>();
+    const applicationName = `m5-preorder-application-${crypto.randomUUID()}`;
+    let submissionPromise: Promise<Json> | undefined;
+    try {
+      submissionPromise = submissionConnection.begin(async (transaction) => {
+        await transaction`
+          select set_config(
+            'application_name',
+            'm5-preorder-accepted-first',
+            true
+          )
+        `;
+        const [submitted] = await transaction<{ result: Json }[]>`
+          select public.submit_public_preorder(
+            ${demoBusinessSlug},
+            'preorder',
+            'bakery_preorder',
+            ${transaction.json(submission as unknown as Json)}::jsonb,
+            ${requestHash()}
+          ) as result
+        `;
+        if (!submitted) {
+          throw new Error("Public preorder race returned no result.");
+        }
+        const result = publicPreorderResultSchema.parse(submitted.result);
+        expect(result.ok).toBe(true);
+        accepted.resolve(submitted.result);
+        await releaseSubmission.promise;
+        return submitted.result;
+      });
+      await accepted.promise;
+      const applicationPromise = applyThroughDatabase(
+        applicationConnection,
+        applicationName,
+        owner.user.id,
+        changeSet.id,
+      );
+      await waitForDatabaseLock(sql, applicationName);
+      releaseSubmission.resolve();
+      const submitted = publicPreorderResultSchema.parse(
+        await submissionPromise,
+      );
+      expect(submitted.ok).toBe(true);
+      const applied = await applicationPromise;
+      expect(applied.status).toBe("applied");
+
+      const storedSubmission = requireData(
+        await admin
+          .from("preorder_submissions")
+          .select("order_record_id")
+          .eq("business_id", business.id)
+          .eq("idempotency_token", idempotencyToken)
+          .single(),
+        "Accepted preorder was not preserved",
+      );
+      const orderRecordId = requiredString(
+        storedSubmission.order_record_id,
+        "Accepted Order Record ID",
+      );
+      expect(
+        requireData(
+          await admin
+            .from("records")
+            .select("id")
+            .eq("business_id", business.id)
+            .eq("id", orderRecordId)
+            .single(),
+          "Accepted Order Record was not preserved",
+        ).id,
+      ).toBe(orderRecordId);
+
+      const laterSubmission = await admin.rpc("submit_public_preorder", {
+        requested_business_slug: demoBusinessSlug,
+        requested_page_slug: "preorder",
+        requested_preorder_key: "bakery_preorder",
+        requested_request_hash: requestHash(),
+        submission: {
+          ...submission,
+          idempotency_token: crypto.randomUUID(),
+        },
+      });
+      if (laterSubmission.error) {
+        throw laterSubmission.error;
+      }
+      expect(publicPreorderResultSchema.parse(laterSubmission.data)).toEqual({
+        code: "not_found",
+        ok: false,
+      });
+    } finally {
+      releaseSubmission.resolve();
+      await submissionPromise?.catch(() => undefined);
+      await submissionConnection.end();
+      await applicationConnection.end();
+    }
+  });
+
+  it("[application] enforces head advances and cascades an applied audit cycle only with whole-Business deletion", async () => {
+    const currentHeadRow = await currentHead();
+    await expect(
+      sql`
+        update public.business_configuration_heads
+        set head_revision = head_revision + 2
+        where business_id = ${business.id}::uuid
+      `,
+    ).rejects.toMatchObject({ code: "23514" });
+    expect(await currentHead()).toEqual(currentHeadRow);
+
+    const deletionOwner = await createIdentity("application-deletion");
+    const deletionBusiness = requireData(
+      await deletionOwner.client.rpc("create_business", {
+        business_name: `Phase 3A deletion ${crypto.randomUUID()}`,
+        requested_business_type: "test",
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create Phase 3A deletion Business",
+    );
+    createdBusinessIds.push(deletionBusiness.id);
+    const deletionService = new ConfigurationChangeService(
+      deletionOwner.client,
+      {
+        actorId: deletionOwner.user.id,
+        businessId: deletionBusiness.id,
+      },
+    );
+    const changeSet = await deletionService.proposeChangeSet({
+      title: "Applied deletion audit",
+      description: null,
+      operations: [
+        {
+          op: "set_object",
+          key: "deletion_probe",
+          singular_label: "Deletion probe",
+          plural_label: "Deletion probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+      ],
+    });
+    await deletionService.validateChangeSet(changeSet.id);
+    const applied = await deletionService.applyChangeSet(changeSet.id);
+    const versionId = applied.applied_version_id as string;
+
+    await expect(
+      sql`
+        delete from public.configuration_versions
+        where business_id = ${deletionBusiness.id}::uuid
+          and id = ${versionId}::uuid
+      `,
+    ).rejects.toMatchObject({ code: "55000" });
+    await expect(
+      sql`
+        delete from public.configuration_change_sets
+        where business_id = ${deletionBusiness.id}::uuid
+          and id = ${applied.id}::uuid
+      `,
+    ).rejects.toMatchObject({ code: "55000" });
+
+    const deleted = await admin
+      .from("businesses")
+      .delete()
+      .eq("id", deletionBusiness.id);
+    expect(deleted.error).toBeNull();
+    for (const table of [
+      "businesses",
+      "business_memberships",
+      "configuration_change_sets",
+      "configuration_versions",
+      "business_configuration_heads",
+      "object_definitions",
+      "records",
+    ] as const) {
+      const [remaining] = await sql<{ count: number }[]>`
+        select count(*)::integer as count
+        from ${sql(table)}
+        where ${
+          table === "businesses" ? sql("id") : sql("business_id")
+        } = ${deletionBusiness.id}::uuid
+      `;
+      expect(remaining?.count, `${table} did not cascade`).toBe(0);
+    }
   });
 });

@@ -379,8 +379,27 @@ validation, projection application, preview or rollback.
   equals the active immutable snapshot.
 - Phase 2B remains transitional for the same reason. An unversioned
   configuration write after proposal creation can make projection/head
-  equality fail closed during validation. Phase 3 must close those mutation
-  paths; Phase 2B does not use broad permanent locks to simulate that boundary.
+  equality fail closed during validation.
+- Phase 3A adds one authenticated Owner/Admin application transaction for
+  already validated proposals. It locks the Business head and proposal,
+  verifies their immutable base and replay, runs the existing static projector
+  as the final authoritative compatibility check, creates one immutable
+  `change` version, advances the head once and marks the proposal applied.
+  Recognised compatibility failures roll back projector writes and close the
+  proposal as rejected; stale bases close as conflicted; unexpected failures
+  roll back the complete transaction and leave the proposal validated.
+- At every successful Phase 3A application commit, the canonical normalized
+  projection, applied change-set candidate, new immutable version and active
+  head are exactly equal in both JSON and checksum. Existing direct
+  authenticated graph, experience and preorder configuration writes remain
+  temporarily available, so a later unversioned write can still create
+  divergence. Phase 3B will revoke those paths and make this engine the
+  mandatory production mutation boundary; Phase 3A does not claim that yet.
+- Existing Object locks serialize application against Record writes: Record
+  validation holds the Object row in shared mode while Field projection takes
+  the conflicting Object update lock. Public preorder submission similarly
+  retains its ordered shared locks while application parks Page and preorder
+  rows. No Business-wide advisory lock is added to production.
 
 ### Locked follow-up boundaries
 
@@ -558,7 +577,8 @@ parallel draft graph.
   reactivation. Location lifecycle changes after proposal creation affect only
   the current-eligibility result and never the stored candidate, checksum,
   allocations or semantic diff.
-- Direct authenticated configuration mutation remains open only until Phase 3.
+- Direct authenticated configuration mutation remains open only until Phase
+  3B.
   Projection divergence therefore remains an explicit engine-state failure,
   not an owner rejection.
 - Phase 2B does not apply candidates, create versions, advance heads, close

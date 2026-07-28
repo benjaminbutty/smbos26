@@ -26,6 +26,7 @@
     "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
     "test:changes": "vitest run --config vitest.changes.config.ts",
     "test:validation": "vitest run --config vitest.validation.config.ts",
+    "test:application": "vitest run --config vitest.application.config.ts",
     "test:watch": "vitest",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",

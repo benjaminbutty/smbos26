@@ -61,6 +61,9 @@ jobs:
       - name: Run rollback-only configuration validation tests
         run: npm run test:validation
 
+      - name: Run atomic configuration application tests
+        run: npm run test:application
+
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration
 

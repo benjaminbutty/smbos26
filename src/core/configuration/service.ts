@@ -44,8 +44,12 @@ const engineErrorMessages: Readonly<Record<string, string>> = {
     "The stored configuration proposal could not be reproduced safely.",
   configuration_candidate_replay_mismatch:
     "The stored configuration proposal failed its integrity check.",
+  configuration_change_set_not_applicable:
+    "This configuration proposal is not ready to be applied.",
   configuration_change_set_not_validatable:
     "This configuration proposal can no longer be validated.",
+  configuration_head_version_mismatch:
+    "The active configuration history is inconsistent. No changes were applied.",
   configuration_owner_or_admin_required:
     "Owner or Admin access is required for configuration changes.",
   configuration_projection_out_of_sync:
@@ -89,7 +93,10 @@ function assertTrustedResponse(
       changeSet.validation_result_json,
     );
     if (
-      (changeSet.status === "validated" && result.outcome !== "valid") ||
+      ((changeSet.status === "validated" ||
+        changeSet.status === "applied" ||
+        changeSet.status === "conflicted") &&
+        result.outcome !== "valid") ||
       (changeSet.status === "rejected" && result.outcome !== "invalid")
     ) {
       throw new ConfigurationChangeServiceError(
@@ -99,7 +106,8 @@ function assertTrustedResponse(
     }
   } else if (
     changeSet.status === "validated" ||
-    changeSet.status === "rejected"
+    changeSet.status === "rejected" ||
+    changeSet.status === "applied"
   ) {
     throw new ConfigurationChangeServiceError(
       "The configuration validation response was incomplete.",
@@ -218,6 +226,24 @@ export class ConfigurationChangeService {
     if (error || !data) {
       throw new ConfigurationChangeServiceError(
         "Could not validate the configuration proposal.",
+        error,
+      );
+    }
+    return assertTrustedResponse(data, this.#businessId);
+  }
+
+  async applyChangeSet(changeSetId: string): Promise<ConfigurationChangeSet> {
+    const { data, error } = await this.#client.rpc(
+      "apply_configuration_change",
+      {
+        expected_business_id: this.#businessId,
+        expected_actor_id: this.#actorId,
+        requested_change_set_id: changeSetIdSchema.parse(changeSetId),
+      },
+    );
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not apply the configuration proposal.",
         error,
       );
     }

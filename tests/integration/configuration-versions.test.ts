@@ -811,7 +811,7 @@ describe("Milestone 5 Phase 1 configuration baselines", () => {
         set active_version_id = ${otherBaseline.id}::uuid
         where business_id = ${business.id}::uuid
       `,
-    ).rejects.toMatchObject({ code: "23503" });
+    ).rejects.toMatchObject({ code: "23514" });
   });
 
   it("allows legitimate Business deletion to cascade its immutable baseline and head", async () => {
