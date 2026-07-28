@@ -316,7 +316,7 @@ Trade-offs and deliberate limits:
 
 ## ADR-006 - Immutable configuration baselines and active heads
 
-**Status:** Accepted for v0.1 (Milestone 5 Phase 1)
+**Status:** Accepted for v0.1 (Milestone 5 Phase 3B)
 
 **Date:** 28 July 2026
 
@@ -374,12 +374,9 @@ validation, projection application, preview or rollback.
   cascades its version history and head. Owner/Admin may read history and the
   head; Staff and anonymous callers may not; authenticated callers have no
   direct write grants.
-- Phase 1 deliberately leaves existing configuration mutation paths open.
-  Therefore it does not yet assert that the active normalized projection always
-  equals the active immutable snapshot.
-- Phase 2B remains transitional for the same reason. An unversioned
-  configuration write after proposal creation can make projection/head
-  equality fail closed during validation.
+- Phase 1 deliberately left existing configuration mutation paths open, and
+  Phase 2B therefore failed closed when an unversioned write made the
+  projection diverge from the active version.
 - Phase 3A adds one authenticated Owner/Admin application transaction for
   already validated proposals. It locks the Business head and proposal,
   verifies their immutable base and replay, runs the existing static projector
@@ -388,13 +385,28 @@ validation, projection application, preview or rollback.
   Recognised compatibility failures roll back projector writes and close the
   proposal as rejected; stale bases close as conflicted; unexpected failures
   roll back the complete transaction and leave the proposal validated.
-- At every successful Phase 3A application commit, the canonical normalized
+- At every successful application commit, the canonical normalized
   projection, applied change-set candidate, new immutable version and active
-  head are exactly equal in both JSON and checksum. Existing direct
-  authenticated graph, experience and preorder configuration writes remain
-  temporarily available, so a later unversioned write can still create
-  divergence. Phase 3B will revoke those paths and make this engine the
-  mandatory production mutation boundary; Phase 3A does not claim that yet.
+  head are exactly equal in both JSON and checksum.
+- Phase 3B makes the change-set engine the mandatory normal production
+  configuration mutation boundary. `anon`, `authenticated` and `service_role`
+  have no direct `INSERT`, `UPDATE` or `DELETE` privilege on the eight
+  versioned projection tables. Authenticated members retain tenant-scoped
+  runtime `SELECT`; anonymous runtime reads continue only through narrow
+  public resolvers.
+- Legacy preorder configuration RPCs remain only as inaccessible historical
+  implementations. Application roles cannot execute them, and private
+  materialisation, diff, projector, sandbox, assertion and lifecycle helpers
+  cannot be invoked directly. The authenticated mutation allow-list is
+  propose, validate, apply and abandon.
+- Production graph, experience and preorder TypeScript services expose
+  runtime reads and operational mutations only. Local integration setup may
+  use a database-owner fixture helper outside `src/`; this is not an
+  application credential, public RPC or production capability.
+- Operational Records, Record Relationships and Record-to-Location links are
+  deliberately outside configuration versioning. Location creation, updates
+  and archival also remain a first-class operational lifecycle; individual
+  Location deletion stays unavailable.
 - Existing Object locks serialize application against Record writes: Record
   validation holds the Object row in shared mode while Field projection takes
   the conflicting Object update lock. Public preorder submission similarly
@@ -420,9 +432,17 @@ validation, projection application, preview or rollback.
 - The same stable configuration identity produces deterministic snapshot JSON
   and checksum. Independently recreated Businesses may differ because their
   configuration UUIDs differ.
-- Bedford Bakery remains on the temporary direct fixture path in Phase 1. Its
-  eventual configured Version 2 and proposal conversion belong to later
-  Milestone 5 phases.
+- Bedford Bakery starts with the same immutable empty Version 1 as every new
+  Business. The local demo authenticates its Owner, proposes, validates and
+  applies `Install Bedford Bakery configuration`, producing configured Version
+  2 before any Product Records are created. Re-running the seed verifies that
+  state instead of creating Version 3.
+- Bedford's Product, Customer, Order and Order Item definitions use the normal
+  `set_object` rule: `kind = custom` and `semantic_type = null`. The runtime
+  has no dependency on template classification.
+- Future AI configuration work must submit the same allow-listed structured
+  operations through this lifecycle. It receives no direct SQL, table mutation
+  or private projector capability.
 
 ## ADR-007 - Structured configuration proposals and canonical candidates
 
@@ -577,9 +597,9 @@ parallel draft graph.
   reactivation. Location lifecycle changes after proposal creation affect only
   the current-eligibility result and never the stored candidate, checksum,
   allocations or semantic diff.
-- Direct authenticated configuration mutation remains open only until Phase
-  3B.
-  Projection divergence therefore remains an explicit engine-state failure,
-  not an owner rejection.
-- Phase 2B does not apply candidates, create versions, advance heads, close
-  direct mutation, implement rollback/preview/UI, or convert the Bedford demo.
+- At the Phase 2B checkpoint, direct authenticated configuration mutation
+  remained open, so projection divergence was an explicit engine-state
+  failure, not an owner rejection. Phase 3B now closes that path.
+- Phase 2B itself did not apply candidates, create versions, advance heads,
+  close direct mutation, implement rollback/preview/UI, or convert the Bedford
+  demo; later Phase 3 work supplies application and closure.

@@ -3,32 +3,15 @@ import "server-only";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import type {
-  Database,
-  Tables,
-  TablesUpdate,
-} from "../../db/supabase/database.types";
+import type { Database, Tables } from "../../db/supabase/database.types";
 import {
-  createFormDefinitionSchema,
-  createPageDefinitionSchema,
-  createViewDefinitionSchema,
   experienceAudienceSchema,
   formConfigSchema,
   pageLayoutSchema,
   parseViewConfig,
-  toJson,
-  updateFormDefinitionSchema,
-  updatePageDefinitionSchema,
-  updateViewDefinitionSchema,
-  type CreateFormDefinitionInput,
-  type CreatePageDefinitionInput,
-  type CreateViewDefinitionInput,
   type ExperienceAudience,
   type FormConfig,
   type PageLayout,
-  type UpdateFormDefinitionInput,
-  type UpdatePageDefinitionInput,
-  type UpdateViewDefinitionInput,
   type ViewConfig,
 } from "./schemas";
 
@@ -85,12 +68,6 @@ export interface PublicPageBundle {
 }
 
 export interface ExperienceService {
-  createView(input: CreateViewDefinitionInput): Promise<Tables<"views">>;
-  updateView(input: UpdateViewDefinitionInput): Promise<Tables<"views">>;
-  createForm(input: CreateFormDefinitionInput): Promise<Tables<"forms">>;
-  updateForm(input: UpdateFormDefinitionInput): Promise<Tables<"forms">>;
-  createPage(input: CreatePageDefinitionInput): Promise<Tables<"pages">>;
-  updatePage(input: UpdatePageDefinitionInput): Promise<Tables<"pages">>;
   getViewById(viewDefinitionId: string): Promise<Tables<"views">>;
   loadView(
     viewKey: string,
@@ -189,176 +166,6 @@ export function createExperienceService(
   }
 
   return {
-    async createView(input) {
-      const value = createViewDefinitionSchema.parse(input);
-      const config = parseViewConfig(value.viewType, value.config);
-      const { data, error } = await client
-        .from("views")
-        .insert({
-          business_id: businessId,
-          key: value.key,
-          name: value.name,
-          view_type: value.viewType,
-          object_definition_id: value.objectDefinitionId,
-          config_json: toJson(config),
-          audience: value.audience,
-          is_active: value.isActive,
-        })
-        .select("*")
-        .single();
-
-      return requireResult(data, error, "Could not create the screen.");
-    },
-
-    async updateView(input) {
-      const value = updateViewDefinitionSchema.parse(input);
-      const { data: existing, error: existingError } = await client
-        .from("views")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("id", value.viewDefinitionId)
-        .maybeSingle();
-      const current = requireResult(
-        existing,
-        existingError,
-        "That screen was not found.",
-      );
-      const changes: TablesUpdate<"views"> = {};
-
-      if (value.changes.name !== undefined) {
-        changes.name = value.changes.name;
-      }
-      if (value.changes.viewType !== undefined) {
-        changes.view_type = value.changes.viewType;
-      }
-      if (value.changes.config !== undefined) {
-        changes.config_json = toJson(
-          parseViewConfig(
-            value.changes.viewType ?? current.view_type,
-            value.changes.config,
-          ),
-        );
-      }
-      if (value.changes.audience !== undefined) {
-        changes.audience = value.changes.audience;
-      }
-      if (value.changes.isActive !== undefined) {
-        changes.is_active = value.changes.isActive;
-      }
-
-      const { data, error } = await client
-        .from("views")
-        .update(changes)
-        .eq("business_id", businessId)
-        .eq("id", value.viewDefinitionId)
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not update the screen.");
-    },
-
-    async createForm(input) {
-      const value = createFormDefinitionSchema.parse(input);
-      const { data, error } = await client
-        .from("forms")
-        .insert({
-          business_id: businessId,
-          key: value.key,
-          name: value.name,
-          object_definition_id: value.objectDefinitionId,
-          mode: value.mode,
-          config_json: toJson(value.config),
-          audience: value.audience,
-          is_active: value.isActive,
-        })
-        .select("*")
-        .single();
-
-      return requireResult(data, error, "Could not create the form.");
-    },
-
-    async updateForm(input) {
-      const value = updateFormDefinitionSchema.parse(input);
-      const changes: TablesUpdate<"forms"> = {};
-
-      if (value.changes.name !== undefined) {
-        changes.name = value.changes.name;
-      }
-      if (value.changes.config !== undefined) {
-        changes.config_json = toJson(value.changes.config);
-      }
-      if (value.changes.audience !== undefined) {
-        changes.audience = value.changes.audience;
-      }
-      if (value.changes.isActive !== undefined) {
-        changes.is_active = value.changes.isActive;
-      }
-
-      const { data, error } = await client
-        .from("forms")
-        .update(changes)
-        .eq("business_id", businessId)
-        .eq("id", value.formDefinitionId)
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not update the form.");
-    },
-
-    async createPage(input) {
-      const value = createPageDefinitionSchema.parse(input);
-      const { data, error } = await client
-        .from("pages")
-        .insert({
-          business_id: businessId,
-          key: value.key,
-          title: value.title,
-          slug: value.slug,
-          audience: value.audience,
-          layout_json: toJson(value.layout),
-          status: value.status,
-          is_active: value.isActive,
-        })
-        .select("*")
-        .single();
-
-      return requireResult(data, error, "Could not create the page.");
-    },
-
-    async updatePage(input) {
-      const value = updatePageDefinitionSchema.parse(input);
-      const changes: TablesUpdate<"pages"> = {};
-
-      if (value.changes.title !== undefined) {
-        changes.title = value.changes.title;
-      }
-      if (value.changes.slug !== undefined) {
-        changes.slug = value.changes.slug;
-      }
-      if (value.changes.audience !== undefined) {
-        changes.audience = value.changes.audience;
-      }
-      if (value.changes.layout !== undefined) {
-        changes.layout_json = toJson(value.changes.layout);
-      }
-      if (value.changes.status !== undefined) {
-        changes.status = value.changes.status;
-      }
-      if (value.changes.isActive !== undefined) {
-        changes.is_active = value.changes.isActive;
-      }
-
-      const { data, error } = await client
-        .from("pages")
-        .update(changes)
-        .eq("business_id", businessId)
-        .eq("id", value.pageDefinitionId)
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not update the page.");
-    },
-
     async getViewById(viewDefinitionId) {
       const { data, error } = await client
         .from("views")

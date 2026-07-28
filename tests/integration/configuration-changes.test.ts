@@ -228,21 +228,11 @@ async function createIdentity(label: string): Promise<Identity> {
 }
 
 async function seedDemo(): Promise<void> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 120; attempt += 1) {
-    try {
-      execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      return;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-  }
-  throw lastError;
+  execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 async function currentLiveSnapshot(): Promise<Json> {
@@ -266,28 +256,6 @@ async function currentHead(): Promise<Tables<"business_configuration_heads">> {
       .single(),
     "Could not load configuration head",
   );
-}
-
-async function synchronizeTestBaseline(): Promise<void> {
-  await sql.begin(async (transaction) => {
-    await transaction.unsafe("set local session_replication_role = replica");
-    await transaction`
-      update public.configuration_versions as version
-      set
-        snapshot_json = private.configuration_snapshot_v1(
-          ${business.id}::uuid
-        ),
-        snapshot_checksum = private.configuration_snapshot_checksum_v1(
-          private.configuration_snapshot_v1(${business.id}::uuid)
-        )
-      where version.business_id = ${business.id}::uuid
-        and version.id = (
-          select head.active_version_id
-          from public.business_configuration_heads as head
-          where head.business_id = ${business.id}::uuid
-        )
-    `;
-  });
 }
 
 function setObjectFrom(
@@ -630,47 +598,6 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       throw memberships.error;
     }
 
-    const probes = await owner.client.from("object_definitions").insert([
-      {
-        business_id: business.id,
-        key: "archive_probe",
-        singular_label: "Active probe",
-        plural_label: "Active probes",
-        description: "",
-        kind: "custom",
-        is_active: true,
-      },
-      {
-        business_id: business.id,
-        key: "restore_probe",
-        singular_label: "Archived probe",
-        plural_label: "Archived probes",
-        description: "",
-        kind: "custom",
-        is_active: false,
-      },
-      {
-        business_id: business.id,
-        key: "compatibility_probe",
-        singular_label: "Compatibility probe",
-        plural_label: "Compatibility probes",
-        description: "",
-        kind: "custom",
-        is_active: true,
-      },
-      {
-        business_id: business.id,
-        key: "compatibility_child",
-        singular_label: "Compatibility child",
-        plural_label: "Compatibility children",
-        description: "",
-        kind: "custom",
-        is_active: true,
-      },
-    ]);
-    if (probes.error) {
-      throw probes.error;
-    }
     const locations = requireData(
       await admin.from("locations").select("*").eq("business_id", business.id),
       "Could not load demo Locations",
@@ -679,8 +606,155 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       locationsByName.set(location.name, location),
     );
 
+    const fixtureService = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const fixtureProposal = await fixtureService.proposeChangeSet({
+      title: "Install configuration engine test fixtures",
+      description: "Ephemeral integration-test configuration.",
+      operations: [
+        {
+          op: "set_object",
+          key: "archive_probe",
+          singular_label: "Active probe",
+          plural_label: "Active probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+        {
+          op: "set_object",
+          key: "compatibility_child",
+          singular_label: "Compatibility child",
+          plural_label: "Compatibility children",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+        {
+          op: "set_object",
+          key: "compatibility_probe",
+          singular_label: "Compatibility probe",
+          plural_label: "Compatibility probes",
+          description: "",
+          icon: null,
+          is_active: true,
+        },
+        {
+          op: "set_object",
+          key: "restore_probe",
+          singular_label: "Archived probe",
+          plural_label: "Archived probes",
+          description: "",
+          icon: null,
+          is_active: false,
+        },
+        {
+          op: "set_field",
+          object_key: "compatibility_child",
+          key: "name",
+          label: "Name",
+          field_type: "short_text",
+          required: true,
+          default_value: null,
+          settings_json: {},
+          position: 0,
+          is_active: true,
+        },
+        {
+          op: "set_field",
+          object_key: "compatibility_probe",
+          key: "category",
+          label: "Category",
+          field_type: "select",
+          required: false,
+          default_value: null,
+          settings_json: { options: ["Alpha", "Beta"] },
+          position: 1,
+          is_active: true,
+        },
+        {
+          op: "set_field",
+          object_key: "compatibility_probe",
+          key: "value",
+          label: "Value",
+          field_type: "short_text",
+          required: true,
+          default_value: null,
+          settings_json: {},
+          position: 0,
+          is_active: true,
+        },
+        {
+          op: "set_relationship",
+          key: "compatibility_probe_has_child",
+          source_object_key: "compatibility_probe",
+          target_object_key: "compatibility_child",
+          source_label: "Children",
+          target_label: "Probe",
+          cardinality: "one_to_many",
+          is_required: false,
+          is_active: true,
+        },
+        {
+          op: "set_form",
+          key: "compatibility_probe_create",
+          name: "New compatibility probe",
+          object_key: "compatibility_probe",
+          mode: "create",
+          config_json: {
+            fields: [{ field: "value" }, { field: "category" }],
+          },
+          audience: "internal",
+          is_active: true,
+        },
+        {
+          op: "set_view",
+          key: "compatibility_probes",
+          name: "Compatibility probes",
+          view_type: "table",
+          object_key: "compatibility_probe",
+          config_json: {
+            fields: ["value", "category"],
+            create_form_key: "compatibility_probe_create",
+            include_archived: false,
+          },
+          audience: "internal",
+          is_active: true,
+        },
+        {
+          op: "set_page",
+          key: "compatibility_workspace",
+          title: "Compatibility workspace",
+          slug: "compatibility-workspace",
+          audience: "internal",
+          layout_json: {
+            blocks: [
+              { type: "view", view_key: "compatibility_probes" },
+              { type: "form", form_key: "compatibility_probe_create" },
+            ],
+          },
+          status: "draft",
+          is_active: true,
+        },
+      ],
+    });
+    const validatedFixture = await fixtureService.validateChangeSet(
+      fixtureProposal.id,
+    );
+    if (validatedFixture.status !== "validated") {
+      throw new Error("Could not validate configuration engine test fixtures.");
+    }
+    const appliedFixture = await fixtureService.applyChangeSet(
+      fixtureProposal.id,
+    );
+    if (appliedFixture.status !== "applied") {
+      throw new Error("Could not apply configuration engine test fixtures.");
+    }
+
     const configuredObjects = requireData(
-      await admin
+      await owner.client
         .from("object_definitions")
         .select("*")
         .eq("business_id", business.id)
@@ -697,59 +771,14 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       throw new Error("Missing compatibility Objects.");
     }
 
-    const fixtureFields = await owner.client.from("field_definitions").insert([
-      {
-        business_id: business.id,
-        object_definition_id: probeObject.id,
-        key: "value",
-        label: "Value",
-        field_type: "short_text",
-        required: true,
-        settings_json: {},
-        position: 0,
-      },
-      {
-        business_id: business.id,
-        object_definition_id: probeObject.id,
-        key: "category",
-        label: "Category",
-        field_type: "select",
-        required: false,
-        settings_json: { options: ["Alpha", "Beta"] },
-        position: 1,
-      },
-      {
-        business_id: business.id,
-        object_definition_id: childObject.id,
-        key: "name",
-        label: "Name",
-        field_type: "short_text",
-        required: true,
-        settings_json: {},
-        position: 0,
-      },
-    ]);
-    if (fixtureFields.error) {
-      throw fixtureFields.error;
-    }
-
     const relationship = requireData(
       await owner.client
         .from("relationship_definitions")
-        .insert({
-          business_id: business.id,
-          key: "compatibility_probe_has_child",
-          source_object_definition_id: probeObject.id,
-          target_object_definition_id: childObject.id,
-          source_label: "Children",
-          target_label: "Probe",
-          cardinality: "one_to_many",
-          is_required: false,
-          is_active: true,
-        })
-        .select()
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("key", "compatibility_probe_has_child")
         .single(),
-      "Could not create compatibility Relationship",
+      "Could not load compatibility Relationship",
     );
     const probeRecord = requireData(
       await owner.client.rpc("create_graph_record", {
@@ -777,70 +806,16 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       }),
       "Could not create compatibility edge",
     );
-
-    const form = requireData(
-      await owner.client
-        .from("forms")
-        .insert({
-          business_id: business.id,
-          key: "compatibility_probe_create",
-          name: "New compatibility probe",
-          object_definition_id: probeObject.id,
-          mode: "create",
-          config_json: {
-            fields: [{ field: "value" }, { field: "category" }],
-          },
-          audience: "internal",
-          is_active: true,
-        })
-        .select()
-        .single(),
-      "Could not create compatibility Form",
-    );
-    const view = requireData(
-      await owner.client
-        .from("views")
-        .insert({
-          business_id: business.id,
-          key: "compatibility_probes",
-          name: "Compatibility probes",
-          object_definition_id: probeObject.id,
-          view_type: "table",
-          config_json: {
-            fields: ["value", "category"],
-            create_form_key: form.key,
-            include_archived: false,
-          },
-          audience: "internal",
-          is_active: true,
-        })
-        .select()
-        .single(),
-      "Could not create compatibility View",
-    );
-    const fixturePage = await owner.client.from("pages").insert({
-      business_id: business.id,
-      key: "compatibility_workspace",
-      title: "Compatibility workspace",
-      slug: "compatibility-workspace",
-      audience: "internal",
-      layout_json: {
-        blocks: [
-          { type: "view", view_key: view.key },
-          { type: "form", form_key: form.key },
-        ],
-      },
-      status: "draft",
-      is_active: true,
-    });
-    if (fixturePage.error) {
-      throw fixturePage.error;
-    }
   }, 90_000);
 
   afterAll(async () => {
-    if (admin && createdBusinessIds.length > 0) {
-      await admin.from("businesses").delete().in("id", createdBusinessIds);
+    if (sql) {
+      for (const businessId of createdBusinessIds) {
+        await sql`
+          delete from public.businesses
+          where id = ${businessId}::uuid
+        `;
+      }
     }
     if (admin) {
       for (const userId of createdUserIds) {
@@ -852,33 +827,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     }
   });
 
-  it("rejects Bedford while its directly seeded projection differs from Version 1", async () => {
-    const service = new ConfigurationChangeService(owner.client, {
-      actorId: owner.user.id,
-      businessId: business.id,
-    });
-    await expectEngineError(
-      service.proposeChangeSet({
-        title: "Expected divergence",
-        description: null,
-        operations: [
-          {
-            op: "set_object",
-            key: "proposal_probe",
-            singular_label: "Proposal probe",
-            plural_label: "Proposal probes",
-            description: "",
-            icon: null,
-            is_active: true,
-          },
-        ],
-      }),
-      "configuration_projection_out_of_sync",
-    );
-  });
-
   it("materializes and stores one immutable complete candidate without changing the live projection or head", async () => {
-    await synchronizeTestBaseline();
     const [version] = await sql<{ snapshot_json: Json }[]>`
       select version.snapshot_json
       from public.configuration_versions as version
@@ -1291,7 +1240,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
         expect(waiting).toBe(true);
 
         const visiblePage = requireData(
-          await admin
+          await owner.client
             .from("pages")
             .select("is_active, slug")
             .eq("business_id", business.id)
@@ -2085,7 +2034,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
   });
 
-  it("fails closed on projection divergence and marks a stale base conflicted", async () => {
+  it("denies unversioned divergence and marks a stale base conflicted", async () => {
     const service = new ConfigurationChangeService(owner.client, {
       actorId: owner.user.id,
       businessId: business.id,
@@ -2102,38 +2051,15 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       ],
     });
     const probeId = requiredString(probe.id, "Probe ID");
-    const originalLabel = requiredString(
-      probe.singular_label,
-      "Probe singular label",
+    const changed = await owner.client
+      .from("object_definitions")
+      .update({ singular_label: "Unversioned divergence" })
+      .eq("business_id", business.id)
+      .eq("id", probeId);
+    expect(changed.error?.code).toBe("42501");
+    expect((await service.validateChangeSet(divergent.id)).status).toBe(
+      "validated",
     );
-    let projectionRestoreError: unknown;
-    try {
-      const changed = await owner.client
-        .from("object_definitions")
-        .update({ singular_label: "Unversioned divergence" })
-        .eq("business_id", business.id)
-        .eq("id", probeId);
-      if (changed.error) {
-        throw changed.error;
-      }
-      await expectEngineError(
-        service.validateChangeSet(divergent.id),
-        "configuration_projection_out_of_sync",
-      );
-      expect((await service.getChangeSet(divergent.id)).status).toBe(
-        "proposed",
-      );
-    } finally {
-      const restored = await owner.client
-        .from("object_definitions")
-        .update({ singular_label: originalLabel })
-        .eq("business_id", business.id)
-        .eq("id", probeId);
-      projectionRestoreError = restored.error;
-    }
-    if (projectionRestoreError) {
-      throw projectionRestoreError;
-    }
 
     const stale = await service.proposeChangeSet({
       title: "Stale validation",
@@ -2476,7 +2402,6 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
   });
 
   it("[application] applies an Owner proposal atomically and retries idempotently", async () => {
-    await synchronizeTestBaseline();
     baselineSnapshot = asSnapshot(await currentLiveSnapshot());
     const service = new ConfigurationChangeService(owner.client, {
       actorId: owner.user.id,
@@ -3010,39 +2935,17 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
     await service.validateChangeSet(divergent.id);
     const headBefore = await currentHead();
-    const originalLabel = requiredString(
-      probe.singular_label,
-      "Owner probe label",
+    const changed = await owner.client
+      .from("object_definitions")
+      .update({ singular_label: "Unversioned application divergence" })
+      .eq("business_id", business.id)
+      .eq("id", requiredString(probe.id, "Owner probe ID"));
+    expect(changed.error?.code).toBe("42501");
+    const applied = await service.applyChangeSet(divergent.id);
+    expect(applied.status).toBe("applied");
+    expect((await currentHead()).head_revision).toBe(
+      headBefore.head_revision + 1,
     );
-    let restoreError: unknown;
-    try {
-      const changed = await owner.client
-        .from("object_definitions")
-        .update({ singular_label: "Unversioned application divergence" })
-        .eq("business_id", business.id)
-        .eq("id", requiredString(probe.id, "Owner probe ID"));
-      if (changed.error) {
-        throw changed.error;
-      }
-      await expectEngineError(
-        service.applyChangeSet(divergent.id),
-        "configuration_projection_out_of_sync",
-      );
-      expect((await service.getChangeSet(divergent.id)).status).toBe(
-        "validated",
-      );
-      expect(await currentHead()).toEqual(headBefore);
-    } finally {
-      const restored = await owner.client
-        .from("object_definitions")
-        .update({ singular_label: originalLabel })
-        .eq("business_id", business.id)
-        .eq("id", requiredString(probe.id, "Owner probe ID"));
-      restoreError = restored.error;
-    }
-    if (restoreError) {
-      throw restoreError;
-    }
   });
 
   it("[application] rolls back projection, version, head, and lifecycle at all three injected failure points", async () => {

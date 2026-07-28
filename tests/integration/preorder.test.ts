@@ -39,6 +39,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createConfigurationFixtures } from "./support/configuration-fixtures";
 
 vi.mock("server-only", () => ({}));
 
@@ -94,6 +95,8 @@ let locations: Record<string, Tables<"locations">>;
 let products: Record<string, ProductRecord>;
 let catalogue: PublicPreorderCatalogue;
 let databaseUrl: string;
+let fixtureSql: Sql;
+let configurationFixtures: ReturnType<typeof createConfigurationFixtures>;
 
 function requireData<T>(
   result: { data: T; error: { message: string } | null },
@@ -365,14 +368,9 @@ async function countGraphRows(): Promise<{
 }
 
 async function updateConfig(config: PreorderConfig): Promise<void> {
-  const { error } = await owner
-    .from("preorder_experiences")
-    .update({ config_json: config })
-    .eq("business_id", business.id)
-    .eq("id", preorder.id);
-  if (error) {
-    throw error;
-  }
+  await configurationFixtures.updateById("preorder_experiences", preorder.id, {
+    config_json: config,
+  });
 }
 
 function walkSourceFiles(directory: string): string[] {
@@ -386,6 +384,8 @@ describe("Milestone 4 preorder", () => {
   beforeAll(async () => {
     settings = getLocalSupabaseSettings();
     databaseUrl = settings.databaseUrl;
+    fixtureSql = postgres(databaseUrl, { max: 1 });
+    configurationFixtures = createConfigurationFixtures(fixtureSql);
     execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -452,78 +452,69 @@ describe("Milestone 4 preorder", () => {
       }),
       "Could not create the other Location",
     );
-    const otherObjects = requireData(
-      await otherOwner.client
-        .from("object_definitions")
-        .insert([
-          {
-            business_id: otherBusiness.id,
-            key: "thing",
-            singular_label: "Thing",
-            plural_label: "Things",
-            description: "",
-            kind: "custom",
-          },
-          {
-            business_id: otherBusiness.id,
-            key: "other_thing",
-            singular_label: "Other Thing",
-            plural_label: "Other Things",
-            description: "",
-            kind: "custom",
-          },
-        ])
-        .select("*"),
-      "Could not create other tenant Objects",
+    const otherObjects = await configurationFixtures.insert(
+      "object_definitions",
+      [
+        {
+          business_id: otherBusiness.id,
+          key: "thing",
+          singular_label: "Thing",
+          plural_label: "Things",
+          description: "",
+          kind: "custom",
+        },
+        {
+          business_id: otherBusiness.id,
+          key: "other_thing",
+          singular_label: "Other Thing",
+          plural_label: "Other Things",
+          description: "",
+          kind: "custom",
+        },
+      ],
     );
     const [otherObject, otherTargetObject] = otherObjects;
     if (!otherObject || !otherTargetObject) {
       throw new Error("Other tenant Objects are incomplete.");
     }
-    const fieldsResult = await otherOwner.client
-      .from("field_definitions")
-      .insert([
-        {
-          business_id: otherBusiness.id,
-          object_definition_id: otherObject.id,
-          key: "name",
-          label: "Name",
-          field_type: "short_text",
-          required: true,
-          settings_json: {},
-          position: 0,
-        },
-        {
-          business_id: otherBusiness.id,
-          object_definition_id: otherTargetObject.id,
-          key: "name",
-          label: "Name",
-          field_type: "short_text",
-          required: true,
-          settings_json: {},
-          position: 0,
-        },
-      ]);
-    if (fieldsResult.error) {
-      throw fieldsResult.error;
-    }
-    const otherRelationship = requireData(
-      await otherOwner.client
-        .from("relationship_definitions")
-        .insert({
-          business_id: otherBusiness.id,
-          key: "thing_has_other",
-          source_object_definition_id: otherObject.id,
-          target_object_definition_id: otherTargetObject.id,
-          source_label: "has",
-          target_label: "belongs to",
-          cardinality: "one_to_many",
-          is_required: false,
-        })
-        .select("*")
-        .single(),
-      "Could not create the other tenant Relationship",
+    await configurationFixtures.insert("field_definitions", [
+      {
+        business_id: otherBusiness.id,
+        object_definition_id: otherObject.id,
+        key: "name",
+        label: "Name",
+        field_type: "short_text",
+        required: true,
+        settings_json: {},
+        position: 0,
+      },
+      {
+        business_id: otherBusiness.id,
+        object_definition_id: otherTargetObject.id,
+        key: "name",
+        label: "Name",
+        field_type: "short_text",
+        required: true,
+        settings_json: {},
+        position: 0,
+      },
+    ]);
+    const [otherRelationship] = await configurationFixtures.insert(
+      "relationship_definitions",
+      {
+        business_id: otherBusiness.id,
+        key: "thing_has_other",
+        source_object_definition_id: otherObject.id,
+        target_object_definition_id: otherTargetObject.id,
+        source_label: "has",
+        target_label: "belongs to",
+        cardinality: "one_to_many",
+        is_required: false,
+      },
     );
+    if (!otherRelationship) {
+      throw new Error("Could not create the other tenant Relationship");
+    }
     const otherRecord = requireData(
       await otherOwner.client
         .from("records")
@@ -546,16 +537,16 @@ describe("Milestone 4 preorder", () => {
 
     const [objectRows, relationshipRows, locationRows, preorderRow] =
       await Promise.all([
-        admin
+        owner
           .from("object_definitions")
           .select("*")
           .eq("business_id", business.id),
-        admin
+        owner
           .from("relationship_definitions")
           .select("*")
           .eq("business_id", business.id),
         admin.from("locations").select("*").eq("business_id", business.id),
-        admin
+        owner
           .from("preorder_experiences")
           .select("*")
           .eq("business_id", business.id)
@@ -627,12 +618,21 @@ describe("Milestone 4 preorder", () => {
     if (admin && other?.business) {
       await admin.from("businesses").delete().eq("id", other.business.id);
     }
+    if (fixtureSql && business) {
+      await fixtureSql`
+        delete from public.businesses
+        where id = ${business.id}::uuid
+      `;
+    }
     for (const userId of createdUserIds) {
       await admin.auth.admin.deleteUser(userId);
     }
+    if (fixtureSql) {
+      await fixtureSql.end();
+    }
   });
 
-  it("allows Owners/Admins to configure while Staff and other tenants cannot", async () => {
+  it("denies unversioned preorder configuration writes for every member role", async () => {
     const changedConfig = structuredClone(originalConfig);
     changedConfig.schedule.cutoff_hours = 72;
     const adminUpdate = await administrator.client
@@ -641,8 +641,8 @@ describe("Milestone 4 preorder", () => {
       .eq("business_id", business.id)
       .eq("id", preorder.id)
       .select("id");
-    expect(adminUpdate.error).toBeNull();
-    expect(adminUpdate.data).toHaveLength(1);
+    expect(adminUpdate.error?.code).toBe("42501");
+    expect(adminUpdate.data).toBeNull();
 
     const staffUpdate = await staff
       .from("preorder_experiences")
@@ -650,8 +650,8 @@ describe("Milestone 4 preorder", () => {
       .eq("business_id", business.id)
       .eq("id", preorder.id)
       .select("id");
-    expect(staffUpdate.error).toBeNull();
-    expect(staffUpdate.data).toEqual([]);
+    expect(staffUpdate.error?.code).toBe("42501");
+    expect(staffUpdate.data).toBeNull();
 
     const otherRead = await otherOwner.client
       .from("preorder_experiences")
@@ -665,10 +665,8 @@ describe("Milestone 4 preorder", () => {
       .eq("business_id", business.id)
       .eq("id", preorder.id)
       .select("id");
-    expect(otherUpdate.error).toBeNull();
-    expect(otherUpdate.data).toEqual([]);
-
-    await updateConfig(originalConfig);
+    expect(otherUpdate.error?.code).toBe("42501");
+    expect(otherUpdate.data).toBeNull();
   });
 
   it("structurally rejects cross-tenant Object, Relationship, Record and Location references", async () => {
@@ -699,25 +697,26 @@ describe("Milestone 4 preorder", () => {
     if (!customerRelationship || !itemRelationship || !productRelationship) {
       throw new Error("Demo Relationships are incomplete.");
     }
-    const objectAttempt = await admin.from("preorder_experiences").insert({
-      business_id: business.id,
-      key: `cross_object_${crypto.randomUUID().replaceAll("-", "")}`,
-      product_object_definition_id: other.object.id,
-      customer_object_definition_id: customerObject.id,
-      order_object_definition_id: orderObject.id,
-      order_item_object_definition_id: orderItemObject.id,
-      customer_places_order_relationship_definition_id: customerRelationship.id,
-      order_contains_item_relationship_definition_id: itemRelationship.id,
-      product_appears_in_item_relationship_definition_id:
-        productRelationship.id,
-      config_json: originalConfig,
-      is_active: false,
-    });
-    expect(objectAttempt.error).not.toBeNull();
+    await expect(
+      configurationFixtures.insert("preorder_experiences", {
+        business_id: business.id,
+        key: `cross_object_${crypto.randomUUID().replaceAll("-", "")}`,
+        product_object_definition_id: other.object.id,
+        customer_object_definition_id: customerObject.id,
+        order_object_definition_id: orderObject.id,
+        order_item_object_definition_id: orderItemObject.id,
+        customer_places_order_relationship_definition_id:
+          customerRelationship.id,
+        order_contains_item_relationship_definition_id: itemRelationship.id,
+        product_appears_in_item_relationship_definition_id:
+          productRelationship.id,
+        config_json: originalConfig,
+        is_active: false,
+      }),
+    ).rejects.toMatchObject({ code: "23503" });
 
-    const relationshipAttempt = await admin
-      .from("preorder_experiences")
-      .insert({
+    await expect(
+      configurationFixtures.insert("preorder_experiences", {
         business_id: business.id,
         key: `cross_relationship_${crypto.randomUUID().replaceAll("-", "")}`,
         product_object_definition_id: productObject.id,
@@ -730,8 +729,8 @@ describe("Milestone 4 preorder", () => {
           productRelationship.id,
         config_json: originalConfig,
         is_active: false,
-      });
-    expect(relationshipAttempt.error).not.toBeNull();
+      }),
+    ).rejects.toMatchObject({ code: "23503" });
 
     const bedford = locations.Bedford;
     const product = products["Afternoon Tea Box"];
@@ -758,19 +757,20 @@ describe("Milestone 4 preorder", () => {
       [orderObject, "uncovered_order"],
       [orderItemObject, "uncovered_order_item"],
     ] as const) {
-      const attempt = await owner.from("field_definitions").insert({
-        business_id: business.id,
-        object_definition_id: objectDefinition.id,
-        key,
-        label: `Uncovered ${objectDefinition.singular_label}`,
-        field_type: "short_text",
-        required: true,
-        settings_json: {},
-        position: 90,
-      });
-      expect(attempt.error?.code).toBe("23514");
+      await expect(
+        configurationFixtures.insert("field_definitions", {
+          business_id: business.id,
+          object_definition_id: objectDefinition.id,
+          key,
+          label: `Uncovered ${objectDefinition.singular_label}`,
+          field_type: "short_text",
+          required: true,
+          settings_json: {},
+          position: 90,
+        }),
+      ).rejects.toMatchObject({ code: "23514" });
 
-      const persisted = await admin
+      const persisted = await owner
         .from("field_definitions")
         .select("id")
         .eq("business_id", business.id)
@@ -783,23 +783,22 @@ describe("Milestone 4 preorder", () => {
 
   it("rejects removal of required public coverage while permitting optional Fields", async () => {
     const fieldKey = `company_${crypto.randomUUID().replaceAll("-", "")}`;
-    const optionalField = requireData(
-      await owner
-        .from("field_definitions")
-        .insert({
-          business_id: business.id,
-          object_definition_id: customerObject.id,
-          key: fieldKey,
-          label: "Company",
-          field_type: "short_text",
-          required: false,
-          settings_json: {},
-          position: 90,
-        })
-        .select("*")
-        .single(),
-      "Could not add an optional Customer Field",
+    const [optionalField] = await configurationFixtures.insert(
+      "field_definitions",
+      {
+        business_id: business.id,
+        object_definition_id: customerObject.id,
+        key: fieldKey,
+        label: "Company",
+        field_type: "short_text",
+        required: false,
+        settings_json: {},
+        position: 90,
+      },
     );
+    if (!optionalField) {
+      throw new Error("Could not add an optional Customer Field");
+    }
 
     const coveredConfig = structuredClone(originalConfig);
     coveredConfig.public_fields.push({
@@ -811,26 +810,24 @@ describe("Milestone 4 preorder", () => {
     });
     await updateConfig(coveredConfig);
 
-    const required = await owner
-      .from("field_definitions")
-      .update({ required: true })
-      .eq("business_id", business.id)
-      .eq("id", optionalField.id);
-    expect(required.error).toBeNull();
+    await configurationFixtures.updateById(
+      "field_definitions",
+      optionalField.id,
+      { required: true },
+    );
 
     const uncoveredConfig = structuredClone(coveredConfig);
     uncoveredConfig.public_fields = uncoveredConfig.public_fields.filter(
       ({ target, field }) => !(target === "customer" && field === fieldKey),
     );
-    const removal = await owner
-      .from("preorder_experiences")
-      .update({ config_json: uncoveredConfig })
-      .eq("business_id", business.id)
-      .eq("id", preorder.id);
-    expect(removal.error?.code).toBe("23514");
+    await expect(
+      configurationFixtures.updateById("preorder_experiences", preorder.id, {
+        config_json: uncoveredConfig,
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
 
     const retained = requireData(
-      await admin
+      await owner
         .from("preorder_experiences")
         .select("config_json")
         .eq("business_id", business.id)
@@ -844,45 +841,42 @@ describe("Milestone 4 preorder", () => {
       ),
     ).toBe(true);
 
-    const relaxed = await owner
-      .from("field_definitions")
-      .update({ required: false })
-      .eq("business_id", business.id)
-      .eq("id", optionalField.id);
-    expect(relaxed.error).toBeNull();
+    await configurationFixtures.updateById(
+      "field_definitions",
+      optionalField.id,
+      { required: false },
+    );
     await updateConfig(originalConfig);
-    const archived = await owner
-      .from("field_definitions")
-      .update({ is_active: false })
-      .eq("business_id", business.id)
-      .eq("id", optionalField.id);
-    expect(archived.error).toBeNull();
+    await configurationFixtures.updateById(
+      "field_definitions",
+      optionalField.id,
+      { is_active: false },
+    );
   });
 
   it("permits a required default only when the Record insert path applies it", async () => {
-    const defaultField = requireData(
-      await owner
-        .from("field_definitions")
-        .insert({
-          business_id: business.id,
-          object_definition_id: orderItemObject.id,
-          key: "packing_note",
-          label: "Packing note",
-          field_type: "short_text",
-          required: true,
-          default_value: "Standard",
-          settings_json: {},
-          position: 90,
-        })
-        .select("*")
-        .single(),
-      "Could not add the default-backed Order Item Field",
+    const [defaultField] = await configurationFixtures.insert(
+      "field_definitions",
+      {
+        business_id: business.id,
+        object_definition_id: orderItemObject.id,
+        key: "packing_note",
+        label: "Packing note",
+        field_type: "short_text",
+        required: true,
+        default_value: "Standard",
+        settings_json: {},
+        position: 90,
+      },
     );
+    if (!defaultField) {
+      throw new Error("Could not add the default-backed Order Item Field");
+    }
 
     const submitted = await submitRaw(baseSubmission(0));
     expect(submitted.ok).toBe(true);
     const itemRecords = requireData(
-      await admin
+      await owner
         .from("records")
         .select("data_json")
         .eq("business_id", business.id)
@@ -895,12 +889,11 @@ describe("Milestone 4 preorder", () => {
       ),
     ).toBe(true);
 
-    const archived = await owner
-      .from("field_definitions")
-      .update({ is_active: false })
-      .eq("business_id", business.id)
-      .eq("id", defaultField.id);
-    expect(archived.error).toBeNull();
+    await configurationFixtures.updateById(
+      "field_definitions",
+      defaultField.id,
+      { is_active: false },
+    );
   });
 
   it("does not use an absent Customer phone default to cover a required Order snapshot", async () => {
@@ -911,7 +904,7 @@ describe("Milestone 4 preorder", () => {
     }
 
     const customerPhoneField = requireData(
-      await admin
+      await owner
         .from("field_definitions")
         .select("*")
         .eq("business_id", business.id)
@@ -921,7 +914,7 @@ describe("Milestone 4 preorder", () => {
       "Could not load the Customer phone Field",
     );
     const orderPhoneField = requireData(
-      await admin
+      await owner
         .from("field_definitions")
         .select("*")
         .eq("business_id", business.id)
@@ -931,23 +924,23 @@ describe("Milestone 4 preorder", () => {
       "Could not load the Order customer-phone Field",
     );
 
-    const emptyCustomerDefault = await owner
-      .from("field_definitions")
-      .update({ default_value: "" })
-      .eq("business_id", business.id)
-      .eq("id", customerPhoneField.id);
-    expect(emptyCustomerDefault.error).toBeNull();
+    await configurationFixtures.updateById(
+      "field_definitions",
+      customerPhoneField.id,
+      { default_value: "" },
+    );
 
     try {
-      const requiredOrderPhone = await owner
-        .from("field_definitions")
-        .update({ required: true })
-        .eq("business_id", business.id)
-        .eq("id", orderPhoneField.id);
-      expect(requiredOrderPhone.error?.code).toBe("23514");
+      await expect(
+        configurationFixtures.updateById(
+          "field_definitions",
+          orderPhoneField.id,
+          { required: true },
+        ),
+      ).rejects.toMatchObject({ code: "23514" });
 
       const retainedOrderPhone = requireData(
-        await admin
+        await owner
           .from("field_definitions")
           .select("required")
           .eq("business_id", business.id)
@@ -957,12 +950,11 @@ describe("Milestone 4 preorder", () => {
       );
       expect(retainedOrderPhone.required).toBe(false);
     } finally {
-      const restored = await owner
-        .from("field_definitions")
-        .update({ default_value: null })
-        .eq("business_id", business.id)
-        .eq("id", customerPhoneField.id);
-      expect(restored.error).toBeNull();
+      await configurationFixtures.updateById(
+        "field_definitions",
+        customerPhoneField.id,
+        { default_value: null },
+      );
     }
   });
 
@@ -972,7 +964,7 @@ describe("Milestone 4 preorder", () => {
       slug: businessSlug,
     });
     const draftSlug = `draft-${crypto.randomUUID()}`;
-    const draftPage = await owner.from("pages").insert({
+    await configurationFixtures.insert("pages", {
       business_id: business.id,
       key: `draft_${crypto.randomUUID().replaceAll("-", "")}`,
       title: "Draft preorder",
@@ -983,7 +975,6 @@ describe("Milestone 4 preorder", () => {
         blocks: [{ type: "preorder", preorder_key: preorderKey }],
       },
     });
-    expect(draftPage.error).toBeNull();
     const draftResolution = await anonymous.rpc("resolve_public_preorder", {
       requested_business_slug: businessSlug,
       requested_page_slug: draftSlug,
@@ -992,58 +983,56 @@ describe("Milestone 4 preorder", () => {
     expect(draftResolution.error).toBeNull();
     expect(draftResolution.data).toBeNull();
 
-    const internalAttempt = await owner.from("pages").insert({
-      business_id: business.id,
-      key: `internal_${crypto.randomUUID().replaceAll("-", "")}`,
-      title: "Internal preorder",
-      slug: `internal-${crypto.randomUUID()}`,
-      audience: "internal",
-      status: "published",
-      layout_json: {
-        blocks: [{ type: "preorder", preorder_key: preorderKey }],
-      },
-    });
-    expect(internalAttempt.error).not.toBeNull();
+    await expect(
+      configurationFixtures.insert("pages", {
+        business_id: business.id,
+        key: `internal_${crypto.randomUUID().replaceAll("-", "")}`,
+        title: "Internal preorder",
+        slug: `internal-${crypto.randomUUID()}`,
+        audience: "internal",
+        status: "published",
+        layout_json: {
+          blocks: [{ type: "preorder", preorder_key: preorderKey }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
 
-    const inactiveExperience = await administrator.client.rpc(
-      "create_preorder_experience",
+    const inactiveKey = `inactive_${crypto.randomUUID().replaceAll("-", "")}`;
+    const [inactiveExperience] = await configurationFixtures.insert(
+      "preorder_experiences",
       {
-        expected_business_id: business.id,
-        requested_key: `inactive_${crypto.randomUUID().replaceAll("-", "")}`,
-        requested_product_object_definition_id: productObject.id,
-        requested_customer_object_definition_id: customerObject.id,
-        requested_order_object_definition_id: orderObject.id,
-        requested_order_item_object_definition_id: orderItemObject.id,
-        requested_customer_places_order_relationship_definition_id:
+        business_id: business.id,
+        key: inactiveKey,
+        product_object_definition_id: productObject.id,
+        customer_object_definition_id: customerObject.id,
+        order_object_definition_id: orderObject.id,
+        order_item_object_definition_id: orderItemObject.id,
+        customer_places_order_relationship_definition_id:
           relationships.customer_places_order?.id ?? "",
-        requested_order_contains_item_relationship_definition_id:
+        order_contains_item_relationship_definition_id:
           relationships.order_contains_order_item?.id ?? "",
-        requested_product_appears_in_item_relationship_definition_id:
+        product_appears_in_item_relationship_definition_id:
           relationships.product_appears_in_order_item?.id ?? "",
-        requested_config: originalConfig,
-        requested_location_ids: [locations.Bedford?.id ?? ""],
-        requested_is_active: false,
+        config_json: originalConfig,
+        is_active: false,
       },
     );
-    expect(inactiveExperience.error).toBeNull();
-    const inactiveKey =
-      typeof inactiveExperience.data === "object" &&
-      inactiveExperience.data !== null &&
-      !Array.isArray(inactiveExperience.data)
-        ? String(inactiveExperience.data.key)
-        : "";
-    const inactivePage = await owner.from("pages").insert({
-      business_id: business.id,
-      key: `inactive_page_${crypto.randomUUID().replaceAll("-", "")}`,
-      title: "Inactive preorder",
-      slug: `inactive-${crypto.randomUUID()}`,
-      audience: "public",
-      status: "published",
-      layout_json: {
-        blocks: [{ type: "preorder", preorder_key: inactiveKey }],
-      },
-    });
-    expect(inactivePage.error).not.toBeNull();
+    if (!inactiveExperience) {
+      throw new Error("Could not create inactive preorder fixture.");
+    }
+    await expect(
+      configurationFixtures.insert("pages", {
+        business_id: business.id,
+        key: `inactive_page_${crypto.randomUUID().replaceAll("-", "")}`,
+        title: "Inactive preorder",
+        slug: `inactive-${crypto.randomUUID()}`,
+        audience: "public",
+        status: "published",
+        layout_json: {
+          blocks: [{ type: "preorder", preorder_key: inactiveKey }],
+        },
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
   });
 
   it("excludes archived allowed Locations from catalogues and submissions", async () => {
@@ -1071,20 +1060,20 @@ describe("Milestone 4 preorder", () => {
         .single(),
       "Could not load the Bedford allowed Location association",
     );
-    const identityChange = await owner
-      .from("preorder_experience_locations")
-      .update({ id: crypto.randomUUID() })
-      .eq("business_id", business.id)
-      .eq("id", association.id);
-    expect(identityChange.error?.code).toBe("22023");
+    await expect(
+      configurationFixtures.updateById(
+        "preorder_experience_locations",
+        association.id,
+        { id: crypto.randomUUID() },
+      ),
+    ).rejects.toMatchObject({ code: "22023" });
 
     try {
-      const archived = await owner
-        .from("preorder_experience_locations")
-        .update({ is_active: false })
-        .eq("business_id", business.id)
-        .eq("id", association.id);
-      expect(archived.error).toBeNull();
+      await configurationFixtures.updateById(
+        "preorder_experience_locations",
+        association.id,
+        { is_active: false },
+      );
 
       const filtered = await resolveCatalogue();
       expect(
@@ -1096,24 +1085,24 @@ describe("Milestone 4 preorder", () => {
         ),
       ).toBe(false);
 
-      const removeLastActive = await owner
-        .from("preorder_experience_locations")
-        .update({ is_active: false })
-        .eq("business_id", business.id)
-        .eq("id", bedfordAssociation.id);
-      expect(removeLastActive.error?.code).toBe("23514");
+      await expect(
+        configurationFixtures.updateById(
+          "preorder_experience_locations",
+          bedfordAssociation.id,
+          { is_active: false },
+        ),
+      ).rejects.toMatchObject({ code: "23514" });
 
       const rejected = await submitRaw(
         baseSubmission(0, { locationId: miltonKeynes.id }),
       );
       expect(rejected).toEqual({ ok: false, code: "invalid_location" });
     } finally {
-      const restored = await owner
-        .from("preorder_experience_locations")
-        .update({ is_active: true })
-        .eq("business_id", business.id)
-        .eq("id", association.id);
-      expect(restored.error).toBeNull();
+      await configurationFixtures.updateById(
+        "preorder_experience_locations",
+        association.id,
+        { is_active: true },
+      );
     }
   });
 
@@ -1129,12 +1118,9 @@ describe("Milestone 4 preorder", () => {
     );
 
     try {
-      const archived = await owner
-        .from("pages")
-        .update({ is_active: false })
-        .eq("business_id", business.id)
-        .eq("id", page.id);
-      expect(archived.error).toBeNull();
+      await configurationFixtures.updateById("pages", page.id, {
+        is_active: false,
+      });
 
       const resolution = await anonymous.rpc("resolve_public_preorder", {
         requested_business_slug: businessSlug,
@@ -1147,12 +1133,9 @@ describe("Milestone 4 preorder", () => {
       const rejected = await submitRaw(baseSubmission(0));
       expect(rejected).toEqual({ ok: false, code: "not_found" });
     } finally {
-      const restored = await owner
-        .from("pages")
-        .update({ is_active: true })
-        .eq("business_id", business.id)
-        .eq("id", page.id);
-      expect(restored.error).toBeNull();
+      await configurationFixtures.updateById("pages", page.id, {
+        is_active: true,
+      });
     }
   });
 
@@ -1226,12 +1209,9 @@ describe("Milestone 4 preorder", () => {
         submissionConnection.end(),
         observer.end(),
       ]);
-      const restored = await owner
-        .from("pages")
-        .update({ is_active: true })
-        .eq("business_id", business.id)
-        .eq("id", page.id);
-      expect(restored.error).toBeNull();
+      await configurationFixtures.updateById("pages", page.id, {
+        is_active: true,
+      });
     }
   });
 
@@ -1310,12 +1290,11 @@ describe("Milestone 4 preorder", () => {
         submissionConnection.end(),
         observer.end(),
       ]);
-      const restored = await owner
-        .from("preorder_experience_locations")
-        .update({ is_active: true })
-        .eq("business_id", business.id)
-        .eq("id", association.id);
-      expect(restored.error).toBeNull();
+      await configurationFixtures.updateById(
+        "preorder_experience_locations",
+        association.id,
+        { is_active: true },
+      );
     }
   });
 
@@ -1650,16 +1629,17 @@ describe("Milestone 4 preorder", () => {
       }),
       "Could not create inactive Location",
     );
-    const allowed = await owner.rpc("set_preorder_experience_locations", {
-      expected_business_id: business.id,
-      target_preorder_experience_id: preorder.id,
-      requested_location_ids: [
-        locations.Bedford?.id ?? "",
-        locations["Milton Keynes"]?.id ?? "",
-        inactiveLocation.id,
-      ],
-    });
-    expect(allowed.error).toBeNull();
+    const [inactiveAssociation] = await configurationFixtures.insert(
+      "preorder_experience_locations",
+      {
+        business_id: business.id,
+        preorder_experience_id: preorder.id,
+        location_id: inactiveLocation.id,
+      },
+    );
+    if (!inactiveAssociation) {
+      throw new Error("Could not add the inactive Location fixture.");
+    }
     const deactivated = await owner
       .from("locations")
       .update({ is_active: false })
@@ -1674,18 +1654,10 @@ describe("Milestone 4 preorder", () => {
     expect(
       filtered.preorder.locations.some(({ id }) => id === inactiveLocation.id),
     ).toBe(false);
-    const restoredAllowed = await owner.rpc(
-      "set_preorder_experience_locations",
-      {
-        expected_business_id: business.id,
-        target_preorder_experience_id: preorder.id,
-        requested_location_ids: [
-          locations.Bedford?.id ?? "",
-          locations["Milton Keynes"]?.id ?? "",
-        ],
-      },
+    await configurationFixtures.deleteById(
+      "preorder_experience_locations",
+      inactiveAssociation.id,
     );
-    expect(restoredAllowed.error).toBeNull();
   });
 
   it("rejects invalid slots, cutoffs, horizons, fields, quantities and forged values", async () => {
@@ -2088,12 +2060,9 @@ describe("Milestone 4 preorder", () => {
     expect(legacyClaim.error).not.toBeNull();
 
     try {
-      const archived = await owner
-        .from("pages")
-        .update({ is_active: false })
-        .eq("business_id", business.id)
-        .eq("id", page.id);
-      expect(archived.error).toBeNull();
+      await configurationFixtures.updateById("pages", page.id, {
+        is_active: false,
+      });
 
       const deliveredClaim = await claimPreorderConfirmationEmail(
         admin,
@@ -2170,12 +2139,9 @@ describe("Milestone 4 preorder", () => {
         code: "not_found",
       });
     } finally {
-      const restored = await owner
-        .from("pages")
-        .update({ is_active: true })
-        .eq("business_id", business.id)
-        .eq("id", page.id);
-      expect(restored.error).toBeNull();
+      await configurationFixtures.updateById("pages", page.id, {
+        is_active: true,
+      });
     }
   });
 

@@ -3,25 +3,16 @@ import "server-only";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import type {
-  Database,
-  Json,
-  Tables,
-  TablesUpdate,
-} from "../../db/supabase/database.types";
+import type { Database } from "../../db/supabase/database.types";
 import {
-  createPreorderExperienceSchema,
   publicPreorderCatalogueSchema,
   publicPreorderConfirmationSchema,
   publicPreorderResultSchema,
   publicPreorderSubmissionSchema,
-  updatePreorderExperienceSchema,
-  type CreatePreorderExperienceInput,
   type PublicPreorderCatalogue,
   type PublicPreorderConfirmation,
   type PublicPreorderResult,
   type PublicPreorderSubmission,
-  type UpdatePreorderExperienceInput,
 } from "./schemas";
 
 export class PreorderServiceError extends Error {
@@ -32,110 +23,6 @@ export class PreorderServiceError extends Error {
     this.name = "PreorderServiceError";
     this.code = cause?.code ?? null;
   }
-}
-
-function requireResult<T>(
-  data: T | null,
-  error: PostgrestError | null,
-  message: string,
-): T {
-  if (error || data === null) {
-    throw new PreorderServiceError(message, error);
-  }
-  return data;
-}
-
-export interface PreorderService {
-  createExperience(
-    input: CreatePreorderExperienceInput,
-  ): Promise<Tables<"preorder_experiences">>;
-  updateExperience(
-    input: UpdatePreorderExperienceInput,
-  ): Promise<Tables<"preorder_experiences">>;
-  setAllowedLocations(
-    preorderExperienceId: string,
-    locationIds: string[],
-  ): Promise<number>;
-}
-
-export function createPreorderService(
-  client: SupabaseClient<Database>,
-  tenant: { businessId: string },
-): PreorderService {
-  const businessId = z.uuid().parse(tenant.businessId);
-
-  return {
-    async createExperience(input) {
-      const value = createPreorderExperienceSchema.parse(input);
-      const { data, error } = await client.rpc("create_preorder_experience", {
-        expected_business_id: businessId,
-        requested_key: value.key,
-        requested_product_object_definition_id: value.productObjectDefinitionId,
-        requested_customer_object_definition_id:
-          value.customerObjectDefinitionId,
-        requested_order_object_definition_id: value.orderObjectDefinitionId,
-        requested_order_item_object_definition_id:
-          value.orderItemObjectDefinitionId,
-        requested_customer_places_order_relationship_definition_id:
-          value.customerPlacesOrderRelationshipDefinitionId,
-        requested_order_contains_item_relationship_definition_id:
-          value.orderContainsItemRelationshipDefinitionId,
-        requested_product_appears_in_item_relationship_definition_id:
-          value.productAppearsInItemRelationshipDefinitionId,
-        requested_config: value.config as Json,
-        requested_location_ids: value.locationIds,
-        requested_is_active: value.isActive,
-      });
-
-      return requireResult(
-        data,
-        error,
-        "Could not create preorder configuration.",
-      );
-    },
-
-    async updateExperience(input) {
-      const value = updatePreorderExperienceSchema.parse(input);
-      const changes: TablesUpdate<"preorder_experiences"> = {};
-      if (value.config !== undefined) {
-        changes.config_json = value.config as Json;
-      }
-      if (value.isActive !== undefined) {
-        changes.is_active = value.isActive;
-      }
-
-      const { data, error } = await client
-        .from("preorder_experiences")
-        .update(changes)
-        .eq("business_id", businessId)
-        .eq("id", value.preorderExperienceId)
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(
-        data,
-        error,
-        "Could not update preorder configuration.",
-      );
-    },
-
-    async setAllowedLocations(preorderExperienceId, locationIds) {
-      const { data, error } = await client.rpc(
-        "set_preorder_experience_locations",
-        {
-          expected_business_id: businessId,
-          target_preorder_experience_id: z.uuid().parse(preorderExperienceId),
-          requested_location_ids: z
-            .array(z.uuid())
-            .min(1)
-            .max(50)
-            .parse(locationIds),
-        },
-      );
-
-      return requireResult(data, error, "Could not update preorder Locations.");
-    },
-  };
 }
 
 export async function resolvePublicPreorder(

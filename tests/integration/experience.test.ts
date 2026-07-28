@@ -8,7 +8,7 @@ import {
 } from "@supabase/supabase-js";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import postgres from "postgres";
+import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
@@ -28,6 +28,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createConfigurationFixtures } from "./support/configuration-fixtures";
 
 vi.mock("server-only", () => ({}));
 
@@ -56,9 +57,19 @@ interface FieldInput {
 const password = "Milestone-3-test-password!";
 const createdUserIds: string[] = [];
 
+function requireFixture<T>(rows: T[], message: string): T {
+  const row = rows[0];
+  if (!row) {
+    throw new Error(message);
+  }
+  return row;
+}
+
 let admin: Client;
 let anonymous: Client;
 let databaseUrl: string;
+let fixtureSql: Sql;
+let configurationFixtures: ReturnType<typeof createConfigurationFixtures>;
 let ownerA: TestIdentity;
 let ownerB: TestIdentity;
 let administratorA: TestIdentity;
@@ -129,62 +140,48 @@ async function createOwnedBusiness(
 }
 
 async function createObject(
-  client: Client,
+  _client: Client,
   businessId: string,
   key: string,
   singularLabel: string,
 ): Promise<ObjectDefinition> {
-  const { data, error } = await client
-    .from("object_definitions")
-    .insert({
-      business_id: businessId,
-      key,
-      singular_label: singularLabel,
-      plural_label:
-        singularLabel === "Catering Enquiry"
-          ? "Catering Enquiries"
-          : `${singularLabel}s`,
-      description: "",
-      kind: "custom",
-    })
-    .select("*")
-    .single();
-  if (error || !data) {
-    throw error ?? new Error(`Could not create Object ${key}`);
+  const [created] = await configurationFixtures.insert("object_definitions", {
+    business_id: businessId,
+    key,
+    singular_label: singularLabel,
+    plural_label:
+      singularLabel === "Catering Enquiry"
+        ? "Catering Enquiries"
+        : `${singularLabel}s`,
+    description: "",
+    kind: "custom",
+  });
+  if (!created) {
+    throw new Error(`Could not create Object ${key}`);
   }
-
-  return data;
+  return created;
 }
 
 async function createFields(
-  client: Client,
+  _client: Client,
   businessId: string,
   objectDefinitionId: string,
   fields: FieldInput[],
 ): Promise<FieldDefinition[]> {
-  const { data, error } = await client
-    .from("field_definitions")
-    .insert(
-      fields.map((field, index) => ({
-        business_id: businessId,
-        object_definition_id: objectDefinitionId,
-        key: field.key,
-        label: field.label,
-        field_type: field.fieldType,
-        required: field.required ?? false,
-        settings_json: field.settings ?? {},
-        position: field.position ?? index,
-        ...(field.defaultValue === undefined
-          ? {}
-          : { default_value: field.defaultValue }),
-      })),
-    )
-    .select("*");
-  if (error || !data) {
-    throw error ?? new Error("Could not create Fields");
-  }
-
-  return data;
+  return configurationFixtures.insert(
+    "field_definitions",
+    fields.map((field, index) => ({
+      business_id: businessId,
+      object_definition_id: objectDefinitionId,
+      key: field.key,
+      label: field.label,
+      field_type: field.fieldType,
+      required: field.required ?? false,
+      default_value: field.defaultValue ?? null,
+      settings_json: field.settings ?? {},
+      position: field.position ?? index,
+    })),
+  );
 }
 
 const cateringFormFields = [
@@ -201,6 +198,8 @@ describe("Milestone 3 experience runtime", () => {
   beforeAll(async () => {
     const settings = getLocalSupabaseSettings();
     databaseUrl = settings.databaseUrl;
+    fixtureSql = postgres(databaseUrl, { max: 1 });
+    configurationFixtures = createConfigurationFixtures(fixtureSql);
     admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -318,23 +317,19 @@ describe("Milestone 3 experience runtime", () => {
         required: true,
       },
     ]);
-    const { data, error } = await ownerB.client
-      .from("views")
-      .insert({
-        business_id: businessB.id,
-        key: "private_items",
-        name: "Private Items",
-        view_type: "table",
-        object_definition_id: businessBObject.id,
-        audience: "internal",
-        config_json: { fields: ["name"] },
-      })
-      .select("*")
-      .single();
-    if (error || !data) {
-      throw error ?? new Error("Could not create Business B View");
+    const [createdBusinessBView] = await configurationFixtures.insert("views", {
+      business_id: businessB.id,
+      key: "private_items",
+      name: "Private Items",
+      view_type: "table",
+      object_definition_id: businessBObject.id,
+      audience: "internal",
+      config_json: { fields: ["name"], include_archived: false },
+    });
+    if (!createdBusinessBView) {
+      throw new Error("Could not create Business B View");
     }
-    businessBView = data;
+    businessBView = createdBusinessBView;
   });
 
   afterAll(async () => {
@@ -349,50 +344,66 @@ describe("Milestone 3 experience runtime", () => {
         await admin.auth.admin.deleteUser(userId);
       }
     }
+    if (fixtureSql) {
+      await fixtureSql.end();
+    }
   });
 
-  it("lets an Owner create Forms and a configured Table View", async () => {
-    const experience = createExperienceService(ownerA.client, {
-      businessId: businessA.id,
-    });
-    createForm = await experience.createForm({
-      key: "catering_create",
-      name: "New catering enquiry",
-      objectDefinitionId: cateringObject.id,
-      mode: "create",
-      config: {
-        fields: cateringFormFields,
-        submit_label: "Add enquiry",
-      },
-    });
-    editForm = await experience.createForm({
-      key: "catering_edit",
-      name: "Edit catering enquiry",
-      objectDefinitionId: cateringObject.id,
-      mode: "edit",
-      config: {
-        fields: cateringFormFields,
-        submit_label: "Save enquiry",
-      },
-    });
-    tableView = await experience.createView({
-      key: "catering_enquiries",
-      name: "Catering Enquiries",
-      viewType: "table",
-      objectDefinitionId: cateringObject.id,
-      config: {
-        fields: [
-          "company_name",
-          "event_date",
-          "guest_count",
-          "budget",
-          "status",
-        ],
-        title_field: "company_name",
-        create_form_key: createForm.key,
-        edit_form_key: editForm.key,
-      },
-    });
+  it("builds Forms and a configured Table View integrity fixture", async () => {
+    createForm = requireFixture(
+      await configurationFixtures.insert("forms", {
+        business_id: businessA.id,
+        key: "catering_create",
+        name: "New catering enquiry",
+        object_definition_id: cateringObject.id,
+        mode: "create",
+        config_json: {
+          fields: cateringFormFields,
+          submit_label: "Add enquiry",
+        },
+        audience: "internal",
+      }),
+      "Could not create catering Form fixture.",
+    );
+    editForm = requireFixture(
+      await configurationFixtures.insert("forms", {
+        business_id: businessA.id,
+        key: "catering_edit",
+        name: "Edit catering enquiry",
+        object_definition_id: cateringObject.id,
+        mode: "edit",
+        config_json: {
+          fields: cateringFormFields,
+          submit_label: "Save enquiry",
+        },
+        audience: "internal",
+      }),
+      "Could not create catering edit Form fixture.",
+    );
+    tableView = requireFixture(
+      await configurationFixtures.insert("views", {
+        business_id: businessA.id,
+        key: "catering_enquiries",
+        name: "Catering Enquiries",
+        view_type: "table",
+        object_definition_id: cateringObject.id,
+        config_json: {
+          fields: [
+            "company_name",
+            "event_date",
+            "guest_count",
+            "budget",
+            "status",
+          ],
+          title_field: "company_name",
+          create_form_key: createForm.key,
+          edit_form_key: editForm.key,
+          include_archived: false,
+        },
+        audience: "internal",
+      }),
+      "Could not create catering View fixture.",
+    );
 
     expect(tableView.business_id).toBe(businessA.id);
     expect(tableView.config_json).toMatchObject({
@@ -401,23 +412,25 @@ describe("Milestone 3 experience runtime", () => {
     });
   });
 
-  it("lets an Admin create and modify experience configuration", async () => {
-    const experience = createExperienceService(administratorA.client, {
-      businessId: businessA.id,
-    });
-    const list = await experience.createView({
-      key: "catering_list",
-      name: "Enquiry list",
-      viewType: "list",
-      objectDefinitionId: cateringObject.id,
-      config: {
-        primary_field: "company_name",
-        secondary_fields: ["event_date", "status"],
-      },
-    });
-    const updated = await experience.updateView({
-      viewDefinitionId: list.id,
-      changes: { name: "Catering enquiry list" },
+  it("updates an experience integrity fixture through the database-owner boundary", async () => {
+    const list = requireFixture(
+      await configurationFixtures.insert("views", {
+        business_id: businessA.id,
+        key: "catering_list",
+        name: "Enquiry list",
+        view_type: "list",
+        object_definition_id: cateringObject.id,
+        config_json: {
+          primary_field: "company_name",
+          secondary_fields: ["event_date", "status"],
+          include_archived: false,
+        },
+        audience: "internal",
+      }),
+      "Could not create list View fixture.",
+    );
+    const updated = await configurationFixtures.updateById("views", list.id, {
+      name: "Catering enquiry list",
     });
 
     expect(updated.name).toBe("Catering enquiry list");
@@ -434,20 +447,14 @@ describe("Milestone 3 experience runtime", () => {
       config_json: { fields: cateringFormFields },
     });
     expect(insertError).not.toBeNull();
-    const { data: absentForm } = await admin
-      .from("forms")
-      .select("id")
-      .eq("business_id", businessA.id)
-      .eq("key", "staff_form");
-    expect(absentForm).toEqual([]);
 
     const { data: updated, error: updateError } = await staffA.client
       .from("views")
       .update({ name: "Changed by Staff" })
       .eq("id", tableView.id)
       .select("id");
-    expect(updateError).toBeNull();
-    expect(updated).toEqual([]);
+    expect(updateError?.code).toBe("42501");
+    expect(updated).toBeNull();
   });
 
   it("isolates experience configuration between Businesses", async () => {
@@ -463,8 +470,8 @@ describe("Milestone 3 experience runtime", () => {
       .update({ name: "Intrusion" })
       .eq("id", businessBView.id)
       .select("id");
-    expect(updateError).toBeNull();
-    expect(changed).toEqual([]);
+    expect(updateError?.code).toBe("42501");
+    expect(changed).toBeNull();
   });
 
   it("rejects cross-tenant Object references structurally", async () => {
@@ -531,90 +538,96 @@ describe("Milestone 3 experience runtime", () => {
   });
 
   it("rejects invalid field references and arbitrary configuration", async () => {
-    const { error: viewError } = await ownerA.client.from("views").insert({
-      business_id: businessA.id,
-      key: "invalid_field_view",
-      name: "Invalid field",
-      view_type: "table",
-      object_definition_id: cateringObject.id,
-      audience: "internal",
-      config_json: { fields: ["not_a_field"] },
-    });
-    expect(viewError?.code).toBe("23514");
+    await expect(
+      configurationFixtures.insert("views", {
+        business_id: businessA.id,
+        key: "invalid_field_view",
+        name: "Invalid field",
+        view_type: "table",
+        object_definition_id: cateringObject.id,
+        audience: "internal",
+        config_json: { fields: ["not_a_field"] },
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
 
-    const { error: formError } = await ownerA.client.from("forms").insert({
-      business_id: businessA.id,
-      key: "invalid_field_form",
-      name: "Invalid field",
-      object_definition_id: cateringObject.id,
-      mode: "edit",
-      audience: "internal",
-      config_json: { fields: [{ field: "not_a_field" }] },
-    });
-    expect(formError?.code).toBe("23514");
+    await expect(
+      configurationFixtures.insert("forms", {
+        business_id: businessA.id,
+        key: "invalid_field_form",
+        name: "Invalid field",
+        object_definition_id: cateringObject.id,
+        mode: "edit",
+        audience: "internal",
+        config_json: { fields: [{ field: "not_a_field" }] },
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
 
-    const { error: arbitraryError } = await ownerA.client.from("views").insert({
-      business_id: businessA.id,
-      key: "arbitrary_view",
-      name: "Arbitrary",
-      view_type: "table",
-      object_definition_id: cateringObject.id,
-      audience: "internal",
-      config_json: { fields: ["company_name"], javascript: "alert(1)" },
-    });
-    expect(arbitraryError?.code).toBe("22023");
+    await expect(
+      configurationFixtures.insert("views", {
+        business_id: businessA.id,
+        key: "arbitrary_view",
+        name: "Arbitrary",
+        view_type: "table",
+        object_definition_id: cateringObject.id,
+        audience: "internal",
+        config_json: {
+          fields: ["company_name"],
+          javascript: "alert(1)",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "22023" });
   });
 
-  it("rejects View field arrays over 50 through direct authenticated writes", async () => {
-    const { error } = await ownerA.client.from("views").insert({
-      business_id: businessA.id,
-      key: "oversized_view",
-      name: "Oversized View",
-      view_type: "table",
-      object_definition_id: cateringObject.id,
-      audience: "internal",
-      is_active: false,
-      config_json: {
-        fields: Array.from({ length: 51 }, (_, index) => `field_${index}`),
-      },
-    });
-
-    expect(error?.code).toBe("22023");
+  it("rejects View field arrays over 50 at the database boundary", async () => {
+    await expect(
+      configurationFixtures.insert("views", {
+        business_id: businessA.id,
+        key: "oversized_view",
+        name: "Oversized View",
+        view_type: "table",
+        object_definition_id: cateringObject.id,
+        audience: "internal",
+        is_active: false,
+        config_json: {
+          fields: Array.from({ length: 51 }, (_, index) => `field_${index}`),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "22023" });
   });
 
-  it("rejects Form field arrays over 50 through direct authenticated writes", async () => {
-    const { error } = await ownerA.client.from("forms").insert({
-      business_id: businessA.id,
-      key: "oversized_form",
-      name: "Oversized Form",
-      object_definition_id: cateringObject.id,
-      mode: "edit",
-      audience: "internal",
-      is_active: false,
-      config_json: {
-        fields: Array.from({ length: 51 }, (_, index) => ({
-          field: `field_${index}`,
-        })),
-      },
-    });
-
-    expect(error?.code).toBe("22023");
+  it("rejects Form field arrays over 50 at the database boundary", async () => {
+    await expect(
+      configurationFixtures.insert("forms", {
+        business_id: businessA.id,
+        key: "oversized_form",
+        name: "Oversized Form",
+        object_definition_id: cateringObject.id,
+        mode: "edit",
+        audience: "internal",
+        is_active: false,
+        config_json: {
+          fields: Array.from({ length: 51 }, (_, index) => ({
+            field: `field_${index}`,
+          })),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "22023" });
   });
 
-  it("rejects Page layouts over 100 blocks through direct authenticated writes", async () => {
-    const { error } = await ownerA.client.from("pages").insert({
-      business_id: businessA.id,
-      key: "oversized_page",
-      title: "Oversized Page",
-      slug: "oversized-page",
-      audience: "internal",
-      status: "draft",
-      layout_json: {
-        blocks: Array.from({ length: 101 }, () => ({ type: "divider" })),
-      },
-    });
-
-    expect(error?.code).toBe("22023");
+  it("rejects Page layouts over 100 blocks at the database boundary", async () => {
+    await expect(
+      configurationFixtures.insert("pages", {
+        business_id: businessA.id,
+        key: "oversized_page",
+        title: "Oversized Page",
+        slug: "oversized-page",
+        audience: "internal",
+        status: "draft",
+        layout_json: {
+          blocks: Array.from({ length: 101 }, () => ({ type: "divider" })),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "22023" });
   });
 
   it("rejects graph changes that would break active Views or Forms", async () => {
@@ -623,11 +636,11 @@ describe("Milestone 3 experience runtime", () => {
       throw new Error("Notes Field missing");
     }
 
-    const { error: archiveError } = await ownerA.client
-      .from("field_definitions")
-      .update({ is_active: false })
-      .eq("id", notesField.id);
-    expect(archiveError?.code).toBe("23514");
+    await expect(
+      configurationFixtures.updateById("field_definitions", notesField.id, {
+        is_active: false,
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
 
     const { data: retained } = await ownerA.client
       .from("field_definitions")
@@ -636,11 +649,13 @@ describe("Milestone 3 experience runtime", () => {
       .single();
     expect(retained?.is_active).toBe(true);
 
-    const { error: objectArchiveError } = await ownerA.client
-      .from("object_definitions")
-      .update({ is_active: false })
-      .eq("id", cateringObject.id);
-    expect(objectArchiveError?.code).toBe("23514");
+    await expect(
+      configurationFixtures.updateById(
+        "object_definitions",
+        cateringObject.id,
+        { is_active: false },
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
   });
 
   it("creates and edits generic Records through configured Forms", async () => {
@@ -783,9 +798,8 @@ describe("Milestone 3 experience runtime", () => {
   });
 
   it("renders configured Pages internally and keeps drafts/internal Pages private", async () => {
-    const { data: internalPage, error: internalError } = await ownerA.client
-      .from("pages")
-      .insert({
+    const internalPage = requireFixture(
+      await configurationFixtures.insert("pages", {
         business_id: businessA.id,
         key: "catering_workspace",
         title: "Catering workspace",
@@ -799,28 +813,22 @@ describe("Milestone 3 experience runtime", () => {
             { type: "form", form_key: createForm.key },
           ],
         },
-      })
-      .select("*")
-      .single();
-    expect(internalError).toBeNull();
+      }),
+      "Could not create internal Page fixture.",
+    );
     expect(internalPage?.status).toBe("draft");
 
-    const { data: publicDraft, error: draftError } = await ownerA.client
-      .from("pages")
-      .insert({
-        business_id: businessA.id,
-        key: "public_draft",
-        title: "Coming soon",
-        slug: "coming-soon",
-        audience: "public",
-        status: "draft",
-        layout_json: {
-          blocks: [{ type: "text", text: "Not published yet." }],
-        },
-      })
-      .select("*")
-      .single();
-    expect(draftError).toBeNull();
+    const [publicDraft] = await configurationFixtures.insert("pages", {
+      business_id: businessA.id,
+      key: "public_draft",
+      title: "Coming soon",
+      slug: "coming-soon",
+      audience: "public",
+      status: "draft",
+      layout_json: {
+        blocks: [{ type: "text", text: "Not published yet." }],
+      },
+    });
     expect(publicDraft?.status).toBe("draft");
 
     expect(
@@ -840,30 +848,25 @@ describe("Milestone 3 experience runtime", () => {
   });
 
   it("publicly resolves only public and published static Pages", async () => {
-    const { data: published, error } = await ownerA.client
-      .from("pages")
-      .insert({
-        business_id: businessA.id,
-        key: "public_information",
-        title: "Catering information",
-        slug: "catering-information",
-        audience: "public",
-        status: "published",
-        layout_json: {
-          blocks: [
-            { type: "heading", text: "Catering from Bedford Bakery", level: 1 },
-            { type: "text", text: "Talk to our team about your next event." },
-            {
-              type: "button",
-              label: "Email us",
-              href: "mailto:catering@example.test",
-            },
-          ],
-        },
-      })
-      .select("*")
-      .single();
-    expect(error).toBeNull();
+    const [published] = await configurationFixtures.insert("pages", {
+      business_id: businessA.id,
+      key: "public_information",
+      title: "Catering information",
+      slug: "catering-information",
+      audience: "public",
+      status: "published",
+      layout_json: {
+        blocks: [
+          { type: "heading", text: "Catering from Bedford Bakery", level: 1 },
+          { type: "text", text: "Talk to our team about your next event." },
+          {
+            type: "button",
+            label: "Email us",
+            href: "mailto:catering@example.test",
+          },
+        ],
+      },
+    });
 
     const resolved = await resolvePublicPage(
       anonymous,
@@ -873,9 +876,8 @@ describe("Milestone 3 experience runtime", () => {
     expect(resolved?.business.name).toBe(businessA.name);
     expect(resolved?.page.layout.blocks).toHaveLength(3);
 
-    const { error: unsafePublishError } = await ownerA.client
-      .from("pages")
-      .insert({
+    await expect(
+      configurationFixtures.insert("pages", {
         business_id: businessA.id,
         key: "unsafe_public_write",
         title: "Unsafe",
@@ -885,32 +887,40 @@ describe("Milestone 3 experience runtime", () => {
         layout_json: {
           blocks: [{ type: "form", form_key: createForm.key }],
         },
-      });
-    expect(unsafePublishError?.code).toBe("23514");
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
   });
 
   it("archives Pages without exposing them in navigation or public resolution", async () => {
     const experience = createExperienceService(ownerA.client, {
       businessId: businessA.id,
     });
-    const internalPage = await experience.createPage({
-      key: `archived_internal_${crypto.randomUUID().replaceAll("-", "")}`,
-      title: "Archived internal Page",
-      slug: `archived-internal-${crypto.randomUUID()}`,
-      audience: "internal",
-      layout: { blocks: [{ type: "text", text: "Internal content" }] },
-      status: "draft",
-      isActive: false,
-    });
-    const publicPage = await experience.createPage({
-      key: `archived_public_${crypto.randomUUID().replaceAll("-", "")}`,
-      title: "Archived public Page",
-      slug: `archived-public-${crypto.randomUUID()}`,
-      audience: "public",
-      layout: { blocks: [{ type: "text", text: "Public content" }] },
-      status: "published",
-      isActive: false,
-    });
+    const internalPage = requireFixture(
+      await configurationFixtures.insert("pages", {
+        business_id: businessA.id,
+        key: `archived_internal_${crypto.randomUUID().replaceAll("-", "")}`,
+        title: "Archived internal Page",
+        slug: `archived-internal-${crypto.randomUUID()}`,
+        audience: "internal",
+        layout_json: { blocks: [{ type: "text", text: "Internal content" }] },
+        status: "draft",
+        is_active: false,
+      }),
+      "Could not create archived internal Page fixture.",
+    );
+    const publicPage = requireFixture(
+      await configurationFixtures.insert("pages", {
+        business_id: businessA.id,
+        key: `archived_public_${crypto.randomUUID().replaceAll("-", "")}`,
+        title: "Archived public Page",
+        slug: `archived-public-${crypto.randomUUID()}`,
+        audience: "public",
+        layout_json: { blocks: [{ type: "text", text: "Public content" }] },
+        status: "published",
+        is_active: false,
+      }),
+      "Could not create public Page fixture.",
+    );
 
     const navigation = await experience.listNavigation();
     expect(navigation.pages.some(({ id }) => id === internalPage.id)).toBe(
@@ -923,23 +933,26 @@ describe("Milestone 3 experience runtime", () => {
       await resolvePublicPage(anonymous, businessA.slug, publicPage.slug),
     ).toBeNull();
 
-    const dormantPage = await experience.createPage({
-      key: `dormant_reference_${crypto.randomUUID().replaceAll("-", "")}`,
-      title: "Dormant invalid reference",
-      slug: `dormant-reference-${crypto.randomUUID()}`,
-      audience: "internal",
-      layout: {
-        blocks: [{ type: "view", view_key: "missing_view" }],
-      },
-      status: "draft",
-      isActive: false,
-    });
-    await expect(
-      experience.updatePage({
-        pageDefinitionId: dormantPage.id,
-        changes: { isActive: true },
+    const dormantPage = requireFixture(
+      await configurationFixtures.insert("pages", {
+        business_id: businessA.id,
+        key: `dormant_reference_${crypto.randomUUID().replaceAll("-", "")}`,
+        title: "Dormant invalid reference",
+        slug: `dormant-reference-${crypto.randomUUID()}`,
+        audience: "internal",
+        layout_json: {
+          blocks: [{ type: "view", view_key: "missing_view" }],
+        },
+        status: "draft",
+        is_active: false,
       }),
-    ).rejects.toBeInstanceOf(ExperienceServiceError);
+      "Could not create dormant Page fixture.",
+    );
+    await expect(
+      configurationFixtures.updateById("pages", dormantPage.id, {
+        is_active: true,
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
   });
 
   it("does not give anonymous callers broad configuration or Record access", async () => {
@@ -968,16 +981,18 @@ describe("Milestone 3 experience runtime", () => {
         required: true,
       },
     ]);
-    const experience = createExperienceService(ownerA.client, {
-      businessId: businessA.id,
-    });
-    const orderForm = await experience.createForm({
-      key: "experience_order_create",
-      name: "New order",
-      objectDefinitionId: orderObject.id,
-      mode: "create",
-      config: { fields: [{ field: "order_number" }] },
-    });
+    const orderForm = requireFixture(
+      await configurationFixtures.insert("forms", {
+        business_id: businessA.id,
+        key: "experience_order_create",
+        name: "New order",
+        object_definition_id: orderObject.id,
+        mode: "create",
+        config_json: { fields: [{ field: "order_number" }] },
+        audience: "internal",
+      }),
+      "Could not create Order Form fixture.",
+    );
     const before = new FormData();
     before.set("order_number", "ORD-001");
     const firstOrder = await submitExperienceForm(
@@ -994,22 +1009,22 @@ describe("Milestone 3 experience runtime", () => {
         fieldType: "short_text",
       },
     ]);
-    await experience.updateForm({
-      formDefinitionId: orderForm.id,
-      changes: {
-        config: {
-          fields: [
-            { field: "order_number" },
-            {
-              field: "occasion",
-              label: "What is the occasion?",
-              help_text: "Optional",
-            },
-          ],
-        },
+    await configurationFixtures.updateById("forms", orderForm.id, {
+      config_json: {
+        fields: [
+          { field: "order_number" },
+          {
+            field: "occasion",
+            label: "What is the occasion?",
+            help_text: "Optional",
+          },
+        ],
       },
     });
 
+    const experience = createExperienceService(ownerA.client, {
+      businessId: businessA.id,
+    });
     const configured = await experience.loadForm(orderForm.key);
     const html = renderToStaticMarkup(
       createElement(FormRenderer, {

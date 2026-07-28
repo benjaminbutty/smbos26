@@ -64,6 +64,9 @@ jobs:
       - name: Run atomic configuration application tests
         run: npm run test:application
 
+      - name: Run mandatory configuration boundary and demo tests
+        run: npm run test:configuration-boundary
+
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration
 
