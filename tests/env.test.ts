@@ -53,4 +53,27 @@ describe("environment validation", () => {
       }),
     ).toThrow("AI_PROVIDER and AI_PROVIDER_API_KEY must be set together.");
   });
+
+  it("requires trusted preorder secrets in production", () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: "production",
+        NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable-key",
+      }),
+    ).toThrow("SUPABASE_SERVICE_ROLE_KEY");
+
+    expect(
+      parseEnvironment({
+        NODE_ENV: "production",
+        NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable-key",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+        PREORDER_RATE_LIMIT_SECRET: "rate-limit-secret",
+      }),
+    ).toMatchObject({
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
+      PREORDER_RATE_LIMIT_SECRET: "rate-limit-secret",
+    });
+  });
 });

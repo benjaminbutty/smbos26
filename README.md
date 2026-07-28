@@ -1,9 +1,8 @@
 # SMBOS
 
 SMBOS is an AI-native operating system for small physical businesses. The
-repository currently contains the Milestone 3 experience runtime: authenticated
-business workspaces rendered from tenant-safe graph and experience
-configuration.
+repository currently contains the Milestone 4 vertical slice: a multi-location
+bakery preorder capability over the tenant-safe graph and experience runtime.
 
 The product and architecture sources of truth are:
 
@@ -11,7 +10,7 @@ The product and architecture sources of truth are:
 - [`docs/architecture-decisions.md`](docs/architecture-decisions.md)
 - [`AGENTS.md`](AGENTS.md)
 
-## Milestone 3 scope
+## Milestone 4 scope
 
 Included:
 
@@ -22,14 +21,24 @@ Included:
 - generic Table, List, Cards, Detail, Field, Form, and Page renderers
 - generated internal workspace navigation and normal create/edit Record flows
 - authenticated draft Page preview and static published public Pages
+- a trusted public preorder Page block and narrow allow-listed catalogue
+- configurable safe public Customer and Order Fields
+- authoritative, atomic Customer/Order/Order Item graph creation
+- tenant-safe generic Record-to-Location links
+- Location-timezone slot generation, cutoff and booking horizon enforcement
+- transactionally locked per-Location Order capacity
+- idempotent public references and database-backed abuse throttling
+- post-commit confirmation email through a local console adapter
+- Bedford Bakery Orders operated through generic Table/Detail Views and an
+  edit Form
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
 
 Not included:
 
-- preorder functionality
+- online payment, deposits, refunds or inventory deduction
 - AI provider calls or builder behavior
-- public Record queries or public Form submissions
+- arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
 - configuration versioning, change sets, or publishing versions
 - workflow/rule execution
@@ -66,8 +75,10 @@ Supabase project using the CLI defaults.
    cp .env.example .env.local
    ```
 
-   The checked-in public values target the local stack. They are not secrets.
-   Leave the future AI values empty.
+   The checked-in public values target the local stack. Copy the
+   `SERVICE_ROLE_KEY` value reported by `npm run supabase:status` into the
+   server-only `SUPABASE_SERVICE_ROLE_KEY` variable. Never expose that value
+   through a `NEXT_PUBLIC_` variable. Leave the future AI values empty.
 
 4. Start the development server:
 
@@ -78,7 +89,7 @@ Supabase project using the CLI defaults.
 5. Open [http://localhost:3000](http://localhost:3000). The health endpoint is
    available at [http://localhost:3000/health](http://localhost:3000/health).
 
-## Local visual demo
+## Bedford Bakery local demonstration
 
 The demo bootstrap is deliberately local-only. It reads credentials from the
 running Supabase CLI and refuses any host/port other than this repository's
@@ -93,14 +104,20 @@ npm run dev
 
 Sign in at [http://localhost:3000/sign-in](http://localhost:3000/sign-in):
 
-- Email: `demo@smbos.local`
+- Staff email: `staff@smbos.local`
 - Password: `Local-demo-2026!`
 
-Open the generated
-[Catering Enquiries workspace](http://localhost:3000/app/bedford-bakery-demo/workspace/catering-enquiries).
-The Object, Fields, two Records, Table/Detail Views, and create/edit Forms are
-all generic graph and experience configuration. There is no Catering-specific
-runtime component, route, or persistence function.
+Open the public
+[Bedford Bakery preorder](http://localhost:3000/p/bedford-bakery-demo/preorder),
+choose products, Bedford or Milton Keynes, an available collection slot and
+customer details, then submit. The safe confirmation appears immediately. The
+local confirmation email is printed in the terminal running `npm run dev`.
+
+Then sign in as Staff and open the generic
+[Orders workspace](http://localhost:3000/app/bedford-bakery-demo/workspace/orders).
+Open the Order detail and use the generated edit Form to change its status.
+Products, Customers, Orders and Order Items are generic graph Records; the
+internal screens are generic Views and Forms.
 
 ## Local Supabase
 
@@ -137,10 +154,12 @@ validating from a clean state.
 
 | Command                    | Purpose                                          |
 | -------------------------- | ------------------------------------------------ |
-| `npm test`                 | Run fast unit and route tests                    |
-| `npm run test:integration` | Exercise real auth identities and RLS            |
-| `npm run test:experience`  | Run the Milestone 3 experience integration suite |
+| `npm test`                 | Run fast unit and component tests                |
+| `npm run test:integration` | Run the full real Supabase/PostgreSQL suite      |
+| `npm run test:rls`         | Run the Milestone 1 tenancy/RLS suite            |
 | `npm run test:graph`       | Run the Milestone 2 graph integrity suite        |
+| `npm run test:experience`  | Run the Milestone 3 experience suite             |
+| `npm run test:preorder`    | Run the Milestone 4 preorder/concurrency suite   |
 | `npm run test:watch`       | Run unit tests in watch mode                     |
 | `npm run typecheck`        | Generate route types and run TypeScript          |
 | `npm run lint`             | Run ESLint                                       |
@@ -151,8 +170,9 @@ validating from a clean state.
 | `npm run supabase:start`   | Start the local Supabase stack                   |
 | `npm run supabase:status`  | Show local Supabase service details              |
 | `npm run supabase:reset`   | Recreate and migrate the local database          |
+| `npm run supabase:lint`    | Run PostgreSQL lint against the local database   |
 | `npm run supabase:stop`    | Stop the local Supabase stack                    |
-| `npm run demo:seed`        | Create the local-only generated UI demo          |
+| `npm run demo:seed`        | Seed the local-only Bedford Bakery demonstration |
 
 Run the integration suite after Supabase is started and reset:
 
@@ -172,22 +192,24 @@ npm start
 ## Environment variables
 
 Environment values are parsed in `src/env.ts`. Deployment builds require both
-public Supabase values. Empty future AI values are normalized to `undefined`;
-partially configured AI integrations fail validation.
+public Supabase values. Trusted preorder writes also require the server-only
+service-role key at runtime. Empty optional values are normalized to
+`undefined`; partially configured AI integrations fail validation.
 
 | Variable                               | Required now | Visibility  |
 | -------------------------------------- | ------------ | ----------- |
 | `NEXT_PUBLIC_APP_URL`                  | No           | Browser     |
 | `NEXT_PUBLIC_SUPABASE_URL`             | Yes          | Browser     |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes          | Browser     |
+| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder | Server only |
+| `PREORDER_RATE_LIMIT_SECRET`           | Production   | Server only |
 | `AI_PROVIDER`                          | No           | Server only |
 | `AI_PROVIDER_API_KEY`                  | No           | Server only |
 
 The publishable key is designed for browser use; PostgreSQL RLS is the
-authorization boundary. Never expose a Supabase secret/service-role credential
-or an AI provider API key through a `NEXT_PUBLIC_` variable. Service-role
-credentials are used only by the test fixture to create and clean up isolated
-test identities.
+authorization boundary. The preorder server uses the service role only to call
+three narrow, schema-validated transaction/email RPCs. The browser never
+receives it and cannot execute the write RPC directly.
 
 ## Repository structure
 
@@ -197,10 +219,10 @@ src/
 ├── app/                Next.js App Router routes and global styles
 ├── auth/               Authentication actions and authorization helpers
 ├── components/         Shared user-interface components
-├── core/               Future metadata-driven business graph
+├── core/               Graph, experience and preorder boundaries
 ├── db/supabase/        SSR/browser clients and generated database types
 ├── lib/                Shared application utilities
-├── runtime/            Future deterministic experience runtime
+├── runtime/            Deterministic generic and trusted runtimes
 └── env.ts              Environment schema and parser
 supabase/
 ├── config.toml         Local Supabase CLI configuration
@@ -211,9 +233,6 @@ tests/
 └── *.test.ts          Fast unit and route tests
 ```
 
-The future graph engine and experience runtime should be added under the
-boundaries defined in the build specification when their milestones begin.
-
 ## Security model
 
 - Protected requests authenticate on the server.
@@ -221,6 +240,12 @@ boundaries defined in the build specification when their milestones begin.
   against the stable business UUID.
 - Fixed capabilities are centralized in `src/auth/capabilities.ts`.
 - Database policies independently restrict every tenant read and mutation.
+- Public catalogue reads return an explicit allow-list; generic graph and
+  experience tables remain inaccessible anonymously.
+- Public preorder writes pass through the server endpoint. PostgreSQL resolves
+  the Business from the published Page and configured key, revalidates every
+  Field/Product/Location/slot/price, locks capacity and creates the complete
+  graph bundle in one transaction.
 - Business creation derives the user from `auth.uid()` and atomically creates
   the business and its first Owner membership.
 - Business slugs are generated by PostgreSQL, globally unique, and immutable.

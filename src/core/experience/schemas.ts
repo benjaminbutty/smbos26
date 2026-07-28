@@ -185,6 +185,13 @@ const formBlockSchema = z
   })
   .strict();
 
+const preorderBlockSchema = z
+  .object({
+    type: z.literal("preorder"),
+    preorder_key: graphKeySchema,
+  })
+  .strict();
+
 const dividerBlockSchema = z.object({ type: z.literal("divider") }).strict();
 
 export const pageBlockSchema = z.discriminatedUnion("type", [
@@ -194,6 +201,7 @@ export const pageBlockSchema = z.discriminatedUnion("type", [
   buttonBlockSchema,
   viewBlockSchema,
   formBlockSchema,
+  preorderBlockSchema,
   dividerBlockSchema,
 ]);
 

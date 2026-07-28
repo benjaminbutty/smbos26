@@ -18,9 +18,10 @@ normal concurrent writes remain possible. Active Relationships likewise keep
 their source and target Objects from being archived until the Relationship is
 archived explicitly.
 
-`relationship_definitions.is_required` is metadata only in Milestone 2.
-Storage enforcement is deferred until a future transactional operation can
-create a Record and its required Relationships atomically.
+`relationship_definitions.is_required` remains metadata for standalone generic
+Record operations. The Milestone 4 trusted preorder transaction creates its
+configured required Records, Relationships and Location link atomically using
+the same graph triggers; it does not weaken or duplicate graph validation.
 
 Business concepts belong in object, field and relationship definitions. Do not
 add concept-specific service functions or persistence models.

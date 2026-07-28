@@ -5,7 +5,9 @@ import type {
   ExperienceViewBundle,
 } from "../../core/experience/service";
 import type { PageLayout } from "../../core/experience/schemas";
+import type { PublicPreorderCatalogue } from "../../core/preorder/schemas";
 import { FormRenderer } from "../forms/form-renderer";
+import { PreorderExperience } from "../preorder/preorder-experience";
 import { ViewRenderer } from "../views/view-renderer";
 
 interface ResolvedFormBlock {
@@ -13,11 +15,17 @@ interface ResolvedFormBlock {
   bundle: ExperienceFormBundle;
 }
 
+interface ResolvedPreorderBlock {
+  catalogue: PublicPreorderCatalogue;
+  endpoint: string;
+}
+
 interface PageRendererProps {
   layout: PageLayout;
   businessSlug?: string;
   views?: Readonly<Record<string, ExperienceViewBundle>>;
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
+  preorders?: Readonly<Record<string, ResolvedPreorderBlock>>;
   publicMode?: boolean;
 }
 
@@ -34,6 +42,7 @@ export function PageRenderer({
   businessSlug,
   views = {},
   forms = {},
+  preorders = {},
   publicMode = false,
 }: Readonly<PageRendererProps>): ReactNode {
   return (
@@ -128,6 +137,29 @@ export function PageRenderer({
               <MissingBlock
                 key={key}
                 message="This form is temporarily unavailable."
+              />
+            );
+          }
+          case "preorder": {
+            if (!publicMode) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="Preorder checkout is available only on the published customer page."
+                />
+              );
+            }
+            const resolvedPreorder = preorders[block.preorder_key];
+            return resolvedPreorder ? (
+              <PreorderExperience
+                catalogue={resolvedPreorder.catalogue}
+                endpoint={resolvedPreorder.endpoint}
+                key={key}
+              />
+            ) : (
+              <MissingBlock
+                key={key}
+                message="Preordering is temporarily unavailable."
               />
             );
           }
