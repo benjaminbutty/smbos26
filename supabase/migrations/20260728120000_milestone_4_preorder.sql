@@ -896,7 +896,9 @@ begin
       and field_definition.required
     order by field_definition.object_definition_id, field_definition.position
   loop
-    if configured_field.default_value is not null then
+    if private.graph_value_is_present(
+      configured_field.default_value
+    ) then
       continue;
     end if;
 
@@ -933,7 +935,9 @@ begin
             and customer_phone_field.object_definition_id = customer_object_id
             and customer_phone_field.key = customer_phone_key
             and customer_phone_field.is_active
-            and customer_phone_field.default_value is not null
+            and private.graph_value_is_present(
+              customer_phone_field.default_value
+            )
         )
       ) then
       continue;

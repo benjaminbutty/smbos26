@@ -837,6 +837,69 @@ describe("Milestone 4 preorder", () => {
     expect(archived.error).toBeNull();
   });
 
+  it("does not use an absent Customer phone default to cover a required Order snapshot", async () => {
+    const customerPhoneKey = originalConfig.field_mappings.customer.phone;
+    const orderPhoneKey = originalConfig.field_mappings.order.customer_phone;
+    if (!customerPhoneKey || !orderPhoneKey) {
+      throw new Error("Demo phone Field mappings are incomplete.");
+    }
+
+    const customerPhoneField = requireData(
+      await admin
+        .from("field_definitions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", customerObject.id)
+        .eq("key", customerPhoneKey)
+        .single(),
+      "Could not load the Customer phone Field",
+    );
+    const orderPhoneField = requireData(
+      await admin
+        .from("field_definitions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id)
+        .eq("key", orderPhoneKey)
+        .single(),
+      "Could not load the Order customer-phone Field",
+    );
+
+    const emptyCustomerDefault = await owner
+      .from("field_definitions")
+      .update({ default_value: "" })
+      .eq("business_id", business.id)
+      .eq("id", customerPhoneField.id);
+    expect(emptyCustomerDefault.error).toBeNull();
+
+    try {
+      const requiredOrderPhone = await owner
+        .from("field_definitions")
+        .update({ required: true })
+        .eq("business_id", business.id)
+        .eq("id", orderPhoneField.id);
+      expect(requiredOrderPhone.error?.code).toBe("23514");
+
+      const retainedOrderPhone = requireData(
+        await admin
+          .from("field_definitions")
+          .select("required")
+          .eq("business_id", business.id)
+          .eq("id", orderPhoneField.id)
+          .single(),
+        "Could not reload the Order customer-phone Field",
+      );
+      expect(retainedOrderPhone.required).toBe(false);
+    } finally {
+      const restored = await owner
+        .from("field_definitions")
+        .update({ default_value: null })
+        .eq("business_id", business.id)
+        .eq("id", customerPhoneField.id);
+      expect(restored.error).toBeNull();
+    }
+  });
+
   it("resolves only a published public Page with an active same-tenant preorder", async () => {
     expect(catalogue.business).toEqual({
       name: "Bedford Bakery",

@@ -478,6 +478,13 @@ begin
       using errcode = '22023';
   end if;
 
+  if new.required
+    and new.default_value is not null
+    and not private.graph_value_is_present(new.default_value) then
+    raise exception 'Required Field default value must be present'
+      using errcode = '23514';
+  end if;
+
   return new;
 end;
 $$;
