@@ -21,6 +21,8 @@ export const environmentSchema = z
     NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
     NEXT_PUBLIC_SUPABASE_URL: z.url(),
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().trim().min(1),
+    SUPABASE_SERVICE_ROLE_KEY: optionalString,
+    PREORDER_RATE_LIMIT_SECRET: optionalString,
     AI_PROVIDER: optionalString,
     AI_PROVIDER_API_KEY: optionalString,
   })
@@ -33,6 +35,30 @@ export const environmentSchema = z
         code: "custom",
         message: "AI_PROVIDER and AI_PROVIDER_API_KEY must be set together.",
         path: [hasAiProvider ? "AI_PROVIDER_API_KEY" : "AI_PROVIDER"],
+      });
+    }
+
+    if (
+      environment.NODE_ENV === "production" &&
+      !environment.SUPABASE_SERVICE_ROLE_KEY
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "SUPABASE_SERVICE_ROLE_KEY is required for trusted preorder writes in production.",
+        path: ["SUPABASE_SERVICE_ROLE_KEY"],
+      });
+    }
+
+    if (
+      environment.NODE_ENV === "production" &&
+      !environment.PREORDER_RATE_LIMIT_SECRET
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "PREORDER_RATE_LIMIT_SECRET is required for public-write hashing in production.",
+        path: ["PREORDER_RATE_LIMIT_SECRET"],
       });
     }
   });
@@ -52,6 +78,8 @@ export function getEnvironment(): Environment {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    PREORDER_RATE_LIMIT_SECRET: process.env.PREORDER_RATE_LIMIT_SECRET,
     AI_PROVIDER: process.env.AI_PROVIDER,
     AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY,
   });

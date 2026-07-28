@@ -15,6 +15,10 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
     return <div className="app-frame workspace-frame">{children}</div>;
   }
 
+  if (pathname.startsWith("/p/")) {
+    return <div className="app-frame customer-frame">{children}</div>;
+  }
+
   return (
     <div className="app-frame">
       <header className="site-header">

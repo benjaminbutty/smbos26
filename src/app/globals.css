@@ -1228,3 +1228,433 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+.public-preorder-page {
+  width: min(calc(100% - 2rem), 76rem);
+  padding-bottom: 5rem;
+}
+
+.public-preorder-page .public-page-heading {
+  padding: 2.5rem 0 1rem;
+  text-align: center;
+}
+
+.public-preorder-page .public-page-heading .eyebrow {
+  color: #a44d37;
+}
+
+.public-preorder-page .runtime-page-blocks > h1,
+.public-preorder-page .runtime-page-blocks > .page-text-block {
+  max-width: 44rem;
+  margin-right: auto;
+  margin-left: auto;
+  text-align: center;
+}
+
+.preorder-flow {
+  display: grid;
+  align-items: start;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+}
+
+.preorder-section {
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: rgba(255, 252, 246, 0.92);
+  border: 1px solid rgba(88, 53, 35, 0.14);
+  border-radius: 1.25rem;
+  box-shadow: 0 1rem 3rem rgba(75, 50, 34, 0.06);
+  grid-column: 1;
+}
+
+.preorder-section-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.preorder-section-heading > span {
+  display: inline-grid;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  color: #fffaf3;
+  background: #a44d37;
+  border-radius: 50%;
+  font-weight: 800;
+  place-items: center;
+}
+
+.preorder-section-heading h2,
+.preorder-section-heading p {
+  margin: 0;
+}
+
+.preorder-section-heading h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.35rem, 2vw, 1.7rem);
+}
+
+.preorder-section-heading p {
+  margin-top: 0.25rem;
+  color: var(--muted);
+}
+
+.preorder-product-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.preorder-product-card {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid rgba(88, 53, 35, 0.13);
+  border-radius: 1rem;
+}
+
+.preorder-product-card > img,
+.preorder-product-placeholder {
+  width: 100%;
+  height: 10rem;
+  object-fit: cover;
+}
+
+.preorder-product-placeholder {
+  display: grid;
+  color: #fff7ed;
+  background:
+    linear-gradient(135deg, rgba(164, 77, 55, 0.35), transparent), #4f6a55;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2rem;
+  place-items: center;
+}
+
+.preorder-product-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 1rem;
+}
+
+.preorder-product-copy h3,
+.preorder-product-copy p {
+  margin: 0;
+}
+
+.preorder-product-copy p {
+  flex: 1;
+  margin: 0.45rem 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.quantity-control {
+  display: grid;
+  align-items: center;
+  margin: 0 1rem 1rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  grid-template-columns: 2.75rem 1fr 2.75rem;
+}
+
+.quantity-control button {
+  min-height: 2.5rem;
+  padding: 0;
+  color: var(--foreground);
+  background: #f8f3eb;
+  border: 0;
+  border-radius: 0;
+  font-size: 1.2rem;
+}
+
+.quantity-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.quantity-control output {
+  text-align: center;
+  font-weight: 800;
+}
+
+.preorder-choice-grid,
+.preorder-fields {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preorder-choice-grid label,
+.preorder-fields label {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.preorder-choice-grid select,
+.preorder-fields input,
+.preorder-fields select,
+.preorder-fields textarea {
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.7rem 0.8rem;
+  color: var(--foreground);
+  background: #fff;
+  border: 1px solid rgba(29, 40, 34, 0.22);
+  border-radius: 0.7rem;
+}
+
+.preorder-fields textarea,
+.preorder-fields label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.preorder-fields small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.slot-picker {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.slot-picker legend {
+  margin-bottom: 0.65rem;
+  font-weight: 800;
+}
+
+.slot-picker > div {
+  display: grid;
+  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr));
+}
+
+.slot-picker label {
+  position: relative;
+  display: grid;
+  min-height: 3rem;
+  cursor: pointer;
+  place-items: center;
+}
+
+.slot-picker input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.slot-picker label > span {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  font-weight: 700;
+  place-items: center;
+}
+
+.slot-picker input:checked + span {
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.slot-picker input:focus-visible + span {
+  outline: 3px solid rgba(34, 101, 74, 0.25);
+  outline-offset: 2px;
+}
+
+.slot-picker .is-sold-out {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.slot-picker .is-sold-out small {
+  position: absolute;
+  bottom: -0.25rem;
+  padding: 0 0.2rem;
+  background: #fff;
+  font-size: 0.62rem;
+}
+
+.preorder-summary {
+  position: sticky;
+  top: 1rem;
+  padding: 1.35rem;
+  background: #243d31;
+  border-radius: 1.25rem;
+  color: #f9f3e9;
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
+.preorder-summary h2 {
+  margin-top: 0;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.preorder-summary ul {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.preorder-summary li,
+.preorder-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.preorder-total {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 1.15rem;
+}
+
+.preorder-collection-note {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.preorder-summary > button {
+  width: 100%;
+  color: #243d31;
+  background: #f3c886;
+  border-color: #f3c886;
+}
+
+.preorder-error {
+  padding: 0.75rem;
+  color: #5f2119;
+  background: #ffe3dc;
+  border-radius: 0.65rem;
+  font-size: 0.85rem;
+}
+
+.preorder-honeypot {
+  position: absolute !important;
+  left: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+}
+
+.preorder-confirmation {
+  max-width: 42rem;
+  margin: 2rem auto;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  background: #fffaf2;
+  border: 1px solid rgba(88, 53, 35, 0.14);
+  border-radius: 1.4rem;
+  box-shadow: 0 1rem 4rem rgba(75, 50, 34, 0.09);
+}
+
+.preorder-confirmation h2 {
+  margin-top: 0.25rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.confirmation-reference {
+  padding: 0.9rem 1rem;
+  background: #f2e8d9;
+  border-radius: 0.7rem;
+}
+
+.preorder-confirmation dl {
+  display: grid;
+  gap: 0;
+  margin: 1.5rem 0;
+}
+
+.preorder-confirmation dl > div {
+  display: grid;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+  grid-template-columns: 9rem 1fr;
+}
+
+.preorder-confirmation dt {
+  color: var(--muted);
+}
+
+.preorder-confirmation dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.email-delivery-note {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 58rem) {
+  .preorder-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .preorder-summary {
+    position: static;
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .preorder-product-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 38rem) {
+  .preorder-product-grid,
+  .preorder-choice-grid,
+  .preorder-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .preorder-product-card {
+    display: grid;
+    grid-template-columns: 7rem 1fr;
+  }
+
+  .preorder-product-card > img,
+  .preorder-product-placeholder {
+    width: 7rem;
+    height: 100%;
+    min-height: 11rem;
+  }
+
+  .preorder-product-copy {
+    padding-bottom: 0.4rem;
+  }
+
+  .quantity-control {
+    margin: 0 1rem 1rem;
+    grid-column: 2;
+  }
+
+  .preorder-confirmation dl > div {
+    gap: 0.25rem;
+    grid-template-columns: 1fr;
+  }
+}

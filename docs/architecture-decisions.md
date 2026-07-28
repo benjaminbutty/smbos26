@@ -208,3 +208,108 @@ or the Milestone 5 version engine.
   are implemented.
 - Full draft configuration versions, publish pointers and rollback remain
   Milestone 5 work; Milestone 3 Page status is intentionally smaller.
+
+## ADR-005 - Trusted preorder capability over graph and experience primitives
+
+**Status:** Accepted for v0.1
+
+**Date:** 28 July 2026
+
+### Context
+
+The first complete business application must accept multi-location bakery
+preorders publicly while preserving the metadata graph as the logical domain
+model. Anonymous callers cannot receive generic Record, View, Form or
+configuration access. Submission must also calculate prices, enforce
+Location-timezone collection rules, prevent capacity overselling and create
+the complete Order graph atomically.
+
+Generic single-Record operations are insufficient for a transaction that must
+create Customer, Order and Order Item Records, three kinds of Relationships, a
+Location link and a capacity reservation together.
+
+### Decision
+
+- Customer, Product, Order and Order Item remain graph Objects stored in
+  `records`; their connections use `record_relationships`. No domain SQL table
+  or Order-specific internal runtime is introduced.
+- `record_location_links` is a reusable platform primitive connecting generic
+  Records to first-class Locations. Composite `(business_id, id)` foreign keys
+  structurally prevent cross-tenant links.
+- `preorder_experiences` is tenant-owned trusted-capability configuration. It
+  references four Objects and three Relationships with composite tenant foreign
+  keys and stores a strict allow-listed configuration for Field mappings, safe
+  public Fields and schedule values. PostgreSQL and TypeScript enforce the same
+  grammar.
+- A Page may contain `{ "type": "preorder", "preorder_key": "..." }` only
+  for a same-tenant active configuration on a public Page. Generic View and Form
+  blocks remain forbidden on published public Pages.
+- Anonymous catalogue access uses a narrow security-definer resolver returning
+  only safe business, active Location, Product, price, availability, public
+  Field and slot data. Its public signature has no clock argument and always
+  uses database statement time; deterministic time injection is confined to a
+  private integration-test helper.
+- Browser submissions use a server-controlled HTTP endpoint. Submission and
+  email-state RPCs are executable only by the server's service role; the
+  credential never enters browser code. The transaction resolves the Business
+  from the published Page and preorder key and never accepts a caller-supplied
+  tenant UUID.
+- PostgreSQL is the authoritative write boundary. It revalidates the complete
+  public grammar, graph Fields, active Products, Product-to-Location links,
+  selected Location and collection slot, then inserts ordinary graph rows so
+  ADR-003 triggers remain authoritative.
+- Product prices are re-read as PostgreSQL `numeric`. Unit price, line total
+  and Order total snapshots are calculated in the transaction; browser totals
+  are not accepted.
+- `preorder_slot_counters` stores one tenant/experience/Location/timestamp row.
+  `INSERT ... ON CONFLICT DO UPDATE ... WHERE reservation_count < capacity`
+  takes the PostgreSQL row lock and increments in the same transaction as graph
+  creation. Any later failure rolls the increment back.
+- A cryptographically random client token is unique per
+  tenant/preorder experience in `preorder_submissions`. A retry returns the
+  stored safe confirmation and neither recreates graph rows nor consumes
+  capacity. Human-facing references use a separate database-unique
+  `PO-XXXXXXXX` value.
+- Collection wall times are interpreted in each allowed Location's IANA
+  timezone. Day, interval, cutoff and booking horizon are rechecked at
+  submission; catalogue availability is advisory. Orders also store immutable
+  local-display and timezone snapshots for generic staff Views while retaining
+  the authoritative `collection_at` timestamp.
+- Active configuration validation proves all required Customer, Order and
+  Order Item Fields are constructable from authoritative runtime values,
+  required public Fields, or defaults applied by the generic Record trigger.
+  Field and configuration mutations that break this invariant roll back.
+- Confirmation email is an adapter invoked after transaction commit. Delivery
+  state/error is persisted separately, and provider failure never removes the
+  Order. The console adapter is restricted to development/test; production
+  without a provider records and returns a controlled delivery failure.
+
+### Consequences
+
+Positive:
+
+- Bedford Bakery is configuration and graph data over reusable platform
+  primitives.
+- Staff can operate resulting Orders immediately through the Milestone 3
+  generic Table, Detail and edit Form runtime.
+- Capacity cannot oversell under coordinated concurrency, and public retries
+  are safe.
+- Public callers cannot turn the capability into arbitrary graph reads or
+  writes.
+
+Trade-offs and deliberate limits:
+
+- The capability transaction is intentionally private and specialized in its
+  orchestration, while all persisted business data and validation remain
+  generic.
+- A new Customer Record is currently created for every successful preorder.
+  Exact normalized-email reuse may be added later; immutable Order snapshots
+  already protect history.
+- Capacity counts Orders and is not released by later status changes in
+  Milestone 4.
+- The development/test email adapter logs safe confirmation data. Production
+  has no live provider in Milestone 4 and therefore fails delivery closed;
+  workflow and queue infrastructure remain deferred.
+- The narrow database-backed hash throttle, honeypot, size limits and
+  idempotency are proportionate abuse controls, not complete anti-fraud
+  protection.

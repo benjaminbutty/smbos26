@@ -1,0 +1,1915 @@
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
+import postgres from "postgres";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+import { createExperienceService } from "../../src/core/experience/service";
+import { defaultPreorderEmailAdapter } from "../../src/core/preorder/email";
+import {
+  publicPreorderCatalogueSchema,
+  publicPreorderResultSchema,
+  type PreorderConfig,
+  type PublicPreorderCatalogue,
+  type PublicPreorderResult,
+  type PublicPreorderSubmission,
+} from "../../src/core/preorder/schemas";
+import { processPreorderSubmission } from "../../src/app/api/preorder/[businessSlug]/[pageSlug]/route";
+import type {
+  Database,
+  Json,
+  Tables,
+} from "../../src/db/supabase/database.types";
+import { submitExperienceForm } from "../../src/runtime/forms/submission";
+import { ViewRenderer } from "../../src/runtime/views/view-renderer";
+import {
+  getLocalSupabaseSettings,
+  type LocalSupabaseSettings,
+} from "./support/local-supabase";
+
+vi.mock("server-only", () => ({}));
+
+type Client = SupabaseClient<Database>;
+type Business = Tables<"businesses">;
+type ObjectDefinition = Tables<"object_definitions">;
+type ProductRecord = Tables<"records">;
+type RelationshipDefinition = Tables<"relationship_definitions">;
+
+interface Identity {
+  client: Client;
+  user: User;
+}
+
+interface OtherTenantFixture {
+  business: Business;
+  location: Tables<"locations">;
+  object: ObjectDefinition;
+  relationship: RelationshipDefinition;
+  record: ProductRecord;
+}
+
+const password = "Milestone-4-test-password!";
+const demoPassword = "Local-demo-2026!";
+const businessSlug = "bedford-bakery-demo";
+const preorderKey = "bakery_preorder";
+const pageSlug = "preorder";
+const createdUserIds: string[] = [];
+
+let settings: LocalSupabaseSettings;
+let admin: Client;
+let anonymous: Client;
+let owner: Client;
+let staff: Client;
+let administrator: Identity;
+let otherOwner: Identity;
+let business: Business;
+let other: OtherTenantFixture;
+let preorder: Tables<"preorder_experiences">;
+let originalConfig: PreorderConfig;
+let customerObject: ObjectDefinition;
+let productObject: ObjectDefinition;
+let orderObject: ObjectDefinition;
+let orderItemObject: ObjectDefinition;
+let relationships: Record<string, RelationshipDefinition>;
+let locations: Record<string, Tables<"locations">>;
+let products: Record<string, ProductRecord>;
+let catalogue: PublicPreorderCatalogue;
+let databaseUrl: string;
+
+function requireData<T>(
+  result: { data: T; error: { message: string } | null },
+  message: string,
+): NonNullable<T> {
+  if (result.error || result.data === null) {
+    throw new Error(`${message}: ${result.error?.message ?? "No data"}`);
+  }
+  return result.data as NonNullable<T>;
+}
+
+async function signIn(email: string, loginPassword: string): Promise<Client> {
+  const client = createClient<Database>(
+    settings.apiUrl,
+    settings.publishableKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+  const { error } = await client.auth.signInWithPassword({
+    email,
+    password: loginPassword,
+  });
+  if (error) {
+    throw error;
+  }
+  return client;
+}
+
+async function createIdentity(label: string): Promise<Identity> {
+  const email = `m4-${Date.now()}-${label}-${crypto.randomUUID()}@example.test`;
+  const created = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (created.error || !created.data.user) {
+    throw created.error ?? new Error(`Could not create ${label}`);
+  }
+  createdUserIds.push(created.data.user.id);
+  return {
+    client: await signIn(email, password),
+    user: created.data.user,
+  };
+}
+
+function asObject(value: Json): Record<string, Json | undefined> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Expected a JSON object.");
+  }
+  return value;
+}
+
+function requestHash(): string {
+  return createHash("sha256").update(crypto.randomUUID(), "utf8").digest("hex");
+}
+
+async function resolveCatalogue(): Promise<PublicPreorderCatalogue> {
+  const { data, error } = await anonymous.rpc("resolve_public_preorder", {
+    requested_business_slug: businessSlug,
+    requested_page_slug: pageSlug,
+    requested_preorder_key: preorderKey,
+  });
+  if (error) {
+    throw error;
+  }
+  return publicPreorderCatalogueSchema.parse(data);
+}
+
+async function resolveCatalogueAt(
+  referenceNow: string,
+): Promise<PublicPreorderCatalogue> {
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const [resolved] = await sql<{ catalogue: Json }[]>`
+      select private.resolve_preorder_catalogue_at(
+        ${businessSlug},
+        ${pageSlug},
+        ${preorderKey},
+        ${referenceNow}::timestamptz
+      ) as catalogue
+    `;
+    if (!resolved) {
+      throw new Error("Private preorder catalogue resolver returned no row.");
+    }
+    return publicPreorderCatalogueSchema.parse(resolved.catalogue);
+  } finally {
+    await sql.end();
+  }
+}
+
+function pickSlot(index: number): {
+  location: Tables<"locations">;
+  collectionAt: string;
+} {
+  const bedford = locations.Bedford;
+  if (!bedford) {
+    throw new Error("Bedford Location is missing.");
+  }
+  const resolvedLocation = catalogue.preorder.locations.find(
+    ({ id }) => id === bedford.id,
+  );
+  const slot = resolvedLocation?.slots.filter(({ available }) => available)[
+    index
+  ];
+  if (!slot) {
+    throw new Error(`No available preorder slot at index ${index}.`);
+  }
+  return { location: bedford, collectionAt: slot.collection_at };
+}
+
+function baseSubmission(
+  slotIndex: number,
+  options?: {
+    idempotencyToken?: string;
+    locationId?: string;
+    productId?: string;
+    quantity?: number;
+  },
+): PublicPreorderSubmission {
+  const slot = pickSlot(slotIndex);
+  const product = products["Afternoon Tea Box"];
+  if (!product) {
+    throw new Error("Afternoon Tea Box is missing.");
+  }
+  return {
+    idempotency_token: options?.idempotencyToken ?? crypto.randomUUID(),
+    location_id: options?.locationId ?? slot.location.id,
+    collection_at: slot.collectionAt,
+    items: [
+      {
+        product_id: options?.productId ?? product.id,
+        quantity: options?.quantity ?? 1,
+      },
+    ],
+    fields: {
+      customer: {
+        name: "Ada Lovelace",
+        email: "ada@example.test",
+        phone: "01234 567890",
+      },
+      order: {
+        dietary_requirements: "Vegetarian",
+        occasion: "Birthday",
+      },
+    },
+    website: "",
+  };
+}
+
+async function submitRaw(
+  submission: Json,
+  hash = requestHash(),
+): Promise<PublicPreorderResult> {
+  const { data, error } = await admin.rpc("submit_public_preorder", {
+    requested_business_slug: businessSlug,
+    requested_page_slug: pageSlug,
+    requested_preorder_key: preorderKey,
+    requested_request_hash: hash,
+    submission,
+  });
+  if (error) {
+    throw error;
+  }
+  return publicPreorderResultSchema.parse(data);
+}
+
+async function countGraphRows(): Promise<{
+  records: number;
+  relationships: number;
+  locationLinks: number;
+  submissions: number;
+}> {
+  const [recordResult, relationshipResult, linkResult, submissionResult] =
+    await Promise.all([
+      admin
+        .from("records")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id),
+      admin
+        .from("record_relationships")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id),
+      admin
+        .from("record_location_links")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id),
+      admin
+        .from("preorder_submissions")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", business.id),
+    ]);
+  for (const result of [
+    recordResult,
+    relationshipResult,
+    linkResult,
+    submissionResult,
+  ]) {
+    if (result.error) {
+      throw result.error;
+    }
+  }
+  return {
+    records: recordResult.count ?? 0,
+    relationships: relationshipResult.count ?? 0,
+    locationLinks: linkResult.count ?? 0,
+    submissions: submissionResult.count ?? 0,
+  };
+}
+
+async function updateConfig(config: PreorderConfig): Promise<void> {
+  const { error } = await owner
+    .from("preorder_experiences")
+    .update({ config_json: config })
+    .eq("business_id", business.id)
+    .eq("id", preorder.id);
+  if (error) {
+    throw error;
+  }
+}
+
+function walkSourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? walkSourceFiles(path) : [path];
+  });
+}
+
+describe("Milestone 4 preorder", () => {
+  beforeAll(async () => {
+    settings = getLocalSupabaseSettings();
+    databaseUrl = settings.databaseUrl;
+    execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    });
+    anonymous = createClient<Database>(
+      settings.apiUrl,
+      settings.publishableKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          persistSession: false,
+        },
+      },
+    );
+    [owner, staff] = await Promise.all([
+      signIn("demo@smbos.local", demoPassword),
+      signIn("staff@smbos.local", demoPassword),
+    ]);
+    [administrator, otherOwner] = await Promise.all([
+      createIdentity("administrator"),
+      createIdentity("other-owner"),
+    ]);
+
+    business = requireData(
+      await admin
+        .from("businesses")
+        .select("*")
+        .eq("slug", businessSlug)
+        .single(),
+      "Could not load Bedford Bakery",
+    );
+    const membership = await admin.from("business_memberships").insert({
+      business_id: business.id,
+      user_id: administrator.user.id,
+      role: "admin",
+    });
+    if (membership.error) {
+      throw membership.error;
+    }
+
+    const otherBusiness = requireData(
+      await otherOwner.client.rpc("create_business", {
+        business_name: `Other Bakery ${crypto.randomUUID()}`,
+        requested_business_type: "bakery",
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create the other tenant",
+    );
+    const otherLocation = requireData(
+      await otherOwner.client.rpc("create_location", {
+        target_business_id: otherBusiness.id,
+        location_name: "Other Location",
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create the other Location",
+    );
+    const otherObjects = requireData(
+      await otherOwner.client
+        .from("object_definitions")
+        .insert([
+          {
+            business_id: otherBusiness.id,
+            key: "thing",
+            singular_label: "Thing",
+            plural_label: "Things",
+            description: "",
+            kind: "custom",
+          },
+          {
+            business_id: otherBusiness.id,
+            key: "other_thing",
+            singular_label: "Other Thing",
+            plural_label: "Other Things",
+            description: "",
+            kind: "custom",
+          },
+        ])
+        .select("*"),
+      "Could not create other tenant Objects",
+    );
+    const [otherObject, otherTargetObject] = otherObjects;
+    if (!otherObject || !otherTargetObject) {
+      throw new Error("Other tenant Objects are incomplete.");
+    }
+    const fieldsResult = await otherOwner.client
+      .from("field_definitions")
+      .insert([
+        {
+          business_id: otherBusiness.id,
+          object_definition_id: otherObject.id,
+          key: "name",
+          label: "Name",
+          field_type: "short_text",
+          required: true,
+          settings_json: {},
+          position: 0,
+        },
+        {
+          business_id: otherBusiness.id,
+          object_definition_id: otherTargetObject.id,
+          key: "name",
+          label: "Name",
+          field_type: "short_text",
+          required: true,
+          settings_json: {},
+          position: 0,
+        },
+      ]);
+    if (fieldsResult.error) {
+      throw fieldsResult.error;
+    }
+    const otherRelationship = requireData(
+      await otherOwner.client
+        .from("relationship_definitions")
+        .insert({
+          business_id: otherBusiness.id,
+          key: "thing_has_other",
+          source_object_definition_id: otherObject.id,
+          target_object_definition_id: otherTargetObject.id,
+          source_label: "has",
+          target_label: "belongs to",
+          cardinality: "one_to_many",
+          is_required: false,
+        })
+        .select("*")
+        .single(),
+      "Could not create the other tenant Relationship",
+    );
+    const otherRecord = requireData(
+      await otherOwner.client
+        .from("records")
+        .insert({
+          business_id: otherBusiness.id,
+          object_definition_id: otherObject.id,
+          data_json: { name: "Other tenant product" },
+        })
+        .select("*")
+        .single(),
+      "Could not create the other tenant Record",
+    );
+    other = {
+      business: otherBusiness,
+      location: otherLocation,
+      object: otherObject,
+      relationship: otherRelationship,
+      record: otherRecord,
+    };
+
+    const [objectRows, relationshipRows, locationRows, preorderRow] =
+      await Promise.all([
+        admin
+          .from("object_definitions")
+          .select("*")
+          .eq("business_id", business.id),
+        admin
+          .from("relationship_definitions")
+          .select("*")
+          .eq("business_id", business.id),
+        admin.from("locations").select("*").eq("business_id", business.id),
+        admin
+          .from("preorder_experiences")
+          .select("*")
+          .eq("business_id", business.id)
+          .eq("key", preorderKey)
+          .single(),
+      ]);
+    if (
+      objectRows.error ||
+      relationshipRows.error ||
+      locationRows.error ||
+      preorderRow.error
+    ) {
+      throw (
+        objectRows.error ??
+        relationshipRows.error ??
+        locationRows.error ??
+        preorderRow.error
+      );
+    }
+    const objectByKey = Object.fromEntries(
+      (objectRows.data ?? []).map((object) => [object.key, object]),
+    );
+    const demoCustomerObject = objectByKey.customer;
+    const demoProductObject = objectByKey.product;
+    const demoOrderObject = objectByKey.order;
+    const demoOrderItemObject = objectByKey.order_item;
+    if (
+      !demoCustomerObject ||
+      !demoProductObject ||
+      !demoOrderObject ||
+      !demoOrderItemObject
+    ) {
+      throw new Error("Demo graph Objects are incomplete.");
+    }
+    customerObject = demoCustomerObject;
+    productObject = demoProductObject;
+    orderObject = demoOrderObject;
+    orderItemObject = demoOrderItemObject;
+    relationships = Object.fromEntries(
+      (relationshipRows.data ?? []).map((relationship) => [
+        relationship.key,
+        relationship,
+      ]),
+    );
+    locations = Object.fromEntries(
+      (locationRows.data ?? []).map((location) => [location.name, location]),
+    );
+    preorder = preorderRow.data;
+    originalConfig = preorder.config_json as PreorderConfig;
+
+    const productRows = requireData(
+      await admin
+        .from("records")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", productObject.id),
+      "Could not load demo Products",
+    );
+    products = Object.fromEntries(
+      productRows.map((product) => [
+        String(asObject(product.data_json).name),
+        product,
+      ]),
+    );
+    catalogue = await resolveCatalogue();
+  }, 60_000);
+
+  afterAll(async () => {
+    if (admin && other?.business) {
+      await admin.from("businesses").delete().eq("id", other.business.id);
+    }
+    for (const userId of createdUserIds) {
+      await admin.auth.admin.deleteUser(userId);
+    }
+  });
+
+  it("allows Owners/Admins to configure while Staff and other tenants cannot", async () => {
+    const changedConfig = structuredClone(originalConfig);
+    changedConfig.schedule.cutoff_hours = 72;
+    const adminUpdate = await administrator.client
+      .from("preorder_experiences")
+      .update({ config_json: changedConfig })
+      .eq("business_id", business.id)
+      .eq("id", preorder.id)
+      .select("id");
+    expect(adminUpdate.error).toBeNull();
+    expect(adminUpdate.data).toHaveLength(1);
+
+    const staffUpdate = await staff
+      .from("preorder_experiences")
+      .update({ config_json: originalConfig })
+      .eq("business_id", business.id)
+      .eq("id", preorder.id)
+      .select("id");
+    expect(staffUpdate.error).toBeNull();
+    expect(staffUpdate.data).toEqual([]);
+
+    const otherRead = await otherOwner.client
+      .from("preorder_experiences")
+      .select("id")
+      .eq("business_id", business.id);
+    expect(otherRead.error).toBeNull();
+    expect(otherRead.data).toEqual([]);
+    const otherUpdate = await otherOwner.client
+      .from("preorder_experiences")
+      .update({ config_json: originalConfig })
+      .eq("business_id", business.id)
+      .eq("id", preorder.id)
+      .select("id");
+    expect(otherUpdate.error).toBeNull();
+    expect(otherUpdate.data).toEqual([]);
+
+    await updateConfig(originalConfig);
+  });
+
+  it("structurally rejects cross-tenant Object, Relationship, Record and Location references", async () => {
+    const sql = postgres(databaseUrl, { max: 1 });
+    const constraints = await sql<{ conname: string }[]>`
+      select conname
+      from pg_constraint
+      where conname in (
+        'preorder_experiences_tenant_product_object_fkey',
+        'preorder_experiences_tenant_customer_order_relationship_fkey',
+        'record_location_links_tenant_record_fkey',
+        'record_location_links_tenant_location_fkey'
+      )
+    `;
+    await sql.end();
+    expect(constraints.map(({ conname }) => conname).sort()).toEqual(
+      [
+        "preorder_experiences_tenant_customer_order_relationship_fkey",
+        "preorder_experiences_tenant_product_object_fkey",
+        "record_location_links_tenant_location_fkey",
+        "record_location_links_tenant_record_fkey",
+      ].sort(),
+    );
+
+    const customerRelationship = relationships.customer_places_order;
+    const itemRelationship = relationships.order_contains_order_item;
+    const productRelationship = relationships.product_appears_in_order_item;
+    if (!customerRelationship || !itemRelationship || !productRelationship) {
+      throw new Error("Demo Relationships are incomplete.");
+    }
+    const objectAttempt = await admin.from("preorder_experiences").insert({
+      business_id: business.id,
+      key: `cross_object_${crypto.randomUUID().replaceAll("-", "")}`,
+      product_object_definition_id: other.object.id,
+      customer_object_definition_id: customerObject.id,
+      order_object_definition_id: orderObject.id,
+      order_item_object_definition_id: orderItemObject.id,
+      customer_places_order_relationship_definition_id: customerRelationship.id,
+      order_contains_item_relationship_definition_id: itemRelationship.id,
+      product_appears_in_item_relationship_definition_id:
+        productRelationship.id,
+      config_json: originalConfig,
+      is_active: false,
+    });
+    expect(objectAttempt.error).not.toBeNull();
+
+    const relationshipAttempt = await admin
+      .from("preorder_experiences")
+      .insert({
+        business_id: business.id,
+        key: `cross_relationship_${crypto.randomUUID().replaceAll("-", "")}`,
+        product_object_definition_id: productObject.id,
+        customer_object_definition_id: customerObject.id,
+        order_object_definition_id: orderObject.id,
+        order_item_object_definition_id: orderItemObject.id,
+        customer_places_order_relationship_definition_id: other.relationship.id,
+        order_contains_item_relationship_definition_id: itemRelationship.id,
+        product_appears_in_item_relationship_definition_id:
+          productRelationship.id,
+        config_json: originalConfig,
+        is_active: false,
+      });
+    expect(relationshipAttempt.error).not.toBeNull();
+
+    const bedford = locations.Bedford;
+    const product = products["Afternoon Tea Box"];
+    if (!bedford || !product) {
+      throw new Error("Demo availability data is incomplete.");
+    }
+    const recordAttempt = await admin.from("record_location_links").insert({
+      business_id: business.id,
+      record_id: other.record.id,
+      location_id: bedford.id,
+    });
+    expect(recordAttempt.error).not.toBeNull();
+    const locationAttempt = await admin.from("record_location_links").insert({
+      business_id: business.id,
+      record_id: product.id,
+      location_id: other.location.id,
+    });
+    expect(locationAttempt.error).not.toBeNull();
+  });
+
+  it("rejects uncovered required Fields for every preorder-created Object", async () => {
+    for (const [objectDefinition, key] of [
+      [customerObject, "uncovered_customer"],
+      [orderObject, "uncovered_order"],
+      [orderItemObject, "uncovered_order_item"],
+    ] as const) {
+      const attempt = await owner.from("field_definitions").insert({
+        business_id: business.id,
+        object_definition_id: objectDefinition.id,
+        key,
+        label: `Uncovered ${objectDefinition.singular_label}`,
+        field_type: "short_text",
+        required: true,
+        settings_json: {},
+        position: 90,
+      });
+      expect(attempt.error?.code).toBe("23514");
+
+      const persisted = await admin
+        .from("field_definitions")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", objectDefinition.id)
+        .eq("key", key);
+      expect(persisted.error).toBeNull();
+      expect(persisted.data).toEqual([]);
+    }
+  });
+
+  it("rejects removal of required public coverage while permitting optional Fields", async () => {
+    const fieldKey = `company_${crypto.randomUUID().replaceAll("-", "")}`;
+    const optionalField = requireData(
+      await owner
+        .from("field_definitions")
+        .insert({
+          business_id: business.id,
+          object_definition_id: customerObject.id,
+          key: fieldKey,
+          label: "Company",
+          field_type: "short_text",
+          required: false,
+          settings_json: {},
+          position: 90,
+        })
+        .select("*")
+        .single(),
+      "Could not add an optional Customer Field",
+    );
+
+    const coveredConfig = structuredClone(originalConfig);
+    coveredConfig.public_fields.push({
+      target: "customer",
+      field: fieldKey,
+      label: "Company",
+      required: true,
+      autocomplete: "organization",
+    });
+    await updateConfig(coveredConfig);
+
+    const required = await owner
+      .from("field_definitions")
+      .update({ required: true })
+      .eq("business_id", business.id)
+      .eq("id", optionalField.id);
+    expect(required.error).toBeNull();
+
+    const uncoveredConfig = structuredClone(coveredConfig);
+    uncoveredConfig.public_fields = uncoveredConfig.public_fields.filter(
+      ({ target, field }) => !(target === "customer" && field === fieldKey),
+    );
+    const removal = await owner
+      .from("preorder_experiences")
+      .update({ config_json: uncoveredConfig })
+      .eq("business_id", business.id)
+      .eq("id", preorder.id);
+    expect(removal.error?.code).toBe("23514");
+
+    const retained = requireData(
+      await admin
+        .from("preorder_experiences")
+        .select("config_json")
+        .eq("business_id", business.id)
+        .eq("id", preorder.id)
+        .single(),
+      "Could not reload retained preorder configuration",
+    );
+    expect(
+      (retained.config_json as PreorderConfig).public_fields.some(
+        ({ target, field }) => target === "customer" && field === fieldKey,
+      ),
+    ).toBe(true);
+
+    const relaxed = await owner
+      .from("field_definitions")
+      .update({ required: false })
+      .eq("business_id", business.id)
+      .eq("id", optionalField.id);
+    expect(relaxed.error).toBeNull();
+    await updateConfig(originalConfig);
+    const archived = await owner
+      .from("field_definitions")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", optionalField.id);
+    expect(archived.error).toBeNull();
+  });
+
+  it("permits a required default only when the Record insert path applies it", async () => {
+    const defaultField = requireData(
+      await owner
+        .from("field_definitions")
+        .insert({
+          business_id: business.id,
+          object_definition_id: orderItemObject.id,
+          key: "packing_note",
+          label: "Packing note",
+          field_type: "short_text",
+          required: true,
+          default_value: "Standard",
+          settings_json: {},
+          position: 90,
+        })
+        .select("*")
+        .single(),
+      "Could not add the default-backed Order Item Field",
+    );
+
+    const submitted = await submitRaw(baseSubmission(0));
+    expect(submitted.ok).toBe(true);
+    const itemRecords = requireData(
+      await admin
+        .from("records")
+        .select("data_json")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderItemObject.id),
+      "Could not load default-backed Order Items",
+    );
+    expect(
+      itemRecords.some(
+        ({ data_json }) => asObject(data_json).packing_note === "Standard",
+      ),
+    ).toBe(true);
+
+    const archived = await owner
+      .from("field_definitions")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", defaultField.id);
+    expect(archived.error).toBeNull();
+  });
+
+  it("does not use an absent Customer phone default to cover a required Order snapshot", async () => {
+    const customerPhoneKey = originalConfig.field_mappings.customer.phone;
+    const orderPhoneKey = originalConfig.field_mappings.order.customer_phone;
+    if (!customerPhoneKey || !orderPhoneKey) {
+      throw new Error("Demo phone Field mappings are incomplete.");
+    }
+
+    const customerPhoneField = requireData(
+      await admin
+        .from("field_definitions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", customerObject.id)
+        .eq("key", customerPhoneKey)
+        .single(),
+      "Could not load the Customer phone Field",
+    );
+    const orderPhoneField = requireData(
+      await admin
+        .from("field_definitions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id)
+        .eq("key", orderPhoneKey)
+        .single(),
+      "Could not load the Order customer-phone Field",
+    );
+
+    const emptyCustomerDefault = await owner
+      .from("field_definitions")
+      .update({ default_value: "" })
+      .eq("business_id", business.id)
+      .eq("id", customerPhoneField.id);
+    expect(emptyCustomerDefault.error).toBeNull();
+
+    try {
+      const requiredOrderPhone = await owner
+        .from("field_definitions")
+        .update({ required: true })
+        .eq("business_id", business.id)
+        .eq("id", orderPhoneField.id);
+      expect(requiredOrderPhone.error?.code).toBe("23514");
+
+      const retainedOrderPhone = requireData(
+        await admin
+          .from("field_definitions")
+          .select("required")
+          .eq("business_id", business.id)
+          .eq("id", orderPhoneField.id)
+          .single(),
+        "Could not reload the Order customer-phone Field",
+      );
+      expect(retainedOrderPhone.required).toBe(false);
+    } finally {
+      const restored = await owner
+        .from("field_definitions")
+        .update({ default_value: null })
+        .eq("business_id", business.id)
+        .eq("id", customerPhoneField.id);
+      expect(restored.error).toBeNull();
+    }
+  });
+
+  it("resolves only a published public Page with an active same-tenant preorder", async () => {
+    expect(catalogue.business).toEqual({
+      name: "Bedford Bakery",
+      slug: businessSlug,
+    });
+    const draftSlug = `draft-${crypto.randomUUID()}`;
+    const draftPage = await owner.from("pages").insert({
+      business_id: business.id,
+      key: `draft_${crypto.randomUUID().replaceAll("-", "")}`,
+      title: "Draft preorder",
+      slug: draftSlug,
+      audience: "public",
+      status: "draft",
+      layout_json: {
+        blocks: [{ type: "preorder", preorder_key: preorderKey }],
+      },
+    });
+    expect(draftPage.error).toBeNull();
+    const draftResolution = await anonymous.rpc("resolve_public_preorder", {
+      requested_business_slug: businessSlug,
+      requested_page_slug: draftSlug,
+      requested_preorder_key: preorderKey,
+    });
+    expect(draftResolution.error).toBeNull();
+    expect(draftResolution.data).toBeNull();
+
+    const internalAttempt = await owner.from("pages").insert({
+      business_id: business.id,
+      key: `internal_${crypto.randomUUID().replaceAll("-", "")}`,
+      title: "Internal preorder",
+      slug: `internal-${crypto.randomUUID()}`,
+      audience: "internal",
+      status: "published",
+      layout_json: {
+        blocks: [{ type: "preorder", preorder_key: preorderKey }],
+      },
+    });
+    expect(internalAttempt.error).not.toBeNull();
+
+    const inactiveExperience = await administrator.client.rpc(
+      "create_preorder_experience",
+      {
+        expected_business_id: business.id,
+        requested_key: `inactive_${crypto.randomUUID().replaceAll("-", "")}`,
+        requested_product_object_definition_id: productObject.id,
+        requested_customer_object_definition_id: customerObject.id,
+        requested_order_object_definition_id: orderObject.id,
+        requested_order_item_object_definition_id: orderItemObject.id,
+        requested_customer_places_order_relationship_definition_id:
+          relationships.customer_places_order?.id ?? "",
+        requested_order_contains_item_relationship_definition_id:
+          relationships.order_contains_order_item?.id ?? "",
+        requested_product_appears_in_item_relationship_definition_id:
+          relationships.product_appears_in_order_item?.id ?? "",
+        requested_config: originalConfig,
+        requested_location_ids: [locations.Bedford?.id ?? ""],
+        requested_is_active: false,
+      },
+    );
+    expect(inactiveExperience.error).toBeNull();
+    const inactiveKey =
+      typeof inactiveExperience.data === "object" &&
+      inactiveExperience.data !== null &&
+      !Array.isArray(inactiveExperience.data)
+        ? String(inactiveExperience.data.key)
+        : "";
+    const inactivePage = await owner.from("pages").insert({
+      business_id: business.id,
+      key: `inactive_page_${crypto.randomUUID().replaceAll("-", "")}`,
+      title: "Inactive preorder",
+      slug: `inactive-${crypto.randomUUID()}`,
+      audience: "public",
+      status: "published",
+      layout_json: {
+        blocks: [{ type: "preorder", preorder_key: inactiveKey }],
+      },
+    });
+    expect(inactivePage.error).not.toBeNull();
+  });
+
+  it("uses authoritative server time and rejects an anonymous alternate clock", async () => {
+    const current = await resolveCatalogue();
+    expect(
+      Math.abs(Date.now() - new Date(current.generated_at).valueOf()),
+    ).toBeLessThan(60_000);
+
+    const historicalCollection = "2025-08-02T10:00:00+00:00";
+    const historicalCounter = await admin.from("preorder_slot_counters").upsert(
+      {
+        business_id: business.id,
+        preorder_experience_id: preorder.id,
+        location_id: locations.Bedford?.id ?? "",
+        collection_at: historicalCollection,
+        reservation_count: 10,
+      },
+      {
+        onConflict:
+          "business_id,preorder_experience_id,location_id,collection_at",
+      },
+    );
+    expect(historicalCounter.error).toBeNull();
+
+    const normalResolution = await resolveCatalogue();
+    expect(
+      normalResolution.preorder.locations
+        .flatMap(({ slots }) => slots)
+        .some(
+          ({ collection_at }) =>
+            new Date(collection_at).toISOString() ===
+            new Date(historicalCollection).toISOString(),
+        ),
+    ).toBe(false);
+
+    const forgedClock = await anonymous.rpc("resolve_public_preorder", {
+      requested_business_slug: businessSlug,
+      requested_page_slug: pageSlug,
+      requested_preorder_key: preorderKey,
+      reference_now: "2025-07-28T10:00:00+00:00",
+    } as never);
+    expect(forgedClock.error).not.toBeNull();
+    expect(forgedClock.data).toBeNull();
+
+    const cleanup = await admin
+      .from("preorder_slot_counters")
+      .delete()
+      .eq("business_id", business.id)
+      .eq("preorder_experience_id", preorder.id)
+      .eq("location_id", locations.Bedford?.id ?? "")
+      .eq("collection_at", historicalCollection);
+    expect(cleanup.error).toBeNull();
+  });
+
+  it("keeps deterministic cutoff and horizon checks behind a private boundary", async () => {
+    const deterministic = structuredClone(originalConfig);
+    deterministic.schedule = {
+      ...deterministic.schedule,
+      days_of_week: [6],
+      start_time: "11:00",
+      end_time: "11:00",
+      cutoff_hours: 48,
+      booking_horizon_days: 2,
+    };
+
+    try {
+      await updateConfig(deterministic);
+      const exactlyAtCutoff = await resolveCatalogueAt(
+        "2026-07-30T10:00:00+00:00",
+      );
+      expect(
+        exactlyAtCutoff.preorder.locations
+          .flatMap(({ slots }) => slots)
+          .some(
+            ({ collection_at }) =>
+              new Date(collection_at).toISOString() ===
+              "2026-08-01T10:00:00.000Z",
+          ),
+      ).toBe(true);
+
+      const insideCutoff = await resolveCatalogueAt(
+        "2026-07-30T10:01:00+00:00",
+      );
+      expect(
+        insideCutoff.preorder.locations
+          .flatMap(({ slots }) => slots)
+          .some(
+            ({ collection_at }) =>
+              new Date(collection_at).toISOString() ===
+              "2026-08-01T10:00:00.000Z",
+          ),
+      ).toBe(false);
+
+      const shortHorizon = structuredClone(deterministic);
+      shortHorizon.schedule.cutoff_hours = 0;
+      shortHorizon.schedule.booking_horizon_days = 1;
+      await updateConfig(shortHorizon);
+      const horizonOne = await resolveCatalogueAt("2026-07-30T10:00:00+00:00");
+      expect(
+        horizonOne.preorder.locations.flatMap(({ slots }) => slots),
+      ).toEqual([]);
+
+      await updateConfig({
+        ...shortHorizon,
+        schedule: {
+          ...shortHorizon.schedule,
+          booking_horizon_days: 2,
+        },
+      });
+      const horizonTwo = await resolveCatalogueAt("2026-07-30T10:00:00+00:00");
+      expect(
+        horizonTwo.preorder.locations
+          .flatMap(({ slots }) => slots)
+          .some(({ date }) => date === "2026-08-01"),
+      ).toBe(true);
+    } finally {
+      await updateConfig(originalConfig);
+    }
+  });
+
+  it("keeps generic and preorder tables private from anonymous callers", async () => {
+    for (const table of [
+      "records",
+      "views",
+      "forms",
+      "preorder_experiences",
+      "preorder_experience_locations",
+      "preorder_slot_counters",
+      "preorder_submissions",
+    ] as const) {
+      const result = await anonymous.from(table).select("*").limit(1);
+      expect(
+        result.error !== null ||
+          result.data === null ||
+          result.data.length === 0,
+      ).toBe(true);
+    }
+
+    const directWrite = await anonymous.rpc("submit_public_preorder", {
+      requested_business_slug: businessSlug,
+      requested_page_slug: pageSlug,
+      requested_preorder_key: preorderKey,
+      requested_request_hash: requestHash(),
+      submission: baseSubmission(0),
+    });
+    expect(directWrite.error).not.toBeNull();
+    expect(directWrite.data).toBeNull();
+  });
+
+  it("returns only allow-listed active catalogue data and enforces Location availability", async () => {
+    expect(Object.keys(catalogue).sort()).toEqual(
+      ["business", "generated_at", "page", "preorder"].sort(),
+    );
+    expect(Object.keys(catalogue.preorder).sort()).toEqual(
+      [
+        "currency",
+        "key",
+        "locations",
+        "products",
+        "public_fields",
+        "schedule",
+      ].sort(),
+    );
+    for (const product of catalogue.preorder.products) {
+      expect(Object.keys(product).sort()).toEqual(
+        ["description", "id", "image_url", "location_ids", "name", "price"]
+          .filter((key) => key !== "image_url" || product.image_url)
+          .sort(),
+      );
+      expect(product).not.toHaveProperty("data_json");
+      expect(product).not.toHaveProperty("status");
+    }
+    const localTimes = catalogue.preorder.locations.flatMap(({ slots }) =>
+      slots.slice(0, 11).map(({ time }) => time),
+    );
+    expect(new Set(localTimes)).toEqual(
+      new Set([
+        "11:00",
+        "11:30",
+        "12:00",
+        "12:30",
+        "13:00",
+        "13:30",
+        "14:00",
+        "14:30",
+        "15:00",
+        "15:30",
+        "16:00",
+      ]),
+    );
+    const firstSlot = catalogue.preorder.locations[0]?.slots[0];
+    if (!firstSlot) {
+      throw new Error("The public catalogue has no slots.");
+    }
+    expect(
+      new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Europe/London",
+      }).format(new Date(firstSlot.collection_at)),
+    ).toBe(firstSlot.time);
+
+    const kids = catalogue.preorder.products.find(
+      ({ name }) => name === "Kids Afternoon Tea",
+    );
+    expect(kids?.location_ids).toEqual([locations.Bedford?.id]);
+    const miltonKeynes = locations["Milton Keynes"];
+    const kidsProduct = products["Kids Afternoon Tea"];
+    if (!miltonKeynes || !kidsProduct) {
+      throw new Error("Seeded product availability is incomplete.");
+    }
+    const unavailable = await submitRaw(
+      baseSubmission(1, {
+        locationId: miltonKeynes.id,
+        productId: kidsProduct.id,
+      }),
+    );
+    expect(unavailable).toEqual({ ok: false, code: "unavailable_product" });
+    const otherProduct = await submitRaw(
+      baseSubmission(1, { productId: other.record.id }),
+    );
+    expect(otherProduct).toEqual({
+      ok: false,
+      code: "unavailable_product",
+    });
+
+    const inactiveProduct = requireData(
+      await owner
+        .from("records")
+        .insert({
+          business_id: business.id,
+          object_definition_id: productObject.id,
+          data_json: {
+            name: "Hidden Box",
+            description: "Not publicly available.",
+            price: 12,
+            status: "Inactive",
+          },
+        })
+        .select("*")
+        .single(),
+      "Could not create inactive Product",
+    );
+    const inactiveLink = await owner.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: inactiveProduct.id,
+      target_location_id: locations.Bedford?.id ?? "",
+    });
+    expect(inactiveLink.error).toBeNull();
+
+    const inactiveLocation = requireData(
+      await owner.rpc("create_location", {
+        target_business_id: business.id,
+        location_name: `Inactive ${crypto.randomUUID()}`,
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create inactive Location",
+    );
+    const allowed = await owner.rpc("set_preorder_experience_locations", {
+      expected_business_id: business.id,
+      target_preorder_experience_id: preorder.id,
+      requested_location_ids: [
+        locations.Bedford?.id ?? "",
+        locations["Milton Keynes"]?.id ?? "",
+        inactiveLocation.id,
+      ],
+    });
+    expect(allowed.error).toBeNull();
+    const deactivated = await owner
+      .from("locations")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", inactiveLocation.id);
+    expect(deactivated.error).toBeNull();
+
+    const filtered = await resolveCatalogue();
+    expect(
+      filtered.preorder.products.some(({ name }) => name === "Hidden Box"),
+    ).toBe(false);
+    expect(
+      filtered.preorder.locations.some(({ id }) => id === inactiveLocation.id),
+    ).toBe(false);
+    const restoredAllowed = await owner.rpc(
+      "set_preorder_experience_locations",
+      {
+        expected_business_id: business.id,
+        target_preorder_experience_id: preorder.id,
+        requested_location_ids: [
+          locations.Bedford?.id ?? "",
+          locations["Milton Keynes"]?.id ?? "",
+        ],
+      },
+    );
+    expect(restoredAllowed.error).toBeNull();
+  });
+
+  it("rejects invalid slots, cutoffs, horizons, fields, quantities and forged values", async () => {
+    const valid = baseSubmission(2);
+    const invalidTime = {
+      ...valid,
+      idempotency_token: crypto.randomUUID(),
+      collection_at: new Date(
+        new Date(valid.collection_at).valueOf() + 15 * 60_000,
+      ).toISOString(),
+    };
+    expect(await submitRaw(invalidTime)).toEqual({
+      ok: false,
+      code: "invalid_slot",
+    });
+
+    const missingProduct = { ...valid, items: [] };
+    expect(await submitRaw(missingProduct)).toEqual({
+      ok: false,
+      code: "invalid_submission",
+    });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        items: [{ ...valid.items[0], quantity: 0 }],
+      }),
+    ).toEqual({ ok: false, code: "invalid_quantity" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        items: [{ ...valid.items[0], quantity: 1.5 }],
+      }),
+    ).toEqual({ ok: false, code: "invalid_quantity" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        items: [{ ...valid.items[0], quantity: 21 }],
+      }),
+    ).toEqual({ ok: false, code: "invalid_quantity" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        fields: {
+          customer: { email: "missing-name@example.test" },
+          order: {},
+        },
+      }),
+    ).toEqual({ ok: false, code: "required_field" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        fields: {
+          customer: {
+            ...valid.fields.customer,
+            arbitrary_url: "https://example.test/unsafe",
+          },
+          order: valid.fields.order,
+        },
+      }),
+    ).toEqual({ ok: false, code: "unsupported_field" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        business_id: other.business.id,
+      }),
+    ).toEqual({ ok: false, code: "invalid_submission" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        created_by: otherOwner.user.id,
+        total: 0.01,
+      }),
+    ).toEqual({ ok: false, code: "invalid_submission" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        items: [
+          {
+            ...valid.items[0],
+            unit_price: 0.01,
+            line_total: 0.01,
+          },
+        ],
+      }),
+    ).toEqual({ ok: false, code: "invalid_quantity" });
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        website: "bot.example",
+      }),
+    ).toEqual({ ok: false, code: "rejected" });
+
+    const cutoffConfig = structuredClone(originalConfig);
+    cutoffConfig.schedule = {
+      ...cutoffConfig.schedule,
+      days_of_week: [1, 2, 3, 4, 5, 6, 7],
+      start_time: "00:00",
+      end_time: "23:55",
+      slot_interval_minutes: 5,
+      cutoff_hours: 48,
+    };
+    await updateConfig(cutoffConfig);
+    const nearCollection = new Date(
+      Math.ceil((Date.now() + 60 * 60_000) / (5 * 60_000)) * (5 * 60_000),
+    ).toISOString();
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        collection_at: nearCollection,
+      }),
+    ).toEqual({ ok: false, code: "invalid_slot" });
+
+    const horizonConfig = structuredClone(cutoffConfig);
+    horizonConfig.schedule.cutoff_hours = 0;
+    horizonConfig.schedule.booking_horizon_days = 1;
+    await updateConfig(horizonConfig);
+    const beyondHorizon = new Date(
+      Math.ceil((Date.now() + 3 * 24 * 60 * 60_000) / (5 * 60_000)) *
+        (5 * 60_000),
+    ).toISOString();
+    expect(
+      await submitRaw({
+        ...valid,
+        idempotency_token: crypto.randomUUID(),
+        collection_at: beyondHorizon,
+      }),
+    ).toEqual({ ok: false, code: "invalid_slot" });
+    await updateConfig(originalConfig);
+  });
+
+  it("rolls back Customer, Order, Order Items, Relationships, Location and capacity on forced failure", async () => {
+    const sql = postgres(databaseUrl, { max: 1 });
+    await sql`
+      create or replace function private.test_force_preorder_bundle_failure()
+      returns trigger
+      language plpgsql
+      set search_path = ''
+      as $$
+      begin
+        raise exception 'controlled_test_failure' using errcode = 'P0001';
+      end;
+      $$
+    `;
+    await sql`
+      create trigger test_force_preorder_bundle_failure
+      before insert on public.record_relationships
+      for each row
+      execute function private.test_force_preorder_bundle_failure()
+    `;
+
+    try {
+      const before = await countGraphRows();
+      const slot = pickSlot(3);
+      const result = await submitRaw(baseSubmission(3));
+      const after = await countGraphRows();
+      expect(result).toEqual({ ok: false, code: "invalid_submission" });
+      expect(after).toEqual(before);
+      const counter = await admin
+        .from("preorder_slot_counters")
+        .select("reservation_count")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", slot.location.id)
+        .eq("collection_at", slot.collectionAt);
+      expect(counter.error).toBeNull();
+      expect(counter.data).toEqual([]);
+    } finally {
+      await sql`
+        drop trigger if exists test_force_preorder_bundle_failure
+        on public.record_relationships
+      `;
+      await sql`
+        drop function if exists private.test_force_preorder_bundle_failure()
+      `;
+      await sql.end();
+    }
+  });
+
+  it("creates an authoritative generic graph bundle and immutable snapshots atomically", async () => {
+    const before = await countGraphRows();
+    const submission = baseSubmission(4, { quantity: 2 });
+    const result = await submitRaw(submission);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("Expected successful preorder.");
+    }
+    const after = await countGraphRows();
+    expect(after.records - before.records).toBe(3);
+    expect(after.relationships - before.relationships).toBe(3);
+    expect(after.locationLinks - before.locationLinks).toBe(1);
+    expect(after.submissions - before.submissions).toBe(1);
+    expect(result.confirmation.total).toBe(60);
+    expect(result.confirmation.items).toEqual([
+      {
+        name: "Afternoon Tea Box",
+        quantity: 2,
+        unit_price: 30,
+        line_total: 60,
+      },
+    ]);
+    expect(Object.keys(result.confirmation).sort()).toEqual(
+      [
+        "collection_at",
+        "collection_location",
+        "confirmation_email",
+        "item_summary",
+        "items",
+        "public_reference",
+        "timezone",
+        "total",
+      ].sort(),
+    );
+    expect(result.confirmation.public_reference).toMatch(/^PO-[A-F0-9]{8}$/);
+    expect(JSON.stringify(result.confirmation)).not.toMatch(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
+    );
+
+    const orderRows = requireData(
+      await admin
+        .from("records")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id),
+      "Could not load Orders",
+    );
+    const order = orderRows.find(
+      (record) =>
+        asObject(record.data_json).public_reference ===
+        result.confirmation.public_reference,
+    );
+    expect(order?.created_by).toBeNull();
+    expect(order && asObject(order.data_json)).toMatchObject({
+      public_reference: result.confirmation.public_reference,
+      customer_name: "Ada Lovelace",
+      customer_email: "ada@example.test",
+      customer_phone: "01234 567890",
+      dietary_requirements: "Vegetarian",
+      occasion: "Birthday",
+      collection_location_name: "Bedford",
+      collection_timezone: "Europe/London",
+      item_summary: "2 × Afternoon Tea Box",
+      total: 60,
+      status: "New",
+    });
+
+    const product = products["Afternoon Tea Box"];
+    if (!product) {
+      throw new Error("Product is missing.");
+    }
+    const changedProduct = await owner.rpc("update_graph_record", {
+      expected_business_id: business.id,
+      target_record_id: product.id,
+      data_patch: { name: "Renamed Tea Box", price: 99 },
+    });
+    expect(changedProduct.error).toBeNull();
+    const unchangedOrder = requireData(
+      await admin
+        .from("records")
+        .select("data_json")
+        .eq("business_id", business.id)
+        .eq("id", order?.id ?? "")
+        .single(),
+      "Could not reload Order snapshot",
+    );
+    expect(asObject(unchangedOrder.data_json)).toMatchObject({
+      item_summary: "2 × Afternoon Tea Box",
+      total: 60,
+    });
+    const restoreProduct = await owner.rpc("update_graph_record", {
+      expected_business_id: business.id,
+      target_record_id: product.id,
+      data_patch: { name: "Afternoon Tea Box", price: 30 },
+    });
+    expect(restoreProduct.error).toBeNull();
+  });
+
+  it("uses an atomic counter so 11 concurrent requests yield 10 Orders and one sold-out result", async () => {
+    const capacityConfig = structuredClone(originalConfig);
+    capacityConfig.schedule.slot_capacity = 10;
+    await updateConfig(capacityConfig);
+    const beforeOrders = requireData(
+      await admin
+        .from("records")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id),
+      "Could not count Orders before concurrency",
+    ).length;
+    const slot = pickSlot(5);
+    const submissions = Array.from({ length: 11 }, () =>
+      submitRaw(baseSubmission(5), requestHash()),
+    );
+    const results = await Promise.all(submissions);
+    expect(results.filter((result) => result.ok)).toHaveLength(10);
+    expect(
+      results.filter((result) => !result.ok && result.code === "sold_out"),
+    ).toHaveLength(1);
+
+    const afterOrders = requireData(
+      await admin
+        .from("records")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id),
+      "Could not count Orders after concurrency",
+    );
+    expect(afterOrders.length - beforeOrders).toBe(10);
+    const ordersForSlot = afterOrders.filter(
+      (record) =>
+        asObject(record.data_json).collection_at === slot.collectionAt,
+    );
+    expect(ordersForSlot).toHaveLength(10);
+    const counter = requireData(
+      await admin
+        .from("preorder_slot_counters")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", slot.location.id)
+        .eq("collection_at", slot.collectionAt)
+        .single(),
+      "Could not load the capacity counter",
+    );
+    expect(counter.reservation_count).toBe(10);
+  });
+
+  it("returns the original safe confirmation on idempotent retry and consumes capacity once", async () => {
+    const token = crypto.randomUUID();
+    const slot = pickSlot(6);
+    const before = await countGraphRows();
+    const first = await submitRaw(
+      baseSubmission(6, { idempotencyToken: token }),
+    );
+    const retry = await submitRaw(
+      baseSubmission(6, { idempotencyToken: token }),
+    );
+    const after = await countGraphRows();
+    expect(first.ok).toBe(true);
+    expect(retry.ok).toBe(true);
+    if (!first.ok || !retry.ok) {
+      throw new Error("Expected idempotent success.");
+    }
+    expect(first.idempotent).toBe(false);
+    expect(retry.idempotent).toBe(true);
+    expect(retry.confirmation).toEqual(first.confirmation);
+    expect(after.records - before.records).toBe(3);
+    expect(after.submissions - before.submissions).toBe(1);
+    const counter = requireData(
+      await admin
+        .from("preorder_slot_counters")
+        .select("reservation_count")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", slot.location.id)
+        .eq("collection_at", slot.collectionAt)
+        .single(),
+      "Could not load idempotent capacity",
+    );
+    expect(counter.reservation_count).toBe(1);
+  });
+
+  it("delivers authoritative email data after commit and preserves Orders on delivery failure", async () => {
+    const sent: Json[] = [];
+    const successInput = baseSubmission(7);
+    const success = await processPreorderSubmission({
+      client: admin,
+      businessSlug,
+      pageSlug,
+      preorderKey,
+      body: successInput,
+      requestHash: requestHash(),
+      emailAdapter: {
+        async sendConfirmation(confirmation) {
+          const existingOrder = requireData(
+            await admin
+              .from("records")
+              .select("id")
+              .eq("business_id", business.id)
+              .eq("object_definition_id", orderObject.id),
+            "Order was not committed before email delivery",
+          );
+          expect(existingOrder.length).toBeGreaterThan(0);
+          sent.push(confirmation);
+        },
+      },
+    });
+    expect(success.ok).toBe(true);
+    if (!success.ok) {
+      throw new Error("Expected email success.");
+    }
+    expect(success.email_status).toBe("delivered");
+    expect(sent).toEqual([success.confirmation]);
+    expect(success.confirmation.total).toBe(30);
+
+    const beforeOrders = requireData(
+      await admin
+        .from("records")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id),
+      "Could not count Orders before email failure",
+    ).length;
+    const failureInput = baseSubmission(8);
+    const failed = await processPreorderSubmission({
+      client: admin,
+      businessSlug,
+      pageSlug,
+      preorderKey,
+      body: failureInput,
+      requestHash: requestHash(),
+      emailAdapter: defaultPreorderEmailAdapter("production"),
+    });
+    expect(failed.ok).toBe(true);
+    if (!failed.ok) {
+      throw new Error("Expected persisted Order despite email failure.");
+    }
+    expect(failed.email_status).toBe("failed");
+    const afterOrders = requireData(
+      await admin
+        .from("records")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderObject.id),
+      "Could not count Orders after email failure",
+    ).length;
+    expect(afterOrders - beforeOrders).toBe(1);
+    const failedDelivery = requireData(
+      await admin
+        .from("preorder_submissions")
+        .select("email_status, email_error")
+        .eq("business_id", business.id)
+        .eq("idempotency_token", failureInput.idempotency_token)
+        .single(),
+      "Could not load failed email state",
+    );
+    expect(failedDelivery).toEqual({
+      email_status: "failed",
+      email_error: "No production preorder email provider is configured.",
+    });
+  });
+
+  it("shows and operates submitted Orders through generic Views, detail and edit Form", async () => {
+    const experience = createExperienceService(staff, {
+      businessId: business.id,
+    });
+    const orders = await experience.loadView("orders");
+    expect(orders.definition.view_type).toBe("table");
+    expect(orders.definition.object_definition_id).toBe(orderObject.id);
+    expect(orders.records.length).toBeGreaterThanOrEqual(13);
+    expect(orders.config).toMatchObject({
+      fields: expect.arrayContaining([
+        "public_reference",
+        "customer_name",
+        "collection_location_name",
+        "collection_local_display",
+        "item_summary",
+        "total",
+        "status",
+      ]),
+    });
+    const detail = await experience.loadDetailViewForObject(orderObject.id);
+    expect(detail?.definition.key).toBe("order_detail");
+    expect(detail?.config).toMatchObject({
+      edit_form_key: "order_status_edit",
+    });
+    expect(detail?.config).toMatchObject({
+      fields: expect.arrayContaining([
+        "collection_local_display",
+        "collection_timezone",
+      ]),
+    });
+    const form = await experience.loadForm("order_status_edit");
+    expect(form.definition.mode).toBe("edit");
+    expect(form.config.fields).toEqual([
+      expect.objectContaining({ field: "status" }),
+    ]);
+
+    const record = orders.records[0];
+    if (!record) {
+      throw new Error("No submitted Order was visible to Staff.");
+    }
+    const formData = new FormData();
+    formData.set("status", "Ready");
+    const updated = await submitExperienceForm(
+      staff,
+      { businessId: business.id },
+      {
+        formKey: "order_status_edit",
+        recordId: record.id,
+        formData,
+      },
+    );
+    expect(asObject(updated.data_json).status).toBe("Ready");
+
+    const summerOrder = orders.records.find(
+      (candidate) =>
+        new Date(
+          String(asObject(candidate.data_json).collection_at),
+        ).toISOString() === "2026-08-01T10:00:00.000Z",
+    );
+    if (!summerOrder) {
+      throw new Error("The summer 11:00 collection Order is missing.");
+    }
+    expect(asObject(summerOrder.data_json)).toMatchObject({
+      collection_at: expect.stringMatching(
+        /^2026-08-01T10:00:00(?:\+00:00|Z)$/,
+      ),
+      collection_local_display: "2026-08-01 11:00",
+      collection_timezone: "Europe/London",
+    });
+
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      const html = renderToStaticMarkup(
+        createElement(ViewRenderer, {
+          bundle: orders,
+          businessSlug,
+        }),
+      );
+      expect(html).toContain("2026-08-01 11:00");
+      expect(html).not.toContain("2026-08-01 10:00");
+    } finally {
+      process.env.TZ = previousTimezone;
+    }
+  });
+
+  it("responds to all six acceptance changes through configuration/data only and has no domain persistence/UI", async () => {
+    const changed = structuredClone(originalConfig);
+    changed.schedule.cutoff_hours = 72;
+    changed.schedule.days_of_week = [6];
+    changed.schedule.slot_capacity = 3;
+    changed.public_fields = changed.public_fields
+      .filter(
+        ({ target, field }) => !(target === "order" && field === "occasion"),
+      )
+      .map((field) =>
+        field.target === "customer" && field.field === "phone"
+          ? { ...field, required: true }
+          : field,
+      );
+    await updateConfig(changed);
+    const changedCatalogue = await resolveCatalogue();
+    expect(changedCatalogue.preorder.schedule).toMatchObject({
+      cutoff_hours: 72,
+      days_of_week: [6],
+      slot_capacity: 3,
+    });
+    expect(
+      changedCatalogue.preorder.public_fields.find(
+        ({ target, field }) => target === "customer" && field === "phone",
+      )?.required,
+    ).toBe(true);
+    expect(
+      changedCatalogue.preorder.public_fields.some(
+        ({ target, field }) => target === "order" && field === "occasion",
+      ),
+    ).toBe(false);
+    expect(
+      changedCatalogue.preorder.locations
+        .flatMap(({ slots }) => slots)
+        .every(({ date }) => new Date(`${date}T12:00:00Z`).getUTCDay() === 6),
+    ).toBe(true);
+
+    const celebration = products["Celebration Box"];
+    const miltonKeynes = locations["Milton Keynes"];
+    if (!celebration || !miltonKeynes) {
+      throw new Error("Configuration-only availability fixture is missing.");
+    }
+    const link = requireData(
+      await owner
+        .from("record_location_links")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("record_id", celebration.id)
+        .eq("location_id", miltonKeynes.id)
+        .single(),
+      "Could not load Celebration availability",
+    );
+    const removed = await owner.rpc("remove_record_location_link", {
+      expected_business_id: business.id,
+      target_record_location_link_id: link.id,
+    });
+    expect(removed.error).toBeNull();
+    const availabilityCatalogue = await resolveCatalogue();
+    expect(
+      availabilityCatalogue.preorder.products
+        .find(({ name }) => name === "Celebration Box")
+        ?.location_ids.includes(miltonKeynes.id),
+    ).toBe(false);
+    const restored = await owner.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: celebration.id,
+      target_location_id: miltonKeynes.id,
+    });
+    expect(restored.error).toBeNull();
+
+    await updateConfig(originalConfig);
+    const restoredCatalogue = await resolveCatalogue();
+    expect(
+      restoredCatalogue.preorder.public_fields.find(
+        ({ target, field }) => target === "customer" && field === "phone",
+      )?.required,
+    ).toBe(false);
+    expect(
+      restoredCatalogue.preorder.public_fields.some(
+        ({ target, field }) => target === "order" && field === "occasion",
+      ),
+    ).toBe(true);
+
+    const sql = postgres(databaseUrl, { max: 1 });
+    const domainTables = await sql<{ table_name: string }[]>`
+      select table_name
+      from information_schema.tables
+      where table_schema = 'public'
+        and table_name in ('customers', 'products', 'orders', 'order_items')
+    `;
+    await sql.end();
+    expect(domainTables).toEqual([]);
+
+    const sourceRoot = join(process.cwd(), "src");
+    const forbiddenComponents =
+      /(?:OrderTable|OrderDetail|BedfordBakeryOrders)\.tsx$/;
+    expect(
+      walkSourceFiles(sourceRoot)
+        .map((path) => relative(sourceRoot, path))
+        .filter((path) => forbiddenComponents.test(path)),
+    ).toEqual([]);
+  });
+});

@@ -45,6 +45,9 @@ jobs:
 
       - name: Build application
         run: npm run build
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ci-build-only-not-a-real-credential
+          PREORDER_RATE_LIMIT_SECRET: ci-build-only-rate-limit-secret
 
       - name: Start local Supabase
         run: npm run supabase:start

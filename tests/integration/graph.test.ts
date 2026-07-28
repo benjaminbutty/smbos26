@@ -889,6 +889,102 @@ describe("metadata-driven graph engine", () => {
     expect(incompleteUpdateError?.code).toBe("23514");
   });
 
+  it("rejects required defaults that do not satisfy generic presence semantics", async () => {
+    const sql = postgres(databaseUrl, { max: 1 });
+    const emptyTextKey = `empty_text_${crypto.randomUUID().replaceAll("-", "")}`;
+    const emptyMultiKey = `empty_multi_${crypto.randomUUID().replaceAll("-", "")}`;
+    const jsonNullKey = `json_null_${crypto.randomUUID().replaceAll("-", "")}`;
+
+    try {
+      await expect(
+        sql`
+          insert into public.field_definitions (
+            business_id,
+            object_definition_id,
+            key,
+            label,
+            field_type,
+            required,
+            default_value
+          )
+          values (
+            ${businessA.id}::uuid,
+            ${validationObject.id}::uuid,
+            ${emptyTextKey},
+            'Empty text default',
+            'short_text',
+            true,
+            '""'::jsonb
+          )
+        `,
+      ).rejects.toMatchObject({ code: "23514" });
+
+      await expect(
+        sql`
+          insert into public.field_definitions (
+            business_id,
+            object_definition_id,
+            key,
+            label,
+            field_type,
+            required,
+            default_value,
+            settings_json
+          )
+          values (
+            ${businessA.id}::uuid,
+            ${validationObject.id}::uuid,
+            ${emptyMultiKey},
+            'Empty multi-select default',
+            'multi_select',
+            true,
+            '[]'::jsonb,
+            '{"options":["Standard"]}'::jsonb
+          )
+        `,
+      ).rejects.toMatchObject({ code: "23514" });
+
+      await expect(
+        sql`
+          insert into public.field_definitions (
+            business_id,
+            object_definition_id,
+            key,
+            label,
+            field_type,
+            required,
+            default_value
+          )
+          values (
+            ${businessA.id}::uuid,
+            ${validationObject.id}::uuid,
+            ${jsonNullKey},
+            'JSON null default',
+            'short_text',
+            true,
+            'null'::jsonb
+          )
+        `,
+      ).rejects.toMatchObject({ code: "23514" });
+
+      const persisted = await sql<{ key: string }[]>`
+        select field_definition.key
+        from public.field_definitions as field_definition
+        where field_definition.business_id = ${businessA.id}::uuid
+          and field_definition.object_definition_id =
+            ${validationObject.id}::uuid
+          and field_definition.key in (
+            ${emptyTextKey},
+            ${emptyMultiKey},
+            ${jsonNullKey}
+          )
+      `;
+      expect(persisted).toEqual([]);
+    } finally {
+      await sql.end();
+    }
+  });
+
   it("enforces primitive types, select/status options and multi-select shape", async () => {
     await createFields(ownerA.client, businessA.id, validationObject.id, [
       { key: "count", label: "Count", fieldType: "number" },
