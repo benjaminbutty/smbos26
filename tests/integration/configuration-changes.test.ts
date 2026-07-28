@@ -1129,7 +1129,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect(after?.count).toBe(before.count + 1);
   });
 
-  it("validates a compatible multi-entity candidate invisibly and releases every sandbox lock", async () => {
+  it("validates a compatible multi-entity candidate with active Locations invisibly and releases every sandbox lock", async () => {
     const ownerService = new ConfigurationChangeService(owner.client, {
       actorId: owner.user.id,
       businessId: business.id,
@@ -1500,7 +1500,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     }
   });
 
-  it("rejects a proposal when an allowed Location becomes inactive after proposal", async () => {
+  it("replays immutably and rejects without updating a Location that became inactive after proposal", async () => {
     const service = new ConfigurationChangeService(owner.client, {
       actorId: owner.user.id,
       businessId: business.id,
@@ -1535,6 +1535,12 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       throw new Error("Missing Bedford Location.");
     }
     const snapshotBefore = await currentLiveSnapshot();
+    const headBefore = await currentHead();
+    const [versionCountBefore] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.configuration_versions
+      where business_id = ${business.id}::uuid
+    `;
     let locationRestoreError: unknown;
 
     try {
@@ -1546,14 +1552,103 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       if (archived.error) {
         throw archived.error;
       }
+
+      await sql`
+        create function private.test_reject_location_update()
+        returns trigger
+        language plpgsql
+        set search_path = ''
+        as $$
+        begin
+          raise exception 'test_location_update_attempted'
+            using errcode = 'P0001';
+        end;
+        $$
+      `;
+      await sql`
+        create trigger test_reject_location_update
+        before update on public.locations
+        for each row execute function private.test_reject_location_update()
+      `;
+
+      const [replayed] = await sql<
+        {
+          candidate_checksum: string;
+          candidate_snapshot: string;
+          id_allocations: string;
+          semantic_diff: string;
+        }[]
+      >`
+        select
+          materialized.result ->> 'candidate_checksum'
+            as candidate_checksum,
+          (materialized.result -> 'candidate_snapshot')::text
+            as candidate_snapshot,
+          (materialized.result -> 'id_allocations')::text
+            as id_allocations,
+          (materialized.result -> 'semantic_diff')::text
+            as semantic_diff
+        from (
+          select private.configuration_materialize_candidate_v1(
+            ${business.id}::uuid,
+            (
+              select version.snapshot_json
+              from public.configuration_versions as version
+              where version.business_id = ${business.id}::uuid
+                and version.id = ${changeSet.base_version_id}::uuid
+            ),
+            ${sql.json(changeSet.operations_json)}::jsonb,
+            ${sql.json(changeSet.id_allocations_json)}::jsonb
+          ) as result
+        ) as materialized
+      `;
+      if (!replayed) {
+        throw new Error("Inactive-Location replay returned no row.");
+      }
+      expect(JSON.parse(replayed.candidate_snapshot)).toEqual(
+        changeSet.candidate_snapshot_json,
+      );
+      expect(replayed.candidate_checksum).toBe(changeSet.candidate_checksum);
+      expect(JSON.parse(replayed.id_allocations)).toEqual(
+        changeSet.id_allocations_json,
+      );
+      expect(JSON.parse(replayed.semantic_diff)).toEqual(
+        changeSet.semantic_diff_json,
+      );
+
       const rejected = await service.validateChangeSet(changeSet.id);
       expect(rejected.status).toBe("rejected");
       expect(rejected.validation_result_json).toMatchObject({
         outcome: "invalid",
         errors: [{ code: "location_ineligible" }],
       });
+      expect(
+        requireData(
+          await admin
+            .from("locations")
+            .select("is_active")
+            .eq("business_id", business.id)
+            .eq("id", bedford.id)
+            .single(),
+          "Could not reload the inactive Location",
+        ).is_active,
+      ).toBe(false);
       expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+      expect(await currentHead()).toEqual(headBefore);
+      const [versionCountAfter] = await sql<{ count: number }[]>`
+        select count(*)::integer as count
+        from public.configuration_versions
+        where business_id = ${business.id}::uuid
+      `;
+      expect(versionCountAfter?.count).toBe(versionCountBefore?.count);
     } finally {
+      await sql`
+        drop trigger if exists test_reject_location_update
+        on public.locations
+      `;
+      await sql`
+        drop function if exists private.test_reject_location_update()
+      `;
       const restored = await owner.client
         .from("locations")
         .update({ is_active: true })

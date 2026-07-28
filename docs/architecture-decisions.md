@@ -523,6 +523,17 @@ parallel draft graph.
 - Candidate Location eligibility is rechecked immediately before and inside
   projection. A Location becoming inactive after proposal is an operational
   incompatibility and cannot be recreated or reactivated by validation.
+- Canonical materialisation and immutable replay validate only Location UUID
+  shape and candidate-internal preorder-association identity/reference rules.
+  They do not query mutable Location existence or activation. Current active
+  same-Business Location eligibility is a distinct assertion at proposal
+  creation and inside authoritative projection validation. Replay failure is
+  therefore always an engine-integrity failure; an eligibility change is an
+  owner-safe `location_ineligible` rejection from the sandbox.
+- Individual Locations use `is_active` archival in v0.1. Authenticated roles
+  have no `DELETE` grant or RLS delete policy on `locations`, and no production
+  RPC hard-deletes one. Whole-Business deletion may continue cascading the
+  Business, its Locations, configuration projection, versions and head.
 
 ### Consequences
 
@@ -537,6 +548,10 @@ parallel draft graph.
   generate WAL. This is proportionate for v0.1 configuration sizes but is a
   deliberate scaling limit to measure before supporting large tenants or
   frequent automated validation.
+- Immutable proposal replay performs no Location write, including temporary
+  reactivation. Location lifecycle changes after proposal creation affect only
+  the current-eligibility result and never the stored candidate, checksum,
+  allocations or semantic diff.
 - Direct authenticated configuration mutation remains open only until Phase 3.
   Projection divergence therefore remains an explicit engine-state failure,
   not an owner rejection.
