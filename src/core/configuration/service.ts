@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import type { Database } from "../../db/supabase/database.types";
 import {
+  configurationDisplayContextSchema,
   configurationValidationResultSchema,
   proposeConfigurationChangeSchema,
   semanticDiffSchema,
@@ -81,6 +82,7 @@ function assertTrustedResponse(
       { message: "configuration_response_business_mismatch" },
     );
   }
+  configurationDisplayContextSchema.parse(changeSet.display_context_json);
   semanticDiffSchema.parse(changeSet.semantic_diff_json);
   if (changeSet.validation_result_json !== null) {
     const result = configurationValidationResultSchema.parse(

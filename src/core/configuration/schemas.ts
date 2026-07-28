@@ -20,6 +20,7 @@ import { preorderConfigSchema } from "../preorder/schemas";
 
 const MAX_OPERATION_COUNT = 100;
 const MAX_OPERATION_BYTES = 256 * 1024;
+const MAX_DISPLAY_CONTEXT_BYTES = 128 * 1024;
 
 const labelSchema = z.string().trim().min(1).max(120);
 const descriptionSchema = z.string().max(5000);
@@ -218,6 +219,31 @@ export const proposeConfigurationChangeSchema = z
     operations: configurationOperationsSchema,
   })
   .strict();
+
+export const configurationDisplayContextSchema = z
+  .object({
+    schema_version: z.literal(1),
+    locations: z.record(
+      z.uuid(),
+      z
+        .object({
+          name: labelSchema,
+        })
+        .strict(),
+    ),
+  })
+  .strict()
+  .superRefine((context, refinement) => {
+    if (
+      new TextEncoder().encode(JSON.stringify(context)).byteLength >
+      MAX_DISPLAY_CONTEXT_BYTES
+    ) {
+      refinement.addIssue({
+        code: "custom",
+        message: "Configuration display context exceeds the 128 KiB limit.",
+      });
+    }
+  });
 
 export const semanticDiffPropertySchema = z
   .object({

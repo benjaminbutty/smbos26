@@ -347,6 +347,12 @@ validation, projection application, preview or rollback.
   `business_id`; tenant ownership belongs to the version row. PostgreSQL hashes
   the canonical `jsonb` text with SHA-256. TypeScript does not implement a
   second checksum algorithm.
+- Location identity and current eligibility remain outside canonical
+  configuration snapshots. A change set stores a bounded immutable schema-v1
+  display context containing proposal-time names for referenced same-Business
+  Location IDs. Those names are owner-readable display metadata only: they do
+  not affect candidate checksums, version content or Location eligibility, and
+  may intentionally differ from a later renamed Location.
 - Existing Businesses are backfilled from their current projection. A Business
   insertion synchronously creates an empty canonical baseline and head in the
   same transaction.

@@ -13,6 +13,7 @@ import {
   ConfigurationChangeServiceError,
 } from "../../src/core/configuration/service";
 import {
+  configurationDisplayContextSchema,
   configurationOperationsSchema,
   semanticDiffSchema,
   type ConfigurationOperation,
@@ -846,6 +847,18 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       applied_version_id: null,
     });
     expect(proposal.candidate_checksum).toMatch(/^[a-f0-9]{64}$/);
+    const displayContext = configurationDisplayContextSchema.parse(
+      proposal.display_context_json,
+    );
+    expect(displayContext).toEqual({
+      schema_version: 1,
+      locations: {
+        [locationsByName.get("Bedford")?.id ?? ""]: { name: "Bedford" },
+        [locationsByName.get("Milton Keynes")?.id ?? ""]: {
+          name: "Milton Keynes",
+        },
+      },
+    });
     expect(await currentLiveSnapshot()).toEqual(liveSnapshotBeforeProposal);
     expect(await currentHead()).toEqual(headBeforeProposal);
     expect(
@@ -922,7 +935,8 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
           ${business.id}::uuid,
           ${sql.json(baselineSnapshot as unknown as Json)}::jsonb,
           ${sql.json([...operations].reverse() as unknown as Json)}::jsonb,
-          ${sql.json(proposal.id_allocations_json)}::jsonb
+          ${sql.json(proposal.id_allocations_json)}::jsonb,
+          ${sql.json(proposal.display_context_json)}::jsonb
         ) as result
       ) as materialized
     `;
@@ -1500,6 +1514,183 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     }
   });
 
+  it("replays proposal-time Location labels without live Location-name read after rename", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const preorderOperation = operations.find(
+      (operation) => operation.op === "set_preorder_experience",
+    );
+    const bedford = locationsByName.get("Bedford");
+    const miltonKeynes = locationsByName.get("Milton Keynes");
+    if (
+      !preorderOperation ||
+      preorderOperation.op !== "set_preorder_experience" ||
+      !bedford ||
+      !miltonKeynes
+    ) {
+      throw new Error("Missing preorder operation or demo Locations.");
+    }
+
+    const changeSet = await service.proposeChangeSet({
+      title: "Milton Keynes collection only",
+      description: null,
+      operations: [
+        {
+          ...preorderOperation,
+          allowed_location_ids: [miltonKeynes.id],
+        },
+      ],
+    });
+    expect(
+      configurationDisplayContextSchema.parse(changeSet.display_context_json)
+        .locations,
+    ).toEqual({
+      [bedford.id]: { name: "Bedford" },
+      [miltonKeynes.id]: { name: "Milton Keynes" },
+    });
+    expect(
+      semanticDiffSchema
+        .parse(changeSet.semantic_diff_json)
+        .changes.find(
+          ({ entity_key, entity_type }) =>
+            entity_type === "preorder_location" &&
+            entity_key.endsWith(`:${bedford.id}`),
+        ),
+    ).toMatchObject({
+      change_type: "archived",
+      label: "Bedford",
+    });
+
+    const snapshotBefore = await currentLiveSnapshot();
+    const headBefore = await currentHead();
+    const [versionCountBefore] = await sql<{ count: number }[]>`
+      select count(*)::integer as count
+      from public.configuration_versions
+      where business_id = ${business.id}::uuid
+    `;
+    const replayRole = "m5_display_context_replay";
+    let replayRoleCreated = false;
+    let renameRestoreError: unknown;
+    try {
+      const renamed = await owner.client
+        .from("locations")
+        .update({ name: "Bedford Central" })
+        .eq("business_id", business.id)
+        .eq("id", bedford.id);
+      if (renamed.error) {
+        throw renamed.error;
+      }
+
+      await sql.unsafe(`create role ${replayRole} nologin`);
+      replayRoleCreated = true;
+      await sql.unsafe(`grant ${replayRole} to postgres`);
+      await sql.unsafe(`grant usage on schema private to ${replayRole}`);
+      await sql.unsafe(`grant usage on schema extensions to ${replayRole}`);
+      await sql.unsafe(
+        `grant execute on all functions in schema private to ${replayRole}`,
+      );
+      const [permission] = await sql<{ can_read_location_names: boolean }[]>`
+        select has_table_privilege(
+          ${replayRole},
+          'public.locations',
+          'select'
+        ) as can_read_location_names
+      `;
+      expect(permission?.can_read_location_names).toBe(false);
+
+      const replayed = await sql.begin(async (transaction) => {
+        await transaction.unsafe(`set local role ${replayRole}`);
+        const [result] = await transaction<
+          {
+            candidate_checksum: string;
+            candidate_snapshot: string;
+            id_allocations: string;
+            semantic_diff: string;
+          }[]
+        >`
+          select
+            materialized.result ->> 'candidate_checksum'
+              as candidate_checksum,
+            (materialized.result -> 'candidate_snapshot')::text
+              as candidate_snapshot,
+            (materialized.result -> 'id_allocations')::text
+              as id_allocations,
+            (materialized.result -> 'semantic_diff')::text
+              as semantic_diff
+          from (
+            select private.configuration_materialize_candidate_v1(
+              ${business.id}::uuid,
+              ${sql.json(baselineSnapshot as unknown as Json)}::jsonb,
+              ${sql.json(changeSet.operations_json)}::jsonb,
+              ${sql.json(changeSet.id_allocations_json)}::jsonb,
+              ${sql.json(changeSet.display_context_json)}::jsonb
+            ) as result
+          ) as materialized
+        `;
+        return result;
+      });
+      if (!replayed) {
+        throw new Error("Renamed-Location replay returned no row.");
+      }
+      expect(JSON.parse(replayed.candidate_snapshot)).toEqual(
+        changeSet.candidate_snapshot_json,
+      );
+      expect(replayed.candidate_checksum).toBe(changeSet.candidate_checksum);
+      expect(JSON.parse(replayed.id_allocations)).toEqual(
+        changeSet.id_allocations_json,
+      );
+      expect(JSON.parse(replayed.semantic_diff)).toEqual(
+        changeSet.semantic_diff_json,
+      );
+      expect(
+        semanticDiffSchema
+          .parse(changeSet.semantic_diff_json)
+          .changes.find(
+            ({ entity_key, entity_type }) =>
+              entity_type === "preorder_location" &&
+              entity_key.endsWith(`:${bedford.id}`),
+          )?.label,
+      ).toBe("Bedford");
+
+      const validated = await service.validateChangeSet(changeSet.id);
+      expect(validated).toMatchObject({
+        status: "validated",
+        validation_result_json: { outcome: "valid" },
+      });
+      expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+      expect(await currentHead()).toEqual(headBefore);
+      const [versionCountAfter] = await sql<{ count: number }[]>`
+        select count(*)::integer as count
+        from public.configuration_versions
+        where business_id = ${business.id}::uuid
+      `;
+      expect(versionCountAfter?.count).toBe(versionCountBefore?.count);
+    } finally {
+      if (replayRoleCreated) {
+        await sql.unsafe(`revoke ${replayRole} from postgres`);
+        await sql.unsafe(
+          `revoke execute on all functions in schema private from ${replayRole}`,
+        );
+        await sql.unsafe(
+          `revoke usage on schema extensions from ${replayRole}`,
+        );
+        await sql.unsafe(`revoke usage on schema private from ${replayRole}`);
+        await sql.unsafe(`drop role ${replayRole}`);
+      }
+      const restored = await owner.client
+        .from("locations")
+        .update({ name: "Bedford" })
+        .eq("business_id", business.id)
+        .eq("id", bedford.id);
+      renameRestoreError = restored.error;
+    }
+    if (renameRestoreError) {
+      throw renameRestoreError;
+    }
+  });
+
   it("replays immutably and rejects without updating a Location that became inactive after proposal", async () => {
     const service = new ConfigurationChangeService(owner.client, {
       actorId: owner.user.id,
@@ -1598,7 +1789,8 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
                 and version.id = ${changeSet.base_version_id}::uuid
             ),
             ${sql.json(changeSet.operations_json)}::jsonb,
-            ${sql.json(changeSet.id_allocations_json)}::jsonb
+            ${sql.json(changeSet.id_allocations_json)}::jsonb,
+            ${sql.json(changeSet.display_context_json)}::jsonb
           ) as result
         ) as materialized
       `;
@@ -1718,6 +1910,104 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       "configuration_candidate_replay_mismatch",
     );
     expect((await service.getChangeSet(tampered.id)).status).toBe("proposed");
+
+    const displayContextTampered = await service.proposeChangeSet({
+      title: "Display-context tamper detection",
+      description: null,
+      operations: [
+        {
+          ...setObjectFrom(probe, true),
+          singular_label: "Display-context tamper probe",
+        },
+      ],
+    });
+    await expect(
+      sql`
+        update public.configuration_change_sets
+        set display_context_json = jsonb_build_object(
+          'schema_version',
+          1,
+          'locations',
+          jsonb_build_object()
+        )
+        where business_id = ${business.id}::uuid
+          and id = ${displayContextTampered.id}::uuid
+      `,
+    ).rejects.toMatchObject({ code: "55000" });
+    await sql.begin(async (transaction) => {
+      await transaction.unsafe("set local session_replication_role = replica");
+      await transaction`
+        update public.configuration_change_sets
+        set display_context_json = jsonb_build_object(
+          'schema_version',
+          1,
+          'locations',
+          jsonb_build_object(
+            ${otherLocation.id}::text,
+            jsonb_build_object('name', 'Other Location')
+          )
+        )
+        where business_id = ${business.id}::uuid
+          and id = ${displayContextTampered.id}::uuid
+      `;
+    });
+    await expectEngineError(
+      service.validateChangeSet(displayContextTampered.id),
+      "configuration_candidate_replay_failed",
+    );
+    expect((await service.getChangeSet(displayContextTampered.id)).status).toBe(
+      "proposed",
+    );
+
+    const [displayContextGuards] = await sql<
+      {
+        bounded_names: boolean;
+        bounded_payload: boolean;
+        exact_properties: boolean;
+      }[]
+    >`
+      select
+        not private.configuration_display_context_v1_is_valid(
+          jsonb_build_object(
+            'schema_version',
+            1,
+            'locations',
+            jsonb_build_object(
+              ${otherLocation.id}::text,
+              jsonb_build_object('name', repeat('x', 121))
+            )
+          )
+        ) as bounded_names,
+        not private.configuration_display_context_v1_is_valid(
+          jsonb_build_object(
+            'schema_version',
+            1,
+            'locations',
+            (
+              select jsonb_object_agg(
+                gen_random_uuid()::text,
+                jsonb_build_object('name', 'Location')
+              )
+              from generate_series(1, 4000)
+            )
+          )
+        ) as bounded_payload,
+        not private.configuration_display_context_v1_is_valid(
+          jsonb_build_object(
+            'schema_version',
+            1,
+            'locations',
+            jsonb_build_object(),
+            'unexpected',
+            true
+          )
+        ) as exact_properties
+    `;
+    expect(displayContextGuards).toEqual({
+      bounded_names: true,
+      bounded_payload: true,
+      exact_properties: true,
+    });
   });
 
   it("fails closed on projection divergence and marks a stale base conflicted", async () => {
@@ -1839,6 +2129,17 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect(forbiddenId.error?.message).toContain(
       "configuration_set_object_invalid",
     );
+    const callerDisplayContext = await raw.rpc("propose_configuration_change", {
+      ...baseProposal,
+      display_context_json: {
+        schema_version: 1,
+        locations: {
+          [otherLocation.id]: { name: "Caller-controlled" },
+        },
+      },
+      requested_operations: [operations[0]] as unknown as Json,
+    } as never);
+    expect(callerDisplayContext.error).not.toBeNull();
 
     const customerPhone = entity(
       baselineSnapshot.field_definitions.filter(

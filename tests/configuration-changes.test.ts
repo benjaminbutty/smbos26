@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  configurationDisplayContextSchema,
   configurationValidationResultSchema,
   configurationOperationsSchema,
   proposeConfigurationChangeSchema,
@@ -231,6 +232,30 @@ describe("configuration change operation grammar", () => {
         description: null,
         operations: [operations[0]],
         candidate_snapshot_json: {},
+      }),
+    ).toThrow();
+  });
+
+  it("strictly validates immutable proposal display context", () => {
+    expect(
+      configurationDisplayContextSchema.parse({
+        schema_version: 1,
+        locations: {
+          [locationId]: { name: "Bedford" },
+        },
+      }),
+    ).toEqual({
+      schema_version: 1,
+      locations: {
+        [locationId]: { name: "Bedford" },
+      },
+    });
+    expect(() =>
+      configurationDisplayContextSchema.parse({
+        schema_version: 1,
+        locations: {
+          [locationId]: { name: "Bedford", is_active: true },
+        },
       }),
     ).toThrow();
   });

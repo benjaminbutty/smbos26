@@ -152,6 +152,7 @@ export type Database = {
           closed_by: string | null;
           created_at: string;
           description: string | null;
+          display_context_json: Json;
           id: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
@@ -180,6 +181,7 @@ export type Database = {
           closed_by?: string | null;
           created_at?: string;
           description?: string | null;
+          display_context_json: Json;
           id?: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
@@ -208,6 +210,7 @@ export type Database = {
           closed_by?: string | null;
           created_at?: string;
           description?: string | null;
+          display_context_json?: Json;
           id?: string;
           id_allocations_json?: Json;
           kind?: Database["public"]["Enums"]["configuration_change_kind"];
@@ -1232,6 +1235,7 @@ export type Database = {
           closed_by: string | null;
           created_at: string;
           description: string | null;
+          display_context_json: Json;
           id: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
@@ -1459,6 +1463,7 @@ export type Database = {
           closed_by: string | null;
           created_at: string;
           description: string | null;
+          display_context_json: Json;
           id: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
@@ -1496,6 +1501,7 @@ export type Database = {
           closed_by: string | null;
           created_at: string;
           description: string | null;
+          display_context_json: Json;
           id: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
@@ -1539,6 +1545,7 @@ export type Database = {
           closed_by: string | null;
           created_at: string;
           description: string | null;
+          display_context_json: Json;
           id: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
@@ -1648,6 +1655,7 @@ export type Database = {
           closed_by: string | null;
           created_at: string;
           description: string | null;
+          display_context_json: Json;
           id: string;
           id_allocations_json: Json;
           kind: Database["public"]["Enums"]["configuration_change_kind"];
