@@ -1192,7 +1192,6 @@ export type Database = {
       };
       resolve_public_preorder: {
         Args: {
-          reference_now?: string;
           requested_business_slug: string;
           requested_page_slug: string;
           requested_preorder_key: string;

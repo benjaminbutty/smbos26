@@ -246,7 +246,9 @@ Location link and a capacity reservation together.
   blocks remain forbidden on published public Pages.
 - Anonymous catalogue access uses a narrow security-definer resolver returning
   only safe business, active Location, Product, price, availability, public
-  Field and slot data.
+  Field and slot data. Its public signature has no clock argument and always
+  uses database statement time; deterministic time injection is confined to a
+  private integration-test helper.
 - Browser submissions use a server-controlled HTTP endpoint. Submission and
   email-state RPCs are executable only by the server's service role; the
   credential never enters browser code. The transaction resolves the Business
@@ -270,10 +272,17 @@ Location link and a capacity reservation together.
   `PO-XXXXXXXX` value.
 - Collection wall times are interpreted in each allowed Location's IANA
   timezone. Day, interval, cutoff and booking horizon are rechecked at
-  submission; catalogue availability is advisory.
+  submission; catalogue availability is advisory. Orders also store immutable
+  local-display and timezone snapshots for generic staff Views while retaining
+  the authoritative `collection_at` timestamp.
+- Active configuration validation proves all required Customer, Order and
+  Order Item Fields are constructable from authoritative runtime values,
+  required public Fields, or defaults applied by the generic Record trigger.
+  Field and configuration mutations that break this invariant roll back.
 - Confirmation email is an adapter invoked after transaction commit. Delivery
   state/error is persisted separately, and provider failure never removes the
-  Order.
+  Order. The console adapter is restricted to development/test; production
+  without a provider records and returns a controlled delivery failure.
 
 ### Consequences
 
@@ -298,8 +307,9 @@ Trade-offs and deliberate limits:
   already protect history.
 - Capacity counts Orders and is not released by later status changes in
   Milestone 4.
-- The local email adapter logs safe confirmation data; a live provider,
-  workflow engine and delivery queue are deferred.
+- The development/test email adapter logs safe confirmation data. Production
+  has no live provider in Milestone 4 and therefore fails delivery closed;
+  workflow and queue infrastructure remain deferred.
 - The narrow database-backed hash throttle, honeypot, size limits and
   idempotency are proportionate abuse controls, not complete anti-fraud
   protection.

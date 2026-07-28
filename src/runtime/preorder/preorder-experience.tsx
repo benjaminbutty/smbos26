@@ -500,9 +500,6 @@ export function PreorderExperience({
           <span>Total</span>
           <strong>{formatMoney(total, catalogue.preorder.currency)}</strong>
         </p>
-        <p className="preorder-collection-note">
-          Your total is due when you collect.
-        </p>
         {error ? (
           <p className="preorder-error" role="alert">
             {error}

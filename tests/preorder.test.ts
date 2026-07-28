@@ -6,10 +6,12 @@ import { POST } from "../src/app/api/preorder/[businessSlug]/[pageSlug]/route";
 import { pageLayoutSchema } from "../src/core/experience/schemas";
 import {
   preorderConfigSchema,
+  publicPreorderConfirmationSchema,
   publicPreorderSubmissionSchema,
   type PreorderConfig,
   type PublicPreorderCatalogue,
 } from "../src/core/preorder/schemas";
+import { defaultPreorderEmailAdapter } from "../src/core/preorder/email";
 import { PageRenderer } from "../src/runtime/pages/page-renderer";
 
 vi.mock("server-only", () => ({}));
@@ -39,6 +41,8 @@ const config: PreorderConfig = {
       status: "status",
       new_status_value: "New",
       collection_at: "collection_at",
+      collection_local_display: "collection_local_display",
+      collection_timezone: "collection_timezone",
       collection_location_name: "collection_location_name",
       customer_name: "customer_name",
       customer_email: "customer_email",
@@ -326,5 +330,47 @@ describe("trusted preorder Page block", () => {
     expect(internalHtml).toContain(
       "Preorder checkout is available only on the published customer page.",
     );
+  });
+});
+
+describe("preorder email adapters", () => {
+  const confirmation = publicPreorderConfirmationSchema.parse({
+    public_reference: "PO-ABCDEF12",
+    collection_location: "Bedford",
+    collection_at: "2026-08-01T10:00:00+00:00",
+    timezone: "Europe/London",
+    items: [
+      {
+        name: "Afternoon Tea Box",
+        quantity: 1,
+        unit_price: 30,
+        line_total: 30,
+      },
+    ],
+    item_summary: "1 × Afternoon Tea Box",
+    total: 30,
+    confirmation_email: "customer@example.test",
+  });
+
+  it("captures confirmation email locally", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    await defaultPreorderEmailAdapter("test").sendConfirmation(confirmation);
+
+    expect(consoleInfo).toHaveBeenCalledWith(
+      "[SMBOS local confirmation email]",
+      expect.stringContaining("PO-ABCDEF12"),
+    );
+    consoleInfo.mockRestore();
+  });
+
+  it("fails closed when production has no configured provider", async () => {
+    const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    await expect(
+      defaultPreorderEmailAdapter("production").sendConfirmation(confirmation),
+    ).rejects.toThrow("No production preorder email provider is configured.");
+    expect(consoleInfo).not.toHaveBeenCalled();
+    consoleInfo.mockRestore();
   });
 });

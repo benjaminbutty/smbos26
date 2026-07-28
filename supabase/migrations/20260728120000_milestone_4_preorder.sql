@@ -343,6 +343,8 @@ begin
       'status',
       'new_status_value',
       'collection_at',
+      'collection_local_display',
+      'collection_timezone',
       'collection_location_name',
       'customer_name',
       'customer_email',
@@ -554,6 +556,8 @@ declare
   mapped_field public.field_definitions;
   customer_phone_key text;
   order_phone_key text;
+  runtime_order_field_keys text[];
+  runtime_item_field_keys text[];
 begin
   perform private.assert_valid_preorder_config_shape(config);
 
@@ -729,6 +733,18 @@ begin
   perform private.assert_preorder_field(
     target_business_id,
     order_object_id,
+    private.preorder_mapping_key(config, 'order', 'collection_local_display'),
+    array['short_text']::public.graph_field_type[]
+  );
+  perform private.assert_preorder_field(
+    target_business_id,
+    order_object_id,
+    private.preorder_mapping_key(config, 'order', 'collection_timezone'),
+    array['short_text']::public.graph_field_type[]
+  );
+  perform private.assert_preorder_field(
+    target_business_id,
+    order_object_id,
     private.preorder_mapping_key(config, 'order', 'collection_location_name'),
     array['short_text']::public.graph_field_type[]
   );
@@ -847,6 +863,103 @@ begin
     raise exception 'Customer name and email must be collected publicly'
       using errcode = '23514';
   end if;
+
+  runtime_order_field_keys := array[
+    private.preorder_mapping_key(config, 'order', 'public_reference'),
+    private.preorder_mapping_key(config, 'order', 'status'),
+    private.preorder_mapping_key(config, 'order', 'collection_at'),
+    private.preorder_mapping_key(config, 'order', 'collection_local_display'),
+    private.preorder_mapping_key(config, 'order', 'collection_timezone'),
+    private.preorder_mapping_key(config, 'order', 'collection_location_name'),
+    private.preorder_mapping_key(config, 'order', 'customer_name'),
+    private.preorder_mapping_key(config, 'order', 'customer_email'),
+    private.preorder_mapping_key(config, 'order', 'item_summary'),
+    private.preorder_mapping_key(config, 'order', 'total')
+  ];
+  runtime_item_field_keys := array[
+    private.preorder_mapping_key(config, 'order_item', 'product_name'),
+    private.preorder_mapping_key(config, 'order_item', 'quantity'),
+    private.preorder_mapping_key(config, 'order_item', 'unit_price'),
+    private.preorder_mapping_key(config, 'order_item', 'line_total')
+  ];
+
+  for configured_field in
+    select field_definition.*
+    from public.field_definitions as field_definition
+    where field_definition.business_id = target_business_id
+      and field_definition.object_definition_id in (
+        customer_object_id,
+        order_object_id,
+        order_item_object_id
+      )
+      and field_definition.is_active
+      and field_definition.required
+    order by field_definition.object_definition_id, field_definition.position
+  loop
+    if configured_field.default_value is not null then
+      continue;
+    end if;
+
+    if configured_field.object_definition_id = customer_object_id
+      and exists (
+        select 1
+        from jsonb_array_elements(config -> 'public_fields') as public_field
+        where public_field ->> 'target' = 'customer'
+          and public_field ->> 'field' = configured_field.key
+          and (public_field ->> 'required')::boolean
+      ) then
+      continue;
+    end if;
+
+    if configured_field.object_definition_id = order_object_id
+      and configured_field.key = any(runtime_order_field_keys) then
+      continue;
+    end if;
+
+    if configured_field.object_definition_id = order_object_id
+      and configured_field.key = order_phone_key
+      and (
+        exists (
+          select 1
+          from jsonb_array_elements(config -> 'public_fields') as public_field
+          where public_field ->> 'target' = 'customer'
+            and public_field ->> 'field' = customer_phone_key
+            and (public_field ->> 'required')::boolean
+        )
+        or exists (
+          select 1
+          from public.field_definitions as customer_phone_field
+          where customer_phone_field.business_id = target_business_id
+            and customer_phone_field.object_definition_id = customer_object_id
+            and customer_phone_field.key = customer_phone_key
+            and customer_phone_field.is_active
+            and customer_phone_field.default_value is not null
+        )
+      ) then
+      continue;
+    end if;
+
+    if configured_field.object_definition_id = order_object_id
+      and exists (
+        select 1
+        from jsonb_array_elements(config -> 'public_fields') as public_field
+        where public_field ->> 'target' = 'order'
+          and public_field ->> 'field' = configured_field.key
+          and (public_field ->> 'required')::boolean
+      ) then
+      continue;
+    end if;
+
+    if configured_field.object_definition_id = order_item_object_id
+      and configured_field.key = any(runtime_item_field_keys) then
+      continue;
+    end if;
+
+    raise exception
+      'Active preorder cannot construct required Field: %',
+      configured_field.key
+      using errcode = '23514';
+  end loop;
 end;
 $$;
 
@@ -1506,11 +1619,11 @@ exception
 end;
 $$;
 
-create function public.resolve_public_preorder(
+create function private.resolve_preorder_catalogue_at(
   requested_business_slug text,
   requested_page_slug text,
   requested_preorder_key text,
-  reference_now timestamptz default now()
+  reference_now timestamptz
 )
 returns jsonb
 language plpgsql
@@ -1896,6 +2009,25 @@ begin
     reference_now
   );
 end;
+$$;
+
+create function public.resolve_public_preorder(
+  requested_business_slug text,
+  requested_page_slug text,
+  requested_preorder_key text
+)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select private.resolve_preorder_catalogue_at(
+    requested_business_slug,
+    requested_page_slug,
+    requested_preorder_key,
+    statement_timestamp()
+  );
 $$;
 
 create function public.submit_public_preorder(
@@ -2413,9 +2545,6 @@ begin
       private.preorder_mapping_key(config, 'customer', 'phone');
     order_phone_key :=
       private.preorder_mapping_key(config, 'order', 'customer_phone');
-    if customer_phone_key is not null then
-      customer_phone := customer_data ->> customer_phone_key;
-    end if;
 
     insert into public.records (
       business_id,
@@ -2429,6 +2558,10 @@ begin
     )
     returning * into customer_record;
 
+    if customer_phone_key is not null then
+      customer_phone := customer_record.data_json ->> customer_phone_key;
+    end if;
+
     order_data := order_public_data || jsonb_build_object(
       private.preorder_mapping_key(config, 'order', 'public_reference'),
       submission_row.public_reference,
@@ -2436,6 +2569,13 @@ begin
       config -> 'field_mappings' -> 'order' -> 'new_status_value',
       private.preorder_mapping_key(config, 'order', 'collection_at'),
       to_jsonb(collection_timestamp),
+      private.preorder_mapping_key(config, 'order', 'collection_local_display'),
+      to_char(
+        collection_timestamp at time zone location_value.timezone,
+        'YYYY-MM-DD HH24:MI'
+      ),
+      private.preorder_mapping_key(config, 'order', 'collection_timezone'),
+      location_value.timezone,
       private.preorder_mapping_key(
         config,
         'order',
@@ -2451,10 +2591,10 @@ begin
       private.preorder_mapping_key(config, 'order', 'total'),
       order_total
     );
-    if order_phone_key is not null then
+    if order_phone_key is not null and customer_phone is not null then
       order_data := order_data || jsonb_build_object(
         order_phone_key,
-        to_jsonb(customer_phone)
+        customer_phone
       );
     end if;
 
@@ -2747,7 +2887,7 @@ end;
 $$;
 
 create trigger field_definitions_preserve_preorder_validity
-after update on public.field_definitions
+after insert or update on public.field_definitions
 for each row execute function private.ensure_graph_change_preserves_preorders();
 
 create trigger relationship_definitions_preserve_preorder_validity
@@ -2880,11 +3020,16 @@ revoke all on function public.set_preorder_experience_locations(
   uuid,
   uuid[]
 ) from public;
-revoke all on function public.resolve_public_preorder(
+revoke all on function private.resolve_preorder_catalogue_at(
   text,
   text,
   text,
   timestamptz
+) from public;
+revoke all on function public.resolve_public_preorder(
+  text,
+  text,
+  text
 ) from public;
 revoke all on function public.submit_public_preorder(
   text,
@@ -2936,8 +3081,7 @@ grant execute on function public.set_preorder_experience_locations(
 grant execute on function public.resolve_public_preorder(
   text,
   text,
-  text,
-  timestamptz
+  text
 ) to anon, authenticated;
 grant execute on function public.submit_public_preorder(
   text,
@@ -2972,13 +3116,20 @@ comment on table public.preorder_slot_counters is
 comment on table public.preorder_submissions is
   'Idempotency, safe confirmation reference and post-commit email delivery state; Order data remains in graph Records.';
 
-comment on function public.resolve_public_preorder(
+comment on function private.resolve_preorder_catalogue_at(
   text,
   text,
   text,
   timestamptz
 ) is
-  'Narrow allow-listed catalogue and deterministic slot resolver for a published public preorder Page.';
+  'Private deterministic preorder catalogue helper; callers cannot reach it through the anonymous API.';
+
+comment on function public.resolve_public_preorder(
+  text,
+  text,
+  text
+) is
+  'Narrow allow-listed catalogue for a published public preorder Page using authoritative server time.';
 
 comment on function public.submit_public_preorder(
   text,

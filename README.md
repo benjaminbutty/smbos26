@@ -111,7 +111,9 @@ Open the public
 [Bedford Bakery preorder](http://localhost:3000/p/bedford-bakery-demo/preorder),
 choose products, Bedford or Milton Keynes, an available collection slot and
 customer details, then submit. The safe confirmation appears immediately. The
-local confirmation email is printed in the terminal running `npm run dev`.
+local-only confirmation email adapter prints the message in the terminal
+running `npm run dev`. Production fails delivery closed unless a real adapter
+is configured; Milestone 4 intentionally does not include one.
 
 Then sign in as Staff and open the generic
 [Orders workspace](http://localhost:3000/app/bedford-bakery-demo/workspace/orders).

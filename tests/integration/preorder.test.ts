@@ -9,9 +9,12 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import postgres from "postgres";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createExperienceService } from "../../src/core/experience/service";
+import { defaultPreorderEmailAdapter } from "../../src/core/preorder/email";
 import {
   publicPreorderCatalogueSchema,
   publicPreorderResultSchema,
@@ -27,6 +30,7 @@ import type {
   Tables,
 } from "../../src/db/supabase/database.types";
 import { submitExperienceForm } from "../../src/runtime/forms/submission";
+import { ViewRenderer } from "../../src/runtime/views/view-renderer";
 import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
@@ -141,19 +145,38 @@ function requestHash(): string {
   return createHash("sha256").update(crypto.randomUUID(), "utf8").digest("hex");
 }
 
-async function resolveCatalogue(
-  referenceNow?: string,
-): Promise<PublicPreorderCatalogue> {
+async function resolveCatalogue(): Promise<PublicPreorderCatalogue> {
   const { data, error } = await anonymous.rpc("resolve_public_preorder", {
     requested_business_slug: businessSlug,
     requested_page_slug: pageSlug,
     requested_preorder_key: preorderKey,
-    ...(referenceNow ? { reference_now: referenceNow } : {}),
   });
   if (error) {
     throw error;
   }
   return publicPreorderCatalogueSchema.parse(data);
+}
+
+async function resolveCatalogueAt(
+  referenceNow: string,
+): Promise<PublicPreorderCatalogue> {
+  const sql = postgres(databaseUrl, { max: 1 });
+  try {
+    const [resolved] = await sql<{ catalogue: Json }[]>`
+      select private.resolve_preorder_catalogue_at(
+        ${businessSlug},
+        ${pageSlug},
+        ${preorderKey},
+        ${referenceNow}::timestamptz
+      ) as catalogue
+    `;
+    if (!resolved) {
+      throw new Error("Private preorder catalogue resolver returned no row.");
+    }
+    return publicPreorderCatalogueSchema.parse(resolved.catalogue);
+  } finally {
+    await sql.end();
+  }
 }
 
 function pickSlot(index: number): {
@@ -663,6 +686,157 @@ describe("Milestone 4 preorder", () => {
     expect(locationAttempt.error).not.toBeNull();
   });
 
+  it("rejects uncovered required Fields for every preorder-created Object", async () => {
+    for (const [objectDefinition, key] of [
+      [customerObject, "uncovered_customer"],
+      [orderObject, "uncovered_order"],
+      [orderItemObject, "uncovered_order_item"],
+    ] as const) {
+      const attempt = await owner.from("field_definitions").insert({
+        business_id: business.id,
+        object_definition_id: objectDefinition.id,
+        key,
+        label: `Uncovered ${objectDefinition.singular_label}`,
+        field_type: "short_text",
+        required: true,
+        settings_json: {},
+        position: 90,
+      });
+      expect(attempt.error?.code).toBe("23514");
+
+      const persisted = await admin
+        .from("field_definitions")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", objectDefinition.id)
+        .eq("key", key);
+      expect(persisted.error).toBeNull();
+      expect(persisted.data).toEqual([]);
+    }
+  });
+
+  it("rejects removal of required public coverage while permitting optional Fields", async () => {
+    const fieldKey = `company_${crypto.randomUUID().replaceAll("-", "")}`;
+    const optionalField = requireData(
+      await owner
+        .from("field_definitions")
+        .insert({
+          business_id: business.id,
+          object_definition_id: customerObject.id,
+          key: fieldKey,
+          label: "Company",
+          field_type: "short_text",
+          required: false,
+          settings_json: {},
+          position: 90,
+        })
+        .select("*")
+        .single(),
+      "Could not add an optional Customer Field",
+    );
+
+    const coveredConfig = structuredClone(originalConfig);
+    coveredConfig.public_fields.push({
+      target: "customer",
+      field: fieldKey,
+      label: "Company",
+      required: true,
+      autocomplete: "organization",
+    });
+    await updateConfig(coveredConfig);
+
+    const required = await owner
+      .from("field_definitions")
+      .update({ required: true })
+      .eq("business_id", business.id)
+      .eq("id", optionalField.id);
+    expect(required.error).toBeNull();
+
+    const uncoveredConfig = structuredClone(coveredConfig);
+    uncoveredConfig.public_fields = uncoveredConfig.public_fields.filter(
+      ({ target, field }) => !(target === "customer" && field === fieldKey),
+    );
+    const removal = await owner
+      .from("preorder_experiences")
+      .update({ config_json: uncoveredConfig })
+      .eq("business_id", business.id)
+      .eq("id", preorder.id);
+    expect(removal.error?.code).toBe("23514");
+
+    const retained = requireData(
+      await admin
+        .from("preorder_experiences")
+        .select("config_json")
+        .eq("business_id", business.id)
+        .eq("id", preorder.id)
+        .single(),
+      "Could not reload retained preorder configuration",
+    );
+    expect(
+      (retained.config_json as PreorderConfig).public_fields.some(
+        ({ target, field }) => target === "customer" && field === fieldKey,
+      ),
+    ).toBe(true);
+
+    const relaxed = await owner
+      .from("field_definitions")
+      .update({ required: false })
+      .eq("business_id", business.id)
+      .eq("id", optionalField.id);
+    expect(relaxed.error).toBeNull();
+    await updateConfig(originalConfig);
+    const archived = await owner
+      .from("field_definitions")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", optionalField.id);
+    expect(archived.error).toBeNull();
+  });
+
+  it("permits a required default only when the Record insert path applies it", async () => {
+    const defaultField = requireData(
+      await owner
+        .from("field_definitions")
+        .insert({
+          business_id: business.id,
+          object_definition_id: orderItemObject.id,
+          key: "packing_note",
+          label: "Packing note",
+          field_type: "short_text",
+          required: true,
+          default_value: "Standard",
+          settings_json: {},
+          position: 90,
+        })
+        .select("*")
+        .single(),
+      "Could not add the default-backed Order Item Field",
+    );
+
+    const submitted = await submitRaw(baseSubmission(0));
+    expect(submitted.ok).toBe(true);
+    const itemRecords = requireData(
+      await admin
+        .from("records")
+        .select("data_json")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", orderItemObject.id),
+      "Could not load default-backed Order Items",
+    );
+    expect(
+      itemRecords.some(
+        ({ data_json }) => asObject(data_json).packing_note === "Standard",
+      ),
+    ).toBe(true);
+
+    const archived = await owner
+      .from("field_definitions")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", defaultField.id);
+    expect(archived.error).toBeNull();
+  });
+
   it("resolves only a published public Page with an active same-tenant preorder", async () => {
     expect(catalogue.business).toEqual({
       name: "Bedford Bakery",
@@ -741,6 +915,124 @@ describe("Milestone 4 preorder", () => {
       },
     });
     expect(inactivePage.error).not.toBeNull();
+  });
+
+  it("uses authoritative server time and rejects an anonymous alternate clock", async () => {
+    const current = await resolveCatalogue();
+    expect(
+      Math.abs(Date.now() - new Date(current.generated_at).valueOf()),
+    ).toBeLessThan(60_000);
+
+    const historicalCollection = "2025-08-02T10:00:00+00:00";
+    const historicalCounter = await admin.from("preorder_slot_counters").upsert(
+      {
+        business_id: business.id,
+        preorder_experience_id: preorder.id,
+        location_id: locations.Bedford?.id ?? "",
+        collection_at: historicalCollection,
+        reservation_count: 10,
+      },
+      {
+        onConflict:
+          "business_id,preorder_experience_id,location_id,collection_at",
+      },
+    );
+    expect(historicalCounter.error).toBeNull();
+
+    const normalResolution = await resolveCatalogue();
+    expect(
+      normalResolution.preorder.locations
+        .flatMap(({ slots }) => slots)
+        .some(
+          ({ collection_at }) =>
+            new Date(collection_at).toISOString() ===
+            new Date(historicalCollection).toISOString(),
+        ),
+    ).toBe(false);
+
+    const forgedClock = await anonymous.rpc("resolve_public_preorder", {
+      requested_business_slug: businessSlug,
+      requested_page_slug: pageSlug,
+      requested_preorder_key: preorderKey,
+      reference_now: "2025-07-28T10:00:00+00:00",
+    } as never);
+    expect(forgedClock.error).not.toBeNull();
+    expect(forgedClock.data).toBeNull();
+
+    const cleanup = await admin
+      .from("preorder_slot_counters")
+      .delete()
+      .eq("business_id", business.id)
+      .eq("preorder_experience_id", preorder.id)
+      .eq("location_id", locations.Bedford?.id ?? "")
+      .eq("collection_at", historicalCollection);
+    expect(cleanup.error).toBeNull();
+  });
+
+  it("keeps deterministic cutoff and horizon checks behind a private boundary", async () => {
+    const deterministic = structuredClone(originalConfig);
+    deterministic.schedule = {
+      ...deterministic.schedule,
+      days_of_week: [6],
+      start_time: "11:00",
+      end_time: "11:00",
+      cutoff_hours: 48,
+      booking_horizon_days: 2,
+    };
+
+    try {
+      await updateConfig(deterministic);
+      const exactlyAtCutoff = await resolveCatalogueAt(
+        "2026-07-30T10:00:00+00:00",
+      );
+      expect(
+        exactlyAtCutoff.preorder.locations
+          .flatMap(({ slots }) => slots)
+          .some(
+            ({ collection_at }) =>
+              new Date(collection_at).toISOString() ===
+              "2026-08-01T10:00:00.000Z",
+          ),
+      ).toBe(true);
+
+      const insideCutoff = await resolveCatalogueAt(
+        "2026-07-30T10:01:00+00:00",
+      );
+      expect(
+        insideCutoff.preorder.locations
+          .flatMap(({ slots }) => slots)
+          .some(
+            ({ collection_at }) =>
+              new Date(collection_at).toISOString() ===
+              "2026-08-01T10:00:00.000Z",
+          ),
+      ).toBe(false);
+
+      const shortHorizon = structuredClone(deterministic);
+      shortHorizon.schedule.cutoff_hours = 0;
+      shortHorizon.schedule.booking_horizon_days = 1;
+      await updateConfig(shortHorizon);
+      const horizonOne = await resolveCatalogueAt("2026-07-30T10:00:00+00:00");
+      expect(
+        horizonOne.preorder.locations.flatMap(({ slots }) => slots),
+      ).toEqual([]);
+
+      await updateConfig({
+        ...shortHorizon,
+        schedule: {
+          ...shortHorizon.schedule,
+          booking_horizon_days: 2,
+        },
+      });
+      const horizonTwo = await resolveCatalogueAt("2026-07-30T10:00:00+00:00");
+      expect(
+        horizonTwo.preorder.locations
+          .flatMap(({ slots }) => slots)
+          .some(({ date }) => date === "2026-08-01"),
+      ).toBe(true);
+    } finally {
+      await updateConfig(originalConfig);
+    }
   });
 
   it("keeps generic and preorder tables private from anonymous callers", async () => {
@@ -1059,45 +1351,51 @@ describe("Milestone 4 preorder", () => {
   });
 
   it("rolls back Customer, Order, Order Items, Relationships, Location and capacity on forced failure", async () => {
-    const forcedField = requireData(
-      await owner
-        .from("field_definitions")
-        .insert({
-          business_id: business.id,
-          object_definition_id: orderObject.id,
-          key: `forced_${crypto.randomUUID().replaceAll("-", "")}`,
-          label: "Forced failure",
-          field_type: "short_text",
-          required: true,
-          settings_json: {},
-          position: 99,
-        })
-        .select("*")
-        .single(),
-      "Could not create forced-failure Field",
-    );
-    const before = await countGraphRows();
-    const slot = pickSlot(3);
-    const result = await submitRaw(baseSubmission(3));
-    const after = await countGraphRows();
-    expect(result).toEqual({ ok: false, code: "invalid_submission" });
-    expect(after).toEqual(before);
-    const counter = await admin
-      .from("preorder_slot_counters")
-      .select("reservation_count")
-      .eq("business_id", business.id)
-      .eq("preorder_experience_id", preorder.id)
-      .eq("location_id", slot.location.id)
-      .eq("collection_at", slot.collectionAt);
-    expect(counter.error).toBeNull();
-    expect(counter.data).toEqual([]);
+    const sql = postgres(databaseUrl, { max: 1 });
+    await sql`
+      create or replace function private.test_force_preorder_bundle_failure()
+      returns trigger
+      language plpgsql
+      set search_path = ''
+      as $$
+      begin
+        raise exception 'controlled_test_failure' using errcode = 'P0001';
+      end;
+      $$
+    `;
+    await sql`
+      create trigger test_force_preorder_bundle_failure
+      before insert on public.record_relationships
+      for each row
+      execute function private.test_force_preorder_bundle_failure()
+    `;
 
-    const relaxed = await owner
-      .from("field_definitions")
-      .update({ required: false })
-      .eq("business_id", business.id)
-      .eq("id", forcedField.id);
-    expect(relaxed.error).toBeNull();
+    try {
+      const before = await countGraphRows();
+      const slot = pickSlot(3);
+      const result = await submitRaw(baseSubmission(3));
+      const after = await countGraphRows();
+      expect(result).toEqual({ ok: false, code: "invalid_submission" });
+      expect(after).toEqual(before);
+      const counter = await admin
+        .from("preorder_slot_counters")
+        .select("reservation_count")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", slot.location.id)
+        .eq("collection_at", slot.collectionAt);
+      expect(counter.error).toBeNull();
+      expect(counter.data).toEqual([]);
+    } finally {
+      await sql`
+        drop trigger if exists test_force_preorder_bundle_failure
+        on public.record_relationships
+      `;
+      await sql`
+        drop function if exists private.test_force_preorder_bundle_failure()
+      `;
+      await sql.end();
+    }
   });
 
   it("creates an authoritative generic graph bundle and immutable snapshots atomically", async () => {
@@ -1161,6 +1459,7 @@ describe("Milestone 4 preorder", () => {
       dietary_requirements: "Vegetarian",
       occasion: "Birthday",
       collection_location_name: "Bedford",
+      collection_timezone: "Europe/London",
       item_summary: "2 × Afternoon Tea Box",
       total: 60,
       status: "New",
@@ -1331,11 +1630,7 @@ describe("Milestone 4 preorder", () => {
       preorderKey,
       body: failureInput,
       requestHash: requestHash(),
-      emailAdapter: {
-        async sendConfirmation() {
-          throw new Error("Test provider unavailable");
-        },
-      },
+      emailAdapter: defaultPreorderEmailAdapter("production"),
     });
     expect(failed.ok).toBe(true);
     if (!failed.ok) {
@@ -1362,7 +1657,7 @@ describe("Milestone 4 preorder", () => {
     );
     expect(failedDelivery).toEqual({
       email_status: "failed",
-      email_error: "Test provider unavailable",
+      email_error: "No production preorder email provider is configured.",
     });
   });
 
@@ -1379,7 +1674,7 @@ describe("Milestone 4 preorder", () => {
         "public_reference",
         "customer_name",
         "collection_location_name",
-        "collection_at",
+        "collection_local_display",
         "item_summary",
         "total",
         "status",
@@ -1389,6 +1684,12 @@ describe("Milestone 4 preorder", () => {
     expect(detail?.definition.key).toBe("order_detail");
     expect(detail?.config).toMatchObject({
       edit_form_key: "order_status_edit",
+    });
+    expect(detail?.config).toMatchObject({
+      fields: expect.arrayContaining([
+        "collection_local_display",
+        "collection_timezone",
+      ]),
     });
     const form = await experience.loadForm("order_status_edit");
     expect(form.definition.mode).toBe("edit");
@@ -1412,6 +1713,38 @@ describe("Milestone 4 preorder", () => {
       },
     );
     expect(asObject(updated.data_json).status).toBe("Ready");
+
+    const summerOrder = orders.records.find(
+      (candidate) =>
+        new Date(
+          String(asObject(candidate.data_json).collection_at),
+        ).toISOString() === "2026-08-01T10:00:00.000Z",
+    );
+    if (!summerOrder) {
+      throw new Error("The summer 11:00 collection Order is missing.");
+    }
+    expect(asObject(summerOrder.data_json)).toMatchObject({
+      collection_at: expect.stringMatching(
+        /^2026-08-01T10:00:00(?:\+00:00|Z)$/,
+      ),
+      collection_local_display: "2026-08-01 11:00",
+      collection_timezone: "Europe/London",
+    });
+
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "UTC";
+    try {
+      const html = renderToStaticMarkup(
+        createElement(ViewRenderer, {
+          bundle: orders,
+          businessSlug,
+        }),
+      );
+      expect(html).toContain("2026-08-01 11:00");
+      expect(html).not.toContain("2026-08-01 10:00");
+    } finally {
+      process.env.TZ = previousTimezone;
+    }
   });
 
   it("responds to all six acceptance changes through configuration/data only and has no domain persistence/UI", async () => {
