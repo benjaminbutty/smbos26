@@ -180,6 +180,7 @@ export function buildConfiguredSubmission(
   config: FormConfig,
   mode: Tables<"forms">["mode"],
   formData: FormData,
+  existingValues: Record<string, Json | undefined> = {},
 ): Record<string, Json> {
   const fieldsByKey = new Map(fields.map((field) => [field.key, field]));
   const submission: Record<string, Json> = {};
@@ -199,7 +200,16 @@ export function buildConfiguredSubmission(
       value = configuredField.default_value;
     }
 
-    if (field.required && !valueIsPresent(value)) {
+    const preservesExistingFile =
+      mode === "edit" &&
+      field.field_type === "file" &&
+      !configuredField.hidden &&
+      value === undefined;
+    const effectiveValue = preservesExistingFile
+      ? existingValues[field.key]
+      : value;
+
+    if (field.required && !valueIsPresent(effectiveValue)) {
       throw new ExperienceSubmissionError(
         `${fieldLabel(field, configuredField)} is required.`,
       );
@@ -207,7 +217,7 @@ export function buildConfiguredSubmission(
 
     if (value !== undefined) {
       submission[field.key] = value;
-    } else if (mode === "edit") {
+    } else if (mode === "edit" && !preservesExistingFile) {
       submission[field.key] = null;
     }
   }
@@ -229,6 +239,7 @@ export async function submitExperienceForm(
   const experience = createExperienceService(client, tenant);
   const form = await experience.loadForm(input.formKey, "internal");
   const isEdit = form.definition.mode === "edit";
+  let existingValues: Record<string, Json | undefined> = {};
 
   if (isEdit !== (input.recordId !== undefined)) {
     throw new ExperienceSubmissionError("This form cannot be used here.");
@@ -237,7 +248,7 @@ export async function submitExperienceForm(
   if (isEdit) {
     const { data: existing, error } = await client
       .from("records")
-      .select("id")
+      .select("id, data_json")
       .eq("business_id", tenant.businessId)
       .eq("id", input.recordId ?? "")
       .eq("object_definition_id", form.definition.object_definition_id)
@@ -248,6 +259,13 @@ export async function submitExperienceForm(
         "The item you wanted to edit is not available.",
       );
     }
+
+    existingValues =
+      typeof existing.data_json === "object" &&
+      existing.data_json !== null &&
+      !Array.isArray(existing.data_json)
+        ? existing.data_json
+        : {};
   }
 
   const data = buildConfiguredSubmission(
@@ -255,6 +273,7 @@ export async function submitExperienceForm(
     form.config,
     form.definition.mode,
     input.formData,
+    existingValues,
   );
   const graph = createGraphService(client, tenant);
 

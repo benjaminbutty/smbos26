@@ -123,4 +123,49 @@ describe("configured Form submission", () => {
       ),
     ).toThrow("Company name is required.");
   });
+
+  it("preserves an existing File on a blank edit and accepts a URL replacement", () => {
+    const title = field("title", "Title", "short_text", true);
+    const attachment = field("attachment", "Attachment", "file");
+    const config: FormConfig = {
+      fields: [
+        { field: "title", hidden: false },
+        { field: "attachment", hidden: false },
+      ],
+    };
+    const existingFile = {
+      url: "https://example.test/image.jpg",
+      name: "image.jpg",
+    };
+    const blankReplacement = new FormData();
+    blankReplacement.set("title", "Updated title");
+    blankReplacement.set("attachment", "");
+
+    expect(
+      buildConfiguredSubmission(
+        [title, attachment],
+        config,
+        "edit",
+        blankReplacement,
+        { attachment: existingFile },
+      ),
+    ).toEqual({ title: "Updated title" });
+
+    const validReplacement = new FormData();
+    validReplacement.set("title", "Updated title");
+    validReplacement.set("attachment", "https://example.test/replacement.jpg");
+
+    expect(
+      buildConfiguredSubmission(
+        [title, attachment],
+        config,
+        "edit",
+        validReplacement,
+        { attachment: existingFile },
+      ),
+    ).toEqual({
+      title: "Updated title",
+      attachment: "https://example.test/replacement.jpg",
+    });
+  });
 });

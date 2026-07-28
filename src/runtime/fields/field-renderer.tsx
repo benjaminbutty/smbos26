@@ -10,6 +10,7 @@ interface FieldValueProps {
 interface FieldInputControlProps {
   field: Tables<"field_definitions">;
   value: Json | undefined;
+  isEdit?: boolean;
 }
 
 function settingsObject(
@@ -187,9 +188,18 @@ function scalarDefault(value: Json | undefined): string | number | undefined {
     : undefined;
 }
 
+function valueIsPresent(value: Json | undefined): boolean {
+  return (
+    value !== undefined &&
+    value !== null &&
+    (typeof value !== "string" || value.trim().length > 0)
+  );
+}
+
 export function FieldInputControl({
   field,
   value,
+  isEdit = false,
 }: Readonly<FieldInputControlProps>): ReactNode {
   const common = {
     id: `field-${field.key}`,
@@ -258,7 +268,6 @@ export function FieldInputControl({
         />
       );
     case "url":
-    case "file":
       return (
         <input
           {...common}
@@ -267,6 +276,34 @@ export function FieldInputControl({
           type="url"
         />
       );
+    case "file": {
+      const hasExistingValue = isEdit && valueIsPresent(value);
+
+      return (
+        <span className="file-replacement-control">
+          {hasExistingValue ? (
+            <span className="current-file">
+              <span>Current file</span>
+              <FieldValue field={field} value={value} />
+            </span>
+          ) : null}
+          <input
+            {...common}
+            defaultValue={isEdit ? "" : scalarDefault(value)}
+            placeholder={
+              hasExistingValue ? "Paste a replacement URL" : "https://"
+            }
+            required={field.required && !hasExistingValue}
+            type="url"
+          />
+          {hasExistingValue ? (
+            <span className="file-preservation-note">
+              Leave blank to keep the current file.
+            </span>
+          ) : null}
+        </span>
+      );
+    }
     case "select":
     case "status":
       return (

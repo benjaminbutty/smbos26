@@ -245,6 +245,53 @@ describe("generic experience renderers", () => {
     expect(html).toContain("Add enquiry");
   });
 
+  it("shows an object-backed File safely with a non-destructive replacement control", () => {
+    const attachment = field("attachment", "Attachment", "file", 6);
+    const existingData = records[0]!.data_json;
+    if (
+      typeof existingData !== "object" ||
+      existingData === null ||
+      Array.isArray(existingData)
+    ) {
+      throw new Error("Expected object-backed Record data");
+    }
+    const html = renderToStaticMarkup(
+      createElement(FormRenderer, {
+        bundle: {
+          ...formBundle,
+          definition: {
+            ...formBundle.definition,
+            key: "catering_edit",
+            name: "Edit catering enquiry",
+            mode: "edit",
+          },
+          fields: [...fields, attachment],
+          config: {
+            fields: [{ field: "attachment", hidden: false }],
+          },
+        },
+        action: "/submit",
+        record: {
+          ...records[0]!,
+          data_json: {
+            ...existingData,
+            attachment: {
+              url: "https://example.test/image.jpg",
+              name: "image.jpg",
+            },
+          },
+        },
+      }),
+    );
+
+    expect(html).toContain("Current file");
+    expect(html).toContain('href="https://example.test/image.jpg"');
+    expect(html).toContain(">image.jpg</a>");
+    expect(html).toContain('placeholder="Paste a replacement URL"');
+    expect(html).toContain('value=""');
+    expect(html).toContain("Leave blank to keep the current file.");
+  });
+
   it("renders every supported Page block and resolves View/Form blocks", () => {
     const html = renderToStaticMarkup(
       createElement(PageRenderer, {

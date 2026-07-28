@@ -998,6 +998,31 @@ textarea {
   line-height: 1.5;
 }
 
+.file-replacement-control {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.current-file {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.6rem;
+  align-items: baseline;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.current-file a {
+  font-weight: 700;
+}
+
+.file-preservation-note {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
 .checkbox-control {
   display: flex;
   min-height: 2.75rem;

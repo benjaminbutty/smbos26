@@ -66,7 +66,11 @@ export function FormRenderer({
                     </span>
                   ) : null}
                 </span>
-                <FieldInputControl field={field} value={value} />
+                <FieldInputControl
+                  field={field}
+                  isEdit={bundle.definition.mode === "edit"}
+                  value={value}
+                />
               </label>
               {configuredField.help_text ? (
                 <p className="field-help">{configuredField.help_text}</p>

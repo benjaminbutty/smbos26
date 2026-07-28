@@ -193,6 +193,7 @@ const cateringFormFields = [
   { field: "guest_count" },
   { field: "budget" },
   { field: "notes" },
+  { field: "attachment" },
   { field: "status" },
 ];
 
@@ -292,6 +293,7 @@ describe("Milestone 3 experience runtime", () => {
           settings: { currency: "GBP" },
         },
         { key: "notes", label: "Notes", fieldType: "long_text" },
+        { key: "attachment", label: "Attachment", fieldType: "file" },
         {
           key: "status",
           label: "Status",
@@ -563,6 +565,58 @@ describe("Milestone 3 experience runtime", () => {
     expect(arbitraryError?.code).toBe("22023");
   });
 
+  it("rejects View field arrays over 50 through direct authenticated writes", async () => {
+    const { error } = await ownerA.client.from("views").insert({
+      business_id: businessA.id,
+      key: "oversized_view",
+      name: "Oversized View",
+      view_type: "table",
+      object_definition_id: cateringObject.id,
+      audience: "internal",
+      is_active: false,
+      config_json: {
+        fields: Array.from({ length: 51 }, (_, index) => `field_${index}`),
+      },
+    });
+
+    expect(error?.code).toBe("22023");
+  });
+
+  it("rejects Form field arrays over 50 through direct authenticated writes", async () => {
+    const { error } = await ownerA.client.from("forms").insert({
+      business_id: businessA.id,
+      key: "oversized_form",
+      name: "Oversized Form",
+      object_definition_id: cateringObject.id,
+      mode: "edit",
+      audience: "internal",
+      is_active: false,
+      config_json: {
+        fields: Array.from({ length: 51 }, (_, index) => ({
+          field: `field_${index}`,
+        })),
+      },
+    });
+
+    expect(error?.code).toBe("22023");
+  });
+
+  it("rejects Page layouts over 100 blocks through direct authenticated writes", async () => {
+    const { error } = await ownerA.client.from("pages").insert({
+      business_id: businessA.id,
+      key: "oversized_page",
+      title: "Oversized Page",
+      slug: "oversized-page",
+      audience: "internal",
+      status: "draft",
+      layout_json: {
+        blocks: Array.from({ length: 101 }, () => ({ type: "divider" })),
+      },
+    });
+
+    expect(error?.code).toBe("22023");
+  });
+
   it("rejects graph changes that would break active Views or Forms", async () => {
     const notesField = cateringFields.find(({ key }) => key === "notes");
     if (!notesField) {
@@ -634,6 +688,82 @@ describe("Milestone 3 experience runtime", () => {
       status: "Contacted",
     });
     expect(updated.created_by).toBe(ownerA.user.id);
+  });
+
+  it("preserves an object-backed File on unrelated edits and accepts a URL replacement", async () => {
+    const existingFile = {
+      url: "https://example.test/image.jpg",
+      name: "image.jpg",
+    };
+    const { data: record, error: createError } = await ownerA.client
+      .from("records")
+      .insert({
+        business_id: businessA.id,
+        object_definition_id: cateringObject.id,
+        data_json: {
+          company_name: "File Test Ltd",
+          event_date: "2026-12-01",
+          guest_count: 40,
+          budget: 2000,
+          notes: "Original notes",
+          attachment: existingFile,
+          status: "New",
+        },
+      })
+      .select("*")
+      .single();
+    expect(createError).toBeNull();
+    if (!record) {
+      throw new Error("Could not create the File preservation Record");
+    }
+
+    const unrelatedEdit = new FormData();
+    unrelatedEdit.set("company_name", "File Test Ltd");
+    unrelatedEdit.set("event_date", "2026-12-01");
+    unrelatedEdit.set("guest_count", "45");
+    unrelatedEdit.set("budget", "2000");
+    unrelatedEdit.set("notes", "Updated notes");
+    unrelatedEdit.set("attachment", "");
+    unrelatedEdit.set("status", "Contacted");
+    const preserved = await submitExperienceForm(
+      ownerA.client,
+      { businessId: businessA.id },
+      {
+        formKey: editForm.key,
+        formData: unrelatedEdit,
+        recordId: record.id,
+      },
+    );
+
+    expect(preserved.data_json).toMatchObject({
+      attachment: existingFile,
+      guest_count: 45,
+      notes: "Updated notes",
+    });
+
+    const replacementEdit = new FormData();
+    replacementEdit.set("company_name", "File Test Ltd");
+    replacementEdit.set("event_date", "2026-12-01");
+    replacementEdit.set("guest_count", "45");
+    replacementEdit.set("budget", "2000");
+    replacementEdit.set("notes", "Updated notes");
+    replacementEdit.set("attachment", "https://example.test/replacement.jpg");
+    replacementEdit.set("status", "Contacted");
+    const replaced = await submitExperienceForm(
+      ownerA.client,
+      { businessId: businessA.id },
+      {
+        formKey: editForm.key,
+        formData: replacementEdit,
+        recordId: record.id,
+      },
+    );
+
+    expect(replaced.data_json).toMatchObject({
+      attachment: "https://example.test/replacement.jpg",
+      guest_count: 45,
+      notes: "Updated notes",
+    });
   });
 
   it("does not let a tenant-scoped service switch Businesses by identifier", async () => {

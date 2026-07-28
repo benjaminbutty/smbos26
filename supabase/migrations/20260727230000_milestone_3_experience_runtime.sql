@@ -152,6 +152,7 @@ as $$
   select coalesce(
     jsonb_typeof(value) = 'array'
       and (allow_empty or jsonb_array_length(value) > 0)
+      and jsonb_array_length(value) <= 50
       and not exists (
         select 1
         from jsonb_array_elements(value) as item
@@ -473,7 +474,7 @@ begin
     config,
     array['fields', 'submit_label']
   ) or jsonb_typeof(config -> 'fields') <> 'array'
-    or jsonb_array_length(config -> 'fields') = 0 then
+    or jsonb_array_length(config -> 'fields') not between 1 and 50 then
     raise exception 'Invalid Form configuration'
       using errcode = '22023';
   end if;
@@ -654,7 +655,7 @@ declare
 begin
   if not private.experience_json_has_only_keys(layout, array['blocks'])
     or jsonb_typeof(layout -> 'blocks') <> 'array'
-    or jsonb_array_length(layout -> 'blocks') = 0 then
+    or jsonb_array_length(layout -> 'blocks') not between 1 and 100 then
     raise exception 'Invalid Page layout'
       using errcode = '22023';
   end if;
