@@ -55,6 +55,9 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Run configuration change proposal tests
+        run: npm run test:changes
+
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration
 

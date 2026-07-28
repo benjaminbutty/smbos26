@@ -138,6 +138,122 @@ export type Database = {
         };
         Relationships: [];
       };
+      configuration_change_sets: {
+        Row: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        Insert: {
+          applied_at?: string | null;
+          applied_by?: string | null;
+          applied_version_id?: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at?: string | null;
+          closed_by?: string | null;
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id?: string | null;
+          semantic_diff_json: Json;
+          status?: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at?: string;
+          validated_at?: string | null;
+          validated_by?: string | null;
+          validation_result_json?: Json | null;
+        };
+        Update: {
+          applied_at?: string | null;
+          applied_by?: string | null;
+          applied_version_id?: string | null;
+          base_head_revision?: number;
+          base_version_id?: string;
+          business_id?: string;
+          candidate_checksum?: string;
+          candidate_snapshot_json?: Json;
+          closed_at?: string | null;
+          closed_by?: string | null;
+          created_at?: string;
+          description?: string | null;
+          id?: string;
+          id_allocations_json?: Json;
+          kind?: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json?: Json;
+          operations_schema_version?: number;
+          requested_by?: string;
+          rollback_target_version_id?: string | null;
+          semantic_diff_json?: Json;
+          status?: Database["public"]["Enums"]["configuration_change_status"];
+          title?: string;
+          updated_at?: string;
+          validated_at?: string | null;
+          validated_by?: string | null;
+          validation_result_json?: Json | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "configuration_change_sets_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "configuration_change_sets_tenant_applied_version_fkey";
+            columns: ["business_id", "applied_version_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "configuration_change_sets_tenant_base_version_fkey";
+            columns: ["business_id", "base_version_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "configuration_change_sets_tenant_rollback_target_fkey";
+            columns: ["business_id", "rollback_target_version_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       configuration_versions: {
         Row: {
           business_id: string;
@@ -201,6 +317,13 @@ export type Database = {
             columns: ["business_id", "restored_from_version_id"];
             isOneToOne: false;
             referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "configuration_versions_tenant_source_change_set_fkey";
+            columns: ["business_id", "source_change_set_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_change_sets";
             referencedColumns: ["business_id", "id"];
           },
         ];
@@ -1090,6 +1213,43 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      abandon_configuration_change_set: {
+        Args: { expected_business_id: string; requested_change_set_id: string };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       archive_graph_record: {
         Args: { expected_business_id: string; target_record_id: string };
         Returns: {
@@ -1280,6 +1440,122 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      get_configuration_change_set: {
+        Args: { expected_business_id: string; requested_change_set_id: string };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      list_configuration_change_sets: {
+        Args: { expected_business_id: string };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        }[];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: false;
+          isSetofReturn: true;
+        };
+      };
+      propose_configuration_change: {
+        Args: {
+          expected_business_id: string;
+          requested_description: string;
+          requested_operations: Json;
+          requested_title: string;
+        };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       remove_graph_relationship: {
         Args: {
           expected_business_id: string;
@@ -1351,6 +1627,14 @@ export type Database = {
     };
     Enums: {
       business_role: "owner" | "admin" | "staff";
+      configuration_change_kind: "change" | "rollback";
+      configuration_change_status:
+        | "proposed"
+        | "validated"
+        | "applied"
+        | "rejected"
+        | "conflicted"
+        | "abandoned";
       configuration_version_kind: "baseline" | "change" | "rollback";
       experience_audience: "internal" | "public";
       experience_form_mode: "create" | "edit";
@@ -1506,6 +1790,15 @@ export const Constants = {
   public: {
     Enums: {
       business_role: ["owner", "admin", "staff"],
+      configuration_change_kind: ["change", "rollback"],
+      configuration_change_status: [
+        "proposed",
+        "validated",
+        "applied",
+        "rejected",
+        "conflicted",
+        "abandoned",
+      ],
       configuration_version_kind: ["baseline", "change", "rollback"],
       experience_audience: ["internal", "public"],
       experience_form_mode: ["create", "edit"],

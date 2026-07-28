@@ -394,3 +394,76 @@ validation, projection application, preview or rollback.
 - Bedford Bakery remains on the temporary direct fixture path in Phase 1. Its
   eventual configured Version 2 and proposal conversion belong to later
   Milestone 5 phases.
+
+## ADR-007 - Structured configuration proposals and canonical candidates
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 2A)
+
+**Date:** 28 July 2026
+
+### Context
+
+Owner-facing and future AI-generated configuration changes need a narrow draft
+boundary before authoritative operational compatibility validation and live
+application exist. A proposal must be reviewable and reproducible without
+creating a second live graph, mutating normalized configuration or advancing a
+Business head.
+
+### Decision
+
+- `configuration_change_sets` stores the immutable proposal base, exact
+  key-based operations, trusted stable-ID allocations, complete schema-v1
+  candidate, PostgreSQL checksum and deterministic semantic diff. Phase 2A
+  creates only `change` / `proposed` rows and implements only the irreversible
+  `proposed` to `abandoned` transition.
+- Proposal creation locks the Business head for a consistent base read, loads
+  its active immutable version and recomputes the live canonical snapshot.
+  `configuration_projection_out_of_sync` is returned unless both JSON and
+  checksum equal the active version. The candidate is always materialized from
+  that immutable version, never from live rows.
+- PostgreSQL is authoritative for the exact operation grammar, complete
+  candidate materialization, structural candidate checks, stable-ID allocation,
+  canonical ordering, checksum and semantic diff. Zod mirrors the caller
+  grammar for early application feedback but cannot authorize acceptance.
+- Operations are complete desired states addressed by stable keys:
+  `set_object`, `set_field`, `set_relationship`, `set_view`, `set_form`,
+  `set_page` and `set_preorder_experience`. Unknown properties, caller-selected
+  configuration IDs, duplicate targets, unrestricted patches and hard deletion
+  are rejected. Allowed Location IDs are the sole caller-supplied UUIDs and are
+  checked against active same-Business Locations.
+- New semantic identities are sorted before UUID allocation. The immutable
+  allocation map is replayed for later validation attempts, so retries cannot
+  create new identities. Existing entity and preorder-association IDs remain
+  stable.
+- Candidate checks prove graph/configuration structure only: references,
+  active dependencies, View/Form Fields, create Form coverage, Page/public
+  safety, preorder mappings/constructability and current Location eligibility.
+  They do not claim compatibility with operational Records.
+- The stored diff classifies `created`, `updated`, `archived` and `restored`
+  changes and includes deterministic entity-specific properties and
+  owner-readable labels. Location labels are display snapshots in the diff;
+  canonical configuration retains only Location UUIDs.
+- `ConfigurationChangeService` is server-only and uses authenticated session
+  RPCs for propose/list/get/abandon. Every RPC resolves `auth.uid()` and
+  independently checks Owner/Admin membership and tenant ownership. Direct
+  authenticated change-set writes are not granted.
+
+### Deliberate Phase 2A limits
+
+- Proposals remain `proposed`; there is no validation sandbox or `validated`
+  transition.
+- No live projection materializer, application transaction, head advancement,
+  change version, stale-apply conflict handling or direct configuration
+  mutation closure is introduced.
+- Rollback proposals, preview, owner Changes UI, Bedford configured Version 2,
+  seeded acceptance proposals and AI/LLM integration remain later work.
+
+### Consequences
+
+- Proposal creation and abandonment are read-only with respect to the active
+  normalized configuration and Business head.
+- Bedford Bakery’s direct demo projection intentionally fails the consistency
+  precondition until a later phase creates its configured Version 2.
+- Snapshot/projection compatibility with existing operational Records remains
+  the critical Phase 2B boundary; Phase 2A structural checks must not be
+  presented as that proof.
