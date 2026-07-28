@@ -1,4 +1,11 @@
 # Runtime boundary
 
-Deterministic forms, views, pages, rules, and workflow execution belong here
-starting in Milestone 3. The runtime must not execute model-generated code.
+Milestone 3 implements deterministic Field, Form, View, and Page rendering
+here. Renderers consume schemas validated at both the TypeScript and PostgreSQL
+boundaries. They never execute configuration as code, HTML, SQL, or arbitrary
+requests.
+
+The authenticated Form boundary reads only configured Field keys, derives the
+Business from the resolved tenant context, and delegates generic Record writes
+to GraphService. Relationship controls and public submissions are intentionally
+deferred.

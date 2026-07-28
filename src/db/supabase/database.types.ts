@@ -165,6 +165,63 @@ export type Database = {
           },
         ];
       };
+      forms: {
+        Row: {
+          audience: Database["public"]["Enums"]["experience_audience"];
+          business_id: string;
+          config_json: Json;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          key: string;
+          mode: Database["public"]["Enums"]["experience_form_mode"];
+          name: string;
+          object_definition_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          audience?: Database["public"]["Enums"]["experience_audience"];
+          business_id: string;
+          config_json: Json;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          key: string;
+          mode: Database["public"]["Enums"]["experience_form_mode"];
+          name: string;
+          object_definition_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          audience?: Database["public"]["Enums"]["experience_audience"];
+          business_id?: string;
+          config_json?: Json;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          key?: string;
+          mode?: Database["public"]["Enums"]["experience_form_mode"];
+          name?: string;
+          object_definition_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "forms_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "forms_tenant_object_fkey";
+            columns: ["business_id", "object_definition_id"];
+            isOneToOne: false;
+            referencedRelation: "object_definitions";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       locations: {
         Row: {
           address_json: Json;
@@ -261,6 +318,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "object_definitions_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      pages: {
+        Row: {
+          audience: Database["public"]["Enums"]["experience_audience"];
+          business_id: string;
+          created_at: string;
+          id: string;
+          key: string;
+          layout_json: Json;
+          slug: string;
+          status: Database["public"]["Enums"]["experience_page_status"];
+          title: string;
+          updated_at: string;
+        };
+        Insert: {
+          audience: Database["public"]["Enums"]["experience_audience"];
+          business_id: string;
+          created_at?: string;
+          id?: string;
+          key: string;
+          layout_json: Json;
+          slug: string;
+          status?: Database["public"]["Enums"]["experience_page_status"];
+          title: string;
+          updated_at?: string;
+        };
+        Update: {
+          audience?: Database["public"]["Enums"]["experience_audience"];
+          business_id?: string;
+          created_at?: string;
+          id?: string;
+          key?: string;
+          layout_json?: Json;
+          slug?: string;
+          status?: Database["public"]["Enums"]["experience_page_status"];
+          title?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pages_business_id_fkey";
             columns: ["business_id"];
             isOneToOne: false;
             referencedRelation: "businesses";
@@ -439,6 +543,63 @@ export type Database = {
           },
         ];
       };
+      views: {
+        Row: {
+          audience: Database["public"]["Enums"]["experience_audience"];
+          business_id: string;
+          config_json: Json;
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          key: string;
+          name: string;
+          object_definition_id: string;
+          updated_at: string;
+          view_type: Database["public"]["Enums"]["experience_view_type"];
+        };
+        Insert: {
+          audience?: Database["public"]["Enums"]["experience_audience"];
+          business_id: string;
+          config_json: Json;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          key: string;
+          name: string;
+          object_definition_id: string;
+          updated_at?: string;
+          view_type: Database["public"]["Enums"]["experience_view_type"];
+        };
+        Update: {
+          audience?: Database["public"]["Enums"]["experience_audience"];
+          business_id?: string;
+          config_json?: Json;
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          key?: string;
+          name?: string;
+          object_definition_id?: string;
+          updated_at?: string;
+          view_type?: Database["public"]["Enums"]["experience_view_type"];
+        };
+        Relationships: [
+          {
+            foreignKeyName: "views_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "views_tenant_object_fkey";
+            columns: ["business_id", "object_definition_id"];
+            isOneToOne: false;
+            referencedRelation: "object_definitions";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -565,6 +726,10 @@ export type Database = {
         };
         Returns: boolean;
       };
+      resolve_public_page: {
+        Args: { requested_business_slug: string; requested_page_slug: string };
+        Returns: Json;
+      };
       update_graph_record: {
         Args: {
           data_patch?: Json;
@@ -592,6 +757,10 @@ export type Database = {
     };
     Enums: {
       business_role: "owner" | "admin" | "staff";
+      experience_audience: "internal" | "public";
+      experience_form_mode: "create" | "edit";
+      experience_page_status: "draft" | "published";
+      experience_view_type: "table" | "list" | "cards" | "detail";
       graph_field_type:
         | "short_text"
         | "long_text"
@@ -741,6 +910,10 @@ export const Constants = {
   public: {
     Enums: {
       business_role: ["owner", "admin", "staff"],
+      experience_audience: ["internal", "public"],
+      experience_form_mode: ["create", "edit"],
+      experience_page_status: ["draft", "published"],
+      experience_view_type: ["table", "list", "cards", "detail"],
       graph_field_type: [
         "short_text",
         "long_text",
