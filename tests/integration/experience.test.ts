@@ -889,6 +889,59 @@ describe("Milestone 3 experience runtime", () => {
     expect(unsafePublishError?.code).toBe("23514");
   });
 
+  it("archives Pages without exposing them in navigation or public resolution", async () => {
+    const experience = createExperienceService(ownerA.client, {
+      businessId: businessA.id,
+    });
+    const internalPage = await experience.createPage({
+      key: `archived_internal_${crypto.randomUUID().replaceAll("-", "")}`,
+      title: "Archived internal Page",
+      slug: `archived-internal-${crypto.randomUUID()}`,
+      audience: "internal",
+      layout: { blocks: [{ type: "text", text: "Internal content" }] },
+      status: "draft",
+      isActive: false,
+    });
+    const publicPage = await experience.createPage({
+      key: `archived_public_${crypto.randomUUID().replaceAll("-", "")}`,
+      title: "Archived public Page",
+      slug: `archived-public-${crypto.randomUUID()}`,
+      audience: "public",
+      layout: { blocks: [{ type: "text", text: "Public content" }] },
+      status: "published",
+      isActive: false,
+    });
+
+    const navigation = await experience.listNavigation();
+    expect(navigation.pages.some(({ id }) => id === internalPage.id)).toBe(
+      false,
+    );
+    await expect(experience.loadPage(internalPage.slug)).rejects.toBeInstanceOf(
+      ExperienceServiceError,
+    );
+    expect(
+      await resolvePublicPage(anonymous, businessA.slug, publicPage.slug),
+    ).toBeNull();
+
+    const dormantPage = await experience.createPage({
+      key: `dormant_reference_${crypto.randomUUID().replaceAll("-", "")}`,
+      title: "Dormant invalid reference",
+      slug: `dormant-reference-${crypto.randomUUID()}`,
+      audience: "internal",
+      layout: {
+        blocks: [{ type: "view", view_key: "missing_view" }],
+      },
+      status: "draft",
+      isActive: false,
+    });
+    await expect(
+      experience.updatePage({
+        pageDefinitionId: dormantPage.id,
+        changes: { isActive: true },
+      }),
+    ).rejects.toBeInstanceOf(ExperienceServiceError);
+  });
+
   it("does not give anonymous callers broad configuration or Record access", async () => {
     const records = await anonymous.from("records").select("*");
     expect(records.error?.code).toBe("42501");

@@ -34,6 +34,42 @@ export type Database = {
   };
   public: {
     Tables: {
+      business_configuration_heads: {
+        Row: {
+          active_version_id: string;
+          business_id: string;
+          head_revision: number;
+          updated_at: string;
+        };
+        Insert: {
+          active_version_id: string;
+          business_id: string;
+          head_revision?: number;
+          updated_at?: string;
+        };
+        Update: {
+          active_version_id?: string;
+          business_id?: string;
+          head_revision?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "business_configuration_heads_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: true;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "business_configuration_heads_tenant_version_fkey";
+            columns: ["business_id", "active_version_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       business_memberships: {
         Row: {
           business_id: string;
@@ -101,6 +137,73 @@ export type Database = {
           updated_at?: string;
         };
         Relationships: [];
+      };
+      configuration_versions: {
+        Row: {
+          business_id: string;
+          created_at: string;
+          created_by: string | null;
+          id: string;
+          kind: Database["public"]["Enums"]["configuration_version_kind"];
+          parent_version_id: string | null;
+          restored_from_version_id: string | null;
+          snapshot_checksum: string;
+          snapshot_json: Json;
+          snapshot_schema_version: number;
+          source_change_set_id: string | null;
+          version_number: number;
+        };
+        Insert: {
+          business_id: string;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          kind: Database["public"]["Enums"]["configuration_version_kind"];
+          parent_version_id?: string | null;
+          restored_from_version_id?: string | null;
+          snapshot_checksum: string;
+          snapshot_json: Json;
+          snapshot_schema_version: number;
+          source_change_set_id?: string | null;
+          version_number: number;
+        };
+        Update: {
+          business_id?: string;
+          created_at?: string;
+          created_by?: string | null;
+          id?: string;
+          kind?: Database["public"]["Enums"]["configuration_version_kind"];
+          parent_version_id?: string | null;
+          restored_from_version_id?: string | null;
+          snapshot_checksum?: string;
+          snapshot_json?: Json;
+          snapshot_schema_version?: number;
+          source_change_set_id?: string | null;
+          version_number?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "configuration_versions_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "configuration_versions_tenant_parent_fkey";
+            columns: ["business_id", "parent_version_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "configuration_versions_tenant_restored_from_fkey";
+            columns: ["business_id", "restored_from_version_id"];
+            isOneToOne: false;
+            referencedRelation: "configuration_versions";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
       };
       field_definitions: {
         Row: {
@@ -331,6 +434,7 @@ export type Database = {
           business_id: string;
           created_at: string;
           id: string;
+          is_active: boolean;
           key: string;
           layout_json: Json;
           slug: string;
@@ -343,6 +447,7 @@ export type Database = {
           business_id: string;
           created_at?: string;
           id?: string;
+          is_active?: boolean;
           key: string;
           layout_json: Json;
           slug: string;
@@ -355,6 +460,7 @@ export type Database = {
           business_id?: string;
           created_at?: string;
           id?: string;
+          is_active?: boolean;
           key?: string;
           layout_json?: Json;
           slug?: string;
@@ -377,6 +483,7 @@ export type Database = {
           business_id: string;
           created_at: string;
           id: string;
+          is_active: boolean;
           location_id: string;
           preorder_experience_id: string;
         };
@@ -384,6 +491,7 @@ export type Database = {
           business_id: string;
           created_at?: string;
           id?: string;
+          is_active?: boolean;
           location_id: string;
           preorder_experience_id: string;
         };
@@ -391,6 +499,7 @@ export type Database = {
           business_id?: string;
           created_at?: string;
           id?: string;
+          is_active?: boolean;
           location_id?: string;
           preorder_experience_id?: string;
         };
@@ -1243,6 +1352,7 @@ export type Database = {
     };
     Enums: {
       business_role: "owner" | "admin" | "staff";
+      configuration_version_kind: "baseline" | "change" | "rollback";
       experience_audience: "internal" | "public";
       experience_form_mode: "create" | "edit";
       experience_page_status: "draft" | "published";
@@ -1397,6 +1507,7 @@ export const Constants = {
   public: {
     Enums: {
       business_role: ["owner", "admin", "staff"],
+      configuration_version_kind: ["baseline", "change", "rollback"],
       experience_audience: ["internal", "public"],
       experience_form_mode: ["create", "edit"],
       experience_page_status: ["draft", "published"],

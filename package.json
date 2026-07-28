@@ -23,6 +23,7 @@
     "test:experience": "vitest run --config vitest.integration.config.ts tests/integration/experience.test.ts",
     "test:graph": "vitest run --config vitest.integration.config.ts tests/integration/graph.test.ts",
     "test:preorder": "vitest run --config vitest.integration.config.ts tests/integration/preorder.test.ts",
+    "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
     "test:watch": "vitest",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",

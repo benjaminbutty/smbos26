@@ -317,6 +317,7 @@ export function createExperienceService(
           audience: value.audience,
           layout_json: toJson(value.layout),
           status: value.status,
+          is_active: value.isActive,
         })
         .select("*")
         .single();
@@ -342,6 +343,9 @@ export function createExperienceService(
       }
       if (value.changes.status !== undefined) {
         changes.status = value.changes.status;
+      }
+      if (value.changes.isActive !== undefined) {
+        changes.is_active = value.changes.isActive;
       }
 
       const { data, error } = await client
@@ -452,6 +456,7 @@ export function createExperienceService(
         .eq("business_id", businessId)
         .eq("slug", pageSlug)
         .eq("audience", experienceAudienceSchema.parse(audience))
+        .eq("is_active", true)
         .maybeSingle();
       const definition = requireResult(
         data,
@@ -480,6 +485,7 @@ export function createExperienceService(
           .select("*")
           .eq("business_id", businessId)
           .eq("audience", "internal")
+          .eq("is_active", true)
           .order("created_at"),
       ]);
 

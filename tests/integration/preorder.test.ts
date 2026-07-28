@@ -980,6 +980,190 @@ describe("Milestone 4 preorder", () => {
     expect(inactivePage.error).not.toBeNull();
   });
 
+  it("excludes archived allowed Locations from catalogues and submissions", async () => {
+    const miltonKeynes = locations["Milton Keynes"];
+    if (!miltonKeynes) {
+      throw new Error("Milton Keynes Location is missing.");
+    }
+    const association = requireData(
+      await owner
+        .from("preorder_experience_locations")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", miltonKeynes.id)
+        .single(),
+      "Could not load the allowed Location association",
+    );
+    const bedfordAssociation = requireData(
+      await owner
+        .from("preorder_experience_locations")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("preorder_experience_id", preorder.id)
+        .eq("location_id", locations.Bedford?.id ?? "")
+        .single(),
+      "Could not load the Bedford allowed Location association",
+    );
+    const identityChange = await owner
+      .from("preorder_experience_locations")
+      .update({ id: crypto.randomUUID() })
+      .eq("business_id", business.id)
+      .eq("id", association.id);
+    expect(identityChange.error?.code).toBe("22023");
+
+    try {
+      const archived = await owner
+        .from("preorder_experience_locations")
+        .update({ is_active: false })
+        .eq("business_id", business.id)
+        .eq("id", association.id);
+      expect(archived.error).toBeNull();
+
+      const filtered = await resolveCatalogue();
+      expect(
+        filtered.preorder.locations.some(({ id }) => id === miltonKeynes.id),
+      ).toBe(false);
+      expect(
+        filtered.preorder.products.some(({ location_ids }) =>
+          location_ids.includes(miltonKeynes.id),
+        ),
+      ).toBe(false);
+
+      const removeLastActive = await owner
+        .from("preorder_experience_locations")
+        .update({ is_active: false })
+        .eq("business_id", business.id)
+        .eq("id", bedfordAssociation.id);
+      expect(removeLastActive.error?.code).toBe("23514");
+
+      const rejected = await submitRaw(
+        baseSubmission(0, { locationId: miltonKeynes.id }),
+      );
+      expect(rejected).toEqual({ ok: false, code: "invalid_location" });
+    } finally {
+      const restored = await owner
+        .from("preorder_experience_locations")
+        .update({ is_active: true })
+        .eq("business_id", business.id)
+        .eq("id", association.id);
+      expect(restored.error).toBeNull();
+    }
+  });
+
+  it("does not resolve or accept submissions through an archived preorder Page", async () => {
+    const page = requireData(
+      await owner
+        .from("pages")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("slug", pageSlug)
+        .single(),
+      "Could not load the preorder Page",
+    );
+
+    try {
+      const archived = await owner
+        .from("pages")
+        .update({ is_active: false })
+        .eq("business_id", business.id)
+        .eq("id", page.id);
+      expect(archived.error).toBeNull();
+
+      const resolution = await anonymous.rpc("resolve_public_preorder", {
+        requested_business_slug: businessSlug,
+        requested_page_slug: pageSlug,
+        requested_preorder_key: preorderKey,
+      });
+      expect(resolution.error).toBeNull();
+      expect(resolution.data).toBeNull();
+
+      const rejected = await submitRaw(baseSubmission(0));
+      expect(rejected).toEqual({ ok: false, code: "not_found" });
+    } finally {
+      const restored = await owner
+        .from("pages")
+        .update({ is_active: true })
+        .eq("business_id", business.id)
+        .eq("id", page.id);
+      expect(restored.error).toBeNull();
+    }
+  });
+
+  it("canonically snapshots preorder configuration without operational rows", async () => {
+    const sql = postgres(databaseUrl, { max: 1 });
+    try {
+      const [resolved] = await sql<{ snapshot: Json }[]>`
+        select private.configuration_snapshot_v1(
+          ${business.id}::uuid
+        ) as snapshot
+      `;
+      const snapshot = asObject(resolved?.snapshot ?? null);
+      const experiences = snapshot.preorder_experiences;
+      const associations = snapshot.preorder_experience_locations;
+      const pages = snapshot.pages;
+      if (
+        !Array.isArray(experiences) ||
+        !Array.isArray(associations) ||
+        !Array.isArray(pages)
+      ) {
+        throw new Error("Canonical preorder snapshot arrays are missing.");
+      }
+
+      expect(
+        experiences.some(
+          (value) =>
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value) &&
+            value.id === preorder.id &&
+            value.key === preorderKey,
+        ),
+      ).toBe(true);
+      const mainAssociations = associations.filter(
+        (value) =>
+          typeof value === "object" &&
+          value !== null &&
+          !Array.isArray(value) &&
+          value.preorder_experience_id === preorder.id,
+      );
+      expect(mainAssociations).toHaveLength(2);
+      expect(
+        mainAssociations.every(
+          (value) =>
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value) &&
+            value.is_active === true &&
+            typeof value.id === "string" &&
+            typeof value.location_id === "string",
+        ),
+      ).toBe(true);
+      expect(
+        pages.some(
+          (value) =>
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value) &&
+            value.slug === pageSlug &&
+            value.status === "published" &&
+            value.is_active === true,
+        ),
+      ).toBe(true);
+
+      const serialized = JSON.stringify(snapshot);
+      expect(serialized).not.toContain("business_id");
+      expect(serialized).not.toContain(products["Afternoon Tea Box"]?.id ?? "");
+      expect(snapshot).not.toHaveProperty("records");
+      expect(snapshot).not.toHaveProperty("record_location_links");
+      expect(snapshot).not.toHaveProperty("preorder_submissions");
+      expect(snapshot).not.toHaveProperty("preorder_slot_counters");
+      expect(snapshot).not.toHaveProperty("preorder_rate_limits");
+    } finally {
+      await sql.end();
+    }
+  });
+
   it("uses authoritative server time and rejects an anonymous alternate clock", async () => {
     const current = await resolveCatalogue();
     expect(

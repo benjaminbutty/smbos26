@@ -313,3 +313,74 @@ Trade-offs and deliberate limits:
 - The narrow database-backed hash throttle, honeypot, size limits and
   idempotency are proportionate abuse controls, not complete anti-fraud
   protection.
+
+## ADR-006 - Immutable configuration baselines and active heads
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 1)
+
+**Date:** 28 July 2026
+
+### Context
+
+Future owner-facing and AI-generated configuration changes need an immutable
+base and one serialized active head per Business. The existing normalized
+graph, experience and preorder tables remain the runtime projection. Phase 1
+establishes history and identity without implementing proposals, candidate
+validation, projection application, preview or rollback.
+
+### Decision
+
+- `configuration_versions` stores tenant-owned immutable snapshots with a
+  per-Business version number, parent/provenance fields, schema version,
+  canonical JSON, SHA-256 checksum, actor and timestamp. Phase 1 creates only
+  system baseline Version 1 rows, whose parent, rollback target, change set and
+  actor are null.
+- `business_configuration_heads` stores exactly one active version pointer and
+  monotonic revision per Business. Composite tenant foreign keys prevent a
+  head, parent or rollback provenance reference from crossing Businesses.
+- `private.configuration_snapshot_v1(uuid)` is the sole canonical reader.
+  It explicitly orders identity-bearing graph, experience and preorder
+  configuration and excludes Business/Location details, membership,
+  operational Records and Relationships, Record-to-Location links,
+  submissions, counters, rate limits, timestamps and actors.
+- Canonical JSON contains stable configuration IDs and keys but no
+  `business_id`; tenant ownership belongs to the version row. PostgreSQL hashes
+  the canonical `jsonb` text with SHA-256. TypeScript does not implement a
+  second checksum algorithm.
+- Existing Businesses are backfilled from their current projection. A Business
+  insertion synchronously creates an empty canonical baseline and head in the
+  same transaction.
+- Pages and preorder allowed-Location associations gain independent
+  `is_active` archival state. Runtime/public resolvers and compatibility checks
+  ignore inactive rows. Page draft/published status remains separate from
+  archival state.
+- Individual version updates and deletes are rejected. Business deletion still
+  cascades its version history and head. Owner/Admin may read history and the
+  head; Staff and anonymous callers may not; authenticated callers have no
+  direct write grants.
+- Phase 1 deliberately leaves existing configuration mutation paths open.
+  Therefore it does not yet assert that the active normalized projection always
+  equals the active immutable snapshot.
+
+### Locked follow-up boundaries
+
+- Phase 2 change sets require an owner-facing title, an optional owner-facing
+  description, and distinct `rejected`, `conflicted` and `abandoned` terminal
+  states.
+- Ordinary owner/AI operations may create only `custom` Objects. Existing
+  Object `kind` and `semantic_type` cannot change silently. Template
+  installation requires a separate trusted system-owned boundary.
+- A later rollback may retain configuration introduced after its historical
+  target in an archived state. `restored_from_version_id` therefore records
+  semantic provenance and does not promise checksum equality with that target.
+
+### Consequences
+
+- Every Business has a durable base for later stale-base and concurrency
+  protection without introducing parallel draft/production graphs.
+- The same stable configuration identity produces deterministic snapshot JSON
+  and checksum. Independently recreated Businesses may differ because their
+  configuration UUIDs differ.
+- Bedford Bakery remains on the temporary direct fixture path in Phase 1. Its
+  eventual configured Version 2 and proposal conversion belong to later
+  Milestone 5 phases.

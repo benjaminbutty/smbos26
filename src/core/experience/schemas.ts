@@ -292,6 +292,7 @@ export const createPageDefinitionSchema = z.object({
   audience: experienceAudienceSchema,
   layout: pageLayoutSchema,
   status: experiencePageStatusSchema.default("draft"),
+  isActive: z.boolean().default(true),
 });
 
 export const updatePageDefinitionSchema = z.object({
@@ -308,6 +309,7 @@ export const updatePageDefinitionSchema = z.object({
       audience: experienceAudienceSchema.optional(),
       layout: pageLayoutSchema.optional(),
       status: experiencePageStatusSchema.optional(),
+      isActive: z.boolean().optional(),
     })
     .refine((changes) => Object.keys(changes).length > 0, {
       message: "At least one Page change is required.",
