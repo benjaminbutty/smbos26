@@ -97,8 +97,11 @@ jobs:
       - name: Run configuration lifecycle action interface tests
         run: npm run test:changes-ui-actions
 
-      - name: Reset for full integration and RLS tests
-        run: npm run supabase:reset
+      - name: Restart clean Supabase for full integration and RLS tests
+        run: |
+          npm run supabase:stop
+          npm run supabase:start
+          npm run supabase:reset
 
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration
