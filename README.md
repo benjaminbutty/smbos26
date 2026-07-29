@@ -1,12 +1,15 @@
 # SMBOS
 
 SMBOS is an AI-native operating system for small physical businesses. The
-repository currently contains the Milestone 4 vertical slice plus the
-Milestone 5 Phase 5B explicit Changes lifecycle interface: a
+repository currently contains the Milestone 4 vertical slice, the Milestone 5
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 1A
+provider-neutral structured AI execution foundation: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
+The AI execution boundary is server-only and deliberately disabled; there is
+no live provider or external model request.
 
 The product and architecture sources of truth are:
 
@@ -53,6 +56,13 @@ Included:
 - bounded latest-50 proposal and version history loading
 - direct projection-table mutation closed to anonymous, authenticated, and
   service-role clients
+- registered strict structured AI task contracts and one trusted execution
+  policy registry
+- provider-neutral schema-constrained generation request/response contracts
+- bounded structured input, output tokens, attempts, retry delay and actual
+  aborting timeout behavior
+- stable owner-safe AI errors with internal causes retained for observability
+- one disabled production AI provider that makes no network request
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -60,13 +70,38 @@ Included:
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
-- AI provider calls or builder behavior
+- live AI provider calls, API-key use or builder behavior
+- AI proposal generation, context assembly, builder routes or chat UI
+- durable AI usage accounting, per-Business budgets or audit persistence
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
 - owner-facing proposal creation or operation editing
 - automatic rebase/merge or AI/LLM integration
 - Location or operational Record versioning
 - workflow/rule execution
+
+## Milestone 6 change boundaries
+
+AI is the primary system-building interface, not the only control surface and
+not a runtime dependency. Manual deterministic configuration and operational
+controls arrive before AI operation generation.
+
+Configuration changes use strict operations and the existing immutable
+proposal → candidate → preview → validation → deliberate Owner/Admin
+application → immutable version lifecycle. Neither AI nor manual UI may mutate
+the eight versioned configuration tables directly, and the model never
+validates or applies its own proposal.
+
+Operational changes such as Product price, Order status, Location creation and
+Product-to-Location availability use separate narrow operational services and
+normal generated UI. They are not configuration versions. Compound requests
+are decomposed into correctly ordered operational and configuration steps.
+
+Phase 1A only establishes the structured execution contract. Its production
+provider is disabled, so it performs no external request and cannot incur an AI
+API charge. Durable budgets, usage accounting and audit records are Phase 1B;
+live provider integration, context assembly, operation generation and builder
+UI remain later work.
 
 ## Requirements
 
@@ -263,11 +298,15 @@ authorization boundary. The preorder server uses the service role only to call
 three narrow, schema-validated transaction/email RPCs. The browser never
 receives it and cannot execute the write RPC directly.
 
+`AI_PROVIDER` and `AI_PROVIDER_API_KEY` remain validated placeholders for a
+future phase. Phase 1A does not read them during execution or send them to a
+provider.
+
 ## Repository structure
 
 ```text
 src/
-├── ai/providers/       Future structured AI provider adapters
+├── ai/                 Server-only structured task/policy/provider contracts
 ├── app/                Next.js App Router routes and global styles
 ├── auth/               Authentication actions and authorization helpers
 ├── components/         Shared user-interface components
@@ -298,6 +337,9 @@ tests/
 - Owner/Admin configuration changes use only the structured propose, validate,
   apply, and abandon RPC lifecycle. Legacy configuration RPCs and private
   engine helpers are not executable by application roles.
+- AI execution resolves only registered server tasks and trusted policies. It
+  has no configuration, operational or Supabase mutation dependency and the
+  Phase 1A provider performs no network request.
 - Database-owner configuration fixtures exist only under `tests/`; they are not
   production services, credentials, routes, or RPCs.
 - Public catalogue reads return an explicit allow-list; generic graph and

@@ -1,10 +1,16 @@
 # AI provider boundary
 
-Provider adapters belong here when the AI builder milestone begins.
+Milestone 6 Phase 1A defines one server-only, provider-neutral structured
+generation interface. The only production adapter is deliberately disabled and
+makes no network request. No provider SDK, API key use, usage ledger or durable
+budget enforcement exists in this phase.
 
-The application must use structured, allow-listed operations. Providers must
-not receive arbitrary SQL, shell, source-editing, or unvalidated HTTP tools,
-and the deterministic SMBOS runtime must continue working when a provider is
-unavailable.
+Future adapters must receive only the trusted request assembled by the
+execution service: fixed provider/model identity, server-owned instruction,
+validated structured input, the registered output contract, output-token
+limit and `AbortSignal`. They must not accept arbitrary tools, URLs, headers,
+credentials, database clients or mutation capabilities.
 
-No provider SDK or runtime call is part of Milestone 0.
+The execution service validates the provider's unknown output with the task's
+strict Zod schema. The deterministic SMBOS runtime and both configuration and
+operational services remain independent of AI availability.

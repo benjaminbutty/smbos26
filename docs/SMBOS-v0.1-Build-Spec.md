@@ -1155,6 +1155,8 @@ Publishing can point the business to a selected config version rather than dupli
 
 ### 8.1 Role of AI
 
+AI is the primary system-building interface, but it is not the only control
+surface. It is a design and change assistant rather than a runtime dependency.
 The AI performs four jobs:
 
 1. understand the user's business-language request;
@@ -1169,7 +1171,13 @@ AI does not directly:
 - run `eval` or generated scripts;
 - bypass permissions;
 - alter system primitives;
+- mutate versioned configuration tables;
+- validate or apply its own configuration proposal;
 - publish material changes without an explicit user action.
+
+Manual deterministic configuration and operational controls must exist before
+AI operation generation depends on them. The system continues to operate when
+AI is disabled or unavailable.
 
 ### 8.2 Context supplied to the model
 
@@ -1188,7 +1196,43 @@ For each builder request, provide:
 
 Do not send unnecessary tenant records or PII if definitions are sufficient.
 
-### 8.3 Change-set model
+### 8.3 Configuration and operational change lanes
+
+Builder requests must be decomposed into one or both trusted change lanes.
+
+The **configuration lane** covers changes to Objects, Fields, Relationships,
+Views, Forms, Pages and preorder configuration such as questions, collection
+days, cutoffs and capacity. AI and manual UI both enter the Milestone 5
+lifecycle:
+
+```text
+strict operations
+-> immutable proposal
+-> candidate
+-> preview
+-> validation
+-> deliberate Owner/Admin application
+-> immutable version
+```
+
+Neither control surface may mutate the eight versioned configuration tables
+directly.
+
+The **operational lane** covers ordinary business data such as Product names
+and prices, Order status, Locations and Product-to-Location availability.
+These changes use narrow operational services and normal generated UI; they
+are not configuration versions. Future operational undo is an explicit inverse
+edit using a captured previous value, never a configuration rollback.
+
+Compound requests must preserve the distinction and order dependencies. For
+example, “Add Cambridge as another preorder collection location” means:
+
+1. create Cambridge through the operational Location boundary;
+2. propose the preorder experience change through the Milestone 5
+   configuration lifecycle;
+3. preview, validate and deliberately apply that proposal.
+
+### 8.4 Change-set model
 
 The LLM should produce operations rather than raw desired state.
 
@@ -1218,56 +1262,27 @@ Example:
 }
 ```
 
-The application validates and applies this. The model never writes directly to the database.
+The application parses these operations into an immutable proposal. Platform
+validation is deterministic and a deliberate Owner/Admin action applies a
+valid proposal. The model never writes directly to the database, validates its
+own proposal or applies it.
 
-### 8.4 AI tool/API contracts
+### 8.5 AI tool/API contracts
 
-Initial builder operations:
+Phase 1A gives the provider no tools or generic function executor. Later
+registered builder tasks may return only schema-constrained values that the
+server classifies into:
 
-#### Graph
+- allow-listed Milestone 5 configuration operations for an immutable proposal;
+- allow-listed operational intents handled through specific narrow services;
+- explicit ordered steps when a request spans both lanes.
 
-- `create_object`
-- `update_object_labels`
-- `archive_object`
-- `create_field`
-- `update_field`
-- `archive_field`
-- `create_relationship`
-- `update_relationship`
+Provider/model selection, lifecycle validation, proposal application, rollback,
+publishing, credentials, database clients, arbitrary HTTP, SQL, shell and
+source-code capabilities are never model-selectable tools. The server owns
+implementation, authorization and deterministic validation.
 
-#### Experience
-
-- `create_view`
-- `update_view`
-- `create_form`
-- `update_form`
-- `create_page`
-- `update_page`
-
-#### Behaviour
-
-- `create_rule`
-- `update_rule`
-- `create_workflow`
-- `update_workflow`
-
-#### Data/setup
-
-- `create_record`
-- `update_record`
-- `create_location`
-- `update_location`
-
-#### Change management
-
-- `validate_change_set`
-- `apply_change_set`
-- `revert_to_version`
-- `publish_version`
-
-The LLM may request these operations. The server owns implementation, validation and permission checks.
-
-### 8.5 Validation layer
+### 8.6 Validation layer
 
 Every proposed operation must validate:
 
@@ -1283,7 +1298,7 @@ Every proposed operation must validate:
 - change does not archive required platform components
 - change does not silently destroy populated data
 
-### 8.6 Preview/diff
+### 8.7 Preview/diff
 
 Material changes should display a simple business-language diff.
 
@@ -1301,7 +1316,7 @@ Existing orders will not be changed.
 
 The underlying structured diff can be more detailed for logs.
 
-### 8.7 Undo
+### 8.8 Undo
 
 `Undo that` should revert to the previous configuration version where possible.
 
@@ -1757,15 +1772,40 @@ Phone can be changed from required to optional via structured change set and rev
 
 ### Milestone 6 - AI builder
 
-Build:
+Build in safety-ordered phases:
 
-- AI context builder
-- structured tool schemas
-- planner prompt
-- operation generation
-- validation feedback loop
-- builder chat UI
-- preview integration
+**Phase 1A - provider-neutral structured execution contracts**
+
+- registered server-owned task/input/output contracts;
+- provider-neutral structured generation interface;
+- trusted fixed policy registry;
+- bounded input, output tokens, timeout and retry behavior;
+- owner-safe errors and deterministic tests;
+- disabled production provider with no SDK, API-key use or network request.
+
+Phase 1A does not create proposals, access configuration or operational data,
+add a browser surface, or incur an AI API charge. Durable per-Business budgets,
+usage accounting and audit records are Phase 1B.
+
+**Before AI operation generation**
+
+- add manual deterministic configuration proposal controls over the existing
+  Milestone 5 lifecycle;
+- add the required narrow operational controls;
+- preserve the separate configuration and operational lanes described in
+  Section 8.3.
+
+**Later builder phases**
+
+- AI context builder;
+- planner prompt and registered builder tasks;
+- strict configuration/operational operation generation;
+- deterministic validation feedback;
+- builder conversation UI and preview integration.
+
+The model may propose configuration operations but never validates or applies
+its own proposal. AI remains a design/change assistant and the deterministic
+runtime has no AI dependency.
 
 Exit criterion:
 

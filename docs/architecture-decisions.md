@@ -959,3 +959,73 @@ after another actor materially advances that head.
   claim.
 - Apply and rollback remain immutable forward history, while operational
   business data stays live and untouched.
+
+## ADR-014 - Separate trusted lanes for AI-assisted system and operational changes
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 1A)
+
+**Date:** 29 July 2026
+
+### Context
+
+AI is intended to be the primary system-building interface for non-technical
+operators, but not every business change is versioned configuration. Treating
+Product prices, Order status or Location creation as configuration would make
+ordinary operations appear in configuration history and give rollback
+misleading semantics. Conversely, allowing either AI or a manual editor to
+write configuration projections directly would bypass the Milestone 5
+proposal, preview, validation and immutable-version boundary.
+
+The first AI milestone also needs a provider contract before a real model,
+browser surface, context loader, proposal generator or durable accounting is
+introduced. The contract must fail safely while no provider is configured and
+must not make the deterministic runtime depend on AI availability.
+
+### Decision
+
+- AI is the primary system-building interface, but it is not the only control
+  surface. Manual deterministic controls are established before AI operation
+  generation and use the same trusted application boundaries.
+- Configuration changes—including Objects, Fields, Relationships, Views,
+  Forms, Pages and preorder experience settings—must enter the existing
+  Milestone 5 lifecycle as strict operations, an immutable proposal, candidate,
+  preview, deterministic validation, deliberate Owner/Admin application and an
+  immutable version.
+- Neither AI nor a manual UI may directly mutate `object_definitions`,
+  `field_definitions`, `relationship_definitions`, `views`, `forms`, `pages`,
+  `preorder_experiences` or `preorder_experience_locations`.
+- Operational changes—including Product Record names/prices, Order status,
+  Locations and Product-to-Location availability—use ordinary narrow
+  operational services and generated UI. They are not configuration versions
+  and are never presented as configuration rollback. A future operational undo
+  is an explicit inverse edit using a captured previous value.
+- Compound requests are decomposed into explicit ordered steps. Adding a new
+  preorder collection Location first creates the Location through the
+  operational boundary, then creates, previews, validates and deliberately
+  applies an M5 proposal that references it.
+- The model may plan and propose. It never validates or applies its own
+  configuration proposal, and the runtime remains deterministic when AI is
+  unavailable.
+- Phase 1A defines registered strict Zod task contracts, a provider-neutral
+  structured provider interface, trusted server-owned policies, actual
+  timeouts, bounded retry behavior, normalised metadata and owner-safe errors.
+  Provider output is unknown until the execution service parses it through the
+  registered strict output schema.
+- The sole Phase 1A production provider is disabled and performs no network
+  request. There is no provider SDK or API-key use, so Phase 1A cannot incur an
+  AI API charge.
+- Durable per-Business budgets, usage accounting and audit persistence are
+  Phase 1B. Context assembly, builder operations, proposal creation, browser
+  surfaces and live provider integration remain later work.
+
+### Consequences
+
+- Configuration history continues to describe system design, while operational
+  data remains live business state with honest edit/undo semantics.
+- AI and manual surfaces cannot become alternative configuration-write
+  boundaries or bypass Owner/Admin deliberation.
+- Future provider adapters have one bounded, schema-constrained interface and
+  cannot receive arbitrary tools, URLs, credentials, database clients or
+  mutation services.
+- Phase 1A proves failure, timeout, retry and strict-output behavior without
+  claiming that the AI builder or a live provider is complete.
