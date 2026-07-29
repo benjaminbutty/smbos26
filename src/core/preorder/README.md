@@ -48,3 +48,9 @@ proposal lifecycle. The older create/update RPC implementations are retained
 only for migration history and are not executable by application roles.
 Product Records and Product-to-Location availability remain operational data,
 outside configuration versioning.
+
+Authenticated candidate preview calls the identifier-only preview resolver
+with the trusted Business, actor, change-set, Page key and preorder key. It
+reuses the authoritative catalogue assembler, receives no submission endpoint
+or idempotency token, and keeps quantity/Location/date/slot/customer-field
+exploration in ephemeral client state with the final submission disabled.

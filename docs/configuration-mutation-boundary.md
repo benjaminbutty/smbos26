@@ -55,8 +55,9 @@ in the `private` schema.
 | `src/core/configuration/definition-source.ts` | Read-only live/snapshot configuration lookup abstraction; no mutation methods |
 | `src/core/graph/service.ts` | Configuration reads plus operational Record/edge writes |
 | `src/core/experience/service.ts` | Configuration reads only |
-| `src/core/preorder/service.ts` | Runtime resolution, submission, and email state only |
-| Server routes/actions under `src/app` | Operational preorder endpoint or runtime reads; no configuration DML |
+| `src/core/preorder/service.ts` | Live runtime resolution/submission/email state plus authenticated identifier-only preview resolution; no configuration mutation |
+| `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
+| Server routes/actions under `src/app` | Operational preorder endpoint, live runtime reads, or authenticated read-only candidate preview; no configuration DML |
 | `scripts/demo-seed.mjs` | Local-only; installs Bedford through propose → validate → apply, then seeds operational data |
 | `tests/integration/support/configuration-fixtures.ts` | Local/test-only database-owner fixture for M1–M4 integrity setup |
 | Explicit tamper/failure-injection tests | Test-only privileged diagnostics; never production setup |

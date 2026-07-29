@@ -671,6 +671,65 @@ textarea {
   margin-bottom: 2rem;
 }
 
+.configuration-preview {
+  min-width: 0;
+}
+
+.configuration-preview-banner {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid #d69e2e;
+  background: #fff8df;
+  box-shadow: 0 0.35rem 1rem rgba(39, 29, 6, 0.12);
+}
+
+.configuration-preview-banner h1,
+.configuration-preview-banner p {
+  margin: 0;
+}
+
+.configuration-preview-banner h1 {
+  margin-block: 0.2rem;
+  font-size: 1.1rem;
+}
+
+.configuration-preview-banner code {
+  font-size: 0.85em;
+}
+
+.configuration-preview-navigation {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding: 0.75rem clamp(1rem, 3vw, 2rem);
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.configuration-preview-navigation a {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.configuration-preview-navigation a:hover,
+.configuration-preview-navigation a[aria-current="page"] {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+
+.configuration-preview-page {
+  padding-top: 2rem;
+}
+
 .view-header .eyebrow,
 .detail-header .eyebrow,
 .page-preview-header .eyebrow,

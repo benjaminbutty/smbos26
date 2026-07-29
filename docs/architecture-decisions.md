@@ -735,3 +735,71 @@ Form and preorder runtime rather than becoming a second implementation.
 - Phase 4B.2 can add an authenticated stable-Page-key route and owner-facing
   presentation by composing this foundation, without changing its trust or
   rendering boundaries.
+
+## ADR-011 - Authenticated rendered candidate preview
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 4B.2)
+
+**Date:** 29 July 2026
+
+### Context
+
+The Phase 4B.1 foundation proves and exposes a trusted candidate but does not
+give an Owner/Admin a route through which to inspect the configured
+experience. Rendering must not introduce a second candidate runtime, let a
+candidate slug affect routing, expose a mutation boundary, or return a
+formerly current candidate after application wins a race.
+
+### Decision
+
+- Preview assertion takes shared locks in the same head, change-set and base
+  version order used by validation and application. It verifies the current
+  normalized projection and checksum against the locked base before replaying
+  and comparing every stored output. Preview never changes lifecycle state.
+- The authenticated route is
+  `/app/[businessSlug]/changes/[changeSetId]/preview/[pageKey]`. It is dynamic
+  and no-store, resolves the immutable Business slug through authenticated
+  membership, derives the actor from the session and permits only Owner/Admin.
+  Candidate Page slugs never participate in preview routing.
+- Candidate Page navigation is built only from active Pages in the verified
+  snapshot. Internal Pages and the currently inspected public Page link only
+  to stable-key preview routes. The existing live application navigation and
+  anonymous public slug resolvers remain unchanged.
+- A reusable preview shell shows proposal kind/status, an abbreviated
+  candidate checksum, a persistent not-live/no-save warning and an Exit link
+  to the existing Business home. No Changes or version-history interface is
+  introduced.
+- The route composes the snapshot `ConfigurationDefinitionSource`,
+  `ExperienceService`, `PageRenderer`, `ViewRenderer`, `FormRenderer` and
+  `PreorderExperience`. There is no candidate-specific renderer tree.
+- Generic preview Forms receive no server action and render disabled controls.
+  Preview Views read current compatible operational Records but suppress
+  mutation and detail navigation. Missing or incompatible data uses existing
+  controlled empty/warning presentation.
+- Candidate preorder uses only the authenticated
+  `resolve_configuration_preview_preorder` resolver. Its schedule and public
+  Fields come from the candidate while Products, prices, Location
+  availability, Locations and counters remain authoritative operational
+  reads. Browser state may explore quantities, Location, date, slot and
+  customer Fields, but preview receives no endpoint or idempotency token and
+  its final submission is disabled.
+- The application proxy rejects POST, PUT, PATCH and DELETE for the exact
+  preview route before route rendering. Anonymous public submission retains
+  only its live Business-slug/Page-slug endpoint and accepts no change-set or
+  preview parameter.
+- Phase 4B.2 adds no Changes dashboard, diff or history screen, lifecycle
+  controls, permanent demonstration proposal, AI integration, automatic
+  rebase/merge or operational Record rollback.
+
+### Consequences
+
+- Owner/Admin can inspect both internal and public candidate Pages inside the
+  authenticated shell without changing the active version or public runtime.
+- Preview and application serialize safely: preview-first observes its current
+  candidate before application proceeds; application-first causes the waiting
+  preview to return unavailable or stale rather than the former candidate.
+- Interactive preorder exploration is intentionally ephemeral client state.
+  Reloading reconstructs it from authoritative reads and persists nothing.
+- Rendering remains limited to the existing Page grammar and deterministic
+  platform components, preserving the AI/runtime and configuration-mutation
+  boundaries.

@@ -5,13 +5,17 @@ import {
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
-import postgres, { type Sql } from "postgres";
+import postgres, { type Sql, type TransactionSql } from "postgres";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { ConfigurationPreviewPage } from "../../src/components/configuration-preview-page";
 import {
   configurationSnapshotV1Schema,
   type ConfigurationSnapshotV1,
 } from "../../src/core/configuration/definition-source";
+import { loadRenderedConfigurationPreview } from "../../src/core/configuration/rendered-preview";
 import {
   ConfigurationChangeService,
   ConfigurationChangeServiceError,
@@ -20,9 +24,13 @@ import {
   configurationOperationsSchema,
   type ConfigurationOperation,
 } from "../../src/core/configuration/schemas";
+import { createExperienceService } from "../../src/core/experience/service";
 import { createGraphService } from "../../src/core/graph/service";
 import { createRecordLocationLinkService } from "../../src/core/graph/location-links";
-import { publicPreorderCatalogueSchema } from "../../src/core/preorder/schemas";
+import {
+  publicPreorderCatalogueSchema,
+  type PublicPreorderCatalogue,
+} from "../../src/core/preorder/schemas";
 import type {
   Database,
   Json,
@@ -460,6 +468,90 @@ async function expectServiceError(
   expect((error as ConfigurationChangeServiceError).code).toBe(code);
 }
 
+async function renderCandidatePage(
+  changeSetId: string,
+  pageKey: string,
+  identity: Identity = owner,
+): Promise<{
+  html: string;
+  rendered: Awaited<ReturnType<typeof loadRenderedConfigurationPreview>>;
+}> {
+  const rendered = await loadRenderedConfigurationPreview(identity.client, {
+    businessId: configuredBusiness.id,
+    actorId: identity.user.id,
+    changeSetId,
+    pageKey,
+  });
+  return {
+    rendered,
+    html: renderToStaticMarkup(
+      createElement(ConfigurationPreviewPage, {
+        businessSlug: configuredBusiness.slug,
+        rendered,
+      }),
+    ),
+  };
+}
+
+async function loadLiveCatalogue(): Promise<PublicPreorderCatalogue> {
+  return publicPreorderCatalogueSchema.parse(
+    requireData(
+      await anonymous.rpc("resolve_public_preorder", {
+        requested_business_slug: configuredBusiness.slug,
+        requested_page_slug: configuredPageSlug,
+        requested_preorder_key: configuredPreorderKey,
+      }),
+      "Could not resolve the live preorder",
+    ),
+  );
+}
+
+async function setAuthenticatedTransactionContext(
+  transaction: TransactionSql,
+  identity: Identity,
+): Promise<void> {
+  await transaction.unsafe("set local role authenticated");
+  await transaction`
+    select set_config(
+      'request.jwt.claim.sub',
+      ${identity.user.id},
+      true
+    )
+  `;
+  await transaction`
+    select set_config(
+      'request.jwt.claim.role',
+      'authenticated',
+      true
+    )
+  `;
+  await transaction`
+    select set_config(
+      'request.jwt.claims',
+      ${JSON.stringify({
+        role: "authenticated",
+        sub: identity.user.id,
+      })},
+      true
+    )
+  `;
+}
+
+function deferred(): {
+  promise: Promise<void>;
+  resolve: () => void;
+} {
+  let resolve: () => void = () => {};
+  const promise = new Promise<void>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
+async function briefly(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+
 describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
   beforeAll(async () => {
     settings = getLocalSupabaseSettings();
@@ -893,4 +985,486 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       "configuration_preview_unavailable",
     );
   }, 90_000);
+
+  describe.skipIf(process.env.SMBOS_RENDERED_PREVIEW_TESTS !== "1")(
+    "Milestone 5 Phase 4B.2 rendered candidate preview",
+    () => {
+      it("renders Owner/Admin candidates, Catering Enquiries, ordinary changes and rollback without preview writes or public leakage", async () => {
+        const configuredVersion2 = (
+          await configuredService.listVersions()
+        ).find((version) => version.version_number === 2);
+        if (!configuredVersion2) {
+          throw new Error("Missing configured Version 2.");
+        }
+
+        const ordinaryBefore = await capturedState(ordinaryProposal.id);
+        const ownerOrdinary = await renderCandidatePage(
+          ordinaryProposal.id,
+          configuredPageKey,
+        );
+        const adminOrdinary = await renderCandidatePage(
+          ordinaryProposal.id,
+          configuredPageKey,
+          administrator,
+        );
+        expect(ownerOrdinary.html).toContain("Preview — not live");
+        expect(ownerOrdinary.html).toContain(
+          "Preview Saturday-only collection",
+        );
+        expect(ownerOrdinary.html).toContain("Change · Proposed");
+        expect(ownerOrdinary.html).toContain("Collection days: Saturday");
+        expect(ownerOrdinary.html).not.toContain("Saturday, Sunday");
+        expect(ownerOrdinary.html).toContain(
+          "Explore this preorder — submission is disabled.",
+        );
+        expect(ownerOrdinary.html).toContain("Disabled in preview");
+        expect(ownerOrdinary.html).not.toContain("/api/preorder/");
+        expect(adminOrdinary.html).toContain("Preview — not live");
+        expect(await capturedState(ordinaryProposal.id)).toEqual(
+          ordinaryBefore,
+        );
+
+        await expectServiceError(
+          loadRenderedConfigurationPreview(staff.client, {
+            businessId: configuredBusiness.id,
+            actorId: staff.user.id,
+            changeSetId: ordinaryProposal.id,
+            pageKey: configuredPageKey,
+          }),
+          "configuration_owner_or_admin_required",
+        );
+        await expect(
+          loadRenderedConfigurationPreview(anonymous, {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: ordinaryProposal.id,
+            pageKey: configuredPageKey,
+          }),
+        ).rejects.toBeInstanceOf(ConfigurationChangeServiceError);
+        await expectServiceError(
+          loadRenderedConfigurationPreview(owner.client, {
+            businessId: configuredBusiness.id,
+            actorId: administrator.user.id,
+            changeSetId: ordinaryProposal.id,
+            pageKey: configuredPageKey,
+          }),
+          "configuration_actor_context_mismatch",
+        );
+        await expectServiceError(
+          loadRenderedConfigurationPreview(owner.client, {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: crossBusinessProposal.id,
+            pageKey: configuredPageKey,
+          }),
+          "configuration_preview_not_found",
+        );
+        await expect(
+          loadRenderedConfigurationPreview(owner.client, {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: ordinaryProposal.id,
+            pageKey: "unknown_candidate_page",
+          }),
+        ).rejects.toThrow("candidate Page is not available");
+        await expect(
+          loadRenderedConfigurationPreview(owner.client, {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: ordinaryProposal.id,
+            pageKey: configuredPageKey,
+            candidate_snapshot_json: {},
+          } as never),
+        ).rejects.toThrow();
+
+        const liveWeekend = await loadLiveCatalogue();
+        expect(liveWeekend.preorder.schedule.days_of_week).toEqual([6, 7]);
+        const livePageBefore = requireData(
+          await anonymous.rpc("resolve_public_page", {
+            requested_business_slug: configuredBusiness.slug,
+            requested_page_slug: configuredPageSlug,
+          }),
+          "Could not resolve live public Page",
+        );
+
+        const [activeVersion] = await sql<{ snapshot_json: Json }[]>`
+          select version.snapshot_json
+          from public.configuration_versions as version
+          join public.business_configuration_heads as head
+            on head.business_id = version.business_id
+            and head.active_version_id = version.id
+          where head.business_id = ${configuredBusiness.id}::uuid
+        `;
+        if (!activeVersion) {
+          throw new Error("Missing active configuration snapshot.");
+        }
+        const activeSnapshot = configurationSnapshotV1Schema.parse(
+          activeVersion.snapshot_json,
+        );
+        const publicPage = activeSnapshot.pages.find(
+          (page) => page.key === configuredPageKey,
+        );
+        if (!publicPage) {
+          throw new Error("Missing active public Page.");
+        }
+        const candidateSlug = "candidate-preorder-slug";
+        const slugProposal = await configuredService.proposeChangeSet({
+          title: "Preview a customer Page slug change",
+          description: null,
+          operations: [
+            {
+              op: "set_page",
+              key: publicPage.key,
+              title: publicPage.title,
+              slug: candidateSlug,
+              audience: publicPage.audience,
+              layout_json: publicPage.layout_json,
+              status: publicPage.status,
+              is_active: true,
+            },
+          ],
+        });
+        const slugPreview = await renderCandidatePage(
+          slugProposal.id,
+          configuredPageKey,
+        );
+        expect(slugPreview.rendered.page.definition.slug).toBe(candidateSlug);
+        expect(slugPreview.html).toContain(
+          `/changes/${slugProposal.id}/preview/${configuredPageKey}`,
+        );
+        expect(slugPreview.html).not.toContain(candidateSlug);
+
+        const candidateSlugPublic = await anonymous.rpc("resolve_public_page", {
+          requested_business_slug: configuredBusiness.slug,
+          requested_page_slug: candidateSlug,
+        });
+        const candidateKeyPublic = await anonymous.rpc("resolve_public_page", {
+          requested_business_slug: configuredBusiness.slug,
+          requested_page_slug: configuredPageKey,
+        });
+        expect(candidateSlugPublic.error).toBeNull();
+        expect(candidateSlugPublic.data).toBeNull();
+        expect(candidateKeyPublic.error).toBeNull();
+        expect(candidateKeyPublic.data).toBeNull();
+        expect(
+          requireData(
+            await anonymous.rpc("resolve_public_page", {
+              requested_business_slug: configuredBusiness.slug,
+              requested_page_slug: configuredPageSlug,
+            }),
+            "Live public Page disappeared",
+          ),
+        ).toEqual(livePageBefore);
+
+        const recordsBeforeCatering = requireData(
+          await owner.client
+            .from("records")
+            .select("*")
+            .eq("business_id", configuredBusiness.id),
+          "Could not capture Records before Catering preview",
+        );
+        const cateringProposal = await configuredService.proposeChangeSet({
+          title: "Add Catering Enquiries",
+          description: "Rendered extensibility proof.",
+          operations: [
+            {
+              op: "set_object",
+              key: "catering_enquiry",
+              singular_label: "Catering Enquiry",
+              plural_label: "Catering Enquiries",
+              description: "A request for catering information.",
+              icon: null,
+              is_active: true,
+            },
+            ...[
+              ["name", "Name", "short_text", true],
+              ["email", "Email", "email", true],
+              ["event_date", "Event Date", "date", true],
+              ["guest_count", "Guest Count", "number", true],
+              ["notes", "Notes", "long_text", false],
+            ].map(
+              ([key, label, fieldType, required], position) =>
+                ({
+                  op: "set_field",
+                  object_key: "catering_enquiry",
+                  key,
+                  label,
+                  field_type: fieldType,
+                  required,
+                  default_value: null,
+                  settings_json: {},
+                  position,
+                  is_active: true,
+                }) as ConfigurationOperation,
+            ),
+            {
+              op: "set_form",
+              key: "catering_enquiry_create",
+              name: "New Catering Enquiry",
+              object_key: "catering_enquiry",
+              mode: "create",
+              config_json: {
+                fields: [
+                  { field: "name" },
+                  { field: "email" },
+                  { field: "event_date" },
+                  { field: "guest_count" },
+                  { field: "notes" },
+                ],
+                submit_label: "Create enquiry",
+              },
+              audience: "internal",
+              is_active: true,
+            },
+            {
+              op: "set_view",
+              key: "catering_enquiries",
+              name: "Catering Enquiries",
+              view_type: "table",
+              object_key: "catering_enquiry",
+              config_json: {
+                fields: ["name", "email", "event_date", "guest_count", "notes"],
+                create_form_key: "catering_enquiry_create",
+                include_archived: false,
+              },
+              audience: "internal",
+              is_active: true,
+            },
+            {
+              op: "set_page",
+              key: "catering_enquiries_page",
+              title: "Catering Enquiries",
+              slug: "catering-enquiries",
+              audience: "internal",
+              layout_json: {
+                blocks: [
+                  { type: "view", view_key: "catering_enquiries" },
+                  { type: "form", form_key: "catering_enquiry_create" },
+                ],
+              },
+              status: "draft",
+              is_active: true,
+            },
+          ],
+        });
+        const cateringBefore = await capturedState(cateringProposal.id);
+        const catering = await renderCandidatePage(
+          cateringProposal.id,
+          "catering_enquiries_page",
+        );
+        expect(catering.html).toContain("Preview — not live");
+        expect(catering.html).toContain("Add Catering Enquiries");
+        expect(catering.html).toContain("Catering Enquiries");
+        expect(catering.html).toContain(
+          `/changes/${cateringProposal.id}/preview/catering_enquiries_page`,
+        );
+        expect(catering.html).toContain(
+          "No catering enquiry information to show yet.",
+        );
+        expect(catering.html).toContain("Guest Count");
+        expect(catering.html).toContain("Event Date");
+        expect(catering.html).toContain("Disabled in preview");
+        expect(catering.html).toContain("<fieldset");
+        expect(catering.html).toContain("disabled");
+        expect(catering.html).not.toContain("<form action=");
+        expect(catering.html.match(/<a\b/g)?.length).toBe(
+          catering.html.match(/<a\b[^>]*\bhref=/g)?.length,
+        );
+        expect(await capturedState(cateringProposal.id)).toEqual(
+          cateringBefore,
+        );
+        expect(
+          requireData(
+            await owner.client
+              .from("records")
+              .select("*")
+              .eq("business_id", configuredBusiness.id),
+            "Could not capture Records after Catering preview",
+          ),
+        ).toEqual(recordsBeforeCatering);
+        expect(
+          requireData(
+            await owner.client
+              .from("pages")
+              .select("*")
+              .eq("business_id", configuredBusiness.id)
+              .eq("key", "catering_enquiries_page"),
+            "Could not inspect live Catering Page",
+          ),
+        ).toEqual([]);
+        const liveNavigation = await createExperienceService(owner.client, {
+          businessId: configuredBusiness.id,
+        }).listNavigation();
+        expect(
+          liveNavigation.pages.some(
+            (page) => page.key === "catering_enquiries_page",
+          ),
+        ).toBe(false);
+
+        const validatedOrdinary = await configuredService.validateChangeSet(
+          ordinaryProposal.id,
+        );
+        expect(validatedOrdinary.status).toBe("validated");
+        const appliedOrdinary = await configuredService.applyChangeSet(
+          ordinaryProposal.id,
+        );
+        expect(appliedOrdinary.status).toBe("applied");
+        expect(
+          (await loadLiveCatalogue()).preorder.schedule.days_of_week,
+        ).toEqual([6]);
+
+        const rollback = await configuredService.prepareRollback({
+          targetVersionId: configuredVersion2.id,
+          title: "Restore weekend collection",
+          description: "Rendered rollback preview proof.",
+        });
+        const rollbackBefore = await capturedState(rollback.id);
+        const rollbackRendered = await renderCandidatePage(
+          rollback.id,
+          configuredPageKey,
+        );
+        expect(rollbackRendered.html).toContain("Rollback · Proposed");
+        expect(rollbackRendered.html).toContain("Saturday, Sunday");
+        expect(
+          (await loadLiveCatalogue()).preorder.schedule.days_of_week,
+        ).toEqual([6]);
+        expect(await capturedState(rollback.id)).toEqual(rollbackBefore);
+
+        const validatedRollback = await configuredService.validateChangeSet(
+          rollback.id,
+        );
+        expect(validatedRollback.status).toBe("validated");
+        const appliedRollback = await configuredService.applyChangeSet(
+          rollback.id,
+        );
+        expect(appliedRollback.status).toBe("applied");
+        expect(
+          (await loadLiveCatalogue()).preorder.schedule.days_of_week,
+        ).toEqual([6, 7]);
+      }, 120_000);
+
+      it("serializes preview first and application first without returning a former candidate", async () => {
+        const previewFirstProposal = await configuredService.proposeChangeSet({
+          title: "Preview-first lock proof",
+          description: null,
+          operations: [await preorderOperation([6])],
+        });
+        await configuredService.validateChangeSet(previewFirstProposal.id);
+
+        const previewConnection = postgres(settings.databaseUrl, { max: 1 });
+        const previewReady = deferred();
+        const releasePreview = deferred();
+        try {
+          const previewTransaction = previewConnection.begin(
+            async (transaction) => {
+              await setAuthenticatedTransactionContext(transaction, owner);
+              const [selected] = await transaction<
+                { candidate_checksum: string }[]
+              >`
+                select
+                  (
+                    public.load_configuration_preview(
+                      ${configuredBusiness.id}::uuid,
+                      ${owner.user.id}::uuid,
+                      ${previewFirstProposal.id}::uuid
+                    )
+                  ).candidate_checksum
+              `;
+              previewReady.resolve();
+              await releasePreview.promise;
+              return selected;
+            },
+          );
+          await previewReady.promise;
+
+          let applicationSettled = false;
+          const application = configuredService
+            .applyChangeSet(previewFirstProposal.id)
+            .finally(() => {
+              applicationSettled = true;
+            });
+          await briefly();
+          expect(applicationSettled).toBe(false);
+          releasePreview.resolve();
+
+          const [previewResult, applied] = await Promise.all([
+            previewTransaction,
+            application,
+          ]);
+          expect(previewResult?.candidate_checksum).toBe(
+            previewFirstProposal.candidate_checksum,
+          );
+          expect(applied.status).toBe("applied");
+        } finally {
+          releasePreview.resolve();
+          await previewConnection.end();
+        }
+
+        const applicationFirstProposal =
+          await configuredService.proposeChangeSet({
+            title: "Application-first lock proof",
+            description: null,
+            operations: [await preorderOperation([6, 7])],
+          });
+        await configuredService.validateChangeSet(applicationFirstProposal.id);
+
+        const applicationConnection = postgres(settings.databaseUrl, {
+          max: 1,
+        });
+        const applicationReady = deferred();
+        const releaseApplication = deferred();
+        try {
+          const applicationTransaction = applicationConnection.begin(
+            async (transaction) => {
+              await setAuthenticatedTransactionContext(transaction, owner);
+              const [selected] = await transaction<{ status: string }[]>`
+                select
+                  (
+                    public.apply_configuration_change(
+                      ${configuredBusiness.id}::uuid,
+                      ${owner.user.id}::uuid,
+                      ${applicationFirstProposal.id}::uuid
+                    )
+                  ).status
+              `;
+              applicationReady.resolve();
+              await releaseApplication.promise;
+              return selected;
+            },
+          );
+          await applicationReady.promise;
+
+          let previewSettled = false;
+          const waitingPreview = configuredService
+            .loadPreview(applicationFirstProposal.id)
+            .then(
+              (value) => ({ value, error: null }),
+              (error: unknown) => ({ value: null, error }),
+            )
+            .finally(() => {
+              previewSettled = true;
+            });
+          await briefly();
+          expect(previewSettled).toBe(false);
+          releaseApplication.resolve();
+
+          const [applicationResult, previewResult] = await Promise.all([
+            applicationTransaction,
+            waitingPreview,
+          ]);
+          expect(applicationResult?.status).toBe("applied");
+          expect(previewResult.value).toBeNull();
+          expect(previewResult.error).toBeInstanceOf(
+            ConfigurationChangeServiceError,
+          );
+          expect(
+            (previewResult.error as ConfigurationChangeServiceError).code,
+          ).toBe("configuration_preview_unavailable");
+        } finally {
+          releaseApplication.resolve();
+          await applicationConnection.end();
+        }
+      }, 60_000);
+    },
+  );
 });

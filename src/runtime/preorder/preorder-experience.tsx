@@ -75,7 +75,7 @@ export function PreorderExperience(
   const [collectionDate, setCollectionDate] = useState("");
   const [collectionAt, setCollectionAt] = useState("");
   const [idempotencyToken, setIdempotencyToken] = useState(() =>
-    crypto.randomUUID(),
+    preview ? "" : crypto.randomUUID(),
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -293,7 +293,11 @@ export function PreorderExperience(
     <form className="preorder-flow" onSubmit={submit}>
       {preview ? (
         <section className="preorder-preview-summary" role="status">
-          <strong>Preorder controls are disabled in preview.</strong>
+          <strong>Explore this preorder — submission is disabled.</strong>
+          <p>
+            Your choices stay only in this browser view and reset when you leave
+            or reload.
+          </p>
           <p>
             Collection days:{" "}
             {catalogue.preorder.schedule.days_of_week
@@ -360,7 +364,7 @@ export function PreorderExperience(
                 >
                   <button
                     aria-label={`Remove one ${product.name}`}
-                    disabled={preview || quantity === 0}
+                    disabled={quantity === 0}
                     onClick={() => updateQuantity(product.id, quantity - 1)}
                     type="button"
                   >
@@ -369,7 +373,7 @@ export function PreorderExperience(
                   <output aria-live="polite">{quantity}</output>
                   <button
                     aria-label={`Add one ${product.name}`}
-                    disabled={preview || quantity === 20}
+                    disabled={quantity === 20}
                     onClick={() => updateQuantity(product.id, quantity + 1)}
                     type="button"
                   >
@@ -397,7 +401,6 @@ export function PreorderExperience(
           <label>
             Location
             <select
-              disabled={preview}
               onChange={(event) => changeLocation(event.target.value)}
               required
               value={locationId}
@@ -413,7 +416,7 @@ export function PreorderExperience(
           <label>
             Date
             <select
-              disabled={preview || !location}
+              disabled={!location}
               onChange={(event) => {
                 setCollectionDate(event.target.value);
                 setCollectionAt("");
@@ -443,7 +446,7 @@ export function PreorderExperience(
                   key={slot.collection_at}
                 >
                   <input
-                    disabled={preview || !slot.available}
+                    disabled={!slot.available}
                     name="collection-slot"
                     onChange={() => setCollectionAt(slot.collection_at)}
                     required
@@ -477,18 +480,9 @@ export function PreorderExperience(
                   {field.required ? " *" : ""}
                 </span>
                 {field.field_type === "long_text" ? (
-                  <textarea
-                    disabled={preview}
-                    name={name}
-                    required={field.required}
-                    rows={4}
-                  />
+                  <textarea name={name} required={field.required} rows={4} />
                 ) : field.field_type === "select" ? (
-                  <select
-                    disabled={preview}
-                    name={name}
-                    required={field.required}
-                  >
+                  <select name={name} required={field.required}>
                     <option value="">Choose…</option>
                     {field.options?.map((option) => (
                       <option key={option}>{option}</option>
@@ -496,7 +490,6 @@ export function PreorderExperience(
                   </select>
                 ) : field.field_type === "multi_select" ? (
                   <select
-                    disabled={preview}
                     multiple
                     name={name}
                     required={field.required}
@@ -507,11 +500,10 @@ export function PreorderExperience(
                     ))}
                   </select>
                 ) : field.field_type === "boolean" ? (
-                  <input disabled={preview} name={name} type="checkbox" />
+                  <input name={name} type="checkbox" />
                 ) : (
                   <input
                     autoComplete={field.autocomplete}
-                    disabled={preview}
                     name={name}
                     required={field.required}
                     type={

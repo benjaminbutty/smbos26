@@ -4,6 +4,7 @@ import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import type { Database } from "../../db/supabase/database.types";
+import { graphKeySchema } from "../graph/schemas";
 import {
   publicPreorderCatalogueSchema,
   publicPreorderConfirmationSchema,
@@ -38,6 +39,46 @@ export async function resolvePublicPreorder(
   });
   if (error) {
     throw new PreorderServiceError("Could not load the preorder page.", error);
+  }
+  return data === null ? null : publicPreorderCatalogueSchema.parse(data);
+}
+
+const configurationPreviewPreorderContextSchema = z
+  .object({
+    businessId: z.uuid(),
+    actorId: z.uuid(),
+    changeSetId: z.uuid(),
+    pageKey: graphKeySchema,
+    preorderKey: graphKeySchema,
+  })
+  .strict();
+
+export async function resolveConfigurationPreviewPreorder(
+  client: SupabaseClient<Database>,
+  context: {
+    businessId: string;
+    actorId: string;
+    changeSetId: string;
+    pageKey: string;
+    preorderKey: string;
+  },
+): Promise<PublicPreorderCatalogue | null> {
+  const trusted = configurationPreviewPreorderContextSchema.parse(context);
+  const { data, error } = await client.rpc(
+    "resolve_configuration_preview_preorder",
+    {
+      expected_business_id: trusted.businessId,
+      expected_actor_id: trusted.actorId,
+      requested_change_set_id: trusted.changeSetId,
+      requested_page_key: trusted.pageKey,
+      requested_preorder_key: trusted.preorderKey,
+    },
+  );
+  if (error) {
+    throw new PreorderServiceError(
+      "Could not load the configuration preview preorder.",
+      error,
+    );
   }
   return data === null ? null : publicPreorderCatalogueSchema.parse(data);
 }

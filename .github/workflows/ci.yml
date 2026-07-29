@@ -79,6 +79,9 @@ jobs:
       - name: Run authenticated preview foundation tests
         run: npm run test:preview-foundation
 
+      - name: Run authenticated rendered preview tests
+        run: npm run test:preview
+
       - name: Reset for full integration and RLS tests
         run: npm run supabase:reset
 

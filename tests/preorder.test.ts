@@ -351,9 +351,22 @@ describe("trusted preorder Page block", () => {
       }),
     );
 
-    expect(html).toContain("Preorder controls are disabled in preview.");
+    expect(html).toContain("Explore this preorder — submission is disabled.");
+    expect(html).toContain(
+      "Your choices stay only in this browser view and reset when you leave or reload.",
+    );
     expect(html).toContain("Disabled in preview");
     expect(html).toContain("Saturday, Sunday");
+    expect(html).toMatch(
+      /aria-label="Add one Afternoon Tea Box"[^>]*type="button"/,
+    );
+    expect(html).not.toMatch(
+      /aria-label="Add one Afternoon Tea Box"[^>]*disabled/,
+    );
+    expect(html).toContain('Location<select required="">');
+    expect(html).toMatch(
+      /<input autoComplete="name" required="" type="text" name="customer\.name"/,
+    );
     expect(html).not.toContain("/api/preorder/");
   });
 });
