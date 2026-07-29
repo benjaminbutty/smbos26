@@ -220,6 +220,14 @@ export const proposeConfigurationChangeSchema = z
   })
   .strict();
 
+export const prepareConfigurationRollbackSchema = z
+  .object({
+    targetVersionId: z.uuid(),
+    title: labelSchema,
+    description: descriptionSchema.nullable(),
+  })
+  .strict();
+
 export const configurationDisplayContextSchema = z
   .object({
     schema_version: z.literal(1),
@@ -327,6 +335,9 @@ export type ConfigurationOperation = z.infer<
 >;
 export type ProposeConfigurationChangeInput = z.input<
   typeof proposeConfigurationChangeSchema
+>;
+export type PrepareConfigurationRollbackInput = z.input<
+  typeof prepareConfigurationRollbackSchema
 >;
 export type SemanticDiff = z.infer<typeof semanticDiffSchema>;
 export type ConfigurationValidationResult = z.infer<

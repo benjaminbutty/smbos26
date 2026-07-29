@@ -31,10 +31,10 @@ Classification: **close direct mutation; runtime read only**.
 
 | Surface | Final classification |
 | --- | --- |
-| `propose_configuration_change`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle |
-| `list_configuration_change_sets`, `get_configuration_change_set` | Owner/Admin history reads |
+| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle |
+| `list_configuration_change_sets`, `get_configuration_change_set`, `list_configuration_versions`, `get_configuration_version` | Owner/Admin history reads |
 | `create_preorder_experience`, `set_preorder_experience_locations` | Retained only for historical migration compatibility; execution revoked from `public`, `anon`, `authenticated`, and `service_role` |
-| Candidate materialiser, semantic diff, projector, validation sandbox, projection/head assertions, and change/version/head protection helpers in `private` | Engine internals; application-role execution revoked |
+| Candidate materialiser, rollback candidate derivation, replay dispatcher, semantic diff, projector, validation sandbox, projection/head assertions, and change/version/head protection helpers in `private` | Engine internals; application-role execution revoked |
 | `resolve_public_page`, `resolve_public_preorder` | Narrow anonymous runtime reads; no table access |
 | Graph Record and Record Relationship RPCs | Operational and outside configuration versioning |
 | Record-to-Location link RPCs | Operational and outside configuration versioning |

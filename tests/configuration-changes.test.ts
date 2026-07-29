@@ -4,6 +4,7 @@ import {
   configurationDisplayContextSchema,
   configurationValidationResultSchema,
   configurationOperationsSchema,
+  prepareConfigurationRollbackSchema,
   proposeConfigurationChangeSchema,
 } from "../src/core/configuration/schemas";
 
@@ -231,6 +232,28 @@ describe("configuration change operation grammar", () => {
         title: "Unsafe",
         description: null,
         operations: [operations[0]],
+        candidate_snapshot_json: {},
+      }),
+    ).toThrow();
+  });
+
+  it("accepts only the narrow rollback request surface", () => {
+    expect(
+      prepareConfigurationRollbackSchema.parse({
+        targetVersionId: locationId,
+        title: "Restore weekend collection",
+        description: null,
+      }),
+    ).toEqual({
+      targetVersionId: locationId,
+      title: "Restore weekend collection",
+      description: null,
+    });
+    expect(() =>
+      prepareConfigurationRollbackSchema.parse({
+        targetVersionId: locationId,
+        title: "Unsafe rollback",
+        description: null,
         candidate_snapshot_json: {},
       }),
     ).toThrow();

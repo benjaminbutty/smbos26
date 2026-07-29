@@ -40,7 +40,10 @@ const versionedTables = [
 const applicationRoles = ["anon", "authenticated", "service_role"] as const;
 const privateEngineFunctions = [
   "configuration_materialize_candidate_v1",
+  "configuration_rollback_candidate_v1",
   "configuration_semantic_diff_v1",
+  "build_configuration_rollback_display_context_v1",
+  "replay_configuration_change_set_v1",
   "project_configuration_candidate_v1",
   "validate_configuration_candidate_in_sandbox_v1",
   "assert_configuration_projection_matches_v1",
@@ -52,7 +55,10 @@ const lifecycleFunctions = [
   "abandon_configuration_change_set",
   "apply_configuration_change",
   "get_configuration_change_set",
+  "get_configuration_version",
   "list_configuration_change_sets",
+  "list_configuration_versions",
+  "prepare_configuration_rollback",
   "propose_configuration_change",
   "validate_configuration_change",
 ] as const;

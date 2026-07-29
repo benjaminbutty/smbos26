@@ -603,3 +603,72 @@ parallel draft graph.
 - Phase 2B itself did not apply candidates, create versions, advance heads,
   close direct mutation, implement rollback/preview/UI, or convert the Bedford
   demo; later Phase 3 work supplies application and closure.
+
+## ADR-009 - Forward-only configuration rollback
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 4A)
+
+**Date:** 29 July 2026
+
+### Context
+
+Owners need to restore an earlier immutable configuration without rewinding
+history or operational data. A historical snapshot cannot be projected
+directly because configuration introduced after that snapshot must retain its
+stable identity and remain available for later history, while current Records,
+Relationship edges, Location links, preorder submissions and Orders must never
+be restored or removed by configuration rollback.
+
+### Decision
+
+- `prepare_configuration_rollback` is the only rollback-proposal creation
+  boundary. It verifies authenticated actor context and current Owner/Admin
+  membership, locks a consistent active head, proves live projection/version
+  equality and accepts only an earlier same-Business version ID plus
+  owner-facing title and optional description.
+- Rollback proposals store exactly one trusted
+  `restore_configuration_version` schema-v1 descriptor. Ordinary proposal
+  grammar does not accept this discriminator. The authoritative target remains
+  `rollback_target_version_id`, allocations are exactly `{}`, and rollback
+  creates no configuration IDs.
+- One private deterministic derivation helper validates current and historical
+  snapshots, matches all eight projection collections by stable semantic
+  identity, restores complete historical rows, and retains every current-only
+  row with `is_active = false`. Historical identity loss, stable-ID changes or
+  immutable parent/endpoint changes are engine-integrity failures.
+- Rollback Location display context covers the union referenced by current,
+  historical and resulting candidate snapshots. It uses current same-Business
+  names even for inactive Locations and never treats activation as
+  preparation-time eligibility.
+- One private replay dispatcher is shared by validation and application.
+  Ordinary changes replay the existing operation materializer; rollback loads
+  its same-Business target and derives the union/archive candidate. Both paths
+  must exactly reproduce stored candidate, checksum, allocations and semantic
+  diff.
+- Rollbacks use the existing rollback-only validation sandbox and existing
+  static projector. Current Records, Relationship edges, dependencies and
+  Location eligibility can reject a rollback with the same owner-safe results
+  as an ordinary change.
+- Successful rollback application uses the existing atomic application
+  transaction and creates a new `rollback` version whose parent is the
+  immediately previous active version and whose `restored_from_version_id`
+  records historical provenance. The active head advances exactly once.
+- Operational tables and Location lifecycle remain outside configuration
+  rollback. No rollback path updates Records, Record Relationships,
+  Record-to-Location links, preorder submissions, Orders, Customers, Products,
+  counters, email state or Location rows.
+- Phase 4A adds Owner/Admin version reads to the server-only configuration
+  service but introduces no preview runtime, Changes UI, version-history UI,
+  AI integration or automatic rebase.
+
+### Consequences
+
+- Configuration history remains a forward chain: a V2 restoration after V3 is
+  a new V4, never a head rewind.
+- A rollback candidate can intentionally have a different checksum from its
+  historical target because later configuration identities remain archived.
+- Competing proposals may share a base, but after one advances the head every
+  other proposal from that base conflicts; applied retries remain idempotent.
+- Rollback compatibility inherits the existing projector's locking, integrity
+  and WAL trade-offs. Phase 4A adds no second projection implementation or
+  infrastructure.

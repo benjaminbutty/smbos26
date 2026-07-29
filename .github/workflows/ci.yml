@@ -67,6 +67,15 @@ jobs:
       - name: Run mandatory configuration boundary and demo tests
         run: npm run test:configuration-boundary
 
+      - name: Reset for forward configuration rollback tests
+        run: npm run supabase:reset
+
+      - name: Run forward configuration rollback tests
+        run: npm run test:rollback
+
+      - name: Reset for full integration and RLS tests
+        run: npm run supabase:reset
+
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration
 

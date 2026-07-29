@@ -7,13 +7,17 @@ import type { Database } from "../../db/supabase/database.types";
 import {
   configurationDisplayContextSchema,
   configurationValidationResultSchema,
+  prepareConfigurationRollbackSchema,
   proposeConfigurationChangeSchema,
   semanticDiffSchema,
+  type PrepareConfigurationRollbackInput,
   type ProposeConfigurationChangeInput,
 } from "./schemas";
 
 type ConfigurationChangeSet =
   Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+type ConfigurationVersion =
+  Database["public"]["Tables"]["configuration_versions"]["Row"];
 type SessionClient = SupabaseClient<Database>;
 
 const contextSchema = z
@@ -24,6 +28,7 @@ const contextSchema = z
   .strict();
 
 const changeSetIdSchema = z.uuid();
+const versionIdSchema = z.uuid();
 
 type PostgrestErrorShape = {
   code?: string;
@@ -56,6 +61,10 @@ const engineErrorMessages: Readonly<Record<string, string>> = {
     "Configuration changed outside the version engine. No proposal was changed.",
   configuration_proposal_no_changes:
     "The proposal does not change the current configuration.",
+  configuration_rollback_target_invalid:
+    "Select an earlier configuration version to prepare this rollback.",
+  configuration_rollback_target_not_found:
+    "The selected configuration version could not be found for this Business.",
   configuration_validation_engine_failure:
     "Configuration validation could not complete safely.",
 };
@@ -117,6 +126,19 @@ function assertTrustedResponse(
   return changeSet;
 }
 
+function assertTrustedVersion(
+  version: ConfigurationVersion,
+  expectedBusinessId: string,
+): ConfigurationVersion {
+  if (version.business_id !== expectedBusinessId) {
+    throw new ConfigurationChangeServiceError(
+      "The configuration version response did not match this Business.",
+      { message: "configuration_response_business_mismatch" },
+    );
+  }
+  return version;
+}
+
 export class ConfigurationChangeService {
   readonly #client: SessionClient;
   readonly #businessId: string;
@@ -175,6 +197,68 @@ export class ConfigurationChangeService {
     return data.map((changeSet) =>
       assertTrustedResponse(changeSet, this.#businessId),
     );
+  }
+
+  async listVersions(): Promise<ConfigurationVersion[]> {
+    const { data, error } = await this.#client.rpc(
+      "list_configuration_versions",
+      { expected_business_id: this.#businessId },
+    );
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not list configuration versions.",
+        error,
+      );
+    }
+    return data.map((version) =>
+      assertTrustedVersion(version, this.#businessId),
+    );
+  }
+
+  async getVersion(versionId: string): Promise<ConfigurationVersion> {
+    const { data, error } = await this.#client.rpc(
+      "get_configuration_version",
+      {
+        expected_business_id: this.#businessId,
+        requested_version_id: versionIdSchema.parse(versionId),
+      },
+    );
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not load the configuration version.",
+        error,
+      );
+    }
+    return assertTrustedVersion(data, this.#businessId);
+  }
+
+  async prepareRollback(
+    input: PrepareConfigurationRollbackInput,
+  ): Promise<ConfigurationChangeSet> {
+    const rollback = prepareConfigurationRollbackSchema.parse(input);
+    const { data, error } = await this.#client.rpc(
+      "prepare_configuration_rollback",
+      {
+        expected_business_id: this.#businessId,
+        expected_actor_id: this.#actorId,
+        requested_target_version_id: rollback.targetVersionId,
+        requested_title: rollback.title,
+        requested_description: rollback.description as string,
+      },
+    );
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not prepare the configuration rollback.",
+        error,
+      );
+    }
+    if (data.requested_by !== this.#actorId || data.kind !== "rollback") {
+      throw new ConfigurationChangeServiceError(
+        "The rollback proposal response did not match the trusted request.",
+        { message: "configuration_response_actor_mismatch" },
+      );
+    }
+    return assertTrustedResponse(data, this.#businessId);
   }
 
   async getChangeSet(changeSetId: string): Promise<ConfigurationChangeSet> {
