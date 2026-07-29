@@ -15,6 +15,7 @@ interface ViewRendererProps {
   businessSlug: string;
   record?: Tables<"records">;
   navigationViewKey?: string;
+  preview?: boolean;
   showHeading?: boolean;
 }
 
@@ -61,6 +62,7 @@ export function TableView({
   bundle,
   fieldsByKey,
   recordBasePath,
+  preview = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as TableViewConfig;
   const fields = configuredFields(config.fields, fieldsByKey);
@@ -79,9 +81,11 @@ export function TableView({
                 {field.label}
               </th>
             ))}
-            <th className="row-action-heading" scope="col">
-              <span className="sr-only">Open</span>
-            </th>
+            {!preview ? (
+              <th className="row-action-heading" scope="col">
+                <span className="sr-only">Open</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
@@ -91,7 +95,7 @@ export function TableView({
               <tr key={record.id}>
                 {fields.map((field, index) => (
                   <td key={field.key}>
-                    {index === 0 ? (
+                    {index === 0 && !preview ? (
                       <a
                         className="primary-record-link"
                         href={`${recordBasePath}/${record.id}`}
@@ -103,9 +107,11 @@ export function TableView({
                     )}
                   </td>
                 ))}
-                <td className="row-action">
-                  <a href={`${recordBasePath}/${record.id}`}>Open</a>
-                </td>
+                {!preview ? (
+                  <td className="row-action">
+                    <a href={`${recordBasePath}/${record.id}`}>Open</a>
+                  </td>
+                ) : null}
               </tr>
             );
           })}
@@ -119,6 +125,7 @@ export function ListView({
   bundle,
   fieldsByKey,
   recordBasePath,
+  preview = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as ListViewConfig;
   const primaryField = fieldsByKey.get(config.primary_field);
@@ -135,12 +142,8 @@ export function ListView({
     <div className="runtime-list">
       {bundle.records.map((record) => {
         const data = dataObject(record);
-        return (
-          <a
-            className="runtime-list-item"
-            href={`${recordBasePath}/${record.id}`}
-            key={record.id}
-          >
+        const content = (
+          <>
             <strong>
               <FieldValue field={primaryField} value={data[primaryField.key]} />
             </strong>
@@ -154,9 +157,24 @@ export function ListView({
                 ))}
               </span>
             ) : null}
-            <span aria-hidden="true" className="open-chevron">
-              →
-            </span>
+            {!preview ? (
+              <span aria-hidden="true" className="open-chevron">
+                →
+              </span>
+            ) : null}
+          </>
+        );
+        return preview ? (
+          <div className="runtime-list-item" key={record.id}>
+            {content}
+          </div>
+        ) : (
+          <a
+            className="runtime-list-item"
+            href={`${recordBasePath}/${record.id}`}
+            key={record.id}
+          >
+            {content}
           </a>
         );
       })}
@@ -168,6 +186,7 @@ export function CardsView({
   bundle,
   fieldsByKey,
   recordBasePath,
+  preview = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as CardsViewConfig;
   const titleField = fieldsByKey.get(config.title_field);
@@ -206,9 +225,21 @@ export function CardsView({
             ) : null}
             <div className="runtime-card-body">
               <h2>
-                <a href={`${recordBasePath}/${record.id}`}>
-                  <FieldValue field={titleField} value={data[titleField.key]} />
-                </a>
+                {preview ? (
+                  <span>
+                    <FieldValue
+                      field={titleField}
+                      value={data[titleField.key]}
+                    />
+                  </span>
+                ) : (
+                  <a href={`${recordBasePath}/${record.id}`}>
+                    <FieldValue
+                      field={titleField}
+                      value={data[titleField.key]}
+                    />
+                  </a>
+                )}
               </h2>
               {subtitleField ? (
                 <p className="card-subtitle">
@@ -245,6 +276,7 @@ export function DetailView({
   navigationViewKey,
   fieldsByKey,
   recordBasePath,
+  preview = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as DetailViewConfig;
   const selectedRecord = record ?? bundle.records[0];
@@ -272,7 +304,7 @@ export function DetailView({
             )}
           </h1>
         </div>
-        {config.edit_form_key ? (
+        {config.edit_form_key && !preview ? (
           <a
             className="button"
             href={`/app/${businessSlug}/workspace/${friendlyPathKey(
@@ -298,9 +330,11 @@ export function DetailView({
       {selectedRecord.record_status === "archived" ? (
         <p className="archived-note">This item is archived.</p>
       ) : null}
-      <a className="back-link" href={recordBasePath}>
-        ← Back to {bundle.object.plural_label}
-      </a>
+      {!preview ? (
+        <a className="back-link" href={recordBasePath}>
+          ← Back to {bundle.object.plural_label}
+        </a>
+      ) : null}
     </article>
   );
 }
@@ -310,6 +344,7 @@ export function ViewRenderer({
   businessSlug,
   record,
   navigationViewKey,
+  preview = false,
   showHeading = true,
 }: Readonly<ViewRendererProps>): ReactNode {
   const fieldsByKey = new Map(bundle.fields.map((field) => [field.key, field]));
@@ -329,7 +364,7 @@ export function ViewRenderer({
             <p className="eyebrow">Workspace</p>
             <h1 className="runtime-title">{bundle.definition.name}</h1>
           </div>
-          {createFormKey ? (
+          {createFormKey && !preview ? (
             <a className="button" href={`${recordBasePath}/new`}>
               + New {bundle.object.singular_label.toLowerCase()}
             </a>
@@ -337,11 +372,18 @@ export function ViewRenderer({
         </header>
       ) : null}
 
+      {bundle.warnings?.map((warning) => (
+        <p className="runtime-preview-warning" key={warning} role="status">
+          {warning}
+        </p>
+      ))}
+
       {bundle.definition.view_type === "table" ? (
         <TableView
           bundle={bundle}
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
+          preview={preview}
           recordBasePath={recordBasePath}
         />
       ) : null}
@@ -350,6 +392,7 @@ export function ViewRenderer({
           bundle={bundle}
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
+          preview={preview}
           recordBasePath={recordBasePath}
         />
       ) : null}
@@ -358,6 +401,7 @@ export function ViewRenderer({
           bundle={bundle}
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
+          preview={preview}
           recordBasePath={recordBasePath}
         />
       ) : null}
@@ -367,6 +411,7 @@ export function ViewRenderer({
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
           navigationViewKey={routeViewKey}
+          preview={preview}
           recordBasePath={recordBasePath}
           {...(record ? { record } : {})}
         />

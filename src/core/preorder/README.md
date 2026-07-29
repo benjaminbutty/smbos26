@@ -41,3 +41,16 @@ Current deliberate limitations:
 - the local email adapter logs safely and no production provider is configured;
 - database-backed throttling is proportionate abuse protection, not a claim of
   complete fraud prevention.
+
+Preorder configuration is read-only through this runtime service. Changes to
+the capability or its allowed Locations use the Milestone 5 structured
+proposal lifecycle. The older create/update RPC implementations are retained
+only for migration history and are not executable by application roles.
+Product Records and Product-to-Location availability remain operational data,
+outside configuration versioning.
+
+Authenticated candidate preview calls the identifier-only preview resolver
+with the trusted Business, actor, change-set, Page key and preorder key. It
+reuses the authoritative catalogue assembler, receives no submission endpoint
+or idempotency token, and keeps quantity/Location/date/slot/customer-field
+exploration in ephemeral client state with the final submission disabled.

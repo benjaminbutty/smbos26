@@ -1,16 +1,21 @@
 # SMBOS
 
 SMBOS is an AI-native operating system for small physical businesses. The
-repository currently contains the Milestone 4 vertical slice: a multi-location
-bakery preorder capability over the tenant-safe graph and experience runtime.
+repository currently contains the Milestone 4 vertical slice plus the
+Milestone 5 Phase 5B explicit Changes lifecycle interface: a
+multi-location bakery preorder capability over the tenant-safe graph and
+experience runtime whose configuration is installed, previewed and explained
+through immutable change sets and forward-only versions, with deliberate
+Owner/Admin validation, application, abandonment and rollback preparation.
 
 The product and architecture sources of truth are:
 
 - [`docs/SMBOS-v0.1-Build-Spec.md`](docs/SMBOS-v0.1-Build-Spec.md)
 - [`docs/architecture-decisions.md`](docs/architecture-decisions.md)
+- [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
 - [`AGENTS.md`](AGENTS.md)
 
-## Milestone 4 scope
+## Current scope
 
 Included:
 
@@ -31,6 +36,24 @@ Included:
 - post-commit confirmation email through a local console adapter
 - Bedford Bakery Orders operated through generic Table/Detail Views and an
   edit Form
+- immutable configuration versions and one active revisioned head per Business
+- structured Owner/Admin configuration proposals with deterministic semantic
+  diffs, rollback-only compatibility validation, and atomic application
+- mandatory propose → validate → apply configuration mutation boundary
+- forward-only rollback proposals and rollback version provenance
+- authenticated verified candidate preview for internal and public Pages
+- read-only Owner/Admin Changes, proposal detail, and Version history routes
+- authenticated POST-only lifecycle Server Actions and read-only confirmation
+  routes for validate, apply, abandon and rollback preparation
+- server-derived Business and actor context with status rechecks before every
+  lifecycle mutation
+- explicit pending state, bounded notices and authoritative
+  idempotency/concurrency in PostgreSQL
+- owner-safe stored semantic-diff and strict validation-result presentation
+- bounded latest-50 proposal and version history loading
+- direct projection-table mutation closed to anonymous, authenticated, and
+  service-role clients
+- Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
 
@@ -40,7 +63,9 @@ Not included:
 - AI provider calls or builder behavior
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
-- configuration versioning, change sets, or publishing versions
+- owner-facing proposal creation or operation editing
+- automatic rebase/merge or AI/LLM integration
+- Location or operational Record versioning
 - workflow/rule execution
 
 ## Requirements
@@ -93,7 +118,10 @@ Supabase project using the CLI defaults.
 
 The demo bootstrap is deliberately local-only. It reads credentials from the
 running Supabase CLI and refuses any host/port other than this repository's
-local `127.0.0.1:5532x` stack.
+local `127.0.0.1:5532x` stack. It creates Bedford Bakery with an empty immutable
+Version 1, authenticates the demo Owner, and proposes, validates, and applies
+`Install Bedford Bakery configuration` as Version 2. Only then does it create
+Product Records and availability.
 
 ```bash
 npm run supabase:start
@@ -102,8 +130,13 @@ npm run demo:seed
 npm run dev
 ```
 
+Running `npm run demo:seed` again is safe: it verifies the existing Version 2,
+head, projection, users, memberships, Locations, and Products without creating
+Version 3 or duplicates.
+
 Sign in at [http://localhost:3000/sign-in](http://localhost:3000/sign-in):
 
+- Owner email: `demo@smbos.local`
 - Staff email: `staff@smbos.local`
 - Password: `Local-demo-2026!`
 
@@ -120,6 +153,13 @@ Then sign in as Staff and open the generic
 Open the Order detail and use the generated edit Form to change its status.
 Products, Customers, Orders and Order Items are generic graph Records; the
 internal screens are generic Views and Forms.
+
+Sign in as the Owner to open
+[Changes and Version history](http://localhost:3000/app/bedford-bakery-demo/changes).
+The configured Version 2 appears as the active head. Lifecycle controls appear
+only when an existing proposal's authoritative status permits them. The local
+demo does not seed permanent proposals; Phase 5B does not introduce
+demonstration-only history or proposal creation.
 
 ## Local Supabase
 
@@ -154,27 +194,37 @@ validating from a clean state.
 
 ## Quality commands
 
-| Command                    | Purpose                                          |
-| -------------------------- | ------------------------------------------------ |
-| `npm test`                 | Run fast unit and component tests                |
-| `npm run test:integration` | Run the full real Supabase/PostgreSQL suite      |
-| `npm run test:rls`         | Run the Milestone 1 tenancy/RLS suite            |
-| `npm run test:graph`       | Run the Milestone 2 graph integrity suite        |
-| `npm run test:experience`  | Run the Milestone 3 experience suite             |
-| `npm run test:preorder`    | Run the Milestone 4 preorder/concurrency suite   |
-| `npm run test:watch`       | Run unit tests in watch mode                     |
-| `npm run typecheck`        | Generate route types and run TypeScript          |
-| `npm run lint`             | Run ESLint                                       |
-| `npm run format`           | Format supported files with Prettier             |
-| `npm run format:check`     | Verify formatting without changing files         |
-| `npm run build`            | Create a production Next.js build                |
-| `npm run check`            | Run formatting, types, linting, and unit tests   |
-| `npm run supabase:start`   | Start the local Supabase stack                   |
-| `npm run supabase:status`  | Show local Supabase service details              |
-| `npm run supabase:reset`   | Recreate and migrate the local database          |
-| `npm run supabase:lint`    | Run PostgreSQL lint against the local database   |
-| `npm run supabase:stop`    | Stop the local Supabase stack                    |
-| `npm run demo:seed`        | Seed the local-only Bedford Bakery demonstration |
+| Command                               | Purpose                                          |
+| ------------------------------------- | ------------------------------------------------ |
+| `npm test`                            | Run fast unit and component tests                |
+| `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
+| `npm run test:rls`                    | Run the Milestone 1 tenancy/RLS suite            |
+| `npm run test:graph`                  | Run the Milestone 2 graph integrity suite        |
+| `npm run test:experience`             | Run the Milestone 3 experience suite             |
+| `npm run test:preorder`               | Run the Milestone 4 preorder/concurrency suite   |
+| `npm run test:configuration`          | Run immutable baseline/version tests             |
+| `npm run test:changes`                | Run structured proposal and semantic-diff tests  |
+| `npm run test:validation`             | Run rollback-only compatibility validation tests |
+| `npm run test:application`            | Run atomic configuration application tests       |
+| `npm run test:configuration-boundary` | Run Phase 3B closure/demo tests                  |
+| `npm run test:rollback`               | Run forward-only rollback tests                  |
+| `npm run test:preview-foundation`     | Run authenticated candidate foundation tests     |
+| `npm run test:preview`                | Run authenticated rendered preview tests         |
+| `npm run test:changes-ui-read`        | Run read-only Changes/History and no-write tests |
+| `npm run test:changes-ui-actions`     | Run lifecycle action/security/concurrency tests  |
+| `npm run test:watch`                  | Run unit tests in watch mode                     |
+| `npm run typecheck`                   | Generate route types and run TypeScript          |
+| `npm run lint`                        | Run ESLint                                       |
+| `npm run format`                      | Format supported files with Prettier             |
+| `npm run format:check`                | Verify formatting without changing files         |
+| `npm run build`                       | Create a production Next.js build                |
+| `npm run check`                       | Run formatting, types, linting, and unit tests   |
+| `npm run supabase:start`              | Start the local Supabase stack                   |
+| `npm run supabase:status`             | Show local Supabase service details              |
+| `npm run supabase:reset`              | Recreate and migrate the local database          |
+| `npm run supabase:lint`               | Run PostgreSQL lint against the local database   |
+| `npm run supabase:stop`               | Stop the local Supabase stack                    |
+| `npm run demo:seed`                   | Seed the local-only Bedford Bakery demonstration |
 
 Run the integration suite after Supabase is started and reset:
 
@@ -242,6 +292,14 @@ tests/
   against the stable business UUID.
 - Fixed capabilities are centralized in `src/auth/capabilities.ts`.
 - Database policies independently restrict every tenant read and mutation.
+- The eight versioned configuration tables are read-only to authenticated
+  runtime clients and inaccessible to anonymous clients. Neither normal
+  sessions nor the service role can mutate them directly.
+- Owner/Admin configuration changes use only the structured propose, validate,
+  apply, and abandon RPC lifecycle. Legacy configuration RPCs and private
+  engine helpers are not executable by application roles.
+- Database-owner configuration fixtures exist only under `tests/`; they are not
+  production services, credentials, routes, or RPCs.
 - Public catalogue reads return an explicit allow-list; generic graph and
   experience tables remain inaccessible anonymously.
 - Public preorder writes pass through the server endpoint. PostgreSQL resolves

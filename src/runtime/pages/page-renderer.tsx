@@ -6,18 +6,18 @@ import type {
 } from "../../core/experience/service";
 import type { PageLayout } from "../../core/experience/schemas";
 import type { PublicPreorderCatalogue } from "../../core/preorder/schemas";
-import { FormRenderer } from "../forms/form-renderer";
+import { FormRenderer, type FormAction } from "../forms/form-renderer";
 import { PreorderExperience } from "../preorder/preorder-experience";
 import { ViewRenderer } from "../views/view-renderer";
 
 interface ResolvedFormBlock {
-  action: string | ((formData: FormData) => void | Promise<void>);
+  action?: FormAction;
   bundle: ExperienceFormBundle;
 }
 
 interface ResolvedPreorderBlock {
   catalogue: PublicPreorderCatalogue;
-  endpoint: string;
+  endpoint?: string;
 }
 
 interface PageRendererProps {
@@ -26,6 +26,7 @@ interface PageRendererProps {
   views?: Readonly<Record<string, ExperienceViewBundle>>;
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
   preorders?: Readonly<Record<string, ResolvedPreorderBlock>>;
+  previewMode?: boolean;
   publicMode?: boolean;
 }
 
@@ -43,6 +44,7 @@ export function PageRenderer({
   views = {},
   forms = {},
   preorders = {},
+  previewMode = false,
   publicMode = false,
 }: Readonly<PageRendererProps>): ReactNode {
   return (
@@ -78,22 +80,35 @@ export function PageRenderer({
           case "button":
             return (
               <p className="page-button-block" key={key}>
-                <a
-                  className={
-                    block.style === "secondary"
-                      ? "button button-secondary"
-                      : "button"
-                  }
-                  href={block.href}
-                >
-                  {block.label}
-                </a>
+                {previewMode ? (
+                  <span
+                    aria-disabled="true"
+                    className={
+                      block.style === "secondary"
+                        ? "button button-secondary"
+                        : "button"
+                    }
+                  >
+                    {block.label}
+                  </span>
+                ) : (
+                  <a
+                    className={
+                      block.style === "secondary"
+                        ? "button button-secondary"
+                        : "button"
+                    }
+                    href={block.href}
+                  >
+                    {block.label}
+                  </a>
+                )}
               </p>
             );
           case "divider":
             return <hr className="page-divider" key={key} />;
           case "view": {
-            if (publicMode) {
+            if (publicMode && !previewMode) {
               return (
                 <MissingBlock
                   key={key}
@@ -107,6 +122,7 @@ export function PageRenderer({
                 bundle={bundle}
                 businessSlug={businessSlug}
                 key={key}
+                preview={previewMode}
                 showHeading={false}
               />
             ) : (
@@ -117,7 +133,7 @@ export function PageRenderer({
             );
           }
           case "form": {
-            if (publicMode) {
+            if (publicMode && !previewMode) {
               return (
                 <MissingBlock
                   key={key}
@@ -126,7 +142,22 @@ export function PageRenderer({
               );
             }
             const resolvedForm = forms[block.form_key];
-            return resolvedForm ? (
+            if (!resolvedForm) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="This form is temporarily unavailable."
+                />
+              );
+            }
+            return previewMode ? (
+              <FormRenderer
+                bundle={resolvedForm.bundle}
+                key={key}
+                mode="preview"
+                showHeading={false}
+              />
+            ) : resolvedForm.action ? (
               <FormRenderer
                 action={resolvedForm.action}
                 bundle={resolvedForm.bundle}
@@ -141,7 +172,7 @@ export function PageRenderer({
             );
           }
           case "preorder": {
-            if (!publicMode) {
+            if (!publicMode && !previewMode) {
               return (
                 <MissingBlock
                   key={key}
@@ -150,7 +181,21 @@ export function PageRenderer({
               );
             }
             const resolvedPreorder = preorders[block.preorder_key];
-            return resolvedPreorder ? (
+            if (!resolvedPreorder) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="Preordering is temporarily unavailable."
+                />
+              );
+            }
+            return previewMode ? (
+              <PreorderExperience
+                catalogue={resolvedPreorder.catalogue}
+                key={key}
+                mode="preview"
+              />
+            ) : resolvedPreorder.endpoint ? (
               <PreorderExperience
                 catalogue={resolvedPreorder.catalogue}
                 endpoint={resolvedPreorder.endpoint}

@@ -3,7 +3,7 @@ import {
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
-import postgres from "postgres";
+import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type {
@@ -16,6 +16,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createConfigurationFixtures } from "./support/configuration-fixtures";
 
 type Client = SupabaseClient<Database>;
 type Business = Tables<"businesses">;
@@ -44,6 +45,8 @@ const createdUserIds: string[] = [];
 
 let admin: Client;
 let databaseUrl: string;
+let fixtureSql: Sql;
+let configurationFixtures: ReturnType<typeof createConfigurationFixtures>;
 let ownerA: TestIdentity;
 let ownerB: TestIdentity;
 let administratorA: TestIdentity;
@@ -119,77 +122,61 @@ async function createOwnedBusiness(
 }
 
 async function createObject(
-  client: Client,
+  _client: Client,
   businessId: string,
   key: string,
   singularLabel: string,
   kind: Enums<"object_definition_kind"> = "custom",
   semanticType: string | null = null,
 ): Promise<ObjectDefinition> {
-  const { data, error } = await client
-    .from("object_definitions")
-    .insert({
-      business_id: businessId,
-      key,
-      singular_label: singularLabel,
-      plural_label: `${singularLabel}s`,
-      description: `${singularLabel} definition`,
-      kind,
-      semantic_type: semanticType,
-    })
-    .select("*")
-    .single();
-
-  if (error || !data) {
-    throw error ?? new Error(`Could not create object ${key}`);
+  const [created] = await configurationFixtures.insert("object_definitions", {
+    business_id: businessId,
+    key,
+    singular_label: singularLabel,
+    plural_label: `${singularLabel}s`,
+    description: `${singularLabel} definition`,
+    kind,
+    semantic_type: semanticType,
+  });
+  if (!created) {
+    throw new Error(`Could not create object ${key}`);
   }
-
-  return data;
+  return created;
 }
 
 async function createFields(
-  client: Client,
+  _client: Client,
   businessId: string,
   objectDefinitionId: string,
   fields: FieldInput[],
 ): Promise<FieldDefinition[]> {
-  const { data, error } = await client
-    .from("field_definitions")
-    .insert(
-      fields.map((field, index) => ({
-        business_id: businessId,
-        object_definition_id: objectDefinitionId,
-        key: field.key,
-        label: field.label,
-        field_type: field.fieldType,
-        required: field.required ?? false,
-        settings_json: field.settings ?? {},
-        position: field.position ?? index,
-        ...(field.defaultValue === undefined
-          ? {}
-          : { default_value: field.defaultValue }),
-      })),
-    )
-    .select("*");
-
-  if (error || !data) {
-    throw error ?? new Error("Could not create fields");
-  }
-
-  return data;
+  return configurationFixtures.insert(
+    "field_definitions",
+    fields.map((field, index) => ({
+      business_id: businessId,
+      object_definition_id: objectDefinitionId,
+      key: field.key,
+      label: field.label,
+      field_type: field.fieldType,
+      required: field.required ?? false,
+      default_value: field.defaultValue ?? null,
+      settings_json: field.settings ?? {},
+      position: field.position ?? index,
+    })),
+  );
 }
 
 async function createRelationshipDefinition(
-  client: Client,
+  _client: Client,
   businessId: string,
   key: string,
   sourceObjectDefinitionId: string,
   targetObjectDefinitionId: string,
   cardinality: Enums<"relationship_cardinality">,
 ): Promise<RelationshipDefinition> {
-  const { data, error } = await client
-    .from("relationship_definitions")
-    .insert({
+  const [created] = await configurationFixtures.insert(
+    "relationship_definitions",
+    {
       business_id: businessId,
       key,
       source_object_definition_id: sourceObjectDefinitionId,
@@ -197,15 +184,12 @@ async function createRelationshipDefinition(
       source_label: "connects",
       target_label: "connected from",
       cardinality,
-    })
-    .select("*")
-    .single();
-
-  if (error || !data) {
-    throw error ?? new Error(`Could not create relationship ${key}`);
+    },
+  );
+  if (!created) {
+    throw new Error(`Could not create relationship ${key}`);
   }
-
-  return data;
+  return created;
 }
 
 async function createRecord(
@@ -246,6 +230,8 @@ describe("metadata-driven graph engine", () => {
   beforeAll(async () => {
     const settings = getLocalSupabaseSettings();
     databaseUrl = settings.databaseUrl;
+    fixtureSql = postgres(databaseUrl, { max: 1 });
+    configurationFixtures = createConfigurationFixtures(fixtureSql);
     admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -306,9 +292,12 @@ describe("metadata-driven graph engine", () => {
         await admin.auth.admin.deleteUser(userId);
       }
     }
+    if (fixtureSql) {
+      await fixtureSql.end();
+    }
   });
 
-  it("lets an Owner create Customer, Product, Order and Order Item templates", async () => {
+  it("builds Customer, Product, Order and Order Item integrity fixtures", async () => {
     customerObject = await createObject(
       ownerA.client,
       businessA.id,
@@ -441,7 +430,7 @@ describe("metadata-driven graph engine", () => {
     ]).toEqual(["customer", "product", "order", "order_item"]);
   });
 
-  it("lets an Admin create graph configuration", async () => {
+  it("builds an additional graph integrity fixture", async () => {
     const definition = await createObject(
       administratorA.client,
       businessA.id,
@@ -482,8 +471,8 @@ describe("metadata-driven graph engine", () => {
       .update({ singular_label: "Changed by Staff" })
       .eq("id", customerObject.id)
       .select("id");
-    expect(updateError).toBeNull();
-    expect(updated).toEqual([]);
+    expect(updateError?.code).toBe("42501");
+    expect(updated).toBeNull();
   });
 
   it("isolates definitions and Records between Businesses", async () => {
@@ -835,22 +824,27 @@ describe("metadata-driven graph engine", () => {
       "one_to_many",
     );
 
-    const { error: objectError } = await ownerA.client
-      .from("object_definitions")
-      .update({ key: "changed_object" })
-      .eq("id", validationObject.id);
-    const { error: fieldError } = await ownerA.client
-      .from("field_definitions")
-      .update({ key: "changed_field" })
-      .eq("id", validationNameField.id);
-    const { error: relationshipError } = await ownerA.client
-      .from("relationship_definitions")
-      .update({ key: "changed_relationship" })
-      .eq("id", customerPlacesOrder.id);
-
-    expect(objectError?.code).toBe("22023");
-    expect(fieldError?.code).toBe("22023");
-    expect(relationshipError?.code).toBe("22023");
+    await expect(
+      configurationFixtures.updateById(
+        "object_definitions",
+        validationObject.id,
+        { key: "changed_object" },
+      ),
+    ).rejects.toMatchObject({ code: "22023" });
+    await expect(
+      configurationFixtures.updateById(
+        "field_definitions",
+        validationNameField.id,
+        { key: "changed_field" },
+      ),
+    ).rejects.toMatchObject({ code: "22023" });
+    await expect(
+      configurationFixtures.updateById(
+        "relationship_definitions",
+        customerPlacesOrder.id,
+        { key: "changed_relationship" },
+      ),
+    ).rejects.toMatchObject({ code: "22023" });
   });
 
   it("validates required fields, unknown keys and the resulting update", async () => {
@@ -1744,11 +1738,11 @@ describe("metadata-driven graph engine", () => {
       },
     );
 
-    const { error: archiveFieldError } = await ownerA.client
-      .from("field_definitions")
-      .update({ is_active: false })
-      .eq("id", legacyField.id);
-    expect(archiveFieldError).toBeNull();
+    await configurationFixtures.updateById(
+      "field_definitions",
+      legacyField.id,
+      { is_active: false },
+    );
 
     const { data: updated, error: updateError } = await ownerA.client.rpc(
       "update_graph_record",
@@ -1827,17 +1821,17 @@ describe("metadata-driven graph engine", () => {
       throw new Error("Archive proof edge was not created");
     }
 
-    const { error: referencedObjectArchiveError } = await ownerA.client
-      .from("object_definitions")
-      .update({ is_active: false })
-      .eq("id", archiveObject.id);
-    expect(referencedObjectArchiveError?.code).toBe("23514");
+    await expect(
+      configurationFixtures.updateById("object_definitions", archiveObject.id, {
+        is_active: false,
+      }),
+    ).rejects.toMatchObject({ code: "23514" });
 
-    const { error: archiveRelationshipError } = await ownerA.client
-      .from("relationship_definitions")
-      .update({ is_active: false })
-      .eq("id", archiveRelationship.id);
-    expect(archiveRelationshipError).toBeNull();
+    await configurationFixtures.updateById(
+      "relationship_definitions",
+      archiveRelationship.id,
+      { is_active: false },
+    );
 
     const archivedRelationshipWrite = await createEdge(
       ownerA.client,
@@ -1848,11 +1842,11 @@ describe("metadata-driven graph engine", () => {
     );
     expect(archivedRelationshipWrite.error?.code).toBe("23514");
 
-    const { error: archiveObjectError } = await ownerA.client
-      .from("object_definitions")
-      .update({ is_active: false })
-      .eq("id", archiveObject.id);
-    expect(archiveObjectError).toBeNull();
+    await configurationFixtures.updateById(
+      "object_definitions",
+      archiveObject.id,
+      { is_active: false },
+    );
 
     const { data: historicalEdges, error: historicalEdgesError } =
       await ownerA.client

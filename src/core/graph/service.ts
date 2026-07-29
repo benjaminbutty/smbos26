@@ -3,30 +3,15 @@ import "server-only";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import type {
-  Database,
-  Json,
-  Tables,
-  TablesUpdate,
-} from "../../db/supabase/database.types";
+import type { Database, Json, Tables } from "../../db/supabase/database.types";
 import {
-  createFieldDefinitionSchema,
-  createObjectDefinitionSchema,
   createRecordRelationshipSchema,
   createRecordSchema,
-  createRelationshipDefinitionSchema,
   queryRecordsSchema,
-  updateFieldDefinitionSchema,
-  updateObjectDefinitionSchema,
   updateRecordSchema,
-  type CreateFieldDefinitionInput,
-  type CreateObjectDefinitionInput,
   type CreateRecordInput,
   type CreateRecordRelationshipInput,
-  type CreateRelationshipDefinitionInput,
   type QueryRecordsInput,
-  type UpdateFieldDefinitionInput,
-  type UpdateObjectDefinitionInput,
   type UpdateRecordInput,
 } from "./schemas";
 
@@ -53,30 +38,6 @@ function requireResult<T>(
 }
 
 export interface GraphService {
-  createObjectDefinition(
-    input: CreateObjectDefinitionInput,
-  ): Promise<Tables<"object_definitions">>;
-  updateObjectDefinition(
-    input: UpdateObjectDefinitionInput,
-  ): Promise<Tables<"object_definitions">>;
-  archiveObjectDefinition(
-    objectDefinitionId: string,
-  ): Promise<Tables<"object_definitions">>;
-  createFieldDefinition(
-    input: CreateFieldDefinitionInput,
-  ): Promise<Tables<"field_definitions">>;
-  updateFieldDefinition(
-    input: UpdateFieldDefinitionInput,
-  ): Promise<Tables<"field_definitions">>;
-  archiveFieldDefinition(
-    fieldDefinitionId: string,
-  ): Promise<Tables<"field_definitions">>;
-  createRelationshipDefinition(
-    input: CreateRelationshipDefinitionInput,
-  ): Promise<Tables<"relationship_definitions">>;
-  archiveRelationshipDefinition(
-    relationshipDefinitionId: string,
-  ): Promise<Tables<"relationship_definitions">>;
   createRecord(input: CreateRecordInput): Promise<Tables<"records">>;
   updateRecord(input: UpdateRecordInput): Promise<Tables<"records">>;
   archiveRecord(recordId: string): Promise<Tables<"records">>;
@@ -94,185 +55,6 @@ export function createGraphService(
   const businessId = z.uuid().parse(tenant.businessId);
 
   return {
-    async createObjectDefinition(input) {
-      const value = createObjectDefinitionSchema.parse(input);
-      const { data, error } = await client
-        .from("object_definitions")
-        .insert({
-          business_id: businessId,
-          key: value.key,
-          singular_label: value.singularLabel,
-          plural_label: value.pluralLabel,
-          description: value.description,
-          kind: value.kind,
-          semantic_type: value.semanticType,
-          icon: value.icon,
-          is_active: value.isActive,
-        })
-        .select("*")
-        .single();
-
-      return requireResult(data, error, "Could not create object definition.");
-    },
-
-    async updateObjectDefinition(input) {
-      const value = updateObjectDefinitionSchema.parse(input);
-      const changes: TablesUpdate<"object_definitions"> = {};
-
-      if (value.changes.singularLabel !== undefined) {
-        changes.singular_label = value.changes.singularLabel;
-      }
-      if (value.changes.pluralLabel !== undefined) {
-        changes.plural_label = value.changes.pluralLabel;
-      }
-      if (value.changes.description !== undefined) {
-        changes.description = value.changes.description;
-      }
-      if (value.changes.semanticType !== undefined) {
-        changes.semantic_type = value.changes.semanticType;
-      }
-      if (value.changes.icon !== undefined) {
-        changes.icon = value.changes.icon;
-      }
-      if (value.changes.isActive !== undefined) {
-        changes.is_active = value.changes.isActive;
-      }
-
-      const { data, error } = await client
-        .from("object_definitions")
-        .update(changes)
-        .eq("business_id", businessId)
-        .eq("id", value.objectDefinitionId)
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not update object definition.");
-    },
-
-    async archiveObjectDefinition(objectDefinitionId) {
-      const { data, error } = await client
-        .from("object_definitions")
-        .update({ is_active: false })
-        .eq("business_id", businessId)
-        .eq("id", z.uuid().parse(objectDefinitionId))
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not archive object definition.");
-    },
-
-    async createFieldDefinition(input) {
-      const value = createFieldDefinitionSchema.parse(input);
-      const { data, error } = await client
-        .from("field_definitions")
-        .insert({
-          business_id: businessId,
-          object_definition_id: value.objectDefinitionId,
-          key: value.key,
-          label: value.label,
-          field_type: value.fieldType,
-          required: value.required,
-          default_value: value.defaultValue,
-          settings_json: value.settings,
-          position: value.position,
-          is_active: value.isActive,
-        })
-        .select("*")
-        .single();
-
-      return requireResult(data, error, "Could not create field definition.");
-    },
-
-    async updateFieldDefinition(input) {
-      const value = updateFieldDefinitionSchema.parse(input);
-      const changes: TablesUpdate<"field_definitions"> = {};
-
-      if (value.changes.label !== undefined) {
-        changes.label = value.changes.label;
-      }
-      if (value.changes.fieldType !== undefined) {
-        changes.field_type = value.changes.fieldType;
-      }
-      if (value.changes.required !== undefined) {
-        changes.required = value.changes.required;
-      }
-      if (value.changes.defaultValue !== undefined) {
-        changes.default_value = value.changes.defaultValue;
-      }
-      if (value.changes.settings !== undefined) {
-        changes.settings_json = value.changes.settings;
-      }
-      if (value.changes.position !== undefined) {
-        changes.position = value.changes.position;
-      }
-      if (value.changes.isActive !== undefined) {
-        changes.is_active = value.changes.isActive;
-      }
-
-      const { data, error } = await client
-        .from("field_definitions")
-        .update(changes)
-        .eq("business_id", businessId)
-        .eq("id", value.fieldDefinitionId)
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not update field definition.");
-    },
-
-    async archiveFieldDefinition(fieldDefinitionId) {
-      const { data, error } = await client
-        .from("field_definitions")
-        .update({ is_active: false })
-        .eq("business_id", businessId)
-        .eq("id", z.uuid().parse(fieldDefinitionId))
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(data, error, "Could not archive field definition.");
-    },
-
-    async createRelationshipDefinition(input) {
-      const value = createRelationshipDefinitionSchema.parse(input);
-      const { data, error } = await client
-        .from("relationship_definitions")
-        .insert({
-          business_id: businessId,
-          key: value.key,
-          source_object_definition_id: value.sourceObjectDefinitionId,
-          target_object_definition_id: value.targetObjectDefinitionId,
-          source_label: value.sourceLabel,
-          target_label: value.targetLabel,
-          cardinality: value.cardinality,
-          is_required: value.isRequired,
-          is_active: value.isActive,
-        })
-        .select("*")
-        .single();
-
-      return requireResult(
-        data,
-        error,
-        "Could not create relationship definition.",
-      );
-    },
-
-    async archiveRelationshipDefinition(relationshipDefinitionId) {
-      const { data, error } = await client
-        .from("relationship_definitions")
-        .update({ is_active: false })
-        .eq("business_id", businessId)
-        .eq("id", z.uuid().parse(relationshipDefinitionId))
-        .select("*")
-        .maybeSingle();
-
-      return requireResult(
-        data,
-        error,
-        "Could not archive relationship definition.",
-      );
-    },
-
     async createRecord(input) {
       const value = createRecordSchema.parse(input);
       const { data, error } = await client.rpc("create_graph_record", {

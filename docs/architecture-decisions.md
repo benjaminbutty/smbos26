@@ -313,3 +313,649 @@ Trade-offs and deliberate limits:
 - The narrow database-backed hash throttle, honeypot, size limits and
   idempotency are proportionate abuse controls, not complete anti-fraud
   protection.
+
+## ADR-006 - Immutable configuration baselines and active heads
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 3B)
+
+**Date:** 28 July 2026
+
+### Context
+
+Future owner-facing and AI-generated configuration changes need an immutable
+base and one serialized active head per Business. The existing normalized
+graph, experience and preorder tables remain the runtime projection. Phase 1
+establishes history and identity without implementing proposals, candidate
+validation, projection application, preview or rollback.
+
+### Decision
+
+- `configuration_versions` stores tenant-owned immutable snapshots with a
+  per-Business version number, parent/provenance fields, schema version,
+  canonical JSON, SHA-256 checksum, actor and timestamp. Phase 1 creates only
+  system baseline Version 1 rows, whose parent, rollback target, change set and
+  actor are null.
+- `business_configuration_heads` stores exactly one active version pointer and
+  monotonic revision per Business. Composite tenant foreign keys prevent a
+  head, parent or rollback provenance reference from crossing Businesses.
+- `private.configuration_snapshot_v1(uuid)` is the sole canonical reader.
+  It explicitly orders identity-bearing graph, experience and preorder
+  configuration and excludes Business/Location details, membership,
+  operational Records and Relationships, Record-to-Location links,
+  submissions, counters, rate limits, timestamps and actors.
+- Canonical JSON contains stable configuration IDs and keys but no
+  `business_id`; tenant ownership belongs to the version row. PostgreSQL hashes
+  the canonical `jsonb` text with SHA-256. TypeScript does not implement a
+  second checksum algorithm.
+- Location identity and current eligibility remain outside canonical
+  configuration snapshots. A change set stores a bounded immutable schema-v1
+  display context containing proposal-time names for referenced same-Business
+  Location IDs. Those names are owner-readable display metadata only: they do
+  not affect candidate checksums, version content or Location eligibility, and
+  may intentionally differ from a later renamed Location.
+- Existing Businesses are backfilled from their current projection. A Business
+  insertion synchronously creates an empty canonical baseline and head in the
+  same transaction.
+- Pages and preorder allowed-Location associations gain independent
+  `is_active` archival state. Runtime/public resolvers and compatibility checks
+  ignore inactive rows. Page draft/published status remains separate from
+  archival state.
+- Public preorder submission locks and rechecks the active published Page,
+  active preorder experience, active allowed-Location association and active
+  Location in that fixed order before entering the retained atomic M4
+  transaction. Concurrent archival therefore cannot admit a submission from a
+  stale pre-archive check.
+- Page archival blocks new public activity but does not cancel operational work
+  already committed. Confirmation email claiming uses immutable Business and
+  preorder identity plus the submission idempotency token; it does not depend
+  on the Page remaining active, published, at the same slug or configured with
+  the preorder block.
+- Individual version updates and deletes are rejected. Business deletion still
+  cascades its version history and head. Owner/Admin may read history and the
+  head; Staff and anonymous callers may not; authenticated callers have no
+  direct write grants.
+- Phase 1 deliberately left existing configuration mutation paths open, and
+  Phase 2B therefore failed closed when an unversioned write made the
+  projection diverge from the active version.
+- Phase 3A adds one authenticated Owner/Admin application transaction for
+  already validated proposals. It locks the Business head and proposal,
+  verifies their immutable base and replay, runs the existing static projector
+  as the final authoritative compatibility check, creates one immutable
+  `change` version, advances the head once and marks the proposal applied.
+  Recognised compatibility failures roll back projector writes and close the
+  proposal as rejected; stale bases close as conflicted; unexpected failures
+  roll back the complete transaction and leave the proposal validated.
+- At every successful application commit, the canonical normalized
+  projection, applied change-set candidate, new immutable version and active
+  head are exactly equal in both JSON and checksum.
+- Phase 3B makes the change-set engine the mandatory normal production
+  configuration mutation boundary. `anon`, `authenticated` and `service_role`
+  have no direct `INSERT`, `UPDATE` or `DELETE` privilege on the eight
+  versioned projection tables. Authenticated members retain tenant-scoped
+  runtime `SELECT`; anonymous runtime reads continue only through narrow
+  public resolvers.
+- Legacy preorder configuration RPCs remain only as inaccessible historical
+  implementations. Application roles cannot execute them, and private
+  materialisation, diff, projector, sandbox, assertion and lifecycle helpers
+  cannot be invoked directly. The authenticated mutation allow-list is
+  propose, validate, apply and abandon.
+- Production graph, experience and preorder TypeScript services expose
+  runtime reads and operational mutations only. Local integration setup may
+  use a database-owner fixture helper outside `src/`; this is not an
+  application credential, public RPC or production capability.
+- Operational Records, Record Relationships and Record-to-Location links are
+  deliberately outside configuration versioning. Location creation, updates
+  and archival also remain a first-class operational lifecycle; individual
+  Location deletion stays unavailable.
+- Existing Object locks serialize application against Record writes: Record
+  validation holds the Object row in shared mode while Field projection takes
+  the conflicting Object update lock. Public preorder submission similarly
+  retains its ordered shared locks while application parks Page and preorder
+  rows. No Business-wide advisory lock is added to production.
+
+### Locked follow-up boundaries
+
+- Phase 2 change sets require an owner-facing title, an optional owner-facing
+  description, and distinct `rejected`, `conflicted` and `abandoned` terminal
+  states.
+- Ordinary owner/AI operations may create only `custom` Objects. Existing
+  Object `kind` and `semantic_type` cannot change silently. Template
+  installation requires a separate trusted system-owned boundary.
+- A later rollback may retain configuration introduced after its historical
+  target in an archived state. `restored_from_version_id` therefore records
+  semantic provenance and does not promise checksum equality with that target.
+
+### Consequences
+
+- Every Business has a durable base for later stale-base and concurrency
+  protection without introducing parallel draft/production graphs.
+- The same stable configuration identity produces deterministic snapshot JSON
+  and checksum. Independently recreated Businesses may differ because their
+  configuration UUIDs differ.
+- Bedford Bakery starts with the same immutable empty Version 1 as every new
+  Business. The local demo authenticates its Owner, proposes, validates and
+  applies `Install Bedford Bakery configuration`, producing configured Version
+  2 before any Product Records are created. Re-running the seed verifies that
+  state instead of creating Version 3.
+- Bedford's Product, Customer, Order and Order Item definitions use the normal
+  `set_object` rule: `kind = custom` and `semantic_type = null`. The runtime
+  has no dependency on template classification.
+- Future AI configuration work must submit the same allow-listed structured
+  operations through this lifecycle. It receives no direct SQL, table mutation
+  or private projector capability.
+
+## ADR-007 - Structured configuration proposals and canonical candidates
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 2A)
+
+**Date:** 28 July 2026
+
+### Context
+
+Owner-facing and future AI-generated configuration changes need a narrow draft
+boundary before authoritative operational compatibility validation and live
+application exist. A proposal must be reviewable and reproducible without
+creating a second live graph, mutating normalized configuration or advancing a
+Business head.
+
+### Decision
+
+- `configuration_change_sets` stores the immutable proposal base, exact
+  key-based operations, trusted stable-ID allocations, complete schema-v1
+  candidate, PostgreSQL checksum and deterministic semantic diff. Phase 2A
+  creates only `change` / `proposed` rows and implements only the irreversible
+  `proposed` to `abandoned` transition.
+- Proposal creation locks the Business head for a consistent base read, loads
+  its active immutable version and recomputes the live canonical snapshot.
+  `configuration_projection_out_of_sync` is returned unless both JSON and
+  checksum equal the active version. The candidate is always materialized from
+  that immutable version, never from live rows.
+- PostgreSQL is authoritative for the exact operation grammar, complete
+  candidate materialization, structural candidate checks, stable-ID allocation,
+  canonical ordering, checksum and semantic diff. Zod mirrors the caller
+  grammar for early application feedback but cannot authorize acceptance.
+- Operations are complete desired states addressed by stable keys:
+  `set_object`, `set_field`, `set_relationship`, `set_view`, `set_form`,
+  `set_page` and `set_preorder_experience`. Unknown properties, caller-selected
+  configuration IDs, duplicate targets, unrestricted patches and hard deletion
+  are rejected. Allowed Location IDs are the sole caller-supplied UUIDs and are
+  checked against active same-Business Locations.
+- New semantic identities are sorted before UUID allocation. The immutable
+  allocation map is replayed for later validation attempts, so retries cannot
+  create new identities. Existing entity and preorder-association IDs remain
+  stable.
+- Candidate checks prove graph/configuration structure only: references,
+  active dependencies, View/Form Fields, create Form coverage, Page/public
+  safety, preorder mappings/constructability and current Location eligibility.
+  They do not claim compatibility with operational Records.
+- The stored diff classifies `created`, `updated`, `archived` and `restored`
+  changes and includes deterministic entity-specific properties and
+  owner-readable labels. Location labels are display snapshots in the diff;
+  canonical configuration retains only Location UUIDs.
+- `ConfigurationChangeService` is server-only and uses authenticated session
+  RPCs for propose/list/get/abandon. Every RPC resolves `auth.uid()` and
+  independently checks Owner/Admin membership and tenant ownership. Direct
+  authenticated change-set writes are not granted.
+
+### Deliberate Phase 2A limits
+
+- Proposals remain `proposed`; there is no validation sandbox or `validated`
+  transition.
+- No live projection materializer, application transaction, head advancement,
+  change version, stale-apply conflict handling or direct configuration
+  mutation closure is introduced.
+- Rollback proposals, preview, owner Changes UI, Bedford configured Version 2,
+  seeded acceptance proposals and AI/LLM integration remain later work.
+
+### Consequences
+
+- Proposal creation and abandonment are read-only with respect to the active
+  normalized configuration and Business head.
+- Bedford Bakery’s direct demo projection intentionally fails the consistency
+  precondition until a later phase creates its configured Version 2.
+- Snapshot/projection compatibility with existing operational Records remains
+  the critical Phase 2B boundary; Phase 2A structural checks must not be
+  presented as that proof.
+
+## ADR-008 - Authoritative compatibility validation in a rollback-only projection sandbox
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 2B)
+
+**Date:** 28 July 2026
+
+### Context
+
+A structurally valid Phase 2A candidate can still be incompatible with live
+operational data. Examples include changing a populated Field type, adding a
+required Field that existing Records cannot satisfy, removing a selected
+option, or changing the cardinality of a Relationship that already has edges.
+The M2-M4 PostgreSQL triggers are already the authoritative integrity boundary;
+reimplementing them in TypeScript or in a second weaker validator would create
+divergent rules.
+
+Validation must exercise those constraints without exposing or committing a
+parallel draft graph.
+
+### Decision
+
+- Every mutating configuration RPC accepts an `expected_actor_id` and verifies
+  `auth.uid()`, exact actor-context equality and current Owner/Admin membership
+  before writing. A complete proposal that produces no semantic or canonical
+  change is rejected before insertion.
+- `validate_configuration_change` locks the Business head and then its change
+  set, verifies the base version/revision, replays immutable operations and
+  trusted allocations, checks every stored engine output, and proves the live
+  projection still equals the active immutable version.
+- One private static table-specific projector materialises complete candidates.
+  It parks Pages, preorder experiences, Views, Forms and Relationships before
+  graph changes; inserts new Objects inactive; applies Fields; restores target
+  Objects and Relationships; restores Forms, Views, preorder associations and
+  experiences; and restores Pages last. It never hard-deletes configuration.
+- The projector runs inside a PL/pgSQL exception block. A distinct success
+  sentinel deliberately raises after final deferred constraints and canonical
+  projection equality succeed. Both the sentinel and authoritative integrity
+  errors roll the subtransaction back. The outer transaction commits only a
+  structured lifecycle result.
+- `validated` stores a strict valid result plus actor/time. Deterministic
+  incompatibility becomes `rejected` with a bounded owner-safe error and closure
+  metadata. A stale base becomes `conflicted`. Unexpected engine or transient
+  failures leave the proposal unchanged. Revalidating an already validated row
+  returns its stored result without changing timestamps.
+- Owner-facing validation results contain only allow-listed codes and plain
+  language. PostgreSQL diagnostics are captured only for internal
+  classification; raw SQL, table/function names, stack traces and internal
+  identifiers are not persisted in the result.
+- Candidate Location eligibility is rechecked immediately before and inside
+  projection. A Location becoming inactive after proposal is an operational
+  incompatibility and cannot be recreated or reactivated by validation.
+- Canonical materialisation and immutable replay validate only Location UUID
+  shape and candidate-internal preorder-association identity/reference rules.
+  They do not query mutable Location existence or activation. Current active
+  same-Business Location eligibility is a distinct assertion at proposal
+  creation and inside authoritative projection validation. Replay failure is
+  therefore always an engine-integrity failure; an eligibility change is an
+  owner-safe `location_ineligible` rejection from the sandbox.
+- Individual Locations use `is_active` archival in v0.1. Authenticated roles
+  have no `DELETE` grant or RLS delete policy on `locations`, and no production
+  RPC hard-deletes one. Whole-Business deletion may continue cascading the
+  Business, its Locations, configuration projection, versions and head.
+
+### Consequences
+
+- Current M2-M4 triggers validate the exact candidate projection against live
+  Records, edges, Locations and preorder constructability without duplicating
+  those rules in TypeScript.
+- MVCC prevents other sessions from observing parked rows, and rollback removes
+  every temporary projection write and lock. The active head, versions and
+  operational Records remain unchanged.
+- Validation takes an exclusive Business-head lock and temporarily writes and
+  locks the Business's active configuration rows. Rolled-back writes still
+  generate WAL. This is proportionate for v0.1 configuration sizes but is a
+  deliberate scaling limit to measure before supporting large tenants or
+  frequent automated validation.
+- Immutable proposal replay performs no Location write, including temporary
+  reactivation. Location lifecycle changes after proposal creation affect only
+  the current-eligibility result and never the stored candidate, checksum,
+  allocations or semantic diff.
+- At the Phase 2B checkpoint, direct authenticated configuration mutation
+  remained open, so projection divergence was an explicit engine-state
+  failure, not an owner rejection. Phase 3B now closes that path.
+- Phase 2B itself did not apply candidates, create versions, advance heads,
+  close direct mutation, implement rollback/preview/UI, or convert the Bedford
+  demo; later Phase 3 work supplies application and closure.
+
+## ADR-009 - Forward-only configuration rollback
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 4A)
+
+**Date:** 29 July 2026
+
+### Context
+
+Owners need to restore an earlier immutable configuration without rewinding
+history or operational data. A historical snapshot cannot be projected
+directly because configuration introduced after that snapshot must retain its
+stable identity and remain available for later history, while current Records,
+Relationship edges, Location links, preorder submissions and Orders must never
+be restored or removed by configuration rollback.
+
+### Decision
+
+- `prepare_configuration_rollback` is the only rollback-proposal creation
+  boundary. It verifies authenticated actor context and current Owner/Admin
+  membership, locks a consistent active head, proves live projection/version
+  equality and accepts only an earlier same-Business version ID plus
+  owner-facing title and optional description.
+- Rollback proposals store exactly one trusted
+  `restore_configuration_version` schema-v1 descriptor. Ordinary proposal
+  grammar does not accept this discriminator. The authoritative target remains
+  `rollback_target_version_id`, allocations are exactly `{}`, and rollback
+  creates no configuration IDs.
+- One private deterministic derivation helper validates current and historical
+  snapshots, matches all eight projection collections by stable semantic
+  identity, restores complete historical rows, and retains every current-only
+  row with `is_active = false`. Historical identity loss, stable-ID changes or
+  immutable parent/endpoint changes are engine-integrity failures.
+- Rollback Location display context covers the union referenced by current,
+  historical and resulting candidate snapshots. It uses current same-Business
+  names even for inactive Locations and never treats activation as
+  preparation-time eligibility.
+- One private replay dispatcher is shared by validation and application.
+  Ordinary changes replay the existing operation materializer; rollback loads
+  its same-Business target and derives the union/archive candidate. Both paths
+  must exactly reproduce stored candidate, checksum, allocations and semantic
+  diff.
+- Rollbacks use the existing rollback-only validation sandbox and existing
+  static projector. Current Records, Relationship edges, dependencies and
+  Location eligibility can reject a rollback with the same owner-safe results
+  as an ordinary change.
+- Successful rollback application uses the existing atomic application
+  transaction and creates a new `rollback` version whose parent is the
+  immediately previous active version and whose `restored_from_version_id`
+  records historical provenance. The active head advances exactly once.
+- Operational tables and Location lifecycle remain outside configuration
+  rollback. No rollback path updates Records, Record Relationships,
+  Record-to-Location links, preorder submissions, Orders, Customers, Products,
+  counters, email state or Location rows.
+- Phase 4A adds Owner/Admin version reads to the server-only configuration
+  service but introduces no preview runtime, Changes UI, version-history UI,
+  AI integration or automatic rebase.
+
+### Consequences
+
+- Configuration history remains a forward chain: a V2 restoration after V3 is
+  a new V4, never a head rewind.
+- A rollback candidate can intentionally have a different checksum from its
+  historical target because later configuration identities remain archived.
+- Competing proposals may share a base, but after one advances the head every
+  other proposal from that base conflicts; applied retries remain idempotent.
+- Rollback compatibility inherits the existing projector's locking, integrity
+  and WAL trade-offs. Phase 4A adds no second projection implementation or
+  infrastructure.
+
+## ADR-010 - Authenticated read-only candidate preview foundation
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 4B.1)
+
+**Date:** 29 July 2026
+
+### Context
+
+Owner/Admin users need to inspect an ordinary or rollback proposal before any
+later Changes UI offers lifecycle controls. A candidate is not trustworthy
+merely because JSON is supplied by a browser or stored on a change-set row:
+preview must prove that the proposal still belongs to the active head and that
+the Phase 4A replay engine reproduces its snapshot, checksum, allocations and
+semantic diff. The preview runtime must also remain the existing Page, View,
+Form and preorder runtime rather than becoming a second implementation.
+
+### Decision
+
+- `load_configuration_preview` accepts only a change-set identifier and derives
+  Business and actor identity from the authenticated session. It permits current
+  Owner/Admin members, proposed or validated status, and a base version equal
+  to the current active head.
+- A private assertion function loads the immutable base, invokes the shared
+  Phase 4A replay dispatcher for both ordinary and rollback proposals, and
+  rejects any mismatch in candidate snapshot, checksum, allocations or
+  semantic diff. Neither function performs projection, head, version,
+  lifecycle, Record or operational writes.
+- A configuration-definition source exposes one typed read-only contract for
+  active normalized tables and verified candidate snapshots. The experience
+  service and existing Page, View and Form renderers consume that contract.
+  Snapshot warnings are limited to operational Records that are incompatible
+  with candidate definitions; new candidate Objects naturally have no current
+  Records.
+- Live list/navigation reads batch Object-definition resolution and cache
+  request-scoped lookups. Candidate lookups remain in-memory.
+- Form and preorder renderer props are discriminated unions. Live mode requires
+  an action or endpoint; preview mode cannot receive one, suppresses navigation
+  and mutation links, disables controls and renders a persistent Preview
+  warning.
+- One private preorder catalogue assembler joins either live or candidate
+  configuration to current operational Products, prices, Product-to-Location
+  links, Locations and counters. The existing public resolver and the
+  authenticated preview resolver both delegate to it, avoiding a second
+  preorder algorithm.
+- Public preview functions grant execution only to `authenticated`; `anon` and
+  `service_role` are explicitly revoked. Every private helper remains
+  inaccessible to application roles.
+- Phase 4B.1 deliberately adds no preview route, Changes dashboard,
+  version-history presentation, lifecycle controls, permanent demonstration
+  proposals, AI integration or automatic merge/rebase.
+
+### Consequences
+
+- Preview always represents an authoritative, current, reproducible candidate;
+  stale and closed proposals fail with stable owner-safe errors.
+- Operational data makes preview realistic but is never copied into the
+  immutable configuration snapshot and is never mutated by preview.
+- The Phase 3B mandatory mutation boundary remains unchanged: all configuration
+  writes still flow through the versioned proposal lifecycle.
+- Phase 4B.2 can add an authenticated stable-Page-key route and owner-facing
+  presentation by composing this foundation, without changing its trust or
+  rendering boundaries.
+
+## ADR-011 - Authenticated rendered candidate preview
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 4B.2)
+
+**Date:** 29 July 2026
+
+### Context
+
+The Phase 4B.1 foundation proves and exposes a trusted candidate but does not
+give an Owner/Admin a route through which to inspect the configured
+experience. Rendering must not introduce a second candidate runtime, let a
+candidate slug affect routing, expose a mutation boundary, or return a
+formerly current candidate after application wins a race.
+
+### Decision
+
+- Each preview assertion takes shared locks in the same head, change-set and
+  base-version order used by validation and application. Those locks linearize
+  that assertion's database transaction only. The assertion verifies the
+  current normalized projection and checksum against the locked base before
+  replaying and comparing every stored output. Preview never changes lifecycle
+  state.
+- Rendered preview performs one identifier-only assertion before candidate
+  assembly and another immediately before returning. The final assertion must
+  identify the same proposal, Business, candidate checksum and kind. Status may
+  remain unchanged or progress from proposed to validated; the final status is
+  shown in the returned preview. A proposal that becomes applied, rejected,
+  conflicted, abandoned or stale during assembly causes the assembled
+  candidate to be discarded.
+- The authenticated route is
+  `/app/[businessSlug]/changes/[changeSetId]/preview/[pageKey]`. It is dynamic
+  and no-store, resolves the immutable Business slug through authenticated
+  membership, derives the actor from the session and permits only Owner/Admin.
+  Candidate Page slugs never participate in preview routing.
+- Candidate Page navigation is built only from active Pages in the verified
+  snapshot. Internal Pages and the currently inspected public Page link only
+  to stable-key preview routes. The existing live application navigation and
+  anonymous public slug resolvers remain unchanged.
+- A reusable preview shell shows proposal kind/status, an abbreviated
+  candidate checksum, a persistent not-live/no-save warning and an Exit link
+  to the existing Business home. No Changes or version-history interface is
+  introduced.
+- The route composes the snapshot `ConfigurationDefinitionSource`,
+  `ExperienceService`, `PageRenderer`, `ViewRenderer`, `FormRenderer` and
+  `PreorderExperience`. There is no candidate-specific renderer tree.
+- Generic preview Forms receive no server action and render disabled controls.
+  Preview Views read current compatible operational Records but suppress
+  mutation and detail navigation. Missing or incompatible data uses existing
+  controlled empty/warning presentation.
+- Candidate preorder uses only the authenticated
+  `resolve_configuration_preview_preorder` resolver. Its schedule and public
+  Fields come from the candidate while Products, prices, Location
+  availability, Locations and counters remain authoritative operational
+  reads. Browser state may explore quantities, Location, date, slot and
+  customer Fields, but preview receives no endpoint or idempotency token and
+  its final submission is disabled.
+- The application proxy rejects POST, PUT, PATCH and DELETE for the exact
+  preview route before route rendering. Anonymous public submission retains
+  only its live Business-slug/Page-slug endpoint and accepts no change-set or
+  preview parameter.
+- Phase 4B.2 adds no Changes dashboard, diff or history screen, lifecycle
+  controls, permanent demonstration proposal, AI integration, automatic
+  rebase/merge or operational Record rollback.
+
+### Consequences
+
+- Owner/Admin can inspect both internal and public candidate Pages inside the
+  authenticated shell without changing the active version or public runtime.
+- Application is not blocked for the entire render or HTTP response. Each
+  assertion serializes with lifecycle changes independently, and the final
+  assertion prevents a candidate closed during assembly from being returned.
+  The small race after that final point-in-time read is ordinary request
+  currentness rather than a transaction lock spanning the response.
+- Interactive preorder exploration is intentionally ephemeral client state.
+  Reloading reconstructs it from authoritative reads and persists nothing.
+- Rendering remains limited to the existing Page grammar and deterministic
+  platform components, preserving the AI/runtime and configuration-mutation
+  boundaries.
+
+## ADR-012 - Read-only Owner/Admin configuration Changes and History
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 5A)
+
+**Date:** 29 July 2026
+
+### Context
+
+The version engine now stores immutable proposals, strict validation results,
+semantic diffs, forward-only versions and rollback provenance. Owner/Admin
+users need an ordinary authenticated interface for understanding those engine
+outputs and entering the Phase 4B verified candidate preview. Phase 5A must not
+turn presentation work into a second lifecycle or configuration mutation
+boundary.
+
+History loading also needs an explicit v0.1 bound. Returning an ever-growing
+tenant history to a server-rendered route would defer a known pagination
+problem and make response size depend on Business age.
+
+### Decision
+
+- `/app/[businessSlug]/changes`,
+  `/app/[businessSlug]/changes/[changeSetId]` and
+  `/app/[businessSlug]/changes/versions/[versionId]` are dynamic, no-store,
+  authenticated server-rendered routes. They resolve the Business and actor
+  through the existing session tenant context and require
+  `manage_configuration`; Staff and cross-Business identifiers receive the
+  same controlled denial/not-found boundary.
+- Changes is platform-shell navigation shown only to Owner/Admin. Generated
+  tenant Page navigation stored in configuration is unchanged.
+- Phase 5A presents the stored semantic diff and strict validation result as
+  immutable authoritative engine outputs. It does not reconstruct validation
+  or invent a second diff algorithm. Non-baseline version detail reuses its
+  source proposal diff.
+- Candidate preview is attempted only for a proposed or validated proposal on
+  its detail route, using `ConfigurationChangeService.loadPreview`. Links use
+  active candidate Page stable keys and remain inside authenticated preview.
+  Stale currentness has an owner-safe state; unexpected replay, database or
+  rendering errors remain observable.
+- The list RPCs return at most the latest 50 proposals and latest 50 versions.
+  Ordering is stable: proposals use `created_at DESC, id DESC`; versions use
+  `version_number DESC, id DESC`. Detail RPCs remain identifier-specific.
+- Actor UUIDs are not primary owner-facing labels. Until a safe profile display
+  source exists, the interface uses neutral Owner/Admin and SMBOS labels.
+- The route and presentation source contains no lifecycle server action,
+  proposal creation, validation, application, abandonment, rollback
+  preparation, direct configuration DML or operational Record write.
+- Phase 5B may add explicit lifecycle controls only through trusted,
+  schema-validated server actions over the existing authenticated service.
+
+### Consequences
+
+- Owners and Admins can understand attention states, completed history,
+  validation outcomes, candidate Pages, immutable versions and forward-only
+  rollback provenance without exposing raw JSON as the primary interface.
+- The latest-50 bound is sufficient for v0.1 and deliberately omits pagination
+  UI. A later cursor uses the already stable proposal ordering; versions use
+  their monotonic number.
+- Route reads and preview loading do not change proposal lifecycle, active
+  projection, head, version history or operational data.
+- Validate, apply, abandon, rollback preparation, proposal creation,
+  natural-language building, automatic rebase and AI integration remain
+  outside Phase 5A.
+
+## ADR-013 - Authenticated explicit configuration lifecycle controls
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 5B)
+
+**Date:** 29 July 2026
+
+### Context
+
+Phase 5A lets Owner/Admin users read authoritative proposals, stored semantic
+diffs, validation results and immutable version history, but it deliberately
+offers no way to advance the already-proven lifecycle. Explicit controls must
+not create a second configuration-write path, trust browser-owned tenant or
+actor context, or mutate merely because a confirmation route was loaded.
+
+Rollback preparation also needs a narrow stale-confirmation check: a user who
+reviewed history under one active head must not silently prepare a proposal
+after another actor materially advances that head.
+
+### Decision
+
+- Lifecycle mutations are exposed only through one authenticated Server Action
+  module. Its narrowly named validate, apply, abandon and rollback-preparation
+  actions call only `ConfigurationChangeService`; they do not use direct table
+  DML, generic RPC invocation, service-role credentials or auth-admin APIs.
+- Every action creates a session client, resolves the immutable Business slug
+  through current membership, requires `manage_configuration`, and derives the
+  Business UUID and actor UUID server-side. Proposal/version identifiers remain
+  untrusted route inputs and are strictly parsed and tenant-scoped again.
+- Forms never supply Business/actor UUIDs, candidate content, operations,
+  checksums, allocations, semantic diffs, validation results, desired status or
+  applied version identity. Rollback preparation accepts only a bounded title
+  and optional description.
+- Proposal detail navigation is status-dependent: proposed offers Preview,
+  Validate and Abandon; validated offers Preview and Apply; applied links to
+  its resulting Version; rejected, conflicted and abandoned offer no mutation.
+  Historical versions offer Prepare rollback; the active Version does not.
+  Every action independently re-reads and enforces current availability.
+- Validate, apply, abandon and rollback confirmation routes are dynamic,
+  no-store authenticated GETs. Rendering them performs only reads. A lifecycle
+  transition requires a genuine POST through its Server Action followed by a
+  redirect.
+- Validation never applies automatically. Apply remains one atomic,
+  idempotent, forward-only version operation. Abandonment is final under the
+  existing database lifecycle. Rollback preparation creates an ordinary
+  proposed rollback; applying it later creates a new future Version rather than
+  rewinding the head.
+- Rollback confirmation binds the rendered active version and revision as
+  untrusted comparison values. Immediately before preparation the action
+  reloads the target and active head; any movement returns a bounded
+  `state_changed` notice and creates no proposal.
+- Notices use a strict enum and are cosmetic. Detail routes always re-read
+  authoritative database state. Known closed/conflicted/rejected/currentness
+  outcomes receive owner-safe notices; unexpected database, replay, projection
+  or trusted-output failures remain observable.
+- A reusable submit button exposes an announced pending state and disables the
+  in-flight browser control. PostgreSQL lifecycle locking and idempotency remain
+  authoritative for duplicate and concurrent submissions.
+- Successful application revalidates Changes, version, authenticated runtime
+  and affected public Page paths. Cache invalidation is an optimisation;
+  database reads remain authoritative.
+- Operational Records, Record Relationships, Record-to-Location links,
+  preorder submissions, capacity counters, email state and Locations remain
+  outside configuration lifecycle mutation.
+- Phase 5B introduces no proposal-creation UI, operation editor,
+  natural-language builder, AI/LLM integration, automatic rebase/merge or
+  permanent demonstration proposal.
+
+### Consequences
+
+- Owner/Admin users can deliberately advance every existing legal lifecycle
+  edge without receiving direct configuration-write capability.
+- Staff, anonymous, malformed and cross-Business submissions fail before a
+  lifecycle service can mutate another tenant; forged form-owned identity or
+  candidate data has no effect.
+- Duplicate validation/application, validate-versus-abandon,
+  competing-application and stale-confirmation races resolve to legal database
+  lifecycle states. UI pending state improves feedback but makes no idempotency
+  claim.
+- Apply and rollback remain immutable forward history, while operational
+  business data stays live and untouched.

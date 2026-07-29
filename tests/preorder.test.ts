@@ -331,6 +331,44 @@ describe("trusted preorder Page block", () => {
       "Preorder checkout is available only on the published customer page.",
     );
   });
+
+  it("renders candidate preorder configuration without an endpoint in preview", () => {
+    const html = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        layout: {
+          blocks: [
+            {
+              type: "preorder" as const,
+              preorder_key: "bakery_preorder",
+            },
+          ],
+        },
+        previewMode: true,
+        publicMode: true,
+        preorders: {
+          bakery_preorder: { catalogue },
+        },
+      }),
+    );
+
+    expect(html).toContain("Explore this preorder — submission is disabled.");
+    expect(html).toContain(
+      "Your choices stay only in this browser view and reset when you leave or reload.",
+    );
+    expect(html).toContain("Disabled in preview");
+    expect(html).toContain("Saturday, Sunday");
+    expect(html).toMatch(
+      /aria-label="Add one Afternoon Tea Box"[^>]*type="button"/,
+    );
+    expect(html).not.toMatch(
+      /aria-label="Add one Afternoon Tea Box"[^>]*disabled/,
+    );
+    expect(html).toContain('Location<select required="">');
+    expect(html).toMatch(
+      /<input autoComplete="name" required="" type="text" name="customer\.name"/,
+    );
+    expect(html).not.toContain("/api/preorder/");
+  });
 });
 
 describe("preorder email adapters", () => {

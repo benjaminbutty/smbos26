@@ -55,6 +55,42 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Run configuration change proposal tests
+        run: npm run test:changes
+
+      - name: Run rollback-only configuration validation tests
+        run: npm run test:validation
+
+      - name: Run atomic configuration application tests
+        run: npm run test:application
+
+      - name: Run mandatory configuration boundary and demo tests
+        run: npm run test:configuration-boundary
+
+      - name: Reset for forward configuration rollback tests
+        run: npm run supabase:reset
+
+      - name: Run forward configuration rollback tests
+        run: npm run test:rollback
+
+      - name: Reset for authenticated preview foundation tests
+        run: npm run supabase:reset
+
+      - name: Run authenticated preview foundation tests
+        run: npm run test:preview-foundation
+
+      - name: Run authenticated rendered preview tests
+        run: npm run test:preview
+
+      - name: Run read-only configuration Changes interface tests
+        run: npm run test:changes-ui-read
+
+      - name: Run configuration lifecycle action interface tests
+        run: npm run test:changes-ui-actions
+
+      - name: Reset for full integration and RLS tests
+        run: npm run supabase:reset
+
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration
 

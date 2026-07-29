@@ -454,6 +454,67 @@ describe("tenant row level security", () => {
     });
   });
 
+  it("uses archival as the only authenticated per-Location removal path", async () => {
+    const permissionSql = postgres(databaseUrl, { max: 1 });
+    let permissions:
+      | {
+          authenticated_can_delete: boolean;
+          authenticated_delete_policies: number;
+        }
+      | undefined;
+    try {
+      [permissions] = await permissionSql<
+        {
+          authenticated_can_delete: boolean;
+          authenticated_delete_policies: number;
+        }[]
+      >`
+        select
+          has_table_privilege(
+            'authenticated',
+            'public.locations',
+            'delete'
+          ) as authenticated_can_delete,
+          (
+            select count(*)::integer
+            from pg_policies
+            where schemaname = 'public'
+              and tablename = 'locations'
+              and cmd = 'DELETE'
+          ) as authenticated_delete_policies
+      `;
+    } finally {
+      await permissionSql.end();
+    }
+    expect(permissions).toEqual({
+      authenticated_can_delete: false,
+      authenticated_delete_policies: 0,
+    });
+
+    for (const identity of [ownerA, administratorA]) {
+      const attempted = await identity.client
+        .from("locations")
+        .delete()
+        .eq("business_id", businessA.id)
+        .eq("id", ownerLocation.id)
+        .select("id");
+      expect(attempted.error?.code).toBe("42501");
+      expect(attempted.data).toBeNull();
+    }
+
+    const retained = await admin
+      .from("locations")
+      .select("id, is_active")
+      .eq("business_id", businessA.id)
+      .eq("id", ownerLocation.id)
+      .single();
+    expect(retained.error).toBeNull();
+    expect(retained.data).toEqual({
+      id: ownerLocation.id,
+      is_active: false,
+    });
+  });
+
   it("prevents Staff from managing Locations or business configuration", async () => {
     const { data: visibleLocations, error: readError } = await staffA.client
       .from("locations")
