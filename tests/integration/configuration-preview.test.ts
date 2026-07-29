@@ -402,6 +402,15 @@ async function capturedState(changeSetId: string): Promise<Json> {
           from public.configuration_versions as version
           where version.business_id = ${configuredBusiness.id}::uuid
         ),
+      'versions',
+        (
+          select coalesce(
+            jsonb_agg(to_jsonb(version) order by version.version_number),
+            '[]'
+          )
+          from public.configuration_versions as version
+          where version.business_id = ${configuredBusiness.id}::uuid
+        ),
       'change_set_lifecycle',
         (
           select to_jsonb(change_set) - array[
