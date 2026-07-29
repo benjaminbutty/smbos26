@@ -73,6 +73,12 @@ jobs:
       - name: Run forward configuration rollback tests
         run: npm run test:rollback
 
+      - name: Reset for authenticated preview foundation tests
+        run: npm run supabase:reset
+
+      - name: Run authenticated preview foundation tests
+        run: npm run test:preview-foundation
+
       - name: Reset for full integration and RLS tests
         run: npm run supabase:reset
 

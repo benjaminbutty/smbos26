@@ -1612,6 +1612,48 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      load_configuration_preview: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_change_set_id: string;
+        };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          display_context_json: Json;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       prepare_configuration_rollback: {
         Args: {
           expected_actor_id: string;
@@ -1713,6 +1755,16 @@ export type Database = {
           target_record_location_link_id: string;
         };
         Returns: boolean;
+      };
+      resolve_configuration_preview_preorder: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_change_set_id: string;
+          requested_page_key: string;
+          requested_preorder_key: string;
+        };
+        Returns: Json;
       };
       resolve_public_page: {
         Args: { requested_business_slug: string; requested_page_slug: string };

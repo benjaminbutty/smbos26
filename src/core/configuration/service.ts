@@ -5,6 +5,11 @@ import { z } from "zod";
 
 import type { Database } from "../../db/supabase/database.types";
 import {
+  configurationSnapshotV1Schema,
+  createSnapshotConfigurationDefinitionSource,
+  type ConfigurationDefinitionSource,
+} from "./definition-source";
+import {
   configurationDisplayContextSchema,
   configurationValidationResultSchema,
   prepareConfigurationRollbackSchema,
@@ -18,6 +23,7 @@ type ConfigurationChangeSet =
   Database["public"]["Tables"]["configuration_change_sets"]["Row"];
 type ConfigurationVersion =
   Database["public"]["Tables"]["configuration_versions"]["Row"];
+type ConfigurationPage = Database["public"]["Tables"]["pages"]["Row"];
 type SessionClient = SupabaseClient<Database>;
 
 const contextSchema = z
@@ -29,6 +35,49 @@ const contextSchema = z
 
 const changeSetIdSchema = z.uuid();
 const versionIdSchema = z.uuid();
+
+const previewChangeSetSchema = z
+  .object({
+    applied_at: z.string().nullable(),
+    applied_by: z.uuid().nullable(),
+    applied_version_id: z.uuid().nullable(),
+    base_head_revision: z.number().int().positive(),
+    base_version_id: z.uuid(),
+    business_id: z.uuid(),
+    candidate_checksum: z.string().regex(/^[a-f0-9]{64}$/),
+    candidate_snapshot_json: configurationSnapshotV1Schema,
+    closed_at: z.string().nullable(),
+    closed_by: z.uuid().nullable(),
+    created_at: z.string(),
+    description: z.string().nullable(),
+    display_context_json: configurationDisplayContextSchema,
+    id: z.uuid(),
+    id_allocations_json: z.record(z.string(), z.uuid()),
+    kind: z.enum(["change", "rollback"]),
+    operations_json: z.unknown(),
+    operations_schema_version: z.literal(1),
+    requested_by: z.uuid(),
+    rollback_target_version_id: z.uuid().nullable(),
+    semantic_diff_json: semanticDiffSchema,
+    status: z.enum(["proposed", "validated"]),
+    title: z.string().min(1).max(120),
+    updated_at: z.string(),
+    validated_at: z.string().nullable(),
+    validated_by: z.uuid().nullable(),
+    validation_result_json: configurationValidationResultSchema.nullable(),
+  })
+  .strict();
+
+export interface ConfigurationPreviewContext {
+  proposalId: string;
+  title: string;
+  kind: "change" | "rollback";
+  status: "proposed" | "validated";
+  candidateChecksum: string;
+  semanticDiff: z.infer<typeof semanticDiffSchema>;
+  definitionSource: ConfigurationDefinitionSource;
+  pages: ConfigurationPage[];
+}
 
 type PostgrestErrorShape = {
   code?: string;
@@ -49,6 +98,12 @@ const engineErrorMessages: Readonly<Record<string, string>> = {
     "The stored configuration proposal could not be reproduced safely.",
   configuration_candidate_replay_mismatch:
     "The stored configuration proposal failed its integrity check.",
+  configuration_preview_unavailable:
+    "This configuration proposal is no longer available to preview.",
+  configuration_preview_not_found:
+    "This configuration proposal could not be found.",
+  configuration_preview_stale:
+    "This preview is out of date because the active configuration changed.",
   configuration_change_set_not_applicable:
     "This configuration proposal is not ready to be applied.",
   configuration_change_set_not_validatable:
@@ -276,6 +331,46 @@ export class ConfigurationChangeService {
       );
     }
     return assertTrustedResponse(data, this.#businessId);
+  }
+
+  async loadPreview(changeSetId: string): Promise<ConfigurationPreviewContext> {
+    const { data, error } = await this.#client.rpc(
+      "load_configuration_preview",
+      {
+        expected_business_id: this.#businessId,
+        expected_actor_id: this.#actorId,
+        requested_change_set_id: changeSetIdSchema.parse(changeSetId),
+      },
+    );
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not load the configuration preview.",
+        error,
+      );
+    }
+
+    const preview = previewChangeSetSchema.parse(data);
+    if (preview.business_id !== this.#businessId) {
+      throw new ConfigurationChangeServiceError(
+        "The configuration preview did not match this Business.",
+        { message: "configuration_response_business_mismatch" },
+      );
+    }
+    const definitionSource = createSnapshotConfigurationDefinitionSource(
+      preview.candidate_snapshot_json,
+      { businessId: this.#businessId },
+    );
+
+    return Object.freeze({
+      proposalId: preview.id,
+      title: preview.title,
+      kind: preview.kind,
+      status: preview.status,
+      candidateChecksum: preview.candidate_checksum,
+      semanticDiff: preview.semantic_diff_json,
+      definitionSource,
+      pages: await definitionSource.listPages(),
+    });
   }
 
   async abandonChangeSet(changeSetId: string): Promise<ConfigurationChangeSet> {

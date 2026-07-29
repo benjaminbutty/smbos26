@@ -3,7 +3,12 @@ import "server-only";
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import type { Database, Tables } from "../../db/supabase/database.types";
+import type { Database, Json, Tables } from "../../db/supabase/database.types";
+import {
+  createActiveConfigurationDefinitionSource,
+  type ConfigurationDefinitionSource,
+  type SourcedViewDefinition,
+} from "../configuration/definition-source";
 import {
   experienceAudienceSchema,
   formConfigSchema,
@@ -37,12 +42,58 @@ function requireResult<T>(
   return data;
 }
 
+function valueMatchesField(
+  value: Json,
+  field: Tables<"field_definitions">,
+): boolean {
+  switch (field.field_type) {
+    case "boolean":
+      return typeof value === "boolean";
+    case "number":
+    case "currency":
+      return typeof value === "number" && Number.isFinite(value);
+    case "multi_select":
+      return (
+        Array.isArray(value) && value.every((item) => typeof item === "string")
+      );
+    case "short_text":
+    case "long_text":
+    case "date":
+    case "datetime":
+    case "email":
+    case "phone":
+    case "url":
+    case "select":
+    case "file":
+    case "status":
+      return typeof value === "string" || field.field_type === "file";
+  }
+}
+
+function recordMatchesDefinitions(
+  record: Tables<"records">,
+  fields: Tables<"field_definitions">[],
+): boolean {
+  const data = record.data_json;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return false;
+  }
+  return fields.every((field) => {
+    const value = data[field.key];
+    if (value === undefined || value === null || value === "") {
+      return !field.required;
+    }
+    return valueMatchesField(value, field);
+  });
+}
+
 export interface ExperienceViewBundle {
   definition: Tables<"views">;
   object: Tables<"object_definitions">;
   fields: Tables<"field_definitions">[];
   records: Tables<"records">[];
   config: ViewConfig;
+  warnings?: string[];
 }
 
 export interface ExperienceFormBundle {
@@ -84,34 +135,38 @@ export interface ExperienceService {
     pageSlug: string,
     audience?: ExperienceAudience,
   ): Promise<ExperiencePageBundle>;
+  loadPageByKey(
+    pageKey: string,
+    audience?: ExperienceAudience,
+  ): Promise<ExperiencePageBundle>;
   listNavigation(): Promise<ExperienceNavigation>;
 }
 
 export function createExperienceService(
   client: SupabaseClient<Database>,
   tenant: { businessId: string },
+  definitionSource?: ConfigurationDefinitionSource,
 ): ExperienceService {
   const businessId = z.uuid().parse(tenant.businessId);
+  const source =
+    definitionSource ??
+    createActiveConfigurationDefinitionSource(client, { businessId });
 
   async function getActiveView(
     viewKey: string,
     audience: ExperienceAudience,
-  ): Promise<Tables<"views">> {
-    const { data, error } = await client
-      .from("views")
-      .select("*")
-      .eq("business_id", businessId)
-      .eq("key", viewKey)
-      .eq("audience", audience)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    return requireResult(data, error, "That screen is not available.");
+  ): Promise<SourcedViewDefinition> {
+    const definition = await source.getViewByKey(viewKey);
+    if (!definition || definition.audience !== audience) {
+      throw new ExperienceServiceError("That screen is not available.");
+    }
+    return definition;
   }
 
   async function buildViewBundle(
-    definition: Tables<"views">,
+    sourcedDefinition: SourcedViewDefinition,
   ): Promise<ExperienceViewBundle> {
+    const { object_key: objectKey, ...definition } = sourcedDefinition;
     const config = parseViewConfig(
       definition.view_type,
       definition.config_json,
@@ -128,53 +183,41 @@ export function createExperienceService(
       recordsQuery = recordsQuery.eq("record_status", "active");
     }
 
-    const [objectResult, fieldsResult, recordsResult] = await Promise.all([
-      client
-        .from("object_definitions")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("id", definition.object_definition_id)
-        .eq("is_active", true)
-        .maybeSingle(),
-      client
-        .from("field_definitions")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("object_definition_id", definition.object_definition_id)
-        .eq("is_active", true)
-        .order("position"),
+    const [object, fields, recordsResult] = await Promise.all([
+      source.getObjectByKey(objectKey),
+      source.listFieldsForObject(objectKey),
       recordsQuery,
     ]);
-
-    const object = requireResult(
-      objectResult.data,
-      objectResult.error,
-      "This screen is not available.",
-    );
-    const fields = requireResult(
-      fieldsResult.data,
-      fieldsResult.error,
-      "Could not load screen fields.",
-    );
+    if (!object) {
+      throw new ExperienceServiceError("This screen is not available.");
+    }
     const records = requireResult(
       recordsResult.data,
       recordsResult.error,
       "Could not load business information.",
     );
+    const warnings =
+      source.kind === "snapshot" &&
+      records.some((record) => !recordMatchesDefinitions(record, fields))
+        ? [
+            "Some existing information does not match this proposed configuration and is shown without changing it.",
+          ]
+        : [];
 
-    return { definition, object, fields, records, config };
+    return { definition, object, fields, records, config, warnings };
   }
 
   return {
     async getViewById(viewDefinitionId) {
-      const { data, error } = await client
-        .from("views")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("id", z.uuid().parse(viewDefinitionId))
-        .maybeSingle();
-
-      return requireResult(data, error, "That screen was not found.");
+      const sourcedDefinition = await source.getViewById(
+        z.uuid().parse(viewDefinitionId),
+      );
+      if (!sourcedDefinition) {
+        throw new ExperienceServiceError("That screen was not found.");
+      }
+      const { object_key: objectKey, ...definition } = sourcedDefinition;
+      void objectKey;
+      return definition;
     },
 
     async loadView(viewKey, audience = "internal") {
@@ -186,90 +229,43 @@ export function createExperienceService(
     },
 
     async loadDetailViewForObject(objectDefinitionId) {
-      const { data, error } = await client
-        .from("views")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("object_definition_id", z.uuid().parse(objectDefinitionId))
-        .eq("view_type", "detail")
-        .eq("audience", "internal")
-        .eq("is_active", true)
-        .order("created_at")
-        .limit(1)
-        .maybeSingle();
-
-      if (error) {
-        throw new ExperienceServiceError(
-          "Could not load the detail screen.",
-          error,
-        );
-      }
-
-      return data ? buildViewBundle(data) : null;
+      const definition = await source.getDetailViewForObjectId(
+        z.uuid().parse(objectDefinitionId),
+      );
+      return definition ? buildViewBundle(definition) : null;
     },
 
     async loadForm(formKey, audience = "internal") {
-      const { data: definition, error: definitionError } = await client
-        .from("forms")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("key", formKey)
-        .eq("audience", experienceAudienceSchema.parse(audience))
-        .eq("is_active", true)
-        .maybeSingle();
-      const form = requireResult(
-        definition,
-        definitionError,
-        "That form is not available.",
-      );
-
-      const [objectResult, fieldsResult] = await Promise.all([
-        client
-          .from("object_definitions")
-          .select("*")
-          .eq("business_id", businessId)
-          .eq("id", form.object_definition_id)
-          .eq("is_active", true)
-          .maybeSingle(),
-        client
-          .from("field_definitions")
-          .select("*")
-          .eq("business_id", businessId)
-          .eq("object_definition_id", form.object_definition_id)
-          .eq("is_active", true)
-          .order("position"),
+      const parsedAudience = experienceAudienceSchema.parse(audience);
+      const sourcedForm = await source.getFormByKey(formKey);
+      if (!sourcedForm || sourcedForm.audience !== parsedAudience) {
+        throw new ExperienceServiceError("That form is not available.");
+      }
+      const { object_key: objectKey, ...form } = sourcedForm;
+      const [object, fields] = await Promise.all([
+        source.getObjectByKey(objectKey),
+        source.listFieldsForObject(objectKey),
       ]);
+      if (!object) {
+        throw new ExperienceServiceError("That form is not available.");
+      }
 
       return {
         definition: form,
-        object: requireResult(
-          objectResult.data,
-          objectResult.error,
-          "That form is not available.",
-        ),
-        fields: requireResult(
-          fieldsResult.data,
-          fieldsResult.error,
-          "Could not load form fields.",
-        ),
+        object,
+        fields,
         config: formConfigSchema.parse(form.config_json),
       };
     },
 
     async loadPage(pageSlug, audience = "internal") {
-      const { data, error } = await client
-        .from("pages")
-        .select("*")
-        .eq("business_id", businessId)
-        .eq("slug", pageSlug)
-        .eq("audience", experienceAudienceSchema.parse(audience))
-        .eq("is_active", true)
-        .maybeSingle();
-      const definition = requireResult(
-        data,
-        error,
-        "That page is not available.",
-      );
+      const definition = await source.getPageBySlug(pageSlug);
+      if (
+        !definition ||
+        definition.audience !== experienceAudienceSchema.parse(audience)
+      ) {
+        throw new ExperienceServiceError("That page is not available.");
+      }
 
       return {
         definition,
@@ -277,36 +273,37 @@ export function createExperienceService(
       };
     },
 
+    async loadPageByKey(pageKey, audience = "internal") {
+      const definition = await source.getPageByKey(pageKey);
+      if (
+        !definition ||
+        definition.audience !== experienceAudienceSchema.parse(audience)
+      ) {
+        throw new ExperienceServiceError("That page is not available.");
+      }
+      return {
+        definition,
+        layout: pageLayoutSchema.parse(definition.layout_json),
+      };
+    },
+
     async listNavigation() {
-      const [viewsResult, pagesResult] = await Promise.all([
-        client
-          .from("views")
-          .select("*")
-          .eq("business_id", businessId)
-          .eq("audience", "internal")
-          .eq("is_active", true)
-          .neq("view_type", "detail")
-          .order("created_at"),
-        client
-          .from("pages")
-          .select("*")
-          .eq("business_id", businessId)
-          .eq("audience", "internal")
-          .eq("is_active", true)
-          .order("created_at"),
+      const [sourcedViews, pages] = await Promise.all([
+        source.listViews(),
+        source.listPages(),
       ]);
 
       return {
-        views: requireResult(
-          viewsResult.data,
-          viewsResult.error,
-          "Could not load workspace navigation.",
-        ),
-        pages: requireResult(
-          pagesResult.data,
-          pagesResult.error,
-          "Could not load workspace navigation.",
-        ),
+        views: sourcedViews
+          .filter(
+            (view) =>
+              view.audience === "internal" && view.view_type !== "detail",
+          )
+          .map(({ object_key: objectKey, ...view }) => {
+            void objectKey;
+            return view;
+          }),
+        pages: pages.filter((page) => page.audience === "internal"),
       };
     },
   };

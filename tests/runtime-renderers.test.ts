@@ -329,4 +329,37 @@ describe("generic experience renderers", () => {
     expect(html).toContain("Acme Ltd");
     expect(html).toContain("Add enquiry");
   });
+
+  it("reuses Page, View and Form renderers without links or actions in preview", () => {
+    const html = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        businessSlug: "bedford-bakery",
+        previewMode: true,
+        layout: {
+          blocks: [
+            {
+              type: "button",
+              label: "Leave preview",
+              href: "https://example.test/live",
+              style: "primary",
+            },
+            { type: "view", view_key: "catering_table" },
+            { type: "form", form_key: "catering_create" },
+          ],
+        },
+        views: { catering_table: tableBundle },
+        forms: {
+          catering_create: { bundle: formBundle },
+        },
+      }),
+    );
+
+    expect(html).toContain("Disabled in preview");
+    expect(html).toContain("<fieldset");
+    expect(html).toContain("disabled");
+    expect(html).not.toContain("<form action=");
+    expect(html).not.toContain('href="https://example.test/live"');
+    expect(html).not.toContain("/workspace/catering-table");
+    expect(html).not.toContain("+ New catering enquiry");
+  });
 });

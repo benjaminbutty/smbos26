@@ -44,6 +44,8 @@ const privateEngineFunctions = [
   "configuration_semantic_diff_v1",
   "build_configuration_rollback_display_context_v1",
   "replay_configuration_change_set_v1",
+  "assert_configuration_preview_v1",
+  "assemble_preorder_catalogue_v1",
   "project_configuration_candidate_v1",
   "validate_configuration_candidate_in_sandbox_v1",
   "assert_configuration_projection_matches_v1",
@@ -58,8 +60,10 @@ const lifecycleFunctions = [
   "get_configuration_version",
   "list_configuration_change_sets",
   "list_configuration_versions",
+  "load_configuration_preview",
   "prepare_configuration_rollback",
   "propose_configuration_change",
+  "resolve_configuration_preview_preorder",
   "validate_configuration_change",
 ] as const;
 

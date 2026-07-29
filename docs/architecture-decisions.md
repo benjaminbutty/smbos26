@@ -672,3 +672,66 @@ be restored or removed by configuration rollback.
 - Rollback compatibility inherits the existing projector's locking, integrity
   and WAL trade-offs. Phase 4A adds no second projection implementation or
   infrastructure.
+
+## ADR-010 - Authenticated read-only candidate preview foundation
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 4B.1)
+
+**Date:** 29 July 2026
+
+### Context
+
+Owner/Admin users need to inspect an ordinary or rollback proposal before any
+later Changes UI offers lifecycle controls. A candidate is not trustworthy
+merely because JSON is supplied by a browser or stored on a change-set row:
+preview must prove that the proposal still belongs to the active head and that
+the Phase 4A replay engine reproduces its snapshot, checksum, allocations and
+semantic diff. The preview runtime must also remain the existing Page, View,
+Form and preorder runtime rather than becoming a second implementation.
+
+### Decision
+
+- `load_configuration_preview` accepts only a change-set identifier and derives
+  Business and actor identity from the authenticated session. It permits current
+  Owner/Admin members, proposed or validated status, and a base version equal
+  to the current active head.
+- A private assertion function loads the immutable base, invokes the shared
+  Phase 4A replay dispatcher for both ordinary and rollback proposals, and
+  rejects any mismatch in candidate snapshot, checksum, allocations or
+  semantic diff. Neither function performs projection, head, version,
+  lifecycle, Record or operational writes.
+- A configuration-definition source exposes one typed read-only contract for
+  active normalized tables and verified candidate snapshots. The experience
+  service and existing Page, View and Form renderers consume that contract.
+  Snapshot warnings are limited to operational Records that are incompatible
+  with candidate definitions; new candidate Objects naturally have no current
+  Records.
+- Live list/navigation reads batch Object-definition resolution and cache
+  request-scoped lookups. Candidate lookups remain in-memory.
+- Form and preorder renderer props are discriminated unions. Live mode requires
+  an action or endpoint; preview mode cannot receive one, suppresses navigation
+  and mutation links, disables controls and renders a persistent Preview
+  warning.
+- One private preorder catalogue assembler joins either live or candidate
+  configuration to current operational Products, prices, Product-to-Location
+  links, Locations and counters. The existing public resolver and the
+  authenticated preview resolver both delegate to it, avoiding a second
+  preorder algorithm.
+- Public preview functions grant execution only to `authenticated`; `anon` and
+  `service_role` are explicitly revoked. Every private helper remains
+  inaccessible to application roles.
+- Phase 4B.1 deliberately adds no preview route, Changes dashboard,
+  version-history presentation, lifecycle controls, permanent demonstration
+  proposals, AI integration or automatic merge/rebase.
+
+### Consequences
+
+- Preview always represents an authoritative, current, reproducible candidate;
+  stale and closed proposals fail with stable owner-safe errors.
+- Operational data makes preview realistic but is never copied into the
+  immutable configuration snapshot and is never mutated by preview.
+- The Phase 3B mandatory mutation boundary remains unchanged: all configuration
+  writes still flow through the versioned proposal lifecycle.
+- Phase 4B.2 can add an authenticated stable-Page-key route and owner-facing
+  presentation by composing this foundation, without changing its trust or
+  rendering boundaries.

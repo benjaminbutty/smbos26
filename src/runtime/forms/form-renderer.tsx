@@ -4,12 +4,26 @@ import type { ExperienceFormBundle } from "../../core/experience/service";
 import type { Json, Tables } from "../../db/supabase/database.types";
 import { FieldInputControl } from "../fields/field-renderer";
 
-interface FormRendererProps {
+export type FormAction =
+  string | ((formData: FormData) => void | Promise<void>);
+
+interface FormRendererCommonProps {
   bundle: ExperienceFormBundle;
-  action: string | ((formData: FormData) => void | Promise<void>);
   record?: Tables<"records">;
   showHeading?: boolean;
 }
+
+export type FormRendererProps = FormRendererCommonProps &
+  (
+    | {
+        action: FormAction;
+        mode?: "live";
+      }
+    | {
+        action?: never;
+        mode: "preview";
+      }
+  );
 
 function recordData(
   record?: Tables<"records">,
@@ -20,12 +34,9 @@ function recordData(
     : {};
 }
 
-export function FormRenderer({
-  bundle,
-  action,
-  record,
-  showHeading = true,
-}: Readonly<FormRendererProps>): ReactNode {
+export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
+  const { bundle, record, showHeading = true } = props;
+  const preview = props.mode === "preview";
   const fieldsByKey = new Map(bundle.fields.map((field) => [field.key, field]));
   const values = recordData(record);
 
@@ -41,52 +52,59 @@ export function FormRenderer({
         </div>
       ) : null}
 
-      <form action={action} className="runtime-form">
-        {bundle.config.fields.map((configuredField) => {
-          const field = fieldsByKey.get(configuredField.field);
-          if (!field || configuredField.hidden) {
-            return null;
-          }
+      <form
+        className="runtime-form"
+        {...(preview ? {} : { action: props.action })}
+      >
+        <fieldset className="runtime-form-fields" disabled={preview}>
+          {bundle.config.fields.map((configuredField) => {
+            const field = fieldsByKey.get(configuredField.field);
+            if (!field || configuredField.hidden) {
+              return null;
+            }
 
-          const value =
-            values[field.key] ??
-            configuredField.default_value ??
-            field.default_value ??
-            undefined;
-          const label = configuredField.label ?? field.label;
+            const value =
+              values[field.key] ??
+              configuredField.default_value ??
+              field.default_value ??
+              undefined;
+            const label = configuredField.label ?? field.label;
 
-          return (
-            <div className="form-field" key={field.key}>
-              <label htmlFor={`field-${field.key}`}>
-                <span>
-                  {label}
-                  {field.required ? (
-                    <span aria-label="required" className="required-mark">
-                      *
-                    </span>
-                  ) : null}
-                </span>
-                <FieldInputControl
-                  field={field}
-                  isEdit={bundle.definition.mode === "edit"}
-                  value={value}
-                />
-              </label>
-              {configuredField.help_text ? (
-                <p className="field-help">{configuredField.help_text}</p>
-              ) : null}
-            </div>
-          );
-        })}
+            return (
+              <div className="form-field" key={field.key}>
+                <label htmlFor={`field-${field.key}`}>
+                  <span>
+                    {label}
+                    {field.required ? (
+                      <span aria-label="required" className="required-mark">
+                        *
+                      </span>
+                    ) : null}
+                  </span>
+                  <FieldInputControl
+                    field={field}
+                    isEdit={bundle.definition.mode === "edit"}
+                    value={value}
+                  />
+                </label>
+                {configuredField.help_text ? (
+                  <p className="field-help">{configuredField.help_text}</p>
+                ) : null}
+              </div>
+            );
+          })}
 
-        <div className="form-actions">
-          <button type="submit">
-            {bundle.config.submit_label ??
-              (bundle.definition.mode === "create"
-                ? `Create ${bundle.object.singular_label.toLowerCase()}`
-                : "Save changes")}
-          </button>
-        </div>
+          <div className="form-actions">
+            <button type="submit">
+              {preview
+                ? "Disabled in preview"
+                : (bundle.config.submit_label ??
+                  (bundle.definition.mode === "create"
+                    ? `Create ${bundle.object.singular_label.toLowerCase()}`
+                    : "Save changes"))}
+            </button>
+          </div>
+        </fieldset>
       </form>
     </section>
   );

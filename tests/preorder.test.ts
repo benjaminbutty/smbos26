@@ -331,6 +331,31 @@ describe("trusted preorder Page block", () => {
       "Preorder checkout is available only on the published customer page.",
     );
   });
+
+  it("renders candidate preorder configuration without an endpoint in preview", () => {
+    const html = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        layout: {
+          blocks: [
+            {
+              type: "preorder" as const,
+              preorder_key: "bakery_preorder",
+            },
+          ],
+        },
+        previewMode: true,
+        publicMode: true,
+        preorders: {
+          bakery_preorder: { catalogue },
+        },
+      }),
+    );
+
+    expect(html).toContain("Preorder controls are disabled in preview.");
+    expect(html).toContain("Disabled in preview");
+    expect(html).toContain("Saturday, Sunday");
+    expect(html).not.toContain("/api/preorder/");
+  });
 });
 
 describe("preorder email adapters", () => {

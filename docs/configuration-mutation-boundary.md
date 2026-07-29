@@ -33,8 +33,10 @@ Classification: **close direct mutation; runtime read only**.
 | --- | --- |
 | `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle |
 | `list_configuration_change_sets`, `get_configuration_change_set`, `list_configuration_versions`, `get_configuration_version` | Owner/Admin history reads |
+| `load_configuration_preview` | Authenticated Owner/Admin identifier-only read; replays and verifies an open candidate against the current head without lifecycle or projection writes |
+| `resolve_configuration_preview_preorder` | Authenticated Owner/Admin read of candidate configuration joined to current operational Product, price, Location-link and counter state |
 | `create_preorder_experience`, `set_preorder_experience_locations` | Retained only for historical migration compatibility; execution revoked from `public`, `anon`, `authenticated`, and `service_role` |
-| Candidate materialiser, rollback candidate derivation, replay dispatcher, semantic diff, projector, validation sandbox, projection/head assertions, and change/version/head protection helpers in `private` | Engine internals; application-role execution revoked |
+| Candidate materialiser, rollback candidate derivation, replay dispatcher, semantic diff, projector, validation sandbox, preview assertion, preorder catalogue assembler, projection/head assertions, and change/version/head protection helpers in `private` | Engine internals; application-role execution revoked |
 | `resolve_public_page`, `resolve_public_preorder` | Narrow anonymous runtime reads; no table access |
 | Graph Record and Record Relationship RPCs | Operational and outside configuration versioning |
 | Record-to-Location link RPCs | Operational and outside configuration versioning |
@@ -49,7 +51,8 @@ in the `private` schema.
 
 | Path | Final classification |
 | --- | --- |
-| `src/core/configuration/service.ts` | Structured M5 lifecycle and history only |
+| `src/core/configuration/service.ts` | Structured M5 lifecycle, history and authenticated verified-candidate preview loading only |
+| `src/core/configuration/definition-source.ts` | Read-only live/snapshot configuration lookup abstraction; no mutation methods |
 | `src/core/graph/service.ts` | Configuration reads plus operational Record/edge writes |
 | `src/core/experience/service.ts` | Configuration reads only |
 | `src/core/preorder/service.ts` | Runtime resolution, submission, and email state only |

@@ -8,10 +8,21 @@ import type {
   PublicPreorderResult,
 } from "../../core/preorder/schemas";
 
-interface PreorderExperienceProps {
+interface PreorderExperienceCommonProps {
   catalogue: PublicPreorderCatalogue;
-  endpoint: string;
 }
+
+export type PreorderExperienceProps = PreorderExperienceCommonProps &
+  (
+    | {
+        endpoint: string;
+        mode?: "live";
+      }
+    | {
+        endpoint?: never;
+        mode: "preview";
+      }
+  );
 
 function formatMoney(value: number, currency: string): string {
   return new Intl.NumberFormat("en-GB", {
@@ -53,10 +64,11 @@ function resultMessage(code: string): string {
   }
 }
 
-export function PreorderExperience({
-  catalogue: initialCatalogue,
-  endpoint,
-}: Readonly<PreorderExperienceProps>): ReactNode {
+export function PreorderExperience(
+  props: Readonly<PreorderExperienceProps>,
+): ReactNode {
+  const { catalogue: initialCatalogue } = props;
+  const preview = props.mode === "preview";
   const [catalogue, setCatalogue] = useState(initialCatalogue);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [locationId, setLocationId] = useState("");
@@ -118,8 +130,11 @@ export function PreorderExperience({
   }
 
   async function refreshCatalogue() {
+    if (preview) {
+      return;
+    }
     try {
-      const response = await fetch(endpoint, { cache: "no-store" });
+      const response = await fetch(props.endpoint, { cache: "no-store" });
       if (response.ok) {
         setCatalogue((await response.json()) as PublicPreorderCatalogue);
       }
@@ -130,6 +145,9 @@ export function PreorderExperience({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (preview) {
+      return;
+    }
     setError("");
     if (basket.length === 0) {
       setError("Choose at least one product.");
@@ -171,7 +189,7 @@ export function PreorderExperience({
 
     setSubmitting(true);
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(props.endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -273,6 +291,41 @@ export function PreorderExperience({
 
   return (
     <form className="preorder-flow" onSubmit={submit}>
+      {preview ? (
+        <section className="preorder-preview-summary" role="status">
+          <strong>Preorder controls are disabled in preview.</strong>
+          <p>
+            Collection days:{" "}
+            {catalogue.preorder.schedule.days_of_week
+              .map(
+                (day) =>
+                  [
+                    "",
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                  ][day],
+              )
+              .join(", ")}
+            . {catalogue.preorder.schedule.start_time}–
+            {catalogue.preorder.schedule.end_time};{" "}
+            {catalogue.preorder.schedule.slot_interval_minutes}-minute slots;
+            capacity {catalogue.preorder.schedule.slot_capacity} per slot;
+            cutoff {catalogue.preorder.schedule.cutoff_hours} hours.
+          </p>
+          <p>
+            Locations:{" "}
+            {catalogue.preorder.locations
+              .map((location) => location.name)
+              .join(", ")}
+            .
+          </p>
+        </section>
+      ) : null}
       <section className="preorder-section" aria-labelledby="products-heading">
         <div className="preorder-section-heading">
           <span>1</span>
@@ -307,7 +360,7 @@ export function PreorderExperience({
                 >
                   <button
                     aria-label={`Remove one ${product.name}`}
-                    disabled={quantity === 0}
+                    disabled={preview || quantity === 0}
                     onClick={() => updateQuantity(product.id, quantity - 1)}
                     type="button"
                   >
@@ -316,7 +369,7 @@ export function PreorderExperience({
                   <output aria-live="polite">{quantity}</output>
                   <button
                     aria-label={`Add one ${product.name}`}
-                    disabled={quantity === 20}
+                    disabled={preview || quantity === 20}
                     onClick={() => updateQuantity(product.id, quantity + 1)}
                     type="button"
                   >
@@ -344,6 +397,7 @@ export function PreorderExperience({
           <label>
             Location
             <select
+              disabled={preview}
               onChange={(event) => changeLocation(event.target.value)}
               required
               value={locationId}
@@ -359,7 +413,7 @@ export function PreorderExperience({
           <label>
             Date
             <select
-              disabled={!location}
+              disabled={preview || !location}
               onChange={(event) => {
                 setCollectionDate(event.target.value);
                 setCollectionAt("");
@@ -389,7 +443,7 @@ export function PreorderExperience({
                   key={slot.collection_at}
                 >
                   <input
-                    disabled={!slot.available}
+                    disabled={preview || !slot.available}
                     name="collection-slot"
                     onChange={() => setCollectionAt(slot.collection_at)}
                     required
@@ -423,9 +477,18 @@ export function PreorderExperience({
                   {field.required ? " *" : ""}
                 </span>
                 {field.field_type === "long_text" ? (
-                  <textarea name={name} required={field.required} rows={4} />
+                  <textarea
+                    disabled={preview}
+                    name={name}
+                    required={field.required}
+                    rows={4}
+                  />
                 ) : field.field_type === "select" ? (
-                  <select name={name} required={field.required}>
+                  <select
+                    disabled={preview}
+                    name={name}
+                    required={field.required}
+                  >
                     <option value="">Choose…</option>
                     {field.options?.map((option) => (
                       <option key={option}>{option}</option>
@@ -433,6 +496,7 @@ export function PreorderExperience({
                   </select>
                 ) : field.field_type === "multi_select" ? (
                   <select
+                    disabled={preview}
                     multiple
                     name={name}
                     required={field.required}
@@ -443,10 +507,11 @@ export function PreorderExperience({
                     ))}
                   </select>
                 ) : field.field_type === "boolean" ? (
-                  <input name={name} type="checkbox" />
+                  <input disabled={preview} name={name} type="checkbox" />
                 ) : (
                   <input
                     autoComplete={field.autocomplete}
+                    disabled={preview}
                     name={name}
                     required={field.required}
                     type={
@@ -469,7 +534,13 @@ export function PreorderExperience({
         </div>
         <label className="preorder-honeypot" aria-hidden="true">
           Website
-          <input autoComplete="off" name="website" tabIndex={-1} type="text" />
+          <input
+            autoComplete="off"
+            disabled={preview}
+            name="website"
+            tabIndex={-1}
+            type="text"
+          />
         </label>
       </section>
 
@@ -505,8 +576,12 @@ export function PreorderExperience({
             {error}
           </p>
         ) : null}
-        <button disabled={submitting} type="submit">
-          {submitting ? "Placing preorder…" : "Place preorder"}
+        <button disabled={preview || submitting} type="submit">
+          {preview
+            ? "Disabled in preview"
+            : submitting
+              ? "Placing preorder…"
+              : "Place preorder"}
         </button>
       </aside>
     </form>
