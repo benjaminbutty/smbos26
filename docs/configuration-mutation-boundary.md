@@ -57,7 +57,9 @@ in the `private` schema.
 | `src/core/experience/service.ts` | Configuration reads only |
 | `src/core/preorder/service.ts` | Live runtime resolution/submission/email state plus authenticated identifier-only preview resolution; no configuration mutation |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
-| Server routes/actions under `src/app` | Operational preorder endpoint, live runtime reads, or authenticated read-only candidate preview; no configuration DML |
+| `src/components/configuration-history-ui.tsx` | Owner-readable proposal, stored diff/validation, preview-link and immutable version presentation; navigation only |
+| Phase 5A routes under `src/app/app/[businessSlug]/changes` | Dynamic no-store Owner/Admin reads using the session client; proposal detail alone may call verified candidate preview; no lifecycle action or configuration DML |
+| Other server routes/actions under `src/app` | Operational preorder endpoint, live runtime reads, or authenticated read-only candidate preview; no configuration DML |
 | `scripts/demo-seed.mjs` | Local-only; installs Bedford through propose → validate → apply, then seeds operational data |
 | `tests/integration/support/configuration-fixtures.ts` | Local/test-only database-owner fixture for M1–M4 integrity setup |
 | Explicit tamper/failure-injection tests | Test-only privileged diagnostics; never production setup |
@@ -67,3 +69,24 @@ table and calls to the two revoked legacy RPCs. Database tests separately
 verify catalogue privileges, RLS policy removal, actual PostgREST denial for
 all application roles, private/legacy function denial, and the exact public
 configuration-function allow-list.
+
+The Phase 5A source regression separately scans its route and presentation
+files for lifecycle service calls, direct DML, server actions, admin clients and
+service-role references. Its integration test captures every public
+tenant-owned row before and after overview, detail, version and verified
+preview reads and requires exact equality.
+
+## Phase 5A read authorization
+
+The Changes and Version history routes resolve the immutable Business slug
+through the authenticated session, verify current membership, then require the
+fixed `manage_configuration` capability. Owner and Admin have that capability;
+Staff do not see the navigation entry and receive controlled not-found if they
+address a route directly. Identifier RPCs always combine the route-derived
+Business UUID with the requested proposal/version UUID, so another Business's
+identifier cannot reveal whether a row exists.
+
+Overview RPCs are bounded to the latest 50 rows. Proposals use stable
+`created_at DESC, id DESC` ordering and versions use
+`version_number DESC, id DESC`. Candidate/snapshot data is never accepted from
+query parameters, request bodies or browser state.

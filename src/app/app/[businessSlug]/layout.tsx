@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { signOut } from "../../../auth/actions";
-import { resolveTenant } from "../../../auth/authorization";
+import { hasCapability, resolveTenant } from "../../../auth/authorization";
 import { createExperienceService } from "../../../core/experience/service";
 import { createServerClient } from "../../../db/supabase/server";
 import { experienceKeyToPath } from "../../../runtime/routing";
@@ -39,6 +39,9 @@ export default async function TenantLayout({
 
         <nav className="workspace-navigation" aria-label="Business workspace">
           <Link href={`/app/${businessSlug}`}>Home</Link>
+          {hasCapability(tenant.membership.role, "manage_configuration") ? (
+            <Link href={`/app/${businessSlug}/changes`}>Changes</Link>
+          ) : null}
           {navigation.pages.map((page) => (
             <Link
               href={`/app/${businessSlug}/pages/${page.slug}`}

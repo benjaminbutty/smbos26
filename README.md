@@ -2,9 +2,10 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice plus the
-Milestone 5 Phase 3B versioned configuration boundary: a multi-location bakery
-preorder capability over the tenant-safe graph and experience runtime whose
-configuration is installed through immutable change sets.
+Milestone 5 Phase 5A read-only Changes and Configuration History interface: a
+multi-location bakery preorder capability over the tenant-safe graph and
+experience runtime whose configuration is installed, previewed and explained
+through immutable change sets and forward-only versions.
 
 The product and architecture sources of truth are:
 
@@ -38,6 +39,11 @@ Included:
 - structured Owner/Admin configuration proposals with deterministic semantic
   diffs, rollback-only compatibility validation, and atomic application
 - mandatory propose → validate → apply configuration mutation boundary
+- forward-only rollback proposals and rollback version provenance
+- authenticated verified candidate preview for internal and public Pages
+- read-only Owner/Admin Changes, proposal detail, and Version history routes
+- owner-safe stored semantic-diff and strict validation-result presentation
+- bounded latest-50 proposal and version history loading
 - direct projection-table mutation closed to anonymous, authenticated, and
   service-role clients
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
@@ -50,8 +56,8 @@ Not included:
 - AI provider calls or builder behavior
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
-- rollback proposals or rollback application
-- configuration preview, Changes UI, or version-history UI
+- owner-facing proposal creation or lifecycle controls
+- validate, apply, abandon, or rollback-preparation buttons
 - automatic rebase/merge or AI/LLM integration
 - Location or operational Record versioning
 - workflow/rule execution
@@ -124,6 +130,7 @@ Version 3 or duplicates.
 
 Sign in at [http://localhost:3000/sign-in](http://localhost:3000/sign-in):
 
+- Owner email: `demo@smbos.local`
 - Staff email: `staff@smbos.local`
 - Password: `Local-demo-2026!`
 
@@ -140,6 +147,12 @@ Then sign in as Staff and open the generic
 Open the Order detail and use the generated edit Form to change its status.
 Products, Customers, Orders and Order Items are generic graph Records; the
 internal screens are generic Views and Forms.
+
+Sign in as the Owner to open the read-only
+[Changes and Version history](http://localhost:3000/app/bedford-bakery-demo/changes).
+The configured Version 2 appears as the active head. The local demo does not
+seed permanent proposals; Phase 5A deliberately avoids demonstration-only
+history.
 
 ## Local Supabase
 
@@ -187,6 +200,10 @@ validating from a clean state.
 | `npm run test:validation`             | Run rollback-only compatibility validation tests |
 | `npm run test:application`            | Run atomic configuration application tests       |
 | `npm run test:configuration-boundary` | Run Phase 3B closure/demo tests                  |
+| `npm run test:rollback`               | Run forward-only rollback tests                  |
+| `npm run test:preview-foundation`     | Run authenticated candidate foundation tests     |
+| `npm run test:preview`                | Run authenticated rendered preview tests         |
+| `npm run test:changes-ui-read`        | Run read-only Changes/History and no-write tests |
 | `npm run test:watch`                  | Run unit tests in watch mode                     |
 | `npm run typecheck`                   | Generate route types and run TypeScript          |
 | `npm run lint`                        | Run ESLint                                       |

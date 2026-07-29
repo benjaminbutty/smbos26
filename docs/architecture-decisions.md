@@ -814,3 +814,67 @@ formerly current candidate after application wins a race.
 - Rendering remains limited to the existing Page grammar and deterministic
   platform components, preserving the AI/runtime and configuration-mutation
   boundaries.
+
+## ADR-012 - Read-only Owner/Admin configuration Changes and History
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 5A)
+
+**Date:** 29 July 2026
+
+### Context
+
+The version engine now stores immutable proposals, strict validation results,
+semantic diffs, forward-only versions and rollback provenance. Owner/Admin
+users need an ordinary authenticated interface for understanding those engine
+outputs and entering the Phase 4B verified candidate preview. Phase 5A must not
+turn presentation work into a second lifecycle or configuration mutation
+boundary.
+
+History loading also needs an explicit v0.1 bound. Returning an ever-growing
+tenant history to a server-rendered route would defer a known pagination
+problem and make response size depend on Business age.
+
+### Decision
+
+- `/app/[businessSlug]/changes`,
+  `/app/[businessSlug]/changes/[changeSetId]` and
+  `/app/[businessSlug]/changes/versions/[versionId]` are dynamic, no-store,
+  authenticated server-rendered routes. They resolve the Business and actor
+  through the existing session tenant context and require
+  `manage_configuration`; Staff and cross-Business identifiers receive the
+  same controlled denial/not-found boundary.
+- Changes is platform-shell navigation shown only to Owner/Admin. Generated
+  tenant Page navigation stored in configuration is unchanged.
+- Phase 5A presents the stored semantic diff and strict validation result as
+  immutable authoritative engine outputs. It does not reconstruct validation
+  or invent a second diff algorithm. Non-baseline version detail reuses its
+  source proposal diff.
+- Candidate preview is attempted only for a proposed or validated proposal on
+  its detail route, using `ConfigurationChangeService.loadPreview`. Links use
+  active candidate Page stable keys and remain inside authenticated preview.
+  Stale currentness has an owner-safe state; unexpected replay, database or
+  rendering errors remain observable.
+- The list RPCs return at most the latest 50 proposals and latest 50 versions.
+  Ordering is stable: proposals use `created_at DESC, id DESC`; versions use
+  `version_number DESC, id DESC`. Detail RPCs remain identifier-specific.
+- Actor UUIDs are not primary owner-facing labels. Until a safe profile display
+  source exists, the interface uses neutral Owner/Admin and SMBOS labels.
+- The route and presentation source contains no lifecycle server action,
+  proposal creation, validation, application, abandonment, rollback
+  preparation, direct configuration DML or operational Record write.
+- Phase 5B may add explicit lifecycle controls only through trusted,
+  schema-validated server actions over the existing authenticated service.
+
+### Consequences
+
+- Owners and Admins can understand attention states, completed history,
+  validation outcomes, candidate Pages, immutable versions and forward-only
+  rollback provenance without exposing raw JSON as the primary interface.
+- The latest-50 bound is sufficient for v0.1 and deliberately omits pagination
+  UI. A later cursor uses the already stable proposal ordering; versions use
+  their monotonic number.
+- Route reads and preview loading do not change proposal lifecycle, active
+  projection, head, version history or operational data.
+- Validate, apply, abandon, rollback preparation, proposal creation,
+  natural-language building, automatic rebase and AI integration remain
+  outside Phase 5A.

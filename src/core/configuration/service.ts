@@ -23,8 +23,27 @@ type ConfigurationChangeSet =
   Database["public"]["Tables"]["configuration_change_sets"]["Row"];
 type ConfigurationVersion =
   Database["public"]["Tables"]["configuration_versions"]["Row"];
+type ConfigurationHead =
+  Database["public"]["Tables"]["business_configuration_heads"]["Row"];
 type ConfigurationPage = Database["public"]["Tables"]["pages"]["Row"];
 type SessionClient = SupabaseClient<Database>;
+
+export interface ConfigurationSnapshotCount {
+  active: number;
+  label: string;
+  total: number;
+}
+
+const snapshotCollectionLabels = {
+  object_definitions: "Business items",
+  field_definitions: "Questions and fields",
+  relationship_definitions: "Connections",
+  views: "Screens",
+  forms: "Forms",
+  pages: "Pages",
+  preorder_experiences: "Preorder setups",
+  preorder_experience_locations: "Preorder locations",
+} as const;
 
 const contextSchema = z
   .object({
@@ -141,6 +160,21 @@ export class ConfigurationChangeServiceError extends Error {
   }
 }
 
+const controlledReadErrorCodes = new Set([
+  "configuration_authentication_required",
+  "configuration_change_set_not_found",
+  "configuration_owner_or_admin_required",
+  "configuration_version_not_found",
+]);
+
+export function isControlledConfigurationReadError(error: unknown): boolean {
+  return (
+    error instanceof z.ZodError ||
+    (error instanceof ConfigurationChangeServiceError &&
+      controlledReadErrorCodes.has(error.code))
+  );
+}
+
 function assertTrustedResponse(
   changeSet: ConfigurationChangeSet,
   expectedBusinessId: string,
@@ -192,7 +226,35 @@ function assertTrustedVersion(
       { message: "configuration_response_business_mismatch" },
     );
   }
+  if (
+    version.snapshot_schema_version !== 1 ||
+    !/^[a-f0-9]{64}$/.test(version.snapshot_checksum)
+  ) {
+    throw new ConfigurationChangeServiceError(
+      "The configuration version metadata was invalid.",
+      { message: "configuration_response_version_invalid" },
+    );
+  }
+  configurationSnapshotV1Schema.parse(version.snapshot_json);
   return version;
+}
+
+export function summarizeConfigurationSnapshot(
+  snapshotJson: ConfigurationVersion["snapshot_json"],
+): ConfigurationSnapshotCount[] {
+  const snapshot = configurationSnapshotV1Schema.parse(snapshotJson);
+  return (
+    Object.keys(snapshotCollectionLabels) as Array<
+      keyof typeof snapshotCollectionLabels
+    >
+  ).map((collection) => {
+    const rows = snapshot[collection];
+    return {
+      active: rows.filter((row) => row.is_active).length,
+      label: snapshotCollectionLabels[collection],
+      total: rows.length,
+    };
+  });
 }
 
 export class ConfigurationChangeService {
@@ -269,6 +331,27 @@ export class ConfigurationChangeService {
     return data.map((version) =>
       assertTrustedVersion(version, this.#businessId),
     );
+  }
+
+  async getActiveHead(): Promise<ConfigurationHead> {
+    const { data, error } = await this.#client
+      .from("business_configuration_heads")
+      .select("*")
+      .eq("business_id", this.#businessId)
+      .maybeSingle();
+    if (error || !data) {
+      throw new ConfigurationChangeServiceError(
+        "Could not load the active configuration version.",
+        error,
+      );
+    }
+    if (data.business_id !== this.#businessId) {
+      throw new ConfigurationChangeServiceError(
+        "The active configuration response did not match this Business.",
+        { message: "configuration_response_business_mismatch" },
+      );
+    }
+    return data;
   }
 
   async getVersion(versionId: string): Promise<ConfigurationVersion> {

@@ -31,6 +31,7 @@
     "test:rollback": "vitest run --config vitest.rollback.config.ts",
     "test:preview-foundation": "vitest run --config vitest.preview-foundation.config.ts",
     "test:preview": "vitest run --config vitest.preview.config.ts",
+    "test:changes-ui-read": "vitest run --config vitest.changes-ui-read.config.ts",
     "test:watch": "vitest",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
