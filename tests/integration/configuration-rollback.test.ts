@@ -365,6 +365,36 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
   });
 
   it("proves Bedford V2 -> V3 -> V4, security, conflict and idempotency", async () => {
+    const orderObject = requireData(
+      await owner.client
+        .from("object_definitions")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("key", "order")
+        .single(),
+      "Could not load the Order Object",
+    );
+    const operationalOrderData = {
+      public_reference: "ROLLBACK-PROOF-ORDER",
+      status: "New",
+      collection_at: "2026-08-08T11:00:00.000Z",
+      collection_local_display: "8 August 2026 at 12:00",
+      collection_timezone: "Europe/London",
+      collection_location_name: "Bedford",
+      customer_name: "Rollback Proof",
+      customer_email: "rollback-proof@example.test",
+      item_summary: "Rollback proof box × 1",
+      total: 25,
+    };
+    const operationalOrder = requireData(
+      await owner.client.rpc("create_graph_record", {
+        expected_business_id: business.id,
+        target_object_definition_id: orderObject.id,
+        requested_data: operationalOrderData,
+        requested_record_status: "active",
+      }),
+      "Could not create the pre-existing rollback proof Order",
+    );
     const beforeOperational = await operationalCounts();
     const { version: version3 } = await proposeValidateApply(
       "Remove Sunday collection",
@@ -512,6 +542,17 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     expect(version4.snapshot_json).toEqual(version2.snapshot_json);
     expect(await publicScheduleDays()).toEqual([6, 7]);
     expect(await operationalCounts()).toEqual(beforeOperational);
+    expect(
+      requireData(
+        await owner.client
+          .from("records")
+          .select("data_json")
+          .eq("business_id", business.id)
+          .eq("id", operationalOrder.id)
+          .single(),
+        "Could not reload the pre-existing rollback proof Order",
+      ).data_json,
+    ).toEqual(operationalOrderData);
 
     const stale = await adminService.validateChangeSet(competing.id);
     expect(stale.status).toBe("conflicted");
