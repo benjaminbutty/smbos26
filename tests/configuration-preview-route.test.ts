@@ -4,11 +4,18 @@ import { join } from "node:path";
 import { NextRequest } from "next/server";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ConfigurationPreviewShell } from "../src/components/configuration-preview-shell";
+import {
+  isControlledConfigurationPreviewError,
+  RenderedConfigurationPreviewError,
+} from "../src/core/configuration/rendered-preview";
+import { ConfigurationChangeServiceError } from "../src/core/configuration/service";
 import type { Tables } from "../src/db/supabase/database.types";
 import { rejectConfigurationPreviewMutation } from "../src/proxy";
+
+vi.mock("server-only", () => ({}));
 
 const now = "2026-07-29T12:00:00.000Z";
 const businessId = "10000000-0000-4000-8000-000000000001";
@@ -131,5 +138,52 @@ describe("authenticated rendered configuration preview route", () => {
     expect(source).not.toContain("candidate_snapshot_json");
     expect(source).not.toContain("searchParams");
     expect(source).not.toContain("FormData");
+    expect(source).toContain("isControlledConfigurationPreviewError(error)");
+    expect(source).toContain("throw error");
+  });
+
+  it("hides only controlled preview denials and rethrows unexpected failures", () => {
+    for (const code of [
+      "configuration_actor_context_mismatch",
+      "configuration_authentication_required",
+      "configuration_owner_or_admin_required",
+      "configuration_preview_not_found",
+      "configuration_preview_stale",
+      "configuration_preview_unavailable",
+    ]) {
+      expect(
+        isControlledConfigurationPreviewError(
+          new ConfigurationChangeServiceError("Safe preview denial.", {
+            message: code,
+          }),
+        ),
+      ).toBe(true);
+    }
+    expect(
+      isControlledConfigurationPreviewError(
+        new RenderedConfigurationPreviewError(),
+      ),
+    ).toBe(true);
+
+    expect(
+      isControlledConfigurationPreviewError(
+        new ConfigurationChangeServiceError("Malformed trusted output.", {
+          message: "configuration_candidate_replay_mismatch",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isControlledConfigurationPreviewError(
+        new ConfigurationChangeServiceError("Database unavailable.", {
+          code: "08006",
+          message: "connection failure",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isControlledConfigurationPreviewError(
+        new Error("Unexpected renderer defect."),
+      ),
+    ).toBe(false);
   });
 });

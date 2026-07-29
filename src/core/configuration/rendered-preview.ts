@@ -15,6 +15,7 @@ import { resolveConfigurationPreviewPreorder } from "../preorder/service";
 import type { Database, Tables } from "../../db/supabase/database.types";
 import {
   ConfigurationChangeService,
+  ConfigurationChangeServiceError,
   type ConfigurationPreviewContext,
 } from "./service";
 
@@ -36,6 +37,58 @@ export interface RenderedConfigurationPreview {
   preorders: Readonly<Record<string, { catalogue: PublicPreorderCatalogue }>>;
 }
 
+export interface RenderedConfigurationPreviewDependencies {
+  afterCandidatePageLoaded?: () => Promise<void>;
+}
+
+export class RenderedConfigurationPreviewError extends Error {
+  readonly code: "configuration_preview_page_unavailable";
+
+  constructor() {
+    super("The candidate Page is not available.");
+    this.name = "RenderedConfigurationPreviewError";
+    this.code = "configuration_preview_page_unavailable";
+  }
+}
+
+const controlledPreviewServiceErrorCodes = new Set([
+  "configuration_actor_context_mismatch",
+  "configuration_authentication_required",
+  "configuration_owner_or_admin_required",
+  "configuration_preview_not_found",
+  "configuration_preview_stale",
+  "configuration_preview_unavailable",
+]);
+
+export function isControlledConfigurationPreviewError(error: unknown): boolean {
+  return (
+    (error instanceof ConfigurationChangeServiceError &&
+      controlledPreviewServiceErrorCodes.has(error.code)) ||
+    error instanceof RenderedConfigurationPreviewError
+  );
+}
+
+function assertFinalPreviewCurrent(
+  initial: ConfigurationPreviewContext,
+  final: ConfigurationPreviewContext,
+): void {
+  const identityMatches =
+    final.proposalId === initial.proposalId &&
+    final.businessId === initial.businessId &&
+    final.candidateChecksum === initial.candidateChecksum &&
+    final.kind === initial.kind;
+  const statusProgressionIsAllowed =
+    final.status === initial.status ||
+    (initial.status === "proposed" && final.status === "validated");
+
+  if (!identityMatches || !statusProgressionIsAllowed) {
+    throw new ConfigurationChangeServiceError(
+      "The configuration preview changed unexpectedly while it was rendering.",
+      { message: "configuration_preview_currentness_mismatch" },
+    );
+  }
+}
+
 export async function loadRenderedConfigurationPreview(
   client: SupabaseClient<Database>,
   request: {
@@ -44,6 +97,7 @@ export async function loadRenderedConfigurationPreview(
     changeSetId: string;
     pageKey: string;
   },
+  dependencies: RenderedConfigurationPreviewDependencies = {},
 ): Promise<RenderedConfigurationPreview> {
   const trusted = renderedPreviewRequestSchema.parse(request);
   const configuration = new ConfigurationChangeService(client, {
@@ -55,7 +109,7 @@ export async function loadRenderedConfigurationPreview(
     (page) => page.key === trusted.pageKey && page.is_active,
   );
   if (!candidatePage) {
-    throw new Error("The candidate Page is not available.");
+    throw new RenderedConfigurationPreviewError();
   }
 
   const experience = createExperienceService(
@@ -67,6 +121,7 @@ export async function loadRenderedConfigurationPreview(
     trusted.pageKey,
     candidatePage.audience,
   );
+  await dependencies.afterCandidatePageLoaded?.();
   const viewKeys = [
     ...new Set(
       page.layout.blocks.flatMap((block) =>
@@ -134,9 +189,13 @@ export async function loadRenderedConfigurationPreview(
     candidatePage.audience === "public"
       ? [...internalPages, candidatePage]
       : internalPages;
+  // Assertion locks end with each RPC transaction. Re-assert after assembly so
+  // this response is a point-in-time read, not a claim to hold an HTTP-wide lock.
+  const finalPreview = await configuration.loadPreview(trusted.changeSetId);
+  assertFinalPreviewCurrent(preview, finalPreview);
 
   return Object.freeze({
-    preview,
+    preview: finalPreview,
     page,
     navigationPages,
     views: Object.fromEntries(viewBundles),

@@ -385,6 +385,43 @@ async function preorderOperation(
   };
 }
 
+async function internalViewPageOperation(
+  key: string,
+  title: string,
+): Promise<ConfigurationOperation> {
+  const [head] = await sql<{ snapshot_json: Json }[]>`
+    select version.snapshot_json
+    from public.configuration_versions as version
+    join public.business_configuration_heads as head
+      on head.business_id = version.business_id
+      and head.active_version_id = version.id
+    where head.business_id = ${configuredBusiness.id}::uuid
+  `;
+  if (!head) {
+    throw new Error("Could not load configured preview fixture head.");
+  }
+  const snapshot = configurationSnapshotV1Schema.parse(head.snapshot_json);
+  const internalView = snapshot.views.find(
+    (view) => view.audience === "internal" && view.is_active,
+  );
+  if (!internalView) {
+    throw new Error("Could not load an internal View for preview assembly.");
+  }
+
+  return {
+    op: "set_page",
+    key,
+    title,
+    slug: key.replaceAll("_", "-"),
+    audience: "internal",
+    layout_json: {
+      blocks: [{ type: "view", view_key: internalView.key }],
+    },
+    status: "draft",
+    is_active: true,
+  };
+}
+
 async function capturedState(changeSetId: string): Promise<Json> {
   const [captured] = await sql<{ state: Json }[]>`
     select jsonb_build_object(
@@ -1352,7 +1389,169 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
         ).toEqual([6, 7]);
       }, 120_000);
 
-      it("serializes preview first and application first without returning a former candidate", async () => {
+      it("discards an internal candidate applied while its View-only Page is assembling", async () => {
+        const pageKey = "currentness_application_page";
+        const proposal = await configuredService.proposeChangeSet({
+          title: "Apply during rendered preview assembly",
+          description: null,
+          operations: [
+            await internalViewPageOperation(
+              pageKey,
+              "Currentness application proof",
+            ),
+          ],
+        });
+        await configuredService.validateChangeSet(proposal.id);
+
+        const pageLoaded = deferred();
+        const resumeAssembly = deferred();
+        const rendering = loadRenderedConfigurationPreview(
+          owner.client,
+          {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: proposal.id,
+            pageKey,
+          },
+          {
+            afterCandidatePageLoaded: async () => {
+              pageLoaded.resolve();
+              await resumeAssembly.promise;
+            },
+          },
+        ).then(
+          (value) => ({ value, error: null }),
+          (error: unknown) => ({ value: null, error }),
+        );
+
+        await pageLoaded.promise;
+        const applied = await configuredService.applyChangeSet(proposal.id);
+        expect(applied.status).toBe("applied");
+        resumeAssembly.resolve();
+
+        const result = await rendering;
+        expect(result.value).toBeNull();
+        expect(result.error).toBeInstanceOf(ConfigurationChangeServiceError);
+        expect((result.error as ConfigurationChangeServiceError).code).toBe(
+          "configuration_preview_unavailable",
+        );
+      }, 30_000);
+
+      it("uses the final validated status and leaves an unchanged rendered candidate exactly read-only", async () => {
+        const pageKey = "currentness_validation_page";
+        const proposal = await configuredService.proposeChangeSet({
+          title: "Validate during rendered preview assembly",
+          description: null,
+          operations: [
+            await internalViewPageOperation(
+              pageKey,
+              "Currentness validation proof",
+            ),
+          ],
+        });
+
+        const pageLoaded = deferred();
+        const resumeAssembly = deferred();
+        const rendering = loadRenderedConfigurationPreview(
+          owner.client,
+          {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: proposal.id,
+            pageKey,
+          },
+          {
+            afterCandidatePageLoaded: async () => {
+              pageLoaded.resolve();
+              await resumeAssembly.promise;
+            },
+          },
+        );
+
+        await pageLoaded.promise;
+        const validated = await configuredService.validateChangeSet(
+          proposal.id,
+        );
+        expect(validated.status).toBe("validated");
+        resumeAssembly.resolve();
+
+        const progressed = await rendering;
+        expect(progressed.preview.status).toBe("validated");
+        expect(progressed.preview.candidateChecksum).toBe(
+          proposal.candidate_checksum,
+        );
+        expect(progressed.page.definition.key).toBe(pageKey);
+
+        const beforeUnchanged = await capturedState(proposal.id);
+        const unchanged = await loadRenderedConfigurationPreview(owner.client, {
+          businessId: configuredBusiness.id,
+          actorId: owner.user.id,
+          changeSetId: proposal.id,
+          pageKey,
+        });
+        expect(unchanged.preview.status).toBe("validated");
+        expect(unchanged.page.definition.key).toBe(pageKey);
+        expect(await capturedState(proposal.id)).toEqual(beforeUnchanged);
+      }, 30_000);
+
+      it("discards a rollback candidate applied while its internal Page is assembling", async () => {
+        const target = (await configuredService.listVersions()).find(
+          (version) => version.version_number === 2,
+        );
+        if (!target) {
+          throw new Error("Missing configured rollback target Version 2.");
+        }
+        const rollback = await configuredService.prepareRollback({
+          targetVersionId: target.id,
+          title: "Apply rollback during rendered preview assembly",
+          description: null,
+        });
+        const initialRollback = await configuredService.loadPreview(
+          rollback.id,
+        );
+        const internalPage = initialRollback.pages.find(
+          (page) => page.is_active && page.audience === "internal",
+        );
+        if (!internalPage) {
+          throw new Error("Rollback candidate has no internal Page.");
+        }
+        await configuredService.validateChangeSet(rollback.id);
+
+        const pageLoaded = deferred();
+        const resumeAssembly = deferred();
+        const rendering = loadRenderedConfigurationPreview(
+          owner.client,
+          {
+            businessId: configuredBusiness.id,
+            actorId: owner.user.id,
+            changeSetId: rollback.id,
+            pageKey: internalPage.key,
+          },
+          {
+            afterCandidatePageLoaded: async () => {
+              pageLoaded.resolve();
+              await resumeAssembly.promise;
+            },
+          },
+        ).then(
+          (value) => ({ value, error: null }),
+          (error: unknown) => ({ value: null, error }),
+        );
+
+        await pageLoaded.promise;
+        const applied = await configuredService.applyChangeSet(rollback.id);
+        expect(applied.status).toBe("applied");
+        resumeAssembly.resolve();
+
+        const result = await rendering;
+        expect(result.value).toBeNull();
+        expect(result.error).toBeInstanceOf(ConfigurationChangeServiceError);
+        expect((result.error as ConfigurationChangeServiceError).code).toBe(
+          "configuration_preview_unavailable",
+        );
+      }, 30_000);
+
+      it("serializes each preview assertion RPC with application in both lock orders", async () => {
         const previewFirstProposal = await configuredService.proposeChangeSet({
           title: "Preview-first lock proof",
           description: null,

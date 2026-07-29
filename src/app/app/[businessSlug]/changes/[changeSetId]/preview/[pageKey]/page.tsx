@@ -3,7 +3,10 @@ import type { ReactNode } from "react";
 
 import { hasCapability, resolveTenant } from "@/auth/authorization";
 import { ConfigurationPreviewPage } from "@/components/configuration-preview-page";
-import { loadRenderedConfigurationPreview } from "@/core/configuration/rendered-preview";
+import {
+  isControlledConfigurationPreviewError,
+  loadRenderedConfigurationPreview,
+} from "@/core/configuration/rendered-preview";
 import { createServerClient } from "@/db/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -37,8 +40,11 @@ export default async function ConfigurationPreviewRoute({
       changeSetId,
       pageKey,
     });
-  } catch {
-    notFound();
+  } catch (error) {
+    if (isControlledConfigurationPreviewError(error)) {
+      notFound();
+    }
+    throw error;
   }
   return (
     <ConfigurationPreviewPage businessSlug={businessSlug} rendered={rendered} />

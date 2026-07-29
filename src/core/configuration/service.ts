@@ -70,6 +70,7 @@ const previewChangeSetSchema = z
 
 export interface ConfigurationPreviewContext {
   proposalId: string;
+  businessId: string;
   title: string;
   kind: "change" | "rollback";
   status: "proposed" | "validated";
@@ -363,6 +364,7 @@ export class ConfigurationChangeService {
 
     return Object.freeze({
       proposalId: preview.id,
+      businessId: preview.business_id,
       title: preview.title,
       kind: preview.kind,
       status: preview.status,

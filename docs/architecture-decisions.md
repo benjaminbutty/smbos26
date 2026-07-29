@@ -752,10 +752,19 @@ formerly current candidate after application wins a race.
 
 ### Decision
 
-- Preview assertion takes shared locks in the same head, change-set and base
-  version order used by validation and application. It verifies the current
-  normalized projection and checksum against the locked base before replaying
-  and comparing every stored output. Preview never changes lifecycle state.
+- Each preview assertion takes shared locks in the same head, change-set and
+  base-version order used by validation and application. Those locks linearize
+  that assertion's database transaction only. The assertion verifies the
+  current normalized projection and checksum against the locked base before
+  replaying and comparing every stored output. Preview never changes lifecycle
+  state.
+- Rendered preview performs one identifier-only assertion before candidate
+  assembly and another immediately before returning. The final assertion must
+  identify the same proposal, Business, candidate checksum and kind. Status may
+  remain unchanged or progress from proposed to validated; the final status is
+  shown in the returned preview. A proposal that becomes applied, rejected,
+  conflicted, abandoned or stale during assembly causes the assembled
+  candidate to be discarded.
 - The authenticated route is
   `/app/[businessSlug]/changes/[changeSetId]/preview/[pageKey]`. It is dynamic
   and no-store, resolves the immutable Business slug through authenticated
@@ -795,9 +804,11 @@ formerly current candidate after application wins a race.
 
 - Owner/Admin can inspect both internal and public candidate Pages inside the
   authenticated shell without changing the active version or public runtime.
-- Preview and application serialize safely: preview-first observes its current
-  candidate before application proceeds; application-first causes the waiting
-  preview to return unavailable or stale rather than the former candidate.
+- Application is not blocked for the entire render or HTTP response. Each
+  assertion serializes with lifecycle changes independently, and the final
+  assertion prevents a candidate closed during assembly from being returned.
+  The small race after that final point-in-time read is ordinary request
+  currentness rather than a transaction lock spanning the response.
 - Interactive preorder exploration is intentionally ephemeral client state.
   Reloading reconstructs it from authoritative reads and persists nothing.
 - Rendering remains limited to the existing Page grammar and deterministic
