@@ -452,7 +452,6 @@ describe("read-only configuration Changes interface", () => {
       expect(source).toContain("notFound()");
       expect(source).not.toContain("createAdminClient");
       expect(source).not.toContain("service_role");
-      expect(source).not.toContain("searchParams");
       expect(source).not.toContain("FormData");
       expect(source).not.toContain("candidate_snapshot_json");
     }
@@ -463,13 +462,14 @@ describe("read-only configuration Changes interface", () => {
     ).toBe(true);
   });
 
-  it("contains no lifecycle/configuration mutations in Phase 5A sources", () => {
+  it("keeps every Changes GET render free of lifecycle/configuration mutation calls", () => {
     const routeRoot = join(process.cwd(), "src/app/app/[businessSlug]/changes");
     const sources = [
       ...filesRecursively(routeRoot).filter(
-        (path) => !path.includes("/preview/"),
+        (path) => path.endsWith("page.tsx") && !path.includes("/preview/"),
       ),
       join(process.cwd(), "src/components/configuration-history-ui.tsx"),
+      join(process.cwd(), "src/components/configuration-action-ui.tsx"),
     ].map((path) => readFileSync(path, "utf8"));
     const forbidden = [
       ".proposeChangeSet(",
@@ -481,8 +481,6 @@ describe("read-only configuration Changes interface", () => {
       ".update(",
       ".upsert(",
       ".delete(",
-      '"use server"',
-      "server action",
       "createAdminClient",
       "service_role",
     ];
@@ -492,6 +490,6 @@ describe("read-only configuration Changes interface", () => {
         expect(source).not.toContain(token);
       }
     }
-    expect(sources.join("\n").match(/\.loadPreview\(/g)).toHaveLength(1);
+    expect(sources.join("\n").match(/\.loadPreview\(/g)).toHaveLength(2);
   });
 });

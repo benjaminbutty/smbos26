@@ -82,6 +82,12 @@ jobs:
       - name: Run authenticated rendered preview tests
         run: npm run test:preview
 
+      - name: Run read-only configuration Changes interface tests
+        run: npm run test:changes-ui-read
+
+      - name: Run configuration lifecycle action interface tests
+        run: npm run test:changes-ui-actions
+
       - name: Reset for full integration and RLS tests
         run: npm run supabase:reset
 

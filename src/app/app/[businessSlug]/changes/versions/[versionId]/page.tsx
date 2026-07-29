@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { hasCapability, resolveTenant } from "@/auth/authorization";
+import { ConfigurationActionNotice } from "@/components/configuration-action-ui";
 import { ConfigurationVersionDetail } from "@/components/configuration-history-ui";
+import { configurationActionNoticeSchema } from "@/core/configuration/action-notices";
 import type { SemanticDiff } from "@/core/configuration/schemas";
 import {
   ConfigurationChangeService,
@@ -17,12 +19,21 @@ export const revalidate = 0;
 
 interface ConfigurationVersionRouteProps {
   params: Promise<{ businessSlug: string; versionId: string }>;
+  searchParams: Promise<{ notice?: string | string[] }>;
 }
 
 export default async function ConfigurationVersionRoute({
   params,
+  searchParams,
 }: Readonly<ConfigurationVersionRouteProps>): Promise<ReactNode> {
-  const { businessSlug, versionId } = await params;
+  const [{ businessSlug, versionId }, query] = await Promise.all([
+    params,
+    searchParams,
+  ]);
+  const noticeValue =
+    typeof query.notice === "string" ? query.notice : undefined;
+  const notice =
+    configurationActionNoticeSchema.safeParse(noticeValue).data ?? null;
   const supabase = await createServerClient();
   const tenant = await resolveTenant(businessSlug, supabase);
 
@@ -88,6 +99,7 @@ export default async function ConfigurationVersionRoute({
       active={detail.active}
       businessSlug={businessSlug}
       diff={detail.diff}
+      notice={<ConfigurationActionNotice notice={notice} />}
       parent={detail.parent}
       restoredFrom={detail.restoredFrom}
       snapshotCounts={detail.snapshotCounts}

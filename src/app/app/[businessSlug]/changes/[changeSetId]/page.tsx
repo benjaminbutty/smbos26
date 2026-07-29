@@ -2,7 +2,9 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { hasCapability, resolveTenant } from "@/auth/authorization";
+import { ConfigurationActionNotice } from "@/components/configuration-action-ui";
 import { ConfigurationChangeDetail } from "@/components/configuration-history-ui";
+import { configurationActionNoticeSchema } from "@/core/configuration/action-notices";
 import {
   ConfigurationChangeService,
   ConfigurationChangeServiceError,
@@ -17,12 +19,21 @@ export const revalidate = 0;
 
 interface ConfigurationChangeRouteProps {
   params: Promise<{ businessSlug: string; changeSetId: string }>;
+  searchParams: Promise<{ notice?: string | string[] }>;
 }
 
 export default async function ConfigurationChangeRoute({
   params,
+  searchParams,
 }: Readonly<ConfigurationChangeRouteProps>): Promise<ReactNode> {
-  const { businessSlug, changeSetId } = await params;
+  const [{ businessSlug, changeSetId }, query] = await Promise.all([
+    params,
+    searchParams,
+  ]);
+  const noticeValue =
+    typeof query.notice === "string" ? query.notice : undefined;
+  const notice =
+    configurationActionNoticeSchema.safeParse(noticeValue).data ?? null;
   const supabase = await createServerClient();
   const tenant = await resolveTenant(businessSlug, supabase);
 
@@ -113,6 +124,7 @@ export default async function ConfigurationChangeRoute({
       baseVersion={detail.baseVersion}
       businessSlug={businessSlug}
       changeSet={detail.changeSet}
+      notice={<ConfigurationActionNotice notice={notice} />}
       preview={detail.preview}
       rollbackTarget={detail.rollbackTarget}
     />

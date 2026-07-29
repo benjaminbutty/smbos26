@@ -2,10 +2,11 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice plus the
-Milestone 5 Phase 5A read-only Changes and Configuration History interface: a
+Milestone 5 Phase 5B explicit Changes lifecycle interface: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
-through immutable change sets and forward-only versions.
+through immutable change sets and forward-only versions, with deliberate
+Owner/Admin validation, application, abandonment and rollback preparation.
 
 The product and architecture sources of truth are:
 
@@ -42,6 +43,12 @@ Included:
 - forward-only rollback proposals and rollback version provenance
 - authenticated verified candidate preview for internal and public Pages
 - read-only Owner/Admin Changes, proposal detail, and Version history routes
+- authenticated POST-only lifecycle Server Actions and read-only confirmation
+  routes for validate, apply, abandon and rollback preparation
+- server-derived Business and actor context with status rechecks before every
+  lifecycle mutation
+- explicit pending state, bounded notices and authoritative
+  idempotency/concurrency in PostgreSQL
 - owner-safe stored semantic-diff and strict validation-result presentation
 - bounded latest-50 proposal and version history loading
 - direct projection-table mutation closed to anonymous, authenticated, and
@@ -56,8 +63,7 @@ Not included:
 - AI provider calls or builder behavior
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
-- owner-facing proposal creation or lifecycle controls
-- validate, apply, abandon, or rollback-preparation buttons
+- owner-facing proposal creation or operation editing
 - automatic rebase/merge or AI/LLM integration
 - Location or operational Record versioning
 - workflow/rule execution
@@ -148,11 +154,12 @@ Open the Order detail and use the generated edit Form to change its status.
 Products, Customers, Orders and Order Items are generic graph Records; the
 internal screens are generic Views and Forms.
 
-Sign in as the Owner to open the read-only
+Sign in as the Owner to open
 [Changes and Version history](http://localhost:3000/app/bedford-bakery-demo/changes).
-The configured Version 2 appears as the active head. The local demo does not
-seed permanent proposals; Phase 5A deliberately avoids demonstration-only
-history.
+The configured Version 2 appears as the active head. Lifecycle controls appear
+only when an existing proposal's authoritative status permits them. The local
+demo does not seed permanent proposals; Phase 5B does not introduce
+demonstration-only history or proposal creation.
 
 ## Local Supabase
 
@@ -204,6 +211,7 @@ validating from a clean state.
 | `npm run test:preview-foundation`     | Run authenticated candidate foundation tests     |
 | `npm run test:preview`                | Run authenticated rendered preview tests         |
 | `npm run test:changes-ui-read`        | Run read-only Changes/History and no-write tests |
+| `npm run test:changes-ui-actions`     | Run lifecycle action/security/concurrency tests  |
 | `npm run test:watch`                  | Run unit tests in watch mode                     |
 | `npm run typecheck`                   | Generate route types and run TypeScript          |
 | `npm run lint`                        | Run ESLint                                       |

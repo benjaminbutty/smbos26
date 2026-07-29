@@ -878,3 +878,84 @@ problem and make response size depend on Business age.
 - Validate, apply, abandon, rollback preparation, proposal creation,
   natural-language building, automatic rebase and AI integration remain
   outside Phase 5A.
+
+## ADR-013 - Authenticated explicit configuration lifecycle controls
+
+**Status:** Accepted for v0.1 (Milestone 5 Phase 5B)
+
+**Date:** 29 July 2026
+
+### Context
+
+Phase 5A lets Owner/Admin users read authoritative proposals, stored semantic
+diffs, validation results and immutable version history, but it deliberately
+offers no way to advance the already-proven lifecycle. Explicit controls must
+not create a second configuration-write path, trust browser-owned tenant or
+actor context, or mutate merely because a confirmation route was loaded.
+
+Rollback preparation also needs a narrow stale-confirmation check: a user who
+reviewed history under one active head must not silently prepare a proposal
+after another actor materially advances that head.
+
+### Decision
+
+- Lifecycle mutations are exposed only through one authenticated Server Action
+  module. Its narrowly named validate, apply, abandon and rollback-preparation
+  actions call only `ConfigurationChangeService`; they do not use direct table
+  DML, generic RPC invocation, service-role credentials or auth-admin APIs.
+- Every action creates a session client, resolves the immutable Business slug
+  through current membership, requires `manage_configuration`, and derives the
+  Business UUID and actor UUID server-side. Proposal/version identifiers remain
+  untrusted route inputs and are strictly parsed and tenant-scoped again.
+- Forms never supply Business/actor UUIDs, candidate content, operations,
+  checksums, allocations, semantic diffs, validation results, desired status or
+  applied version identity. Rollback preparation accepts only a bounded title
+  and optional description.
+- Proposal detail navigation is status-dependent: proposed offers Preview,
+  Validate and Abandon; validated offers Preview and Apply; applied links to
+  its resulting Version; rejected, conflicted and abandoned offer no mutation.
+  Historical versions offer Prepare rollback; the active Version does not.
+  Every action independently re-reads and enforces current availability.
+- Validate, apply, abandon and rollback confirmation routes are dynamic,
+  no-store authenticated GETs. Rendering them performs only reads. A lifecycle
+  transition requires a genuine POST through its Server Action followed by a
+  redirect.
+- Validation never applies automatically. Apply remains one atomic,
+  idempotent, forward-only version operation. Abandonment is final under the
+  existing database lifecycle. Rollback preparation creates an ordinary
+  proposed rollback; applying it later creates a new future Version rather than
+  rewinding the head.
+- Rollback confirmation binds the rendered active version and revision as
+  untrusted comparison values. Immediately before preparation the action
+  reloads the target and active head; any movement returns a bounded
+  `state_changed` notice and creates no proposal.
+- Notices use a strict enum and are cosmetic. Detail routes always re-read
+  authoritative database state. Known closed/conflicted/rejected/currentness
+  outcomes receive owner-safe notices; unexpected database, replay, projection
+  or trusted-output failures remain observable.
+- A reusable submit button exposes an announced pending state and disables the
+  in-flight browser control. PostgreSQL lifecycle locking and idempotency remain
+  authoritative for duplicate and concurrent submissions.
+- Successful application revalidates Changes, version, authenticated runtime
+  and affected public Page paths. Cache invalidation is an optimisation;
+  database reads remain authoritative.
+- Operational Records, Record Relationships, Record-to-Location links,
+  preorder submissions, capacity counters, email state and Locations remain
+  outside configuration lifecycle mutation.
+- Phase 5B introduces no proposal-creation UI, operation editor,
+  natural-language builder, AI/LLM integration, automatic rebase/merge or
+  permanent demonstration proposal.
+
+### Consequences
+
+- Owner/Admin users can deliberately advance every existing legal lifecycle
+  edge without receiving direct configuration-write capability.
+- Staff, anonymous, malformed and cross-Business submissions fail before a
+  lifecycle service can mutate another tenant; forged form-owned identity or
+  candidate data has no effect.
+- Duplicate validation/application, validate-versus-abandon,
+  competing-application and stale-confirmation races resolve to legal database
+  lifecycle states. UI pending state improves feedback but makes no idempotency
+  claim.
+- Apply and rollback remain immutable forward history, while operational
+  business data stays live and untouched.

@@ -5,10 +5,10 @@ Objects, Fields, Relationships, Views, Forms, Pages and preorder configuration.
 The AI and future owner controls may plan or request allow-listed operations;
 PostgreSQL materialises, validates and applies them deterministically.
 
-## Read model
+## Read model and lifecycle actions
 
-Milestone 5 Phase 5A exposes a read-only Owner/Admin presentation over the
-existing authenticated service:
+Milestone 5 Phase 5A established the read-only Owner/Admin presentation over
+the existing authenticated service:
 
 - `listChangeSets()` returns the latest 50 proposals in stable
   `created_at DESC, id DESC` order.
@@ -29,16 +29,38 @@ immutable engine outputs. A non-baseline version reuses its source proposal
 diff. Snapshot detail shows bounded collection counts and does not create
 another snapshot or diff algorithm.
 
-## Phase 5A routes
+Phase 5B adds one dedicated `actions.ts` module under the Changes route. Its
+four narrowly named Server Actions resolve the session user and Business slug,
+require `manage_configuration`, derive Business and actor UUIDs server-side,
+parse and re-read route identifiers, call only `ConfigurationChangeService`,
+inspect the returned lifecycle state, and revalidate affected paths before
+POST/redirect/GET.
+
+Forms never provide Business UUID, actor UUID, candidate snapshot, operations,
+checksum, allocations, semantic diff, validation result, desired status or
+applied version identity. Rollback preparation accepts only its bounded title
+and optional description; the target version and render-time head identity are
+server-bound untrusted arguments that are parsed and rechecked.
+
+## Owner/Admin routes
 
 - `/app/[businessSlug]/changes`
 - `/app/[businessSlug]/changes/[changeSetId]`
 - `/app/[businessSlug]/changes/versions/[versionId]`
+- `/app/[businessSlug]/changes/[changeSetId]/validate`
+- `/app/[businessSlug]/changes/[changeSetId]/apply`
+- `/app/[businessSlug]/changes/[changeSetId]/abandon`
+- `/app/[businessSlug]/changes/versions/[versionId]/rollback`
 
 They are dynamic, no-store server routes protected by authenticated membership
 and `manage_configuration`. Staff, anonymous callers, malformed identifiers
 and cross-Business identifiers receive controlled denial/not-found handling.
 
-Phase 5A contains no lifecycle or configuration mutation controls. Phase 5B is
-responsible for explicit validate, apply, abandon and rollback-preparation
-actions through trusted server actions; it must not introduce direct table DML.
+Every confirmation GET is read-only. Proposed supports Preview, Validate and
+Abandon; validated supports Preview and Apply; applied links to its resulting
+Version; rejected, conflicted and abandoned have no mutation control. Only
+historical versions offer rollback preparation. The UI is advisory and every
+Server Action repeats the same current-state check.
+
+There is still no proposal creation UI, natural-language builder, AI
+integration, automatic merge/rebase or permanent demonstration proposal.

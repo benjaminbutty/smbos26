@@ -1241,6 +1241,58 @@ textarea {
   gap: 2.5rem;
 }
 
+.configuration-confirmation-page {
+  display: grid;
+  max-width: 64rem;
+  gap: 1.5rem;
+}
+
+.configuration-confirmation-page > header p,
+.configuration-confirmation-page > header h1 {
+  margin-bottom: 0.35rem;
+}
+
+.configuration-action-panel {
+  padding: 1.25rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.configuration-action-links,
+.confirmation-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.confirmation-form {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.confirmation-form-fields {
+  display: grid;
+  align-items: stretch;
+}
+
+.confirmation-form-fields label {
+  display: grid;
+  gap: 0.45rem;
+  font-weight: 700;
+}
+
+.confirmation-form-fields input,
+.confirmation-form-fields textarea {
+  width: 100%;
+}
+
+.confirmation-form button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .history-page-header,
 .history-detail-header,
 .section-heading,

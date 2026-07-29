@@ -329,7 +329,7 @@ function ValidationResult({
   );
 }
 
-function SemanticDiffView({
+export function SemanticDiffView({
   diff,
 }: Readonly<{ diff: SemanticDiff }>): ReactNode {
   return (
@@ -710,6 +710,7 @@ export interface ConfigurationChangeDetailProps {
   baseVersion: Version;
   businessSlug: string;
   changeSet: ChangeSet;
+  notice?: ReactNode;
   preview:
     | { state: "available"; pages: Page[] }
     | { state: "empty" }
@@ -723,6 +724,7 @@ export function ConfigurationChangeDetail({
   baseVersion,
   businessSlug,
   changeSet,
+  notice,
   preview,
   rollbackTarget,
 }: Readonly<ConfigurationChangeDetailProps>): ReactNode {
@@ -749,6 +751,60 @@ export function ConfigurationChangeDetail({
         </div>
         <StatusBadge status={changeSet.status} />
       </header>
+
+      {notice}
+
+      <section
+        className="change-section configuration-action-panel"
+        aria-labelledby="available-actions-heading"
+      >
+        <h2 id="available-actions-heading">Available actions</h2>
+        {changeSet.status === "proposed" ? (
+          <div className="configuration-action-links">
+            <Link
+              className="button"
+              href={`${pathForChange(businessSlug, changeSet.id)}/validate`}
+            >
+              Validate proposal
+            </Link>
+            <Link
+              className="button button-danger"
+              href={`${pathForChange(businessSlug, changeSet.id)}/abandon`}
+            >
+              Abandon proposal
+            </Link>
+          </div>
+        ) : changeSet.status === "validated" ? (
+          <div className="configuration-action-links">
+            <Link
+              className="button"
+              href={`${pathForChange(businessSlug, changeSet.id)}/apply`}
+            >
+              Apply configuration
+            </Link>
+          </div>
+        ) : changeSet.status === "applied" && appliedVersion ? (
+          <div className="configuration-action-links">
+            <Link
+              className="button button-secondary"
+              href={pathForVersion(businessSlug, appliedVersion.id)}
+            >
+              View resulting Version {appliedVersion.version_number}
+            </Link>
+          </div>
+        ) : (
+          <p className="muted">
+            This proposal is closed. No configuration action is available.
+          </p>
+        )}
+        {(changeSet.status === "proposed" ||
+          changeSet.status === "validated") &&
+        preview.state === "available" ? (
+          <p className="muted">
+            Candidate preview links are available in the preview section below.
+          </p>
+        ) : null}
+      </section>
 
       <section
         className="change-section"
@@ -909,6 +965,7 @@ export interface ConfigurationVersionDetailProps {
   active: boolean;
   businessSlug: string;
   diff: SemanticDiff | null;
+  notice?: ReactNode;
   parent: Version | null;
   restoredFrom: Version | null;
   snapshotCounts: SnapshotCount[];
@@ -921,6 +978,7 @@ export function ConfigurationVersionDetail({
   active,
   businessSlug,
   diff,
+  notice,
   parent,
   restoredFrom,
   snapshotCounts,
@@ -958,6 +1016,25 @@ export function ConfigurationVersionDetail({
           <span className="historical-version-marker">Historical</span>
         )}
       </header>
+
+      {notice}
+
+      {!active ? (
+        <section
+          className="change-section configuration-action-panel"
+          aria-labelledby="version-actions-heading"
+        >
+          <h2 id="version-actions-heading">Available actions</h2>
+          <div className="configuration-action-links">
+            <Link
+              className="button button-secondary"
+              href={`${pathForVersion(businessSlug, version.id)}/rollback`}
+            >
+              Prepare rollback
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       {version.kind === "baseline" ? (
         <div className="history-notice">
