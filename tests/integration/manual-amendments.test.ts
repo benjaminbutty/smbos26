@@ -174,6 +174,57 @@ async function countRows(
   return rows[0].count;
 }
 
+async function captureNullRejectionState() {
+  const rows = await sql<
+    {
+      ai_execution_runs: Json;
+      head: Json;
+      projection: Json;
+      records: Json;
+      versions: Json;
+    }[]
+  >`
+    select
+      (
+        select to_jsonb(head_value)
+        from public.business_configuration_heads as head_value
+        where head_value.business_id = ${business.id}::uuid
+      ) as head,
+      (
+        select coalesce(
+          jsonb_agg(
+            to_jsonb(version_value)
+            order by version_value.version_number, version_value.id
+          ),
+          '[]'::jsonb
+        )
+        from public.configuration_versions as version_value
+        where version_value.business_id = ${business.id}::uuid
+      ) as versions,
+      private.configuration_snapshot_v1(${business.id}::uuid) as projection,
+      (
+        select coalesce(
+          jsonb_agg(to_jsonb(record_value) order by record_value.id),
+          '[]'::jsonb
+        )
+        from public.records as record_value
+        where record_value.business_id = ${business.id}::uuid
+      ) as records,
+      (
+        select coalesce(
+          jsonb_agg(to_jsonb(run_value) order by run_value.id),
+          '[]'::jsonb
+        )
+        from public.ai_execution_runs as run_value
+        where run_value.business_id = ${business.id}::uuid
+      ) as ai_execution_runs
+  `;
+  if (!rows[0]) {
+    throw new Error("Could not capture NULL-rejection state.");
+  }
+  return rows[0];
+}
+
 async function acceptanceStep<T>(
   label: string,
   operation: () => Promise<T>,
@@ -306,6 +357,93 @@ describe("Milestone 6 Phase 2A.1 manual amendment acceptance", () => {
     } as never);
     expect(obsolete.error).not.toBeNull();
     expect(await countRows("configuration_change_sets")).toBe(before);
+  });
+
+  it("fails closed for every NULL expected actor and head value while valid exact inputs still work", async () => {
+    const active = await loadActiveManualAmendmentSnapshot(configuration);
+    const amendment = composePreorderScheduleAmendment(active.snapshot, {
+      intent: "update_preorder_schedule",
+      preorderKey,
+      schedule: {
+        ...active.snapshot.preorder_experiences[0]!.config_json.schedule,
+        cutoff_hours: 72,
+      },
+    });
+    const args = {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      expected_base_version_id: active.baseVersionId,
+      expected_head_revision: active.headRevision,
+      requested_title: amendment.title,
+      requested_description: amendment.description,
+      requested_operations: [amendment.operation] as Json,
+    };
+    const proposalsBefore = await countRows("configuration_change_sets");
+    const protectedStateBefore = await captureNullRejectionState();
+
+    const nullActor = await owner.client.rpc("propose_configuration_change", {
+      ...args,
+      expected_actor_id: null,
+    } as never);
+    expect(nullActor.error?.message).toContain(
+      "configuration_actor_context_mismatch",
+    );
+    expect(await countRows("configuration_change_sets")).toBe(proposalsBefore);
+    expect(await captureNullRejectionState()).toEqual(protectedStateBefore);
+
+    const nullVersion = await owner.client.rpc("propose_configuration_change", {
+      ...args,
+      expected_base_version_id: null,
+    } as never);
+    expect(nullVersion.error?.message).toContain(
+      "configuration_proposal_stale",
+    );
+    expect(await countRows("configuration_change_sets")).toBe(proposalsBefore);
+    expect(await captureNullRejectionState()).toEqual(protectedStateBefore);
+
+    const nullRevision = await owner.client.rpc(
+      "propose_configuration_change",
+      {
+        ...args,
+        expected_head_revision: null,
+      } as never,
+    );
+    expect(nullRevision.error?.message).toContain(
+      "configuration_proposal_stale",
+    );
+    expect(await countRows("configuration_change_sets")).toBe(proposalsBefore);
+    expect(await captureNullRejectionState()).toEqual(protectedStateBefore);
+
+    const nullVersionAndRevision = await owner.client.rpc(
+      "propose_configuration_change",
+      {
+        ...args,
+        expected_base_version_id: null,
+        expected_head_revision: null,
+      } as never,
+    );
+    expect(nullVersionAndRevision.error?.message).toContain(
+      "configuration_proposal_stale",
+    );
+    expect(await countRows("configuration_change_sets")).toBe(proposalsBefore);
+    expect(await captureNullRejectionState()).toEqual(protectedStateBefore);
+
+    const exactCurrent = await owner.client.rpc(
+      "propose_configuration_change",
+      args,
+    );
+    expect(exactCurrent.error).toBeNull();
+    expect(exactCurrent.data).toMatchObject({
+      base_version_id: active.baseVersionId,
+      base_head_revision: active.headRevision,
+      business_id: business.id,
+      requested_by: owner.user.id,
+      status: "proposed",
+    });
+    expect(await countRows("configuration_change_sets")).toBe(
+      proposalsBefore + 1,
+    );
+    expect(await captureNullRejectionState()).toEqual(protectedStateBefore);
   });
 
   it("rejects Staff, anonymous, forged actor, version and revision values without writes", async () => {

@@ -1154,8 +1154,9 @@ activation while appearing to change only the schedule.
   context; the M5 semantic diff remains authoritative.
 - Ordinary proposal creation requires both the exact expected active version
   and head revision. PostgreSQL authenticates, rechecks Owner/Admin membership,
-  takes the existing Business head lock, compares both values atomically and
-  raises `configuration_proposal_stale` with no insert on mismatch.
+  takes the existing Business head lock, compares both values atomically with
+  NULL-safe equality and raises `configuration_proposal_stale` with no insert
+  when either value is missing or mismatched.
 - The obsolete five-argument `propose_configuration_change` overload is
   revoked and dropped. Its seven-argument expected-head replacement is the
   sole ordinary proposal RPC. Rollback preparation retains its separate
