@@ -9,7 +9,7 @@ export function createAdminClient() {
   const environment = getEnvironment();
   if (!environment.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error(
-      "SUPABASE_SERVICE_ROLE_KEY is required for trusted preorder writes.",
+      "SUPABASE_SERVICE_ROLE_KEY is required for trusted server writes.",
     );
   }
 

@@ -6,27 +6,49 @@ import {
   aiProviderFailureKindSchema,
   structuredAiProviderResponseSchema,
   StructuredAiProviderError,
+  structuredAiUsageSchema,
   type AiExecutionPolicy,
   type AiExecutionPolicyRegistry,
   type RegisteredAiTask,
   type RegisteredAiTaskRegistry,
+  type StructuredAiProvider,
   type StructuredAiProviderRegistry,
   type StructuredAiProviderRequest,
+  type StructuredAiUsage,
 } from "./contracts";
-import { AiExecutionError } from "./errors";
+import {
+  AiExecutionError,
+  type AiExecutionAccounting,
+  type AiExecutionErrorCode,
+} from "./errors";
 import {
   aiExecutionPolicies,
   registeredAiTasks,
   structuredAiProviders,
 } from "./registry";
 
+const MAX_AGGREGATE_TOKENS = 5_000_000_000;
+
 const executionPolicySchema = z
   .object({
-    key: z.string().min(1).max(80),
-    providerKey: z.string().min(1).max(80),
-    modelKey: z.string().min(1).max(120),
+    key: z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[a-z][a-z0-9_]*$/),
+    providerKey: z
+      .string()
+      .min(1)
+      .max(80)
+      .regex(/^[a-z][a-z0-9_-]*$/),
+    modelKey: z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/),
     maxInputBytes: z.number().int().positive().max(1_048_576),
-    maxOutputTokens: z.number().int().positive().max(8_192),
+    maxBillableInputTokens: z.number().int().positive().max(10_000_000),
+    maxOutputTokens: z.number().int().positive().max(1_000_000),
     timeoutMs: z.number().int().positive().max(120_000),
     maxAttempts: z.number().int().positive().max(5),
     retryDelayMs: z.number().int().nonnegative().max(10_000),
@@ -34,14 +56,46 @@ const executionPolicySchema = z
       .array(aiProviderFailureKindSchema)
       .max(5)
       .readonly(),
+    inputMicrousdPerMillion: z.number().int().nonnegative().max(1_000_000_000),
+    outputMicrousdPerMillion: z.number().int().nonnegative().max(1_000_000_000),
   })
   .strict();
+
+const taskKeySchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z][a-z0-9_]*$/);
+const providerKeySchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z][a-z0-9_-]*$/);
+const purposeLabelSchema = z.string().trim().min(1).max(120);
 
 interface ExecutionDependencies {
   tasks: RegisteredAiTaskRegistry;
   policies: AiExecutionPolicyRegistry;
   providers: StructuredAiProviderRegistry;
   sleep(milliseconds: number): Promise<void>;
+}
+
+export interface PreparedAiExecutionDescriptor {
+  taskKey: string;
+  taskVersion: number;
+  purposeLabel: string;
+  policy: AiExecutionPolicy;
+}
+
+export interface PreparedAiExecution {
+  readonly descriptor: PreparedAiExecutionDescriptor;
+}
+
+interface InternalPreparedExecution {
+  task: RegisteredAiTask;
+  policy: AiExecutionPolicy;
+  provider: StructuredAiProvider;
+  request: Readonly<Omit<StructuredAiProviderRequest, "signal">>;
 }
 
 interface AiExecutionMetadata {
@@ -51,9 +105,10 @@ interface AiExecutionMetadata {
   providerKey: string;
   modelKey: string;
   attempts: number;
-  usage?: {
+  usage: {
     inputTokens: number;
     outputTokens: number;
+    complete: boolean;
   };
   requestMetadata?: Readonly<Record<string, string | number | boolean>>;
 }
@@ -61,6 +116,16 @@ interface AiExecutionMetadata {
 export interface AiExecutionResult<TOutput = unknown> {
   output: TOutput;
   metadata: AiExecutionMetadata;
+  accounting: AiExecutionAccounting;
+}
+
+interface MutableAccounting {
+  attemptsStarted: number;
+  inputTokens: number;
+  outputTokens: number;
+  usageReported: boolean;
+  usageComplete: boolean;
+  providerInvocationStarted: boolean;
 }
 
 const defaultSleep = (milliseconds: number) =>
@@ -83,15 +148,12 @@ function stableJsonValue(value: unknown): unknown {
   ) {
     return value;
   }
-
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
-
   if (Array.isArray(value)) {
     return value.map(stableJsonValue);
   }
-
   if (
     typeof value === "object" &&
     Object.getPrototypeOf(value) === Object.prototype
@@ -103,7 +165,6 @@ function stableJsonValue(value: unknown): unknown {
         .map(([key, item]) => [key, stableJsonValue(item)]),
     );
   }
-
   throw new TypeError("AI task input must be JSON serialisable.");
 }
 
@@ -121,26 +182,74 @@ function outputJsonSchema(
   }) as Readonly<Record<string, unknown>>;
 }
 
-function mapProviderFailure(
-  failure: StructuredAiProviderError,
+function snapshotAccounting(
+  accounting: MutableAccounting,
+): AiExecutionAccounting {
+  return Object.freeze({
+    attemptsStarted: accounting.attemptsStarted,
+    inputTokens: accounting.inputTokens,
+    outputTokens: accounting.outputTokens,
+    usageReported: accounting.usageReported,
+    usageComplete: accounting.usageComplete,
+    providerInvocationStarted: accounting.providerInvocationStarted,
+    failureBeforeProviderInvocation: !accounting.providerInvocationStarted,
+  });
+}
+
+function addUsage(
+  accounting: MutableAccounting,
+  usage: StructuredAiUsage | undefined,
+): void {
+  if (!usage) {
+    accounting.usageComplete = false;
+    return;
+  }
+  const parsed = structuredAiUsageSchema.parse(usage);
+  accounting.usageReported = true;
+  const inputTotal = accounting.inputTokens + parsed.inputTokens;
+  const outputTotal = accounting.outputTokens + parsed.outputTokens;
+  if (
+    !Number.isSafeInteger(inputTotal) ||
+    !Number.isSafeInteger(outputTotal) ||
+    inputTotal > MAX_AGGREGATE_TOKENS ||
+    outputTotal > MAX_AGGREGATE_TOKENS
+  ) {
+    accounting.usageComplete = false;
+    throw new RangeError("Aggregate AI usage exceeds safe accounting bounds.");
+  }
+  accounting.inputTokens = inputTotal;
+  accounting.outputTokens = outputTotal;
+}
+
+function executionError(
+  code: AiExecutionErrorCode,
+  accounting: MutableAccounting,
+  cause?: unknown,
 ): AiExecutionError {
+  return new AiExecutionError(code, {
+    accounting: snapshotAccounting(accounting),
+    cause,
+  });
+}
+
+function providerFailureCode(
+  failure: StructuredAiProviderError,
+): AiExecutionErrorCode {
   switch (failure.kind) {
     case "disabled":
-      return new AiExecutionError("ai_disabled", { cause: failure });
+      return "ai_disabled";
     case "rate_limited":
-      return new AiExecutionError("ai_rate_limited", { cause: failure });
+      return "ai_rate_limited";
     case "unavailable":
     case "transient":
-      return new AiExecutionError("ai_provider_unavailable", {
-        cause: failure,
-      });
+      return "ai_provider_unavailable";
     case "invalid_request":
-      return new AiExecutionError("ai_execution_failed", { cause: failure });
+      return "ai_execution_failed";
   }
 }
 
 async function invokeWithTimeout(
-  provider: StructuredAiProviderRegistry[string],
+  provider: StructuredAiProvider,
   request: Omit<StructuredAiProviderRequest, "signal">,
   timeoutMs: number,
 ) {
@@ -177,67 +286,107 @@ export function createAiExecutionService(
     providers: overrides.providers ?? structuredAiProviders,
     sleep: overrides.sleep ?? defaultSleep,
   };
+  const preparedExecutions = new WeakMap<
+    PreparedAiExecution,
+    InternalPreparedExecution
+  >();
 
-  return Object.freeze({
-    async execute(taskKey: string, input: unknown): Promise<AiExecutionResult> {
-      const task = dependencies.tasks[taskKey];
+  function prepare(taskKey: string, input: unknown): PreparedAiExecution {
+    const task = dependencies.tasks[taskKey];
+    if (!task) {
+      throw new AiExecutionError("ai_task_not_found");
+    }
+
+    try {
+      taskKeySchema.parse(taskKey);
       if (
-        !task ||
         task.key !== taskKey ||
         !Number.isInteger(task.version) ||
         task.version < 1
       ) {
-        throw new AiExecutionError("ai_task_not_found");
+        throw new Error("The registered AI task identity is invalid.");
       }
+      purposeLabelSchema.parse(task.purposeLabel);
+      taskKeySchema.parse(task.policyKey);
+    } catch (cause) {
+      throw new AiExecutionError("ai_execution_failed", { cause });
+    }
 
-      const parsedInput = task.inputSchema.safeParse(input);
-      if (!parsedInput.success) {
-        throw new AiExecutionError("ai_input_invalid", {
-          cause: parsedInput.error,
-        });
-      }
+    const parsedInput = task.inputSchema.safeParse(input);
+    if (!parsedInput.success) {
+      throw new AiExecutionError("ai_input_invalid", {
+        cause: parsedInput.error,
+      });
+    }
 
-      const policyValue = dependencies.policies[task.policyKey];
-      if (!policyValue) {
-        throw new AiExecutionError("ai_execution_failed", {
-          cause: new Error("The registered AI policy was not found."),
-        });
-      }
+    const policyValue = dependencies.policies[task.policyKey];
+    if (!policyValue) {
+      throw new AiExecutionError("ai_execution_failed", {
+        cause: new Error("The registered AI policy was not found."),
+      });
+    }
 
-      let policy: AiExecutionPolicy;
-      try {
-        policy = executionPolicySchema.parse(policyValue);
-      } catch (cause) {
-        throw new AiExecutionError("ai_execution_failed", { cause });
+    let policy: AiExecutionPolicy;
+    try {
+      policy = executionPolicySchema.parse(policyValue);
+      if (policy.key !== task.policyKey) {
+        throw new Error("The registered AI policy key does not match.");
       }
+    } catch (cause) {
+      throw new AiExecutionError("ai_execution_failed", { cause });
+    }
 
-      let inputBytes: number;
-      try {
-        inputBytes = serialisedInputBytes(parsedInput.data);
-      } catch (cause) {
-        throw new AiExecutionError("ai_input_invalid", { cause });
+    const provider = dependencies.providers[policy.providerKey];
+    if (!provider) {
+      throw new AiExecutionError("ai_execution_failed", {
+        cause: new Error("The registered structured provider was not found."),
+      });
+    }
+    try {
+      const providerKey = providerKeySchema.parse(provider.key);
+      if (providerKey !== policy.providerKey) {
+        throw new Error(
+          "The registered structured provider key does not match.",
+        );
       }
-      if (inputBytes > policy.maxInputBytes) {
-        throw new AiExecutionError("ai_input_too_large");
-      }
+    } catch (cause) {
+      throw new AiExecutionError("ai_execution_failed", { cause });
+    }
 
-      const provider = dependencies.providers[policy.providerKey];
-      if (!provider) {
-        throw new AiExecutionError("ai_provider_unavailable", {
-          cause: new Error("The registered structured provider was not found."),
-        });
-      }
+    let inputBytes: number;
+    try {
+      inputBytes = serialisedInputBytes(parsedInput.data);
+    } catch (cause) {
+      throw new AiExecutionError("ai_input_invalid", { cause });
+    }
+    if (inputBytes > policy.maxInputBytes) {
+      throw new AiExecutionError("ai_input_too_large");
+    }
 
-      let instruction: string;
-      let jsonSchema: Readonly<Record<string, unknown>>;
-      try {
-        instruction = task.buildInstruction(parsedInput.data);
-        jsonSchema = outputJsonSchema(task);
-      } catch (cause) {
-        throw new AiExecutionError("ai_execution_failed", { cause });
+    let instruction: string;
+    let jsonSchema: Readonly<Record<string, unknown>>;
+    try {
+      instruction = task.buildInstruction(parsedInput.data);
+      if (instruction.length < 1 || instruction.length > 20_000) {
+        throw new Error("The server-owned AI instruction is invalid.");
       }
+      jsonSchema = outputJsonSchema(task);
+    } catch (cause) {
+      throw new AiExecutionError("ai_execution_failed", { cause });
+    }
 
-      const request = Object.freeze({
+    const descriptor = Object.freeze({
+      taskKey: task.key,
+      taskVersion: task.version,
+      purposeLabel: task.purposeLabel,
+      policy: Object.freeze({ ...policy }),
+    });
+    const prepared = Object.freeze({ descriptor });
+    preparedExecutions.set(prepared, {
+      task,
+      policy,
+      provider,
+      request: Object.freeze({
         providerKey: policy.providerKey,
         modelKey: policy.modelKey,
         instruction,
@@ -248,86 +397,135 @@ export function createAiExecutionService(
           jsonSchema,
         }),
         maxOutputTokens: policy.maxOutputTokens,
-      });
+      }),
+    });
+    return prepared;
+  }
 
-      for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
-        try {
-          const rawResponse = await invokeWithTimeout(
-            provider,
-            request,
-            policy.timeoutMs,
-          );
-          const response =
-            structuredAiProviderResponseSchema.safeParse(rawResponse);
-          if (!response.success) {
-            throw new AiExecutionError("ai_output_invalid", {
-              cause: response.error,
-            });
-          }
-
-          const parsedOutput = task.outputSchema.safeParse(
-            response.data.output,
-          );
-          if (!parsedOutput.success) {
-            throw new AiExecutionError("ai_output_invalid", {
-              cause: parsedOutput.error,
-            });
-          }
-
-          return Object.freeze({
-            output: parsedOutput.data,
-            metadata: Object.freeze({
-              taskKey: task.key,
-              taskVersion: task.version,
-              purposeLabel: task.purposeLabel,
-              providerKey: policy.providerKey,
-              modelKey: policy.modelKey,
-              attempts: attempt,
-              ...(response.data.usage
-                ? { usage: Object.freeze(response.data.usage) }
-                : {}),
-              ...(response.data.requestMetadata
-                ? {
-                    requestMetadata: Object.freeze(
-                      response.data.requestMetadata,
-                    ),
-                  }
-                : {}),
-            }),
-          });
-        } catch (cause) {
-          if (cause instanceof AiExecutionError) {
-            throw cause;
-          }
-          if (cause instanceof AiAttemptTimeoutError) {
-            throw new AiExecutionError("ai_timeout", { cause });
-          }
-          if (cause instanceof StructuredAiProviderError) {
-            const retryable = policy.retryableFailureKinds.includes(cause.kind);
-            if (retryable && attempt < policy.maxAttempts) {
-              try {
-                await dependencies.sleep(policy.retryDelayMs);
-              } catch (sleepCause) {
-                throw new AiExecutionError("ai_execution_failed", {
-                  cause: sleepCause,
-                });
-              }
-              continue;
-            }
-            if (retryable) {
-              throw new AiExecutionError("ai_attempts_exhausted", {
-                cause,
-              });
-            }
-            throw mapProviderFailure(cause);
-          }
-          throw new AiExecutionError("ai_execution_failed", { cause });
-        }
-      }
-
+  async function executePrepared(
+    prepared: PreparedAiExecution,
+  ): Promise<AiExecutionResult> {
+    const internal = preparedExecutions.get(prepared);
+    if (!internal) {
       throw new AiExecutionError("ai_execution_failed", {
-        cause: new Error("The AI attempt loop ended unexpectedly."),
+        cause: new Error("The prepared AI execution is not trusted."),
       });
+    }
+
+    const { task, policy, provider, request } = internal;
+    const accounting: MutableAccounting = {
+      attemptsStarted: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      usageReported: false,
+      usageComplete: true,
+      providerInvocationStarted: false,
+    };
+
+    for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
+      accounting.attemptsStarted += 1;
+      accounting.providerInvocationStarted = true;
+      try {
+        const rawResponse = await invokeWithTimeout(
+          provider,
+          request,
+          policy.timeoutMs,
+        );
+        const response =
+          structuredAiProviderResponseSchema.safeParse(rawResponse);
+        if (!response.success) {
+          accounting.usageComplete = false;
+          throw executionError("ai_output_invalid", accounting, response.error);
+        }
+
+        try {
+          addUsage(accounting, response.data.usage);
+        } catch (cause) {
+          throw executionError("ai_execution_failed", accounting, cause);
+        }
+
+        const parsedOutput = task.outputSchema.safeParse(response.data.output);
+        if (!parsedOutput.success) {
+          throw executionError(
+            "ai_output_invalid",
+            accounting,
+            parsedOutput.error,
+          );
+        }
+
+        const finalAccounting = snapshotAccounting(accounting);
+        return Object.freeze({
+          output: parsedOutput.data,
+          accounting: finalAccounting,
+          metadata: Object.freeze({
+            taskKey: task.key,
+            taskVersion: task.version,
+            purposeLabel: task.purposeLabel,
+            providerKey: policy.providerKey,
+            modelKey: policy.modelKey,
+            attempts: attempt,
+            usage: Object.freeze({
+              inputTokens: finalAccounting.inputTokens,
+              outputTokens: finalAccounting.outputTokens,
+              complete: finalAccounting.usageComplete,
+            }),
+            ...(response.data.requestMetadata
+              ? {
+                  requestMetadata: Object.freeze(response.data.requestMetadata),
+                }
+              : {}),
+          }),
+        });
+      } catch (cause) {
+        if (cause instanceof AiExecutionError) {
+          throw cause;
+        }
+        if (cause instanceof AiAttemptTimeoutError) {
+          accounting.usageComplete = false;
+          throw executionError("ai_timeout", accounting, cause);
+        }
+        if (cause instanceof StructuredAiProviderError) {
+          try {
+            addUsage(accounting, cause.usage);
+          } catch (usageCause) {
+            throw executionError("ai_execution_failed", accounting, usageCause);
+          }
+          const retryable = policy.retryableFailureKinds.includes(cause.kind);
+          if (retryable && attempt < policy.maxAttempts) {
+            try {
+              await dependencies.sleep(policy.retryDelayMs);
+            } catch (sleepCause) {
+              throw executionError(
+                "ai_execution_failed",
+                accounting,
+                sleepCause,
+              );
+            }
+            continue;
+          }
+          if (retryable) {
+            throw executionError("ai_attempts_exhausted", accounting, cause);
+          }
+          throw executionError(providerFailureCode(cause), accounting, cause);
+        }
+        accounting.usageComplete = false;
+        throw executionError("ai_execution_failed", accounting, cause);
+      }
+    }
+
+    accounting.usageComplete = false;
+    throw executionError(
+      "ai_execution_failed",
+      accounting,
+      new Error("The AI attempt loop ended unexpectedly."),
+    );
+  }
+
+  return Object.freeze({
+    prepare,
+    executePrepared,
+    async execute(taskKey: string, input: unknown): Promise<AiExecutionResult> {
+      return executePrepared(prepare(taskKey, input));
     },
   });
 }

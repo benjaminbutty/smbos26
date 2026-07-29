@@ -1282,6 +1282,48 @@ publishing, credentials, database clients, arbitrary HTTP, SQL, shell and
 source-code capabilities are never model-selectable tools. The server owns
 implementation, authorization and deterministic validation.
 
+### 8.5.1 Durable AI usage controls
+
+The Phase 1A provider-neutral execution core remains independent of tenancy and
+storage. A separate server-only Business-aware service validates and prepares a
+registered task, derives its trusted worst-case envelope, reserves budget,
+executes the prepared task, aggregates usage across every provider attempt and
+settles the durable run before returning output.
+
+Each Business has one settings row and starts disabled. The conservative v0.1
+defaults and PostgreSQL hard maximums are:
+
+| Limit | Default | Hard maximum |
+| --- | ---: | ---: |
+| Requests per UTC day | 25 | 1,000 |
+| Input tokens per UTC day | 250,000 | 100,000,000 |
+| Output tokens per UTC day | 100,000 | 50,000,000 |
+| Cost per UTC day | 5,000,000 microusd | 1,000,000,000 microusd |
+
+These are safety limits, not final commercial plans. No null limit means
+unlimited. The usage day is the UTC date derived from PostgreSQL statement time
+when reservation occurs. A settings-row lock serializes reservation for one
+Business without holding a transaction open during provider execution or
+contending with another Business.
+
+The reservation covers maximum billable input tokens and maximum output tokens
+for every allowed attempt. Integer cost is the sum of the separately rounded-up
+input and output components at trusted microusd-per-million rates. Settled,
+complete usage charges aggregate actual usage. Unsettled or incomplete usage
+conservatively consumes at least its reservation for the captured UTC day;
+actual overrun is recorded and charged without clamping. A pre-provider failure
+cancels and releases the reservation. Settlement is idempotent and an
+unrecordable settlement prevents model output from being returned as success.
+
+The execution row is a metadata-only reservation and audit record. It contains
+bounded Business/actor, task/policy/provider/model identity, lifecycle, safe
+outcome, reserved/actual/charged usage, attempts, completeness and timestamps.
+It contains no prompt, task input, instruction, candidate configuration, model
+output, raw response, headers, credentials, arbitrary provider metadata or
+stack trace. Owner/Admin audit reads are deterministically limited to the latest
+50 rows. This accounting is a platform setting, not M5 versioned
+configuration.
+
 ### 8.6 Validation layer
 
 Every proposed operation must validate:
@@ -1784,8 +1826,23 @@ Build in safety-ordered phases:
 - disabled production provider with no SDK, API-key use or network request.
 
 Phase 1A does not create proposals, access configuration or operational data,
-add a browser surface, or incur an AI API charge. Durable per-Business budgets,
-usage accounting and audit records are Phase 1B.
+add a browser surface, or incur an AI API charge.
+
+**Phase 1B - durable per-Business usage controls and safe audit**
+
+- one default-disabled finite settings row per Business;
+- UTC-day request, input-token, output-token and integer-microusd limits;
+- atomic settings-row-locked worst-case reservation before execution;
+- aggregate all-attempt usage and idempotent success/failure settlement;
+- conservative reservation charging for incomplete or unknown usage;
+- authenticated Owner/Admin settings, summary and latest-50 audit reads;
+- metadata-only durable runs with no prompt, input, output or provider payload;
+- service-role-only narrow reserve/settle RPCs with no direct table access.
+
+Phase 1B adds no provider SDK, live model, route, Server Action, settings/audit
+UI, context builder, proposal generation or configuration/operational
+mutation. The production provider remains disabled and network-free, so no AI
+API charge can be incurred.
 
 **Before AI operation generation**
 

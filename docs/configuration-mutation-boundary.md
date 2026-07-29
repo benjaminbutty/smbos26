@@ -42,6 +42,8 @@ Classification: **close direct mutation; runtime read only**.
 | Record-to-Location link RPCs | Operational and outside configuration versioning |
 | Public preorder submission and confirmation-email state RPCs | Trusted operational transaction boundary; not configuration mutation |
 | Business and Location lifecycle RPCs | Platform/operational lifecycle; Location versioning is out of scope |
+| AI settings read/update, UTC-day summary and latest-50 audit RPCs | Owner/Admin platform-accounting boundary; not configuration mutation |
+| AI budget reserve/settle RPCs | Service-role-only accounting lifecycle; no configuration-table access or grant |
 
 No generic private-function proxy exists. The migration also revokes the
 `public` default execute privilege for future functions created by `postgres`
@@ -56,6 +58,7 @@ in the `private` schema.
 | `src/core/graph/service.ts` | Configuration reads plus operational Record/edge writes |
 | `src/core/experience/service.ts` | Configuration reads only |
 | `src/core/preorder/service.ts` | Live runtime resolution/submission/email state plus authenticated identifier-only preview resolution; no configuration mutation |
+| `src/ai/accounting/service.ts`, `src/ai/business-execution.ts` | Server-only per-Business accounting/orchestration; may reserve and settle only `business_ai_settings` and `ai_execution_runs`; imports no configuration mutation service |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/components/configuration-history-ui.tsx`, `src/components/configuration-action-ui.tsx` | Owner-readable proposal, diff/validation, confirmation and immutable version presentation; links/forms only and no lifecycle service call |
@@ -78,6 +81,14 @@ prove submitted Business/actor/candidate/operation/checksum/status values are
 ignored, while database-backed tests exercise Owner/Admin, Staff, anonymous,
 cross-Business, malformed, stale and concurrent submissions through the actual
 Server Actions.
+
+Milestone 6 Phase 1B treats AI limits and execution audit as platform/account
+state, not versioned Business configuration. `business_ai_settings` and
+`ai_execution_runs` are outside the eight projection tables and have no direct
+application-role grants, including for `service_role`. Their narrow accounting
+RPCs do not invoke proposal, validation, application, rollback or operational
+Record mutation. The M5 direct-DML denials and mandatory
+propose → validate → apply boundary are unchanged.
 
 ## Phase 5A read authorization
 

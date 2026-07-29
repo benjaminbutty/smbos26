@@ -55,6 +55,9 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Run AI accounting and usage-control tests
+        run: npm run test:ai-accounting
+
       - name: Run configuration change proposal tests
         run: npm run test:changes
 

@@ -40,6 +40,7 @@ export const aiExecutionPolicies = Object.freeze({
     providerKey: "disabled",
     modelKey: "unconfigured",
     maxInputBytes: 2_048,
+    maxBillableInputTokens: 1_024,
     maxOutputTokens: 256,
     timeoutMs: 10_000,
     maxAttempts: 3,
@@ -48,6 +49,8 @@ export const aiExecutionPolicies = Object.freeze({
       "rate_limited",
       "transient",
     ] as const),
+    inputMicrousdPerMillion: 0,
+    outputMicrousdPerMillion: 0,
   }),
 }) satisfies AiExecutionPolicyRegistry;
 

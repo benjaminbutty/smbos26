@@ -34,6 +34,157 @@ export type Database = {
   };
   public: {
     Tables: {
+      ai_execution_runs: {
+        Row: {
+          actor_id: string;
+          actual_cost_microusd: number | null;
+          actual_input_tokens: number | null;
+          actual_output_tokens: number | null;
+          business_id: string;
+          charged_cost_microusd: number;
+          charged_input_tokens: number;
+          charged_output_tokens: number;
+          id: string;
+          input_microusd_per_million: number;
+          model_key: string;
+          outcome_code: string | null;
+          output_microusd_per_million: number;
+          policy_key: string;
+          provider_attempt_count: number;
+          provider_invocation_started: boolean;
+          provider_key: string;
+          purpose_label: string;
+          reserved_at: string;
+          reserved_cost_microusd: number;
+          reserved_input_tokens: number;
+          reserved_output_tokens: number;
+          reserved_request_count: number;
+          settled_at: string | null;
+          status: Database["public"]["Enums"]["ai_execution_status"];
+          task_key: string;
+          task_version: number;
+          usage_complete: boolean;
+          usage_day: string;
+          usage_overrun: boolean;
+        };
+        Insert: {
+          actor_id: string;
+          actual_cost_microusd?: number | null;
+          actual_input_tokens?: number | null;
+          actual_output_tokens?: number | null;
+          business_id: string;
+          charged_cost_microusd?: number;
+          charged_input_tokens?: number;
+          charged_output_tokens?: number;
+          id: string;
+          input_microusd_per_million: number;
+          model_key: string;
+          outcome_code?: string | null;
+          output_microusd_per_million: number;
+          policy_key: string;
+          provider_attempt_count?: number;
+          provider_invocation_started?: boolean;
+          provider_key: string;
+          purpose_label: string;
+          reserved_at?: string;
+          reserved_cost_microusd: number;
+          reserved_input_tokens: number;
+          reserved_output_tokens: number;
+          reserved_request_count?: number;
+          settled_at?: string | null;
+          status?: Database["public"]["Enums"]["ai_execution_status"];
+          task_key: string;
+          task_version: number;
+          usage_complete?: boolean;
+          usage_day: string;
+          usage_overrun?: boolean;
+        };
+        Update: {
+          actor_id?: string;
+          actual_cost_microusd?: number | null;
+          actual_input_tokens?: number | null;
+          actual_output_tokens?: number | null;
+          business_id?: string;
+          charged_cost_microusd?: number;
+          charged_input_tokens?: number;
+          charged_output_tokens?: number;
+          id?: string;
+          input_microusd_per_million?: number;
+          model_key?: string;
+          outcome_code?: string | null;
+          output_microusd_per_million?: number;
+          policy_key?: string;
+          provider_attempt_count?: number;
+          provider_invocation_started?: boolean;
+          provider_key?: string;
+          purpose_label?: string;
+          reserved_at?: string;
+          reserved_cost_microusd?: number;
+          reserved_input_tokens?: number;
+          reserved_output_tokens?: number;
+          reserved_request_count?: number;
+          settled_at?: string | null;
+          status?: Database["public"]["Enums"]["ai_execution_status"];
+          task_key?: string;
+          task_version?: number;
+          usage_complete?: boolean;
+          usage_day?: string;
+          usage_overrun?: boolean;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ai_execution_runs_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      business_ai_settings: {
+        Row: {
+          business_id: string;
+          created_at: string;
+          daily_cost_limit_microusd: number;
+          daily_input_token_limit: number;
+          daily_output_token_limit: number;
+          daily_request_limit: number;
+          is_enabled: boolean;
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          business_id: string;
+          created_at?: string;
+          daily_cost_limit_microusd?: number;
+          daily_input_token_limit?: number;
+          daily_output_token_limit?: number;
+          daily_request_limit?: number;
+          is_enabled?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: {
+          business_id?: string;
+          created_at?: string;
+          daily_cost_limit_microusd?: number;
+          daily_input_token_limit?: number;
+          daily_output_token_limit?: number;
+          daily_request_limit?: number;
+          is_enabled?: boolean;
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "business_ai_settings_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: true;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       business_configuration_heads: {
         Row: {
           active_version_id: string;
@@ -1490,6 +1641,30 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      get_business_ai_settings: {
+        Args: { expected_actor_id: string; expected_business_id: string };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          daily_cost_limit_microusd: number;
+          daily_input_token_limit: number;
+          daily_output_token_limit: number;
+          daily_request_limit: number;
+          is_enabled: boolean;
+          updated_at: string;
+          updated_by: string;
+        }[];
+      };
+      get_business_ai_usage_summary: {
+        Args: { expected_actor_id: string; expected_business_id: string };
+        Returns: {
+          cost_microusd: number;
+          input_tokens: number;
+          output_tokens: number;
+          request_count: number;
+          usage_day: string;
+        }[];
+      };
       get_configuration_change_set: {
         Args: { expected_business_id: string; requested_change_set_id: string };
         Returns: {
@@ -1550,6 +1725,39 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      list_business_ai_execution_runs: {
+        Args: { expected_actor_id: string; expected_business_id: string };
+        Returns: {
+          actor_id: string;
+          actual_cost_microusd: number;
+          actual_input_tokens: number;
+          actual_output_tokens: number;
+          business_id: string;
+          charged_cost_microusd: number;
+          charged_input_tokens: number;
+          charged_output_tokens: number;
+          id: string;
+          model_key: string;
+          outcome_code: string;
+          policy_key: string;
+          provider_attempt_count: number;
+          provider_invocation_started: boolean;
+          provider_key: string;
+          purpose_label: string;
+          reserved_at: string;
+          reserved_cost_microusd: number;
+          reserved_input_tokens: number;
+          reserved_output_tokens: number;
+          reserved_request_count: number;
+          settled_at: string;
+          status: Database["public"]["Enums"]["ai_execution_status"];
+          task_key: string;
+          task_version: number;
+          usage_complete: boolean;
+          usage_day: string;
+          usage_overrun: boolean;
+        }[];
       };
       list_configuration_change_sets: {
         Args: { expected_business_id: string };
@@ -1756,6 +1964,34 @@ export type Database = {
         };
         Returns: boolean;
       };
+      reserve_business_ai_execution: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_execution_id: string;
+          requested_input_microusd_per_million: number;
+          requested_model_key: string;
+          requested_output_microusd_per_million: number;
+          requested_policy_key: string;
+          requested_provider_key: string;
+          requested_purpose_label: string;
+          requested_reserved_input_tokens: number;
+          requested_reserved_output_tokens: number;
+          requested_task_key: string;
+          requested_task_version: number;
+        };
+        Returns: {
+          business_id: string;
+          id: string;
+          reserved_at: string;
+          reserved_cost_microusd: number;
+          reserved_input_tokens: number;
+          reserved_output_tokens: number;
+          reserved_request_count: number;
+          status: Database["public"]["Enums"]["ai_execution_status"];
+          usage_day: string;
+        }[];
+      };
       resolve_configuration_preview_preorder: {
         Args: {
           expected_actor_id: string;
@@ -1786,6 +2022,36 @@ export type Database = {
         };
         Returns: number;
       };
+      settle_business_ai_execution: {
+        Args: {
+          expected_business_id: string;
+          requested_actual_input_tokens: number;
+          requested_actual_output_tokens: number;
+          requested_execution_id: string;
+          requested_outcome_code: string;
+          requested_provider_attempt_count: number;
+          requested_provider_invocation_started: boolean;
+          requested_status: Database["public"]["Enums"]["ai_execution_status"];
+          requested_usage_complete: boolean;
+        };
+        Returns: {
+          actual_cost_microusd: number;
+          actual_input_tokens: number;
+          actual_output_tokens: number;
+          business_id: string;
+          charged_cost_microusd: number;
+          charged_input_tokens: number;
+          charged_output_tokens: number;
+          id: string;
+          outcome_code: string;
+          provider_attempt_count: number;
+          provider_invocation_started: boolean;
+          settled_at: string;
+          status: Database["public"]["Enums"]["ai_execution_status"];
+          usage_complete: boolean;
+          usage_overrun: boolean;
+        }[];
+      };
       submit_public_preorder: {
         Args: {
           requested_business_slug: string;
@@ -1795,6 +2061,28 @@ export type Database = {
           submission: Json;
         };
         Returns: Json;
+      };
+      update_business_ai_settings: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_daily_cost_limit_microusd: number;
+          requested_daily_input_token_limit: number;
+          requested_daily_output_token_limit: number;
+          requested_daily_request_limit: number;
+          requested_is_enabled: boolean;
+        };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          daily_cost_limit_microusd: number;
+          daily_input_token_limit: number;
+          daily_output_token_limit: number;
+          daily_request_limit: number;
+          is_enabled: boolean;
+          updated_at: string;
+          updated_by: string;
+        }[];
       };
       update_graph_record: {
         Args: {
@@ -1864,6 +2152,8 @@ export type Database = {
       };
     };
     Enums: {
+      ai_execution_status:
+        "reserved" | "succeeded" | "failed" | "cancelled" | "expired";
       business_role: "owner" | "admin" | "staff";
       configuration_change_kind: "change" | "rollback";
       configuration_change_status:
@@ -2027,6 +2317,13 @@ export const Constants = {
   },
   public: {
     Enums: {
+      ai_execution_status: [
+        "reserved",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "expired",
+      ],
       business_role: ["owner", "admin", "staff"],
       configuration_change_kind: ["change", "rollback"],
       configuration_change_status: [

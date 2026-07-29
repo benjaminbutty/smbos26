@@ -12,19 +12,32 @@ export const aiProviderFailureKindSchema = z.enum([
 
 export type AiProviderFailureKind = z.infer<typeof aiProviderFailureKindSchema>;
 
+export const structuredAiUsageSchema = z
+  .object({
+    inputTokens: z.number().int().nonnegative().max(1_000_000_000),
+    outputTokens: z.number().int().nonnegative().max(1_000_000_000),
+  })
+  .strict();
+
+export type StructuredAiUsage = z.infer<typeof structuredAiUsageSchema>;
+
 export class StructuredAiProviderError extends Error {
   readonly kind: AiProviderFailureKind;
+  readonly usage: StructuredAiUsage | undefined;
   override readonly cause: unknown;
 
   constructor(
     kind: AiProviderFailureKind,
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; usage?: StructuredAiUsage },
   ) {
     super(message);
     this.name = "StructuredAiProviderError";
     this.kind = kind;
     this.cause = options?.cause;
+    this.usage = options?.usage
+      ? Object.freeze(structuredAiUsageSchema.parse(options.usage))
+      : undefined;
   }
 }
 
@@ -37,13 +50,7 @@ const providerMetadataValueSchema = z.union([
 export const structuredAiProviderResponseSchema = z
   .object({
     output: z.unknown(),
-    usage: z
-      .object({
-        inputTokens: z.number().int().nonnegative().max(1_000_000_000),
-        outputTokens: z.number().int().nonnegative().max(1_000_000_000),
-      })
-      .strict()
-      .optional(),
+    usage: structuredAiUsageSchema.optional(),
     requestMetadata: z
       .record(
         z
@@ -89,6 +96,7 @@ export interface StructuredAiProviderResponse {
 }
 
 export interface StructuredAiProvider {
+  readonly key: string;
   generateStructured(
     request: StructuredAiProviderRequest,
   ): Promise<StructuredAiProviderResponse>;
@@ -116,11 +124,14 @@ export interface AiExecutionPolicy {
   providerKey: string;
   modelKey: string;
   maxInputBytes: number;
+  maxBillableInputTokens: number;
   maxOutputTokens: number;
   timeoutMs: number;
   maxAttempts: number;
   retryDelayMs: number;
   retryableFailureKinds: readonly AiProviderFailureKind[];
+  inputMicrousdPerMillion: number;
+  outputMicrousdPerMillion: number;
 }
 
 export type AiExecutionPolicyRegistry = Readonly<

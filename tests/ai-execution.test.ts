@@ -30,7 +30,8 @@ function policy(overrides: Partial<AiExecutionPolicy> = {}): AiExecutionPolicy {
 }
 
 function serviceWith(
-  provider: StructuredAiProvider,
+  provider: Omit<StructuredAiProvider, "key"> &
+    Partial<Pick<StructuredAiProvider, "key">>,
   options: {
     policy?: AiExecutionPolicy;
     sleep?: (milliseconds: number) => Promise<void>;
@@ -42,7 +43,7 @@ function serviceWith(
       bounded_structured_v1: options.policy ?? policy(),
     },
     providers: {
-      disabled: provider,
+      disabled: { key: "disabled", ...provider },
     },
     ...(options.sleep ? { sleep: options.sleep } : {}),
   });
@@ -75,6 +76,15 @@ describe("provider-neutral structured AI execution", () => {
 
     expect(result).toEqual({
       output: { summary: "Ready." },
+      accounting: {
+        attemptsStarted: 1,
+        inputTokens: 12,
+        outputTokens: 3,
+        usageReported: true,
+        usageComplete: true,
+        providerInvocationStarted: true,
+        failureBeforeProviderInvocation: false,
+      },
       metadata: {
         taskKey: "contract_probe_v1",
         taskVersion: 1,
@@ -82,7 +92,7 @@ describe("provider-neutral structured AI execution", () => {
         providerKey: "disabled",
         modelKey: "unconfigured",
         attempts: 1,
-        usage: { inputTokens: 12, outputTokens: 3 },
+        usage: { inputTokens: 12, outputTokens: 3, complete: true },
         requestMetadata: { request_id: "safe-id", cached: false },
       },
     });
@@ -97,6 +107,18 @@ describe("provider-neutral structured AI execution", () => {
         subject: "",
       }),
     ).rejects.toMatchObject({ code: "ai_input_invalid" });
+    expect(generateStructured).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a provider registry key does not match its declaration", async () => {
+    const generateStructured = vi.fn();
+
+    await expect(
+      serviceWith({
+        key: "different_provider",
+        generateStructured,
+      }).execute("contract_probe_v1", { subject: "Readiness" }),
+    ).rejects.toMatchObject({ code: "ai_execution_failed" });
     expect(generateStructured).not.toHaveBeenCalled();
   });
 
@@ -367,6 +389,14 @@ describe("production AI source boundaries", () => {
     const source = productionTypeScript
       .map((file) => fs.readFileSync(file, "utf8"))
       .join("\n");
+    const providerNeutralCore = productionTypeScript
+      .filter(
+        (file) =>
+          !file.includes(`${path.sep}accounting${path.sep}`) &&
+          !file.endsWith(`${path.sep}business-execution.ts`),
+      )
+      .map((file) => fs.readFileSync(file, "utf8"))
+      .join("\n");
 
     expect(source).not.toMatch(
       /core\/(?:configuration|graph|preorder|experience)\/service/,
@@ -374,7 +404,7 @@ describe("production AI source boundaries", () => {
     expect(source).not.toMatch(
       /propose_configuration_change|apply_configuration_change|validate_configuration_change|create_record|create_location|submit_preorder/,
     );
-    expect(source).not.toMatch(/supabase|service[_-]?role/i);
+    expect(providerNeutralCore).not.toMatch(/supabase|service[_-]?role/i);
   });
 
   it("contains no real network-provider implementation", () => {

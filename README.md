@@ -2,14 +2,15 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 1A
-provider-neutral structured AI execution foundation: a
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 1B
+provider-neutral structured AI execution and durable usage-control foundation: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
-The AI execution boundary is server-only and deliberately disabled; there is
-no live provider or external model request.
+The AI execution boundary is server-only, per-Business accounting is disabled
+by default, and the sole production provider remains deliberately disabled.
+There is no live provider or external model request.
 
 The product and architecture sources of truth are:
 
@@ -62,6 +63,12 @@ Included:
 - bounded structured input, output tokens, attempts, retry delay and actual
   aborting timeout behavior
 - stable owner-safe AI errors with internal causes retained for observability
+- default-disabled finite per-Business daily request, input-token,
+  output-token, and integer-microusd controls
+- atomic worst-case reservations, idempotent settlement, and conservative
+  unknown-usage charging across every provider attempt
+- Owner/Admin-only settings, UTC-day summary, and metadata-only latest-50
+  execution audit reads
 - one disabled production AI provider that makes no network request
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
@@ -72,7 +79,7 @@ Not included:
 - online payment, deposits, refunds or inventory deduction
 - live AI provider calls, API-key use or builder behavior
 - AI proposal generation, context assembly, builder routes or chat UI
-- durable AI usage accounting, per-Business budgets or audit persistence
+- billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
 - owner-facing proposal creation or operation editing
@@ -97,11 +104,22 @@ Product-to-Location availability use separate narrow operational services and
 normal generated UI. They are not configuration versions. Compound requests
 are decomposed into correctly ordered operational and configuration steps.
 
-Phase 1A only establishes the structured execution contract. Its production
-provider is disabled, so it performs no external request and cannot incur an AI
-API charge. Durable budgets, usage accounting and audit records are Phase 1B;
-live provider integration, context assembly, operation generation and builder
-UI remain later work.
+Phase 1B wraps the Phase 1A structured execution core in a separate
+Business-aware accounting service. Each Business starts disabled with finite
+limits. PostgreSQL locks that Business's settings row and reserves the trusted
+worst-case envelope before an attempt; known usage settles to aggregate actuals
+and incomplete usage retains at least the reservation. Limits reset by the UTC
+date captured from database statement time. Money is integer micro-US-dollars
+(`1 USD = 1,000,000 microusd`).
+
+The execution audit stores only bounded identity, policy, status, token/cost,
+attempt, completeness and timestamp fields. It stores no prompt, task input,
+instruction, model output, raw response, header, credential, provider metadata
+or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
+
+The production provider is still disabled, so it performs no external request
+and cannot incur an AI API charge. Live provider integration, context assembly,
+operation generation and builder UI remain later work.
 
 ## Requirements
 
@@ -233,6 +251,7 @@ validating from a clean state.
 | ------------------------------------- | ------------------------------------------------ |
 | `npm test`                            | Run fast unit and component tests                |
 | `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
+| `npm run test:ai-accounting`          | Run durable AI usage-control/accounting tests    |
 | `npm run test:rls`                    | Run the Milestone 1 tenancy/RLS suite            |
 | `npm run test:graph`                  | Run the Milestone 2 graph integrity suite        |
 | `npm run test:experience`             | Run the Milestone 3 experience suite             |
@@ -338,8 +357,11 @@ tests/
   apply, and abandon RPC lifecycle. Legacy configuration RPCs and private
   engine helpers are not executable by application roles.
 - AI execution resolves only registered server tasks and trusted policies. It
-  has no configuration, operational or Supabase mutation dependency and the
-  Phase 1A provider performs no network request.
+  has no configuration or operational mutation dependency. A separate
+  server-only accounting module verifies the authenticated Owner/Admin through
+  narrow RPCs and alone may invoke service-role-only reserve/settle RPCs.
+  Direct access to both accounting tables is denied to all application roles,
+  including `service_role`. The disabled provider performs no network request.
 - Database-owner configuration fixtures exist only under `tests/`; they are not
   production services, credentials, routes, or RPCs.
 - Public catalogue reads return an explicit allow-list; generic graph and

@@ -1029,3 +1029,87 @@ must not make the deterministic runtime depend on AI availability.
   mutation services.
 - Phase 1A proves failure, timeout, retry and strict-output behavior without
   claiming that the AI builder or a live provider is complete.
+
+## ADR-015 - Durable per-Business AI reservation and metadata-only audit
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 1B)
+
+**Date:** 29 July 2026
+
+### Context
+
+The provider-neutral Phase 1A core can validate a registered task and execute a
+bounded provider policy, but a future provider call must not begin without
+durable tenant-level spend control. Browser-side limit checks cannot prevent
+concurrent overspend, final-attempt-only metering can undercount retries, and a
+failed post-provider audit write must not be presented as an ordinary success.
+
+Accounting also has a different lifecycle from versioned system configuration.
+Limits and execution usage are platform/account state; putting them into M5
+proposals would make concurrency enforcement depend on configuration history
+and give rollback misleading spend semantics.
+
+### Decision
+
+- Each Business has one `business_ai_settings` row, synchronously created with
+  the Business and backfilled for existing Businesses. AI starts disabled and
+  every request, input-token, output-token and microusd limit is finite,
+  positive and capped by PostgreSQL. The documented values are conservative
+  safety defaults and ceilings, not commercial plans.
+- `ai_execution_runs` is one bounded reservation/audit row per trusted
+  server-generated UUID. It stores only allow-listed identity, lifecycle,
+  outcome, reserved/actual/charged usage, attempts, completeness and timestamps.
+  It stores no prompt, task input, instruction, candidate, model output, raw
+  provider response, header, credential, arbitrary provider metadata or stack
+  trace.
+- Reservation is one PostgreSQL transaction. It verifies `service_role`,
+  rechecks the supplied actor's current Owner/Admin membership, locks that
+  Business's settings row, derives the UTC day from database statement time,
+  totals charged terminal runs plus active reservations, checks all four
+  limits, and inserts the immutable reservation. Another Business locks a
+  different row, and no transaction remains open during provider execution.
+- The trusted policy registry supplies maximum billable input, maximum output,
+  maximum attempts and integer microusd-per-million rates. The reservation
+  covers every attempt. Input and output cost components are each rounded up
+  using integer arithmetic and then added.
+- The execution core exposes bounded internal accounting: attempts started,
+  aggregate reported input/output tokens, usage completeness and whether
+  provider invocation began. Public error serialization remains only a safe
+  code and message.
+- Complete usage settles to aggregate actuals. Incomplete or unknown usage
+  charges at least the reservation; actual overrun is stored and charged
+  without clamping. Pre-provider failure cancels and releases the reservation.
+  Identical reserve/settle retries are idempotent and conflicting replays fail
+  closed. Settlement is retried once; persistent failure retains the
+  conservative reservation and prevents output from being returned as success.
+- Unsettled reservations consume their captured UTC day's worst-case allowance.
+  They naturally stop affecting a later UTC day; Phase 1B adds no expiry worker,
+  queue, cron or early-reclamation mechanism.
+- Direct access to both tables is revoked from anonymous, authenticated and
+  service-role clients. Authenticated Owner/Admin settings, summary and
+  deterministic latest-50 audit reads use narrow security-definer RPCs. Only a
+  server-only AI accounting module can create a service-role client and invoke
+  reserve/settle RPCs, which independently validate their trusted context.
+- AI accounting is outside M5 configuration mutation. The eight configuration
+  tables receive no new grant, and this phase invokes no proposal, validation,
+  application, rollback or operational Record mutation.
+- The sole production provider remains disabled and network-free. Phase 1B adds
+  no provider SDK, API-key use, route, Server Action or UI, so it cannot incur
+  an external AI API charge.
+
+### Consequences
+
+- Per-Business daily controls are durable and safe against concurrent requests,
+  while provider execution remains independent of database, tenant and
+  authorization concerns.
+- Unknown outcomes fail financially conservative; known usage releases unused
+  reservation capacity, and retries are charged from all metered attempts.
+- Audit reads are useful for owners without becoming prompt/conversation
+  storage or exposing raw provider material.
+- A reservation that never settles can consume capacity for the rest of its
+  captured UTC day. This deliberate v0.1 trade-off avoids premature reuse and
+  background infrastructure; later reclamation requires an equally
+  concurrency-safe design.
+- Billing, subscriptions, customer invoicing, live providers, builder context,
+  operation generation and manual configuration amendment controls remain
+  outside Phase 1B.
