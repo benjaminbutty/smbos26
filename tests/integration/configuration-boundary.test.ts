@@ -141,6 +141,14 @@ async function expectDmlDenied(
 async function proposeCapacityNine(): Promise<
   Tables<"configuration_change_sets">
 > {
+  const head = requireData(
+    await owner.client
+      .from("business_configuration_heads")
+      .select("*")
+      .eq("business_id", business.id)
+      .single(),
+    "Could not load the active configuration head.",
+  );
   const locationRows = requireData(
     await owner.client
       .from("preorder_experience_locations")
@@ -159,6 +167,8 @@ async function proposeCapacityNine(): Promise<
     await administrator.client.rpc("propose_configuration_change", {
       expected_business_id: business.id,
       expected_actor_id: administrator.user.id,
+      expected_base_version_id: head.active_version_id,
+      expected_head_revision: head.head_revision,
       requested_title: "Reduce preorder slot capacity",
       requested_description: "Phase 3B post-closure application proof.",
       requested_operations: [
@@ -529,6 +539,8 @@ describe("Milestone 5 Phase 3B configuration mutation boundary", () => {
       {
         expected_business_id: business.id,
         expected_actor_id: staff.user.id,
+        expected_base_version_id: proposal.base_version_id,
+        expected_head_revision: proposal.base_head_revision,
         requested_title: "Staff attempt",
         requested_description: "",
         requested_operations: proposal.operations_json,

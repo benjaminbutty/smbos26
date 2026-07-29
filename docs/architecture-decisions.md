@@ -1113,3 +1113,74 @@ and give rollback misleading spend semantics.
 - Billing, subscriptions, customer invoicing, live providers, builder context,
   operation generation and manual configuration amendment controls remain
   outside Phase 1B.
+
+## ADR-016 - Deterministic manual amendments share the M5 lifecycle
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 2A.1)
+
+**Date:** 29 July 2026
+
+### Context
+
+AI is intended to become the primary system-building interface, but it must not
+be the only editing surface or a dependency for safe configuration changes.
+The first bounded manual control edits preorder scheduling. Because the editor
+renders one immutable active version and submits later, it must not silently
+overwrite, merge or rebase across a newer applied version.
+
+A manual editor also must not become a second configuration engine. Accepting
+complete preorder configuration or operations from the browser would let a
+forged request replace mappings, public questions, allowed Locations or
+activation while appearing to change only the schedule.
+
+### Decision
+
+- Manual controls express bounded owner intents. The first supported intent is
+  `update_preorder_schedule`: preorder stable key, collection days,
+  first/last time, slot interval, capacity, cutoff hours and booking horizon.
+- Owner/Admin users access dynamic no-store Edit setup routes through the
+  existing `manage_configuration` capability. Staff, anonymous and
+  cross-Business requests receive the controlled authorization boundary.
+- The server reloads the active head and immutable version, parses
+  `snapshot_json`, resolves one active preorder and its active Location
+  associations, and composes one complete strict
+  `set_preorder_experience` operation.
+- Product, Customer, Order and Order Item keys, all Relationship keys, field
+  mappings, public Fields and their labels/required/help/autocomplete settings,
+  allowed Location IDs, activation and every other non-schedule property come
+  from that snapshot. The browser cannot supply them authoritatively.
+- Semantic no-ops create no proposal, version, head movement or audit row.
+  Bounded title and owner-readable description are server-generated proposal
+  context; the M5 semantic diff remains authoritative.
+- Ordinary proposal creation requires both the exact expected active version
+  and head revision. PostgreSQL authenticates, rechecks Owner/Admin membership,
+  takes the existing Business head lock, compares both values atomically and
+  raises `configuration_proposal_stale` with no insert on mismatch.
+- The obsolete five-argument `propose_configuration_change` overload is
+  revoked and dropped. Its seven-argument expected-head replacement is the
+  sole ordinary proposal RPC. Rollback preparation retains its separate
+  trusted path and current-head controls.
+- Manual submission creates only an immutable `proposed` M5 change set. Stored
+  candidate, allocation, checksum, display context and semantic diff remain
+  database-derived. Candidate preview, deliberate validation, deliberate
+  Owner/Admin application and immutable version creation remain the existing
+  M5 lifecycle.
+- Manual UI performs no direct projection-table DML, operational Record or
+  Location mutation, AI invocation, network request, budget reservation or AI
+  execution/accounting write.
+- Question/Field controls, broader manual building and AI operation generation
+  remain later phases.
+
+### Consequences
+
+- AI is visibly not the only configuration control surface, while the runtime
+  and configuration lifecycle remain deterministic when AI is disabled.
+- A stale editor fails safely and asks the owner to reload; proposals are never
+  silently rebased or merged.
+- The manual UI stays in owner language and cannot expose or accept raw
+  configuration grammar.
+- Competing proposals may share one unchanged base under existing M5 semantics.
+  Applying one leaves the other subject to the existing stale-base validation
+  and application conflict behavior.
+- The M5 proposal, preview, validation, application and version engine remains
+  the sole normal production configuration mutation boundary.

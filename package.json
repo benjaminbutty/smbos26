@@ -25,6 +25,7 @@
     "test:preorder": "vitest run --config vitest.integration.config.ts tests/integration/preorder.test.ts",
     "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
     "test:ai-accounting": "vitest run --config vitest.ai-accounting.config.ts",
+    "test:manual-amendments": "vitest run --config vitest.manual-amendments.config.ts",
     "test:changes": "vitest run --config vitest.changes.config.ts",
     "test:validation": "vitest run --config vitest.validation.config.ts",
     "test:application": "vitest run --config vitest.application.config.ts",

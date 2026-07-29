@@ -198,6 +198,7 @@ describe("Milestone 5 Phase 5A authenticated read interface", () => {
     });
     baseline = (await ownerService.listVersions())[0]!;
     proposal = await ownerService.proposeChangeSet({
+      ...(await ownerService.getProposalCurrentness()),
       title: "Add catering enquiries",
       description: "A read-only Phase 5A proposal fixture.",
       operations: [

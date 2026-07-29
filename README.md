@@ -2,8 +2,8 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 1B
-provider-neutral structured AI execution and durable usage-control foundation: a
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 2A.1
+provider-neutral AI foundation plus deterministic manual setup amendments: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
@@ -49,6 +49,12 @@ Included:
 - read-only Owner/Admin Changes, proposal detail, and Version history routes
 - authenticated POST-only lifecycle Server Actions and read-only confirmation
   routes for validate, apply, abandon and rollback preparation
+- authenticated Owner/Admin Edit setup routes for deterministic preorder
+  collection schedule proposals
+- exact active-version and head-revision proposal currentness enforced
+  atomically in PostgreSQL
+- server-composed complete preorder operations from the active immutable
+  snapshot, with owner-readable metadata and no-op rejection
 - server-derived Business and actor context with status rechecks before every
   lifecycle mutation
 - explicit pending state, bounded notices and authoritative
@@ -82,7 +88,7 @@ Not included:
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
-- owner-facing proposal creation or operation editing
+- general-purpose owner-facing operation editing or raw configuration editing
 - automatic rebase/merge or AI/LLM integration
 - Location or operational Record versioning
 - workflow/rule execution
@@ -120,6 +126,15 @@ or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
 The production provider is still disabled, so it performs no external request
 and cannot incur an AI API charge. Live provider integration, context assembly,
 operation generation and builder UI remain later work.
+
+Phase 2A.1 adds the first non-AI configuration control at
+`/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
+days, times, interval, capacity, notice and booking horizon. The server reloads
+the immutable active version, preserves every non-schedule property, composes
+one strict `set_preorder_experience` operation and creates only an ordinary M5
+proposal. Saving does not validate, apply, publish, invoke AI or create an AI
+execution/accounting row. Stale rendered forms fail against the exact expected
+active version and head revision instead of being rebased.
 
 ## Requirements
 
@@ -213,6 +228,10 @@ The configured Version 2 appears as the active head. Lifecycle controls appear
 only when an existing proposal's authoritative status permits them. The local
 demo does not seed permanent proposals; Phase 5B does not introduce
 demonstration-only history or proposal creation.
+
+Open [Edit setup](http://localhost:3000/app/bedford-bakery-demo/setup) to
+prepare a preorder collection settings proposal. Review its stored diff and
+candidate preview in Changes, then validate and apply it deliberately.
 
 ## Local Supabase
 

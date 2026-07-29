@@ -40,7 +40,10 @@ export default async function TenantLayout({
         <nav className="workspace-navigation" aria-label="Business workspace">
           <Link href={`/app/${businessSlug}`}>Home</Link>
           {hasCapability(tenant.membership.role, "manage_configuration") ? (
-            <Link href={`/app/${businessSlug}/changes`}>Changes</Link>
+            <>
+              <Link href={`/app/${businessSlug}/setup`}>Edit setup</Link>
+              <Link href={`/app/${businessSlug}/changes`}>Changes</Link>
+            </>
           ) : null}
           {navigation.pages.map((page) => (
             <Link

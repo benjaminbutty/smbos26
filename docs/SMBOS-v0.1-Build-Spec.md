@@ -1846,8 +1846,21 @@ API charge can be incurred.
 
 **Before AI operation generation**
 
-- add manual deterministic configuration proposal controls over the existing
-  Milestone 5 lifecycle;
+- **Phase 2A.1:** add the first manual deterministic configuration proposal
+  control over the existing Milestone 5 lifecycle:
+  - Owner/Admin preorder collection days, first/last collection time, slot
+    interval, slot capacity, cutoff/notice and booking horizon controls;
+  - server-only composition of one complete strict
+    `set_preorder_experience` operation from the active immutable snapshot;
+  - exact expected active version and head revision enforced under the
+    PostgreSQL head lock;
+  - owner-readable proposal metadata and semantic no-op rejection;
+  - proposed-only submission followed by the existing candidate preview,
+    deliberate validation and deliberate application;
+  - no AI execution, accounting, provider request, direct projection write,
+    operational Record change, automatic validation or automatic application;
+- add later bounded manual question/Field configuration controls over the same
+  lifecycle;
 - add the required narrow operational controls;
 - preserve the separate configuration and operational lanes described in
   Section 8.3.

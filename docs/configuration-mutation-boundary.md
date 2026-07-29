@@ -31,7 +31,7 @@ Classification: **close direct mutation; runtime read only**.
 
 | Surface | Final classification |
 | --- | --- |
-| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle |
+| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle. Ordinary proposal creation requires the exact expected active version and head revision. |
 | `list_configuration_change_sets`, `get_configuration_change_set`, `list_configuration_versions`, `get_configuration_version` | Owner/Admin history reads |
 | `load_configuration_preview` | Authenticated Owner/Admin identifier-only read; replays and verifies an open candidate against the current head without lifecycle or projection writes |
 | `resolve_configuration_preview_preorder` | Authenticated Owner/Admin read of candidate configuration joined to current operational Product, price, Location-link and counter state |
@@ -61,6 +61,8 @@ in the `private` schema.
 | `src/ai/accounting/service.ts`, `src/ai/business-execution.ts` | Server-only per-Business accounting/orchestration; may reserve and settle only `business_ai_settings` and `ai_execution_runs`; imports no configuration mutation service |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
+| `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
+| `src/app/app/[businessSlug]/setup` | Dynamic no-store Owner/Admin manual setup reads and one narrow proposal-preparation Server Action; proposed-only and no mutation on GET |
 | `src/components/configuration-history-ui.tsx`, `src/components/configuration-action-ui.tsx` | Owner-readable proposal, diff/validation, confirmation and immutable version presentation; links/forms only and no lifecycle service call |
 | Confirmation routes under `src/app/app/[businessSlug]/changes` | Dynamic no-store Owner/Admin GETs that re-read authoritative proposal/version/head state and bind narrowly named Server Actions; rendering performs no mutation |
 | Other server routes/actions under `src/app` | Operational preorder endpoint, live runtime reads, or authenticated read-only candidate preview; no configuration DML |
@@ -89,6 +91,25 @@ application-role grants, including for `service_role`. Their narrow accounting
 RPCs do not invoke proposal, validation, application, rollback or operational
 Record mutation. The M5 direct-DML denials and mandatory
 propose → validate → apply boundary are unchanged.
+
+Milestone 6 Phase 2A.1 replaces the old five-argument ordinary proposal RPC
+with one seven-argument signature. After authentication, actor and current
+Owner/Admin membership checks, PostgreSQL takes the existing shared Business
+head lock and compares both `active_version_id` and `head_revision` with the
+caller-supplied currentness values. A mismatch raises
+`configuration_proposal_stale` before loading or materialising the base and
+inserts nothing. The old overload is revoked and dropped.
+
+The manual preorder editor accepts only the tenant-scoped preorder stable key,
+expected-head comparison values and schedule controls. It resolves Business and
+actor from the authenticated session, reloads and parses the expected immutable
+version, preserves graph keys, mappings, public Fields, Location associations
+and activation from that snapshot, validates the complete existing operation
+schema, rejects semantic no-ops and calls only `proposeChangeSet()`. Browser
+values for Business/actor identity, metadata, operations, mappings, Fields,
+Locations, activation, candidate, checksum, diff, validation or status are not
+read. The result remains `proposed`; preview, validation and application are
+the existing M5 implementations.
 
 ## Phase 5A read authorization
 

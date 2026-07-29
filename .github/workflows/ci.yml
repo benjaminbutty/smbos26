@@ -55,6 +55,12 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Run deterministic manual amendment tests
+        run: npm run test:manual-amendments
+
+      - name: Reset after manual amendment acceptance
+        run: npm run supabase:reset
+
       - name: Run AI accounting and usage-control tests
         run: npm run test:ai-accounting
 

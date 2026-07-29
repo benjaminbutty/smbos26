@@ -1909,7 +1909,9 @@ export type Database = {
       propose_configuration_change: {
         Args: {
           expected_actor_id: string;
+          expected_base_version_id: string;
           expected_business_id: string;
+          expected_head_revision: number;
           requested_description: string;
           requested_operations: Json;
           requested_title: string;

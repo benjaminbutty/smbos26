@@ -218,6 +218,7 @@ async function proposeValidateApply(
   operations: ConfigurationOperation[],
 ): Promise<{ proposal: ChangeSet; version: Version }> {
   const proposed = await ownerService.proposeChangeSet({
+    ...(await ownerService.getProposalCurrentness()),
     title,
     description: null,
     operations,
@@ -507,6 +508,10 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
       {
         expected_business_id: business.id,
         expected_actor_id: owner.user.id,
+        expected_base_version_id: (await ownerService.getProposalCurrentness())
+          .expectedBaseVersionId,
+        expected_head_revision: (await ownerService.getProposalCurrentness())
+          .expectedHeadRevision,
         requested_title: "Descriptor injection",
         requested_description: null as unknown as string,
         requested_operations: [
@@ -962,6 +967,7 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
       actorId: owner.user.id,
     });
     const cascadeV2Proposal = await cascadeService.proposeChangeSet({
+      ...(await cascadeService.getProposalCurrentness()),
       title: "Add cascade probe",
       description: null,
       operations: [
@@ -984,6 +990,7 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
       cascadeV2Applied.applied_version_id!,
     );
     const cascadeV3Proposal = await cascadeService.proposeChangeSet({
+      ...(await cascadeService.getProposalCurrentness()),
       title: "Rename cascade probe",
       description: null,
       operations: [
