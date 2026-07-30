@@ -26,6 +26,7 @@
     "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
     "test:ai-context": "vitest run --config vitest.ai-context.config.ts",
     "test:ai-accounting": "vitest run --config vitest.ai-accounting.config.ts",
+    "test:builder-planning": "vitest run --config vitest.builder-planning.config.ts",
     "test:manual-amendments": "vitest run --config vitest.manual-amendments.config.ts",
     "test:manual-questions": "vitest run --config vitest.manual-questions.config.ts",
     "test:changes": "vitest run --config vitest.changes.config.ts",

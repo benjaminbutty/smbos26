@@ -22,3 +22,9 @@ summary and the latest 50 metadata-only runs. Service-role credentials exist
 only inside this module and can execute only the reserve/settle RPCs; even
 `service_role` has no direct table access. No prompt, task input, instruction,
 model output, raw response, credential or arbitrary provider metadata is stored.
+
+Phase 3B builder planning uses this boundary unchanged. Semantic-invalid output
+settles as failed with aggregate usage, while a structurally and semantically
+valid execution settles before the planning service performs its final context
+comparison. If context changed during execution, usage remains recorded even
+though the stale plan is discarded and never returned as current.

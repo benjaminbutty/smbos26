@@ -93,6 +93,7 @@ export interface PreparedAiExecution {
 
 interface InternalPreparedExecution {
   task: RegisteredAiTask;
+  input: unknown;
   policy: AiExecutionPolicy;
   provider: StructuredAiProvider;
   request: Readonly<Omit<StructuredAiProviderRequest, "signal">>;
@@ -384,6 +385,7 @@ export function createAiExecutionService(
     const prepared = Object.freeze({ descriptor });
     preparedExecutions.set(prepared, {
       task,
+      input: parsedInput.data,
       policy,
       provider,
       request: Object.freeze({
@@ -412,7 +414,7 @@ export function createAiExecutionService(
       });
     }
 
-    const { task, policy, provider, request } = internal;
+    const { task, input, policy, provider, request } = internal;
     const accounting: MutableAccounting = {
       attemptsStarted: 0,
       inputTokens: 0,
@@ -453,9 +455,19 @@ export function createAiExecutionService(
           );
         }
 
+        let validatedOutput: unknown;
+        try {
+          validatedOutput = task.validateOutput
+            ? task.validateOutput(input, parsedOutput.data)
+            : parsedOutput.data;
+          validatedOutput = task.outputSchema.parse(validatedOutput);
+        } catch (cause) {
+          throw executionError("ai_output_invalid", accounting, cause);
+        }
+
         const finalAccounting = snapshotAccounting(accounting);
         return Object.freeze({
-          output: parsedOutput.data,
+          output: validatedOutput,
           accounting: finalAccounting,
           metadata: Object.freeze({
             taskKey: task.key,

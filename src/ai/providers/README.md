@@ -19,3 +19,8 @@ aggregates bounded token usage across attempts, but tenancy, membership, limits,
 pricing, reservation and durable audit remain in the separate server-only
 accounting/orchestration layer. Providers receive none of those concerns, and
 arbitrary provider metadata is not persisted.
+
+`builder_plan_v1` does not change this production boundary: it still resolves
+only to the disabled adapter. Test suites may inject deterministic providers
+through execution dependencies, but no successful fake belongs to the
+production registry.

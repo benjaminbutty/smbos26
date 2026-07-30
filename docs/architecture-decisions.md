@@ -1328,3 +1328,89 @@ execution/accounting and from the M5 proposal lifecycle.
 - Later model output remains untrusted and can enter configuration only as
   strict allow-listed M5 operations with expected-head protection, preview,
   deterministic validation and deliberate Owner/Admin application.
+
+## ADR-019 - Builder planning is structured, reviewable and non-executing
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 3B)
+
+**Date:** 30 July 2026
+
+### Context
+
+The first real builder task must translate one owner request and the Phase 3A
+Business context into useful clarification or a reviewable plan without
+prematurely creating configuration operations, proposals or a conversational
+surface. Static output shape validation alone cannot prevent a model from
+inventing existing Object keys, Location references or incoherent step
+dependencies.
+
+Planning also uses the Business-aware execution boundary, whose accounting
+requires trusted actor and Business identity. Those identities and exact
+configuration currentness must not become model input merely because the
+planning service composes context and accounting.
+
+### Decision
+
+- `builder_plan_v1` is one registered server-owned task. Its strict input is a
+  schema-v1 object containing one trimmed 1–4,000 character owner request and
+  the exact Phase 3A `AiBusinessModelContextV1`.
+- The authoritative context loader additionally returns session-derived
+  `actorId` and tenant-checked `businessId` in a server-only execution envelope.
+  Neither identity, the active version UUID nor trusted head currentness enters
+  registered task input. `buildAiBusinessContext` retains its existing public
+  bundle shape.
+- The strict versioned output is either one to five bounded clarification
+  questions or a bounded owner-readable ready plan. Assumptions, concepts,
+  journeys, steps and unsupported requirements use plan-local references and
+  conservative string/array limits.
+- Ready steps distinguish configuration and operational lanes with fixed
+  descriptive categories. Categories are planning vocabulary, not provider
+  tools, M5 operations, candidates or mutation authority. Every ready step
+  requires later owner confirmation.
+- Unsupported workflows, rules, payment, inventory, integrations, arbitrary
+  code and other unavailable capabilities are surfaced explicitly. A ready
+  plan contains no unresolved unsupported requirement, and high-impact
+  assumptions require owner confirmation.
+- Registered tasks may define an optional pure server-owned semantic output
+  validator. The provider-neutral core invokes it after strict parsing and
+  usage aggregation but before success. Failure becomes `ai_output_invalid`
+  with accounting retained. `contract_probe_v1` continues without a hook.
+- The planning validator performs no I/O. It checks unique references,
+  state-specific invariants, context-resolved Object and Location references,
+  concept consistency, lane/category compatibility, contiguous ordered
+  dependencies and compatibility with the supplied capability registry.
+- `builder_planning_v1` permits at most 160 KiB input, 64,000 billable input
+  tokens and 4,096 output tokens per attempt, a 30-second timeout and two
+  attempts with bounded rate-limit/transient retries. Zero pricing and the
+  disabled network-free production provider remain unchanged. Its worst-case
+  128,000 input-token and 8,192 output-token reservation fits the default
+  Business limits.
+- The authenticated service accepts only an ordinary session client,
+  server-selected Business UUID and bounded owner request. It loads
+  authoritative context, prepares/executes through existing Business-aware
+  accounting, reloads context and compares base version, head revision and
+  canonical serialized model context.
+- A detected configuration or Location change discards the plan with
+  `ai_plan_context_stale`. The metadata-only audit still records usage incurred
+  by the completed model execution. There remains an unavoidable race after
+  the final read; future operation generation and proposal creation must
+  rebuild context and enforce expected-head protection.
+- Owner requests, task input, Business context, questions, assumptions, plans,
+  instruction and provider output remain in memory and are never persisted.
+  Phase 3B creates no proposal, candidate, validation, application, publication,
+  Record/Location mutation, route, Server Action, chat surface or migration.
+- Phase 3A retains configured URLs accepted by the Page grammar. Before any live
+  provider is enabled, SMBOS must decide and test treatment of HTTPS query
+  strings/fragments and `mailto:`/`tel:` links: full values, normalized origins
+  or redacted representations.
+
+### Consequences
+
+- The first builder task is useful and owner-readable without becoming an
+  execution or configuration-write boundary.
+- Hallucinated references and incoherent plans fail before successful
+  settlement, while genuine provider usage remains conservatively accounted.
+- Production still makes no external model request and the deterministic
+  business runtime remains independent of AI availability.
+- Clarification answers, operation generation, proposal creation, live-provider
+  integration and builder UI remain later work.

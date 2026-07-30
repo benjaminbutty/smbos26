@@ -2,9 +2,10 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 3A
-provider-neutral AI foundation, deterministic manual setup amendments and
-data-minimised Business context: a
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 3B
+provider-neutral AI foundation, deterministic manual setup amendments,
+data-minimised Business context and strict non-executing Business-request
+planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
@@ -87,6 +88,18 @@ Included:
 - trusted active-version/head currentness kept outside model-facing context
 - configuration UUID, actor, checksum, timestamp, operational Record, PII,
   proposal, validation and AI audit exclusion from model-facing context
+- one registered `builder_plan_v1` task over a bounded owner request and the
+  exact Phase 3A model context
+- strict clarification-or-ready planning output with owner-readable bounds,
+  plan-local references, explicit unsupported capabilities and separate
+  configuration/operational planning lanes
+- pure server-owned semantic output validation for references, dependencies,
+  category/lane compatibility and current platform capability compatibility
+- authenticated planning orchestration with session-derived accounting
+  identity, metadata-only usage settlement and post-execution context
+  comparison before a plan is returned
+- in-memory-only owner requests and plans with no proposal, validation,
+  application, publication, Record or Location mutation
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -94,8 +107,8 @@ Included:
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
-- live AI provider calls, API-key use or builder behavior
-- AI proposal generation, planner tasks, builder routes or chat UI
+- live AI provider calls, API-key use or executable builder behavior
+- AI proposal/operation generation, builder routes or chat UI
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -135,8 +148,8 @@ instruction, model output, raw response, header, credential, provider metadata
 or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
 
 The production provider is still disabled, so it performs no external request
-and cannot incur an AI API charge. Live provider integration, planning,
-operation generation and builder UI remain later work.
+and cannot incur an AI API charge. Live provider integration, operation
+generation and builder UI remain later work.
 
 Phase 2A.1 adds the first non-AI configuration control at
 `/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
@@ -172,6 +185,29 @@ and AI audit are excluded. Canonical serialization is deterministically ordered
 and fails without truncation above 128 KiB. The Bedford acceptance context,
 including one inactive Location fixture, is 11,189 bytes. Phase 3A persists
 nothing, invokes no provider, reserves no budget and creates no proposal.
+
+Phase 3B registers `builder_plan_v1`. Its input is one trimmed owner request of
+at most 4,000 characters plus the exact strict Phase 3A `modelContext`.
+Session-derived actor/Business identity and exact base-version/head currentness
+remain server-only. The fixed instruction and strict schema allow either one to
+five clarification questions or a bounded owner-readable ready plan; the plan
+contains descriptive configuration/operational categories, not tools or M5
+operations.
+
+The provider-neutral core now runs an optional pure task semantic validator
+after strict output parsing and before success. Invalid Object, Location,
+concept or dependency references therefore settle as `ai_output_invalid` with
+reported usage retained. The planning service reloads and canonically projects
+Business context after execution and discards a plan when its version,
+revision or projected content changed. Metered execution remains in the
+metadata-only audit even when the plan is discarded as stale. A later
+operation/proposal phase must still rebuild context and enforce expected-head
+protection because a final read cannot remove every race.
+
+The sole production provider remains disabled and network-free. Owner requests,
+context and plans remain in memory and are not stored. Before any live provider
+is enabled, SMBOS must decide and test minimisation for configured HTTPS query
+strings/fragments and `mailto:`/`tel:` links.
 
 ## Requirements
 
@@ -309,6 +345,7 @@ validating from a clean state.
 | `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
 | `npm run test:ai-context`             | Run AI-safe Business context tests               |
 | `npm run test:ai-accounting`          | Run durable AI usage-control/accounting tests    |
+| `npm run test:builder-planning`       | Run strict non-executing builder planning tests  |
 | `npm run test:manual-amendments`      | Run deterministic schedule amendment tests       |
 | `npm run test:manual-questions`       | Run deterministic preorder question tests        |
 | `npm run test:rls`                    | Run the Milestone 1 tenancy/RLS suite            |

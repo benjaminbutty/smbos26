@@ -113,6 +113,10 @@ export interface RegisteredAiTask<
   inputSchema: TInputSchema;
   outputSchema: TOutputSchema;
   buildInstruction(input: z.output<TInputSchema>): string;
+  validateOutput?(
+    input: z.output<TInputSchema>,
+    parsedOutput: z.output<TOutputSchema>,
+  ): z.output<TOutputSchema>;
 }
 
 export type RegisteredAiTaskRegistry = Readonly<

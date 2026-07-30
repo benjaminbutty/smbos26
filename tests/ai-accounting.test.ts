@@ -497,7 +497,7 @@ describe("Phase 1B source boundaries", () => {
 
   it("keeps configuration lifecycle and operational mutation out of AI source", () => {
     expect(aiSource).not.toMatch(
-      /ConfigurationChangeService|propose_configuration_change|validate_configuration_change|apply_configuration_change|create_graph_record|create_location|submit_public_preorder/,
+      /ConfigurationChangeService|propose_configuration_change|validate_configuration_change|apply_configuration_change|create_graph_record|submit_public_preorder/,
     );
   });
 

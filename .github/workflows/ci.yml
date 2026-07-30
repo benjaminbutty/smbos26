@@ -58,7 +58,13 @@ jobs:
       - name: Run AI-safe Business context tests
         run: npm run test:ai-context
 
-      - name: Reset after AI Business context acceptance
+      - name: Reset for strict builder planning tests
+        run: npm run supabase:reset
+
+      - name: Run strict builder planning tests
+        run: npm run test:builder-planning
+
+      - name: Reset after builder planning acceptance
         run: npm run supabase:reset
 
       - name: Run deterministic manual question tests

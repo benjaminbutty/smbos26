@@ -67,6 +67,10 @@ const versionSchema = z
   .strict();
 
 export interface AuthoritativeAiBusinessContext {
+  executionContext: {
+    businessId: string;
+    actorId: string;
+  };
   currentness: AiBusinessContextCurrentness;
   source: AiBusinessContextSource;
 }
@@ -189,6 +193,10 @@ export async function loadAuthoritativeAiBusinessContext(
     }
 
     return Object.freeze({
+      executionContext: Object.freeze({
+        businessId: business.id,
+        actorId,
+      }),
       currentness: Object.freeze({
         baseVersionId: version.id,
         headRevision: head.head_revision,

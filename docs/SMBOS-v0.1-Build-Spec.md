@@ -1904,7 +1904,26 @@ API charge can be incurred.
   - exact active-version/head currentness outside model-facing data;
   - no operational Records/PII, configuration UUIDs, actors, timestamps,
     checksums, persistence, provider call, AI accounting or proposal creation;
-- planner prompt and registered builder tasks;
+- **Phase 3B - strict Business-request planning contract:**
+  - one registered `builder_plan_v1` task whose strict input is a trimmed
+    1–4,000 character owner request plus the exact Phase 3A model context;
+  - trusted actor/Business identity and exact base-version/head currentness
+    remain outside model input;
+  - one bounded clarification-or-ready output contract with owner-readable
+    assumptions, questions, concepts, journeys, descriptive steps and explicit
+    unsupported requirements;
+  - separate configuration and operational planning categories that are not
+    tools, M5 operations or mutation authority;
+  - optional pure server-owned semantic output validation inside the
+    provider-neutral execution core before successful settlement;
+  - authenticated composition through existing per-Business reservation and
+    metadata-only accounting;
+  - post-execution version, revision and canonical model-context comparison,
+    discarding a known-stale plan while retaining incurred usage accounting;
+  - no request/context/plan persistence, live provider, proposal, validation,
+    application, publication, route, UI or operational mutation;
+  - a required configured-URL minimisation decision before any live external
+    provider is enabled;
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.

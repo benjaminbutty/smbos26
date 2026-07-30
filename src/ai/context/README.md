@@ -21,7 +21,18 @@ They remain untrusted and must be tenant- and eligibility-checked if a later
 model returns them. Trusted active-version identity and head revision stay in
 the server-only `currentness` envelope, outside `modelContext`.
 
+The authoritative loader additionally exposes session-derived Business and
+actor identity in a separate server-only `executionContext`. The public
+`buildAiBusinessContext` bundle is unchanged. Planning uses this identity only
+for the existing Business-aware accounting boundary; it never enters
+`modelContext` or registered task input.
+
 Collections and JSON object keys are deterministically ordered. The complete
 model context has a 128 KiB hard limit and is never truncated, persisted, or
 logged. This phase makes no provider call, reserves no AI budget, and creates
 no configuration proposal.
+
+Phase 3B planning reloads and reprojects this source after execution. A change
+to the base version, head revision or canonical model context discards the
+result as stale. Future operation generation must still reload context and use
+expected-head protection.

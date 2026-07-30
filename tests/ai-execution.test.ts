@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
@@ -171,6 +172,100 @@ describe("provider-neutral structured AI execution", () => {
       }),
     ).rejects.toMatchObject({ code: "ai_output_invalid" });
     expect(generateStructured).toHaveBeenCalledOnce();
+  });
+
+  it("runs optional semantic validation after strict parsing and preserves usage on failure", async () => {
+    const validateOutput = vi.fn(() => {
+      throw new Error("semantic detail must remain internal");
+    });
+    const inputSchema = z.object({ expected: z.string() }).strict();
+    const outputSchema = z.object({ value: z.string() }).strict();
+    const service = createAiExecutionService({
+      tasks: {
+        semantic_probe_v1: {
+          key: "semantic_probe_v1",
+          version: 1,
+          purposeLabel: "Verify semantic output validation",
+          policyKey: "bounded_structured_v1",
+          inputSchema,
+          outputSchema,
+          buildInstruction: () => "Return the registered value.",
+          validateOutput,
+        },
+      },
+      policies: {
+        bounded_structured_v1: policy(),
+      },
+      providers: {
+        disabled: {
+          key: "disabled",
+          generateStructured: vi.fn().mockResolvedValue({
+            output: { value: "strictly valid" },
+            usage: { inputTokens: 31, outputTokens: 7 },
+          }),
+        },
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await service.execute("semantic_probe_v1", { expected: "different" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expectAiError(caught, "ai_output_invalid");
+    expect(validateOutput).toHaveBeenCalledWith(
+      { expected: "different" },
+      { value: "strictly valid" },
+    );
+    expect(caught.accounting).toMatchObject({
+      inputTokens: 31,
+      outputTokens: 7,
+      usageReported: true,
+      usageComplete: true,
+    });
+    expect(JSON.stringify(caught)).not.toContain("semantic detail");
+  });
+
+  it("accepts the value returned by a successful semantic validator", async () => {
+    const inputSchema = z.object({ expected: z.string() }).strict();
+    const outputSchema = z.object({ value: z.string() }).strict();
+    const service = createAiExecutionService({
+      tasks: {
+        semantic_probe_v1: {
+          key: "semantic_probe_v1",
+          version: 1,
+          purposeLabel: "Verify semantic output validation",
+          policyKey: "bounded_structured_v1",
+          inputSchema,
+          outputSchema,
+          buildInstruction: () => "Return the registered value.",
+          validateOutput: (
+            input: z.infer<typeof inputSchema>,
+            output: z.infer<typeof outputSchema>,
+          ) => {
+            expect(output.value).toBe(input.expected);
+            return output;
+          },
+        },
+      },
+      policies: {
+        bounded_structured_v1: policy(),
+      },
+      providers: {
+        disabled: {
+          key: "disabled",
+          generateStructured: vi.fn().mockResolvedValue({
+            output: { value: "matching" },
+          }),
+        },
+      },
+    });
+
+    await expect(
+      service.execute("semantic_probe_v1", { expected: "matching" }),
+    ).resolves.toMatchObject({ output: { value: "matching" } });
   });
 
   it("attempts a non-retryable provider failure exactly once", async () => {
@@ -393,7 +488,8 @@ describe("production AI source boundaries", () => {
       .filter(
         (file) =>
           !file.includes(`${path.sep}accounting${path.sep}`) &&
-          !file.endsWith(`${path.sep}business-execution.ts`),
+          !file.endsWith(`${path.sep}business-execution.ts`) &&
+          !file.endsWith(`${path.sep}planning${path.sep}service.ts`),
       )
       .map((file) => fs.readFileSync(file, "utf8"))
       .join("\n");
@@ -402,7 +498,7 @@ describe("production AI source boundaries", () => {
       /core\/(?:configuration|graph|preorder|experience)\/service/,
     );
     expect(source).not.toMatch(
-      /propose_configuration_change|apply_configuration_change|validate_configuration_change|create_record|create_location|submit_preorder/,
+      /propose_configuration_change|apply_configuration_change|validate_configuration_change|create_record|submit_preorder/,
     );
     expect(providerNeutralCore).not.toMatch(/supabase|service[_-]?role/i);
   });

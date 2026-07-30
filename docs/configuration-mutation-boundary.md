@@ -61,6 +61,7 @@ in the `private` schema.
 | `src/ai/accounting/service.ts`, `src/ai/business-execution.ts` | Server-only per-Business accounting/orchestration; may reserve and settle only `business_ai_settings` and `ai_execution_runs`; imports no configuration mutation service |
 | `src/core/configuration/builder-context-source.ts` | Authenticated read-only Business context source; session-derived actor, current membership/capability, tenant Business/Location rows and active immutable version only |
 | `src/ai/context/` | Pure strict model-facing projection and safe errors; no database client, provider, execution/accounting service, configuration mutation service or I/O |
+| `src/ai/planning/` | Strict non-executing planning schemas, instruction, semantic validation and authenticated composition; may read authoritative context and use AI accounting/execution, but exposes no configuration lifecycle or operational mutation method |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -153,6 +154,22 @@ candidates, diffs, validation and AI audit are excluded. Location UUIDs are the
 only opaque model-facing database references. Canonical ordering and a 128 KiB
 hard limit apply before any future provider boundary; Phase 3A makes no
 provider call, reservation, audit row, proposal or lifecycle transition.
+
+Milestone 6 Phase 3B adds no configuration mutation surface. Its registered
+task receives only a bounded owner request and the exact Phase 3A model
+context. Planning steps use descriptive category enums and are neither tools
+nor M5 operations. The planning service imports no
+`ConfigurationChangeService`, graph/preorder mutation service or Location
+mutation boundary and cannot propose, validate, apply, abandon, roll back,
+publish or mutate operational data.
+
+The generic execution core invokes a pure server-owned semantic validator after
+strict output parsing and before successful settlement. The planning validator
+checks plan-local identity, current Object/Location references, ordered
+dependencies, change lanes and the supplied capability registry. The service
+then reloads authoritative context and discards a known-stale result without
+creating a proposal. Owner requests, context and plans remain in memory; only
+the existing metadata-only execution reservation and settlement are durable.
 
 ## Phase 5A read authorization
 

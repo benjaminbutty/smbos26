@@ -7,6 +7,7 @@ import type {
   RegisteredAiTaskRegistry,
   StructuredAiProviderRegistry,
 } from "./contracts";
+import { builderPlanTaskV1 } from "./planning/task";
 import { DisabledStructuredAiProvider } from "./providers/disabled";
 
 const contractProbeInputSchema = z
@@ -32,6 +33,7 @@ export const registeredAiTasks = Object.freeze({
     buildInstruction: () =>
       "Return one concise summary that matches the registered output contract.",
   }),
+  builder_plan_v1: builderPlanTaskV1,
 }) satisfies RegisteredAiTaskRegistry;
 
 export const aiExecutionPolicies = Object.freeze({
@@ -45,6 +47,23 @@ export const aiExecutionPolicies = Object.freeze({
     timeoutMs: 10_000,
     maxAttempts: 3,
     retryDelayMs: 100,
+    retryableFailureKinds: Object.freeze([
+      "rate_limited",
+      "transient",
+    ] as const),
+    inputMicrousdPerMillion: 0,
+    outputMicrousdPerMillion: 0,
+  }),
+  builder_planning_v1: Object.freeze({
+    key: "builder_planning_v1",
+    providerKey: "disabled",
+    modelKey: "unconfigured",
+    maxInputBytes: 160 * 1024,
+    maxBillableInputTokens: 64_000,
+    maxOutputTokens: 4_096,
+    timeoutMs: 30_000,
+    maxAttempts: 2,
+    retryDelayMs: 250,
     retryableFailureKinds: Object.freeze([
       "rate_limited",
       "transient",
