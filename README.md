@@ -2,8 +2,9 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 2A.2
-provider-neutral AI foundation plus deterministic manual setup amendments: a
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 3A
+provider-neutral AI foundation, deterministic manual setup amendments and
+data-minimised Business context: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
@@ -78,6 +79,14 @@ Included:
 - Owner/Admin-only settings, UTC-day summary, and metadata-only latest-50
   execution audit reads
 - one disabled production AI provider that makes no network request
+- one authenticated Owner/Admin-only Business context loader over ordinary
+  session/RLS reads, the active immutable configuration version and current
+  Locations
+- one strict schema-v1 pure model-facing projector with deterministic ordering,
+  explicit Field-setting allow-lists and a 128 KiB hard limit
+- trusted active-version/head currentness kept outside model-facing context
+- configuration UUID, actor, checksum, timestamp, operational Record, PII,
+  proposal, validation and AI audit exclusion from model-facing context
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -86,7 +95,7 @@ Not included:
 
 - online payment, deposits, refunds or inventory deduction
 - live AI provider calls, API-key use or builder behavior
-- AI proposal generation, context assembly, builder routes or chat UI
+- AI proposal generation, planner tasks, builder routes or chat UI
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -126,7 +135,7 @@ instruction, model output, raw response, header, credential, provider metadata
 or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
 
 The production provider is still disabled, so it performs no external request
-and cannot incur an AI API charge. Live provider integration, context assembly,
+and cannot incur an AI API charge. Live provider integration, planning,
 operation generation and builder UI remain later work.
 
 Phase 2A.1 adds the first non-AI configuration control at
@@ -146,6 +155,23 @@ global required constraint must be relaxed. New questions are globally
 optional generic Order Fields with hidden server-derived keys; preorder
 requiredness remains independent. Submission still creates only a proposed M5
 change for preview, deliberate validation and deliberate application.
+
+Phase 3A adds a read-only AI-safe Business context foundation. One server-only
+loader derives the actor from the ordinary authenticated session, requires the
+fixed `manage_configuration` capability, reads the Business and current active
+and inactive Locations through RLS, then parses only the active immutable
+configuration version. A separate pure projector emits an explicit strict
+schema-v1 contract for Business/access summaries, configuration definitions,
+preorder setup and implemented platform capabilities.
+
+Trusted `baseVersionId` and `headRevision` remain outside the model-facing
+context. Location UUIDs are the sole opaque database references in model-facing
+data and remain untrusted if returned later. Configuration UUIDs, actors,
+timestamps, checksums, operational Records/PII, proposals, validation results
+and AI audit are excluded. Canonical serialization is deterministically ordered
+and fails without truncation above 128 KiB. The Bedford acceptance context,
+including one inactive Location fixture, is 11,189 bytes. Phase 3A persists
+nothing, invokes no provider, reserves no budget and creates no proposal.
 
 ## Requirements
 
@@ -281,6 +307,7 @@ validating from a clean state.
 | ------------------------------------- | ------------------------------------------------ |
 | `npm test`                            | Run fast unit and component tests                |
 | `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
+| `npm run test:ai-context`             | Run AI-safe Business context tests               |
 | `npm run test:ai-accounting`          | Run durable AI usage-control/accounting tests    |
 | `npm run test:manual-amendments`      | Run deterministic schedule amendment tests       |
 | `npm run test:manual-questions`       | Run deterministic preorder question tests        |

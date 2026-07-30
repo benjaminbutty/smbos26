@@ -1181,7 +1181,13 @@ AI is disabled or unavailable.
 
 ### 8.2 Context supplied to the model
 
-For each builder request, provide:
+The server builds one explicit schema-versioned Business context before any
+future builder request. Its authoritative sources are the authenticated
+tenant-scoped Business and current Locations plus the active immutable
+configuration version. The normalized live configuration projection is not
+read independently.
+
+The model-facing projection may provide:
 
 - business summary
 - locations
@@ -1189,12 +1195,20 @@ For each builder request, provide:
 - field definitions
 - relationship definitions
 - relevant pages/views/forms
-- active rules/workflows
-- platform action registry
-- current draft version
+- explicit availability of rules/workflows
+- current platform capability registry
+- active configuration version number and revision
 - user role/permissions
 
-Do not send unnecessary tenant records or PII if definitions are sufficient.
+Operational Records and PII are never included. Configuration UUIDs, actor
+identity, timestamps and checksums are also excluded. Location UUIDs are the
+sole opaque references because preorder configuration already accepts them;
+they remain untrusted and must be tenant/eligibility checked if returned.
+Trusted active-version/head currentness stays outside the model-facing value.
+
+The projection is strict, deterministic and bounded to 128 KiB without
+truncation. It is assembled in memory, is not persisted or logged, and does not
+itself invoke a provider, reserve AI usage or create a proposal.
 
 ### 8.3 Configuration and operational change lanes
 
@@ -1879,7 +1893,17 @@ API charge can be incurred.
 
 **Later builder phases**
 
-- AI context builder;
+- **Phase 3A - AI-safe Business context foundation:**
+  - ordinary authenticated session/RLS loading with current Owner/Admin
+    `manage_configuration` authorization;
+  - Business and current active/inactive Location summaries;
+  - active immutable snapshot as the sole versioned configuration source;
+  - strict schema-v1 pure projection of Objects/Fields, Relationships, Views,
+    Forms, Pages, preorder setup and current platform capabilities;
+  - deterministic canonical ordering and 128 KiB fail-closed byte limit;
+  - exact active-version/head currentness outside model-facing data;
+  - no operational Records/PII, configuration UUIDs, actors, timestamps,
+    checksums, persistence, provider call, AI accounting or proposal creation;
 - planner prompt and registered builder tasks;
 - strict configuration/operational operation generation;
 - deterministic validation feedback;

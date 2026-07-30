@@ -59,6 +59,8 @@ in the `private` schema.
 | `src/core/experience/service.ts` | Configuration reads only |
 | `src/core/preorder/service.ts` | Live runtime resolution/submission/email state plus authenticated identifier-only preview resolution; no configuration mutation |
 | `src/ai/accounting/service.ts`, `src/ai/business-execution.ts` | Server-only per-Business accounting/orchestration; may reserve and settle only `business_ai_settings` and `ai_execution_runs`; imports no configuration mutation service |
+| `src/core/configuration/builder-context-source.ts` | Authenticated read-only Business context source; session-derived actor, current membership/capability, tenant Business/Location rows and active immutable version only |
+| `src/ai/context/` | Pure strict model-facing projection and safe errors; no database client, provider, execution/accounting service, configuration mutation service or I/O |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -136,6 +138,21 @@ only. Candidate preview, validation and deliberate application remain M5;
 operational Records and Relationships change only through their existing
 runtime boundaries, including when a later public preorder stores a new answer
 on an ordinary Order Record.
+
+Milestone 6 Phase 3A adds no configuration mutation surface. Its authenticated
+source loader uses only ordinary session/RLS reads for the current Business,
+membership, active and inactive Locations, configuration head and active
+immutable version. It does not read normalized live configuration tables
+independently. The pure projector receives the parsed snapshot in memory and
+has no mutation, provider, accounting or database dependency.
+
+The server-only result keeps exact active-version/head currentness outside the
+strict schema-v1 model context. Configuration UUIDs, actors, checksums,
+timestamps, operational Records/Relationships/Location links, PII, proposals,
+candidates, diffs, validation and AI audit are excluded. Location UUIDs are the
+only opaque model-facing database references. Canonical ordering and a 128 KiB
+hard limit apply before any future provider boundary; Phase 3A makes no
+provider call, reservation, audit row, proposal or lifecycle transition.
 
 ## Phase 5A read authorization
 

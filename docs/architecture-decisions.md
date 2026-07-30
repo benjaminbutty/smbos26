@@ -1252,3 +1252,79 @@ Conflating them could invalidate historical or non-preorder Records.
 - Manual controls and future AI authors share the same strict operation grammar
   and immutable M5 lifecycle, including no-op, stale, preview, validation,
   deliberate application and forward history behavior.
+
+## ADR-018 - Model context is a data-minimised projection of the active Business
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 3A)
+
+**Date:** 30 July 2026
+
+### Context
+
+A future registered planning task needs a deterministic answer to “What is this
+Business currently configured to do?” Supplying raw tenant rows would expose
+configuration identities, audit metadata and operational PII, while reading
+live normalized configuration tables independently could combine different
+configuration states. Context assembly must also remain separate from provider
+execution/accounting and from the M5 proposal lifecycle.
+
+### Decision
+
+- One server-only loader receives an ordinary authenticated Supabase session
+  client and a server-selected Business UUID. It derives the actor from session
+  claims, verifies current membership and requires the fixed
+  `manage_configuration` capability. Owner and Admin qualify; Staff,
+  anonymous and cross-Business callers do not.
+- The loader reads the tenant-scoped Business and current active and inactive
+  Locations through authenticated RLS, then reads the Business configuration
+  head and its active immutable configuration version. The strict
+  `configurationSnapshotV1Schema` parses that snapshot. It does not assemble
+  configuration by independently reading normalized live projection tables.
+- Locations remain current operational/platform state because configuration
+  snapshots intentionally retain only their opaque associations. A snapshot
+  association that does not resolve to a current same-Business Location makes
+  context inconsistent; it is never silently dropped or invented.
+- A separate pure projector has no Supabase/database client, configuration
+  mutation service, provider, execution/accounting service, I/O or mutation.
+  It emits one strict schema-v1 allow-listed model context containing Business
+  summary, current role/configuration capability, active version number and
+  revision, Locations, Objects and grouped Fields, Relationships, Views, Forms,
+  Pages, preorder experiences and a versioned registry of implemented platform
+  capabilities.
+- Active and archived configuration identities remain represented by stable
+  keys and active flags. Field settings expose only validated options for
+  select/multi-select/status and a three-letter currency code for currency.
+  Raw Field and Form default values are replaced by `has_default`.
+- Configuration UUIDs, Business/actor/version identity, actors, timestamps and
+  checksums are excluded. Location UUIDs are the sole opaque database
+  references in model-facing context because current preorder operations
+  require them. They remain untrusted and must be tenant- and
+  eligibility-checked if later model output returns them.
+- Operational Records and their values, Record Relationships,
+  Record-to-Location links, submissions, counters, rate limits, email state,
+  memberships/profiles, AI settings/audit, prompts/output, proposals,
+  candidates, diffs and validation data are never loaded into model context.
+- Exact active-version and head-revision currentness is returned as trusted
+  server metadata outside `modelContext`. Later proposal creation must use that
+  expected-head protection; model output never supplies trusted currentness.
+- Every collection and serialized JSON object is deterministically ordered.
+  The complete model context has a 128 KiB hard limit, fails without truncation
+  and is neither persisted nor logged. The Bedford Version 2 acceptance
+  context, including one inactive Location fixture, is 11,189 bytes.
+- Phase 3A makes no provider/network request, invokes no AI execution service,
+  reserves no budget, creates no AI execution row, proposal, route, Server
+  Action or UI, and performs no lifecycle transition.
+
+### Consequences
+
+- Future registered planning tasks receive one stable provider-neutral data
+  contract without coupling provider adapters or accounting to tenant reads.
+- Business configuration text and safe Page URLs remain available for useful
+  planning, while operational customer/order/product values and audit
+  identities remain outside the model boundary.
+- A context above the conservative v0.1 bound fails before any future provider
+  or accounting action. Relevance filtering or scoped contexts require a later
+  explicit design rather than silent truncation.
+- Later model output remains untrusted and can enter configuration only as
+  strict allow-listed M5 operations with expected-head protection, preview,
+  deterministic validation and deliberate Owner/Admin application.
