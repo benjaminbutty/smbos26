@@ -4,10 +4,15 @@ import type { ReactNode } from "react";
 
 import { hasCapability, resolveTenant } from "../../../../auth/authorization";
 import {
+  listPreorderQuestionSetups,
   listPreorderScheduleSetups,
   loadActiveManualAmendmentSnapshot,
+  ManualAmendmentError,
 } from "../../../../core/configuration/manual-amendments/service";
-import { ConfigurationChangeService } from "../../../../core/configuration/service";
+import {
+  ConfigurationChangeService,
+  isControlledConfigurationReadError,
+} from "../../../../core/configuration/service";
 import { createServerClient } from "../../../../db/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -30,8 +35,26 @@ export default async function SetupPage({
     businessId: tenant.business.id,
     actorId: tenant.user.id,
   });
-  const active = await loadActiveManualAmendmentSnapshot(configuration);
-  const setups = listPreorderScheduleSetups(active.snapshot);
+  let setups;
+  let questionSetups;
+  try {
+    const active = await loadActiveManualAmendmentSnapshot(configuration);
+    setups = listPreorderScheduleSetups(active.snapshot);
+    questionSetups = new Map(
+      listPreorderQuestionSetups(active.snapshot).map((setup) => [
+        setup.key,
+        setup,
+      ]),
+    );
+  } catch (error) {
+    if (
+      error instanceof ManualAmendmentError ||
+      isControlledConfigurationReadError(error)
+    ) {
+      notFound();
+    }
+    throw error;
+  }
 
   return (
     <section className="tenant-content setup-page">
@@ -46,9 +69,9 @@ export default async function SetupPage({
       <section className="change-section" aria-labelledby="preorder-heading">
         <div className="section-heading">
           <div>
-            <h2 id="preorder-heading">Preorder collection settings</h2>
+            <h2 id="preorder-heading">Preorder setup</h2>
             <p className="muted">
-              Collection days, times, capacity, notice and booking horizon.
+              Collection settings and the questions customers answer.
             </p>
           </div>
           <span className="section-count">{setups.length}</span>
@@ -65,14 +88,24 @@ export default async function SetupPage({
                 <p className="muted">
                   {setup.schedule.days_of_week.length} collection{" "}
                   {setup.schedule.days_of_week.length === 1 ? "day" : "days"} ·{" "}
-                  {setup.schedule.start_time}–{setup.schedule.end_time}
+                  {setup.schedule.start_time}–{setup.schedule.end_time} ·{" "}
+                  {questionSetups.get(setup.key)?.questions.length ?? 0}{" "}
+                  questions
                 </p>
-                <Link
-                  className="button button-secondary"
-                  href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}`}
-                >
-                  Edit collection settings
-                </Link>
+                <div className="configuration-action-links">
+                  <Link
+                    className="button button-secondary"
+                    href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}`}
+                  >
+                    Collection settings
+                  </Link>
+                  <Link
+                    className="button button-secondary"
+                    href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}/questions`}
+                  >
+                    Questions customers answer
+                  </Link>
+                </div>
               </article>
             ))}
           </div>

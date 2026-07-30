@@ -102,6 +102,18 @@ export default async function PreorderSchedulePage({
         </div>
       </header>
 
+      <nav
+        aria-label="Preorder setup sections"
+        className="history-section-links"
+      >
+        <span aria-current="page">Collection settings</span>
+        <Link
+          href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(preorderKey)}/questions`}
+        >
+          Questions customers answer
+        </Link>
+      </nav>
+
       <EditorNotice notice={notice} />
 
       <form action={submitAction} className="panel compact-panel stack-form">

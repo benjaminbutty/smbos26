@@ -62,7 +62,7 @@ in the `private` schema.
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
-| `src/app/app/[businessSlug]/setup` | Dynamic no-store Owner/Admin manual setup reads and one narrow proposal-preparation Server Action; proposed-only and no mutation on GET |
+| `src/app/app/[businessSlug]/setup` | Dynamic no-store Owner/Admin schedule and preorder-question setup reads with narrowly named proposal-preparation Server Actions; proposed-only and no mutation on GET |
 | `src/components/configuration-history-ui.tsx`, `src/components/configuration-action-ui.tsx` | Owner-readable proposal, diff/validation, confirmation and immutable version presentation; links/forms only and no lifecycle service call |
 | Confirmation routes under `src/app/app/[businessSlug]/changes` | Dynamic no-store Owner/Admin GETs that re-read authoritative proposal/version/head state and bind narrowly named Server Actions; rendering performs no mutation |
 | Other server routes/actions under `src/app` | Operational preorder endpoint, live runtime reads, or authenticated read-only candidate preview; no configuration DML |
@@ -110,6 +110,32 @@ values for Business/actor identity, metadata, operations, mappings, Fields,
 Locations, activation, candidate, checksum, diff, validation or status are not
 read. The result remains `proposed`; preview, validation and application are
 the existing M5 implementations.
+
+Milestone 6 Phase 2A.2 adds `update_preorder_question` and
+`add_preorder_question` to the same manual boundary. Existing-question actions
+bind preorder, target and Field key from the route and accept only expected
+head, wording, optional help and journey-level requiredness from the form. New
+question actions bind the preorder from the route and accept only expected
+head, wording, optional help, short/long answer style and journey-level
+requiredness. They never accept an Object or Field key.
+
+Both composers reload the immutable active snapshot. Existing questions must
+resolve uniquely through the preorder public mapping to one active configured
+Object and Field. Public wording is changed only in preorder channel
+configuration. Making a question optional emits a complete `set_field` only
+when an underlying Field constraint must be relaxed; making it required for
+one preorder never makes the generic Field globally required. New questions
+become globally optional short/long-text Fields on the configured Order Object,
+with a deterministic server-derived non-colliding key and next position, plus
+one preserved complete preorder operation that appends the public question.
+Archived keys are collision inputs and are never restored.
+
+No-op edits, duplicate public labels, invalid identities and stale forms create
+no proposal. A successful submission creates one ordinary proposed change set
+only. Candidate preview, validation and deliberate application remain M5;
+operational Records and Relationships change only through their existing
+runtime boundaries, including when a later public preorder stores a new answer
+on an ordinary Order Record.
 
 ## Phase 5A read authorization
 

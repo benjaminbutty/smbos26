@@ -1859,8 +1859,20 @@ API charge can be incurred.
     deliberate validation and deliberate application;
   - no AI execution, accounting, provider request, direct projection write,
     operational Record change, automatic validation or automatic application;
-- add later bounded manual question/Field configuration controls over the same
-  lifecycle;
+- **Phase 2A.2:** add bounded deterministic preorder-question controls over the
+  same lifecycle:
+  - edit existing public wording, optional help and preorder-level requiredness
+    while preserving the complete generic Field and preorder configuration;
+  - relax an underlying globally required Field only when making a journey
+    question optional, and never globally tighten a Field merely because one
+    preorder requires it;
+  - add short- or long-answer questions as globally optional generic Order
+    Fields with server-derived keys that cannot collide with active or archived
+    Fields;
+  - create only strict `set_field` and `set_preorder_experience` operations,
+    an ordinary proposed change set and the existing candidate preview;
+  - no new primitive, domain table, migration, raw schema editor, direct
+    projection write, automatic validation/application or AI execution;
 - add the required narrow operational controls;
 - preserve the separate configuration and operational lanes described in
   Section 8.3.

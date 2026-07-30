@@ -1169,8 +1169,8 @@ activation while appearing to change only the schedule.
 - Manual UI performs no direct projection-table DML, operational Record or
   Location mutation, AI invocation, network request, budget reservation or AI
   execution/accounting write.
-- Question/Field controls, broader manual building and AI operation generation
-  remain later phases.
+- Broader Form, View and Page controls, general manual building and AI
+  operation generation remain later phases.
 
 ### Consequences
 
@@ -1185,3 +1185,70 @@ activation while appearing to change only the schedule.
   and application conflict behavior.
 - The M5 proposal, preview, validation, application and version engine remains
   the sole normal production configuration mutation boundary.
+
+## ADR-017 - Bounded question controls compose generic Fields
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 2A.2)
+
+**Date:** 30 July 2026
+
+### Context
+
+Preorder proves the platform only if an owner can safely change and extend the
+questions customers answer without a question-specific table, raw schema
+editor or second configuration engine. Public wording and journey-level
+requiredness are channel presentation concerns, while generic Field
+requiredness constrains every Record and operating journey using that Object.
+Conflating them could invalidate historical or non-preorder Records.
+
+### Decision
+
+- `update_preorder_question` and `add_preorder_question` are bounded
+  owner-intent contracts, not complete Field, preorder or operation inputs.
+- Existing-question identity is route-bound as preorder key, target and Field
+  key. The server reloads the active immutable snapshot and resolves exactly
+  one active preorder, public mapping, configured Object and active Field.
+  Missing, archived, duplicated, ambiguous, inconsistent or no-longer-public
+  targets fail closed.
+- Public wording, help text and requiredness live in preorder
+  `public_fields`. Editing them preserves Field type, label, default, settings,
+  position, activation and every other preorder property.
+- Making a public question optional also emits a complete `set_field` with
+  `required = false` only when its generic Field is globally required. Making a
+  question required for one preorder never globally tightens the Field.
+- New short and long answers map to `short_text` and `long_text` on the
+  preorder’s configured Order Object. New Fields are globally optional,
+  active, have a null default, empty supported settings and deterministic next
+  position. The public question may independently be required.
+- New Field keys are hidden and derived server-side from the owner label plus
+  every active and archived key on that Object. Keys conform to the graph
+  grammar, use bounded deterministic numeric suffixes and never restore or
+  repurpose archived Fields.
+- Equivalent empty help and identical edits are semantic no-ops. New labels
+  that duplicate an active public question case-insensitively fail before
+  proposal creation. Titles and descriptions are fixed, deterministic and
+  owner-readable.
+- Both controls compose only existing strict `set_field` and
+  `set_preorder_experience` operations and call
+  `ConfigurationChangeService.proposeChangeSet` with the exact active version
+  and revision used for composition. PostgreSQL’s NULL-safe expected-head check
+  remains the final race boundary.
+- Submission creates one ordinary proposed change set only. Existing candidate
+  preview, deliberate validation and deliberate application create the later
+  immutable version. Live projection, public runtime, operational Records and
+  Relationships remain unchanged before application; AI is never invoked or
+  accounted.
+- No new primitive, domain table, database migration, service-role manual
+  editor, direct configuration DML, provider request or alternate mutation path
+  is introduced. Broader Form, View, Page and generic schema editing remain
+  later work.
+
+### Consequences
+
+- Owners can make Phone optional, change public question wording/help, or add a
+  Gift message without seeing Objects, Fields, keys or operation grammar.
+- Existing Records stay compatible because preorder requiredness is separate
+  from global Record requiredness, and new Order Fields start optional.
+- Manual controls and future AI authors share the same strict operation grammar
+  and immutable M5 lifecycle, including no-op, stale, preview, validation,
+  deliberate application and forward history behavior.

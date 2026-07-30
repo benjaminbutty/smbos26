@@ -7,6 +7,7 @@ export default defineConfig({
     exclude: [
       "tests/integration/configuration-rollback.test.ts",
       "tests/integration/manual-amendments.test.ts",
+      "tests/integration/manual-questions.test.ts",
     ],
     fileParallelism: false,
     testTimeout: 30_000,

@@ -2,7 +2,7 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 2A.1
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 2A.2
 provider-neutral AI foundation plus deterministic manual setup amendments: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
@@ -51,6 +51,8 @@ Included:
   routes for validate, apply, abandon and rollback preparation
 - authenticated Owner/Admin Edit setup routes for deterministic preorder
   collection schedule proposals
+- bounded preorder-question controls for editing public wording, help and
+  requiredness or adding one short/long-answer generic Order Field
 - exact active-version and head-revision proposal currentness enforced
   atomically in PostgreSQL
 - server-composed complete preorder operations from the active immutable
@@ -135,6 +137,15 @@ one strict `set_preorder_experience` operation and creates only an ordinary M5
 proposal. Saving does not validate, apply, publish, invoke AI or create an AI
 execution/accounting row. Stale rendered forms fail against the exact expected
 active version and head revision instead of being rebased.
+
+Phase 2A.2 adds a second bounded control under the same Edit setup entry.
+Owner/Admin users can edit an existing preorder question’s public wording,
+optional help and journey-level requiredness, or add one short- or long-answer
+question. Existing questions preserve their generic Field definitions unless a
+global required constraint must be relaxed. New questions are globally
+optional generic Order Fields with hidden server-derived keys; preorder
+requiredness remains independent. Submission still creates only a proposed M5
+change for preview, deliberate validation and deliberate application.
 
 ## Requirements
 
@@ -271,6 +282,8 @@ validating from a clean state.
 | `npm test`                            | Run fast unit and component tests                |
 | `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
 | `npm run test:ai-accounting`          | Run durable AI usage-control/accounting tests    |
+| `npm run test:manual-amendments`      | Run deterministic schedule amendment tests       |
+| `npm run test:manual-questions`       | Run deterministic preorder question tests        |
 | `npm run test:rls`                    | Run the Milestone 1 tenancy/RLS suite            |
 | `npm run test:graph`                  | Run the Milestone 2 graph integrity suite        |
 | `npm run test:experience`             | Run the Milestone 3 experience suite             |
