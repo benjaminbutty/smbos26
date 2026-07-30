@@ -1912,6 +1912,9 @@ API charge can be incurred.
   - one bounded clarification-or-ready output contract with owner-readable
     assumptions, questions, concepts, journeys, descriptive steps and explicit
     unsupported requirements;
+  - a required zero-to-twenty concepts collection, where platform-only
+    operational plans use an explicit empty array rather than inventing a
+    generic Object for a first-class platform entity such as Location;
   - separate configuration and operational planning categories that are not
     tools, M5 operations or mutation authority;
   - optional pure server-owned semantic output validation inside the

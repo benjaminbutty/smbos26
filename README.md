@@ -194,6 +194,11 @@ five clarification questions or a bounded owner-readable ready plan; the plan
 contains descriptive configuration/operational categories, not tools or M5
 operations.
 
+Domain concepts are present only when a plan concerns generic Business
+concepts. Platform-only operational plans such as creating or renaming a
+Location keep the required `concepts` property as `[]`; they do not invent a
+generic Location Object and remain descriptive rather than executable.
+
 The provider-neutral core now runs an optional pure task semantic validator
 after strict output parsing and before success. Invalid Object, Location,
 concept or dependency references therefore settle as `ai_output_invalid` with

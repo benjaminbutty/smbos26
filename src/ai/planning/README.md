@@ -11,6 +11,13 @@ They are not tools, Milestone 5 operations or mutation authority. Planning does
 not create a proposal, validate, apply, publish, change a Record or Location, or
 persist the request or result.
 
+Domain concepts appear only when a plan concerns generic Business concepts.
+Platform-only operational plans, such as creating or renaming a Location, keep
+the required `concepts` property as an explicit empty array and use empty
+`affected_concepts`. Location remains a first-class platform entity; planning
+does not invent or imply a generic Location Object. Such a plan is still
+descriptive and non-executing.
+
 The authenticated loader derives actor and Business identity for accounting and
 keeps both outside task input. Exact configuration currentness also remains
 outside model input. After a metered execution, the service reloads and

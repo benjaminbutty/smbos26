@@ -174,7 +174,7 @@ export const builderPlanStepSchema = z.discriminatedUnion("lane", [
 export const builderReadyPlanSchema = z
   .object({
     outcome: z.string().trim().min(1).max(2_000),
-    concepts: z.array(builderPlanConceptSchema).min(1).max(20),
+    concepts: z.array(builderPlanConceptSchema).max(20),
     user_journeys: z.array(builderPlanJourneySchema).max(20),
     steps: z.array(builderPlanStepSchema).min(1).max(20),
   })

@@ -154,6 +154,37 @@ function readyOutput(): Extract<BuilderPlanOutput, { state: "ready" }> {
   };
 }
 
+function locationReadyOutput(
+  locationReference: string,
+): Extract<BuilderPlanOutput, { state: "ready" }> {
+  return {
+    schema_version: 1,
+    state: "ready",
+    understanding: "You want to rename the existing Bedford Location.",
+    assumptions: [],
+    plan: {
+      outcome: "The Bedford Location has the proposed owner-reviewed name.",
+      concepts: [],
+      user_journeys: [],
+      steps: [
+        {
+          reference: "step_1",
+          sequence: 1,
+          lane: "operational",
+          category: "update_location",
+          summary: "Rename the Bedford Location.",
+          dependencies: [],
+          affected_concepts: [],
+          location_references: [locationReference],
+          materiality: "medium",
+          requires_owner_confirmation: true,
+        },
+      ],
+    },
+    unsupported_requirements: [],
+  };
+}
+
 function clarificationOutput(): Extract<
   BuilderPlanOutput,
   { state: "needs_clarification" }
@@ -428,6 +459,57 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
       });
     },
   );
+
+  it("returns a concept-free Location plan through real accounting without mutation", async () => {
+    await enablePlanning();
+    const before = requireData(
+      await owner.client
+        .from("locations")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("slug", "bedford")
+        .single(),
+      "Could not load the unchanged Bedford Location.",
+    );
+    const output = locationReadyOutput(before.id);
+    const provider = vi.fn().mockResolvedValue({
+      output,
+      usage: { inputTokens: 95, outputTokens: 24 },
+    });
+
+    const result = await planningWithProvider(provider).plan(owner.client, {
+      businessId: business.id,
+      ownerRequest: "Rename the Bedford Location.",
+    });
+
+    expect(result.plan).toEqual(output);
+    expect(result.execution).toEqual({
+      attempts: 1,
+      inputTokens: 95,
+      outputTokens: 24,
+      usageComplete: true,
+    });
+    const after = requireData(
+      await owner.client
+        .from("locations")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("id", before.id)
+        .single(),
+      "Could not verify the unchanged Bedford Location.",
+    );
+    expect(after).toEqual(before);
+    expect(provider).toHaveBeenCalledOnce();
+    expect(await executionRows()).toEqual([
+      expect.objectContaining({
+        status: "succeeded",
+        task_key: "builder_plan_v1",
+        policy_key: "builder_planning_v1",
+        actual_input_tokens: "95",
+        actual_output_tokens: "24",
+      }),
+    ]);
+  });
 
   it("denies Staff, anonymous, and cross-Business callers before provider invocation", async () => {
     await enablePlanning();

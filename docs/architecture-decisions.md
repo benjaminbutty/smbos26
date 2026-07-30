@@ -1363,6 +1363,11 @@ planning service composes context and accounting.
   questions or a bounded owner-readable ready plan. Assumptions, concepts,
   journeys, steps and unsupported requirements use plan-local references and
   conservative string/array limits.
+- Domain concepts are included only when a plan concerns generic Business
+  concepts. A platform-only operational plan keeps the required `concepts`
+  property as an explicit empty array and its steps use empty
+  `affected_concepts`. In particular, Location planning neither creates nor
+  pretends there is a generic Location Object.
 - Ready steps distinguish configuration and operational lanes with fixed
   descriptive categories. Categories are planning vocabulary, not provider
   tools, M5 operations, candidates or mutation authority. Every ready step

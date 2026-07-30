@@ -208,6 +208,48 @@ function readyOutput(): Extract<BuilderPlanOutput, { state: "ready" }> {
   };
 }
 
+function locationReadyOutput(
+  category: "create_location" | "update_location",
+): Extract<BuilderPlanOutput, { state: "ready" }> {
+  return {
+    schema_version: 1,
+    state: "ready",
+    understanding:
+      category === "update_location"
+        ? "You want to rename the existing Bedford Location."
+        : "You want to add a Cambridge Location.",
+    assumptions: [],
+    plan: {
+      outcome:
+        category === "update_location"
+          ? "The Bedford Location has the proposed owner-reviewed name."
+          : "A Cambridge Location is available after later owner confirmation.",
+      concepts: [],
+      user_journeys: [],
+      steps: [
+        {
+          reference: "step_1",
+          sequence: 1,
+          lane: "operational",
+          category,
+          summary:
+            category === "update_location"
+              ? "Rename the Bedford Location."
+              : "Create a Cambridge Location.",
+          dependencies: [],
+          affected_concepts: [],
+          ...(category === "update_location"
+            ? { location_references: [ids.location] }
+            : {}),
+          materiality: "medium",
+          requires_owner_confirmation: true,
+        },
+      ],
+    },
+    unsupported_requirements: [],
+  };
+}
+
 function fakeExecutionResult(output: BuilderPlanOutput) {
   return {
     output,
@@ -241,6 +283,55 @@ describe("builder_plan_v1 strict schemas and semantics", () => {
     expect(validateBuilderPlanOutput(taskInput(), readyOutput())).toEqual(
       readyOutput(),
     );
+  });
+
+  it("accepts concept-free Location plans and the unchanged configuration fixture", () => {
+    const updateLocation = locationReadyOutput("update_location");
+    const createLocation = locationReadyOutput("create_location");
+
+    expect(validateBuilderPlanOutput(taskInput(), updateLocation)).toEqual(
+      updateLocation,
+    );
+    expect(updateLocation.plan.steps[0]).toMatchObject({
+      affected_concepts: [],
+      location_references: [ids.location],
+    });
+    expect(validateBuilderPlanOutput(taskInput(), createLocation)).toEqual(
+      createLocation,
+    );
+    expect(createLocation.plan.steps[0]).not.toHaveProperty(
+      "location_references",
+    );
+    expect(validateBuilderPlanOutput(taskInput(), readyOutput())).toEqual(
+      readyOutput(),
+    );
+  });
+
+  it("rejects undeclared concepts and unknown Locations in concept-free plans", () => {
+    const undeclaredConcept = locationReadyOutput("create_location");
+    undeclaredConcept.plan.steps[0]!.affected_concepts = ["concept_1"];
+    expect(() =>
+      validateBuilderPlanOutput(taskInput(), undeclaredConcept),
+    ).toThrow();
+
+    const unknownLocation = locationReadyOutput("update_location");
+    unknownLocation.plan.steps[0]!.location_references = [ids.otherLocation];
+    expect(() =>
+      validateBuilderPlanOutput(taskInput(), unknownLocation),
+    ).toThrow();
+  });
+
+  it("requires the deterministic concepts property even when it is empty", () => {
+    const output = locationReadyOutput("create_location");
+    const { concepts, ...planWithoutConcepts } = output.plan;
+
+    expect(concepts).toEqual([]);
+    expect(
+      builderPlanOutputSchema.safeParse({
+        ...output,
+        plan: planWithoutConcepts,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects unknown properties and state-specific fields", () => {
@@ -580,6 +671,9 @@ describe("builder planning task execution and service", () => {
     expect(structuredAiProviders).toEqual({ disabled: expect.anything() });
     expect(BUILDER_PLANNING_INSTRUCTION).not.toMatch(
       /90000000|api[_-]?key|baseVersionId|headRevision/,
+    );
+    expect(BUILDER_PLANNING_INSTRUCTION).toContain(
+      "platform-only Location plan keeps the required concepts array empty",
     );
   });
 

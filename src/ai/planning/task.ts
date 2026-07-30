@@ -12,6 +12,7 @@ export const BUILDER_PLANNING_INSTRUCTION = [
   "Never produce SQL, source code, HTTP requests, tool calls, executable workflows, executable rules, or arbitrary code.",
   "This task must not produce Milestone 5 operations, candidates, proposals, validation, application, publication, or runtime mutations.",
   "Never invent an existing Object key or Location reference.",
+  "Use concepts only for generic Business concepts; a platform-only Location plan keeps the required concepts array empty and never invents a Location Object.",
   "New concepts use plan-local references only and receive no UUID or trusted platform key.",
   "Every ready-plan step is proposed planning only and requires later owner confirmation.",
 ].join(" ");
