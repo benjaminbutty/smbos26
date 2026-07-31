@@ -287,7 +287,31 @@ npm run eval:builder-planning-terra-reliability-live
 A key alone is not permission to run either gate. Qualification reserves at
 most 3,543,040 microusd beneath a 3,700,000 ceiling; reliability reserves at
 most 10,629,120 microusd beneath an 11,000,000 ceiling. Operation generation
-remains blocked until a reviewed 24/24 reliability result.
+remains outside this milestone and is not implemented until a later bounded
+change-drafting phase.
+
+### Milestone 6 Phase 4C closeout
+
+The supplied redacted live evidence clears the planning gate for the frozen
+`gpt-5.6-terra` / `builder_planning_terra_medium_v1` profile. Qualification ran
+the eight unchanged scenarios once, with 8/8 passing: structural failures 0,
+semantic failures 0, scenario-gate failures 0, provider failures 0; 34,949
+input tokens, 3,476 output tokens, 139,515 estimated microusd and 47,157 ms.
+Reliability ran the same eight scenarios in three sequential repetitions (24
+executions), with 24/24 passing, every scenario 3/3, one provider attempt per
+execution and failures 0: structural 0, semantic 0, scenario-gate 0, provider
+0; 104,847 input tokens, 8,764 output tokens, 393,585 estimated microusd and
+108,779 ms.
+
+This is bounded engineering evidence, not a claim of universal model
+perfection. Deterministic schemas, semantic validation and scenario gates
+remain authoritative; the model has no mutation authority. Operation
+generation, proposals, validation/application automation and publication are
+not implemented here. A future milestone may begin bounded change drafting,
+but must preserve currentness protection, deterministic validation and the
+separate configuration/operational lanes. Any material model-alias, prompt,
+schema, validator, context or provider-transport change invalidates this
+evidence and requires both gates to be rerun.
 
 ## Requirements
 

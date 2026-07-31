@@ -81,6 +81,14 @@ validator, diagnostics, synthetic context, owner requests and evaluator gates.
 The `builder_plan_v1` task keeps version 1 because this structured contract is
 unchanged, while its code-owned policy identity is now
 `builder_planning_terra_medium_v1` to record the material Terra-medium
-execution profile. This does not add operation generation or any mutation
-authority; operation generation remains blocked pending reviewed qualification
-and repeated reliability evidence.
+execution profile. The supplied reviewed redacted live evidence passes
+qualification 8/8 and reliability 24/24 (every scenario 3/3), clearing the
+planning gate for this frozen profile. This is bounded engineering evidence,
+not universal model perfection; deterministic schemas, semantic validation and
+scenario gates remain authoritative and the model has no mutation authority.
+Operation generation, proposal creation, validation/application automation and
+publication remain unimplemented and outside this milestone. A future
+milestone may begin bounded change drafting only with exact-head protection and
+the separate configuration/operational lanes. Any material model-alias,
+prompt, schema, validator, context or provider-transport change invalidates
+the evidence and requires both gates to be rerun.

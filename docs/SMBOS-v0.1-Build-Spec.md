@@ -2042,6 +2042,28 @@ API charge can be incurred.
   - add no fallback, other model, owner selection, prompt/schema/validator/gate
     relaxation, operation generation, proposal, mutation, migration, table or
     primitive.
+
+**Phase 4C completion record**
+
+The reviewed redacted live qualification completed the eight unchanged
+scenarios once and passed 8/8. Structural, semantic, scenario-gate and provider
+failure counts were all zero; usage was 34,949 input tokens and 3,476 output
+tokens, with 139,515 estimated microusd and 47,157 ms elapsed. The reviewed
+reliability run completed three sequential repetitions of the same eight
+scenarios (24 executions) and passed 24/24, with every scenario passing 3/3,
+one provider attempt per execution, and zero structural, semantic,
+scenario-gate or provider failures; usage was 104,847 input tokens and 8,764
+output tokens, with 393,585 estimated microusd and 108,779 ms elapsed.
+
+These results clear the planning gate for the frozen Terra-medium profile as
+bounded engineering evidence, not universal model perfection. Deterministic
+schemas, semantic validation and scenario gates remain authoritative, and the
+model has no mutation authority. Operation generation is still not implemented
+in Milestone 6; a later milestone may begin bounded change drafting only while
+retaining exact-head protection, deterministic validation and separate
+configuration/operational lanes. Any material model-alias, prompt, schema,
+validator, context or provider-transport change invalidates the evidence and
+requires both gates to run again.
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.

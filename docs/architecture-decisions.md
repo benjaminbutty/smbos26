@@ -1762,11 +1762,23 @@ standard input and output tokens.
 
 ### Consequences
 
-- Current-generation planning is deliberately qualified rather than assumed
-  reliable. A reviewed 8/8 qualification is required before a deliberately run
-  24/24 reliability gate; operation generation remains blocked before then.
+- The supplied reviewed redacted live evidence clears the planning gate for the
+  frozen Terra-medium profile: qualification passed 8/8 (34,949 input tokens,
+  3,476 output tokens, 139,515 estimated microusd, 47,157 ms; structural,
+  semantic, scenario-gate and provider failures all zero), and reliability
+  passed 24/24 over three sequential repetitions, every scenario 3/3 with one
+  provider attempt per execution (104,847 input tokens, 8,764 output tokens,
+  393,585 estimated microusd, 108,779 ms; all four failure counters zero).
+  This is bounded engineering evidence, not a universal model-perfection
+  claim.
 - CI remains network-free by exercising only injected providers. The live gates
   are explicit, bounded operator actions and create no durable state.
-- Terra is not claimed to have passed until both live gates produce and receive
-  review of their required redacted results. Neither live gate has run for this
-  profile.
+- Deterministic schemas, semantic validation and scenario gates remain
+  authoritative; the model has no mutation authority. Operation generation,
+  proposal creation, validation/application automation and publication remain
+  unimplemented and outside this milestone. A later milestone may begin
+  bounded change drafting only with exact-head protection and the separate
+  configuration/operational lanes.
+- Any material model-alias, prompt, schema, semantic-validator, context or
+  provider-transport change invalidates this evidence and requires both gates
+  to be rerun.

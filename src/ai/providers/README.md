@@ -80,3 +80,14 @@ content and credentials are neither printed nor persisted. Qualification has a
 fixed aggregate maximum reservation of 3,543,040 microusd and a code-owned
 3,700,000 microusd hard ceiling; repeated reliability has 24 executions, a
 10,629,120 microusd maximum and an 11,000,000 microusd ceiling.
+
+The reviewed redacted Terra evidence passed qualification 8/8 and reliability
+24/24, with every reliability scenario passing 3/3 and one provider attempt per
+execution. Qualification used 34,949 input and 3,476 output tokens, 139,515
+estimated microusd and 47,157 ms; reliability used 104,847 input and 8,764
+output tokens, 393,585 estimated microusd and 108,779 ms. Structural,
+semantic, scenario-gate and provider failure counts were zero in both gates.
+This clears the planning gate for the frozen provider profile as bounded
+engineering evidence, not universal model perfection. Operation generation and
+mutation authority remain unimplemented; future profile or frozen-subject
+changes invalidate the evidence and require both gates to be rerun.

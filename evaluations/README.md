@@ -46,7 +46,32 @@ context, model prose, reasoning content, question or assumption text, labels,
 Object keys, Location UUIDs, provider body/ID, API key or raw error is emitted
 or persisted. The Terra alias can advance independently, so evidence must be
 rerun after a material alias advance or any permitted execution/planning-subject
-change. Operation generation remains blocked until a reviewed 24/24 result.
+change. Operation generation is not implemented in this milestone and remains
+outside the planning gates.
 
-Live GPT-5.6 Terra qualification not run.
-Live GPT-5.6 Terra reliability evaluation not run.
+### Reviewed redacted live evidence
+
+Qualification completed the eight unchanged scenarios once and passed 8/8.
+Structural failures: 0. Semantic failures: 0. Scenario-gate failures: 0.
+Provider failures: 0. Input tokens: 34,949. Output tokens: 3,476. Estimated
+cost: 139,515 microusd. Elapsed: 47,157 ms.
+
+Reliability completed three sequential repetitions of the same eight scenarios
+(24 executions) and passed 24/24. Every scenario passed 3/3 and every
+execution used one provider attempt. Failures: 0. Structural failures: 0.
+Semantic failures: 0. Scenario-gate failures: 0. Provider failures: 0. Input
+tokens: 104,847. Output tokens: 8,764. Estimated cost: 393,585 microusd.
+Elapsed: 108,779 ms.
+
+Reliability scenario totals: `preorder_phone_optional` 3/3,
+`preorder_schedule_change` 3/3, `corporate_catering_enquiries` 3/3,
+`create_cambridge_location` 3/3, `add_cambridge_preorder_collection` 3/3,
+`automated_weekly_customer_email` 3/3, `card_payment_at_checkout` 3/3 and
+`ambiguous_bookings` 3/3.
+
+The planning gate is cleared for this frozen profile as bounded engineering
+evidence, not universal model perfection. No model prose, questions,
+assumptions, summaries, Object keys, Location references, provider IDs or
+provider bodies are recorded here. Any material model-alias, prompt, schema,
+validator, context or provider-transport change invalidates the evidence and
+requires both gates to be rerun.
