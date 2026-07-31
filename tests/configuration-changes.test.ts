@@ -222,6 +222,8 @@ describe("configuration change operation grammar", () => {
   it("requires bounded proposal metadata and rejects embedded engine output", () => {
     expect(
       proposeConfigurationChangeSchema.parse({
+        expectedBaseVersionId: locationId,
+        expectedHeadRevision: 2,
         title: "Saturday collection only",
         description: null,
         operations: [operations[0]],
@@ -229,6 +231,8 @@ describe("configuration change operation grammar", () => {
     ).toMatchObject({ title: "Saturday collection only" });
     expect(() =>
       proposeConfigurationChangeSchema.parse({
+        expectedBaseVersionId: locationId,
+        expectedHeadRevision: 2,
         title: "Unsafe",
         description: null,
         operations: [operations[0]],

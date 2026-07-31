@@ -1155,6 +1155,8 @@ Publishing can point the business to a selected config version rather than dupli
 
 ### 8.1 Role of AI
 
+AI is the primary system-building interface, but it is not the only control
+surface. It is a design and change assistant rather than a runtime dependency.
 The AI performs four jobs:
 
 1. understand the user's business-language request;
@@ -1169,11 +1171,23 @@ AI does not directly:
 - run `eval` or generated scripts;
 - bypass permissions;
 - alter system primitives;
+- mutate versioned configuration tables;
+- validate or apply its own configuration proposal;
 - publish material changes without an explicit user action.
+
+Manual deterministic configuration and operational controls must exist before
+AI operation generation depends on them. The system continues to operate when
+AI is disabled or unavailable.
 
 ### 8.2 Context supplied to the model
 
-For each builder request, provide:
+The server builds one explicit schema-versioned Business context before any
+future builder request. Its authoritative sources are the authenticated
+tenant-scoped Business and current Locations plus the active immutable
+configuration version. The normalized live configuration projection is not
+read independently.
+
+The model-facing projection may provide:
 
 - business summary
 - locations
@@ -1181,14 +1195,58 @@ For each builder request, provide:
 - field definitions
 - relationship definitions
 - relevant pages/views/forms
-- active rules/workflows
-- platform action registry
-- current draft version
+- explicit availability of rules/workflows
+- current platform capability registry
+- active configuration version number and revision
 - user role/permissions
 
-Do not send unnecessary tenant records or PII if definitions are sufficient.
+Operational Records and PII are never included. Configuration UUIDs, actor
+identity, timestamps and checksums are also excluded. Location UUIDs are the
+sole opaque references because preorder configuration already accepts them;
+they remain untrusted and must be tenant/eligibility checked if returned.
+Trusted active-version/head currentness stays outside the model-facing value.
 
-### 8.3 Change-set model
+The projection is strict, deterministic and bounded to 128 KiB without
+truncation. It is assembled in memory, is not persisted or logged, and does not
+itself invoke a provider, reserve AI usage or create a proposal.
+
+### 8.3 Configuration and operational change lanes
+
+Builder requests must be decomposed into one or both trusted change lanes.
+
+The **configuration lane** covers changes to Objects, Fields, Relationships,
+Views, Forms, Pages and preorder configuration such as questions, collection
+days, cutoffs and capacity. AI and manual UI both enter the Milestone 5
+lifecycle:
+
+```text
+strict operations
+-> immutable proposal
+-> candidate
+-> preview
+-> validation
+-> deliberate Owner/Admin application
+-> immutable version
+```
+
+Neither control surface may mutate the eight versioned configuration tables
+directly.
+
+The **operational lane** covers ordinary business data such as Product names
+and prices, Order status, Locations and Product-to-Location availability.
+These changes use narrow operational services and normal generated UI; they
+are not configuration versions. Future operational undo is an explicit inverse
+edit using a captured previous value, never a configuration rollback.
+
+Compound requests must preserve the distinction and order dependencies. For
+example, “Add Cambridge as another preorder collection location” means:
+
+1. create Cambridge through the operational Location boundary;
+2. propose the preorder experience change through the Milestone 5
+   configuration lifecycle;
+3. preview, validate and deliberately apply that proposal.
+
+### 8.4 Change-set model
 
 The LLM should produce operations rather than raw desired state.
 
@@ -1218,56 +1276,69 @@ Example:
 }
 ```
 
-The application validates and applies this. The model never writes directly to the database.
+The application parses these operations into an immutable proposal. Platform
+validation is deterministic and a deliberate Owner/Admin action applies a
+valid proposal. The model never writes directly to the database, validates its
+own proposal or applies it.
 
-### 8.4 AI tool/API contracts
+### 8.5 AI tool/API contracts
 
-Initial builder operations:
+Phase 1A gives the provider no tools or generic function executor. Later
+registered builder tasks may return only schema-constrained values that the
+server classifies into:
 
-#### Graph
+- allow-listed Milestone 5 configuration operations for an immutable proposal;
+- allow-listed operational intents handled through specific narrow services;
+- explicit ordered steps when a request spans both lanes.
 
-- `create_object`
-- `update_object_labels`
-- `archive_object`
-- `create_field`
-- `update_field`
-- `archive_field`
-- `create_relationship`
-- `update_relationship`
+Provider/model selection, lifecycle validation, proposal application, rollback,
+publishing, credentials, database clients, arbitrary HTTP, SQL, shell and
+source-code capabilities are never model-selectable tools. The server owns
+implementation, authorization and deterministic validation.
 
-#### Experience
+### 8.5.1 Durable AI usage controls
 
-- `create_view`
-- `update_view`
-- `create_form`
-- `update_form`
-- `create_page`
-- `update_page`
+The Phase 1A provider-neutral execution core remains independent of tenancy and
+storage. A separate server-only Business-aware service validates and prepares a
+registered task, derives its trusted worst-case envelope, reserves budget,
+executes the prepared task, aggregates usage across every provider attempt and
+settles the durable run before returning output.
 
-#### Behaviour
+Each Business has one settings row and starts disabled. The conservative v0.1
+defaults and PostgreSQL hard maximums are:
 
-- `create_rule`
-- `update_rule`
-- `create_workflow`
-- `update_workflow`
+| Limit | Default | Hard maximum |
+| --- | ---: | ---: |
+| Requests per UTC day | 25 | 1,000 |
+| Input tokens per UTC day | 250,000 | 100,000,000 |
+| Output tokens per UTC day | 100,000 | 50,000,000 |
+| Cost per UTC day | 5,000,000 microusd | 1,000,000,000 microusd |
 
-#### Data/setup
+These are safety limits, not final commercial plans. No null limit means
+unlimited. The usage day is the UTC date derived from PostgreSQL statement time
+when reservation occurs. A settings-row lock serializes reservation for one
+Business without holding a transaction open during provider execution or
+contending with another Business.
 
-- `create_record`
-- `update_record`
-- `create_location`
-- `update_location`
+The reservation covers maximum billable input tokens and maximum output tokens
+for every allowed attempt. Integer cost is the sum of the separately rounded-up
+input and output components at trusted microusd-per-million rates. Settled,
+complete usage charges aggregate actual usage. Unsettled or incomplete usage
+conservatively consumes at least its reservation for the captured UTC day;
+actual overrun is recorded and charged without clamping. A pre-provider failure
+cancels and releases the reservation. Settlement is idempotent and an
+unrecordable settlement prevents model output from being returned as success.
 
-#### Change management
+The execution row is a metadata-only reservation and audit record. It contains
+bounded Business/actor, task/policy/provider/model identity, lifecycle, safe
+outcome, reserved/actual/charged usage, attempts, completeness and timestamps.
+It contains no prompt, task input, instruction, candidate configuration, model
+output, raw response, headers, credentials, arbitrary provider metadata or
+stack trace. Owner/Admin audit reads are deterministically limited to the latest
+50 rows. This accounting is a platform setting, not M5 versioned
+configuration.
 
-- `validate_change_set`
-- `apply_change_set`
-- `revert_to_version`
-- `publish_version`
-
-The LLM may request these operations. The server owns implementation, validation and permission checks.
-
-### 8.5 Validation layer
+### 8.6 Validation layer
 
 Every proposed operation must validate:
 
@@ -1283,7 +1354,7 @@ Every proposed operation must validate:
 - change does not archive required platform components
 - change does not silently destroy populated data
 
-### 8.6 Preview/diff
+### 8.7 Preview/diff
 
 Material changes should display a simple business-language diff.
 
@@ -1301,7 +1372,7 @@ Existing orders will not be changed.
 
 The underlying structured diff can be more detailed for logs.
 
-### 8.7 Undo
+### 8.8 Undo
 
 `Undo that` should revert to the previous configuration version where possible.
 
@@ -1757,15 +1828,249 @@ Phone can be changed from required to optional via structured change set and rev
 
 ### Milestone 6 - AI builder
 
-Build:
+Build in safety-ordered phases:
 
-- AI context builder
-- structured tool schemas
-- planner prompt
-- operation generation
-- validation feedback loop
-- builder chat UI
-- preview integration
+**Phase 1A - provider-neutral structured execution contracts**
+
+- registered server-owned task/input/output contracts;
+- provider-neutral structured generation interface;
+- trusted fixed policy registry;
+- bounded input, output tokens, timeout and retry behavior;
+- owner-safe errors and deterministic tests;
+- disabled production provider with no SDK, API-key use or network request.
+
+Phase 1A does not create proposals, access configuration or operational data,
+add a browser surface, or incur an AI API charge.
+
+**Phase 1B - durable per-Business usage controls and safe audit**
+
+- one default-disabled finite settings row per Business;
+- UTC-day request, input-token, output-token and integer-microusd limits;
+- atomic settings-row-locked worst-case reservation before execution;
+- aggregate all-attempt usage and idempotent success/failure settlement;
+- conservative reservation charging for incomplete or unknown usage;
+- authenticated Owner/Admin settings, summary and latest-50 audit reads;
+- metadata-only durable runs with no prompt, input, output or provider payload;
+- service-role-only narrow reserve/settle RPCs with no direct table access.
+
+Phase 1B adds no provider SDK, live model, route, Server Action, settings/audit
+UI, context builder, proposal generation or configuration/operational
+mutation. The production provider remains disabled and network-free, so no AI
+API charge can be incurred.
+
+**Before AI operation generation**
+
+- **Phase 2A.1:** add the first manual deterministic configuration proposal
+  control over the existing Milestone 5 lifecycle:
+  - Owner/Admin preorder collection days, first/last collection time, slot
+    interval, slot capacity, cutoff/notice and booking horizon controls;
+  - server-only composition of one complete strict
+    `set_preorder_experience` operation from the active immutable snapshot;
+  - exact expected active version and head revision enforced under the
+    PostgreSQL head lock;
+  - owner-readable proposal metadata and semantic no-op rejection;
+  - proposed-only submission followed by the existing candidate preview,
+    deliberate validation and deliberate application;
+  - no AI execution, accounting, provider request, direct projection write,
+    operational Record change, automatic validation or automatic application;
+- **Phase 2A.2:** add bounded deterministic preorder-question controls over the
+  same lifecycle:
+  - edit existing public wording, optional help and preorder-level requiredness
+    while preserving the complete generic Field and preorder configuration;
+  - relax an underlying globally required Field only when making a journey
+    question optional, and never globally tighten a Field merely because one
+    preorder requires it;
+  - add short- or long-answer questions as globally optional generic Order
+    Fields with server-derived keys that cannot collide with active or archived
+    Fields;
+  - create only strict `set_field` and `set_preorder_experience` operations,
+    an ordinary proposed change set and the existing candidate preview;
+  - no new primitive, domain table, migration, raw schema editor, direct
+    projection write, automatic validation/application or AI execution;
+- add the required narrow operational controls;
+- preserve the separate configuration and operational lanes described in
+  Section 8.3.
+
+**Later builder phases**
+
+- **Phase 3A - AI-safe Business context foundation:**
+  - ordinary authenticated session/RLS loading with current Owner/Admin
+    `manage_configuration` authorization;
+  - Business and current active/inactive Location summaries;
+  - active immutable snapshot as the sole versioned configuration source;
+  - strict schema-v1 pure projection of Objects/Fields, Relationships, Views,
+    Forms, Pages, preorder setup and current platform capabilities;
+  - deterministic canonical ordering and 128 KiB fail-closed byte limit;
+  - exact active-version/head currentness outside model-facing data;
+  - no operational Records/PII, configuration UUIDs, actors, timestamps,
+    checksums, persistence, provider call, AI accounting or proposal creation;
+- **Phase 3B - strict Business-request planning contract:**
+  - one registered `builder_plan_v1` task whose strict input is a trimmed
+    1–4,000 character owner request plus the exact Phase 3A model context;
+  - trusted actor/Business identity and exact base-version/head currentness
+    remain outside model input;
+  - one bounded clarification-or-ready output contract with owner-readable
+    assumptions, questions, concepts, journeys, descriptive steps and explicit
+    unsupported requirements;
+  - a required zero-to-twenty concepts collection, where platform-only
+    operational plans use an explicit empty array rather than inventing a
+    generic Object for a first-class platform entity such as Location;
+  - separate configuration and operational planning categories that are not
+    tools, M5 operations or mutation authority;
+  - optional pure server-owned semantic output validation inside the
+    provider-neutral execution core before successful settlement;
+  - authenticated composition through existing per-Business reservation and
+    metadata-only accounting;
+  - post-execution version, revision and canonical model-context comparison,
+    discarding a known-stale plan while retaining incurred usage accounting;
+  - no request/context/plan persistence, proposal, validation,
+    application, publication, route, UI or operational mutation;
+- **Phase 4A - external-provider safety gate and OpenAI Responses adapter:**
+  - update unreleased context schema v1 in place with explicit AI-safe Page
+    blocks; image/button destinations become structural kinds and raw URLs,
+    credentials, hosts, paths, queries, fragments, email addresses and
+    telephone numbers are excluded without changing runtime Page configuration;
+  - one strict OpenAI Responses adapter using the code-owned
+    `gpt-5.4-mini-2026-03-17` model, deterministic structured input, adapted
+    strict JSON Schema, `store: false`, no tools and no conversation state;
+  - server provider mode defaults to disabled and accepts only `disabled` or
+    `openai`; OpenAI additionally requires a server-only key, while Business AI
+    remains a separate gate;
+  - code-owned standard pricing of 750,000 input and 4,500,000 output microusd
+    per million tokens; the two-attempt planning envelope reserves exactly
+    132,864 microusd using integer ceiling arithmetic;
+  - refusals, content filtering, max-output incompleteness and provider/API
+    failures fail closed with reported usage retained for settlement;
+  - SMBOS persists no request, instruction, context, response or raw provider
+    material; `store: false` is not a Zero Data Retention claim and deployment
+    must review provider account data controls;
+  - no operation generation, proposal, validation, application, route, Server
+    Action, UI, chat persistence, operational mutation, migration or table;
+- **Phase 4B - controlled real-model planning evaluation gate:**
+  - evaluate the unchanged production `builder_plan_v1` task, strict schemas,
+    semantic validator, instruction, Phase 3A context shape, fixed OpenAI model
+    and production planning policy through the provider-neutral executor;
+  - one deterministic strict synthetic local-food Business context containing
+    no operational Records, customer/order data, personal identity, contact
+    value, credential or tenant database row;
+  - exactly eight sequential scenarios covering preorder changes, a reusable
+    Catering Enquiry concept, Location creation, a compound
+    Location/preorder request, unsupported automation/payment and ambiguous
+    bookings;
+  - deterministic hard gates for structural/semantic compatibility, result
+    state, lane/category selection, unsupported honesty, reference integrity
+    and compound ordering/dependency;
+  - metadata-only output with no request, context, model prose, labels, UUIDs,
+    provider body or persistence;
+  - existing integer accounting derives a fixed 1,062,912 microusd aggregate
+    maximum beneath a code-owned 1,100,000 microusd hard ceiling;
+  - external execution requires `RUN_LIVE_OPENAI_EVAL=1`,
+    `AI_PROVIDER=openai` and a non-blank server-only key; CI uses injected fake
+    providers and never runs the live command;
+  - no tenant/accounting row, route, Server Action, UI, proposal, lifecycle
+    action, Record/Relationship/Location mutation, migration, table or
+    primitive;
+  - operation generation remains blocked until the explicit live evaluation
+    succeeds and is reviewed;
+- **Phase 4B.1 - bounded planning diagnostics and least-change precision:**
+  - preserve the fixed model, provider, pricing, token, retry, schema, context,
+    scenario and evaluator gate from Phase 4B;
+  - classify invalid planning output internally as structural, semantic or
+    unknown using a finite code-owned diagnostic taxonomy;
+  - keep public `ai_output_invalid` errors, metadata-only accounting and audit
+    records unchanged, with no raw model/provider/request/context material in
+    emitted evaluation output;
+  - strengthen the server-owned instruction so the owner's explicit request
+    defines scope, the smallest coherent plan is preferred and adjacent work,
+    guessed references and unrelated configuration are excluded;
+  - keep Location-only planning concept-free and require explicit ordering and
+    dependencies for a combined new Location plus later configuration request;
+  - add no operation generation, proposal, mutation, route, UI, migration,
+    table, primitive, second model, provider or retry path;
+- **Phase 4B.2 - high-impact assumption contract alignment:**
+  - preserve the fixed model, provider, pricing, token, retry, schema, context,
+    scenario and evaluator gate from Phase 4B and Phase 4B.1;
+  - record the second explicit live run: eight scenarios, seven passed, one
+    failed, 33,453 input tokens, 3,194 output tokens, 39,468 microusd and
+    29,322 ms, with the remaining `high_impact_assumption_unconfirmed`
+    diagnostic on `preorder_schedule_change`;
+  - strengthen the server-owned instruction with general assumption semantics:
+    explicit owner requests and established Business context are not
+    assumptions, the direct requested effect is not an assumption, unnecessary
+    assumptions are omitted, and every high-impact assumption in a ready plan
+    requires owner confirmation;
+  - keep the deterministic validator rejecting high-impact assumptions without
+    confirmation and accepting confirmed high-impact assumptions; do not weaken
+    the validator, scenario gate, or turn semantic-invalid output into a retry;
+  - record that the earlier reference and least-change failures are resolved and
+    that this correction aligns the instruction with the existing validator;
+  - add focused instruction, assumption, preorder-schedule, public-error and
+    accounting-redaction regressions without model-output snapshots;
+  - add no operation generation, proposal, mutation, route, UI, migration,
+    table, primitive, second model, provider or retry path; rerun the same eight
+    scenarios once more only after exact-head CI.
+- **Phase 4C - GPT-5.6 Terra medium qualification and reliability gate:**
+  - replace the unstable historical mini candidate with the code-owned
+    `gpt-5.6-terra` alias and explicit non-overridable
+    `reasoning: { effort: "medium" }`; no model, effort or policy input is
+    accepted from environment (other than activation), Business, browser, task
+    input, owner request, context, provider response or evaluation parameters;
+  - retain exactly the approved Phase 4B.2 planning instruction, schemas,
+    semantic validator, diagnostic taxonomy, synthetic context, eight owner
+    requests, strict transport and deterministic hard gates;
+  - use policy identity `builder_planning_terra_medium_v1`, 2,500,000 input and
+    15,000,000 output microusd per million tokens, with an exact two-attempt
+    reservation of 442,880 microusd and no cached-input discount; explicitly
+    disable GPT-5.6 implicit prompt caching with provider-owned
+    `prompt_cache_options: { mode: "explicit" }`, sending no breakpoint, key
+    or retention option, until a separate cache-token accounting review;
+  - provide two separate non-production gates: qualification is eight scenarios
+    once, requiring `RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1`; reliability is the
+    same scenarios in three sequential rounds (24 executions), requiring
+    `RUN_LIVE_OPENAI_TERRA_RELIABILITY=1`; both also require `AI_PROVIDER=openai`
+    and a non-blank server-only key, while the historical flag is inert;
+  - verify qualification's exact 3,543,040 microusd maximum under a 3,700,000
+    ceiling and reliability's exact 10,629,120 maximum under an 11,000,000
+    ceiling before provider construction; CI uses only injected providers;
+  - emit only bounded redacted metadata and never request, inspect, persist or
+    print reasoning content, request/context data, plan text, provider bodies,
+    response IDs or credentials; no gate has a database, accounting, telemetry,
+    file-writing, route, Server Action, UI or mutation dependency;
+  - treat alias advancement and any permitted execution/planning-subject change
+    as invalidating prior evidence; qualification requires reviewed 8/8, then
+    reliability requires reviewed 24/24 before operation generation can begin;
+  - add no fallback, other model, owner selection, prompt/schema/validator/gate
+    relaxation, operation generation, proposal, mutation, migration, table or
+    primitive.
+
+**Phase 4C completion record**
+
+The reviewed redacted live qualification completed the eight unchanged
+scenarios once and passed 8/8. Structural, semantic, scenario-gate and provider
+failure counts were all zero; usage was 34,949 input tokens and 3,476 output
+tokens, with 139,515 estimated microusd and 47,157 ms elapsed. The reviewed
+reliability run completed three sequential repetitions of the same eight
+scenarios (24 executions) and passed 24/24, with every scenario passing 3/3,
+one provider attempt per execution, and zero structural, semantic,
+scenario-gate or provider failures; usage was 104,847 input tokens and 8,764
+output tokens, with 393,585 estimated microusd and 108,779 ms elapsed.
+
+These results clear the planning gate for the frozen Terra-medium profile as
+bounded engineering evidence, not universal model perfection. Deterministic
+schemas, semantic validation and scenario gates remain authoritative, and the
+model has no mutation authority. Operation generation is still not implemented
+in Milestone 6; a later milestone may begin bounded change drafting only while
+retaining exact-head protection, deterministic validation and separate
+configuration/operational lanes. Any material model-alias, prompt, schema,
+validator, context or provider-transport change invalidates the evidence and
+requires both gates to run again.
+- strict configuration/operational operation generation;
+- deterministic validation feedback;
+- builder conversation UI and preview integration.
+
+The model may propose configuration operations but never validates or applies
+its own proposal. AI remains a design/change assistant and the deterministic
+runtime has no AI dependency.
 
 Exit criterion:
 

@@ -55,6 +55,51 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Run OpenAI provider safety tests with injected clients
+        run: npm run test:openai-provider
+
+      - name: Reset after OpenAI provider acceptance
+        run: npm run supabase:reset
+
+      - name: Run AI-safe Business context tests
+        run: npm run test:ai-context
+
+      - name: Reset for strict builder planning tests
+        run: npm run supabase:reset
+
+      - name: Run strict builder planning tests
+        run: npm run test:builder-planning
+
+      - name: Run bounded builder planning evaluation tests
+        run: npm run test:builder-evaluation
+
+      - name: Run Terra medium provider profile tests
+        run: npm run test:terra-provider-profile
+
+      - name: Run Terra medium qualification gate tests
+        run: npm run test:builder-terra-qualification
+
+      - name: Run Terra medium reliability gate tests
+        run: npm run test:builder-terra-reliability
+
+      - name: Reset after builder planning acceptance
+        run: npm run supabase:reset
+
+      - name: Run deterministic manual question tests
+        run: npm run test:manual-questions
+
+      - name: Reset after manual question acceptance
+        run: npm run supabase:reset
+
+      - name: Run deterministic manual amendment tests
+        run: npm run test:manual-amendments
+
+      - name: Reset after manual amendment acceptance
+        run: npm run supabase:reset
+
+      - name: Run AI accounting and usage-control tests
+        run: npm run test:ai-accounting
+
       - name: Run configuration change proposal tests
         run: npm run test:changes
 
@@ -88,8 +133,11 @@ jobs:
       - name: Run configuration lifecycle action interface tests
         run: npm run test:changes-ui-actions
 
-      - name: Reset for full integration and RLS tests
-        run: npm run supabase:reset
+      - name: Restart clean Supabase for full integration and RLS tests
+        run: |
+          npm run supabase:stop
+          npm run supabase:start
+          npm run supabase:reset
 
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration

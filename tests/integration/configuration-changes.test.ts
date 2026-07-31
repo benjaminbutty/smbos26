@@ -611,6 +611,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       businessId: business.id,
     });
     const fixtureProposal = await fixtureService.proposeChangeSet({
+      ...(await fixtureService.getProposalCurrentness()),
       title: "Install configuration engine test fixtures",
       description: "Ephemeral integration-test configuration.",
       operations: [
@@ -849,6 +850,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       businessId: business.id,
     });
     proposal = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Saturday collection and catering enquiries",
       description: "A deterministic Phase 2A proposal.",
       operations,
@@ -1079,6 +1081,8 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     const mismatched = await owner.client.rpc("propose_configuration_change", {
       expected_business_id: business.id,
       expected_actor_id: staff.user.id,
+      expected_base_version_id: headBeforeProposal.active_version_id,
+      expected_head_revision: headBeforeProposal.head_revision,
       requested_title: "Mismatched actor",
       requested_description: null as unknown as string,
       requested_operations: [
@@ -1105,6 +1109,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
     await expectEngineError(
       ownerService.proposeChangeSet({
+        ...(await ownerService.getProposalCurrentness()),
         title: "Repeat existing state",
         description: null,
         operations: [
@@ -1121,6 +1126,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
 
     const abandonTarget = await ownerService.proposeChangeSet({
+      ...(await ownerService.getProposalCurrentness()),
       title: "Actor-safe abandonment",
       description: null,
       operations: [
@@ -1433,6 +1439,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
 
     for (const testCase of cases) {
       const changeSet = await service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: testCase.title,
         description: null,
         operations: testCase.operations,
@@ -1558,6 +1565,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     }
 
     const changeSet = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Milton Keynes collection only",
       description: null,
       operations: [
@@ -1730,6 +1738,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       throw new Error("Missing preorder operation.");
     }
     const changeSet = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Location eligibility recheck",
       description: null,
       operations: [
@@ -1884,6 +1893,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
     const probe = entity(baselineSnapshot.object_definitions, "restore_probe");
     const concurrent = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Concurrent validation",
       description: null,
       operations: [
@@ -1903,6 +1913,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect(first.validation_result_json).toEqual(second.validation_result_json);
 
     const tampered = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Tamper detection",
       description: null,
       operations: [
@@ -1936,6 +1947,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect((await service.getChangeSet(tampered.id)).status).toBe("proposed");
 
     const displayContextTampered = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Display-context tamper detection",
       description: null,
       operations: [
@@ -2041,6 +2053,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
     const probe = entity(baselineSnapshot.object_definitions, "archive_probe");
     const divergent = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Projection divergence",
       description: null,
       operations: [
@@ -2062,6 +2075,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
 
     const stale = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Stale validation",
       description: null,
       operations: [
@@ -2119,7 +2133,9 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
     const baseProposal = {
       expected_actor_id: owner.user.id,
+      expected_base_version_id: headBeforeProposal.active_version_id,
       expected_business_id: business.id,
+      expected_head_revision: headBeforeProposal.head_revision,
       requested_description: "",
       requested_title: "Rejected identity replacement",
     };
@@ -2267,6 +2283,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
     await expectEngineError(
       service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: "Missing Object",
         description: null,
         operations: [
@@ -2298,6 +2315,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     }
     await expectEngineError(
       service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: "Cross-tenant Location",
         description: null,
         operations: [
@@ -2343,6 +2361,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
     await expectEngineError(
       staffService.proposeChangeSet({
+        ...(await ownerService.getProposalCurrentness()),
         title: "Staff proposal",
         description: null,
         operations: [
@@ -2355,6 +2374,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       "configuration_owner_or_admin_required",
     );
     const adminProposal = await adminService.proposeChangeSet({
+      ...(await adminService.getProposalCurrentness()),
       title: "Admin proposal",
       description: null,
       operations: [
@@ -2414,6 +2434,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       where business_id = ${business.id}::uuid
     `;
     const changeSet = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Apply Owner configuration",
       description: "Phase 3A Owner application proof.",
       operations: [
@@ -2528,6 +2549,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       businessId: otherBusiness.id,
     });
     const proposed = await ownerService.proposeChangeSet({
+      ...(await ownerService.getProposalCurrentness()),
       title: "Application permission probe",
       description: null,
       operations: [
@@ -2567,6 +2589,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
 
     const abandonedProposal = await ownerService.proposeChangeSet({
+      ...(await ownerService.getProposalCurrentness()),
       title: "Abandoned application probe",
       description: null,
       operations: [
@@ -2590,6 +2613,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
 
     const adminProposal = await adminService.proposeChangeSet({
+      ...(await adminService.getProposalCurrentness()),
       title: "Admin application",
       description: null,
       operations: [
@@ -2618,6 +2642,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       businessId: business.id,
     });
     const duplicate = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Concurrent duplicate application",
       description: null,
       operations: [
@@ -2656,6 +2681,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect(duplicateVersions).toHaveLength(1);
 
     const proposalA = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Same-base proposal A",
       description: null,
       operations: [
@@ -2671,6 +2697,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       ],
     });
     const proposalB = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Same-base proposal B",
       description: null,
       operations: [
@@ -2724,6 +2751,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       businessId: business.id,
     });
     const fixture = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Create application compatibility fixture",
       description: null,
       operations: [
@@ -2761,6 +2789,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       "value",
     );
     const changeSet = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Change field after validation",
       description: null,
       operations: [
@@ -2849,6 +2878,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       "display_context",
     ] as const) {
       const changeSet = await service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: `Application ${tamperKind} tamper`,
         description: null,
         operations: [
@@ -2924,6 +2954,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     const current = asSnapshot(await currentLiveSnapshot());
     const probe = entity(current.object_definitions, "phase_3_owner_probe");
     const divergent = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Application projection divergence",
       description: null,
       operations: [
@@ -2961,6 +2992,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
 
     for (const failurePoint of failurePoints) {
       const changeSet = await service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: `Atomic failure ${failurePoint}`,
         description: null,
         operations: [
@@ -3078,6 +3110,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     });
     const installFixture = async (key: string): Promise<SnapshotV1> => {
       const fixture = await service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: `Install ${key}`,
         description: null,
         operations: [
@@ -3119,6 +3152,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
         "value",
       );
       const changeSet = await service.proposeChangeSet({
+        ...(await service.getProposalCurrentness()),
         title: `Change ${objectKey} value to number`,
         description: null,
         operations: [
@@ -3339,6 +3373,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     const current = asSnapshot(await currentLiveSnapshot());
     const page = entity(current.pages, "public_preorder");
     const changeSet = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
       title: "Draft public preorder Page",
       description: null,
       operations: [
@@ -3526,6 +3561,7 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       },
     );
     const changeSet = await deletionService.proposeChangeSet({
+      ...(await deletionService.getProposalCurrentness()),
       title: "Applied deletion audit",
       description: null,
       operations: [

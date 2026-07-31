@@ -1,12 +1,19 @@
 # SMBOS
 
 SMBOS is an AI-native operating system for small physical businesses. The
-repository currently contains the Milestone 4 vertical slice plus the
-Milestone 5 Phase 5B explicit Changes lifecycle interface: a
+repository currently contains the Milestone 4 vertical slice, the Milestone 5
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4C
+Terra-medium qualification and reliability gate after bounded real-model
+planning diagnostics, deterministic manual setup amendments,
+data-minimised Business context and strict non-executing Business-request
+planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
+The AI execution boundary is server-only and per-Business accounting is
+disabled by default. OpenAI Responses is the first external adapter, but it is
+also server-disabled by default and has no user-facing invocation surface.
 
 The product and architecture sources of truth are:
 
@@ -45,6 +52,14 @@ Included:
 - read-only Owner/Admin Changes, proposal detail, and Version history routes
 - authenticated POST-only lifecycle Server Actions and read-only confirmation
   routes for validate, apply, abandon and rollback preparation
+- authenticated Owner/Admin Edit setup routes for deterministic preorder
+  collection schedule proposals
+- bounded preorder-question controls for editing public wording, help and
+  requiredness or adding one short/long-answer generic Order Field
+- exact active-version and head-revision proposal currentness enforced
+  atomically in PostgreSQL
+- server-composed complete preorder operations from the active immutable
+  snapshot, with owner-readable metadata and no-op rejection
 - server-derived Business and actor context with status rechecks before every
   lifecycle mutation
 - explicit pending state, bounded notices and authoritative
@@ -53,6 +68,54 @@ Included:
 - bounded latest-50 proposal and version history loading
 - direct projection-table mutation closed to anonymous, authenticated, and
   service-role clients
+- registered strict structured AI task contracts and one trusted execution
+  policy registry
+- provider-neutral schema-constrained generation request/response contracts
+- bounded structured input, output tokens, attempts, retry delay and actual
+  aborting timeout behavior
+- stable owner-safe AI errors with internal causes retained for observability
+- default-disabled finite per-Business daily request, input-token,
+  output-token, and integer-microusd controls
+- atomic worst-case reservations, idempotent settlement, and conservative
+  unknown-usage charging across every provider attempt
+- Owner/Admin-only settings, UTC-day summary, and metadata-only latest-50
+  execution audit reads
+- one server-only OpenAI Responses adapter behind a default-disabled runtime
+  gate, fixed model/pricing, strict Structured Outputs, `store: false` and no
+  tools or conversation state
+- two engineering-only, separately activated Terra-medium planning gates over
+  synthetic configuration: an eight-scenario qualification run and three
+  sequential repetitions (24 executions) for reliability, with frozen hard
+  gates, redacted metadata-only output and ceilings of 3,700,000 and
+  11,000,000 microusd
+- one authenticated Owner/Admin-only Business context loader over ordinary
+  session/RLS reads, the active immutable configuration version and current
+  Locations
+- one strict schema-v1 pure model-facing projector with deterministic ordering,
+  explicit Field-setting allow-lists and a 128 KiB hard limit
+- explicit AI-safe Page blocks that retain structural purpose while excluding
+  raw image/button destinations, credentials, hosts, paths, queries, fragments,
+  email addresses and telephone numbers
+- trusted active-version/head currentness kept outside model-facing context
+- configuration UUID, actor, checksum, timestamp, operational Record, PII,
+  proposal, validation and AI audit exclusion from model-facing context
+- one registered `builder_plan_v1` task over a bounded owner request and the
+  exact Phase 3A model context
+- strict clarification-or-ready planning output with owner-readable bounds,
+  plan-local references, explicit unsupported capabilities and separate
+  configuration/operational planning lanes
+- server-owned least-change and assumption-classification rules that keep the
+  owner's explicit request as the scope boundary, reject adjacent unasked work,
+  and require owner confirmation for every high-impact assumption in a ready
+  plan
+- pure server-owned semantic output validation for references, dependencies,
+  category/lane compatibility and current platform capability compatibility,
+  with finite internal diagnostics that never enter public errors or accounting
+- authenticated planning orchestration with session-derived accounting
+  identity, metadata-only usage settlement and post-execution context
+  comparison before a plan is returned
+- in-memory-only owner requests and plans with no proposal, validation,
+  application, publication, Record or Location mutation
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -60,13 +123,195 @@ Included:
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
-- AI provider calls or builder behavior
+- user-facing AI execution or executable builder behavior
+- owner/provider/model/API-key selection and multiple external providers
+- AI proposal/operation generation, builder routes or chat UI
+- billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
-- owner-facing proposal creation or operation editing
+- general-purpose owner-facing operation editing or raw configuration editing
 - automatic rebase/merge or AI/LLM integration
 - Location or operational Record versioning
 - workflow/rule execution
+
+## Milestone 6 change boundaries
+
+AI is the primary system-building interface, not the only control surface and
+not a runtime dependency. Manual deterministic configuration and operational
+controls arrive before AI operation generation.
+
+Configuration changes use strict operations and the existing immutable
+proposal → candidate → preview → validation → deliberate Owner/Admin
+application → immutable version lifecycle. Neither AI nor manual UI may mutate
+the eight versioned configuration tables directly, and the model never
+validates or applies its own proposal.
+
+Operational changes such as Product price, Order status, Location creation and
+Product-to-Location availability use separate narrow operational services and
+normal generated UI. They are not configuration versions. Compound requests
+are decomposed into correctly ordered operational and configuration steps.
+
+Phase 1B wraps the Phase 1A structured execution core in a separate
+Business-aware accounting service. Each Business starts disabled with finite
+limits. PostgreSQL locks that Business's settings row and reserves the trusted
+worst-case envelope before an attempt; known usage settles to aggregate actuals
+and incomplete usage retains at least the reservation. Limits reset by the UTC
+date captured from database statement time. Money is integer micro-US-dollars
+(`1 USD = 1,000,000 microusd`).
+
+The execution audit stores only bounded identity, policy, status, token/cost,
+attempt, completeness and timestamp fields. It stores no prompt, task input,
+instruction, model output, raw response, header, credential, provider metadata
+or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
+
+Production remains network-free unless `AI_PROVIDER=openai` and a server-only
+key are both configured. Even then, the current Business must separately have
+AI enabled before reservation or provider invocation. Operation generation and
+builder UI remain later work.
+
+Phase 2A.1 adds the first non-AI configuration control at
+`/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
+days, times, interval, capacity, notice and booking horizon. The server reloads
+the immutable active version, preserves every non-schedule property, composes
+one strict `set_preorder_experience` operation and creates only an ordinary M5
+proposal. Saving does not validate, apply, publish, invoke AI or create an AI
+execution/accounting row. Stale rendered forms fail against the exact expected
+active version and head revision instead of being rebased.
+
+Phase 2A.2 adds a second bounded control under the same Edit setup entry.
+Owner/Admin users can edit an existing preorder question’s public wording,
+optional help and journey-level requiredness, or add one short- or long-answer
+question. Existing questions preserve their generic Field definitions unless a
+global required constraint must be relaxed. New questions are globally
+optional generic Order Fields with hidden server-derived keys; preorder
+requiredness remains independent. Submission still creates only a proposed M5
+change for preview, deliberate validation and deliberate application.
+
+Phase 3A adds a read-only AI-safe Business context foundation. One server-only
+loader derives the actor from the ordinary authenticated session, requires the
+fixed `manage_configuration` capability, reads the Business and current active
+and inactive Locations through RLS, then parses only the active immutable
+configuration version. A separate pure projector emits an explicit strict
+schema-v1 contract for Business/access summaries, configuration definitions,
+preorder setup and implemented platform capabilities.
+
+Trusted `baseVersionId` and `headRevision` remain outside the model-facing
+context. Location UUIDs are the sole opaque database references in model-facing
+data and remain untrusted if returned later. Configuration UUIDs, actors,
+timestamps, checksums, operational Records/PII, proposals, validation results
+and AI audit are excluded. Canonical serialization is deterministically ordered
+and fails without truncation above 128 KiB. The Bedford acceptance context,
+including one inactive Location fixture, is 11,189 bytes. Phase 3A persists
+nothing, invokes no provider, reserves no budget and creates no proposal.
+
+Phase 3B registers `builder_plan_v1`. Its input is one trimmed owner request of
+at most 4,000 characters plus the exact strict Phase 3A `modelContext`.
+Session-derived actor/Business identity and exact base-version/head currentness
+remain server-only. The fixed instruction and strict schema allow either one to
+five clarification questions or a bounded owner-readable ready plan; the plan
+contains descriptive configuration/operational categories, not tools or M5
+operations.
+
+Domain concepts are present only when a plan concerns generic Business
+concepts. Platform-only operational plans such as creating or renaming a
+Location keep the required `concepts` property as `[]`; they do not invent a
+generic Location Object and remain descriptive rather than executable.
+
+The provider-neutral core now runs an optional pure task semantic validator
+after strict output parsing and before success. Invalid Object, Location,
+concept or dependency references therefore settle as `ai_output_invalid` with
+reported usage retained. The planning service reloads and canonically projects
+Business context after execution and discards a plan when its version,
+revision or projected content changed. Metered execution remains in the
+metadata-only audit even when the plan is discarded as stale. A later
+operation/proposal phase must still rebuild context and enforce expected-head
+protection because a final read cannot remove every race.
+
+Phase 4A classifies Page image sources as `external_web` and button
+destinations as `internal_path`, `external_web`, `email` or `telephone`.
+Raw destinations never enter model context. The fixed
+Responses adapter receives deterministic structured input and a strict adapted
+JSON Schema, sets `store: false`, and receives no tools, identity metadata or
+conversation state. SMBOS persists neither request nor response. `store: false`
+disables Responses application-state storage for the request; it is not a Zero
+Data Retention claim, and production activation requires review of the OpenAI
+project/organization data controls.
+
+Phase 4B.1 evaluates that unchanged production planning path independently and
+adds bounded diagnostics around structural versus semantic output failures. The
+engineering-only harness uses one strict synthetic local-food Business context,
+the registered `builder_plan_v1` task, production OpenAI adapter and production
+planning policy through the provider-neutral execution service. It runs exactly
+eight scenarios sequentially and emits only bounded pass/fail, state,
+lane/category, unsupported-reason, count, usage, integer-cost and elapsed-time
+metadata. Structural failures emit only `output_contract_invalid`; semantic
+failures emit one approved diagnostic code; unclassified failures emit only
+`unknown_output_invalid`. It has no application import, database client, tenant
+row, accounting row, persistence, route, Server Action or UI.
+
+Phase 4C replaces the unstable historical mini candidate with the code-owned
+`gpt-5.6-terra` alias and non-overridable `medium` reasoning. The planning
+instruction, schemas, semantic validator, synthetic context, owner requests and
+hard gates are frozen. The alias may advance independently, so qualification
+evidence is invalid whenever its identity or material execution/planning subject
+changes. Operation generation remains blocked.
+
+GPT-5.6 otherwise uses implicit prompt caching. The first Terra planner
+explicitly disables it with provider-owned
+`prompt_cache_options: { mode: "explicit" }` and sends no explicit cache
+breakpoint, key or retention option. This preserves the trusted ordinary
+$2.50/M input reservation rate; cache pricing and cache-token accounting need
+a separate future review.
+
+`npm run test:builder-evaluation`, `npm run test:terra-provider-profile`,
+`npm run test:builder-terra-qualification` and
+`npm run test:builder-terra-reliability` use injected providers and run in CI.
+The external gates are deliberately separate:
+
+```bash
+RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-planning-terra-qualification-live
+```
+
+Only after an 8/8 qualification review may an operator deliberately run:
+
+```bash
+RUN_LIVE_OPENAI_TERRA_RELIABILITY=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-planning-terra-reliability-live
+```
+
+A key alone is not permission to run either gate. Qualification reserves at
+most 3,543,040 microusd beneath a 3,700,000 ceiling; reliability reserves at
+most 10,629,120 microusd beneath an 11,000,000 ceiling. Operation generation
+remains outside this milestone and is not implemented until a later bounded
+change-drafting phase.
+
+### Milestone 6 Phase 4C closeout
+
+The supplied redacted live evidence clears the planning gate for the frozen
+`gpt-5.6-terra` / `builder_planning_terra_medium_v1` profile. Qualification ran
+the eight unchanged scenarios once, with 8/8 passing: structural failures 0,
+semantic failures 0, scenario-gate failures 0, provider failures 0; 34,949
+input tokens, 3,476 output tokens, 139,515 estimated microusd and 47,157 ms.
+Reliability ran the same eight scenarios in three sequential repetitions (24
+executions), with 24/24 passing, every scenario 3/3, one provider attempt per
+execution and failures 0: structural 0, semantic 0, scenario-gate 0, provider
+0; 104,847 input tokens, 8,764 output tokens, 393,585 estimated microusd and
+108,779 ms.
+
+This is bounded engineering evidence, not a claim of universal model
+perfection. Deterministic schemas, semantic validation and scenario gates
+remain authoritative; the model has no mutation authority. Operation
+generation, proposals, validation/application automation and publication are
+not implemented here. A future milestone may begin bounded change drafting,
+but must preserve currentness protection, deterministic validation and the
+separate configuration/operational lanes. Any material model-alias, prompt,
+schema, validator, context or provider-transport change invalidates this
+evidence and requires both gates to be rerun.
 
 ## Requirements
 
@@ -103,7 +348,8 @@ Supabase project using the CLI defaults.
    The checked-in public values target the local stack. Copy the
    `SERVICE_ROLE_KEY` value reported by `npm run supabase:status` into the
    server-only `SUPABASE_SERVICE_ROLE_KEY` variable. Never expose that value
-   through a `NEXT_PUBLIC_` variable. Leave the future AI values empty.
+   through a `NEXT_PUBLIC_` variable. Leave `AI_PROVIDER` and `OPENAI_API_KEY`
+   empty to keep external execution disabled.
 
 4. Start the development server:
 
@@ -161,6 +407,10 @@ only when an existing proposal's authoritative status permits them. The local
 demo does not seed permanent proposals; Phase 5B does not introduce
 demonstration-only history or proposal creation.
 
+Open [Edit setup](http://localhost:3000/app/bedford-bakery-demo/setup) to
+prepare a preorder collection settings proposal. Review its stored diff and
+candidate preview in Changes, then validate and apply it deliberately.
+
 ## Local Supabase
 
 Start the Docker-based local stack:
@@ -198,6 +448,11 @@ validating from a clean state.
 | ------------------------------------- | ------------------------------------------------ |
 | `npm test`                            | Run fast unit and component tests                |
 | `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
+| `npm run test:ai-context`             | Run AI-safe Business context tests               |
+| `npm run test:ai-accounting`          | Run durable AI usage-control/accounting tests    |
+| `npm run test:builder-planning`       | Run strict non-executing builder planning tests  |
+| `npm run test:manual-amendments`      | Run deterministic schedule amendment tests       |
+| `npm run test:manual-questions`       | Run deterministic preorder question tests        |
 | `npm run test:rls`                    | Run the Milestone 1 tenancy/RLS suite            |
 | `npm run test:graph`                  | Run the Milestone 2 graph integrity suite        |
 | `npm run test:experience`             | Run the Milestone 3 experience suite             |
@@ -243,31 +498,37 @@ npm start
 
 ## Environment variables
 
-Environment values are parsed in `src/env.ts`. Deployment builds require both
-public Supabase values. Trusted preorder writes also require the server-only
-service-role key at runtime. Empty optional values are normalized to
-`undefined`; partially configured AI integrations fail validation.
+Shared application environment values are parsed in `src/env.ts`. The
+server-only AI runtime parses its own closed provider configuration so its API
+key cannot enter client source. Deployment builds require both public Supabase
+values. Trusted preorder writes also require the server-only service-role key
+at runtime.
 
-| Variable                               | Required now | Visibility  |
-| -------------------------------------- | ------------ | ----------- |
-| `NEXT_PUBLIC_APP_URL`                  | No           | Browser     |
-| `NEXT_PUBLIC_SUPABASE_URL`             | Yes          | Browser     |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes          | Browser     |
-| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder | Server only |
-| `PREORDER_RATE_LIMIT_SECRET`           | Production   | Server only |
-| `AI_PROVIDER`                          | No           | Server only |
-| `AI_PROVIDER_API_KEY`                  | No           | Server only |
+| Variable                               | Required now    | Visibility  |
+| -------------------------------------- | --------------- | ----------- |
+| `NEXT_PUBLIC_APP_URL`                  | No              | Browser     |
+| `NEXT_PUBLIC_SUPABASE_URL`             | Yes             | Browser     |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes             | Browser     |
+| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder    | Server only |
+| `PREORDER_RATE_LIMIT_SECRET`           | Production      | Server only |
+| `AI_PROVIDER`                          | No (`disabled`) | Server only |
+| `OPENAI_API_KEY`                       | When `openai`   | Server only |
 
 The publishable key is designed for browser use; PostgreSQL RLS is the
 authorization boundary. The preorder server uses the service role only to call
 three narrow, schema-validated transaction/email RPCs. The browser never
 receives it and cannot execute the write RPC directly.
 
+`AI_PROVIDER` accepts only blank/`disabled` or `openai`. OpenAI mode requires
+`OPENAI_API_KEY`; provider, endpoint, model, attempts, timeout, token maximum,
+pricing, storage behavior and schema remain code-owned. There is no
+`NEXT_PUBLIC_` AI variable or arbitrary base-URL/model override.
+
 ## Repository structure
 
 ```text
 src/
-├── ai/providers/       Future structured AI provider adapters
+├── ai/                 Server-only structured task/policy/provider contracts
 ├── app/                Next.js App Router routes and global styles
 ├── auth/               Authentication actions and authorization helpers
 ├── components/         Shared user-interface components
@@ -298,6 +559,12 @@ tests/
 - Owner/Admin configuration changes use only the structured propose, validate,
   apply, and abandon RPC lifecycle. Legacy configuration RPCs and private
   engine helpers are not executable by application roles.
+- AI execution resolves only registered server tasks and trusted policies. It
+  has no configuration or operational mutation dependency. A separate
+  server-only accounting module verifies the authenticated Owner/Admin through
+  narrow RPCs and alone may invoke service-role-only reserve/settle RPCs.
+  Direct access to both accounting tables is denied to all application roles,
+  including `service_role`. The disabled provider performs no network request.
 - Database-owner configuration fixtures exist only under `tests/`; they are not
   production services, credentials, routes, or RPCs.
 - Public catalogue reads return an explicit allow-list; generic graph and

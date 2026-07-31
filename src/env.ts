@@ -23,21 +23,8 @@ export const environmentSchema = z
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().trim().min(1),
     SUPABASE_SERVICE_ROLE_KEY: optionalString,
     PREORDER_RATE_LIMIT_SECRET: optionalString,
-    AI_PROVIDER: optionalString,
-    AI_PROVIDER_API_KEY: optionalString,
   })
   .superRefine((environment, context) => {
-    const hasAiProvider = environment.AI_PROVIDER !== undefined;
-    const hasAiProviderKey = environment.AI_PROVIDER_API_KEY !== undefined;
-
-    if (hasAiProvider !== hasAiProviderKey) {
-      context.addIssue({
-        code: "custom",
-        message: "AI_PROVIDER and AI_PROVIDER_API_KEY must be set together.",
-        path: [hasAiProvider ? "AI_PROVIDER_API_KEY" : "AI_PROVIDER"],
-      });
-    }
-
     if (
       environment.NODE_ENV === "production" &&
       !environment.SUPABASE_SERVICE_ROLE_KEY
@@ -80,7 +67,5 @@ export function getEnvironment(): Environment {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     PREORDER_RATE_LIMIT_SECRET: process.env.PREORDER_RATE_LIMIT_SECRET,
-    AI_PROVIDER: process.env.AI_PROVIDER,
-    AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY,
   });
 }

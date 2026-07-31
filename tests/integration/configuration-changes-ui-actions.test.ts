@@ -200,7 +200,9 @@ async function proposeObject(
   business: Business,
   key: string,
 ): Promise<ChangeSet> {
-  return service(identity, business).proposeChangeSet({
+  const configuration = service(identity, business);
+  return configuration.proposeChangeSet({
+    ...(await configuration.getProposalCurrentness()),
     title: `Add ${key}`,
     description: null,
     operations: [objectOperation(key, key.replaceAll("_", " "))],
@@ -464,7 +466,9 @@ describe("Milestone 5 Phase 5B real Server Action lifecycle", () => {
 
   it("rejects operationally incompatible proposals with owner-safe stored errors and no unintended writes", async () => {
     const business = await createScenarioBusiness("Action invalid lifecycle");
-    const setup = await service(owner, business).proposeChangeSet({
+    const ownerConfiguration = service(owner, business);
+    const setup = await ownerConfiguration.proposeChangeSet({
+      ...(await ownerConfiguration.getProposalCurrentness()),
       title: "Install compatibility fixture",
       description: null,
       operations: [
@@ -502,7 +506,8 @@ describe("Milestone 5 Phase 5B real Server Action lifecycle", () => {
       recordStatus: "active",
     });
 
-    const proposal = await service(owner, business).proposeChangeSet({
+    const proposal = await ownerConfiguration.proposeChangeSet({
+      ...(await ownerConfiguration.getProposalCurrentness()),
       title: "Make existing values numeric",
       description: null,
       operations: [

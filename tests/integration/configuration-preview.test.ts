@@ -288,6 +288,7 @@ async function installConfiguredBusiness(): Promise<void> {
   }
 
   const proposal = await configuredService.proposeChangeSet({
+    ...(await configuredService.getProposalCurrentness()),
     title: "Install isolated preview foundation fixture",
     description: "Test-only clone of generic Bedford configuration.",
     operations: operationsFromSnapshot(snapshot, replacementIds),
@@ -666,6 +667,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
     )!.id;
     await installConfiguredBusiness();
     ordinaryProposal = await configuredService.proposeChangeSet({
+      ...(await configuredService.getProposalCurrentness()),
       title: "Preview Saturday-only collection",
       description: "Ordinary preview replay proof.",
       operations: [await preorderOperation([6])],
@@ -677,6 +679,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
     });
 
     const lifecycleBaseline = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Install lifecycle preview probe",
       description: null,
       operations: [
@@ -722,6 +725,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       data: { name: "Existing probe" },
     });
     crossBusinessProposal = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Cross-Business preview probe",
       description: null,
       operations: [
@@ -917,6 +921,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
 
   it("rejects stale and every closed status without preview lifecycle mutation", async () => {
     const abandoned = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Abandoned preview probe",
       description: null,
       operations: [
@@ -934,6 +939,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
     await lifecycleService.abandonChangeSet(abandoned.id);
 
     const stale = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Stale preview probe",
       description: null,
       operations: [
@@ -949,6 +955,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       ],
     });
     const conflict = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Conflicted preview probe",
       description: null,
       operations: [
@@ -964,6 +971,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       ],
     });
     const appliedProposal = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Applied preview probe",
       description: null,
       operations: [
@@ -1005,6 +1013,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
     );
 
     const rejectedProposal = await lifecycleService.proposeChangeSet({
+      ...(await lifecycleService.getProposalCurrentness()),
       title: "Rejected preview probe",
       description: null,
       operations: [
@@ -1155,6 +1164,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
         }
         const candidateSlug = "candidate-preorder-slug";
         const slugProposal = await configuredService.proposeChangeSet({
+          ...(await configuredService.getProposalCurrentness()),
           title: "Preview a customer Page slug change",
           description: null,
           operations: [
@@ -1210,6 +1220,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
           "Could not capture Records before Catering preview",
         );
         const cateringProposal = await configuredService.proposeChangeSet({
+          ...(await configuredService.getProposalCurrentness()),
           title: "Add Catering Enquiries",
           description: "Rendered extensibility proof.",
           operations: [
@@ -1392,6 +1403,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       it("discards an internal candidate applied while its View-only Page is assembling", async () => {
         const pageKey = "currentness_application_page";
         const proposal = await configuredService.proposeChangeSet({
+          ...(await configuredService.getProposalCurrentness()),
           title: "Apply during rendered preview assembly",
           description: null,
           operations: [
@@ -1440,6 +1452,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       it("uses the final validated status and leaves an unchanged rendered candidate exactly read-only", async () => {
         const pageKey = "currentness_validation_page";
         const proposal = await configuredService.proposeChangeSet({
+          ...(await configuredService.getProposalCurrentness()),
           title: "Validate during rendered preview assembly",
           description: null,
           operations: [
@@ -1553,6 +1566,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
 
       it("serializes each preview assertion RPC with application in both lock orders", async () => {
         const previewFirstProposal = await configuredService.proposeChangeSet({
+          ...(await configuredService.getProposalCurrentness()),
           title: "Preview-first lock proof",
           description: null,
           operations: [await preorderOperation([6])],
@@ -1610,6 +1624,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
 
         const applicationFirstProposal =
           await configuredService.proposeChangeSet({
+            ...(await configuredService.getProposalCurrentness()),
             title: "Application-first lock proof",
             description: null,
             operations: [await preorderOperation([6, 7])],

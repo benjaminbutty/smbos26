@@ -22,7 +22,9 @@ the existing authenticated service:
 
 All calls use an authenticated session client. The Business UUID and actor UUID
 come from the resolved route tenant context; candidate or snapshot JSON is
-never accepted from the browser.
+never accepted from the browser. Ordinary proposal creation also requires the
+exact active version ID and head revision against which its strict operations
+were composed. PostgreSQL compares both while holding the Business head lock.
 
 The UI treats stored `semantic_diff_json` and `validation_result_json` as
 immutable engine outputs. A non-baseline version reuses its source proposal
@@ -51,6 +53,8 @@ server-bound untrusted arguments that are parsed and rechecked.
 - `/app/[businessSlug]/changes/[changeSetId]/apply`
 - `/app/[businessSlug]/changes/[changeSetId]/abandon`
 - `/app/[businessSlug]/changes/versions/[versionId]/rollback`
+- `/app/[businessSlug]/setup`
+- `/app/[businessSlug]/setup/preorder/[preorderKey]`
 
 They are dynamic, no-store server routes protected by authenticated membership
 and `manage_configuration`. Staff, anonymous callers, malformed identifiers
@@ -62,5 +66,10 @@ Version; rejected, conflicted and abandoned have no mutation control. Only
 historical versions offer rollback preparation. The UI is advisory and every
 Server Action repeats the same current-state check.
 
-There is still no proposal creation UI, natural-language builder, AI
-integration, automatic merge/rebase or permanent demonstration proposal.
+Phase 2A.1 adds one bounded proposal-creation UI for preorder schedule
+amendments. Its server-only composer reads the active immutable snapshot,
+preserves every non-schedule property and active Location association, rejects
+no-ops and creates only an ordinary proposal. There is still no raw operation
+editor, general manual builder, natural-language builder, AI integration,
+automatic validation/application, automatic merge/rebase or permanent
+demonstration proposal.

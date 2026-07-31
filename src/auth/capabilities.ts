@@ -6,7 +6,8 @@ export type Capability =
   | "manage_configuration"
   | "manage_locations"
   | "manage_memberships"
-  | "manage_ownership";
+  | "manage_ownership"
+  | "manage_ai";
 
 const roleCapabilities: Readonly<Record<BusinessRole, readonly Capability[]>> =
   {
@@ -16,12 +17,14 @@ const roleCapabilities: Readonly<Record<BusinessRole, readonly Capability[]>> =
       "manage_locations",
       "manage_memberships",
       "manage_ownership",
+      "manage_ai",
     ],
     admin: [
       "manage_business",
       "manage_configuration",
       "manage_locations",
       "manage_memberships",
+      "manage_ai",
     ],
     staff: [],
   };

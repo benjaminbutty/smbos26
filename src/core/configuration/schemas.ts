@@ -214,6 +214,8 @@ export const configurationOperationsSchema = z
 
 export const proposeConfigurationChangeSchema = z
   .object({
+    expectedBaseVersionId: z.uuid(),
+    expectedHeadRevision: z.number().int().positive(),
     title: labelSchema,
     description: descriptionSchema.nullable(),
     operations: configurationOperationsSchema,

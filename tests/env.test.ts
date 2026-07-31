@@ -18,14 +18,14 @@ describe("environment validation", () => {
     });
   });
 
-  it("normalizes empty future AI integration values", () => {
+  it("does not expose server-only AI provider values through shared environment", () => {
     expect(
       parseEnvironment({
         NODE_ENV: "test",
         NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55321",
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable-key",
         AI_PROVIDER: "",
-        AI_PROVIDER_API_KEY: "",
+        OPENAI_API_KEY: "server-only-marker",
       }),
     ).toEqual({
       NODE_ENV: "test",
@@ -41,17 +41,6 @@ describe("environment validation", () => {
         NODE_ENV: "test",
       }),
     ).toThrow();
-  });
-
-  it("rejects a partially configured AI provider", () => {
-    expect(() =>
-      parseEnvironment({
-        NODE_ENV: "test",
-        NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55321",
-        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable-key",
-        AI_PROVIDER: "future-provider",
-      }),
-    ).toThrow("AI_PROVIDER and AI_PROVIDER_API_KEY must be set together.");
   });
 
   it("requires trusted preorder secrets in production", () => {

@@ -132,6 +132,8 @@ const engineErrorMessages: Readonly<Record<string, string>> = {
     "The active configuration history is inconsistent. No changes were applied.",
   configuration_owner_or_admin_required:
     "Owner or Admin access is required for configuration changes.",
+  configuration_proposal_stale:
+    "Setup changed after this page was loaded. Reload and try again.",
   configuration_projection_out_of_sync:
     "Configuration changed outside the version engine. No proposal was changed.",
   configuration_proposal_no_changes:
@@ -281,6 +283,8 @@ export class ConfigurationChangeService {
       {
         expected_business_id: this.#businessId,
         expected_actor_id: this.#actorId,
+        expected_base_version_id: proposal.expectedBaseVersionId,
+        expected_head_revision: proposal.expectedHeadRevision,
         requested_title: proposal.title,
         requested_description: proposal.description as string,
         requested_operations: proposal.operations,
@@ -352,6 +356,17 @@ export class ConfigurationChangeService {
       );
     }
     return data;
+  }
+
+  async getProposalCurrentness(): Promise<{
+    expectedBaseVersionId: string;
+    expectedHeadRevision: number;
+  }> {
+    const head = await this.getActiveHead();
+    return {
+      expectedBaseVersionId: head.active_version_id,
+      expectedHeadRevision: head.head_revision,
+    };
   }
 
   async getVersion(versionId: string): Promise<ConfigurationVersion> {

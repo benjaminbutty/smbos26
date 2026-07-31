@@ -563,6 +563,8 @@ async function ensureConfiguredVersionTwo({
       await owner.rpc("propose_configuration_change", {
         expected_business_id: businessId,
         expected_actor_id: ownerId,
+        expected_base_version_id: activeVersion.id,
+        expected_head_revision: head.head_revision,
         requested_title: initialChangeTitle,
         requested_description:
           "Create the complete Bedford Bakery preorder and staff workspace configuration.",

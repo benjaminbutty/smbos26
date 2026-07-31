@@ -1,0 +1,44 @@
+# AI accounting boundary
+
+Milestone 6 Phase 1B adds a server-only Business-aware layer around the
+provider-neutral execution core. It validates and prepares the registered task
+before reading settings or reserving, derives the trusted worst-case envelope,
+then uses one narrow accounting service to reserve and settle.
+
+Every Business starts disabled. The UTC usage day comes from PostgreSQL
+statement time at reservation. Reservation locks only that Business's settings
+row and includes one request plus the maximum input and output tokens across
+all allowed attempts. Cost uses integer microusd and separately rounds up the
+input and output rate components.
+
+Complete usage settles to the aggregate actuals reported across every attempt.
+Incomplete or unknown usage charges at least the reservation; an overrun is
+recorded rather than clamped. A failure before any provider invocation cancels
+the reservation. Settlement is retried once with the same immutable identity;
+if it still fails, model output is not returned as a normal success.
+
+Authenticated Owner/Admin RPCs expose only typed settings, the current UTC-day
+summary and the latest 50 metadata-only runs. Service-role credentials exist
+only inside this module and can execute only the reserve/settle RPCs; even
+`service_role` has no direct table access. No prompt, task input, instruction,
+model output, raw response, credential or arbitrary provider metadata is stored.
+
+Phase 3B builder planning uses this boundary unchanged. Semantic-invalid output
+settles as failed with aggregate usage, while a structurally and semantically
+valid execution settles before the planning service performs its final context
+comparison. If context changed during execution, usage remains recorded even
+though the stale plan is discarded and never returned as current.
+
+In Phase 4C OpenAI planning reserves 128,000 input and 8,192 output tokens
+across two attempts at code-owned rates of 2,500,000 and 15,000,000 microusd
+per million tokens. Integer ceiling arithmetic yields an exact worst-case
+reservation of 442,880 microusd, which remains within the 5,000,000 microusd
+default Business daily cost limit. All reported input tokens use the standard
+rate because the provider request explicitly disables GPT-5.6 implicit prompt
+caching and sends no explicit breakpoint. Cached-token discounts and
+cache-write pricing are therefore not applied or accounted for. Provider output
+tokens, including any reported reasoning-token contribution, use the standard
+output rate. Reasoning content is neither requested nor persisted. Prompt
+caching needs a separate future review with detailed cache-token accounting.
+Refusal and incomplete responses settle failed with reported usage, while
+missing usage remains conservatively charged.

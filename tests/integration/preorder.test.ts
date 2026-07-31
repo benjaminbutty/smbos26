@@ -307,6 +307,26 @@ function baseSubmission(
   };
 }
 
+function formatCollectionDisplay(
+  collectionAt: string,
+  timeZone: string,
+): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      hour: "2-digit",
+      hour12: false,
+      minute: "2-digit",
+      month: "2-digit",
+      timeZone,
+      year: "numeric",
+    })
+      .formatToParts(new Date(collectionAt))
+      .map(({ type, value }) => [type, value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
 async function submitRaw(
   submission: Json,
   hash = requestHash(),
@@ -2226,6 +2246,15 @@ describe("Milestone 4 preorder", () => {
   });
 
   it("shows and operates submitted Orders through generic Views, detail and edit Form", async () => {
+    const viewSubmission = baseSubmission(9);
+    const viewSubmissionResult = await submitRaw(viewSubmission);
+    expect(viewSubmissionResult.ok).toBe(true);
+    if (!viewSubmissionResult.ok) {
+      throw new Error(
+        "Expected the generic View fixture Order to be submitted.",
+      );
+    }
+
     const experience = createExperienceService(staff, {
       businessId: business.id,
     });
@@ -2278,20 +2307,24 @@ describe("Milestone 4 preorder", () => {
     );
     expect(asObject(updated.data_json).status).toBe("Ready");
 
-    const summerOrder = orders.records.find(
+    const submittedOrder = orders.records.find(
       (candidate) =>
-        new Date(
-          String(asObject(candidate.data_json).collection_at),
-        ).toISOString() === "2026-08-01T10:00:00.000Z",
+        asObject(candidate.data_json).public_reference ===
+        viewSubmissionResult.confirmation.public_reference,
     );
-    if (!summerOrder) {
-      throw new Error("The summer 11:00 collection Order is missing.");
+    if (!submittedOrder) {
+      throw new Error("The submitted generic View fixture Order is missing.");
     }
-    expect(asObject(summerOrder.data_json)).toMatchObject({
-      collection_at: expect.stringMatching(
-        /^2026-08-01T10:00:00(?:\+00:00|Z)$/,
-      ),
-      collection_local_display: "2026-08-01 11:00",
+    const collectionAt = new Date(viewSubmission.collection_at).toISOString();
+    const localDisplay = formatCollectionDisplay(collectionAt, "Europe/London");
+    const utcDisplay = formatCollectionDisplay(collectionAt, "UTC");
+    expect(
+      new Date(
+        String(asObject(submittedOrder.data_json).collection_at),
+      ).toISOString(),
+    ).toBe(collectionAt);
+    expect(asObject(submittedOrder.data_json)).toMatchObject({
+      collection_local_display: localDisplay,
       collection_timezone: "Europe/London",
     });
 
@@ -2304,8 +2337,15 @@ describe("Milestone 4 preorder", () => {
           businessSlug,
         }),
       );
-      expect(html).toContain("2026-08-01 11:00");
-      expect(html).not.toContain("2026-08-01 10:00");
+      const submittedRow = html
+        .split("</tr>")
+        .find((row) =>
+          row.includes(viewSubmissionResult.confirmation.public_reference),
+        );
+      expect(submittedRow).toContain(localDisplay);
+      if (localDisplay !== utcDisplay) {
+        expect(submittedRow).not.toContain(utcDisplay);
+      }
     } finally {
       process.env.TZ = previousTimezone;
     }
