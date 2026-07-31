@@ -28,3 +28,25 @@ credentials, diagnostic messages and response IDs are never emitted or stored.
 The public `AiExecutionError` JSON contract and metadata-only accounting audit
 remain unchanged. Operation generation stays blocked until an explicit live
 evaluation succeeds and is reviewed.
+
+## Second live run
+
+The second explicit run used the unchanged fixed model and eight scenarios:
+
+- passed: 7
+- failed: 1
+- input tokens: 33,453
+- output tokens: 3,194
+- estimated cost: 39,468 microusd
+- elapsed: 29,322 ms
+
+The remaining redacted diagnostic was
+`high_impact_assumption_unconfirmed` for `preorder_schedule_change`. The
+previous reference and least-change failures are resolved. Phase 4B.2 therefore
+aligns the instruction with the existing deterministic assumption validator:
+explicit owner requests and established context are not assumptions, unnecessary
+assumptions are omitted, and every high-impact assumption in a ready plan must
+require owner confirmation. The validator and scenario pass gate are unchanged;
+invalid output is not retried, and operation generation remains blocked. The
+same eight scenarios must run once more after exact-head CI. No model prose is
+recorded.

@@ -1987,6 +1987,28 @@ API charge can be incurred.
     dependencies for a combined new Location plus later configuration request;
   - add no operation generation, proposal, mutation, route, UI, migration,
     table, primitive, second model, provider or retry path;
+- **Phase 4B.2 - high-impact assumption contract alignment:**
+  - preserve the fixed model, provider, pricing, token, retry, schema, context,
+    scenario and evaluator gate from Phase 4B and Phase 4B.1;
+  - record the second explicit live run: eight scenarios, seven passed, one
+    failed, 33,453 input tokens, 3,194 output tokens, 39,468 microusd and
+    29,322 ms, with the remaining `high_impact_assumption_unconfirmed`
+    diagnostic on `preorder_schedule_change`;
+  - strengthen the server-owned instruction with general assumption semantics:
+    explicit owner requests and established Business context are not
+    assumptions, the direct requested effect is not an assumption, unnecessary
+    assumptions are omitted, and every high-impact assumption in a ready plan
+    requires owner confirmation;
+  - keep the deterministic validator rejecting high-impact assumptions without
+    confirmation and accepting confirmed high-impact assumptions; do not weaken
+    the validator, scenario gate, or turn semantic-invalid output into a retry;
+  - record that the earlier reference and least-change failures are resolved and
+    that this correction aligns the instruction with the existing validator;
+  - add focused instruction, assumption, preorder-schedule, public-error and
+    accounting-redaction regressions without model-output snapshots;
+  - add no operation generation, proposal, mutation, route, UI, migration,
+    table, primitive, second model, provider or retry path; rerun the same eight
+    scenarios once more only after exact-head CI.
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.

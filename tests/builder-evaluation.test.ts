@@ -315,6 +315,7 @@ describe("scenario → production task contract → evaluator", () => {
     ] as const) {
       const output = compliantOutputs[scenarioId];
       if (output.state !== "ready") throw new Error("Invalid fixture.");
+      expect(output.assumptions, scenarioId).toEqual([]);
       expect(output.plan.concepts, scenarioId).toEqual([]);
       expect(output.plan.steps, scenarioId).toHaveLength(1);
       expect(output.plan.steps[0], scenarioId).toMatchObject({

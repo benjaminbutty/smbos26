@@ -1642,3 +1642,39 @@ Location-only plans, exact trusted references, globally unique plan-local
 references, prior-step dependencies and explicit ordering for combined Location
 and later configuration requests. No operation generation or mutation surface
 is introduced.
+
+### Phase 4B.2 amendment - high-impact assumption contract alignment
+
+**Date:** 31 July 2026
+
+The second explicit real-model evaluation was run once against the unchanged
+`gpt-5.4-mini-2026-03-17` planning path:
+
+- scenarios: 8
+- passed: 7
+- failed: 1
+- input tokens: 33,453
+- output tokens: 3,194
+- estimated cost: 39,468 microusd
+- elapsed: 29,322 ms
+
+The remaining diagnostic was
+`high_impact_assumption_unconfirmed` for `preorder_schedule_change`. The
+earlier reference and least-change failures are resolved. This focused
+correction aligns the server-owned instruction with the existing deterministic
+assumption invariant: an assumption is an owner-unknown fact not already
+established by Business context; explicit owner instructions and their direct
+requested effects are not assumptions; unnecessary assumptions should be
+omitted; and every high-impact assumption in a ready plan must require owner
+confirmation. Low- and medium-impact assumptions must still be classified
+honestly.
+
+The `builderPlanAssumptionSchema`, ready-plan validator, diagnostic taxonomy,
+`high_impact_assumption_unconfirmed` failure, scenario definitions and evaluator
+gate are unchanged. High-impact assumptions without confirmation remain
+rejected, confirmed high-impact assumptions remain accepted, and semantic
+invalid output is not retried automatically. Public `AiExecutionError` JSON and
+metadata-only accounting settlement continue to exclude diagnostics and
+assumption content. Operation generation remains blocked. The same eight
+scenarios must run once more after exact-head CI; implementation and CI remain
+non-live.

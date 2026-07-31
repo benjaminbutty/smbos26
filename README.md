@@ -2,8 +2,9 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4B.1
-bounded real-model planning diagnostics gate, deterministic manual setup amendments,
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4B.2
+high-impact assumption contract alignment after the bounded real-model planning
+diagnostics gate, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
@@ -85,7 +86,8 @@ Included:
 - one engineering-only, explicitly activated eight-scenario planning
   evaluation over synthetic configuration, with deterministic hard gates,
   sequential calls, redacted metadata-only output, bounded structural/semantic
-  diagnostics and a 1,100,000 microusd ceiling
+  diagnostics, explicit high-impact assumption confirmation and a 1,100,000
+  microusd ceiling
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
@@ -102,8 +104,10 @@ Included:
 - strict clarification-or-ready planning output with owner-readable bounds,
   plan-local references, explicit unsupported capabilities and separate
   configuration/operational planning lanes
-- server-owned least-change planning rules that keep the owner's explicit
-  request as the scope boundary and reject adjacent unasked work
+- server-owned least-change and assumption-classification rules that keep the
+  owner's explicit request as the scope boundary, reject adjacent unasked work,
+  and require owner confirmation for every high-impact assumption in a ready
+  plan
 - pure server-owned semantic output validation for references, dependencies,
   category/lane compatibility and current platform capability compatibility,
   with finite internal diagnostics that never enter public errors or accounting
@@ -244,6 +248,17 @@ metadata. Structural failures emit only `output_contract_invalid`; semantic
 failures emit one approved diagnostic code; unclassified failures emit only
 `unknown_output_invalid`. It has no application import, database client, tenant
 row, accounting row, persistence, route, Server Action or UI.
+
+Phase 4B.2 records the second explicit live run against the unchanged path:
+eight scenarios, seven passed and one failed. The run used 33,453 input tokens,
+3,194 output tokens, an estimated 39,468 microusd and 29,322 ms. The only
+remaining diagnostic was `high_impact_assumption_unconfirmed` for
+`preorder_schedule_change`. The correction adds general server-owned assumption
+semantics: explicit owner requests and established context are not assumptions,
+unnecessary assumptions are omitted, and every high-impact assumption in a ready
+plan must require owner confirmation. The deterministic validator, scenario gate,
+model, provider, schemas, pricing, token limits, retries and context remain
+unchanged; operation generation remains blocked.
 
 `npm run test:builder-evaluation` uses injected fake providers and runs in CI.
 The external command is separate:

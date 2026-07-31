@@ -625,6 +625,22 @@ describe("builder_plan_v1 strict schemas and semantics", () => {
     ).toBe(false);
   });
 
+  it("accepts a confirmed high-impact ready assumption", () => {
+    const confirmed = structuredClone(readyOutput());
+    confirmed.assumptions = [
+      {
+        reference: "assumption_1",
+        statement: "The owner will confirm the proposed collection policy.",
+        impact: "high",
+        requires_owner_confirmation: true,
+      },
+    ];
+
+    expect(validateBuilderPlanOutput(taskInput(), confirmed)).toEqual(
+      confirmed,
+    );
+  });
+
   it("reports only finite bounded diagnostics for semantic validation failures", () => {
     const duplicateReference = structuredClone(readyOutput());
     duplicateReference.assumptions = [
@@ -805,6 +821,21 @@ describe("builder planning task execution and service", () => {
     );
   });
 
+  it("states the general high-impact assumption confirmation contract", () => {
+    expect(BUILDER_PLANNING_INSTRUCTION).toContain(
+      'In a ready plan, every assumption with impact="high" must set requires_owner_confirmation=true.',
+    );
+    expect(BUILDER_PLANNING_INSTRUCTION).toContain(
+      'Never return a ready plan containing an impact="high" assumption with requires_owner_confirmation=false.',
+    );
+    expect(BUILDER_PLANNING_INSTRUCTION).toContain(
+      "Do not restate an explicit owner instruction as an assumption.",
+    );
+    expect(BUILDER_PLANNING_INSTRUCTION).toContain(
+      "Prefer no assumption over inventing an unnecessary assumption.",
+    );
+  });
+
   it("sends exact structured input and no trusted identity to the provider", async () => {
     const generateStructured = vi.fn().mockResolvedValue({
       output: readyOutput(),
@@ -903,6 +934,9 @@ describe("builder planning task execution and service", () => {
     );
     expect(JSON.stringify(settle.mock.calls[0]?.[0])).not.toContain(
       "existing_concept_object_unknown",
+    );
+    expect(JSON.stringify(settle.mock.calls[0]?.[0])).not.toContain(
+      "The existing Order concept should remain the source.",
     );
   });
 

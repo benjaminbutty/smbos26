@@ -62,3 +62,16 @@ operational service. Diagnostic stage/reason metadata is emitted only for
 `ai_output_invalid`; public errors and metadata-only accounting remain the
 existing bounded contracts. Operation generation remains blocked until the
 explicit live gate succeeds and is reviewed.
+
+Phase 4B.2 aligns the server-owned instruction with the existing assumption
+invariant. An assumption is an owner-unknown fact not already established by
+Business context; an explicit owner request and its direct requested effect are
+not assumptions; unnecessary assumptions are omitted; and every high-impact
+assumption in a ready plan must require owner confirmation. The deterministic
+validator still rejects `impact: "high"` with
+`requires_owner_confirmation: false`, accepts the confirmed form, and never
+converts this semantic failure into a retry. The second live run had seven of
+eight scenarios pass, with the remaining
+`high_impact_assumption_unconfirmed` diagnostic on the preorder schedule
+scenario. Public errors and accounting remain metadata-only and contain no
+diagnostic or assumption content.
