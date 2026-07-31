@@ -2,8 +2,8 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4A
-opt-in external-provider safety gate, deterministic manual setup amendments,
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4B
+bounded real-model planning evaluation gate, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
@@ -82,6 +82,10 @@ Included:
 - one server-only OpenAI Responses adapter behind a default-disabled runtime
   gate, fixed model/pricing, strict Structured Outputs, `store: false` and no
   tools or conversation state
+- one engineering-only, explicitly activated eight-scenario planning
+  evaluation over synthetic configuration, with deterministic hard gates,
+  sequential calls, redacted metadata-only output and a 1,100,000 microusd
+  ceiling
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
@@ -225,6 +229,30 @@ tools, identity metadata or conversation state. SMBOS persists neither request
 nor response. `store: false` disables Responses application-state storage for
 the request; it is not a Zero Data Retention claim, and production activation
 requires review of the OpenAI project/organization data controls.
+
+Phase 4B evaluates that unchanged production planning path independently. The
+engineering-only harness uses one strict synthetic local-food Business context,
+the registered `builder_plan_v1` task, production OpenAI adapter and production
+planning policy through the provider-neutral execution service. It runs exactly
+eight scenarios sequentially and emits only bounded pass/fail, state,
+lane/category, unsupported-reason, count, usage, integer-cost and elapsed-time
+metadata. It has no application import, database client, tenant row, accounting
+row, persistence, route, Server Action or UI.
+
+`npm run test:builder-evaluation` uses injected fake providers and runs in CI.
+The external command is separate:
+
+```bash
+RUN_LIVE_OPENAI_EVAL=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-planning-live
+```
+
+All three values are required. A configured key alone is not permission to
+run. The fixed eight-scenario reservation envelope is 1,062,912 microusd under
+a hard 1,100,000 microusd ceiling. Operation generation remains blocked until
+the explicit live evaluation succeeds and is reviewed.
 
 ## Requirements
 

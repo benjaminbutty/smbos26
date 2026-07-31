@@ -9,13 +9,14 @@ import {
   type StructuredAiProviderResponse,
   type StructuredAiUsage,
 } from "../contracts";
+import { OPENAI_BUILDER_PLANNING_MODEL_KEY } from "../policies";
 import {
   adaptRegisteredSchemaForOpenAi,
   OpenAiSchemaAdaptationError,
 } from "./openai-schema";
 
 export const OPENAI_PROVIDER_KEY = "openai";
-export const OPENAI_MODEL_KEY = "gpt-5.4-mini-2026-03-17";
+export const OPENAI_MODEL_KEY = OPENAI_BUILDER_PLANNING_MODEL_KEY;
 export const OPENAI_API_BASE_URL = "https://api.openai.com/v1";
 
 export interface OpenAiResponsesClient {

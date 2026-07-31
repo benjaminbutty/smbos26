@@ -70,6 +70,9 @@ jobs:
       - name: Run strict builder planning tests
         run: npm run test:builder-planning
 
+      - name: Run bounded builder planning evaluation tests
+        run: npm run test:builder-evaluation
+
       - name: Reset after builder planning acceptance
         run: npm run supabase:reset
 

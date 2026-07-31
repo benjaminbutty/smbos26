@@ -34,3 +34,17 @@ Phase 4A enables only an opt-in server-side OpenAI adapter. The task input uses
 the URL-minimised context shape; raw configured image/button destinations never
 reach the provider. Planning remains in-memory, descriptive and non-executing,
 with no route, proposal or mutation surface.
+
+Phase 4B evaluates this production task, instruction, schemas and semantic
+validator unchanged. An engineering-only harness supplies one deterministic
+strict synthetic Business context and eight fixed owner requests through the
+provider-neutral execution core. Deterministic hard gates check result state,
+configuration/operational lanes, categories, unsupported-capability honesty,
+reference validation and compound Location/preorder ordering.
+
+The evaluator receives only an already strict and semantically validated plan
+plus bounded execution metadata. Its report excludes owner requests, model
+prose, context, labels and references. The live harness is not imported by the
+application and does not persist output or invoke any configuration or
+operational service. Operation generation remains blocked until the explicit
+live gate succeeds and is reviewed.

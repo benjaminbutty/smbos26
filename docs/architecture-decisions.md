@@ -1524,3 +1524,90 @@ organization from repository code.
   semantic validation, reservation, settlement and stale-context checks.
 - The deterministic runtime and existing configuration/operational mutation
   boundaries remain independent of AI availability.
+
+## ADR-021 - Real-model planning must pass a bounded synthetic evaluation gate
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 4B)
+
+**Date:** 31 July 2026
+
+### Context
+
+Injected-client and unit coverage prove SMBOS request construction, strict
+schema transport, structural parsing, semantic validation and safe failure
+mapping deterministically. They do not prove that the fixed external model can
+coherently satisfy representative Business-owner planning requests. Operation
+generation must not begin on that assumption.
+
+A useful compatibility gate must exercise the approved production planning path
+without becoming a production endpoint, tenant-data export, persistence
+surface, benchmark service or prompt-tuning loop.
+
+### Decision
+
+- One engineering-only harness evaluates the production `builder_plan_v1`
+  task, instruction, strict input/output schemas, semantic validator, Phase 3A
+  model-context contract, OpenAI Responses adapter,
+  `gpt-5.4-mini-2026-03-17` model and `builder_planning_v1` policy unchanged.
+  A failure is recorded as bounded diagnostics and requires a separate focused
+  correction; this phase does not silently tune the subject under test.
+- The harness uses one code-owned deterministic synthetic local-food Business
+  context that passes the exact `AiBusinessModelContextV1` schema and remains
+  below 128 KiB. It includes representative Objects, Fields, Relationships,
+  internal Views, public Form/Page, preorder configuration/questions and two
+  RFC-valid synthetic Location references. It includes no tenant row,
+  membership, operational Record, customer/order data, personal name, contact
+  value, credential or destination secret.
+- Exactly eight stable scenarios cover optional preorder phone, preorder
+  schedule, fully specified corporate catering enquiries, Location creation,
+  compound Location/preorder configuration, unsupported weekly email
+  automation, unsupported card payment and ambiguous bookings. Calls are
+  sequential and each scenario runs once, subject only to the production
+  policy's existing maximum of two attempts.
+- Strict parsing and the production semantic validator run before one pure
+  deterministic evaluator. Hard gates cover ready/clarification state,
+  configuration/operational lanes, required/forbidden categories, unsupported
+  capability honesty, plan-local/current references and compound step
+  ordering/dependency. No second model or model-as-judge is used.
+- Evaluation output is limited to stable scenario identity, pass/fail, result
+  state, lane/category and unsupported-reason enums, bounded counts, attempts,
+  input/output tokens, integer estimated microusd, elapsed milliseconds and
+  failed-gate enums, plus bounded aggregate totals. Owner requests, Business
+  context/name, model prose, questions, assumptions, outcomes, summaries,
+  labels, UUIDs, response IDs, raw provider material and credentials are not
+  printed, logged or persisted. Provider failures expose only scenario ID and
+  a safe SMBOS error code.
+- Existing trusted integer accounting derives 132,864 microusd per scenario
+  and exactly 1,062,912 microusd for eight scenarios. A separate code-owned
+  1,100,000 microusd hard ceiling is verified before provider construction or
+  request. Environment input cannot change scenario count, repetitions,
+  attempts, model, output limit or ceiling.
+- Live execution requires all of `RUN_LIVE_OPENAI_EVAL=1`,
+  `AI_PROVIDER=openai` and a non-blank server-only `OPENAI_API_KEY`. A key
+  alone grants no permission. Missing or incorrect activation constructs no
+  provider and makes no request. Normal tests, CI, builds and demo seed never
+  invoke the live command; CI exercises the complete scenario → registered
+  task → structural parsing → semantic validation → evaluator path with
+  injected fake providers.
+- Evaluation code is unreachable from application routes, Server Actions and
+  browser modules. It has no database client, Business accounting,
+  file-writing, telemetry, analytics, mutation or configuration-lifecycle
+  dependency and writes no result file. It creates no `ai_execution_runs` row,
+  proposal, configuration change, Record, Relationship or Location.
+- The live gate must be rerun when the fixed model, planning instruction,
+  planning output schema, semantic validator or provider schema transport
+  materially changes.
+- Operation generation remains blocked until a successful explicit live
+  evaluation has been completed and reviewed.
+
+### Consequences
+
+- Live provider compatibility becomes explicit evidence separate from
+  deterministic adapter and injected-provider coverage.
+- Evaluation API usage is bounded and deliberate, while CI and normal
+  development remain network-free.
+- A quality or compatibility failure stops progression to operation generation
+  without leaking model content or creating production state.
+- Phase 4B adds no route, Server Action, UI, operation generation, proposal,
+  validation/application action, operational mutation, migration, table or
+  platform primitive.

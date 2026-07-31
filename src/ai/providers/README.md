@@ -52,3 +52,17 @@ Refusal, content filtering and max-output incompleteness are non-retryable.
 Only rate limits and transient network/5xx failures use the bounded execution
 retry policy. Reported usage is retained on failures; raw content and SDK
 errors never enter public errors or audit.
+
+The Phase 4B live planning evaluation uses this same production adapter,
+registered task and fixed policy without a second prompt, schema, model or
+provider implementation. It is a separate sequential engineering command and
+requires `RUN_LIVE_OPENAI_EVAL=1`, `AI_PROVIDER=openai` and a non-blank
+server-only `OPENAI_API_KEY`. Missing any gate constructs no provider and makes
+no request. Normal tests use injected providers; CI, builds and demo seed never
+run the external command.
+
+Only bounded evaluation metadata may be printed. Request text, Business
+context, Location references, model prose, provider bodies/IDs and credentials
+are neither printed nor persisted. Eight scenarios have a fixed aggregate
+maximum reservation of 1,062,912 microusd and a code-owned 1,100,000 microusd
+hard ceiling.

@@ -1946,6 +1946,32 @@ API charge can be incurred.
     must review provider account data controls;
   - no operation generation, proposal, validation, application, route, Server
     Action, UI, chat persistence, operational mutation, migration or table;
+- **Phase 4B - controlled real-model planning evaluation gate:**
+  - evaluate the unchanged production `builder_plan_v1` task, strict schemas,
+    semantic validator, instruction, Phase 3A context shape, fixed OpenAI model
+    and production planning policy through the provider-neutral executor;
+  - one deterministic strict synthetic local-food Business context containing
+    no operational Records, customer/order data, personal identity, contact
+    value, credential or tenant database row;
+  - exactly eight sequential scenarios covering preorder changes, a reusable
+    Catering Enquiry concept, Location creation, a compound
+    Location/preorder request, unsupported automation/payment and ambiguous
+    bookings;
+  - deterministic hard gates for structural/semantic compatibility, result
+    state, lane/category selection, unsupported honesty, reference integrity
+    and compound ordering/dependency;
+  - metadata-only output with no request, context, model prose, labels, UUIDs,
+    provider body or persistence;
+  - existing integer accounting derives a fixed 1,062,912 microusd aggregate
+    maximum beneath a code-owned 1,100,000 microusd hard ceiling;
+  - external execution requires `RUN_LIVE_OPENAI_EVAL=1`,
+    `AI_PROVIDER=openai` and a non-blank server-only key; CI uses injected fake
+    providers and never runs the live command;
+  - no tenant/accounting row, route, Server Action, UI, proposal, lifecycle
+    action, Record/Relationship/Location mutation, migration, table or
+    primitive;
+  - operation generation remains blocked until the explicit live evaluation
+    succeeds and is reviewed;
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.
