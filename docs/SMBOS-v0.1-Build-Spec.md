@@ -1972,6 +1972,21 @@ API charge can be incurred.
     primitive;
   - operation generation remains blocked until the explicit live evaluation
     succeeds and is reviewed;
+- **Phase 4B.1 - bounded planning diagnostics and least-change precision:**
+  - preserve the fixed model, provider, pricing, token, retry, schema, context,
+    scenario and evaluator gate from Phase 4B;
+  - classify invalid planning output internally as structural, semantic or
+    unknown using a finite code-owned diagnostic taxonomy;
+  - keep public `ai_output_invalid` errors, metadata-only accounting and audit
+    records unchanged, with no raw model/provider/request/context material in
+    emitted evaluation output;
+  - strengthen the server-owned instruction so the owner's explicit request
+    defines scope, the smallest coherent plan is preferred and adjacent work,
+    guessed references and unrelated configuration are excluded;
+  - keep Location-only planning concept-free and require explicit ordering and
+    dependencies for a combined new Location plus later configuration request;
+  - add no operation generation, proposal, mutation, route, UI, migration,
+    table, primitive, second model, provider or retry path;
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.

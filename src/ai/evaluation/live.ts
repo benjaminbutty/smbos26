@@ -3,16 +3,24 @@ import type { AiExecutionResult } from "../execution";
 import { aiExecutionErrorCodes, type AiExecutionErrorCode } from "../errors";
 import { openAiBuilderPlanningPolicy } from "../policies";
 import {
+  BuilderPlanValidationError,
+  type BuilderPlanValidationDiagnosticCode,
+} from "../planning/diagnostics";
+import {
   builderPlanOutputSchema,
   builderPlanTaskInputSchema,
   type BuilderPlanOutput,
 } from "../planning/schemas";
+import { ZodError } from "zod";
 import { deriveBuilderEvaluationEnvelope } from "./envelope";
 import { evaluateBuilderPlan } from "./evaluator";
 import { builderEvaluationScenarios } from "./scenarios";
 import {
   builderEvaluationAggregateSchema,
   builderEvaluationProviderFailureSchema,
+  builderEvaluationValidationReasonCodeSchema,
+  builderEvaluationValidationStageSchema,
+  type BuilderEvaluationScenarioId,
   type BuilderEvaluationReport,
 } from "./schemas";
 
@@ -60,6 +68,79 @@ function safeExecutionErrorCode(cause: unknown): AiExecutionErrorCode {
     return cause.code as AiExecutionErrorCode;
   }
   return "ai_execution_failed";
+}
+
+function nextCause(cause: unknown): unknown {
+  if (typeof cause !== "object" || cause === null || !("cause" in cause)) {
+    return undefined;
+  }
+  return (cause as { cause?: unknown }).cause;
+}
+
+function classifyOutputValidationFailure(cause: unknown): {
+  validation_stage: "structural" | "semantic" | "unknown";
+  validation_reason_code: BuilderPlanValidationDiagnosticCode;
+} {
+  const seen = new Set<object>();
+  let current: unknown = cause;
+  for (let depth = 0; depth < 5 && current !== undefined; depth += 1) {
+    if (current instanceof BuilderPlanValidationError) {
+      const diagnosticCode = builderEvaluationValidationReasonCodeSchema.parse(
+        current.diagnosticCode,
+      );
+      const validationStage =
+        diagnosticCode === "output_contract_invalid"
+          ? "structural"
+          : diagnosticCode === "unknown_output_invalid"
+            ? "unknown"
+            : "semantic";
+      return {
+        validation_stage:
+          builderEvaluationValidationStageSchema.parse(validationStage),
+        validation_reason_code: diagnosticCode,
+      };
+    }
+    if (current instanceof ZodError) {
+      return {
+        validation_stage: "structural",
+        validation_reason_code: "output_contract_invalid",
+      };
+    }
+    if (
+      (typeof current === "object" && current !== null) ||
+      typeof current === "function"
+    ) {
+      const objectCause = current as object;
+      if (seen.has(objectCause)) {
+        break;
+      }
+      seen.add(objectCause);
+    }
+    current = nextCause(current);
+  }
+  return {
+    validation_stage: "unknown",
+    validation_reason_code: "unknown_output_invalid",
+  };
+}
+
+export function redactBuilderEvaluationFailure(
+  cause: unknown,
+  scenarioId: BuilderEvaluationScenarioId,
+) {
+  const errorCode = safeExecutionErrorCode(cause);
+  if (errorCode !== "ai_output_invalid") {
+    return builderEvaluationProviderFailureSchema.parse({
+      scenario_id: scenarioId,
+      error_code: errorCode,
+    });
+  }
+  const validation = classifyOutputValidationFailure(cause);
+  return builderEvaluationProviderFailureSchema.parse({
+    scenario_id: scenarioId,
+    error_code: errorCode,
+    ...validation,
+  });
 }
 
 function failureAccounting(cause: unknown): {
@@ -166,12 +247,7 @@ export async function runLiveBuilderEvaluation(
       totalOutputTokens += accounting.outputTokens;
       totalEstimatedCostMicrousd += estimatedCostMicrousd;
       totalElapsedMs += elapsedMs;
-      dependencies.emit(
-        builderEvaluationProviderFailureSchema.parse({
-          scenario_id: scenario.id,
-          error_code: safeExecutionErrorCode(cause),
-        }),
-      );
+      dependencies.emit(redactBuilderEvaluationFailure(cause, scenario.id));
     }
   }
 

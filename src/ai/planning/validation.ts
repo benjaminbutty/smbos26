@@ -1,6 +1,8 @@
-import { z } from "zod";
-
 import type { AiBusinessModelContextV1 } from "../context/schemas";
+import {
+  BuilderPlanValidationError,
+  type BuilderPlanValidationDiagnosticCode,
+} from "./diagnostics";
 import {
   builderPlanOutputSchema,
   type BuilderPlanOutput,
@@ -26,24 +28,12 @@ const operationalSupportByCategory = {
   link_record_to_location: "record_to_location_connections",
 } as const;
 
-function issue(message: string, path: PropertyKey[] = []): z.ZodError {
-  return new z.ZodError([
-    {
-      code: "custom",
-      message,
-      path,
-      input: undefined,
-    },
-  ]);
-}
-
 function requireUnique(
   values: readonly string[],
-  label: string,
-  path: PropertyKey[],
+  diagnosticCode: BuilderPlanValidationDiagnosticCode = "duplicate_reference",
 ): void {
   if (new Set(values).size !== values.length) {
-    throw issue(`${label} must be unique.`, path);
+    throw new BuilderPlanValidationError(diagnosticCode);
   }
 }
 
@@ -51,28 +41,19 @@ function validateQuestions(output: BuilderPlanOutput): void {
   if (output.state !== "needs_clarification") {
     return;
   }
-  requireUnique(
-    output.questions.map(({ reference }) => reference),
-    "Question references",
-    ["questions"],
-  );
-  for (const [index, question] of output.questions.entries()) {
+  requireUnique(output.questions.map(({ reference }) => reference));
+  for (const question of output.questions) {
     if (question.response_style !== "free_text") {
       requireUnique(
         question.options.map((option) => option.toLocaleLowerCase("en")),
-        "Question options",
-        ["questions", index, "options"],
+        "duplicate_question_option",
       );
     }
   }
 }
 
 function validateAssumptions(output: BuilderPlanOutput): void {
-  requireUnique(
-    output.assumptions.map(({ reference }) => reference),
-    "Assumption references",
-    ["assumptions"],
-  );
+  requireUnique(output.assumptions.map(({ reference }) => reference));
   if (
     output.state === "ready" &&
     output.assumptions.some(
@@ -80,34 +61,25 @@ function validateAssumptions(output: BuilderPlanOutput): void {
         assumption.impact === "high" && !assumption.requires_owner_confirmation,
     )
   ) {
-    throw issue(
-      "A high-impact ready-plan assumption requires owner confirmation.",
-      ["assumptions"],
-    );
+    throw new BuilderPlanValidationError("high_impact_assumption_unconfirmed");
   }
 }
 
 function validateUnsupported(output: BuilderPlanOutput): void {
   requireUnique(
     output.unsupported_requirements.map(({ reference }) => reference),
-    "Unsupported-requirement references",
-    ["unsupported_requirements"],
   );
   if (
     output.state === "ready" &&
     output.unsupported_requirements.length !== 0
   ) {
-    throw issue(
-      "A ready plan cannot contain an unresolved unsupported requirement.",
-      ["unsupported_requirements"],
-    );
+    throw new BuilderPlanValidationError("ready_has_unsupported_requirement");
   }
 }
 
 function validatePlatformCompatibility(
   context: AiBusinessModelContextV1,
   step: BuilderReadyPlanStep,
-  index: number,
 ): void {
   const capabilities = context.platform_capabilities;
   if (step.lane === "configuration") {
@@ -115,10 +87,7 @@ function validatePlatformCompatibility(
     if (
       !capabilities.configuration_operation_names.includes(requiredOperation)
     ) {
-      throw issue(
-        "The planned configuration category is not in the supplied capability registry.",
-        ["plan", "steps", index, "category"],
-      );
+      throw new BuilderPlanValidationError("category_not_supported");
     }
     return;
   }
@@ -128,10 +97,7 @@ function validatePlatformCompatibility(
   );
   const requiredSupport = operationalSupportByCategory[step.category];
   if (!operationalLane?.supports.includes(requiredSupport)) {
-    throw issue(
-      "The planned operational category is not in the supplied capability registry.",
-      ["plan", "steps", index, "category"],
-    );
+    throw new BuilderPlanValidationError("category_not_supported");
   }
 }
 
@@ -149,108 +115,54 @@ function validateReadyPlan(
     output.plan.concepts.map(({ reference }) => reference),
   );
 
-  requireUnique(
-    output.plan.concepts.map(({ reference }) => reference),
-    "Concept references",
-    ["plan", "concepts"],
-  );
-  requireUnique(
-    output.plan.user_journeys.map(({ reference }) => reference),
-    "Journey references",
-    ["plan", "user_journeys"],
-  );
-  requireUnique(
-    output.plan.steps.map(({ reference }) => reference),
-    "Step references",
-    ["plan", "steps"],
-  );
+  requireUnique(output.plan.concepts.map(({ reference }) => reference));
+  requireUnique(output.plan.user_journeys.map(({ reference }) => reference));
+  requireUnique(output.plan.steps.map(({ reference }) => reference));
 
-  for (const [index, concept] of output.plan.concepts.entries()) {
+  for (const concept of output.plan.concepts) {
     if (
       concept.disposition === "existing" &&
       !objectKeys.has(concept.existing_object_key)
     ) {
-      throw issue(
-        "An existing concept must resolve to an Object in Business context.",
-        ["plan", "concepts", index, "existing_object_key"],
-      );
+      throw new BuilderPlanValidationError("existing_concept_object_unknown");
     }
   }
 
   const priorStepReferences = new Set<string>();
   for (const [index, step] of output.plan.steps.entries()) {
     if (step.sequence !== index + 1) {
-      throw issue(
-        "Plan step sequences must be unique and contiguous from one.",
-        ["plan", "steps", index, "sequence"],
-      );
+      throw new BuilderPlanValidationError("step_sequence_invalid");
     }
-    requireUnique(step.dependencies, "Step dependencies", [
-      "plan",
-      "steps",
-      index,
-      "dependencies",
-    ]);
-    requireUnique(step.affected_concepts, "Affected concept references", [
-      "plan",
-      "steps",
-      index,
-      "affected_concepts",
-    ]);
-    requireUnique(step.existing_object_keys, "Existing Object keys", [
-      "plan",
-      "steps",
-      index,
-      "existing_object_keys",
-    ]);
-    requireUnique(step.location_references, "Location references", [
-      "plan",
-      "steps",
-      index,
-      "location_references",
-    ]);
+    requireUnique(step.dependencies);
+    requireUnique(step.affected_concepts);
+    requireUnique(step.existing_object_keys);
+    requireUnique(step.location_references);
 
     if (
       step.dependencies.some(
         (dependency) => !priorStepReferences.has(dependency),
       )
     ) {
-      throw issue("Step dependencies may refer only to earlier plan steps.", [
-        "plan",
-        "steps",
-        index,
-        "dependencies",
-      ]);
+      throw new BuilderPlanValidationError("dependency_not_prior");
     }
     if (
       step.affected_concepts.some(
         (reference) => !conceptReferences.has(reference),
       )
     ) {
-      throw issue("Affected concept references must resolve within the plan.", [
-        "plan",
-        "steps",
-        index,
-        "affected_concepts",
-      ]);
+      throw new BuilderPlanValidationError("affected_concept_unknown");
     }
     if (step.existing_object_keys.some((key) => !objectKeys.has(key))) {
-      throw issue(
-        "Planned existing Object keys must resolve in Business context.",
-        ["plan", "steps", index, "existing_object_keys"],
-      );
+      throw new BuilderPlanValidationError("existing_object_unknown");
     }
     if (
       step.location_references.some(
         (reference) => !locationReferences.has(reference),
       )
     ) {
-      throw issue(
-        "Planned Location references must resolve in Business context.",
-        ["plan", "steps", index, "location_references"],
-      );
+      throw new BuilderPlanValidationError("location_reference_unknown");
     }
-    validatePlatformCompatibility(input.business_context, step, index);
+    validatePlatformCompatibility(input.business_context, step);
     priorStepReferences.add(step.reference);
   }
 }
@@ -267,14 +179,19 @@ function validateGlobalReferences(output: BuilderPlanOutput): void {
           ...output.plan.steps.map(({ reference }) => reference),
         ]),
   ];
-  requireUnique(references, "All plan-local references", []);
+  requireUnique(references);
 }
 
 export function validateBuilderPlanOutput(
   input: BuilderPlanTaskInput,
   parsedOutput: BuilderPlanOutput,
 ): BuilderPlanOutput {
-  const output = builderPlanOutputSchema.parse(parsedOutput);
+  let output: BuilderPlanOutput;
+  try {
+    output = builderPlanOutputSchema.parse(parsedOutput);
+  } catch {
+    throw new BuilderPlanValidationError("output_contract_invalid");
+  }
   validateQuestions(output);
   validateAssumptions(output);
   validateUnsupported(output);

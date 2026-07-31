@@ -1,4 +1,5 @@
 import { runLiveBuilderEvaluation } from "../src/ai/evaluation/live";
+import { builderEvaluationTopLevelFailureSchema } from "../src/ai/evaluation/schemas";
 
 try {
   const result = await runLiveBuilderEvaluation({
@@ -13,10 +14,11 @@ try {
   }
 } catch {
   console.log(
-    JSON.stringify({
-      scenario_id: "preorder_phone_optional",
-      error_code: "ai_execution_failed",
-    }),
+    JSON.stringify(
+      builderEvaluationTopLevelFailureSchema.parse({
+        evaluation_error_code: "evaluation_setup_failed",
+      }),
+    ),
   );
   process.exitCode = 1;
 }

@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
+import { ZodError } from "zod";
 
 vi.mock("server-only", () => ({}));
 
@@ -17,16 +18,21 @@ import {
 import { evaluateBuilderPlan } from "../src/ai/evaluation/evaluator";
 import {
   liveBuilderEvaluationIsActivated,
+  redactBuilderEvaluationFailure,
   runLiveBuilderEvaluation,
 } from "../src/ai/evaluation/live";
 import { builderEvaluationScenarios } from "../src/ai/evaluation/scenarios";
 import {
   builderEvaluationReportSchema,
   builderEvaluationScenarioSchema,
+  builderEvaluationTopLevelFailureSchema,
+  builderEvaluationProviderFailureSchema,
   type BuilderEvaluationScenarioId,
 } from "../src/ai/evaluation/schemas";
+import { AiExecutionError } from "../src/ai/errors";
 import { createAiExecutionService } from "../src/ai/execution";
 import { openAiBuilderPlanningPolicy } from "../src/ai/policies";
+import { BuilderPlanValidationError } from "../src/ai/planning/diagnostics";
 import {
   builderPlanOutputSchema,
   builderPlanTaskInputSchema,
@@ -302,6 +308,37 @@ describe("scenario → production task contract → evaluator", () => {
     }
   });
 
+  it("keeps preorder changes to one existing-capability configuration step", () => {
+    for (const scenarioId of [
+      "preorder_phone_optional",
+      "preorder_schedule_change",
+    ] as const) {
+      const output = compliantOutputs[scenarioId];
+      if (output.state !== "ready") throw new Error("Invalid fixture.");
+      expect(output.plan.concepts, scenarioId).toEqual([]);
+      expect(output.plan.steps, scenarioId).toHaveLength(1);
+      expect(output.plan.steps[0], scenarioId).toMatchObject({
+        lane: "configuration",
+        category: "configure_preorder",
+        dependencies: [],
+        affected_concepts: [],
+        location_references: [],
+      });
+      expect(
+        evaluateBuilderPlan(
+          builderEvaluationScenarios.find(({ id }) => id === scenarioId)!,
+          output,
+          {
+            attempts: 1,
+            inputTokens: 1,
+            outputTokens: 1,
+            elapsedMs: 1,
+          },
+        ).passed,
+      ).toBe(true);
+    }
+  });
+
   it("fails missing required categories and forbidden lanes", () => {
     const corporate = builderEvaluationScenarios[2]!;
     const missingPage = ready(
@@ -409,6 +446,62 @@ describe("scenario → production task contract → evaluator", () => {
         "concepts_must_be_empty",
       ]),
     );
+
+    const compliant = compliantOutputs.add_cambridge_preorder_collection;
+    if (compliant.state !== "ready") throw new Error("Invalid fixture.");
+    expect(
+      evaluateBuilderPlan(scenario, compliant, {
+        attempts: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        elapsedMs: 1,
+      }).passed,
+    ).toBe(true);
+    expect(compliant.plan.concepts).toEqual([]);
+    expect(compliant.plan.steps[0]).toMatchObject({
+      category: "create_location",
+      affected_concepts: [],
+      location_references: [],
+    });
+    expect(compliant.plan.steps[1]).toMatchObject({
+      category: "configure_preorder",
+      dependencies: ["step_1"],
+    });
+  });
+
+  it("keeps a Location-only evaluator boundary free of adjacent configuration", () => {
+    const scenario = builderEvaluationScenarios[3]!;
+    const invalid = ready(
+      [
+        step("step_1", 1, "operational", "create_location"),
+        step("step_2", 2, "configuration", "configure_preorder"),
+      ],
+      [
+        {
+          reference: "concept_1",
+          label: "Fabricated Location Object",
+          disposition: "new",
+          purpose: "Invalid platform concept.",
+        },
+      ],
+    );
+    invalid.plan.steps[0]!.location_references = [
+      "33333333-3333-4333-8333-333333333333",
+    ];
+    const report = evaluateBuilderPlan(scenario, invalid, {
+      attempts: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      elapsedMs: 1,
+    });
+    expect(report.passed).toBe(false);
+    expect(report.failed_gate_codes).toEqual(
+      expect.arrayContaining([
+        "configuration_step_forbidden",
+        "concepts_must_be_empty",
+        "location_existing_reference_forbidden",
+      ]),
+    );
   });
 
   it("rejects fabricated Location and Object references through semantic validation", async () => {
@@ -495,6 +588,97 @@ describe("live activation, redaction, and source isolation", () => {
       ).resolves.toMatchObject({ ran: false });
     }
     expect(loadProductionExecution).not.toHaveBeenCalled();
+  });
+
+  it("emits only approved bounded diagnostics for invalid planning output", () => {
+    const semantic = redactBuilderEvaluationFailure(
+      new AiExecutionError("ai_output_invalid", {
+        cause: new BuilderPlanValidationError("existing_object_unknown"),
+      }),
+      "preorder_phone_optional",
+    );
+    const structural = redactBuilderEvaluationFailure(
+      new AiExecutionError("ai_output_invalid", {
+        cause: new ZodError([
+          {
+            code: "custom",
+            message: "raw structural message marker",
+            path: ["secret_path"],
+            input: "raw input marker",
+          },
+        ]),
+      }),
+      "preorder_schedule_change",
+    );
+    const unknown = redactBuilderEvaluationFailure(
+      {
+        code: "ai_output_invalid",
+        cause: new Error("raw unknown output marker"),
+      },
+      "add_cambridge_preorder_collection",
+    );
+    const provider = redactBuilderEvaluationFailure(
+      {
+        code: "ai_provider_unavailable",
+        cause: new Error("raw provider marker"),
+      },
+      "corporate_catering_enquiries",
+    );
+    const emitted = [semantic, structural, unknown, provider];
+
+    expect(emitted).toEqual([
+      {
+        scenario_id: "preorder_phone_optional",
+        error_code: "ai_output_invalid",
+        validation_stage: "semantic",
+        validation_reason_code: "existing_object_unknown",
+      },
+      {
+        scenario_id: "preorder_schedule_change",
+        error_code: "ai_output_invalid",
+        validation_stage: "structural",
+        validation_reason_code: "output_contract_invalid",
+      },
+      {
+        scenario_id: "add_cambridge_preorder_collection",
+        error_code: "ai_output_invalid",
+        validation_stage: "unknown",
+        validation_reason_code: "unknown_output_invalid",
+      },
+      {
+        scenario_id: "corporate_catering_enquiries",
+        error_code: "ai_provider_unavailable",
+      },
+    ]);
+    for (const failure of emitted) {
+      expect(builderEvaluationProviderFailureSchema.parse(failure)).toEqual(
+        failure,
+      );
+    }
+    const serialized = JSON.stringify(emitted);
+    expect(serialized).not.toContain("raw structural message marker");
+    expect(serialized).not.toContain("secret_path");
+    expect(serialized).not.toContain("raw input marker");
+    expect(serialized).not.toContain("raw unknown output marker");
+    expect(serialized).not.toContain("raw provider marker");
+
+    expect(
+      builderEvaluationTopLevelFailureSchema.parse({
+        evaluation_error_code: "evaluation_setup_failed",
+      }),
+    ).toEqual({ evaluation_error_code: "evaluation_setup_failed" });
+  });
+
+  it("uses a scenario-free bounded setup-failure envelope", () => {
+    const liveScript = fs.readFileSync(
+      path.join(repositoryRoot, "evaluations", "builder-planning.live.eval.ts"),
+      "utf8",
+    );
+    expect(liveScript).toContain("evaluation_error_code");
+    expect(liveScript).toContain("evaluation_setup_failed");
+    expect(liveScript).not.toContain("preorder_phone_optional");
+    expect(liveScript).not.toContain("error.message");
+    expect(liveScript).not.toContain("cause");
   });
 
   it("redacts provider failures and never emits raw provider data or the key", async () => {

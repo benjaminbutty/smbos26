@@ -187,14 +187,16 @@ failed with reported usage. No route, Server Action, UI, proposal, lifecycle
 progression, projection write, operational mutation, migration, table or
 primitive is added.
 
-Milestone 6 Phase 4B adds only an engineering evaluation harness around the
-unchanged provider-neutral planning execution path. It uses a code-owned strict
-synthetic context and fixed in-memory owner requests, imports no database or
-configuration/operational service, and creates no Business accounting row,
-proposal, candidate, validation/application action, configuration projection,
-Record, Relationship or Location. Source-boundary tests keep evaluation code
-out of application routes, Server Actions and client modules. The harness
-prints only bounded redacted metadata and persists no result.
+Milestone 6 Phase 4B.1 keeps the engineering evaluation harness around the
+unchanged provider-neutral planning execution path and adds only bounded
+structural/semantic diagnostics plus least-change instruction rules. It uses a
+code-owned strict synthetic context and fixed in-memory owner requests,
+imports no database or configuration/operational service, and creates no
+Business accounting row, proposal, candidate, validation/application action,
+configuration projection, Record, Relationship or Location. Source-boundary
+tests keep evaluation code out of application routes, Server Actions and
+client modules. The harness prints only bounded redacted metadata and persists
+no result; public errors and accounting remain unchanged.
 
 ## Phase 5A read authorization
 

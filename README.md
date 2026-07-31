@@ -2,8 +2,8 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4B
-bounded real-model planning evaluation gate, deterministic manual setup amendments,
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4B.1
+bounded real-model planning diagnostics gate, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
@@ -84,8 +84,8 @@ Included:
   tools or conversation state
 - one engineering-only, explicitly activated eight-scenario planning
   evaluation over synthetic configuration, with deterministic hard gates,
-  sequential calls, redacted metadata-only output and a 1,100,000 microusd
-  ceiling
+  sequential calls, redacted metadata-only output, bounded structural/semantic
+  diagnostics and a 1,100,000 microusd ceiling
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
@@ -102,8 +102,11 @@ Included:
 - strict clarification-or-ready planning output with owner-readable bounds,
   plan-local references, explicit unsupported capabilities and separate
   configuration/operational planning lanes
+- server-owned least-change planning rules that keep the owner's explicit
+  request as the scope boundary and reject adjacent unasked work
 - pure server-owned semantic output validation for references, dependencies,
-  category/lane compatibility and current platform capability compatibility
+  category/lane compatibility and current platform capability compatibility,
+  with finite internal diagnostics that never enter public errors or accounting
 - authenticated planning orchestration with session-derived accounting
   identity, metadata-only usage settlement and post-execution context
   comparison before a plan is returned
@@ -230,14 +233,17 @@ nor response. `store: false` disables Responses application-state storage for
 the request; it is not a Zero Data Retention claim, and production activation
 requires review of the OpenAI project/organization data controls.
 
-Phase 4B evaluates that unchanged production planning path independently. The
+Phase 4B.1 evaluates that unchanged production planning path independently and
+adds bounded diagnostics around structural versus semantic output failures. The
 engineering-only harness uses one strict synthetic local-food Business context,
 the registered `builder_plan_v1` task, production OpenAI adapter and production
 planning policy through the provider-neutral execution service. It runs exactly
 eight scenarios sequentially and emits only bounded pass/fail, state,
 lane/category, unsupported-reason, count, usage, integer-cost and elapsed-time
-metadata. It has no application import, database client, tenant row, accounting
-row, persistence, route, Server Action or UI.
+metadata. Structural failures emit only `output_contract_invalid`; semantic
+failures emit one approved diagnostic code; unclassified failures emit only
+`unknown_output_invalid`. It has no application import, database client, tenant
+row, accounting row, persistence, route, Server Action or UI.
 
 `npm run test:builder-evaluation` uses injected fake providers and runs in CI.
 The external command is separate:

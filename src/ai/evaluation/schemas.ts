@@ -1,12 +1,15 @@
 import { z } from "zod";
 
-import { aiExecutionErrorCodes } from "../errors";
 import { OPENAI_BUILDER_PLANNING_MODEL_KEY } from "../policies";
 import {
   builderPlanConfigurationCategorySchema,
   builderPlanOperationalCategorySchema,
   builderPlanUnsupportedReasonSchema,
 } from "../planning/schemas";
+import {
+  builderPlanValidationDiagnosticCodes,
+  type BuilderPlanValidationDiagnosticCode,
+} from "../planning/diagnostics";
 
 export const builderEvaluationScenarioIdSchema = z.enum([
   "preorder_phone_optional",
@@ -83,10 +86,54 @@ export const builderEvaluationReportSchema = z
   })
   .strict();
 
-export const builderEvaluationProviderFailureSchema = z
+export const builderEvaluationValidationStageSchema = z.enum([
+  "structural",
+  "semantic",
+  "unknown",
+]);
+
+export const builderEvaluationValidationReasonCodeSchema = z.enum(
+  builderPlanValidationDiagnosticCodes,
+);
+
+const nonOutputAiExecutionErrorCodeSchema = z.enum([
+  "ai_disabled",
+  "ai_task_not_found",
+  "ai_input_invalid",
+  "ai_input_too_large",
+  "ai_provider_unavailable",
+  "ai_rate_limited",
+  "ai_timeout",
+  "ai_refused",
+  "ai_incomplete",
+  "ai_content_filtered",
+  "ai_attempts_exhausted",
+  "ai_execution_failed",
+  "ai_budget_exceeded",
+  "ai_accounting_unavailable",
+  "ai_accounting_failed",
+]);
+
+export const builderEvaluationProviderFailureSchema = z.union([
+  z
+    .object({
+      scenario_id: builderEvaluationScenarioIdSchema,
+      error_code: z.literal("ai_output_invalid"),
+      validation_stage: builderEvaluationValidationStageSchema,
+      validation_reason_code: builderEvaluationValidationReasonCodeSchema,
+    })
+    .strict(),
+  z
+    .object({
+      scenario_id: builderEvaluationScenarioIdSchema,
+      error_code: nonOutputAiExecutionErrorCodeSchema,
+    })
+    .strict(),
+]);
+
+export const builderEvaluationTopLevelFailureSchema = z
   .object({
-    scenario_id: builderEvaluationScenarioIdSchema,
-    error_code: z.enum(aiExecutionErrorCodes),
+    evaluation_error_code: z.literal("evaluation_setup_failed"),
   })
   .strict();
 
@@ -115,3 +162,5 @@ export type BuilderEvaluationReport = z.infer<
 export type BuilderEvaluationFailedGateCode = z.infer<
   typeof builderEvaluationFailedGateCodeSchema
 >;
+export type BuilderEvaluationValidationReasonCode =
+  BuilderPlanValidationDiagnosticCode;

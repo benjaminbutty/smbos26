@@ -18,7 +18,12 @@ import {
 } from "../src/ai/context/projector";
 import type { StructuredAiProviderRequest } from "../src/ai/contracts";
 import { createAiExecutionService } from "../src/ai/execution";
+import { AiExecutionError } from "../src/ai/errors";
 import { AiPlanningError } from "../src/ai/planning/errors";
+import {
+  BuilderPlanValidationError,
+  type BuilderPlanValidationDiagnosticCode,
+} from "../src/ai/planning/diagnostics";
 import {
   builderPlanOutputSchema,
   builderPlanTaskInputSchema,
@@ -274,6 +279,22 @@ function fakeExecutionResult(output: BuilderPlanOutput) {
       requestMetadata: { must_not_escape: "provider detail" },
     },
   };
+}
+
+function expectValidationDiagnostic(
+  action: () => unknown,
+  diagnosticCode: BuilderPlanValidationDiagnosticCode,
+): void {
+  let thrown: unknown;
+  try {
+    action();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(BuilderPlanValidationError);
+  expect((thrown as BuilderPlanValidationError).diagnosticCode).toBe(
+    diagnosticCode,
+  );
 }
 
 describe("builder_plan_v1 strict schemas and semantics", () => {
@@ -604,6 +625,111 @@ describe("builder_plan_v1 strict schemas and semantics", () => {
     ).toBe(false);
   });
 
+  it("reports only finite bounded diagnostics for semantic validation failures", () => {
+    const duplicateReference = structuredClone(readyOutput());
+    duplicateReference.assumptions = [
+      duplicateReference.assumptions[0]!,
+      { ...duplicateReference.assumptions[0]! },
+    ];
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), duplicateReference),
+      "duplicate_reference",
+    );
+
+    const duplicateQuestionOption = {
+      ...clarificationOutput(),
+      questions: [
+        {
+          ...clarificationOutput().questions[0]!,
+          response_style: "single_choice" as const,
+          options: ["Email", "email"],
+        },
+      ],
+    };
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), duplicateQuestionOption),
+      "duplicate_question_option",
+    );
+
+    const highImpact = structuredClone(readyOutput());
+    highImpact.assumptions[0]!.impact = "high";
+    highImpact.assumptions[0]!.requires_owner_confirmation = false;
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), highImpact),
+      "high_impact_assumption_unconfirmed",
+    );
+
+    const unknownConceptObject = structuredClone(readyOutput());
+    const concept = unknownConceptObject.plan.concepts[0]!;
+    if (concept.disposition !== "existing") {
+      throw new Error("Expected an existing concept fixture.");
+    }
+    concept.existing_object_key = "invented";
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), unknownConceptObject),
+      "existing_concept_object_unknown",
+    );
+
+    const invalidSequence = structuredClone(readyOutput());
+    invalidSequence.plan.steps[0]!.sequence = 2;
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), invalidSequence),
+      "step_sequence_invalid",
+    );
+
+    const forwardDependency = structuredClone(readyOutput());
+    forwardDependency.plan.steps = [
+      { ...forwardDependency.plan.steps[0]!, dependencies: ["step_2"] },
+      {
+        ...forwardDependency.plan.steps[0]!,
+        reference: "step_2",
+        sequence: 2,
+      },
+    ];
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), forwardDependency),
+      "dependency_not_prior",
+    );
+
+    const unknownAffectedConcept = structuredClone(readyOutput());
+    unknownAffectedConcept.plan.steps[0]!.affected_concepts = ["concept_2"];
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), unknownAffectedConcept),
+      "affected_concept_unknown",
+    );
+
+    const unknownExistingObject = structuredClone(readyOutput());
+    unknownExistingObject.plan.steps[0]!.existing_object_keys = ["invented"];
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), unknownExistingObject),
+      "existing_object_unknown",
+    );
+
+    const unknownLocation = structuredClone(readyOutput());
+    unknownLocation.plan.steps[0]!.location_references = [ids.otherLocation];
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), unknownLocation),
+      "location_reference_unknown",
+    );
+
+    const unsupportedCategoryInput = structuredClone(taskInput());
+    unsupportedCategoryInput.business_context.platform_capabilities.configuration_operation_names =
+      [];
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(unsupportedCategoryInput, readyOutput()),
+      "category_not_supported",
+    );
+
+    const invalidContract = {
+      ...readyOutput(),
+      unexpected: true,
+    } as BuilderPlanOutput;
+    expectValidationDiagnostic(
+      () => validateBuilderPlanOutput(taskInput(), invalidContract),
+      "output_contract_invalid",
+    );
+  });
+
   it("bounds owner-readable output and arrays", () => {
     expect(
       builderPlanOutputSchema.safeParse({
@@ -749,9 +875,24 @@ describe("builder planning task execution and service", () => {
       generateExecutionId: () => "10000000-0000-4000-8000-000000000099",
     });
 
-    await expect(
-      service.execute("builder_plan_v1", taskInput()),
-    ).rejects.toMatchObject({ code: "ai_output_invalid" });
+    let executionError: unknown;
+    try {
+      await service.execute("builder_plan_v1", taskInput());
+    } catch (error) {
+      executionError = error;
+    }
+    expect(executionError).toBeInstanceOf(AiExecutionError);
+    expect(executionError).toMatchObject({ code: "ai_output_invalid" });
+    expect(JSON.stringify(executionError)).not.toContain(
+      "existing_concept_object_unknown",
+    );
+    expect(JSON.stringify(executionError)).not.toContain(
+      "The builder plan referenced an unavailable existing concept Object.",
+    );
+    expect((executionError as AiExecutionError).toPublicError()).toEqual({
+      code: "ai_output_invalid",
+      message: "The AI service returned an invalid result.",
+    });
     expect(settle).toHaveBeenCalledWith(
       expect.objectContaining({
         status: "failed",
@@ -759,6 +900,9 @@ describe("builder planning task execution and service", () => {
         actualInputTokens: 70,
         actualOutputTokens: 25,
       }),
+    );
+    expect(JSON.stringify(settle.mock.calls[0]?.[0])).not.toContain(
+      "existing_concept_object_unknown",
     );
   });
 

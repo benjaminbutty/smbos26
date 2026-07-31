@@ -1611,3 +1611,34 @@ surface, benchmark service or prompt-tuning loop.
 - Phase 4B adds no route, Server Action, UI, operation generation, proposal,
   validation/application action, operational mutation, migration, table or
   platform primitive.
+
+### Phase 4B.1 amendment - bounded diagnostics and least-change precision
+
+**Date:** 31 July 2026
+
+The first explicit real-model evaluation was run once with the fixed
+`gpt-5.4-mini-2026-03-17` model:
+
+- scenarios: 8
+- passed: 4
+- failed: 4
+- input tokens: 31,413
+- output tokens: 3,993
+- estimated cost: 41,535 microusd
+- elapsed: 32,327 ms
+
+The focused correction preserves the Phase 4B model, provider, pricing, token,
+retry, output schema, scenarios, context and evaluator gates. Semantic
+validation now throws one code-owned `BuilderPlanValidationError` diagnostic;
+structural and unclassified output failures are classified as
+`output_contract_invalid` and `unknown_output_invalid`. Evaluation output may
+include only the bounded validation stage and diagnostic enum for
+`ai_output_invalid`. Public errors, `toJSON`, `toPublicError`, settlement and
+metadata-only audit remain unchanged.
+
+The server-owned instruction now enforces the explicit request as the scope
+boundary, smallest coherent plans, no adjacent work, concept-free
+Location-only plans, exact trusted references, globally unique plan-local
+references, prior-step dependencies and explicit ordering for combined Location
+and later configuration requests. No operation generation or mutation surface
+is introduced.

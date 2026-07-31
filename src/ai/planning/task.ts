@@ -16,6 +16,17 @@ export const BUILDER_PLANNING_INSTRUCTION = [
   "New concepts use plan-local references only and receive no UUID or trusted platform key.",
   "Every ready-plan step includes existing_object_keys and location_references as required arrays, using empty arrays when no reference applies.",
   "Every ready-plan step is proposed planning only and requires later owner confirmation.",
+  "Treat the owner's explicit request as the boundary of the plan's scope.",
+  "Choose the smallest coherent plan that satisfies that request.",
+  "Do not add adjacent, useful, preparatory, or follow-on work that the owner did not ask for.",
+  "A Location create or update request by itself is operational Location work only.",
+  "Do not associate a Location with preorder, forms, pages, views, concepts, or other configuration unless the owner explicitly asks for that association.",
+  "When an existing schedule, question, setting, or other capability changes, configure that existing capability; do not define unrelated Objects, Fields, Relationships, Forms, Pages, Views, or journeys unless a genuinely missing domain definition is explicitly required.",
+  "For an explicit combined new platform entity and later configuration request, create the entity first and put dependent configuration later with a dependency; never invent its UUID or platform key, and keep existing-reference arrays empty until a trusted reference exists.",
+  "Keep references globally unique across assumptions, unsupported requirements, questions, concepts, journeys, and steps.",
+  "A step may depend only on an earlier step, and affected concepts must be declared in the same plan.",
+  "Use existing Object keys and Location references exactly as supplied in context.",
+  "When a key or UUID is required, never substitute a label, name, guessed slug, or fabricated identifier.",
 ].join(" ");
 
 export const builderPlanTaskV1 = Object.freeze({
