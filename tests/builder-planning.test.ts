@@ -40,6 +40,7 @@ import {
   registeredAiTasks,
   structuredAiProviders,
 } from "../src/ai/registry";
+import { BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY } from "../src/ai/policies";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
 import type { Database } from "../src/db/supabase/database.types";
@@ -802,7 +803,10 @@ describe("builder_plan_v1 strict schemas and semantics", () => {
 describe("builder planning task execution and service", () => {
   it("registers a bounded server-owned task and disabled production policy", () => {
     expect(registeredAiTasks.builder_plan_v1).toBe(builderPlanTaskV1);
-    expect(aiExecutionPolicies.builder_planning_v1).toMatchObject({
+    expect(
+      aiExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
+    ).toMatchObject({
+      key: BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
       providerKey: "disabled",
       maxInputBytes: 160 * 1024,
       maxBillableInputTokens: 64_000,
@@ -844,7 +848,8 @@ describe("builder planning task execution and service", () => {
     const service = createAiExecutionService({
       tasks: registeredAiTasks,
       policies: {
-        builder_planning_v1: aiExecutionPolicies.builder_planning_v1,
+        [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]:
+          aiExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
       },
       providers: {
         disabled: { key: "disabled", generateStructured },
@@ -872,7 +877,8 @@ describe("builder planning task execution and service", () => {
     const execution = createAiExecutionService({
       tasks: registeredAiTasks,
       policies: {
-        builder_planning_v1: aiExecutionPolicies.builder_planning_v1,
+        [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]:
+          aiExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
       },
       providers: {
         disabled: {

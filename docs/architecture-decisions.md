@@ -1678,3 +1678,82 @@ metadata-only accounting settlement continue to exclude diagnostics and
 assumption content. Operation generation remains blocked. The same eight
 scenarios must run once more after exact-head CI; implementation and CI remain
 non-live.
+
+## ADR-022 - Current-generation planning uses Terra medium and repeated reliability gates
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 4C)
+
+**Date:** 31 July 2026
+
+### Context
+
+The historical `gpt-5.4-mini-2026-03-17` candidate was evaluated three times
+against the approved planning subject: 4/8 (31,413 input tokens, 3,993 output
+tokens, 41,535 microusd, 32,327 ms), 7/8 (33,453 input tokens, 3,194 output
+tokens, 39,468 microusd, 29,322 ms), and 4/8 (30,587 input tokens, 2,303
+output tokens, 33,308 microusd, 22,514 ms). The varying failures show that a
+single favourable run—or one further scenario-specific prompt sentence—is not
+reliability evidence.
+
+Planning needs a current balanced candidate without weakening the deterministic
+contract or creating a production-facing evaluation surface. An advancing model
+alias cannot promise snapshot-level reproducibility, so qualification evidence
+needs clear invalidation rules.
+
+### Decision
+
+- `builder_plan_v1` uses code-owned `gpt-5.6-terra` with explicit,
+  non-overridable `reasoning: { effort: "medium" }`. It has no fallback, owner
+  selection or environment/model-response override. The OpenAI request retains
+  `store: false`, fixed base URL, `logLevel: "off"`, `maxRetries: 0`, strict
+  schema transport, no tools, no conversation state and the existing abort
+  signal. Reasoning summaries and reasoning content are neither requested nor
+  persisted.
+- The task's structured contract remains version 1, but its metadata-only
+  policy identity is `builder_planning_terra_medium_v1`. Disabled runtime maps
+  it to the disabled provider and zero pricing; OpenAI maps it to Terra medium.
+  The policy retains the 160 KiB, 64,000-input-token, 4,096-output-token,
+  30-second, two-attempt, 250-ms, rate-limit/transient-only bounds.
+- Trusted pricing is 2,500,000 input and 15,000,000 output microusd per
+  million tokens. Standard integer ceiling accounting charges all reported
+  input and output tokens without cached-input discounts. One execution reserves
+  exactly 442,880 microusd, within the existing 5,000,000 default daily limit.
+- The Phase 4B.2 instruction, schemas, semantic validator, diagnostic
+  taxonomy, synthetic Business context, eight owner requests, deterministic
+  gates and provider schema transport are frozen. Regression tests enforce the
+  instruction exactly and pin the other frozen source contracts.
+- Gate A runs the eight unchanged scenarios exactly once and sequentially only
+  when `RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1`, `AI_PROVIDER=openai` and a
+  non-blank server-only key are all present. Before provider construction it
+  verifies the exact 3,543,040 microusd envelope against a 3,700,000 ceiling.
+  It requires 8/8 successful structural, semantic and deterministic-gate
+  results, no fabricated references, no provider failure and aggregate cost
+  below the ceiling.
+- Gate B is separate and never starts automatically. It deliberately runs the
+  same eight scenarios in three sequential rounds (24 executions) only when
+  `RUN_LIVE_OPENAI_TERRA_RELIABILITY=1` is set with the same server gates.
+  Before provider construction it verifies the exact 10,629,120 microusd
+  envelope against an 11,000,000 ceiling. It requires 24/24 and three passes
+  for every scenario. The historical `RUN_LIVE_OPENAI_EVAL` flag is inert and
+  the superseded command is a safe deprecation message.
+- Both gates remain engineering-only: no route, Server Action, UI, client
+  import, tenant row, membership, accounting row, proposal, configuration or
+  operational mutation, database client, file writing, telemetry or analytics.
+  Their only output is bounded redacted metadata; model prose, request/context,
+  reasoning content, labels/references, provider data and credentials are not
+  emitted or persisted.
+- Alias advancement invalidates evidence, as do changes to model identifier,
+  reasoning effort, instruction, schemas, semantic validation, material context
+  projection or provider schema transport. A failed qualification or reliability
+  result stops progression without automatic rerun or prompt tuning; the next
+  reviewed comparison candidate is GPT-5.6 Sol medium.
+
+### Consequences
+
+- Current-generation planning is deliberately qualified rather than assumed
+  reliable. A reviewed 8/8 qualification is required before a deliberately run
+  24/24 reliability gate; operation generation remains blocked before then.
+- CI remains network-free by exercising only injected providers. The live gates
+  are explicit, bounded operator actions and create no durable state.
+- Terra is not claimed to have passed until both live gates produce and receive
+  review of their required redacted results.

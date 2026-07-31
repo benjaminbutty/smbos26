@@ -75,3 +75,12 @@ eight scenarios pass, with the remaining
 `high_impact_assumption_unconfirmed` diagnostic on the preorder schedule
 scenario. Public errors and accounting remain metadata-only and contain no
 diagnostic or assumption content.
+
+Phase 4C freezes that approved instruction, input/output schemas, semantic
+validator, diagnostics, synthetic context, owner requests and evaluator gates.
+The `builder_plan_v1` task keeps version 1 because this structured contract is
+unchanged, while its code-owned policy identity is now
+`builder_planning_terra_medium_v1` to record the material Terra-medium
+execution profile. This does not add operation generation or any mutation
+authority; operation generation remains blocked pending reviewed qualification
+and repeated reliability evidence.

@@ -1,52 +1,45 @@
 # Builder planning evaluation
 
-The live command is an engineering-only, opt-in check of the fixed
-`builder_plan_v1` production planning path:
+Phase 4C provides two isolated engineering-only live gates for the frozen
+`builder_plan_v1` planning subject and code-owned `gpt-5.6-terra` alias with
+`medium` reasoning. Neither gate is part of the deployed application, tenant
+runtime, accounting boundary, mutation path, route, Server Action, or UI.
+
+Qualification runs exactly eight existing scenarios once, sequentially:
 
 ```bash
-RUN_LIVE_OPENAI_EVAL=1 \
+RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1 \
 AI_PROVIDER=openai \
 OPENAI_API_KEY=... \
-npm run eval:builder-planning-live
+npm run eval:builder-planning-terra-qualification-live
 ```
 
-All three activation values are required. The command runs eight sequential
-synthetic Business scenarios once, subject only to the registered two-attempt
-policy, and emits bounded metadata. It does not load tenant data, use Business
-accounting, persist output, invoke a route or mutation service, or generate
-operations.
+It fails unless all eight complete, parse and validate structurally and
+semantically, and pass their unchanged deterministic gates. Its trusted maximum
+reservation is 3,543,040 microusd under a 3,700,000 microusd hard ceiling.
 
-Invalid output is reported internally as one of three stages: `structural`,
-`semantic`, or `unknown`. Structural failures use `output_contract_invalid`,
-semantic failures use the finite planning diagnostic enum, and unclassified
-failures use `unknown_output_invalid`. Only the scenario ID, `ai_output_invalid`,
-stage and approved reason code may be emitted for that failure class. Provider
-failures keep the existing scenario ID and safe execution error code only.
+Only after an operator reviews an 8/8 qualification result may they deliberately
+run repeated reliability:
 
-Requests, context, model prose, schema paths, labels, UUIDs, provider bodies,
-credentials, diagnostic messages and response IDs are never emitted or stored.
-The public `AiExecutionError` JSON contract and metadata-only accounting audit
-remain unchanged. Operation generation stays blocked until an explicit live
-evaluation succeeds and is reviewed.
+```bash
+RUN_LIVE_OPENAI_TERRA_RELIABILITY=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-planning-terra-reliability-live
+```
 
-## Second live run
+Reliability runs the same eight scenarios in three sequential rounds (24 total
+executions) and fails unless all 24 pass. Its trusted maximum reservation is
+10,629,120 microusd under an 11,000,000 microusd hard ceiling. The gates do not
+trigger each other, and the historical `RUN_LIVE_OPENAI_EVAL` flag is inert.
 
-The second explicit run used the unchanged fixed model and eight scenarios:
+Only redacted scenario metadata, bounded validation diagnostics, token counts,
+integer cost and elapsed time may be emitted. No owner request, Business
+context, model prose, reasoning content, question or assumption text, labels,
+Object keys, Location UUIDs, provider body/ID, API key or raw error is emitted
+or persisted. The Terra alias can advance independently, so evidence must be
+rerun after a material alias advance or any permitted execution/planning-subject
+change. Operation generation remains blocked until a reviewed 24/24 result.
 
-- passed: 7
-- failed: 1
-- input tokens: 33,453
-- output tokens: 3,194
-- estimated cost: 39,468 microusd
-- elapsed: 29,322 ms
-
-The remaining redacted diagnostic was
-`high_impact_assumption_unconfirmed` for `preorder_schedule_change`. The
-previous reference and least-change failures are resolved. Phase 4B.2 therefore
-aligns the instruction with the existing deterministic assumption validator:
-explicit owner requests and established context are not assumptions, unnecessary
-assumptions are omitted, and every high-impact assumption in a ready plan must
-require owner confirmation. The validator and scenario pass gate are unchanged;
-invalid output is not retried, and operation generation remains blocked. The
-same eight scenarios must run once more after exact-head CI. No model prose is
-recorded.
+Live GPT-5.6 Terra qualification not run.
+Live GPT-5.6 Terra reliability evaluation not run.

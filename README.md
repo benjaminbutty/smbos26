@@ -2,9 +2,9 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4B.2
-high-impact assumption contract alignment after the bounded real-model planning
-diagnostics gate, deterministic manual setup amendments,
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4C
+Terra-medium qualification and reliability gate after bounded real-model
+planning diagnostics, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
@@ -83,11 +83,11 @@ Included:
 - one server-only OpenAI Responses adapter behind a default-disabled runtime
   gate, fixed model/pricing, strict Structured Outputs, `store: false` and no
   tools or conversation state
-- one engineering-only, explicitly activated eight-scenario planning
-  evaluation over synthetic configuration, with deterministic hard gates,
-  sequential calls, redacted metadata-only output, bounded structural/semantic
-  diagnostics, explicit high-impact assumption confirmation and a 1,100,000
-  microusd ceiling
+- two engineering-only, separately activated Terra-medium planning gates over
+  synthetic configuration: an eight-scenario qualification run and three
+  sequential repetitions (24 executions) for reliability, with frozen hard
+  gates, redacted metadata-only output and ceilings of 3,700,000 and
+  11,000,000 microusd
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
@@ -230,12 +230,12 @@ protection because a final read cannot remove every race.
 Phase 4A classifies Page image sources as `external_web` and button
 destinations as `internal_path`, `external_web`, `email` or `telephone`.
 Raw destinations never enter model context. The fixed
-`gpt-5.4-mini-2026-03-17` Responses adapter receives deterministic structured
-input and a strict adapted JSON Schema, sets `store: false`, and receives no
-tools, identity metadata or conversation state. SMBOS persists neither request
-nor response. `store: false` disables Responses application-state storage for
-the request; it is not a Zero Data Retention claim, and production activation
-requires review of the OpenAI project/organization data controls.
+Responses adapter receives deterministic structured input and a strict adapted
+JSON Schema, sets `store: false`, and receives no tools, identity metadata or
+conversation state. SMBOS persists neither request nor response. `store: false`
+disables Responses application-state storage for the request; it is not a Zero
+Data Retention claim, and production activation requires review of the OpenAI
+project/organization data controls.
 
 Phase 4B.1 evaluates that unchanged production planning path independently and
 adds bounded diagnostics around structural versus semantic output failures. The
@@ -249,31 +249,38 @@ failures emit one approved diagnostic code; unclassified failures emit only
 `unknown_output_invalid`. It has no application import, database client, tenant
 row, accounting row, persistence, route, Server Action or UI.
 
-Phase 4B.2 records the second explicit live run against the unchanged path:
-eight scenarios, seven passed and one failed. The run used 33,453 input tokens,
-3,194 output tokens, an estimated 39,468 microusd and 29,322 ms. The only
-remaining diagnostic was `high_impact_assumption_unconfirmed` for
-`preorder_schedule_change`. The correction adds general server-owned assumption
-semantics: explicit owner requests and established context are not assumptions,
-unnecessary assumptions are omitted, and every high-impact assumption in a ready
-plan must require owner confirmation. The deterministic validator, scenario gate,
-model, provider, schemas, pricing, token limits, retries and context remain
-unchanged; operation generation remains blocked.
+Phase 4C replaces the unstable historical mini candidate with the code-owned
+`gpt-5.6-terra` alias and non-overridable `medium` reasoning. The planning
+instruction, schemas, semantic validator, synthetic context, owner requests and
+hard gates are frozen. The alias may advance independently, so qualification
+evidence is invalid whenever its identity or material execution/planning subject
+changes. Operation generation remains blocked.
 
-`npm run test:builder-evaluation` uses injected fake providers and runs in CI.
-The external command is separate:
+`npm run test:builder-evaluation`, `npm run test:terra-provider-profile`,
+`npm run test:builder-terra-qualification` and
+`npm run test:builder-terra-reliability` use injected providers and run in CI.
+The external gates are deliberately separate:
 
 ```bash
-RUN_LIVE_OPENAI_EVAL=1 \
+RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1 \
 AI_PROVIDER=openai \
 OPENAI_API_KEY=... \
-npm run eval:builder-planning-live
+npm run eval:builder-planning-terra-qualification-live
 ```
 
-All three values are required. A configured key alone is not permission to
-run. The fixed eight-scenario reservation envelope is 1,062,912 microusd under
-a hard 1,100,000 microusd ceiling. Operation generation remains blocked until
-the explicit live evaluation succeeds and is reviewed.
+Only after an 8/8 qualification review may an operator deliberately run:
+
+```bash
+RUN_LIVE_OPENAI_TERRA_RELIABILITY=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-planning-terra-reliability-live
+```
+
+A key alone is not permission to run either gate. Qualification reserves at
+most 3,543,040 microusd beneath a 3,700,000 ceiling; reliability reserves at
+most 10,629,120 microusd beneath an 11,000,000 ceiling. Operation generation
+remains blocked until a reviewed 24/24 reliability result.
 
 ## Requirements
 

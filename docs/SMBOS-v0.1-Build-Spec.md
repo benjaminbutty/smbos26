@@ -2009,6 +2009,36 @@ API charge can be incurred.
   - add no operation generation, proposal, mutation, route, UI, migration,
     table, primitive, second model, provider or retry path; rerun the same eight
     scenarios once more only after exact-head CI.
+- **Phase 4C - GPT-5.6 Terra medium qualification and reliability gate:**
+  - replace the unstable historical mini candidate with the code-owned
+    `gpt-5.6-terra` alias and explicit non-overridable
+    `reasoning: { effort: "medium" }`; no model, effort or policy input is
+    accepted from environment (other than activation), Business, browser, task
+    input, owner request, context, provider response or evaluation parameters;
+  - retain exactly the approved Phase 4B.2 planning instruction, schemas,
+    semantic validator, diagnostic taxonomy, synthetic context, eight owner
+    requests, strict transport and deterministic hard gates;
+  - use policy identity `builder_planning_terra_medium_v1`, 2,500,000 input and
+    15,000,000 output microusd per million tokens, with an exact two-attempt
+    reservation of 442,880 microusd and no cached-input discount;
+  - provide two separate non-production gates: qualification is eight scenarios
+    once, requiring `RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1`; reliability is the
+    same scenarios in three sequential rounds (24 executions), requiring
+    `RUN_LIVE_OPENAI_TERRA_RELIABILITY=1`; both also require `AI_PROVIDER=openai`
+    and a non-blank server-only key, while the historical flag is inert;
+  - verify qualification's exact 3,543,040 microusd maximum under a 3,700,000
+    ceiling and reliability's exact 10,629,120 maximum under an 11,000,000
+    ceiling before provider construction; CI uses only injected providers;
+  - emit only bounded redacted metadata and never request, inspect, persist or
+    print reasoning content, request/context data, plan text, provider bodies,
+    response IDs or credentials; no gate has a database, accounting, telemetry,
+    file-writing, route, Server Action, UI or mutation dependency;
+  - treat alias advancement and any permitted execution/planning-subject change
+    as invalidating prior evidence; qualification requires reviewed 8/8, then
+    reliability requires reviewed 24/24 before operation generation can begin;
+  - add no fallback, other model, owner selection, prompt/schema/validator/gate
+    relaxation, operation generation, proposal, mutation, migration, table or
+    primitive.
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.

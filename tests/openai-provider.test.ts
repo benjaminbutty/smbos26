@@ -546,7 +546,8 @@ describe("server-owned OpenAI runtime and pricing", () => {
     ]);
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
-    expect(runtime.policies.builder_planning_v1).toMatchObject({
+    expect(runtime.policies.builder_planning_terra_medium_v1).toMatchObject({
+      key: "builder_planning_terra_medium_v1",
       providerKey: "openai",
       modelKey: OPENAI_MODEL_KEY,
       maxInputBytes: 160 * 1024,
@@ -556,18 +557,20 @@ describe("server-owned OpenAI runtime and pricing", () => {
       maxAttempts: 2,
       retryDelayMs: 250,
       retryableFailureKinds: ["rate_limited", "transient"],
-      inputMicrousdPerMillion: 750_000,
-      outputMicrousdPerMillion: 4_500_000,
+      inputMicrousdPerMillion: 2_500_000,
+      outputMicrousdPerMillion: 15_000_000,
     });
     expect(
-      deriveAiReservationEnvelope(runtime.policies.builder_planning_v1),
+      deriveAiReservationEnvelope(
+        runtime.policies.builder_planning_terra_medium_v1,
+      ),
     ).toEqual({
       reservedRequestCount: 1,
       reservedInputTokens: 128_000,
       reservedOutputTokens: 8_192,
-      reservedCostMicrousd: 132_864,
-      inputMicrousdPerMillion: 750_000,
-      outputMicrousdPerMillion: 4_500_000,
+      reservedCostMicrousd: 442_880,
+      inputMicrousdPerMillion: 2_500_000,
+      outputMicrousdPerMillion: 15_000_000,
     });
   });
 

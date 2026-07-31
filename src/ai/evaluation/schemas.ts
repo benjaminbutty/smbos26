@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { OPENAI_BUILDER_PLANNING_MODEL_KEY } from "../policies";
+import {
+  BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+  OPENAI_BUILDER_PLANNING_MODEL_KEY,
+  OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+} from "../policies";
 import {
   builderPlanConfigurationCategorySchema,
   builderPlanOperationalCategorySchema,
@@ -131,6 +135,30 @@ export const builderEvaluationProviderFailureSchema = z.union([
     .strict(),
 ]);
 
+export const builderEvaluationReliabilityReportSchema =
+  builderEvaluationReportSchema.extend({
+    repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  });
+
+export const builderEvaluationReliabilityProviderFailureSchema = z.union([
+  z
+    .object({
+      scenario_id: builderEvaluationScenarioIdSchema,
+      error_code: z.literal("ai_output_invalid"),
+      validation_stage: builderEvaluationValidationStageSchema,
+      validation_reason_code: builderEvaluationValidationReasonCodeSchema,
+      repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    })
+    .strict(),
+  z
+    .object({
+      scenario_id: builderEvaluationScenarioIdSchema,
+      error_code: nonOutputAiExecutionErrorCodeSchema,
+      repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    })
+    .strict(),
+]);
+
 export const builderEvaluationTopLevelFailureSchema = z
   .object({
     evaluation_error_code: z.literal("evaluation_setup_failed"),
@@ -140,13 +168,50 @@ export const builderEvaluationTopLevelFailureSchema = z
 export const builderEvaluationAggregateSchema = z
   .object({
     model_key: z.literal(OPENAI_BUILDER_PLANNING_MODEL_KEY),
+    policy_key: z.literal(BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY),
+    reasoning_effort: z.literal(OPENAI_BUILDER_PLANNING_REASONING_EFFORT),
     total_scenarios: z.literal(8),
     passed_scenarios: z.number().int().min(0).max(8),
     failed_scenarios: z.number().int().min(0).max(8),
+    structural_failure_count: z.number().int().min(0).max(8),
+    semantic_failure_count: z.number().int().min(0).max(8),
+    scenario_gate_failure_count: z.number().int().min(0).max(8),
+    provider_failure_count: z.number().int().min(0).max(8),
     total_input_tokens: z.number().int().nonnegative(),
     total_output_tokens: z.number().int().nonnegative(),
     total_estimated_cost_microusd: z.number().int().nonnegative(),
     total_elapsed_ms: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const builderEvaluationReliabilityAggregateSchema = z
+  .object({
+    model_key: z.literal(OPENAI_BUILDER_PLANNING_MODEL_KEY),
+    policy_key: z.literal(BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY),
+    reasoning_effort: z.literal(OPENAI_BUILDER_PLANNING_REASONING_EFFORT),
+    total_scenarios: z.literal(8),
+    repetitions_per_scenario: z.literal(3),
+    total_executions: z.literal(24),
+    passed_executions: z.number().int().min(0).max(24),
+    failed_executions: z.number().int().min(0).max(24),
+    structural_failure_count: z.number().int().min(0).max(24),
+    semantic_failure_count: z.number().int().min(0).max(24),
+    scenario_gate_failure_count: z.number().int().min(0).max(24),
+    provider_failure_count: z.number().int().min(0).max(24),
+    total_input_tokens: z.number().int().nonnegative(),
+    total_output_tokens: z.number().int().nonnegative(),
+    total_estimated_cost_microusd: z.number().int().nonnegative(),
+    total_elapsed_ms: z.number().int().nonnegative(),
+    per_scenario_pass_counts: z
+      .array(
+        z
+          .object({
+            scenario_id: builderEvaluationScenarioIdSchema,
+            passed_count: z.number().int().min(0).max(3),
+          })
+          .strict(),
+      )
+      .length(8),
   })
   .strict();
 
@@ -158,6 +223,9 @@ export type BuilderEvaluationScenarioId = z.infer<
 >;
 export type BuilderEvaluationReport = z.infer<
   typeof builderEvaluationReportSchema
+>;
+export type BuilderEvaluationReliabilityReport = z.infer<
+  typeof builderEvaluationReliabilityReportSchema
 >;
 export type BuilderEvaluationFailedGateCode = z.infer<
   typeof builderEvaluationFailedGateCodeSchema

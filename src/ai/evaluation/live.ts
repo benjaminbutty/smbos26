@@ -1,7 +1,14 @@
+import { ZodError } from "zod";
+
 import { calculateAiTokenCostMicrousd } from "../accounting/cost";
 import type { AiExecutionResult } from "../execution";
 import { aiExecutionErrorCodes, type AiExecutionErrorCode } from "../errors";
-import { openAiBuilderPlanningPolicy } from "../policies";
+import {
+  BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+  OPENAI_BUILDER_PLANNING_MODEL_KEY,
+  OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+  openAiBuilderPlanningPolicy,
+} from "../policies";
 import {
   BuilderPlanValidationError,
   type BuilderPlanValidationDiagnosticCode,
@@ -11,21 +18,37 @@ import {
   builderPlanTaskInputSchema,
   type BuilderPlanOutput,
 } from "../planning/schemas";
-import { ZodError } from "zod";
-import { deriveBuilderEvaluationEnvelope } from "./envelope";
+import { syntheticBusinessContext } from "../../../evaluations/fixtures/synthetic-business-context";
+import {
+  BUILDER_TERRA_QUALIFICATION_SCENARIO_COUNT,
+  BUILDER_TERRA_RELIABILITY_REPETITIONS,
+  BUILDER_TERRA_RELIABILITY_TOTAL_EXECUTIONS,
+  deriveBuilderTerraQualificationEnvelope,
+  deriveBuilderTerraReliabilityEnvelope,
+} from "./envelope";
 import { evaluateBuilderPlan } from "./evaluator";
 import { builderEvaluationScenarios } from "./scenarios";
 import {
   builderEvaluationAggregateSchema,
   builderEvaluationProviderFailureSchema,
+  builderEvaluationReliabilityAggregateSchema,
+  builderEvaluationReliabilityProviderFailureSchema,
+  builderEvaluationReliabilityReportSchema,
   builderEvaluationValidationReasonCodeSchema,
   builderEvaluationValidationStageSchema,
-  type BuilderEvaluationScenarioId,
   type BuilderEvaluationReport,
+  type BuilderEvaluationReliabilityReport,
+  type BuilderEvaluationScenarioId,
 } from "./schemas";
 
-export interface BuilderEvaluationEnvironment {
-  RUN_LIVE_OPENAI_EVAL?: string | undefined;
+export interface BuilderTerraQualificationEnvironment {
+  RUN_LIVE_OPENAI_TERRA_QUALIFICATION?: string | undefined;
+  AI_PROVIDER?: string | undefined;
+  OPENAI_API_KEY?: string | undefined;
+}
+
+export interface BuilderTerraReliabilityEnvironment {
+  RUN_LIVE_OPENAI_TERRA_RELIABILITY?: string | undefined;
   AI_PROVIDER?: string | undefined;
   OPENAI_API_KEY?: string | undefined;
 }
@@ -41,17 +64,46 @@ interface LiveEvaluationDependencies {
   emit(value: unknown): void;
 }
 
-export interface LiveBuilderEvaluationResult {
+export interface LiveBuilderTerraQualificationResult {
   ran: boolean;
   passed: boolean;
   reports: readonly BuilderEvaluationReport[];
 }
 
-export function liveBuilderEvaluationIsActivated(
-  environment: BuilderEvaluationEnvironment,
+export interface LiveBuilderTerraReliabilityResult {
+  ran: boolean;
+  passed: boolean;
+  reports: readonly BuilderEvaluationReliabilityReport[];
+}
+
+interface MutableGateTotals {
+  passedExecutions: number;
+  failedExecutions: number;
+  structuralFailureCount: number;
+  semanticFailureCount: number;
+  scenarioGateFailureCount: number;
+  providerFailureCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostMicrousd: number;
+  elapsedMs: number;
+}
+
+export function liveBuilderTerraQualificationIsActivated(
+  environment: BuilderTerraQualificationEnvironment,
 ): boolean {
   return (
-    environment.RUN_LIVE_OPENAI_EVAL === "1" &&
+    environment.RUN_LIVE_OPENAI_TERRA_QUALIFICATION === "1" &&
+    environment.AI_PROVIDER?.trim() === "openai" &&
+    Boolean(environment.OPENAI_API_KEY?.trim())
+  );
+}
+
+export function liveBuilderTerraReliabilityIsActivated(
+  environment: BuilderTerraReliabilityEnvironment,
+): boolean {
+  return (
+    environment.RUN_LIVE_OPENAI_TERRA_RELIABILITY === "1" &&
     environment.AI_PROVIDER?.trim() === "openai" &&
     Boolean(environment.OPENAI_API_KEY?.trim())
   );
@@ -111,9 +163,7 @@ function classifyOutputValidationFailure(cause: unknown): {
       typeof current === "function"
     ) {
       const objectCause = current as object;
-      if (seen.has(objectCause)) {
-        break;
-      }
+      if (seen.has(objectCause)) break;
       seen.add(objectCause);
     }
     current = nextCause(current);
@@ -135,18 +185,27 @@ export function redactBuilderEvaluationFailure(
       error_code: errorCode,
     });
   }
-  const validation = classifyOutputValidationFailure(cause);
   return builderEvaluationProviderFailureSchema.parse({
     scenario_id: scenarioId,
     error_code: errorCode,
-    ...validation,
+    ...classifyOutputValidationFailure(cause),
+  });
+}
+
+function redactBuilderReliabilityFailure(
+  cause: unknown,
+  scenarioId: BuilderEvaluationScenarioId,
+  repetition: 1 | 2 | 3,
+) {
+  return builderEvaluationReliabilityProviderFailureSchema.parse({
+    ...redactBuilderEvaluationFailure(cause, scenarioId),
+    repetition,
   });
 }
 
 function failureAccounting(cause: unknown): {
   inputTokens: number;
   outputTokens: number;
-  elapsedMs: number;
 } {
   if (
     typeof cause !== "object" ||
@@ -155,7 +214,7 @@ function failureAccounting(cause: unknown): {
     typeof cause.accounting !== "object" ||
     cause.accounting === null
   ) {
-    return { inputTokens: 0, outputTokens: 0, elapsedMs: 0 };
+    return { inputTokens: 0, outputTokens: 0 };
   }
   const accounting = cause.accounting as Record<string, unknown>;
   return {
@@ -163,8 +222,35 @@ function failureAccounting(cause: unknown): {
       typeof accounting.inputTokens === "number" ? accounting.inputTokens : 0,
     outputTokens:
       typeof accounting.outputTokens === "number" ? accounting.outputTokens : 0,
-    elapsedMs: 0,
   };
+}
+
+function estimatedCost(inputTokens: number, outputTokens: number): number {
+  return calculateAiTokenCostMicrousd({
+    inputTokens,
+    outputTokens,
+    inputMicrousdPerMillion:
+      openAiBuilderPlanningPolicy.inputMicrousdPerMillion,
+    outputMicrousdPerMillion:
+      openAiBuilderPlanningPolicy.outputMicrousdPerMillion,
+  });
+}
+
+function classifyFailedExecution(
+  cause: unknown,
+  totals: MutableGateTotals,
+): void {
+  const errorCode = safeExecutionErrorCode(cause);
+  if (errorCode !== "ai_output_invalid") {
+    totals.providerFailureCount += 1;
+    return;
+  }
+  const validation = classifyOutputValidationFailure(cause);
+  if (validation.validation_stage === "semantic") {
+    totals.semanticFailureCount += 1;
+  } else {
+    totals.structuralFailureCount += 1;
+  }
 }
 
 async function defaultLoadProductionExecution() {
@@ -179,96 +265,250 @@ async function defaultLoadProductionExecution() {
   });
 }
 
-export async function runLiveBuilderEvaluation(
-  environment: BuilderEvaluationEnvironment,
-  overrides: Partial<LiveEvaluationDependencies> = {},
-): Promise<LiveBuilderEvaluationResult> {
-  if (!liveBuilderEvaluationIsActivated(environment)) {
-    return Object.freeze({ ran: false, passed: false, reports: [] });
-  }
-
-  deriveBuilderEvaluationEnvelope();
-
-  const dependencies: LiveEvaluationDependencies = {
+function dependenciesFor(
+  overrides: Partial<LiveEvaluationDependencies>,
+): LiveEvaluationDependencies {
+  return {
     loadProductionExecution:
       overrides.loadProductionExecution ?? defaultLoadProductionExecution,
     now: overrides.now ?? (() => performance.now()),
     emit: overrides.emit ?? ((value) => console.log(JSON.stringify(value))),
   };
+}
+
+function newTotals(): MutableGateTotals {
+  return {
+    passedExecutions: 0,
+    failedExecutions: 0,
+    structuralFailureCount: 0,
+    semanticFailureCount: 0,
+    scenarioGateFailureCount: 0,
+    providerFailureCount: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    estimatedCostMicrousd: 0,
+    elapsedMs: 0,
+  };
+}
+
+function taskInputFor(scenarioId: BuilderEvaluationScenarioId) {
+  const scenario = builderEvaluationScenarios.find(
+    ({ id }) => id === scenarioId,
+  );
+  if (!scenario) throw new Error("The builder evaluation scenario is missing.");
+  return builderPlanTaskInputSchema.parse({
+    schema_version: 1,
+    owner_request: scenario.owner_request,
+    business_context: syntheticBusinessContext,
+  });
+}
+
+function updateTotalsForReport(
+  report: BuilderEvaluationReport,
+  totals: MutableGateTotals,
+): void {
+  totals.inputTokens += report.input_tokens;
+  totals.outputTokens += report.output_tokens;
+  totals.estimatedCostMicrousd += report.estimated_cost_microusd;
+  totals.elapsedMs += report.elapsed_ms;
+  if (report.passed) {
+    totals.passedExecutions += 1;
+  } else {
+    totals.failedExecutions += 1;
+    totals.scenarioGateFailureCount += 1;
+  }
+}
+
+function updateTotalsForFailure(
+  cause: unknown,
+  elapsedMs: number,
+  totals: MutableGateTotals,
+): void {
+  const accounting = failureAccounting(cause);
+  totals.failedExecutions += 1;
+  totals.inputTokens += accounting.inputTokens;
+  totals.outputTokens += accounting.outputTokens;
+  totals.estimatedCostMicrousd += estimatedCost(
+    accounting.inputTokens,
+    accounting.outputTokens,
+  );
+  totals.elapsedMs += elapsedMs;
+  classifyFailedExecution(cause, totals);
+}
+
+export async function runLiveBuilderTerraQualification(
+  environment: BuilderTerraQualificationEnvironment,
+  overrides: Partial<LiveEvaluationDependencies> = {},
+): Promise<LiveBuilderTerraQualificationResult> {
+  if (!liveBuilderTerraQualificationIsActivated(environment)) {
+    return Object.freeze({ ran: false, passed: false, reports: [] });
+  }
+
+  const envelope = deriveBuilderTerraQualificationEnvelope();
+  const dependencies = dependenciesFor(overrides);
   const execution = await dependencies.loadProductionExecution();
   const reports: BuilderEvaluationReport[] = [];
-  let failedScenarios = 0;
-  let totalInputTokens = 0;
-  let totalOutputTokens = 0;
-  let totalEstimatedCostMicrousd = 0;
-  let totalElapsedMs = 0;
+  const totals = newTotals();
 
   for (const scenario of builderEvaluationScenarios) {
     const startedAt = dependencies.now();
     try {
-      const input = builderPlanTaskInputSchema.parse({
-        schema_version: 1,
-        owner_request: scenario.owner_request,
-        business_context: (
-          await import("../../../evaluations/fixtures/synthetic-business-context")
-        ).syntheticBusinessContext,
-      });
-      const result = await execution.execute("builder_plan_v1", input);
-      const elapsedMs = Math.max(0, Math.round(dependencies.now() - startedAt));
-      const output = builderPlanOutputSchema.parse(
-        result.output,
-      ) as BuilderPlanOutput;
-      const report = evaluateBuilderPlan(scenario, output, {
-        attempts: result.accounting.attemptsStarted,
-        inputTokens: result.accounting.inputTokens,
-        outputTokens: result.accounting.outputTokens,
-        elapsedMs,
-      });
+      const result = await execution.execute(
+        "builder_plan_v1",
+        taskInputFor(scenario.id),
+      );
+      const report = evaluateBuilderPlan(
+        scenario,
+        builderPlanOutputSchema.parse(result.output) as BuilderPlanOutput,
+        {
+          attempts: result.accounting.attemptsStarted,
+          inputTokens: result.accounting.inputTokens,
+          outputTokens: result.accounting.outputTokens,
+          elapsedMs: Math.max(0, Math.round(dependencies.now() - startedAt)),
+        },
+      );
       reports.push(report);
+      updateTotalsForReport(report, totals);
       dependencies.emit(report);
-      if (!report.passed) failedScenarios += 1;
-      totalInputTokens += report.input_tokens;
-      totalOutputTokens += report.output_tokens;
-      totalEstimatedCostMicrousd += report.estimated_cost_microusd;
-      totalElapsedMs += report.elapsed_ms;
     } catch (cause) {
-      failedScenarios += 1;
       const elapsedMs = Math.max(0, Math.round(dependencies.now() - startedAt));
-      const accounting = failureAccounting(cause);
-      const estimatedCostMicrousd = calculateAiTokenCostMicrousd({
-        inputTokens: accounting.inputTokens,
-        outputTokens: accounting.outputTokens,
-        inputMicrousdPerMillion:
-          openAiBuilderPlanningPolicy.inputMicrousdPerMillion,
-        outputMicrousdPerMillion:
-          openAiBuilderPlanningPolicy.outputMicrousdPerMillion,
-      });
-      totalInputTokens += accounting.inputTokens;
-      totalOutputTokens += accounting.outputTokens;
-      totalEstimatedCostMicrousd += estimatedCostMicrousd;
-      totalElapsedMs += elapsedMs;
+      updateTotalsForFailure(cause, elapsedMs, totals);
       dependencies.emit(redactBuilderEvaluationFailure(cause, scenario.id));
     }
   }
 
   const aggregate = builderEvaluationAggregateSchema.parse({
-    model_key: openAiBuilderPlanningPolicy.modelKey,
-    total_scenarios: 8,
-    passed_scenarios: 8 - failedScenarios,
-    failed_scenarios: failedScenarios,
-    total_input_tokens: totalInputTokens,
-    total_output_tokens: totalOutputTokens,
-    total_estimated_cost_microusd: totalEstimatedCostMicrousd,
-    total_elapsed_ms: totalElapsedMs,
+    model_key: OPENAI_BUILDER_PLANNING_MODEL_KEY,
+    policy_key: BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+    reasoning_effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+    total_scenarios: BUILDER_TERRA_QUALIFICATION_SCENARIO_COUNT,
+    passed_scenarios: totals.passedExecutions,
+    failed_scenarios: totals.failedExecutions,
+    structural_failure_count: totals.structuralFailureCount,
+    semantic_failure_count: totals.semanticFailureCount,
+    scenario_gate_failure_count: totals.scenarioGateFailureCount,
+    provider_failure_count: totals.providerFailureCount,
+    total_input_tokens: totals.inputTokens,
+    total_output_tokens: totals.outputTokens,
+    total_estimated_cost_microusd: totals.estimatedCostMicrousd,
+    total_elapsed_ms: totals.elapsedMs,
   });
   dependencies.emit(aggregate);
 
   return Object.freeze({
     ran: true,
     passed:
-      failedScenarios === 0 &&
-      totalEstimatedCostMicrousd <=
-        deriveBuilderEvaluationEnvelope().hardCeilingMicrousd,
+      totals.passedExecutions === BUILDER_TERRA_QUALIFICATION_SCENARIO_COUNT &&
+      totals.failedExecutions === 0 &&
+      totals.estimatedCostMicrousd < envelope.hardCeilingMicrousd,
+    reports: Object.freeze(reports),
+  });
+}
+
+export async function runLiveBuilderTerraReliability(
+  environment: BuilderTerraReliabilityEnvironment,
+  overrides: Partial<LiveEvaluationDependencies> = {},
+): Promise<LiveBuilderTerraReliabilityResult> {
+  if (!liveBuilderTerraReliabilityIsActivated(environment)) {
+    return Object.freeze({ ran: false, passed: false, reports: [] });
+  }
+
+  const envelope = deriveBuilderTerraReliabilityEnvelope();
+  const dependencies = dependenciesFor(overrides);
+  const execution = await dependencies.loadProductionExecution();
+  const reports: BuilderEvaluationReliabilityReport[] = [];
+  const totals = newTotals();
+  const perScenarioPassCounts = new Map<BuilderEvaluationScenarioId, number>(
+    builderEvaluationScenarios.map(({ id }) => [id, 0]),
+  );
+
+  for (
+    let repetition = 1;
+    repetition <= BUILDER_TERRA_RELIABILITY_REPETITIONS;
+    repetition += 1
+  ) {
+    for (const scenario of builderEvaluationScenarios) {
+      const startedAt = dependencies.now();
+      try {
+        const result = await execution.execute(
+          "builder_plan_v1",
+          taskInputFor(scenario.id),
+        );
+        const report = builderEvaluationReliabilityReportSchema.parse({
+          ...evaluateBuilderPlan(
+            scenario,
+            builderPlanOutputSchema.parse(result.output) as BuilderPlanOutput,
+            {
+              attempts: result.accounting.attemptsStarted,
+              inputTokens: result.accounting.inputTokens,
+              outputTokens: result.accounting.outputTokens,
+              elapsedMs: Math.max(
+                0,
+                Math.round(dependencies.now() - startedAt),
+              ),
+            },
+          ),
+          repetition,
+        });
+        reports.push(report);
+        updateTotalsForReport(report, totals);
+        if (report.passed) {
+          perScenarioPassCounts.set(
+            scenario.id,
+            (perScenarioPassCounts.get(scenario.id) ?? 0) + 1,
+          );
+        }
+        dependencies.emit(report);
+      } catch (cause) {
+        const elapsedMs = Math.max(
+          0,
+          Math.round(dependencies.now() - startedAt),
+        );
+        updateTotalsForFailure(cause, elapsedMs, totals);
+        dependencies.emit(
+          redactBuilderReliabilityFailure(
+            cause,
+            scenario.id,
+            repetition as 1 | 2 | 3,
+          ),
+        );
+      }
+    }
+  }
+
+  const aggregate = builderEvaluationReliabilityAggregateSchema.parse({
+    model_key: OPENAI_BUILDER_PLANNING_MODEL_KEY,
+    policy_key: BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+    reasoning_effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+    total_scenarios: BUILDER_TERRA_QUALIFICATION_SCENARIO_COUNT,
+    repetitions_per_scenario: BUILDER_TERRA_RELIABILITY_REPETITIONS,
+    total_executions: BUILDER_TERRA_RELIABILITY_TOTAL_EXECUTIONS,
+    passed_executions: totals.passedExecutions,
+    failed_executions: totals.failedExecutions,
+    structural_failure_count: totals.structuralFailureCount,
+    semantic_failure_count: totals.semanticFailureCount,
+    scenario_gate_failure_count: totals.scenarioGateFailureCount,
+    provider_failure_count: totals.providerFailureCount,
+    total_input_tokens: totals.inputTokens,
+    total_output_tokens: totals.outputTokens,
+    total_estimated_cost_microusd: totals.estimatedCostMicrousd,
+    total_elapsed_ms: totals.elapsedMs,
+    per_scenario_pass_counts: builderEvaluationScenarios.map(({ id }) => ({
+      scenario_id: id,
+      passed_count: perScenarioPassCounts.get(id) ?? 0,
+    })),
+  });
+  dependencies.emit(aggregate);
+
+  return Object.freeze({
+    ran: true,
+    passed:
+      totals.passedExecutions === BUILDER_TERRA_RELIABILITY_TOTAL_EXECUTIONS &&
+      totals.failedExecutions === 0 &&
+      [...perScenarioPassCounts.values()].every(
+        (count) => count === BUILDER_TERRA_RELIABILITY_REPETITIONS,
+      ) &&
+      totals.estimatedCostMicrousd < envelope.hardCeilingMicrousd,
     reports: Object.freeze(reports),
   });
 }

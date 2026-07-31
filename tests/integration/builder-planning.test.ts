@@ -33,6 +33,7 @@ import {
   type OpenAiResponsesClient,
 } from "../../src/ai/providers/openai";
 import { aiExecutionPolicies, registeredAiTasks } from "../../src/ai/registry";
+import { BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY } from "../../src/ai/policies";
 import {
   loadAuthoritativeAiBusinessContext,
   type AuthoritativeAiBusinessContext,
@@ -225,7 +226,8 @@ function planningWithProvider(
   const execution = createAiExecutionService({
     tasks: registeredAiTasks,
     policies: {
-      builder_planning_v1: aiExecutionPolicies.builder_planning_v1,
+      [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]:
+        aiExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
     },
     providers: {
       disabled: { key: "disabled", generateStructured },
@@ -245,12 +247,12 @@ function planningWithOpenAiClient(client: OpenAiResponsesClient) {
   const execution = createAiExecutionService({
     tasks: registeredAiTasks,
     policies: {
-      builder_planning_v1: {
-        ...aiExecutionPolicies.builder_planning_v1,
+      [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: {
+        ...aiExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
         providerKey: "openai",
         modelKey: OPENAI_MODEL_KEY,
-        inputMicrousdPerMillion: 750_000,
-        outputMicrousdPerMillion: 4_500_000,
+        inputMicrousdPerMillion: 2_500_000,
+        outputMicrousdPerMillion: 15_000_000,
       },
     },
     providers: {
@@ -521,7 +523,7 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
       expect(rows[0]).toMatchObject({
         status: "succeeded",
         task_key: "builder_plan_v1",
-        policy_key: "builder_planning_v1",
+        policy_key: "builder_planning_terra_medium_v1",
         actual_input_tokens: "120",
         actual_output_tokens: "40",
       });
@@ -556,11 +558,11 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
         model_key: OPENAI_MODEL_KEY,
         reserved_input_tokens: "128000",
         reserved_output_tokens: "8192",
-        reserved_cost_microusd: "132864",
+        reserved_cost_microusd: "442880",
         actual_input_tokens: "120",
         actual_output_tokens: "40",
-        actual_cost_microusd: "270",
-        charged_cost_microusd: "270",
+        actual_cost_microusd: "900",
+        charged_cost_microusd: "900",
       }),
     ]);
   });
@@ -619,7 +621,7 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
           provider_key: "openai",
           actual_input_tokens: "120",
           actual_output_tokens: "40",
-          charged_cost_microusd: "270",
+          charged_cost_microusd: "900",
         }),
       ]);
       expect(JSON.stringify(await executionRows())).not.toContain(
@@ -672,7 +674,7 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
       expect.objectContaining({
         status: "succeeded",
         task_key: "builder_plan_v1",
-        policy_key: "builder_planning_v1",
+        policy_key: "builder_planning_terra_medium_v1",
         actual_input_tokens: "95",
         actual_output_tokens: "24",
       }),

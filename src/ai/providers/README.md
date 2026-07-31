@@ -21,8 +21,11 @@ pricing, reservation and durable audit remain in the separate server-only
 accounting/orchestration layer. Providers receive none of those concerns, and
 arbitrary provider metadata is not persisted.
 
-`builder_plan_v1` uses the fixed `gpt-5.4-mini-2026-03-17` model in OpenAI
-mode. The OpenAI runtime also retains the disabled provider for
+`builder_plan_v1` uses the fixed code-owned `gpt-5.6-terra` alias in OpenAI
+mode with explicit, non-overridable `reasoning: { effort: "medium" }`. The
+alias may advance independently, so its live qualification must be rerun after
+a material alias advance or a change to the execution/planning subject. The
+OpenAI runtime also retains the disabled provider for
 `contract_probe_v1`, so deliberately unavailable tasks return controlled
 `ai_disabled` rather than failing on a missing registry entry. Production
 runtime construction validates every registered task → policy → provider
@@ -37,7 +40,8 @@ authoritative. Unsafe schemas fail before an
 SDK request.
 
 Responses receive one server instruction and one deterministically serialized
-user input, `store: false`, the fixed output limit and abort signal. They
+user input, `store: false`, the fixed output limit, `medium` reasoning and an
+abort signal. They
 receive no tools, previous response, conversation, background mode, arbitrary
 metadata, identity, headers or endpoint. SMBOS stores no request or response.
 The SDK client is explicitly constructed with `logLevel: "off"`; ambient
@@ -53,16 +57,18 @@ Only rate limits and transient network/5xx failures use the bounded execution
 retry policy. Reported usage is retained on failures; raw content and SDK
 errors never enter public errors or audit.
 
-The Phase 4B live planning evaluation uses this same production adapter,
-registered task and fixed policy without a second prompt, schema, model or
-provider implementation. It is a separate sequential engineering command and
-requires `RUN_LIVE_OPENAI_EVAL=1`, `AI_PROVIDER=openai` and a non-blank
-server-only `OPENAI_API_KEY`. Missing any gate constructs no provider and makes
-no request. Normal tests use injected providers; CI, builds and demo seed never
-run the external command.
+Phase 4C has two separate sequential engineering gates over this same
+production adapter, task and policy. Qualification requires
+`RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1`; repeated reliability requires
+`RUN_LIVE_OPENAI_TERRA_RELIABILITY=1`; each also requires
+`AI_PROVIDER=openai` and a non-blank server-only `OPENAI_API_KEY`. Neither the
+other gate nor the historical `RUN_LIVE_OPENAI_EVAL` variable activates a
+request. Normal tests use injected providers; CI, builds and demo seed never
+run either external gate.
 
 Only bounded evaluation metadata may be printed. Request text, Business
-context, Location references, model prose, provider bodies/IDs and credentials
-are neither printed nor persisted. Eight scenarios have a fixed aggregate
-maximum reservation of 1,062,912 microusd and a code-owned 1,100,000 microusd
-hard ceiling.
+context, Location references, model prose, provider bodies/IDs, reasoning
+content and credentials are neither printed nor persisted. Qualification has a
+fixed aggregate maximum reservation of 3,543,040 microusd and a code-owned
+3,700,000 microusd hard ceiling; repeated reliability has 24 executions, a
+10,629,120 microusd maximum and an 11,000,000 microusd ceiling.

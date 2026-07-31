@@ -10,16 +10,16 @@ vi.mock("server-only", () => ({}));
 import { deriveAiReservationEnvelope } from "../src/ai/accounting/cost";
 import type { StructuredAiProviderRequest } from "../src/ai/contracts";
 import {
-  BUILDER_EVALUATION_EXPECTED_AGGREGATE_MAX_MICROUSD,
-  BUILDER_EVALUATION_HARD_CEILING_MICROUSD,
-  BUILDER_EVALUATION_SCENARIO_COUNT,
-  deriveBuilderEvaluationEnvelope,
+  BUILDER_TERRA_QUALIFICATION_EXPECTED_AGGREGATE_MAX_MICROUSD,
+  BUILDER_TERRA_QUALIFICATION_HARD_CEILING_MICROUSD,
+  BUILDER_TERRA_QUALIFICATION_SCENARIO_COUNT,
+  deriveBuilderTerraQualificationEnvelope,
 } from "../src/ai/evaluation/envelope";
 import { evaluateBuilderPlan } from "../src/ai/evaluation/evaluator";
 import {
-  liveBuilderEvaluationIsActivated,
+  liveBuilderTerraQualificationIsActivated,
   redactBuilderEvaluationFailure,
-  runLiveBuilderEvaluation,
+  runLiveBuilderTerraQualification,
 } from "../src/ai/evaluation/live";
 import { builderEvaluationScenarios } from "../src/ai/evaluation/scenarios";
 import {
@@ -31,7 +31,10 @@ import {
 } from "../src/ai/evaluation/schemas";
 import { AiExecutionError } from "../src/ai/errors";
 import { createAiExecutionService } from "../src/ai/execution";
-import { openAiBuilderPlanningPolicy } from "../src/ai/policies";
+import {
+  BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+  openAiBuilderPlanningPolicy,
+} from "../src/ai/policies";
 import { BuilderPlanValidationError } from "../src/ai/planning/diagnostics";
 import {
   builderPlanOutputSchema,
@@ -203,7 +206,9 @@ function taskInputFor(scenarioId: BuilderEvaluationScenarioId) {
 function fakeExecutionService(outputs = compliantOutputs) {
   return createAiExecutionService({
     tasks: { builder_plan_v1: builderPlanTaskV1 },
-    policies: { builder_planning_v1: openAiBuilderPlanningPolicy },
+    policies: {
+      [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
+    },
     providers: {
       openai: {
         key: "openai",
@@ -227,7 +232,7 @@ function fakeExecutionService(outputs = compliantOutputs) {
 describe("bounded builder evaluation definitions", () => {
   it("defines exactly eight unique strict scenarios", () => {
     expect(builderEvaluationScenarios).toHaveLength(8);
-    expect(BUILDER_EVALUATION_SCENARIO_COUNT).toBe(8);
+    expect(BUILDER_TERRA_QUALIFICATION_SCENARIO_COUNT).toBe(8);
     expect(new Set(builderEvaluationScenarios.map(({ id }) => id)).size).toBe(
       8,
     );
@@ -272,16 +277,16 @@ describe("bounded builder evaluation definitions", () => {
     const perScenario = deriveAiReservationEnvelope(
       openAiBuilderPlanningPolicy,
     ).reservedCostMicrousd;
-    const envelope = deriveBuilderEvaluationEnvelope();
-    expect(perScenario).toBe(132_864);
-    expect(envelope.aggregateMicrousd).toBe(1_062_912);
+    const envelope = deriveBuilderTerraQualificationEnvelope();
+    expect(perScenario).toBe(442_880);
+    expect(envelope.aggregateMicrousd).toBe(3_543_040);
     expect(envelope.aggregateMicrousd).toBe(
-      BUILDER_EVALUATION_EXPECTED_AGGREGATE_MAX_MICROUSD,
+      BUILDER_TERRA_QUALIFICATION_EXPECTED_AGGREGATE_MAX_MICROUSD,
     );
     expect(envelope.hardCeilingMicrousd).toBe(
-      BUILDER_EVALUATION_HARD_CEILING_MICROUSD,
+      BUILDER_TERRA_QUALIFICATION_HARD_CEILING_MICROUSD,
     );
-    expect(envelope.hardCeilingMicrousd).toBe(1_100_000);
+    expect(envelope.hardCeilingMicrousd).toBe(3_700_000);
   });
 });
 
@@ -572,20 +577,27 @@ describe("live activation, redaction, and source isolation", () => {
         OPENAI_API_KEY: "synthetic-key",
       },
       {
-        RUN_LIVE_OPENAI_EVAL: "1",
+        RUN_LIVE_OPENAI_TERRA_QUALIFICATION: "1",
         AI_PROVIDER: "disabled",
         OPENAI_API_KEY: "synthetic-key",
       },
       {
-        RUN_LIVE_OPENAI_EVAL: "1",
+        RUN_LIVE_OPENAI_TERRA_QUALIFICATION: "1",
         AI_PROVIDER: "openai",
         OPENAI_API_KEY: " ",
       },
+      {
+        RUN_LIVE_OPENAI_EVAL: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      },
     ];
     for (const environment of environments) {
-      expect(liveBuilderEvaluationIsActivated(environment)).toBe(false);
+      expect(liveBuilderTerraQualificationIsActivated(environment)).toBe(false);
       await expect(
-        runLiveBuilderEvaluation(environment, { loadProductionExecution }),
+        runLiveBuilderTerraQualification(environment, {
+          loadProductionExecution,
+        }),
       ).resolves.toMatchObject({ ran: false });
     }
     expect(loadProductionExecution).not.toHaveBeenCalled();
@@ -672,7 +684,11 @@ describe("live activation, redaction, and source isolation", () => {
 
   it("uses a scenario-free bounded setup-failure envelope", () => {
     const liveScript = fs.readFileSync(
-      path.join(repositoryRoot, "evaluations", "builder-planning.live.eval.ts"),
+      path.join(
+        repositoryRoot,
+        "evaluations",
+        "builder-planning.terra-qualification.live.eval.ts",
+      ),
       "utf8",
     );
     expect(liveScript).toContain("evaluation_error_code");
@@ -686,9 +702,9 @@ describe("live activation, redaction, and source isolation", () => {
     const emitted: unknown[] = [];
     const rawProviderData = "raw-provider-body-marker";
     const key = "synthetic-server-key-marker";
-    await runLiveBuilderEvaluation(
+    await runLiveBuilderTerraQualification(
       {
-        RUN_LIVE_OPENAI_EVAL: "1",
+        RUN_LIVE_OPENAI_TERRA_QUALIFICATION: "1",
         AI_PROVIDER: "openai",
         OPENAI_API_KEY: key,
       },

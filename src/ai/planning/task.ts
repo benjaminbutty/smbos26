@@ -1,4 +1,5 @@
 import type { RegisteredAiTask } from "../contracts";
+import { BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY } from "../policies";
 import { builderPlanOutputSchema, builderPlanTaskInputSchema } from "./schemas";
 import { validateBuilderPlanOutput } from "./validation";
 
@@ -43,7 +44,7 @@ export const builderPlanTaskV1 = Object.freeze({
   key: "builder_plan_v1",
   version: 1,
   purposeLabel: "Plan a bounded Business request",
-  policyKey: "builder_planning_v1",
+  policyKey: BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   inputSchema: builderPlanTaskInputSchema,
   outputSchema: builderPlanOutputSchema,
   buildInstruction: () => BUILDER_PLANNING_INSTRUCTION,

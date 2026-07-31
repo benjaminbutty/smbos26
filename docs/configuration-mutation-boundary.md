@@ -198,6 +198,20 @@ tests keep evaluation code out of application routes, Server Actions and
 client modules. The harness prints only bounded redacted metadata and persists
 no result; public errors and accounting remain unchanged.
 
+Milestone 6 Phase 4C replaces only the trusted execution profile with the
+code-owned `gpt-5.6-terra` alias, explicit medium reasoning and
+`builder_planning_terra_medium_v1` audit-policy identity. Planning instruction,
+schemas, semantic validation, diagnostics, synthetic context, owner requests
+and deterministic gates remain frozen. The two engineering-only live gates use
+only synthetic in-memory configuration and the existing provider-neutral
+execution core; they import no database client, accounting/orchestration,
+configuration or operational service, and create no tenant state. They have no
+route, Server Action, UI or client import. Their bounded redacted output is
+ephemeral and includes no request/context/plan/reasoning content. The first
+eight-call qualification and deliberate three-round reliability gate are not
+configuration mutations; operation generation remains blocked until reviewed
+24/24 reliability evidence exists.
+
 ## Phase 5A read authorization
 
 The Changes and Version history routes resolve the immutable Business slug

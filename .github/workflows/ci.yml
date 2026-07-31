@@ -73,6 +73,15 @@ jobs:
       - name: Run bounded builder planning evaluation tests
         run: npm run test:builder-evaluation
 
+      - name: Run Terra medium provider profile tests
+        run: npm run test:terra-provider-profile
+
+      - name: Run Terra medium qualification gate tests
+        run: npm run test:builder-terra-qualification
+
+      - name: Run Terra medium reliability gate tests
+        run: npm run test:builder-terra-reliability
+
       - name: Reset after builder planning acceptance
         run: npm run supabase:reset
 

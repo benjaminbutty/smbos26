@@ -9,6 +9,7 @@ import type {
   StructuredAiProviderRegistry,
 } from "./contracts";
 import {
+  BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderPlanningPolicy,
 } from "./policies";
@@ -55,7 +56,7 @@ export interface ProductionAiRuntime {
   tasks: typeof allRegisteredAiTasks;
   policies: Readonly<{
     bounded_structured_v1: AiExecutionPolicy;
-    builder_planning_v1: AiExecutionPolicy;
+    builder_planning_terra_medium_v1: AiExecutionPolicy;
   }>;
   providers: StructuredAiProviderRegistry;
 }
@@ -140,7 +141,7 @@ export function createProductionAiRuntime(
     tasks: allRegisteredAiTasks,
     policies: Object.freeze({
       bounded_structured_v1: disabledExecutionPolicies.bounded_structured_v1,
-      builder_planning_v1: openAiBuilderPlanningPolicy,
+      [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
     }),
     providers: Object.freeze({
       disabled: Object.freeze(new DisabledStructuredAiProvider()),

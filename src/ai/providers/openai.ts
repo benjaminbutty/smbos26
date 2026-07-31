@@ -9,7 +9,10 @@ import {
   type StructuredAiProviderResponse,
   type StructuredAiUsage,
 } from "../contracts";
-import { OPENAI_BUILDER_PLANNING_MODEL_KEY } from "../policies";
+import {
+  OPENAI_BUILDER_PLANNING_MODEL_KEY,
+  OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+} from "../policies";
 import {
   adaptRegisteredSchemaForOpenAi,
   OpenAiSchemaAdaptationError,
@@ -273,6 +276,9 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
         ]),
         max_output_tokens: request.maxOutputTokens,
         store: false,
+        reasoning: Object.freeze({
+          effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+        }),
         text: Object.freeze({
           format: Object.freeze({
             type: "json_schema",

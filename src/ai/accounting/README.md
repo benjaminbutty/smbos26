@@ -29,10 +29,13 @@ valid execution settles before the planning service performs its final context
 comparison. If context changed during execution, usage remains recorded even
 though the stale plan is discarded and never returned as current.
 
-In Phase 4A OpenAI planning reserves 128,000 input and 8,192 output tokens
-across two attempts at code-owned rates of 750,000 and 4,500,000 microusd per
-million tokens. Integer ceiling arithmetic yields an exact worst-case
-reservation of 132,864 microusd. All reported input tokens use the standard
-rate; cached-token discounts are not applied. Refusal and incomplete responses
-settle failed with reported usage, while missing usage remains conservatively
-charged.
+In Phase 4C OpenAI planning reserves 128,000 input and 8,192 output tokens
+across two attempts at code-owned rates of 2,500,000 and 15,000,000 microusd
+per million tokens. Integer ceiling arithmetic yields an exact worst-case
+reservation of 442,880 microusd, which remains within the 5,000,000 microusd
+default Business daily cost limit. All reported input tokens use the standard
+rate; cached-token discounts are not applied. Provider output tokens, including
+any reported reasoning-token contribution, use the standard output rate.
+Reasoning content is neither requested nor persisted. Refusal and incomplete
+responses settle failed with reported usage, while missing usage remains
+conservatively charged.
