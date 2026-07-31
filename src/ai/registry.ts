@@ -104,6 +104,50 @@ export class AiRuntimeConfigurationError extends Error {
   }
 }
 
+function validateProductionAiRuntime(
+  runtime: ProductionAiRuntime,
+): ProductionAiRuntime {
+  try {
+    for (const [providerRegistryKey, provider] of Object.entries(
+      runtime.providers,
+    )) {
+      if (providerRegistryKey !== provider.key) {
+        throw new Error("The production AI provider identity is invalid.");
+      }
+    }
+
+    for (const [policyRegistryKey, policy] of Object.entries(
+      runtime.policies,
+    )) {
+      if (policyRegistryKey !== policy.key) {
+        throw new Error("The production AI policy identity is invalid.");
+      }
+      const provider = runtime.providers[policy.providerKey];
+      if (!provider || provider.key !== policy.providerKey) {
+        throw new Error("The production AI policy provider is unavailable.");
+      }
+    }
+
+    for (const [taskRegistryKey, task] of Object.entries(runtime.tasks)) {
+      if (taskRegistryKey !== task.key) {
+        throw new Error("The production AI task identity is invalid.");
+      }
+      const policy = runtime.policies[task.policyKey];
+      if (!policy || policy.key !== task.policyKey) {
+        throw new Error("The production AI task policy is unavailable.");
+      }
+      const provider = runtime.providers[policy.providerKey];
+      if (!provider || provider.key !== policy.providerKey) {
+        throw new Error("The production AI task provider is unavailable.");
+      }
+    }
+  } catch {
+    throw new AiRuntimeConfigurationError();
+  }
+
+  return Object.freeze(runtime);
+}
+
 function openAiBuilderPolicy() {
   return Object.freeze({
     ...disabledExecutionPolicies.builder_planning_v1,
@@ -120,7 +164,7 @@ export function createProductionAiRuntime(
 ): ProductionAiRuntime {
   const providerMode = serverEnvironment.AI_PROVIDER?.trim() || "disabled";
   if (providerMode === "disabled") {
-    return Object.freeze({
+    return validateProductionAiRuntime({
       tasks: allRegisteredAiTasks,
       policies: disabledExecutionPolicies,
       providers: Object.freeze({
@@ -139,13 +183,14 @@ export function createProductionAiRuntime(
     overrides.createOpenAiProvider ??
     ((trustedApiKey: string) =>
       new OpenAiResponsesStructuredProvider({ apiKey: trustedApiKey }));
-  return Object.freeze({
+  return validateProductionAiRuntime({
     tasks: allRegisteredAiTasks,
     policies: Object.freeze({
       bounded_structured_v1: disabledExecutionPolicies.bounded_structured_v1,
       builder_planning_v1: openAiBuilderPolicy(),
     }),
     providers: Object.freeze({
+      disabled: Object.freeze(new DisabledStructuredAiProvider()),
       openai: Object.freeze(createOpenAiProvider(apiKey)),
     }),
   });

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 vi.mock("server-only", () => ({}));
@@ -15,10 +15,13 @@ import {
 import { AiExecutionError } from "../src/ai/errors";
 import { builderPlanTaskV1 } from "../src/ai/planning/task";
 import {
+  createOpenAiResponsesClient,
   OPENAI_MODEL_KEY,
   OpenAiResponsesStructuredProvider,
   serializeOpenAiStructuredInput,
   type OpenAiResponsesClient,
+  type OpenAiSdkClientConstructor,
+  type OpenAiSdkClientOptions,
 } from "../src/ai/providers/openai";
 import {
   adaptRegisteredSchemaForOpenAi,
@@ -28,11 +31,17 @@ import {
   AiRuntimeConfigurationError,
   createProductionAiRuntime,
 } from "../src/ai/registry";
+import { createAiExecutionService } from "../src/ai/execution";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 const simpleOutputSchema = {
   type: "object",
@@ -201,6 +210,90 @@ describe("OpenAI strict schema adaptation", () => {
 });
 
 describe("OpenAI Responses structured provider", () => {
+  it("constructs the actual SDK boundary with logging forced off", () => {
+    vi.stubEnv("OPENAI_LOG", "debug");
+    let receivedOptions: OpenAiSdkClientOptions | undefined;
+    class CapturingOpenAiClient {
+      readonly responses = { create: vi.fn() };
+
+      constructor(options: OpenAiSdkClientOptions) {
+        receivedOptions = options;
+      }
+    }
+
+    createOpenAiResponsesClient(
+      "synthetic-test-value",
+      CapturingOpenAiClient as OpenAiSdkClientConstructor,
+    );
+
+    expect(receivedOptions).toEqual({
+      apiKey: "synthetic-test-value",
+      baseURL: "https://api.openai.com/v1",
+      maxRetries: 0,
+      organization: null,
+      project: null,
+      logLevel: "off",
+    });
+    expect(receivedOptions).not.toHaveProperty("logger");
+  });
+
+  it("overrides ambient OPENAI_LOG and sends no payload markers to the SDK logger", async () => {
+    vi.stubEnv("OPENAI_LOG", "debug");
+    const ownerMarker = "owner-request-must-not-be-logged";
+    const contextMarker = "business-context-must-not-be-logged";
+    const responseMarker = "model-response-must-not-be-logged";
+    const loggerSpies = [
+      vi.spyOn(console, "debug").mockImplementation(() => {}),
+      vi.spyOn(console, "info").mockImplementation(() => {}),
+      vi.spyOn(console, "warn").mockImplementation(() => {}),
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+    ];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify(
+          completedResponse({
+            summary: responseMarker,
+          }),
+        ),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    const provider = new OpenAiResponsesStructuredProvider({
+      apiKey: "synthetic-test-value",
+    });
+
+    await expect(
+      provider.generateStructured({
+        ...request({
+          instruction: ownerMarker,
+          input: {
+            business_summary: contextMarker,
+            business_settings: { logLevel: "debug" },
+            task_input: { OPENAI_LOG: "debug" },
+          },
+        }),
+        logLevel: "debug",
+        logger: console,
+      } as StructuredAiProviderRequest & {
+        logLevel: string;
+        logger: Console;
+      }),
+    ).resolves.toMatchObject({
+      output: { summary: responseMarker },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    for (const loggerSpy of loggerSpies) {
+      expect(loggerSpy).not.toHaveBeenCalled();
+      expect(JSON.stringify(loggerSpy.mock.calls)).not.toMatch(
+        new RegExp(`${ownerMarker}|${contextMarker}|${responseMarker}`),
+      );
+    }
+  });
+
   it("sends a fixed, stateless, tool-free request and forwards the AbortSignal", async () => {
     const { client, create } = clientReturning(
       completedResponse({ summary: "Ready" }),
@@ -432,7 +525,7 @@ describe("server-owned OpenAI runtime and pricing", () => {
     }
   });
 
-  it("constructs only the fixed OpenAI provider, model, policy, and pricing", () => {
+  it("constructs the complete fixed provider registry, model, policy, and pricing", () => {
     const provider = {
       key: "openai",
       generateStructured: vi.fn(),
@@ -447,7 +540,12 @@ describe("server-owned OpenAI runtime and pricing", () => {
     );
 
     expect(createOpenAiProvider).toHaveBeenCalledWith("synthetic-test-value");
-    expect(runtime.providers).toEqual({ openai: provider });
+    expect(Object.keys(runtime.providers).toSorted()).toEqual([
+      "disabled",
+      "openai",
+    ]);
+    expect(runtime.providers.openai).toBe(provider);
+    expect(runtime.providers.disabled?.key).toBe("disabled");
     expect(runtime.policies.builder_planning_v1).toMatchObject({
       providerKey: "openai",
       modelKey: OPENAI_MODEL_KEY,
@@ -471,6 +569,111 @@ describe("server-owned OpenAI runtime and pricing", () => {
       inputMicrousdPerMillion: 750_000,
       outputMicrousdPerMillion: 4_500_000,
     });
+  });
+
+  it("ignores non-allow-listed runtime input and ambient logging configuration", () => {
+    vi.stubEnv("OPENAI_LOG", "debug");
+    const createOpenAiProvider = vi.fn().mockReturnValue({
+      key: "openai",
+      generateStructured: vi.fn(),
+    });
+
+    createProductionAiRuntime(
+      {
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-test-value",
+        OPENAI_LOG: "debug",
+        logLevel: "debug",
+        business_ai_settings: { logLevel: "debug" },
+      } as {
+        AI_PROVIDER: string;
+        OPENAI_API_KEY: string;
+        OPENAI_LOG: string;
+        logLevel: string;
+        business_ai_settings: { logLevel: string };
+      },
+      { createOpenAiProvider },
+    );
+
+    expect(createOpenAiProvider).toHaveBeenCalledWith("synthetic-test-value");
+    expect(createOpenAiProvider).not.toHaveBeenCalledWith(
+      "synthetic-test-value",
+      expect.anything(),
+    );
+  });
+
+  it("validates every production task-policy-provider chain before returning", () => {
+    for (const environment of [
+      {},
+      {
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-test-value",
+      },
+    ]) {
+      const runtime = createProductionAiRuntime(environment, {
+        createOpenAiProvider: () => ({
+          key: "openai",
+          generateStructured: vi.fn(),
+        }),
+      });
+      for (const [taskKey, task] of Object.entries(runtime.tasks)) {
+        expect(task.key).toBe(taskKey);
+        const policy = runtime.policies[task.policyKey];
+        expect(policy?.key).toBe(task.policyKey);
+        const provider = policy
+          ? runtime.providers[policy.providerKey]
+          : undefined;
+        expect(provider?.key).toBe(policy?.providerKey);
+      }
+    }
+  });
+
+  it("rejects an incomplete injected production runtime during construction", () => {
+    expect(() =>
+      createProductionAiRuntime(
+        {
+          AI_PROVIDER: "openai",
+          OPENAI_API_KEY: "synthetic-test-value",
+        },
+        {
+          createOpenAiProvider: () => ({
+            key: "wrong-provider-key",
+            generateStructured: vi.fn(),
+          }),
+        },
+      ),
+    ).toThrow(AiRuntimeConfigurationError);
+  });
+
+  it("keeps the contract probe controlled-disabled in OpenAI mode", async () => {
+    const openAiInvocation = vi.fn();
+    const runtime = createProductionAiRuntime(
+      {
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-test-value",
+      },
+      {
+        createOpenAiProvider: () => ({
+          key: "openai",
+          generateStructured: openAiInvocation,
+        }),
+      },
+    );
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("No external request is permitted."));
+    const execution = createAiExecutionService({
+      tasks: runtime.tasks,
+      policies: runtime.policies,
+      providers: runtime.providers,
+      sleep: async () => {},
+    });
+
+    await expect(
+      execution.execute("contract_probe_v1", { subject: "Readiness" }),
+    ).rejects.toMatchObject({ code: "ai_disabled" });
+    expect(openAiInvocation).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("keeps server configuration and SDK use out of client and non-provider source", () => {
@@ -501,6 +704,7 @@ describe("server-owned OpenAI runtime and pricing", () => {
 
     expect(sdkImports).toEqual(["ai/providers/openai.ts"]);
     expect(clientSource).not.toMatch(/OPENAI_API_KEY|AI_PROVIDER/);
+    expect(clientSource).not.toMatch(/OPENAI_LOG|logLevel/);
     expect(envExample).toContain("AI_PROVIDER=");
     expect(envExample).toContain("OPENAI_API_KEY=");
     expect(envExample).not.toMatch(/OPENAI_API_KEY=.+/);

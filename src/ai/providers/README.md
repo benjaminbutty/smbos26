@@ -22,7 +22,12 @@ accounting/orchestration layer. Providers receive none of those concerns, and
 arbitrary provider metadata is not persisted.
 
 `builder_plan_v1` uses the fixed `gpt-5.4-mini-2026-03-17` model in OpenAI
-mode. Its response format is a strict deterministic JSON Schema adaptation
+mode. The OpenAI runtime also retains the disabled provider for
+`contract_probe_v1`, so deliberately unavailable tasks return controlled
+`ai_disabled` rather than failing on a missing registry entry. Production
+runtime construction validates every registered task → policy → provider
+identity and reference before returning. Its response format is a strict
+deterministic JSON Schema adaptation
 wrapped under one required `result` property and unwrapped before registered
 Zod and semantic validation. Object properties remain required and reject
 extras; `oneOf` is explicitly converted to `anyOf`; only the provider-owned
@@ -35,6 +40,9 @@ Responses receive one server instruction and one deterministically serialized
 user input, `store: false`, the fixed output limit and abort signal. They
 receive no tools, previous response, conversation, background mode, arbitrary
 metadata, identity, headers or endpoint. SMBOS stores no request or response.
+The SDK client is explicitly constructed with `logLevel: "off"`; ambient
+`OPENAI_LOG` values cannot enable SDK request or response payload logging for
+SMBOS calls.
 `store: false` disables Responses application-state storage for this request;
 it does not assert Zero Data Retention. Provider abuse-monitoring and
 organization retention depend on account controls and must be reviewed before

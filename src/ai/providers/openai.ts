@@ -27,6 +27,35 @@ export interface OpenAiResponsesClient {
   };
 }
 
+export interface OpenAiSdkClientOptions {
+  apiKey: string;
+  baseURL: typeof OPENAI_API_BASE_URL;
+  maxRetries: 0;
+  organization: null;
+  project: null;
+  logLevel: "off";
+}
+
+export type OpenAiSdkClientConstructor = new (
+  options: OpenAiSdkClientOptions,
+) => OpenAiResponsesClient;
+
+export function createOpenAiResponsesClient(
+  apiKey: string,
+  ClientConstructor: OpenAiSdkClientConstructor = OpenAI as unknown as OpenAiSdkClientConstructor,
+): OpenAiResponsesClient {
+  return new ClientConstructor(
+    Object.freeze({
+      apiKey,
+      baseURL: OPENAI_API_BASE_URL,
+      maxRetries: 0,
+      organization: null,
+      project: null,
+      logLevel: "off",
+    }),
+  );
+}
+
 function stableJsonValue(value: unknown): unknown {
   if (
     value === null ||
@@ -211,13 +240,7 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
     if (!input.apiKey) {
       throw new Error("The OpenAI provider configuration is incomplete.");
     }
-    this.#client = new OpenAI({
-      apiKey: input.apiKey,
-      baseURL: OPENAI_API_BASE_URL,
-      maxRetries: 0,
-      organization: null,
-      project: null,
-    }) as unknown as OpenAiResponsesClient;
+    this.#client = createOpenAiResponsesClient(input.apiKey);
   }
 
   async generateStructured(

@@ -1445,7 +1445,9 @@ organization from repository code.
 
 - OpenAI Responses is the first and only external adapter behind the existing
   provider-neutral `StructuredAiProvider` interface. The official server SDK
-  is pinned. No browser module imports it.
+  is pinned and constructed with `logLevel: "off"`. Ambient `OPENAI_LOG`
+  values cannot enable SDK request or response payload logging for SMBOS
+  calls. No browser module imports it.
 - External execution is disabled when `AI_PROVIDER` is missing, blank or
   `disabled`. The only other accepted mode is `openai`, which requires
   `OPENAI_API_KEY` in server-only runtime code. The API key never enters the
@@ -1455,9 +1457,13 @@ organization from repository code.
   gates. A disabled Business fails before reservation and provider invocation.
 - Provider, API endpoint, model, instruction, reasoning behavior, storage,
   schema, token bounds, timeout, attempts and pricing are code-owned. OpenAI
-  mode registers only `gpt-5.4-mini-2026-03-17` for
-  `builder_planning_v1`; future providers/models require new reviewed registry
-  entries.
+  mode routes `builder_planning_v1` only to
+  `gpt-5.4-mini-2026-03-17`; future providers/models require new reviewed
+  registry entries. The disabled provider remains registered alongside
+  OpenAI so `contract_probe_v1` returns controlled `ai_disabled` without an
+  external request. Production runtime construction validates every complete
+  task → policy → provider chain and fails closed before returning if registry
+  identities or references do not match.
 - Standard pricing is 750,000 input and 4,500,000 output microusd per million
   tokens. Cached input receives no discount. Existing integer ceiling
   arithmetic reserves 128,000 input plus 8,192 output tokens across two
