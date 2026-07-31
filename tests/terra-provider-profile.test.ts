@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -33,6 +33,10 @@ const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const approvedPhase4B2Instruction = [
   "Interpret the owner's bounded request in ordinary Business language.",
@@ -169,20 +173,29 @@ describe("GPT-5.6 Terra medium production profile", () => {
     ).rejects.toMatchObject({ code: "ai_disabled" });
   });
 
-  it("makes medium reasoning explicit while retaining the strict stateless no-tools request", async () => {
+  it("makes medium reasoning and cache disabling explicit in the strict stateless no-tools request", async () => {
     const create = vi.fn().mockResolvedValue(completedResponse());
     const provider = new OpenAiResponsesStructuredProvider({
       client: { responses: { create } } as OpenAiResponsesClient,
     });
     const selectedRequest = request();
+    const cacheMarker = "forged-cache-breakpoint";
     await expect(
       provider.generateStructured({
         ...selectedRequest,
         reasoning: { effort: "high" },
         metadata: { model: "ignored" },
+        prompt_cache_options: { mode: "implicit" },
+        prompt_cache_breakpoint: cacheMarker,
+        prompt_cache_key: cacheMarker,
+        prompt_cache_retention: cacheMarker,
       } as StructuredAiProviderRequest & {
         reasoning: { effort: string };
         metadata: Record<string, string>;
+        prompt_cache_options: { mode: string };
+        prompt_cache_breakpoint: string;
+        prompt_cache_key: string;
+        prompt_cache_retention: string;
       }),
     ).resolves.toMatchObject({ output: { summary: "Ready" } });
 
@@ -192,6 +205,10 @@ describe("GPT-5.6 Terra medium production profile", () => {
       store: false,
       reasoning: { effort: "medium" },
     });
+    expect(body.prompt_cache_options).toEqual({ mode: "explicit" });
+    expect(body.instructions).toBe(selectedRequest.instruction);
+    expect(JSON.stringify(body.input)).not.toContain(cacheMarker);
+    expect(body.instructions).not.toContain(cacheMarker);
     expect(options).toEqual({ signal: selectedRequest.signal });
     for (const forbidden of [
       "tools",
@@ -204,12 +221,18 @@ describe("GPT-5.6 Terra medium production profile", () => {
       "reasoning_summary",
       "reasoning_content",
       "reasoning_mode",
+      "prompt_cache_breakpoint",
+      "prompt_cache_key",
+      "prompt_cache_retention",
     ]) {
       expect(body).not.toHaveProperty(forbidden);
     }
   });
 
-  it("ignores unrecognised model and reasoning environment values", () => {
+  it("ignores unrecognised model, reasoning, and prompt-cache environment values", async () => {
+    vi.stubEnv("OPENAI_PROMPT_CACHE_MODE", "implicit");
+    vi.stubEnv("AI_PROMPT_CACHE_MODE", "implicit");
+    vi.stubEnv("PROMPT_CACHE_MODE", "implicit");
     const provider = { key: "openai", generateStructured: vi.fn() };
     const runtime = createProductionAiRuntime(
       {
@@ -219,6 +242,9 @@ describe("GPT-5.6 Terra medium production profile", () => {
         AI_MODEL: "untrusted-model",
         OPENAI_REASONING_EFFORT: "high",
         AI_REASONING_EFFORT: "high",
+        OPENAI_PROMPT_CACHE_MODE: "implicit",
+        AI_PROMPT_CACHE_MODE: "implicit",
+        PROMPT_CACHE_MODE: "implicit",
       } as {
         AI_PROVIDER: string;
         OPENAI_API_KEY: string;
@@ -226,6 +252,9 @@ describe("GPT-5.6 Terra medium production profile", () => {
         AI_MODEL: string;
         OPENAI_REASONING_EFFORT: string;
         AI_REASONING_EFFORT: string;
+        OPENAI_PROMPT_CACHE_MODE: string;
+        AI_PROMPT_CACHE_MODE: string;
+        PROMPT_CACHE_MODE: string;
       },
       { createOpenAiProvider: () => provider },
     );
@@ -240,6 +269,25 @@ describe("GPT-5.6 Terra medium production profile", () => {
       "OPENAI_REASONING_EFFORT",
     );
     expect(environmentSchema.shape).not.toHaveProperty("AI_REASONING_EFFORT");
+    expect(environmentSchema.shape).not.toHaveProperty(
+      "OPENAI_PROMPT_CACHE_MODE",
+    );
+    expect(environmentSchema.shape).not.toHaveProperty("AI_PROMPT_CACHE_MODE");
+    expect(environmentSchema.shape).not.toHaveProperty("PROMPT_CACHE_MODE");
+    expect(
+      fs.readFileSync(path.join(repositoryRoot, ".env.example"), "utf8"),
+    ).not.toMatch(
+      /OPENAI_PROMPT_CACHE_MODE|AI_PROMPT_CACHE_MODE|PROMPT_CACHE_MODE/,
+    );
+
+    const create = vi.fn().mockResolvedValue(completedResponse());
+    const openAiProvider = new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } } as OpenAiResponsesClient,
+    });
+    await openAiProvider.generateStructured(request());
+    expect(create.mock.calls[0]?.[0]?.prompt_cache_options).toEqual({
+      mode: "explicit",
+    });
   });
 
   it("freezes the approved Phase 4B.2 planning subject", () => {

@@ -5,6 +5,13 @@ Phase 4C provides two isolated engineering-only live gates for the frozen
 `medium` reasoning. Neither gate is part of the deployed application, tenant
 runtime, accounting boundary, mutation path, route, Server Action, or UI.
 
+GPT-5.6 otherwise uses implicit prompt caching. The production request for this
+profile explicitly sends `prompt_cache_options: { mode: "explicit" }` and no
+prompt-cache breakpoint, key or retention option, so these evaluations use no
+provider prompt caching. The ordinary $2.50/M input rate therefore remains the
+trusted reservation rate. Cache-token accounting and cache pricing require a
+separate future review.
+
 Qualification runs exactly eight existing scenarios once, sequentially:
 
 ```bash

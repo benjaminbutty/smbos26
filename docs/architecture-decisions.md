@@ -1700,6 +1700,11 @@ contract or creating a production-facing evaluation surface. An advancing model
 alias cannot promise snapshot-level reproducibility, so qualification evidence
 needs clear invalidation rules.
 
+GPT-5.6 otherwise uses implicit prompt caching. An implicit breakpoint could
+write cache tokens at a higher rate than ordinary uncached input, while the
+current provider usage normalization and trusted reservation price only cover
+standard input and output tokens.
+
 ### Decision
 
 - `builder_plan_v1` uses code-owned `gpt-5.6-terra` with explicit,
@@ -1707,17 +1712,24 @@ needs clear invalidation rules.
   selection or environment/model-response override. The OpenAI request retains
   `store: false`, fixed base URL, `logLevel: "off"`, `maxRetries: 0`, strict
   schema transport, no tools, no conversation state and the existing abort
-  signal. Reasoning summaries and reasoning content are neither requested nor
-  persisted.
+  signal. It also owns `prompt_cache_options: { mode: "explicit" }` inside the
+  provider, sends no prompt-cache breakpoint, key or retention option, and
+  accepts no cache-mode input from callers, Business settings, environment or
+  model output. Reasoning summaries and reasoning content are neither requested
+  nor persisted.
 - The task's structured contract remains version 1, but its metadata-only
   policy identity is `builder_planning_terra_medium_v1`. Disabled runtime maps
   it to the disabled provider and zero pricing; OpenAI maps it to Terra medium.
   The policy retains the 160 KiB, 64,000-input-token, 4,096-output-token,
   30-second, two-attempt, 250-ms, rate-limit/transient-only bounds.
 - Trusted pricing is 2,500,000 input and 15,000,000 output microusd per
-  million tokens. Standard integer ceiling accounting charges all reported
-  input and output tokens without cached-input discounts. One execution reserves
-  exactly 442,880 microusd, within the existing 5,000,000 default daily limit.
+  million tokens. Explicit mode with no explicit breakpoint means this profile
+  does not use provider prompt caching, so the ordinary $2.50/M input rate is
+  the trusted reservation rate. Standard integer ceiling accounting charges all
+  reported input and output tokens without cached-input discounts. One execution
+  reserves exactly 442,880 microusd, within the existing 5,000,000 default daily
+  limit. Prompt caching requires a separate future review with detailed
+  cache-token accounting.
 - The Phase 4B.2 instruction, schemas, semantic validator, diagnostic
   taxonomy, synthetic Business context, eight owner requests, deterministic
   gates and provider schema transport are frozen. Regression tests enforce the
@@ -1756,4 +1768,5 @@ needs clear invalidation rules.
 - CI remains network-free by exercising only injected providers. The live gates
   are explicit, bounded operator actions and create no durable state.
 - Terra is not claimed to have passed until both live gates produce and receive
-  review of their required redacted results.
+  review of their required redacted results. Neither live gate has run for this
+  profile.

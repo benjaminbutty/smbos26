@@ -40,8 +40,8 @@ authoritative. Unsafe schemas fail before an
 SDK request.
 
 Responses receive one server instruction and one deterministically serialized
-user input, `store: false`, the fixed output limit, `medium` reasoning and an
-abort signal. They
+user input, `store: false`, the fixed output limit, `medium` reasoning,
+`prompt_cache_options: { mode: "explicit" }` and an abort signal. They
 receive no tools, previous response, conversation, background mode, arbitrary
 metadata, identity, headers or endpoint. SMBOS stores no request or response.
 The SDK client is explicitly constructed with `logLevel: "off"`; ambient
@@ -51,6 +51,14 @@ SMBOS calls.
 it does not assert Zero Data Retention. Provider abuse-monitoring and
 organization retention depend on account controls and must be reviewed before
 production activation.
+
+GPT-5.6 otherwise uses implicit prompt caching, whose cache writes cost more
+than ordinary uncached input. The first Terra profile deliberately owns
+explicit mode inside this provider and sends no prompt-cache breakpoint, key or
+retention option. With no explicit breakpoint, this planning request does not
+use provider prompt caching. Cache use needs a separate future review with
+detailed cache-token accounting; it is not caller-, Business-, task-,
+environment- or model-selectable.
 
 Refusal, content filtering and max-output incompleteness are non-retryable.
 Only rate limits and transient network/5xx failures use the bounded execution

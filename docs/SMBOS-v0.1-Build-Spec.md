@@ -2020,7 +2020,10 @@ API charge can be incurred.
     requests, strict transport and deterministic hard gates;
   - use policy identity `builder_planning_terra_medium_v1`, 2,500,000 input and
     15,000,000 output microusd per million tokens, with an exact two-attempt
-    reservation of 442,880 microusd and no cached-input discount;
+    reservation of 442,880 microusd and no cached-input discount; explicitly
+    disable GPT-5.6 implicit prompt caching with provider-owned
+    `prompt_cache_options: { mode: "explicit" }`, sending no breakpoint, key
+    or retention option, until a separate cache-token accounting review;
   - provide two separate non-production gates: qualification is eight scenarios
     once, requiring `RUN_LIVE_OPENAI_TERRA_QUALIFICATION=1`; reliability is the
     same scenarios in three sequential rounds (24 executions), requiring

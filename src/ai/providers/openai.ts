@@ -279,6 +279,9 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
         reasoning: Object.freeze({
           effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
         }),
+        prompt_cache_options: Object.freeze({
+          mode: "explicit",
+        }),
         text: Object.freeze({
           format: Object.freeze({
             type: "json_schema",

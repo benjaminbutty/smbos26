@@ -256,6 +256,13 @@ hard gates are frozen. The alias may advance independently, so qualification
 evidence is invalid whenever its identity or material execution/planning subject
 changes. Operation generation remains blocked.
 
+GPT-5.6 otherwise uses implicit prompt caching. The first Terra planner
+explicitly disables it with provider-owned
+`prompt_cache_options: { mode: "explicit" }` and sends no explicit cache
+breakpoint, key or retention option. This preserves the trusted ordinary
+$2.50/M input reservation rate; cache pricing and cache-token accounting need
+a separate future review.
+
 `npm run test:builder-evaluation`, `npm run test:terra-provider-profile`,
 `npm run test:builder-terra-qualification` and
 `npm run test:builder-terra-reliability` use injected providers and run in CI.
