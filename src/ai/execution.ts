@@ -246,6 +246,14 @@ function providerFailureCode(
       return "ai_provider_unavailable";
     case "invalid_request":
       return "ai_execution_failed";
+    case "invalid_response":
+      return "ai_output_invalid";
+    case "refused":
+      return "ai_refused";
+    case "incomplete":
+      return "ai_incomplete";
+    case "content_filtered":
+      return "ai_content_filtered";
   }
 }
 

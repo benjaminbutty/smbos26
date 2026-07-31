@@ -124,6 +124,64 @@ function projectFieldSettings(
   return aiContextFieldSettingsSchema.parse(projected);
 }
 
+export type AiPageDestinationKind =
+  "internal_path" | "external_web" | "email" | "telephone";
+
+export function classifyAiPageDestination(
+  value: string,
+): AiPageDestinationKind {
+  if (value.startsWith("/")) {
+    return "internal_path";
+  }
+  if (/^https?:\/\//i.test(value)) {
+    return "external_web";
+  }
+  if (/^mailto:/i.test(value)) {
+    return "email";
+  }
+  if (/^tel:/i.test(value)) {
+    return "telephone";
+  }
+  throw new AiBusinessContextError("ai_context_inconsistent");
+}
+
+function projectPageBlock(
+  block: ConfigurationSnapshotV1["pages"][number]["layout_json"]["blocks"][number],
+) {
+  switch (block.type) {
+    case "heading":
+      return { type: block.type, text: block.text, level: block.level };
+    case "text":
+      return { type: block.type, text: block.text };
+    case "image": {
+      if (classifyAiPageDestination(block.src) !== "external_web") {
+        throw new AiBusinessContextError("ai_context_inconsistent");
+      }
+      return {
+        type: block.type,
+        alt: block.alt,
+        ...(block.caption ? { caption: block.caption } : {}),
+        source_kind: "external_web" as const,
+      };
+    }
+    case "button":
+      return {
+        type: block.type,
+        label: block.label,
+        style: block.style,
+        destination_kind: classifyAiPageDestination(block.href),
+      };
+    case "view":
+      return { type: block.type, view_key: block.view_key };
+    case "form":
+      return { type: block.type, form_key: block.form_key };
+    case "preorder":
+      return { type: block.type, preorder_key: block.preorder_key };
+    case "divider":
+      return { type: block.type };
+  }
+}
+
 function platformCapabilities() {
   return {
     registry_version: 1 as const,
@@ -318,7 +376,7 @@ export function projectAiBusinessModelContext(
         audience: page.audience,
         status: page.status,
         is_active: page.is_active,
-        blocks: page.layout_json.blocks,
+        blocks: page.layout_json.blocks.map(projectPageBlock),
       }))
       .toSorted(compareKey);
 

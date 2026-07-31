@@ -6,7 +6,6 @@ import {
   experienceFormModeSchema,
   experiencePageStatusSchema,
   experienceViewTypeSchema,
-  pageBlockSchema,
 } from "../../core/experience/schemas";
 import {
   graphFieldTypeSchema,
@@ -175,6 +174,82 @@ export const aiContextFormSchema = z
   })
   .strict();
 
+const aiContextHeadingBlockSchema = z
+  .object({
+    type: z.literal("heading"),
+    text: z.string().trim().min(1).max(200),
+    level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  })
+  .strict();
+
+const aiContextTextBlockSchema = z
+  .object({
+    type: z.literal("text"),
+    text: z.string().trim().min(1).max(5000),
+  })
+  .strict();
+
+const aiContextImageBlockSchema = z
+  .object({
+    type: z.literal("image"),
+    alt: z.string().trim().min(1).max(300),
+    caption: z.string().trim().min(1).max(500).optional(),
+    source_kind: z.literal("external_web"),
+  })
+  .strict();
+
+const aiContextButtonBlockSchema = z
+  .object({
+    type: z.literal("button"),
+    label: labelSchema,
+    style: z.enum(["primary", "secondary"]),
+    destination_kind: z.enum([
+      "internal_path",
+      "external_web",
+      "email",
+      "telephone",
+    ]),
+  })
+  .strict();
+
+const aiContextViewBlockSchema = z
+  .object({
+    type: z.literal("view"),
+    view_key: graphKeySchema,
+  })
+  .strict();
+
+const aiContextFormBlockSchema = z
+  .object({
+    type: z.literal("form"),
+    form_key: graphKeySchema,
+  })
+  .strict();
+
+const aiContextPreorderBlockSchema = z
+  .object({
+    type: z.literal("preorder"),
+    preorder_key: graphKeySchema,
+  })
+  .strict();
+
+const aiContextDividerBlockSchema = z
+  .object({
+    type: z.literal("divider"),
+  })
+  .strict();
+
+export const aiContextPageBlockSchema = z.discriminatedUnion("type", [
+  aiContextHeadingBlockSchema,
+  aiContextTextBlockSchema,
+  aiContextImageBlockSchema,
+  aiContextButtonBlockSchema,
+  aiContextViewBlockSchema,
+  aiContextFormBlockSchema,
+  aiContextPreorderBlockSchema,
+  aiContextDividerBlockSchema,
+]);
+
 export const aiContextPageSchema = z
   .object({
     key: graphKeySchema,
@@ -187,7 +262,7 @@ export const aiContextPageSchema = z
     audience: experienceAudienceSchema,
     status: experiencePageStatusSchema,
     is_active: z.boolean(),
-    blocks: z.array(pageBlockSchema).min(1).max(100),
+    blocks: z.array(aiContextPageBlockSchema).min(1).max(100),
   })
   .strict();
 
@@ -328,8 +403,15 @@ export const authoritativeRelationshipCardinalities =
   relationshipCardinalitySchema.options;
 export const authoritativeViewTypes = experienceViewTypeSchema.options;
 export const authoritativeFormModes = experienceFormModeSchema.options;
-export const authoritativePageBlockTypes = pageBlockSchema.options.map(
-  (schema) => schema.shape.type.value,
-);
+export const authoritativePageBlockTypes = [
+  "heading",
+  "text",
+  "image",
+  "button",
+  "view",
+  "form",
+  "preorder",
+  "divider",
+] as const;
 export const authoritativeConfigurationOperationNames =
   configurationOperationSchema.options.map((schema) => schema.shape.op.value);

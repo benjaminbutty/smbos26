@@ -16,7 +16,9 @@ Platform-only operational plans, such as creating or renaming a Location, keep
 the required `concepts` property as an explicit empty array and use empty
 `affected_concepts`. Location remains a first-class platform entity; planning
 does not invent or imply a generic Location Object. Such a plan is still
-descriptive and non-executing.
+descriptive and non-executing. Every ready step also supplies
+`existing_object_keys` and `location_references` as required arrays, using
+empty arrays when no reference applies.
 
 The authenticated loader derives actor and Business identity for accounting and
 keeps both outside task input. Exact configuration currentness also remains
@@ -28,7 +30,7 @@ records usage incurred by that discarded execution.
 There is an unavoidable race after the final read. Future operation generation
 and proposal creation must rebuild context and retain expected-head protection.
 
-Before any live external provider is enabled, SMBOS must decide and test whether
-configured HTTPS query strings/fragments and `mailto:`/`tel:` links are sent in
-full, reduced to normalized origins, or redacted. No live provider may be
-enabled before that URL-minimisation decision is implemented.
+Phase 4A enables only an opt-in server-side OpenAI adapter. The task input uses
+the URL-minimised context shape; raw configured image/button destinations never
+reach the provider. Planning remains in-memory, descriptive and non-executing,
+with no route, proposal or mutation surface.

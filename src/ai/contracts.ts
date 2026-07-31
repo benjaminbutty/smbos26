@@ -8,6 +8,10 @@ export const aiProviderFailureKindSchema = z.enum([
   "rate_limited",
   "transient",
   "invalid_request",
+  "invalid_response",
+  "refused",
+  "incomplete",
+  "content_filtered",
 ]);
 
 export type AiProviderFailureKind = z.infer<typeof aiProviderFailureKindSchema>;

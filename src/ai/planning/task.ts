@@ -14,6 +14,7 @@ export const BUILDER_PLANNING_INSTRUCTION = [
   "Never invent an existing Object key or Location reference.",
   "Use concepts only for generic Business concepts; a platform-only Location plan keeps the required concepts array empty and never invents a Location Object.",
   "New concepts use plan-local references only and receive no UUID or trusted platform key.",
+  "Every ready-plan step includes existing_object_keys and location_references as required arrays, using empty arrays when no reference applies.",
   "Every ready-plan step is proposed planning only and requires later owner confirmation.",
 ].join(" ");
 

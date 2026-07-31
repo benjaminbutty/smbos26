@@ -2,17 +2,17 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 3B
-provider-neutral AI foundation, deterministic manual setup amendments,
+Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4A
+opt-in external-provider safety gate, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
-The AI execution boundary is server-only, per-Business accounting is disabled
-by default, and the sole production provider remains deliberately disabled.
-There is no live provider or external model request.
+The AI execution boundary is server-only and per-Business accounting is
+disabled by default. OpenAI Responses is the first external adapter, but it is
+also server-disabled by default and has no user-facing invocation surface.
 
 The product and architecture sources of truth are:
 
@@ -79,12 +79,17 @@ Included:
   unknown-usage charging across every provider attempt
 - Owner/Admin-only settings, UTC-day summary, and metadata-only latest-50
   execution audit reads
-- one disabled production AI provider that makes no network request
+- one server-only OpenAI Responses adapter behind a default-disabled runtime
+  gate, fixed model/pricing, strict Structured Outputs, `store: false` and no
+  tools or conversation state
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
 - one strict schema-v1 pure model-facing projector with deterministic ordering,
   explicit Field-setting allow-lists and a 128 KiB hard limit
+- explicit AI-safe Page blocks that retain structural purpose while excluding
+  raw image/button destinations, credentials, hosts, paths, queries, fragments,
+  email addresses and telephone numbers
 - trusted active-version/head currentness kept outside model-facing context
 - configuration UUID, actor, checksum, timestamp, operational Record, PII,
   proposal, validation and AI audit exclusion from model-facing context
@@ -107,7 +112,8 @@ Included:
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
-- live AI provider calls, API-key use or executable builder behavior
+- user-facing AI execution or executable builder behavior
+- owner/provider/model/API-key selection and multiple external providers
 - AI proposal/operation generation, builder routes or chat UI
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
@@ -147,9 +153,10 @@ attempt, completeness and timestamp fields. It stores no prompt, task input,
 instruction, model output, raw response, header, credential, provider metadata
 or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
 
-The production provider is still disabled, so it performs no external request
-and cannot incur an AI API charge. Live provider integration, operation
-generation and builder UI remain later work.
+Production remains network-free unless `AI_PROVIDER=openai` and a server-only
+key are both configured. Even then, the current Business must separately have
+AI enabled before reservation or provider invocation. Operation generation and
+builder UI remain later work.
 
 Phase 2A.1 adds the first non-AI configuration control at
 `/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
@@ -209,10 +216,15 @@ metadata-only audit even when the plan is discarded as stale. A later
 operation/proposal phase must still rebuild context and enforce expected-head
 protection because a final read cannot remove every race.
 
-The sole production provider remains disabled and network-free. Owner requests,
-context and plans remain in memory and are not stored. Before any live provider
-is enabled, SMBOS must decide and test minimisation for configured HTTPS query
-strings/fragments and `mailto:`/`tel:` links.
+Phase 4A classifies Page image sources as `external_web` and button
+destinations as `internal_path`, `external_web`, `email` or `telephone`.
+Raw destinations never enter model context. The fixed
+`gpt-5.4-mini-2026-03-17` Responses adapter receives deterministic structured
+input and a strict adapted JSON Schema, sets `store: false`, and receives no
+tools, identity metadata or conversation state. SMBOS persists neither request
+nor response. `store: false` disables Responses application-state storage for
+the request; it is not a Zero Data Retention claim, and production activation
+requires review of the OpenAI project/organization data controls.
 
 ## Requirements
 
@@ -249,7 +261,8 @@ Supabase project using the CLI defaults.
    The checked-in public values target the local stack. Copy the
    `SERVICE_ROLE_KEY` value reported by `npm run supabase:status` into the
    server-only `SUPABASE_SERVICE_ROLE_KEY` variable. Never expose that value
-   through a `NEXT_PUBLIC_` variable. Leave the future AI values empty.
+   through a `NEXT_PUBLIC_` variable. Leave `AI_PROVIDER` and `OPENAI_API_KEY`
+   empty to keep external execution disabled.
 
 4. Start the development server:
 
@@ -398,29 +411,31 @@ npm start
 
 ## Environment variables
 
-Environment values are parsed in `src/env.ts`. Deployment builds require both
-public Supabase values. Trusted preorder writes also require the server-only
-service-role key at runtime. Empty optional values are normalized to
-`undefined`; partially configured AI integrations fail validation.
+Shared application environment values are parsed in `src/env.ts`. The
+server-only AI runtime parses its own closed provider configuration so its API
+key cannot enter client source. Deployment builds require both public Supabase
+values. Trusted preorder writes also require the server-only service-role key
+at runtime.
 
-| Variable                               | Required now | Visibility  |
-| -------------------------------------- | ------------ | ----------- |
-| `NEXT_PUBLIC_APP_URL`                  | No           | Browser     |
-| `NEXT_PUBLIC_SUPABASE_URL`             | Yes          | Browser     |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes          | Browser     |
-| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder | Server only |
-| `PREORDER_RATE_LIMIT_SECRET`           | Production   | Server only |
-| `AI_PROVIDER`                          | No           | Server only |
-| `AI_PROVIDER_API_KEY`                  | No           | Server only |
+| Variable                               | Required now    | Visibility  |
+| -------------------------------------- | --------------- | ----------- |
+| `NEXT_PUBLIC_APP_URL`                  | No              | Browser     |
+| `NEXT_PUBLIC_SUPABASE_URL`             | Yes             | Browser     |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes             | Browser     |
+| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder    | Server only |
+| `PREORDER_RATE_LIMIT_SECRET`           | Production      | Server only |
+| `AI_PROVIDER`                          | No (`disabled`) | Server only |
+| `OPENAI_API_KEY`                       | When `openai`   | Server only |
 
 The publishable key is designed for browser use; PostgreSQL RLS is the
 authorization boundary. The preorder server uses the service role only to call
 three narrow, schema-validated transaction/email RPCs. The browser never
 receives it and cannot execute the write RPC directly.
 
-`AI_PROVIDER` and `AI_PROVIDER_API_KEY` remain validated placeholders for a
-future phase. Phase 1A does not read them during execution or send them to a
-provider.
+`AI_PROVIDER` accepts only blank/`disabled` or `openai`. OpenAI mode requires
+`OPENAI_API_KEY`; provider, endpoint, model, attempts, timeout, token maximum,
+pricing, storage behavior and schema remain code-owned. There is no
+`NEXT_PUBLIC_` AI variable or arbitrary base-URL/model override.
 
 ## Repository structure
 

@@ -517,13 +517,12 @@ describe("Phase 1B source boundaries", () => {
     expect(aiSource).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|node:https/);
   });
 
-  it("adds no provider SDK dependency", () => {
+  it("pins only the reviewed OpenAI provider SDK", () => {
     const packageJson = fs.readFileSync(
       path.join(repositoryRoot, "package.json"),
       "utf8",
     );
-    expect(packageJson).not.toMatch(
-      /"openai"|"anthropic"|"@google\/generative-ai"/,
-    );
+    expect(packageJson).toMatch(/"openai":\s*"[^"]+"/);
+    expect(packageJson).not.toMatch(/"anthropic"|"@google\/generative-ai"/);
   });
 });

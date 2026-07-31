@@ -1419,3 +1419,102 @@ planning service composes context and accounting.
   business runtime remains independent of AI availability.
 - Clarification answers, operation generation, proposal creation, live-provider
   integration and builder UI remain later work.
+
+## ADR-020 - External model execution is opt-in, minimised and schema-constrained
+
+**Status:** Accepted for v0.1 (Milestone 6 Phase 4A)
+
+**Date:** 31 July 2026
+
+### Context
+
+The provider-neutral execution, Business accounting, model context and
+non-executing planning boundaries are ready for their first external model.
+Enabling one without a separate server gate, code-owned model/pricing or a
+provider-compatible strict schema would let deployment or model behavior
+weaken trusted policy. Raw Page image/button URLs also contain destination
+details the planning model does not need, including credentials, paths, query
+values, fragments, email addresses and telephone numbers.
+
+Responses application-state storage and provider account retention are
+different concerns. SMBOS can prevent its own prompt/output persistence and
+request `store: false`, but cannot infer Zero Data Retention for a provider
+organization from repository code.
+
+### Decision
+
+- OpenAI Responses is the first and only external adapter behind the existing
+  provider-neutral `StructuredAiProvider` interface. The official server SDK
+  is pinned. No browser module imports it.
+- External execution is disabled when `AI_PROVIDER` is missing, blank or
+  `disabled`. The only other accepted mode is `openai`, which requires
+  `OPENAI_API_KEY` in server-only runtime code. The API key never enters the
+  database, browser, request metadata, public errors, logs or AI execution
+  audit.
+- Server activation and `business_ai_settings.is_enabled` are independent
+  gates. A disabled Business fails before reservation and provider invocation.
+- Provider, API endpoint, model, instruction, reasoning behavior, storage,
+  schema, token bounds, timeout, attempts and pricing are code-owned. OpenAI
+  mode registers only `gpt-5.4-mini-2026-03-17` for
+  `builder_planning_v1`; future providers/models require new reviewed registry
+  entries.
+- Standard pricing is 750,000 input and 4,500,000 output microusd per million
+  tokens. Cached input receives no discount. Existing integer ceiling
+  arithmetic reserves 128,000 input plus 8,192 output tokens across two
+  attempts for exactly 132,864 microusd. Pricing must be reviewed whenever the
+  fixed model changes.
+- Unreleased model-context schema v1 is hardened in place. It no longer embeds
+  the runtime Page-block union. Heading, text, View, Form, preorder and divider
+  structure is preserved. Images expose alt/caption and
+  `source_kind: external_web`; buttons expose label/style and an
+  `internal_path`, `external_web`, `email` or `telephone` destination kind.
+  Raw destinations and their credentials, hosts, paths, queries, fragments,
+  email addresses and telephone numbers are excluded. Runtime Page
+  configuration and rendering are unchanged.
+- The existing registered Zod output schema and pure semantic validator remain
+  authoritative. A deterministic adapter adds one required object transport
+  wrapper, requires every object property, forces
+  `additionalProperties: false`, preserves names/types/enums/discriminators
+  and supported bounds, explicitly converts `oneOf` to `anyOf`, and removes
+  only the provider-incompatible `$schema` dialect declaration. Supported
+  format constraints are preserved and Zod remains authoritative. Any other unsupported
+  keyword or optional object property fails before network invocation.
+- The request contains one separate server instruction and one
+  deterministically serialized structured user input, the fixed model and
+  output maximum, strict `text.format` JSON Schema, `store: false` and the
+  existing abort signal. It supplies no tools, function calling, web/file
+  search, code/computer execution, MCP, previous response, conversation,
+  background mode, identity, arbitrary metadata, headers or base URL.
+- The adapter accepts exactly one assistant message with one structured text
+  result, rejects refusal/missing/multiple/malformed output, unwraps the
+  transport and returns no raw response. Registered Zod parsing and semantic
+  validation then run as before.
+- Refusal, content filtering and max-output incompleteness are non-retryable
+  and settle failed with reported usage. Only rate limiting and transient
+  network/5xx failures use the existing bounded retry policy. Authentication
+  fails unavailable, invalid request/schema fails safely, and no provider
+  body, header, refusal text, credential or stack trace reaches public errors
+  or audit. Missing usage remains conservatively charged; retry usage
+  aggregates across attempts.
+- SMBOS keeps request, instruction, context, response and raw provider content
+  in memory only. `store: false` disables Responses application-state storage
+  for the request; it is not a claim of Zero Data Retention. Provider
+  abuse-monitoring and organization-level retention remain governed by the
+  deployed OpenAI project/organization data controls and require review before
+  production launch.
+- Phase 4A adds no route, Server Action, UI, chat/conversation persistence,
+  operation generation, proposal, validation, application, lifecycle
+  progression, Record/Relationship/Location mutation, migration, table or new
+  platform primitive.
+
+### Consequences
+
+- A deployment and a Business must both deliberately enable external planning;
+  default builds and CI remain network-free and require no API key.
+- The model sees Page-block purpose without receiving configured destination
+  secrets. Arbitrary Business-authored page text remains intended content and
+  is not claimed to be redacted.
+- Provider schema enforcement supplements rather than replaces SMBOS parsing,
+  semantic validation, reservation, settlement and stale-context checks.
+- The deterministic runtime and existing configuration/operational mutation
+  boundaries remain independent of AI availability.

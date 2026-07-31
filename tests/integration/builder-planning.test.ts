@@ -27,6 +27,11 @@ import {
   builderPlanningService,
   createBuilderPlanningService,
 } from "../../src/ai/planning/service";
+import {
+  OPENAI_MODEL_KEY,
+  OpenAiResponsesStructuredProvider,
+  type OpenAiResponsesClient,
+} from "../../src/ai/providers/openai";
 import { aiExecutionPolicies, registeredAiTasks } from "../../src/ai/registry";
 import {
   loadAuthoritativeAiBusinessContext,
@@ -145,6 +150,7 @@ function readyOutput(): Extract<BuilderPlanOutput, { state: "ready" }> {
           dependencies: [],
           affected_concepts: ["concept_1"],
           existing_object_keys: ["order"],
+          location_references: [],
           materiality: "medium",
           requires_owner_confirmation: true,
         },
@@ -175,6 +181,7 @@ function locationReadyOutput(
           summary: "Rename the Bedford Location.",
           dependencies: [],
           affected_concepts: [],
+          existing_object_keys: [],
           location_references: [locationReference],
           materiality: "medium",
           requires_owner_confirmation: true,
@@ -232,6 +239,67 @@ function planningWithProvider(
         execution,
       }).execute(taskKey, input),
   });
+}
+
+function planningWithOpenAiClient(client: OpenAiResponsesClient) {
+  const execution = createAiExecutionService({
+    tasks: registeredAiTasks,
+    policies: {
+      builder_planning_v1: {
+        ...aiExecutionPolicies.builder_planning_v1,
+        providerKey: "openai",
+        modelKey: OPENAI_MODEL_KEY,
+        inputMicrousdPerMillion: 750_000,
+        outputMicrousdPerMillion: 4_500_000,
+      },
+    },
+    providers: {
+      openai: new OpenAiResponsesStructuredProvider({ client }),
+    },
+    sleep: async () => {},
+  });
+  return createBuilderPlanningService({
+    executeTask: (sessionClient, context, taskKey, input) =>
+      createBusinessAiExecutionOrchestrator({
+        accounting: new SupabaseAiAccountingService(sessionClient, context),
+        execution,
+      }).execute(taskKey, input),
+  });
+}
+
+function openAiResponse(
+  output: unknown,
+  usage = { inputTokens: 120, outputTokens: 40 },
+) {
+  return {
+    status: "completed",
+    error: null,
+    incomplete_details: null,
+    output: [
+      {
+        type: "message",
+        role: "assistant",
+        status: "completed",
+        content: [
+          {
+            type: "output_text",
+            text: JSON.stringify({ result: output }),
+            annotations: [],
+          },
+        ],
+      },
+    ],
+    usage: {
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      total_tokens: usage.inputTokens + usage.outputTokens,
+      input_tokens_details: {
+        cached_tokens: 0,
+        cache_write_tokens: 0,
+      },
+      output_tokens_details: { reasoning_tokens: 0 },
+    },
+  };
 }
 
 async function enablePlanning(): Promise<void> {
@@ -457,6 +525,106 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
         actual_input_tokens: "120",
         actual_output_tokens: "40",
       });
+    },
+  );
+
+  it("executes the injected OpenAI adapter through real reservation and settlement", async () => {
+    await enablePlanning();
+    const create = vi.fn().mockResolvedValue(openAiResponse(readyOutput()));
+
+    const result = await planningWithOpenAiClient({
+      responses: { create },
+    }).plan(owner.client, {
+      businessId: business.id,
+      ownerRequest: "Improve Orders.",
+    });
+
+    expect(result.plan).toEqual(readyOutput());
+    expect(create).toHaveBeenCalledOnce();
+    const [body] = create.mock.calls[0]!;
+    expect(body).toMatchObject({
+      model: OPENAI_MODEL_KEY,
+      store: false,
+      max_output_tokens: 4_096,
+      text: { format: { type: "json_schema", strict: true } },
+    });
+    expect(body).not.toHaveProperty("tools");
+    expect(await executionRows()).toEqual([
+      expect.objectContaining({
+        status: "succeeded",
+        provider_key: "openai",
+        model_key: OPENAI_MODEL_KEY,
+        reserved_input_tokens: "128000",
+        reserved_output_tokens: "8192",
+        reserved_cost_microusd: "132864",
+        actual_input_tokens: "120",
+        actual_output_tokens: "40",
+        actual_cost_microusd: "270",
+        charged_cost_microusd: "270",
+      }),
+    ]);
+  });
+
+  it.each([
+    [
+      "refusal",
+      {
+        ...openAiResponse({}),
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "refusal", refusal: "never persist this text" }],
+          },
+        ],
+      },
+      "ai_refused",
+    ],
+    [
+      "max-output incomplete",
+      {
+        ...openAiResponse({}),
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+      },
+      "ai_incomplete",
+    ],
+    [
+      "content-filter incomplete",
+      {
+        ...openAiResponse({}),
+        status: "incomplete",
+        incomplete_details: { reason: "content_filter" },
+      },
+      "ai_content_filtered",
+    ],
+  ])(
+    "settles OpenAI %s as failed with reported usage",
+    async (_label, response, outcomeCode) => {
+      await enablePlanning();
+      const create = vi.fn().mockResolvedValue(response);
+
+      await expect(
+        planningWithOpenAiClient({ responses: { create } }).plan(owner.client, {
+          businessId: business.id,
+          ownerRequest: "Improve Orders.",
+        }),
+      ).rejects.toMatchObject({ code: outcomeCode });
+
+      expect(await executionRows()).toEqual([
+        expect.objectContaining({
+          status: "failed",
+          outcome_code: outcomeCode,
+          provider_key: "openai",
+          actual_input_tokens: "120",
+          actual_output_tokens: "40",
+          charged_cost_microusd: "270",
+        }),
+      ]);
+      expect(JSON.stringify(await executionRows())).not.toContain(
+        "never persist this text",
+      );
     },
   );
 

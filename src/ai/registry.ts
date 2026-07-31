@@ -3,12 +3,18 @@ import "server-only";
 import { z } from "zod";
 
 import type {
+  AiExecutionPolicy,
   AiExecutionPolicyRegistry,
   RegisteredAiTaskRegistry,
+  StructuredAiProvider,
   StructuredAiProviderRegistry,
 } from "./contracts";
 import { builderPlanTaskV1 } from "./planning/task";
 import { DisabledStructuredAiProvider } from "./providers/disabled";
+import {
+  OPENAI_MODEL_KEY,
+  OpenAiResponsesStructuredProvider,
+} from "./providers/openai";
 
 const contractProbeInputSchema = z
   .object({
@@ -22,7 +28,7 @@ const contractProbeOutputSchema = z
   })
   .strict();
 
-export const registeredAiTasks = Object.freeze({
+const allRegisteredAiTasks = Object.freeze({
   contract_probe_v1: Object.freeze({
     key: "contract_probe_v1",
     version: 1,
@@ -36,7 +42,7 @@ export const registeredAiTasks = Object.freeze({
   builder_plan_v1: builderPlanTaskV1,
 }) satisfies RegisteredAiTaskRegistry;
 
-export const aiExecutionPolicies = Object.freeze({
+const disabledExecutionPolicies = Object.freeze({
   bounded_structured_v1: Object.freeze({
     key: "bounded_structured_v1",
     providerKey: "disabled",
@@ -73,6 +79,83 @@ export const aiExecutionPolicies = Object.freeze({
   }),
 }) satisfies AiExecutionPolicyRegistry;
 
-export const structuredAiProviders = Object.freeze({
-  disabled: Object.freeze(new DisabledStructuredAiProvider()),
-}) satisfies StructuredAiProviderRegistry;
+export interface AiRuntimeServerEnvironment {
+  AI_PROVIDER?: string | undefined;
+  OPENAI_API_KEY?: string | undefined;
+}
+
+interface ProductionRuntimeDependencies {
+  createOpenAiProvider(apiKey: string): StructuredAiProvider;
+}
+
+export interface ProductionAiRuntime {
+  tasks: typeof allRegisteredAiTasks;
+  policies: Readonly<{
+    bounded_structured_v1: AiExecutionPolicy;
+    builder_planning_v1: AiExecutionPolicy;
+  }>;
+  providers: StructuredAiProviderRegistry;
+}
+
+export class AiRuntimeConfigurationError extends Error {
+  constructor() {
+    super("The server AI provider configuration is invalid.");
+    this.name = "AiRuntimeConfigurationError";
+  }
+}
+
+function openAiBuilderPolicy() {
+  return Object.freeze({
+    ...disabledExecutionPolicies.builder_planning_v1,
+    providerKey: "openai",
+    modelKey: OPENAI_MODEL_KEY,
+    inputMicrousdPerMillion: 750_000,
+    outputMicrousdPerMillion: 4_500_000,
+  }) satisfies AiExecutionPolicy;
+}
+
+export function createProductionAiRuntime(
+  serverEnvironment: AiRuntimeServerEnvironment,
+  overrides: Partial<ProductionRuntimeDependencies> = {},
+): ProductionAiRuntime {
+  const providerMode = serverEnvironment.AI_PROVIDER?.trim() || "disabled";
+  if (providerMode === "disabled") {
+    return Object.freeze({
+      tasks: allRegisteredAiTasks,
+      policies: disabledExecutionPolicies,
+      providers: Object.freeze({
+        disabled: Object.freeze(new DisabledStructuredAiProvider()),
+      }),
+    });
+  }
+  if (providerMode !== "openai") {
+    throw new AiRuntimeConfigurationError();
+  }
+  const apiKey = serverEnvironment.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new AiRuntimeConfigurationError();
+  }
+  const createOpenAiProvider =
+    overrides.createOpenAiProvider ??
+    ((trustedApiKey: string) =>
+      new OpenAiResponsesStructuredProvider({ apiKey: trustedApiKey }));
+  return Object.freeze({
+    tasks: allRegisteredAiTasks,
+    policies: Object.freeze({
+      bounded_structured_v1: disabledExecutionPolicies.bounded_structured_v1,
+      builder_planning_v1: openAiBuilderPolicy(),
+    }),
+    providers: Object.freeze({
+      openai: Object.freeze(createOpenAiProvider(apiKey)),
+    }),
+  });
+}
+
+const productionRuntime = createProductionAiRuntime({
+  AI_PROVIDER: process.env.AI_PROVIDER,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+});
+
+export const registeredAiTasks = productionRuntime.tasks;
+export const aiExecutionPolicies = productionRuntime.policies;
+export const structuredAiProviders = productionRuntime.providers;

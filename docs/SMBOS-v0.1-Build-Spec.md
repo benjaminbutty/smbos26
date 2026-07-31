@@ -1923,10 +1923,29 @@ API charge can be incurred.
     metadata-only accounting;
   - post-execution version, revision and canonical model-context comparison,
     discarding a known-stale plan while retaining incurred usage accounting;
-  - no request/context/plan persistence, live provider, proposal, validation,
+  - no request/context/plan persistence, proposal, validation,
     application, publication, route, UI or operational mutation;
-  - a required configured-URL minimisation decision before any live external
-    provider is enabled;
+- **Phase 4A - external-provider safety gate and OpenAI Responses adapter:**
+  - update unreleased context schema v1 in place with explicit AI-safe Page
+    blocks; image/button destinations become structural kinds and raw URLs,
+    credentials, hosts, paths, queries, fragments, email addresses and
+    telephone numbers are excluded without changing runtime Page configuration;
+  - one strict OpenAI Responses adapter using the code-owned
+    `gpt-5.4-mini-2026-03-17` model, deterministic structured input, adapted
+    strict JSON Schema, `store: false`, no tools and no conversation state;
+  - server provider mode defaults to disabled and accepts only `disabled` or
+    `openai`; OpenAI additionally requires a server-only key, while Business AI
+    remains a separate gate;
+  - code-owned standard pricing of 750,000 input and 4,500,000 output microusd
+    per million tokens; the two-attempt planning envelope reserves exactly
+    132,864 microusd using integer ceiling arithmetic;
+  - refusals, content filtering, max-output incompleteness and provider/API
+    failures fail closed with reported usage retained for settlement;
+  - SMBOS persists no request, instruction, context, response or raw provider
+    material; `store: false` is not a Zero Data Retention claim and deployment
+    must review provider account data controls;
+  - no operation generation, proposal, validation, application, route, Server
+    Action, UI, chat persistence, operational mutation, migration or table;
 - strict configuration/operational operation generation;
 - deterministic validation feedback;
 - builder conversation UI and preview integration.

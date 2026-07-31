@@ -171,6 +171,22 @@ then reloads authoritative context and discards a known-stale result without
 creating a proposal. Owner requests, context and plans remain in memory; only
 the existing metadata-only execution reservation and settlement are durable.
 
+Milestone 6 Phase 4A preserves that boundary while adding the first opt-in
+external provider. The OpenAI adapter receives only the registered planning
+instruction, deterministic URL-minimised task input, strict adapted output
+schema, fixed model/token limit and abort signal. It receives no configuration
+or operational service, tool, actor/Business/version identity, conversation
+state or mutation authority.
+
+Server mode defaults to disabled; `openai` additionally requires a server-only
+key, and the existing per-Business `is_enabled` check still occurs before
+reservation/invocation. Responses use `store: false`; SMBOS stores no request
+or response, while the existing metadata-only reservation/audit remains the
+sole durable provider-adjacent state. Refusal and incomplete responses settle
+failed with reported usage. No route, Server Action, UI, proposal, lifecycle
+progression, projection write, operational mutation, migration, table or
+primitive is added.
+
 ## Phase 5A read authorization
 
 The Changes and Version history routes resolve the immutable Business slug

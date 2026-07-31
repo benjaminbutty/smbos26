@@ -21,6 +21,11 @@ import {
   authoritativeRelationshipCardinalities,
   authoritativeViewTypes,
 } from "../src/ai/context/schemas";
+import { builderPlanTaskInputSchema } from "../src/ai/planning/schemas";
+import {
+  OPENAI_MODEL_KEY,
+  OpenAiResponsesStructuredProvider,
+} from "../src/ai/providers/openai";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
 
 const ids = {
@@ -45,6 +50,17 @@ const ids = {
   preorderLocation: "80000000-0000-4000-8000-000000000001",
   activeLocation: "a0000000-0000-4000-8000-000000000001",
   inactiveLocation: "a0000000-0000-4000-8000-000000000002",
+} as const;
+
+const urlMarkers = {
+  username: "url-user-marker-9f",
+  password: "url-password-marker-9f",
+  hostname: "url-host-marker-9f.test",
+  pathname: "url-path-marker-9f",
+  query: "url-query-marker-9f",
+  fragment: "url-fragment-marker-9f",
+  email: "url-email-marker-9f@example.test",
+  telephone: "+441234567890-marker-9f",
 } as const;
 
 function snapshot(): ConfigurationSnapshotV1 {
@@ -290,16 +306,38 @@ function snapshot(): ConfigurationSnapshotV1 {
             },
             {
               type: "image",
-              src: "https://example.test/preorder.jpg",
+              src: `https://${urlMarkers.username}:${urlMarkers.password}@${urlMarkers.hostname}/${urlMarkers.pathname}?${urlMarkers.query}#${urlMarkers.fragment}`,
               alt: "A boxed preorder",
+              caption: "Prepared for collection",
             },
             {
               type: "button",
-              label: "Contact us",
-              href: "mailto:hello@example.test",
+              label: "Internal details",
+              href: `/${urlMarkers.pathname}?${urlMarkers.query}#${urlMarkers.fragment}`,
+              style: "primary",
+            },
+            {
+              type: "button",
+              label: "External details",
+              href: `https://${urlMarkers.hostname}/${urlMarkers.pathname}?${urlMarkers.query}#${urlMarkers.fragment}`,
               style: "secondary",
             },
+            {
+              type: "button",
+              label: "Email us",
+              href: `mailto:${urlMarkers.email}`,
+              style: "secondary",
+            },
+            {
+              type: "button",
+              label: "Telephone us",
+              href: `tel:${urlMarkers.telephone}`,
+              style: "secondary",
+            },
+            { type: "view", view_key: "orders" },
+            { type: "form", form_key: "customer_form" },
             { type: "preorder", preorder_key: "bakery_preorder" },
+            { type: "divider" },
           ],
         },
         status: "published",
@@ -401,6 +439,79 @@ describe("AI-safe Business model context projection", () => {
       serializeAiBusinessModelContext(right.modelContext),
     );
     expect(left.serializedBytes).toBe(right.serializedBytes);
+  });
+
+  it("excludes every URL/contact marker from task serialization and the provider request", async () => {
+    const projected = projectAiBusinessModelContext(source()).modelContext;
+    const taskInput = builderPlanTaskInputSchema.parse({
+      schema_version: 1,
+      owner_request: "Improve the public collection page.",
+      business_context: projected,
+    });
+    const create = vi.fn().mockResolvedValue({
+      status: "completed",
+      error: null,
+      incomplete_details: null,
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({ result: { accepted: true } }),
+              annotations: [],
+            },
+          ],
+        },
+      ],
+      usage: {
+        input_tokens: 10,
+        output_tokens: 2,
+        total_tokens: 12,
+        input_tokens_details: {
+          cached_tokens: 0,
+          cache_write_tokens: 0,
+        },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
+    });
+    await new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } },
+    }).generateStructured({
+      providerKey: "openai",
+      modelKey: OPENAI_MODEL_KEY,
+      instruction: "Return the strict result.",
+      input: taskInput,
+      outputContract: {
+        name: "marker_probe",
+        version: 1,
+        jsonSchema: {
+          type: "object",
+          properties: { accepted: { type: "boolean" } },
+          required: ["accepted"],
+          additionalProperties: false,
+        },
+      },
+      maxOutputTokens: 16,
+      signal: new AbortController().signal,
+    });
+
+    for (const serialized of [
+      serializeAiBusinessModelContext(projected),
+      JSON.stringify(taskInput),
+      JSON.stringify(create.mock.calls[0]?.[0]),
+      JSON.stringify(
+        new AiBusinessContextError("ai_context_inconsistent", {
+          cause: source(),
+        }),
+      ),
+    ]) {
+      for (const marker of Object.values(urlMarkers)) {
+        expect(serialized).not.toContain(marker);
+      }
+    }
   });
 
   it("strictly rejects unknown top-level and nested properties", () => {
@@ -521,17 +632,69 @@ describe("AI-safe Business model context projection", () => {
         },
       ],
     });
-    expect(projected.pages[0]?.blocks).toContainEqual({
+    const projectedBlocks = projected.pages[0]?.blocks;
+    expect(projectedBlocks).toContainEqual({
       type: "image",
-      src: "https://example.test/preorder.jpg",
       alt: "A boxed preorder",
+      caption: "Prepared for collection",
+      source_kind: "external_web",
     });
-    expect(projected.pages[0]?.blocks).toContainEqual({
+    expect(projectedBlocks).toContainEqual({
       type: "button",
-      label: "Contact us",
-      href: "mailto:hello@example.test",
+      label: "Internal details",
+      destination_kind: "internal_path",
+      style: "primary",
+    });
+    expect(projectedBlocks).toContainEqual({
+      type: "button",
+      label: "External details",
+      destination_kind: "external_web",
       style: "secondary",
     });
+    expect(projectedBlocks).toContainEqual({
+      type: "button",
+      label: "Email us",
+      destination_kind: "email",
+      style: "secondary",
+    });
+    expect(projectedBlocks).toContainEqual({
+      type: "button",
+      label: "Telephone us",
+      destination_kind: "telephone",
+      style: "secondary",
+    });
+    expect(projectedBlocks).toEqual(
+      expect.arrayContaining([
+        { type: "heading", text: "Preorder for collection", level: 1 },
+        {
+          type: "text",
+          text: "Choose a collection location and tell us what you need.",
+        },
+        { type: "view", view_key: "orders" },
+        { type: "form", form_key: "customer_form" },
+        { type: "preorder", preorder_key: "bakery_preorder" },
+        { type: "divider" },
+      ]),
+    );
+    const serializedPage = JSON.stringify(projected.pages[0]);
+    for (const marker of Object.values(urlMarkers)) {
+      expect(serializedPage).not.toContain(marker);
+    }
+    expect(serializedPage).not.toMatch(/"src"|"href"/);
+    expect(
+      source().activeConfiguration.snapshot.pages[0]?.layout_json.blocks,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "image",
+          src: expect.stringContaining(urlMarkers.username),
+        }),
+        expect.objectContaining({
+          type: "button",
+          href: `mailto:${urlMarkers.email}`,
+        }),
+      ]),
+    );
 
     const preorder = projected.preorder_experiences[0];
     expect(preorder).toMatchObject({

@@ -503,14 +503,15 @@ describe("production AI source boundaries", () => {
     expect(providerNeutralCore).not.toMatch(/supabase|service[_-]?role/i);
   });
 
-  it("contains no real network-provider implementation", () => {
+  it("contains no direct network implementation outside the reviewed SDK", () => {
     const providerSource = productionTypeScript
       .filter((file) => file.includes(`${path.sep}providers${path.sep}`))
       .map((file) => fs.readFileSync(file, "utf8"))
       .join("\n");
 
     expect(providerSource).not.toMatch(
-      /\bfetch\s*\(|XMLHttpRequest|node:https|axios|openai|anthropic|generativelanguage/i,
+      /\bfetch\s*\(|XMLHttpRequest|node:https|axios|anthropic|generativelanguage/i,
     );
+    expect(providerSource.match(/from ["']openai["']/g)).toHaveLength(1);
   });
 });

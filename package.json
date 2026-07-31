@@ -26,6 +26,7 @@
     "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
     "test:ai-context": "vitest run --config vitest.ai-context.config.ts",
     "test:ai-accounting": "vitest run --config vitest.ai-accounting.config.ts",
+    "test:openai-provider": "vitest run --config vitest.openai-provider.config.ts",
     "test:builder-planning": "vitest run --config vitest.builder-planning.config.ts",
     "test:manual-amendments": "vitest run --config vitest.manual-amendments.config.ts",
     "test:manual-questions": "vitest run --config vitest.manual-questions.config.ts",
@@ -51,6 +52,7 @@
     "@supabase/ssr": "0.12.3",
     "@supabase/supabase-js": "2.110.9",
     "next": "16.2.12",
+    "openai": "7.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "4.4.3"

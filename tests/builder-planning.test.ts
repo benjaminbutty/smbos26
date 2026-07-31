@@ -199,6 +199,7 @@ function readyOutput(): Extract<BuilderPlanOutput, { state: "ready" }> {
           dependencies: [],
           affected_concepts: ["concept_1"],
           existing_object_keys: ["order"],
+          location_references: [],
           materiality: "medium",
           requires_owner_confirmation: true,
         },
@@ -238,9 +239,9 @@ function locationReadyOutput(
               : "Create a Cambridge Location.",
           dependencies: [],
           affected_concepts: [],
-          ...(category === "update_location"
-            ? { location_references: [ids.location] }
-            : {}),
+          existing_object_keys: [],
+          location_references:
+            category === "update_location" ? [ids.location] : [],
           materiality: "medium",
           requires_owner_confirmation: true,
         },
@@ -299,9 +300,10 @@ describe("builder_plan_v1 strict schemas and semantics", () => {
     expect(validateBuilderPlanOutput(taskInput(), createLocation)).toEqual(
       createLocation,
     );
-    expect(createLocation.plan.steps[0]).not.toHaveProperty(
-      "location_references",
-    );
+    expect(createLocation.plan.steps[0]).toMatchObject({
+      existing_object_keys: [],
+      location_references: [],
+    });
     expect(validateBuilderPlanOutput(taskInput(), readyOutput())).toEqual(
       readyOutput(),
     );
@@ -897,7 +899,7 @@ describe("builder planning production boundaries", () => {
     );
   });
 
-  it("adds no planning route, Server Action, provider SDK, fetch, or persistence", () => {
+  it("adds no planning route, Server Action, direct SDK use, fetch, or persistence", () => {
     expect(appSource).not.toMatch(
       /builderPlanningService|createBuilderPlanningService|builder_plan_v1/,
     );
@@ -906,13 +908,6 @@ describe("builder planning production boundaries", () => {
     );
     expect(planningSource).not.toMatch(
       /\.from\(["']ai_execution_runs|insert\(|update\(|upsert\(/,
-    );
-    const packageJson = fs.readFileSync(
-      path.join(repositoryRoot, "package.json"),
-      "utf8",
-    );
-    expect(packageJson).not.toMatch(
-      /"openai"|"anthropic"|"@google\/generative-ai"/,
     );
   });
 });

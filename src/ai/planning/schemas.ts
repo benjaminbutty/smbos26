@@ -143,11 +143,8 @@ const builderPlanStepBaseSchema = z.object({
   summary: ownerReadableTextSchema,
   dependencies: z.array(referenceSchema("step")).max(20),
   affected_concepts: z.array(referenceSchema("concept")).max(20),
-  existing_object_keys: z
-    .array(z.string().trim().min(1).max(80))
-    .max(20)
-    .optional(),
-  location_references: z.array(z.uuid()).max(20).optional(),
+  existing_object_keys: z.array(z.string().trim().min(1).max(80)).max(20),
+  location_references: z.array(z.uuid()).max(20),
   materiality: z.enum(["low", "medium", "high"]),
   requires_owner_confirmation: z.literal(true),
 });

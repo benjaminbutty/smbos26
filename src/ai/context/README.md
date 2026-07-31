@@ -29,8 +29,15 @@ for the existing Business-aware accounting boundary; it never enters
 
 Collections and JSON object keys are deterministically ordered. The complete
 model context has a 128 KiB hard limit and is never truncated, persisted, or
-logged. This phase makes no provider call, reserves no AI budget, and creates
-no configuration proposal.
+logged.
+
+Before external execution, Page blocks pass an additional structural
+minimisation gate. Heading, text, View, Form, preorder and divider meaning is
+preserved. Images expose alt/caption plus `source_kind: external_web`; buttons
+expose label/style plus an internal-path, external-web, email or telephone
+destination kind. Raw `src`/`href` values—and therefore credentials, hosts,
+paths, queries, fragments, addresses and numbers—are excluded. Runtime Page
+configuration and rendering are unchanged.
 
 Phase 3B planning reloads and reprojects this source after execution. A change
 to the base version, head revision or canonical model context discards the

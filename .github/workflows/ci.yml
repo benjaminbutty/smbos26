@@ -55,6 +55,12 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Run OpenAI provider safety tests with injected clients
+        run: npm run test:openai-provider
+
+      - name: Reset after OpenAI provider acceptance
+        run: npm run supabase:reset
+
       - name: Run AI-safe Business context tests
         run: npm run test:ai-context
 

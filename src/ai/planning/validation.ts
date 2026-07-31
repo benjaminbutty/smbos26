@@ -197,13 +197,13 @@ function validateReadyPlan(
       index,
       "affected_concepts",
     ]);
-    requireUnique(step.existing_object_keys ?? [], "Existing Object keys", [
+    requireUnique(step.existing_object_keys, "Existing Object keys", [
       "plan",
       "steps",
       index,
       "existing_object_keys",
     ]);
-    requireUnique(step.location_references ?? [], "Location references", [
+    requireUnique(step.location_references, "Location references", [
       "plan",
       "steps",
       index,
@@ -234,14 +234,14 @@ function validateReadyPlan(
         "affected_concepts",
       ]);
     }
-    if ((step.existing_object_keys ?? []).some((key) => !objectKeys.has(key))) {
+    if (step.existing_object_keys.some((key) => !objectKeys.has(key))) {
       throw issue(
         "Planned existing Object keys must resolve in Business context.",
         ["plan", "steps", index, "existing_object_keys"],
       );
     }
     if (
-      (step.location_references ?? []).some(
+      step.location_references.some(
         (reference) => !locationReferences.has(reference),
       )
     ) {
