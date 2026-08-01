@@ -62,6 +62,7 @@ in the `private` schema.
 | `src/core/configuration/builder-context-source.ts` | Authenticated read-only Business context source; session-derived actor, current membership/capability, tenant Business/Location rows and active immutable version only |
 | `src/ai/context/` | Pure strict model-facing projection and safe errors; no database client, provider, execution/accounting service, configuration mutation service or I/O |
 | `src/ai/planning/` | Strict non-executing planning schemas, instruction, semantic validation and authenticated composition; may read authoritative context and use AI accounting/execution, but exposes no configuration lifecycle or operational mutation method |
+| `src/ai/configuration-drafting/` | Pure server-owned untrusted additive configuration-intent schemas, fixed instruction, semantic validation and production-disabled task registration; no database/provider/accounting/lifecycle dependency and no M5 operation generation |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -78,6 +79,22 @@ table and calls to the two revoked legacy RPCs. Database tests separately
 verify catalogue privileges, RLS policy removal, actual PostgREST denial for
 all application roles, private/legacy function denial, and the exact public
 configuration-function allow-list.
+
+Milestone 7 Phase 1A adds no mutation surface to this boundary. Its
+`builder_configuration_draft_v1` result is transient, untrusted additive
+intent only. It contains plan-local references for new definitions and exact
+active context keys for existing definitions, but no trusted IDs, stable-key
+allocations, positions, defaults, active/publication state, M5 operations,
+candidate, proposal or currentness. The task remains mapped to the disabled
+provider even in OpenAI server mode. A later server-owned compiler must derive
+complete trusted definitions and submit them through the existing lifecycle.
+
+Public Form/Page intent in this draft is not a public runtime capability. The
+current PostgreSQL resolver remains limited to static published Pages, the
+public renderer does not expose generic public Form submission, and generic
+Form submission currently creates or updates one internal Record without
+Relationship controls. No migration, route, UI, DML or operational mutation
+was added for Phase 1A.
 
 The Phase 5B source regression proves lifecycle calls occur only in the
 dedicated action/service boundary; presentation and confirmation GETs contain

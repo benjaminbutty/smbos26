@@ -1782,3 +1782,70 @@ standard input and output tokens.
 - Any material model-alias, prompt, schema, semantic-validator, context or
   provider-transport change invalidates this evidence and requires both gates
   to be rerun.
+
+## ADR-023 - Bounded additive configuration drafting remains untrusted and disabled
+
+**Status:** Accepted for v0.1 (Milestone 7 Phase 1A)
+
+**Date:** 1 August 2026
+
+### Context
+
+Milestone 6 can produce a validated ready plan but deliberately stops before
+configuration operations. The next boundary must express enough generic design
+intent for a future deterministic compiler without allowing the model to
+choose trusted identities, currentness, complete definitions or lifecycle
+actions. The adjacent Corporate Catering Enquiry case must be representable
+using the existing Object, Field, Relationship, View, Form and Page primitives,
+not a catering-specific module or new database table.
+
+The current public Page and Form runtime is also intentionally incomplete:
+PostgreSQL resolves only static published public Pages, the public renderer has
+no generic public Form action, and the existing generic Form submission path
+creates or updates one internal Record without Relationship controls. Public
+Form/Page design intent must therefore not imply executable publication.
+
+### Decision
+
+- Register one server-only `builder_configuration_draft_v1` task at schema
+  version 1 with a strict owner request, exact `AiBusinessModelContextV1` and
+  existing ready-plan result as input.
+- Allow only additive intent for Objects, Fields, Relationships, Views, Forms
+  and Pages. Reject `configure_preorder`, operational categories, updates,
+  archive/restore/delete intent, Field type changes, Locations, Records,
+  Relationship edges, workflows, rules, payments, integrations, code, SQL,
+  HTTP and arbitrary executable instructions.
+- Give each new entity a globally unique plan-local reference and require
+  exact `step_N` source references. Existing dependencies resolve only through
+  exact active context keys. The contract contains no new stable keys, UUIDs,
+  positions, defaults, active state, slugs, publication state or currentness.
+- Use typed View/Form/Page grammars and strict Field settings rather than
+  arbitrary JSON. A pure synchronous validator proves the ready planning
+  boundary, source-step coverage, reference resolution and activity,
+  ownership, audience/mode compatibility, required create-Form coverage,
+  deterministic duplicate intent and the 128 KiB serialized bound.
+- Register the output validator through the existing optional execution hook.
+  Input semantic checks run during the normal task schema parse, before any
+  provider invocation. Validation diagnostics are finite, code-owned and never
+  appear in public AI errors or accounting.
+- Use the separate
+  `builder_configuration_drafting_disabled_v1` policy with the bounded
+  256 KiB/96,000-token/8,192-token/30-second/two-attempt envelope and zero
+  pricing. Keep it mapped to the disabled provider in both disabled and OpenAI
+  registries. Do not add an OpenAI drafting profile or alter the Terra planning
+  profile/evidence.
+- Keep the result transient. Do not load Business state from the database,
+  persist requests/plans/drafts, create operations/candidates/proposals,
+  invoke the configuration lifecycle, add a route/UI, add a migration or
+  mutate configuration or operational data.
+
+### Consequences
+
+The model can describe a bounded generic Catering Enquiry design using the
+existing platform grammar, while trusted key allocation, complete M5
+definitions, operations, ordering, preservation, defaults, active/publication
+state, IDs, proposal metadata and expected-head protection remain future
+server-owned compiler work. The existing planning task and Terra qualification
+and reliability evidence remain unchanged and cannot be reused as evidence for
+drafting. The public Form/Page gap remains explicit and requires a later
+reusable capability before end-to-end public Catering Enquiry acceptance.

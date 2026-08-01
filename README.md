@@ -116,6 +116,14 @@ Included:
   comparison before a plan is returned
 - in-memory-only owner requests and plans with no proposal, validation,
   application, publication, Record or Location mutation
+- one registered `builder_configuration_draft_v1` task that turns a validated
+  ready configuration plan into bounded additive, untrusted, transient intent
+  for Objects, Fields, Relationships, Views, Forms and Pages only
+- pure semantic validation for local draft references, exact active context
+  references, source-step coverage, typed experience dependencies and required
+  create Form coverage
+- production-disabled configuration drafting in both disabled and OpenAI server
+  modes; no compiler, proposal, operation generation or provider request
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -126,6 +134,8 @@ Not included:
 - user-facing AI execution or executable builder behavior
 - owner/provider/model/API-key selection and multiple external providers
 - AI proposal/operation generation, builder routes or chat UI
+- configuration-draft compilation, Milestone 5 operation generation and
+  proposal creation from `builder_configuration_draft_v1`
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -312,6 +322,43 @@ but must preserve currentness protection, deterministic validation and the
 separate configuration/operational lanes. Any material model-alias, prompt,
 schema, validator, context or provider-transport change invalidates this
 evidence and requires both gates to be rerun.
+
+### Milestone 7 Phase 1A - bounded additive configuration drafting
+
+Phase 1A adds only the untrusted, transient
+`builder_configuration_draft_v1` boundary. It accepts a validated ready
+`builder_plan_v1` result, the bounded owner request and the exact model-facing
+Business context, then describes additive intent for Objects, Fields,
+Relationships, Views, Forms and Pages. Every new definition uses a plan-local
+reference such as `draft_object_1`; every existing definition uses an exact
+active key from the supplied context. The output contains no UUIDs, new stable
+keys, positions, defaults, active or publication state, slugs, arbitrary JSON,
+M5 operations, candidate, proposal or currentness values.
+
+The pure validator proves configuration-only ready input, compatible source
+planning steps, global local-reference uniqueness, exact active context
+dependencies, Field/Object ownership, typed View/Form/Page references,
+audience compatibility, required create-Form coverage, duplicate new intent and
+the 128 KiB serialized output limit. The task is mapped to the separate
+zero-priced `builder_configuration_drafting_disabled_v1` policy in both
+disabled and OpenAI runtime modes. Planning remains on the unchanged
+`builder_planning_terra_medium_v1` profile and its qualification/reliability
+evidence is not reused for drafting.
+
+The draft is not compiled and does not create an M5 operation or proposal. A
+future trusted server compiler must derive collision-safe keys, IDs, positions,
+complete definitions, operations, defaults, active state, publication state
+and exact expected-head metadata before the existing propose -> validate ->
+apply lifecycle can be used.
+
+Public Form/Page intent remains design intent only. PostgreSQL currently
+allows only the static published public Page resolver, and the public renderer
+does not provide generic public Form submission. Generic Form submission
+currently creates or updates one internal Record and has no Relationship
+controls. A later reusable public Form capability is required before the full
+Corporate Catering Enquiry acceptance flow; no catering-specific production
+code was added in Phase 1A. The acceptance fixture remains exactly Company
+name, Event date, Number of guests, Budget and Notes, with no implicit status.
 
 ## Requirements
 

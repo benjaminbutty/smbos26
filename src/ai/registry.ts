@@ -10,9 +10,11 @@ import type {
 } from "./contracts";
 import {
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+  BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderPlanningPolicy,
 } from "./policies";
+import { builderConfigurationDraftTaskV1 } from "./configuration-drafting/task";
 import { builderPlanTaskV1 } from "./planning/task";
 import { DisabledStructuredAiProvider } from "./providers/disabled";
 import { OpenAiResponsesStructuredProvider } from "./providers/openai";
@@ -41,6 +43,7 @@ const allRegisteredAiTasks = Object.freeze({
       "Return one concise summary that matches the registered output contract.",
   }),
   builder_plan_v1: builderPlanTaskV1,
+  builder_configuration_draft_v1: builderConfigurationDraftTaskV1,
 }) satisfies RegisteredAiTaskRegistry;
 
 export interface AiRuntimeServerEnvironment {
@@ -57,6 +60,7 @@ export interface ProductionAiRuntime {
   policies: Readonly<{
     bounded_structured_v1: AiExecutionPolicy;
     builder_planning_terra_medium_v1: AiExecutionPolicy;
+    builder_configuration_drafting_disabled_v1: AiExecutionPolicy;
   }>;
   providers: StructuredAiProviderRegistry;
 }
@@ -142,6 +146,10 @@ export function createProductionAiRuntime(
     policies: Object.freeze({
       bounded_structured_v1: disabledExecutionPolicies.bounded_structured_v1,
       [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
+      [BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY]:
+        disabledExecutionPolicies[
+          BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY
+        ],
     }),
     providers: Object.freeze({
       disabled: Object.freeze(new DisabledStructuredAiProvider()),

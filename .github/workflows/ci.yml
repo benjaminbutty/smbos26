@@ -70,6 +70,9 @@ jobs:
       - name: Run strict builder planning tests
         run: npm run test:builder-planning
 
+      - name: Run bounded configuration drafting tests
+        run: npm run test:builder-configuration-drafting
+
       - name: Run bounded builder planning evaluation tests
         run: npm run test:builder-evaluation
 
