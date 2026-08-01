@@ -63,6 +63,7 @@ in the `private` schema.
 | `src/ai/context/` | Pure strict model-facing projection and safe errors; no database client, provider, execution/accounting service, configuration mutation service or I/O |
 | `src/ai/planning/` | Strict non-executing planning schemas, instruction, semantic validation and authenticated composition; may read authoritative context and use AI accounting/execution, but exposes no configuration lifecycle or operational mutation method |
 | `src/ai/configuration-drafting/` | Pure server-owned untrusted additive configuration-intent schemas, fixed instruction, semantic validation and production-disabled task registration; no database/provider/accounting/lifecycle dependency and no M5 operation generation |
+| `src/core/configuration/draft-compiler/` | Pure server-owned Phase 1B compiler from a validated draft plus immutable snapshot to strict additive M5 operations; revalidates existing references and derives deterministic keys/slugs/positions; no UUID/currentness/proposal, database/provider/route/UI or mutation dependency |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -86,8 +87,13 @@ intent only. It contains plan-local references for new definitions and exact
 active context keys for existing definitions, but no trusted IDs, stable-key
 allocations, positions, defaults, active/publication state, M5 operations,
 candidate, proposal or currentness. The task remains mapped to the disabled
-provider even in OpenAI server mode. A later server-owned compiler must derive
-complete trusted definitions and submit them through the existing lifecycle.
+provider even in OpenAI server mode. Phase 1B is the separate pure compiler
+boundary: it consumes a server-supplied immutable snapshot, revalidates
+existing references, reserves active and archived identities and emits only
+strict additive M5 operations. It creates no UUID, expected-head metadata,
+candidate, proposal or lifecycle transition. M5 later allocates trusted IDs
+while materialising a proposal candidate; a later orchestration phase supplies
+authentication, exact currentness and proposal metadata.
 
 Public Form/Page intent in this draft is not a public runtime capability. The
 current PostgreSQL resolver remains limited to static published Pages, the

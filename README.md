@@ -127,7 +127,7 @@ Included:
   values and `[]` for empty collections; singular/plural Object labels use one
   normalized duplicate namespace
 - production-disabled configuration drafting in both disabled and OpenAI server
-  modes; no compiler, proposal, operation generation or provider request
+  modes; the separate Phase 1B compiler performs no provider request
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -138,8 +138,8 @@ Not included:
 - user-facing AI execution or executable builder behavior
 - owner/provider/model/API-key selection and multiple external providers
 - AI proposal/operation generation, builder routes or chat UI
-- configuration-draft compilation, Milestone 5 operation generation and
-  proposal creation from `builder_configuration_draft_v1`
+- proposal creation, lifecycle orchestration and builder routes from
+  `builder_configuration_draft_v1`
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -353,11 +353,16 @@ disabled and OpenAI runtime modes. Planning remains on the unchanged
 evidence is not reused, and any material drafting schema or validator change
 does not inherit or revive that evidence.
 
-The draft is not compiled and does not create an M5 operation or proposal. A
-future trusted server compiler must derive collision-safe keys, IDs, positions,
-complete definitions, operations, defaults, active state, publication state
-and exact expected-head metadata before the existing propose -> validate ->
-apply lifecycle can be used.
+The draft is not compiled inside the AI boundary and does not create a
+proposal. Milestone 7 Phase 1B now provides a separate pure trusted compiler
+under `src/core/configuration/draft-compiler/`. It consumes the validated draft
+and a server-supplied immutable configuration snapshot, revalidates existing
+references, reserves active and archived identities, derives collision-safe
+keys, Page slugs, Field positions, complete defaults/active state and strict
+M5 operations. It produces no UUIDs, expected-head values, candidate,
+proposal or lifecycle state; M5 later allocates trusted IDs while materialising
+a candidate, and a later orchestration phase supplies authentication,
+currentness and proposal metadata.
 
 Public Form/Page intent remains design intent only. PostgreSQL currently
 allows only the static published public Page resolver, and the public renderer
@@ -367,6 +372,19 @@ controls. A later reusable public Form capability is required before the full
 Corporate Catering Enquiry acceptance flow; no catering-specific production
 code was added in Phase 1A. The acceptance fixture remains exactly Company
 name, Event date, Number of guests, Budget and Notes, with no implicit status.
+
+### Milestone 7 Phase 1B - deterministic configuration draft compilation
+
+Phase 1B is a synchronous, pure server-owned compiler. Its strict input is the
+Phase 1A task input, draft and one authoritative immutable `ConfigurationSnapshotV1`.
+It re-runs Phase 1A validation, rejects inconsistent or ambiguous snapshots,
+resolves existing references against fresh active/archived snapshot state and
+compiles only complete `set_object`, `set_field`, `set_relationship`,
+`set_form`, `set_view` and `set_page` operations. Canonical operation order is
+Object, Field, Relationship, Form, View, Page; Pages are always draft and public
+Form/Page intent remains non-executable. The compiler has no database/provider,
+UUID, currentness, proposal, route, UI or mutation dependency. Phase 2 later
+adds authenticated currentness and proposal orchestration.
 
 ## Requirements
 

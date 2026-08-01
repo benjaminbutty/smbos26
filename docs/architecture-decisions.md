@@ -1861,3 +1861,58 @@ server-owned compiler work. The existing planning task and Terra qualification
 and reliability evidence remain unchanged and cannot be reused as evidence for
 drafting. The public Form/Page gap remains explicit and requires a later
 reusable capability before end-to-end public Catering Enquiry acceptance.
+
+## ADR-024 - Deterministic configuration draft compilation is a pure snapshot boundary
+
+**Status:** Accepted for v0.1 (Milestone 7 Phase 1B)
+
+**Date:** 1 August 2026
+
+### Context
+
+ADR-023 deliberately stops at a validated, untrusted additive configuration
+draft. The next safe boundary must turn that bounded blueprint into complete
+M5 operation intent without allowing the model to choose trusted IDs,
+currentness, lifecycle state or database behavior. Existing configuration may
+also have changed since model context was assembled, and archived identities
+must remain unavailable for accidental reuse.
+
+### Decision
+
+- Keep `src/ai/configuration-drafting/` as the untrusted Phase 1A contract and
+  place the trusted compiler under `src/core/configuration/draft-compiler/`.
+- Make `compileConfigurationDraft()` synchronous and pure. It accepts only the
+  Phase 1A task input, draft and one server-supplied immutable
+  `ConfigurationSnapshotV1`; it performs no database, network, provider,
+  Business, actor or lifecycle access.
+- Re-run the Phase 1A semantic validator and parse the authoritative snapshot,
+  then resolve every existing Object, Field, Form and View reference against
+  that fresh snapshot. Missing, inactive, incompatible, duplicate or
+  inconsistent identities fail with finite code-owned safe diagnostics.
+- Reserve active and archived Object, Field, Relationship, View, Form and Page
+  keys plus Page slugs. Derive new keys and slugs through deterministic
+  normalized bases and finite numeric suffixes. Derive Field positions from
+  canonical source-step/base/local-reference order, starting new Objects at
+  zero and appending Fields on existing Objects after the greatest historical
+  position.
+- Emit only complete strict `set_object`, `set_field`, `set_relationship`,
+  `set_form`, `set_view` and `set_page` operations. Preserve nested design
+  order, return canonical operation group order, parse every operation through
+  the existing M5 schemas and fail closed on M5 count/size/grammar limits.
+- Compile all new Pages as `draft`. Public Form/Page intent remains design
+  configuration, and Relationship operations create no operational edges.
+
+The compiler never derives UUIDs, expected-head values, candidate snapshots, ID
+allocations or proposal metadata. M5 later allocates trusted IDs while
+materialising a proposal candidate. Phase 2 supplies authentication, exact
+currentness and proposal orchestration.
+
+### Consequences
+
+The model can express the generic Catering Enquiry blueprint while the trusted
+platform controls identity allocation, snapshot drift, defaults, active state,
+experience grammar and operation ordering. Active and archived definitions are
+not silently reused, and the compiler remains testable without Supabase reset
+or provider calls. Terra planning evidence remains unchanged and is not
+evidence for drafting or compilation. Generic public Form submission and
+publication remain deferred to a later reusable runtime capability.
