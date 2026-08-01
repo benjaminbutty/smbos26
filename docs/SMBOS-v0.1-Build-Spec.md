@@ -1338,6 +1338,79 @@ stack trace. Owner/Admin audit reads are deterministically limited to the latest
 50 rows. This accounting is a platform setting, not M5 versioned
 configuration.
 
+### 8.5.2 Milestone 7 Phase 1A bounded configuration drafting
+
+The first post-planning drafting boundary is deliberately untrusted and
+transient. `builder_configuration_draft_v1` accepts exactly a schema-v1 owner
+request, the strict `AiBusinessModelContextV1`, and an already validated
+ready-state `builder_plan_v1` result. It returns a strict schema-v1 object with
+the required collections `objects`, `fields`, `relationships`, `views`,
+`forms` and `pages`, plus one bounded owner-readable summary.
+
+Phase 1A is additive only. Its supported draft entity kinds are Object, Field,
+Relationship, View, Form and Page. All new definitions use only locally scoped
+references (`draft_object_N`, `draft_field_N`, `draft_relationship_N`,
+`draft_view_N`, `draft_form_N`, `draft_page_N`) and cite exact `step_N`
+references from the validated ready plan. New Objects additionally bind to an
+exact `concept_N` whose plan disposition is `new`. Each new concept has at most
+one draft Object, and every new concept affected by a `define_object` step is
+represented. Existing Objects and Fields use exact active context keys;
+existing View and Form references use exact active context keys. The contract
+contains no UUIDs, new stable keys, positions,
+defaults, active/publication state, slugs, arbitrary JSON, operational Record
+data, Relationship edges, Locations, workflows, rules, payments,
+integrations, code, SQL, HTTP, tools or executable instructions.
+
+The pure semantic validator runs synchronously without a database client. It
+rechecks the existing planning validator and configuration-only six-category
+boundary, then proves concept mapping, source-step coverage and exact
+per-step Object scope: `define_object` steps authorize the mapped draft
+concept, while `define_field`, `configure_view`, `configure_form` and
+`define_relationship` steps authorize their complete target Object scope.
+`configure_page` steps authorize the Objects behind every referenced View/Form
+block. Existing scope is derived only from exact `existing_object_keys` or
+existing concepts' exact `existing_object_key`; draft scope is derived only
+from affected new concepts. It also proves local-reference uniqueness,
+context resolution and activity, Field/Object ownership, typed View/Form
+references, Cards image type, audience compatibility, required create-Form
+coverage, deterministic duplicate-intent rules and a hard 128 KiB serialized
+output limit. No free-text or fuzzy scope comparison is used. It does not
+compile keys, allocate IDs, derive positions, materialise complete definitions
+or create operations.
+
+All structurally optional design properties are required by the schema and use
+explicit `null` when absent; empty collections remain `[]`, and unknown
+properties are rejected. Singular and plural new-Object labels share one
+NFKC/case-normalized duplicate namespace.
+
+The task is production-disabled under the separate code-owned
+`builder_configuration_drafting_disabled_v1` policy. The policy is present in
+both disabled and OpenAI server registries but always resolves to the disabled
+provider, including when OpenAI planning is enabled. The registered drafting
+output schema adapts to the existing OpenAI strict-object boundary in a
+non-live test; this does not enable a drafting provider request. The existing
+`builder_plan_v1` contract, Terra instruction, Terra policy and qualification
+and reliability evidence remain unchanged; that planning evidence is not
+evidence for this new drafting task. Any material drafting schema or validator
+change invalidates planning evidence for drafting and does not reuse it.
+
+The result is not a compiler input that can be applied directly. A later
+trusted server compiler must derive collision-safe stable keys, Field
+positions, complete trusted M5 definitions and operations, ordering, preserved
+properties, defaults, active state, Page slugs/publication state, IDs, proposal
+metadata and expected-head values before the existing propose -> validate ->
+apply configuration lifecycle. Phase 1A creates no proposal and performs no
+configuration or operational mutation.
+
+The generic public Form/Page case remains incomplete. PostgreSQL currently
+resolves only static public and published Pages and rejects generic public Form
+submission; the public renderer also has no generic public Form action. The
+current generic Form submission path creates or updates one internal Record and
+offers no Relationship controls. A later reusable public Form capability is
+required before full Corporate Catering Enquiry acceptance. The preserved
+fixture is exactly Company name, Event date, Number of guests, Budget and Notes;
+`status` is not added unless a validated owner plan explicitly requests it.
+
 ### 8.6 Validation layer
 
 Every proposed operation must validate:
