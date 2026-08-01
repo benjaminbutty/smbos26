@@ -119,9 +119,13 @@ Included:
 - one registered `builder_configuration_draft_v1` task that turns a validated
   ready configuration plan into bounded additive, untrusted, transient intent
   for Objects, Fields, Relationships, Views, Forms and Pages only
-- pure semantic validation for local draft references, exact active context
-  references, source-step coverage, typed experience dependencies and required
-  create Form coverage
+- pure semantic validation that binds each draft Object to one new plan
+  concept, checks exact per-step Object scope, local draft references, exact
+  active context references, source-step coverage, typed experience
+  dependencies and required create Form coverage
+- strict structural contracts with explicit `null` for absent optional design
+  values and `[]` for empty collections; singular/plural Object labels use one
+  normalized duplicate namespace
 - production-disabled configuration drafting in both disabled and OpenAI server
   modes; no compiler, proposal, operation generation or provider request
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
@@ -336,14 +340,18 @@ keys, positions, defaults, active or publication state, slugs, arbitrary JSON,
 M5 operations, candidate, proposal or currentness values.
 
 The pure validator proves configuration-only ready input, compatible source
-planning steps, global local-reference uniqueness, exact active context
-dependencies, Field/Object ownership, typed View/Form/Page references,
-audience compatibility, required create-Form coverage, duplicate new intent and
-the 128 KiB serialized output limit. The task is mapped to the separate
+planning steps, exact concept mapping and per-step Object scope, global
+local-reference uniqueness, exact active context dependencies, Field/Object
+ownership, typed View/Form/Page references, audience compatibility, required
+create-Form coverage, duplicate new intent and the 128 KiB serialized output
+limit. The strict schema uses explicit `null` for absent optional design
+values. The registered schema also adapts to the OpenAI strict-object boundary
+without enabling a provider request. The task is mapped to the separate
 zero-priced `builder_configuration_drafting_disabled_v1` policy in both
 disabled and OpenAI runtime modes. Planning remains on the unchanged
-`builder_planning_terra_medium_v1` profile and its qualification/reliability
-evidence is not reused for drafting.
+`builder_planning_terra_medium_v1` profile; its qualification/reliability
+evidence is not reused, and any material drafting schema or validator change
+does not inherit or revive that evidence.
 
 The draft is not compiled and does not create an M5 operation or proposal. A
 future trusted server compiler must derive collision-safe keys, IDs, positions,

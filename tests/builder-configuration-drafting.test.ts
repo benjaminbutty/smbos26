@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
@@ -36,6 +37,7 @@ import {
   validateConfigurationDraftInput,
   validateConfigurationDraftOutput,
 } from "../src/ai/configuration-drafting/validation";
+import { adaptRegisteredSchemaForOpenAi } from "../src/ai/providers/openai-schema";
 import type { BuilderPlanOutput } from "../src/ai/planning/schemas";
 
 type BuilderPlanReadyResult = Extract<BuilderPlanOutput, { state: "ready" }>;
@@ -360,6 +362,7 @@ function validDraft(): BuilderConfigurationDraftOutput {
     objects: [
       {
         reference: "draft_object_1",
+        concept_reference: "concept_1",
         source_step_references: ["step_1"],
         singular_label: "Catering Enquiry",
         plural_label: "Catering Enquiries",
@@ -374,7 +377,7 @@ function validDraft(): BuilderConfigurationDraftOutput {
         label: "Company name",
         field_type: "short_text",
         required: true,
-        settings: {},
+        settings: null,
       },
       {
         reference: "draft_field_2",
@@ -383,7 +386,7 @@ function validDraft(): BuilderConfigurationDraftOutput {
         label: "Event date",
         field_type: "date",
         required: true,
-        settings: {},
+        settings: null,
       },
       {
         reference: "draft_field_3",
@@ -392,7 +395,7 @@ function validDraft(): BuilderConfigurationDraftOutput {
         label: "Number of guests",
         field_type: "number",
         required: true,
-        settings: {},
+        settings: null,
       },
       {
         reference: "draft_field_4",
@@ -410,7 +413,7 @@ function validDraft(): BuilderConfigurationDraftOutput {
         label: "Notes",
         field_type: "long_text",
         required: false,
-        settings: {},
+        settings: null,
       },
     ],
     relationships: [
@@ -444,6 +447,9 @@ function validDraft(): BuilderConfigurationDraftOutput {
             draftFieldReference("draft_field_4"),
             draftFieldReference("draft_field_5"),
           ],
+          title_field: null,
+          create_form_reference: null,
+          edit_form_reference: null,
         },
       },
     ],
@@ -456,11 +462,31 @@ function validDraft(): BuilderConfigurationDraftOutput {
         mode: "create",
         audience: "public",
         fields: [
-          { field_reference: draftFieldReference("draft_field_1") },
-          { field_reference: draftFieldReference("draft_field_2") },
-          { field_reference: draftFieldReference("draft_field_3") },
-          { field_reference: draftFieldReference("draft_field_4") },
-          { field_reference: draftFieldReference("draft_field_5") },
+          {
+            field_reference: draftFieldReference("draft_field_1"),
+            label: null,
+            help_text: null,
+          },
+          {
+            field_reference: draftFieldReference("draft_field_2"),
+            label: null,
+            help_text: null,
+          },
+          {
+            field_reference: draftFieldReference("draft_field_3"),
+            label: null,
+            help_text: null,
+          },
+          {
+            field_reference: draftFieldReference("draft_field_4"),
+            label: null,
+            help_text: null,
+          },
+          {
+            field_reference: draftFieldReference("draft_field_5"),
+            label: null,
+            help_text: null,
+          },
         ],
         submit_label: "Send enquiry",
       },
@@ -534,6 +560,60 @@ function draftExecutionService(
   });
 }
 
+function collectObjectSchemas(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectObjectSchemas);
+  }
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  return [
+    ...(record.type === "object" || "properties" in record ? [record] : []),
+    ...Object.values(record).flatMap(collectObjectSchemas),
+  ];
+}
+
+function containsNullType(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(containsNullType);
+  }
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return record.type === "null" || Object.values(record).some(containsNullType);
+}
+
+function collectPropertySchemas(
+  value: unknown,
+  propertyName: string,
+): unknown[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectPropertySchemas(item, propertyName));
+  }
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  const properties = record.properties;
+  const propertyRecord =
+    properties && typeof properties === "object" && !Array.isArray(properties)
+      ? (properties as Record<string, unknown>)
+      : undefined;
+  const matches = propertyRecord
+    ? propertyName in propertyRecord
+      ? [propertyRecord[propertyName]]
+      : []
+    : [];
+  return [
+    ...matches,
+    ...Object.values(record).flatMap((item) =>
+      collectPropertySchemas(item, propertyName),
+    ),
+  ];
+}
+
 describe("builder_configuration_draft_v1 strict contract", () => {
   it("accepts the generic Catering Enquiry fixture as untrusted intent", () => {
     const input = inputValue();
@@ -570,6 +650,105 @@ describe("builder_configuration_draft_v1 strict contract", () => {
         forms: undefined,
       }).success,
     ).toBe(false);
+  });
+
+  it("requires explicit nulls for absent optional design properties", () => {
+    const output = validDraft();
+    const view = output.views[0];
+    if (!view || view.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    const withoutTitleField = Object.fromEntries(
+      Object.entries(view.configuration).filter(
+        ([key]) => key !== "title_field",
+      ),
+    );
+    expect(
+      builderConfigurationDraftOutputSchema.safeParse({
+        ...output,
+        views: [{ ...view, configuration: withoutTitleField }],
+      }).success,
+    ).toBe(false);
+    expect(
+      builderConfigurationDraftOutputSchema.safeParse({
+        ...output,
+        forms: [
+          {
+            ...output.forms[0]!,
+            fields: [
+              {
+                ...output.forms[0]!.fields[0]!,
+                label: undefined,
+              },
+              ...output.forms[0]!.fields.slice(1),
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      builderConfigurationDraftOutputSchema.safeParse(output).success,
+    ).toBe(true);
+    expect(
+      builderConfigurationDraftOutputSchema.safeParse({
+        ...output,
+        unexpected: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("adapts the actual drafting schema to strict OpenAI objects without invoking a provider", async () => {
+    const registered = z.toJSONSchema(
+      builderConfigurationDraftTaskV1.outputSchema,
+      { target: "draft-7", unrepresentable: "throw" },
+    ) as Record<string, unknown>;
+    const adapted = adaptRegisteredSchemaForOpenAi(registered);
+
+    expect(adapted).toMatchObject({
+      type: "object",
+      required: ["result"],
+      additionalProperties: false,
+    });
+    for (const objectSchema of collectObjectSchemas(adapted)) {
+      expect(objectSchema.additionalProperties).toBe(false);
+      expect(new Set(objectSchema.required as string[])).toEqual(
+        new Set(Object.keys(objectSchema.properties as object)),
+      );
+    }
+    expect(containsNullType(adapted)).toBe(true);
+    for (const propertyName of [
+      "title_field",
+      "create_form_reference",
+      "edit_form_reference",
+      "subtitle_field",
+      "image_field",
+      "submit_label",
+      "label",
+      "help_text",
+    ]) {
+      expect(
+        collectPropertySchemas(adapted, propertyName).some(containsNullType),
+      ).toBe(true);
+    }
+
+    const provider = vi.fn();
+    const openAiFactory = vi.fn(() => ({
+      key: "openai" as const,
+      generateStructured: provider,
+    }));
+    const runtime = createProductionAiRuntime(
+      { AI_PROVIDER: "openai", OPENAI_API_KEY: "test-key" },
+      { createOpenAiProvider: openAiFactory },
+    );
+    await expect(
+      createAiExecutionService({
+        tasks: runtime.tasks,
+        policies: runtime.policies,
+        providers: runtime.providers,
+      }).execute("builder_configuration_draft_v1", inputValue()),
+    ).rejects.toMatchObject({ code: "ai_disabled" });
+    expect(openAiFactory).toHaveBeenCalledOnce();
+    expect(provider).not.toHaveBeenCalled();
   });
 
   it("rejects an entirely empty draft", () => {
@@ -739,6 +918,7 @@ describe("builder_configuration_draft_v1 strict contract", () => {
       summary: "A deliberately over-sized bounded draft.",
       objects: Array.from({ length: 20 }, (_, index) => ({
         reference: `draft_object_${index + 1}`,
+        concept_reference: "concept_1",
         source_step_references: ["step_1"],
         singular_label: `Object ${index + 1}`,
         plural_label: `Objects ${index + 1}`,
@@ -754,7 +934,7 @@ describe("builder_configuration_draft_v1 strict contract", () => {
         label: `Field ${index + 1} ${"x".repeat(100)}`,
         field_type: "short_text" as const,
         required: false,
-        settings: {},
+        settings: null,
       })),
       relationships: Array.from({ length: 50 }, (_, index) => ({
         reference: `draft_relationship_${index + 1}`,
@@ -909,6 +1089,136 @@ describe("builder configuration draft semantic validation", () => {
     );
   });
 
+  it("binds each draft Object to exactly one new plan concept", () => {
+    const unknownConcept = validDraft();
+    unknownConcept.objects[0]!.concept_reference = "concept_99";
+    expectDiagnostic(
+      () => validateConfigurationDraftOutput(inputValue(), unknownConcept),
+      "draft_concept_unknown",
+    );
+
+    const existingConcept = validDraft();
+    existingConcept.objects[0]!.concept_reference = "concept_2";
+    expectDiagnostic(
+      () => validateConfigurationDraftOutput(inputValue(), existingConcept),
+      "draft_concept_not_new",
+    );
+
+    const duplicateConcept = validDraft();
+    duplicateConcept.objects.push({
+      ...duplicateConcept.objects[0]!,
+      reference: "draft_object_2",
+    });
+    expectDiagnostic(
+      () => validateConfigurationDraftOutput(inputValue(), duplicateConcept),
+      "duplicate_draft_concept",
+    );
+
+    const uncoveredPlan = readyPlan();
+    uncoveredPlan.plan.concepts.push({
+      reference: "concept_3",
+      label: "Another new concept",
+      disposition: "new",
+      purpose: "A second concept that must be represented.",
+    });
+    uncoveredPlan.plan.steps[0]!.affected_concepts.push("concept_3");
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(uncoveredPlan),
+          validDraft(),
+        ),
+      "draft_concept_uncovered",
+    );
+  });
+
+  it("requires each cited source step to authorize the entity Object scope", () => {
+    const fieldMismatchPlan = readyPlan();
+    fieldMismatchPlan.plan.steps[1]!.affected_concepts = ["concept_2"];
+    const fieldMismatch = validDraft();
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(fieldMismatchPlan),
+          fieldMismatch,
+        ),
+      "source_step_scope_mismatch",
+    );
+
+    const viewMismatchPlan = readyPlan();
+    viewMismatchPlan.plan.steps[3]!.affected_concepts = ["concept_2"];
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(viewMismatchPlan),
+          validDraft(),
+        ),
+      "source_step_scope_mismatch",
+    );
+
+    const formMismatchPlan = readyPlan();
+    formMismatchPlan.plan.steps[4]!.affected_concepts = ["concept_2"];
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(formMismatchPlan),
+          validDraft(),
+        ),
+      "source_step_scope_mismatch",
+    );
+
+    const relationshipMismatchPlan = readyPlan();
+    relationshipMismatchPlan.plan.steps[2]!.affected_concepts = ["concept_2"];
+    relationshipMismatchPlan.plan.steps[2]!.existing_object_keys = ["customer"];
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(relationshipMismatchPlan),
+          validDraft(),
+        ),
+      "source_step_scope_mismatch",
+    );
+
+    const pageMismatchPlan = readyPlan();
+    pageMismatchPlan.plan.steps[5]!.affected_concepts = ["concept_2"];
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(pageMismatchPlan),
+          validDraft(),
+        ),
+      "source_step_scope_mismatch",
+    );
+
+    const unrelatedDraftObject = validDraft();
+    const unrelatedPlan = readyPlan();
+    unrelatedPlan.plan.steps.push({
+      reference: "step_7",
+      sequence: 7,
+      lane: "configuration",
+      category: "define_object",
+      summary: "Prepare an unrelated existing Object scope.",
+      dependencies: ["step_6"],
+      affected_concepts: ["concept_2"],
+      existing_object_keys: ["customer"],
+      location_references: [],
+      materiality: "medium",
+      requires_owner_confirmation: true,
+    });
+    unrelatedDraftObject.objects[0]!.source_step_references = [
+      "step_1",
+      "step_7",
+    ];
+    expectDiagnostic(
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(unrelatedPlan),
+          unrelatedDraftObject,
+        ),
+      "source_step_scope_mismatch",
+    );
+  });
+
   it("resolves exact active context keys and draft references", () => {
     const unknownObject = validDraft();
     unknownObject.relationships[0]!.source_object_reference = {
@@ -928,10 +1238,11 @@ describe("builder configuration draft semantic validation", () => {
       source: "existing",
       object_key: "customer",
     };
-    expectDiagnostic(
-      () => validateConfigurationDraftOutput(inputValue(), inactiveField),
-      "existing_field_unknown_or_inactive",
-    );
+    expectDiagnostic(() => {
+      const plan = readyPlan();
+      plan.plan.steps[3]!.affected_concepts = ["concept_2"];
+      return validateConfigurationDraftOutput(inputValue(plan), inactiveField);
+    }, "existing_field_unknown_or_inactive");
 
     const inactiveForm = validDraft();
     tableView(inactiveForm).configuration.create_form_reference = {
@@ -984,10 +1295,14 @@ describe("builder configuration draft semantic validation", () => {
     tableView(crossObjectView).configuration.fields = [
       draftFieldReference("draft_field_1"),
     ];
-    expectDiagnostic(
-      () => validateConfigurationDraftOutput(inputValue(), crossObjectView),
-      "view_field_object_mismatch",
-    );
+    expectDiagnostic(() => {
+      const plan = readyPlan();
+      plan.plan.steps[3]!.affected_concepts = ["concept_2"];
+      return validateConfigurationDraftOutput(
+        inputValue(plan),
+        crossObjectView,
+      );
+    }, "view_field_object_mismatch");
 
     const crossObjectForm = validDraft();
     crossObjectForm.forms[0]!.object_reference = {
@@ -995,12 +1310,20 @@ describe("builder configuration draft semantic validation", () => {
       object_key: "customer",
     };
     crossObjectForm.forms[0]!.fields = [
-      { field_reference: draftFieldReference("draft_field_1") },
+      {
+        field_reference: draftFieldReference("draft_field_1"),
+        label: null,
+        help_text: null,
+      },
     ];
-    expectDiagnostic(
-      () => validateConfigurationDraftOutput(inputValue(), crossObjectForm),
-      "form_field_object_mismatch",
-    );
+    expectDiagnostic(() => {
+      const plan = readyPlan();
+      plan.plan.steps[4]!.affected_concepts = ["concept_2"];
+      return validateConfigurationDraftOutput(
+        inputValue(plan),
+        crossObjectForm,
+      );
+    }, "form_field_object_mismatch");
 
     const missingRequired = validDraft();
     missingRequired.forms[0]!.fields = missingRequired.forms[0]!.fields.filter(
@@ -1025,8 +1348,16 @@ describe("builder configuration draft semantic validation", () => {
 
     const duplicateFormField = validDraft();
     duplicateFormField.forms[0]!.fields = [
-      { field_reference: draftFieldReference("draft_field_1") },
-      { field_reference: draftFieldReference("draft_field_1") },
+      {
+        field_reference: draftFieldReference("draft_field_1"),
+        label: null,
+        help_text: null,
+      },
+      {
+        field_reference: draftFieldReference("draft_field_1"),
+        label: null,
+        help_text: null,
+      },
     ];
     expectDiagnostic(
       () => validateConfigurationDraftOutput(inputValue(), duplicateFormField),
@@ -1066,6 +1397,9 @@ describe("builder configuration draft semantic validation", () => {
         title_field: draftFieldReference("draft_field_1"),
         image_field: draftFieldReference("draft_field_2"),
         supporting_fields: [],
+        subtitle_field: null,
+        create_form_reference: null,
+        edit_form_reference: null,
       },
     };
     expectDiagnostic(
@@ -1075,15 +1409,28 @@ describe("builder configuration draft semantic validation", () => {
   });
 
   it("rejects duplicate new Object and same-Object Field labels deterministically", () => {
+    const duplicateObjectPlan = readyPlan();
+    duplicateObjectPlan.plan.concepts.push({
+      reference: "concept_3",
+      label: "Another new concept",
+      disposition: "new",
+      purpose: "Provide a distinct duplicate-label test concept.",
+    });
+    duplicateObjectPlan.plan.steps[0]!.affected_concepts.push("concept_3");
     const duplicateObject = validDraft();
     duplicateObject.objects.push({
       ...duplicateObject.objects[0]!,
       reference: "draft_object_2",
+      concept_reference: "concept_3",
       singular_label: "  Catering\u00a0Enquiry ",
       plural_label: "Other enquiries",
     });
     expectDiagnostic(
-      () => validateConfigurationDraftOutput(inputValue(), duplicateObject),
+      () =>
+        validateConfigurationDraftOutput(
+          inputValue(duplicateObjectPlan),
+          duplicateObject,
+        ),
       "duplicate_object_intent",
     );
 
@@ -1097,6 +1444,40 @@ describe("builder configuration draft semantic validation", () => {
       () => validateConfigurationDraftOutput(inputValue(), duplicateField),
       "duplicate_field_intent",
     );
+  });
+
+  it("normalizes one duplicate-label namespace across singular and plural labels", () => {
+    const duplicateObjectPlan = readyPlan();
+    duplicateObjectPlan.plan.concepts.push({
+      reference: "concept_3",
+      label: "Another new concept",
+      disposition: "new",
+      purpose: "Provide a distinct duplicate-label test concept.",
+    });
+    duplicateObjectPlan.plan.steps[0]!.affected_concepts.push("concept_3");
+
+    for (const labels of [
+      { singular_label: "Catering Enquiries", plural_label: "Other enquiries" },
+      { singular_label: "Other enquiry", plural_label: "Catering Enquiry" },
+      { singular_label: "Other enquiry", plural_label: "Catering Enquiries" },
+      { singular_label: "Same label", plural_label: "Same label" },
+    ]) {
+      const output = validDraft();
+      output.objects.push({
+        ...output.objects[0]!,
+        reference: "draft_object_2",
+        concept_reference: "concept_3",
+        ...labels,
+      });
+      expectDiagnostic(
+        () =>
+          validateConfigurationDraftOutput(
+            inputValue(duplicateObjectPlan),
+            output,
+          ),
+        "duplicate_object_intent",
+      );
+    }
   });
 
   it("does not turn collection order into position or allocation authority", () => {

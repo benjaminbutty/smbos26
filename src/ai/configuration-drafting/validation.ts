@@ -41,6 +41,14 @@ type DraftSourceCategory =
   | "configure_form"
   | "configure_page";
 
+type ReadyPlanStep =
+  BuilderConfigurationDraftReadyTaskInput["ready_plan"]["plan"]["steps"][number];
+
+interface PlanStepScope {
+  existingObjectKeys: ReadonlySet<string>;
+  draftConceptReferences: ReadonlySet<string>;
+}
+
 function isAcceptedConfigurationCategory(
   category: string,
 ): category is DraftSourceCategory {
@@ -146,7 +154,7 @@ function normaliseLabel(value: string): string {
 function validateSourceSteps(
   input: BuilderConfigurationDraftReadyTaskInput,
   output: BuilderConfigurationDraftOutput,
-): void {
+): Map<string, ReadyPlanStep> {
   const steps = new Map(
     input.ready_plan.plan.steps.map((step) => [step.reference, step]),
   );
@@ -199,6 +207,90 @@ function validateSourceSteps(
   ) {
     fail("source_step_uncovered");
   }
+
+  return steps;
+}
+
+function buildPlanStepScopes(
+  input: BuilderConfigurationDraftReadyTaskInput,
+): Map<string, PlanStepScope> {
+  const conceptsByReference = new Map(
+    input.ready_plan.plan.concepts.map((concept) => [
+      concept.reference,
+      concept,
+    ]),
+  );
+
+  return new Map(
+    input.ready_plan.plan.steps.map((step) => {
+      const existingObjectKeys = new Set(step.existing_object_keys);
+      const draftConceptReferences = new Set<string>();
+
+      for (const conceptReference of step.affected_concepts) {
+        const concept = conceptsByReference.get(conceptReference);
+        if (concept?.disposition === "existing") {
+          existingObjectKeys.add(concept.existing_object_key);
+        } else if (concept?.disposition === "new") {
+          draftConceptReferences.add(concept.reference);
+        }
+      }
+
+      return [
+        step.reference,
+        { existingObjectKeys, draftConceptReferences },
+      ] as const;
+    }),
+  );
+}
+
+function validateDraftObjectConcepts(
+  input: BuilderConfigurationDraftReadyTaskInput,
+  output: BuilderConfigurationDraftOutput,
+  steps: ReadonlyMap<string, ReadyPlanStep>,
+): Map<string, string> {
+  const conceptsByReference = new Map(
+    input.ready_plan.plan.concepts.map((concept) => [
+      concept.reference,
+      concept,
+    ]),
+  );
+  const conceptByDraftObjectReference = new Map<string, string>();
+  const representedConcepts = new Set<string>();
+
+  for (const object of output.objects) {
+    const concept = conceptsByReference.get(object.concept_reference);
+    if (!concept) {
+      fail("draft_concept_unknown");
+    }
+    if (concept.disposition !== "new") {
+      fail("draft_concept_not_new");
+    }
+    if (representedConcepts.has(object.concept_reference)) {
+      fail("duplicate_draft_concept");
+    }
+    representedConcepts.add(object.concept_reference);
+    conceptByDraftObjectReference.set(
+      object.reference,
+      object.concept_reference,
+    );
+  }
+
+  for (const step of steps.values()) {
+    if (step.category !== "define_object") {
+      continue;
+    }
+    for (const conceptReference of step.affected_concepts) {
+      const concept = conceptsByReference.get(conceptReference);
+      if (
+        concept?.disposition === "new" &&
+        ![...conceptByDraftObjectReference.values()].includes(concept.reference)
+      ) {
+        fail("draft_concept_uncovered");
+      }
+    }
+  }
+
+  return conceptByDraftObjectReference;
 }
 
 function validateUniqueLocalReferences(
@@ -264,7 +356,13 @@ export function validateConfigurationDraftOutput(
   }
 
   validateUniqueLocalReferences(parsedOutput);
-  validateSourceSteps(parsedInput, parsedOutput);
+  const sourceSteps = validateSourceSteps(parsedInput, parsedOutput);
+  const stepScopes = buildPlanStepScopes(parsedInput);
+  const draftObjectConcepts = validateDraftObjectConcepts(
+    parsedInput,
+    parsedOutput,
+    sourceSteps,
+  );
 
   const objectsByReference = new Map(
     parsedOutput.objects.map((object) => [object.reference, object]),
@@ -279,6 +377,50 @@ export function validateConfigurationDraftOutput(
     parsedOutput.views.map((view) => [view.reference, view]),
   );
   const objectsByKey = contextObjects(parsedInput.business_context);
+
+  function validateSourceObjectScope(
+    sourceStepReferences: ReadonlyArray<string>,
+    object: ResolvedObject,
+  ): void {
+    for (const sourceStepReference of sourceStepReferences) {
+      const scope = stepScopes.get(sourceStepReference);
+      if (!scope) {
+        fail("unknown_source_step");
+      }
+
+      const authorized = object.objectKey
+        ? scope.existingObjectKeys.has(object.objectKey)
+        : object.draftReference
+          ? (() => {
+              const conceptReference = draftObjectConcepts.get(
+                object.draftReference,
+              );
+              return (
+                conceptReference !== undefined &&
+                scope.draftConceptReferences.has(conceptReference)
+              );
+            })()
+          : false;
+      if (!authorized) {
+        fail("source_step_scope_mismatch");
+      }
+    }
+  }
+
+  function validateDraftObjectSourceScope(object: {
+    concept_reference: string;
+    source_step_references: ReadonlyArray<string>;
+  }): void {
+    for (const sourceStepReference of object.source_step_references) {
+      const scope = stepScopes.get(sourceStepReference);
+      if (
+        !scope ||
+        !scope.draftConceptReferences.has(object.concept_reference)
+      ) {
+        fail("source_step_scope_mismatch");
+      }
+    }
+  }
 
   function resolveObject(reference: DraftObjectReference): ResolvedObject {
     if (reference.source === "existing") {
@@ -299,6 +441,10 @@ export function validateConfigurationDraftOutput(
       identity: `draft:object:${reference.object_reference}`,
       draftReference: reference.object_reference,
     };
+  }
+
+  for (const object of parsedOutput.objects) {
+    validateDraftObjectSourceScope(object);
   }
 
   function resolveExistingField(
@@ -428,16 +574,15 @@ export function validateConfigurationDraftOutput(
   }
 
   function validateObjectIntentLabels(): void {
-    const singularLabels = new Set<string>();
-    const pluralLabels = new Set<string>();
+    const labels = new Set<string>();
     for (const object of parsedOutput.objects) {
-      const singular = normaliseLabel(object.singular_label);
-      const plural = normaliseLabel(object.plural_label);
-      if (singularLabels.has(singular) || pluralLabels.has(plural)) {
-        fail("duplicate_object_intent");
+      for (const value of [object.singular_label, object.plural_label]) {
+        const label = normaliseLabel(value);
+        if (labels.has(label)) {
+          fail("duplicate_object_intent");
+        }
+        labels.add(label);
       }
-      singularLabels.add(singular);
-      pluralLabels.add(plural);
     }
   }
 
@@ -460,6 +605,8 @@ export function validateConfigurationDraftOutput(
 
   const resolvedFields = new Map<string, ResolvedField>();
   for (const field of parsedOutput.fields) {
+    const targetObject = resolveObject(field.object_reference);
+    validateSourceObjectScope(field.source_step_references, targetObject);
     resolvedFields.set(
       field.reference,
       resolveField({
@@ -509,16 +656,17 @@ export function validateConfigurationDraftOutput(
 
   for (const view of parsedOutput.views) {
     const targetObject = resolveObject(view.object_reference);
+    validateSourceObjectScope(view.source_step_references, targetObject);
     switch (view.view_type) {
       case "table":
         validateViewFields(view, targetObject, [
           ...view.configuration.fields,
-          ...(view.configuration.title_field
+          ...(view.configuration.title_field !== null
             ? [view.configuration.title_field]
             : []),
         ]);
         validateViewForms(view, targetObject, [
-          ...(view.configuration.create_form_reference
+          ...(view.configuration.create_form_reference !== null
             ? [
                 {
                   reference: view.configuration.create_form_reference,
@@ -526,7 +674,7 @@ export function validateConfigurationDraftOutput(
                 },
               ]
             : []),
-          ...(view.configuration.edit_form_reference
+          ...(view.configuration.edit_form_reference !== null
             ? [
                 {
                   reference: view.configuration.edit_form_reference,
@@ -542,7 +690,7 @@ export function validateConfigurationDraftOutput(
           ...view.configuration.secondary_fields,
         ]);
         validateViewForms(view, targetObject, [
-          ...(view.configuration.create_form_reference
+          ...(view.configuration.create_form_reference !== null
             ? [
                 {
                   reference: view.configuration.create_form_reference,
@@ -550,7 +698,7 @@ export function validateConfigurationDraftOutput(
                 },
               ]
             : []),
-          ...(view.configuration.edit_form_reference
+          ...(view.configuration.edit_form_reference !== null
             ? [
                 {
                   reference: view.configuration.edit_form_reference,
@@ -563,22 +711,22 @@ export function validateConfigurationDraftOutput(
       case "cards":
         validateViewFields(view, targetObject, [
           view.configuration.title_field,
-          ...(view.configuration.subtitle_field
+          ...(view.configuration.subtitle_field !== null
             ? [view.configuration.subtitle_field]
             : []),
-          ...(view.configuration.image_field
+          ...(view.configuration.image_field !== null
             ? [view.configuration.image_field]
             : []),
           ...view.configuration.supporting_fields,
         ]);
         if (
-          view.configuration.image_field &&
+          view.configuration.image_field !== null &&
           resolveField(view.configuration.image_field).fieldType !== "file"
         ) {
           fail("cards_image_field_invalid");
         }
         validateViewForms(view, targetObject, [
-          ...(view.configuration.create_form_reference
+          ...(view.configuration.create_form_reference !== null
             ? [
                 {
                   reference: view.configuration.create_form_reference,
@@ -586,7 +734,7 @@ export function validateConfigurationDraftOutput(
                 },
               ]
             : []),
-          ...(view.configuration.edit_form_reference
+          ...(view.configuration.edit_form_reference !== null
             ? [
                 {
                   reference: view.configuration.edit_form_reference,
@@ -599,12 +747,12 @@ export function validateConfigurationDraftOutput(
       case "detail":
         validateViewFields(view, targetObject, [
           ...view.configuration.fields,
-          ...(view.configuration.title_field
+          ...(view.configuration.title_field !== null
             ? [view.configuration.title_field]
             : []),
         ]);
         validateViewForms(view, targetObject, [
-          ...(view.configuration.edit_form_reference
+          ...(view.configuration.edit_form_reference !== null
             ? [
                 {
                   reference: view.configuration.edit_form_reference,
@@ -670,6 +818,7 @@ export function validateConfigurationDraftOutput(
 
   for (const form of parsedOutput.forms) {
     const targetObject = resolveObject(form.object_reference);
+    validateSourceObjectScope(form.source_step_references, targetObject);
     const identities = new Set<string>();
     for (const configuredField of form.fields) {
       const field = resolveField(configuredField.field_reference);
@@ -691,18 +840,28 @@ export function validateConfigurationDraftOutput(
         if (view.audience !== page.audience) {
           fail("page_block_audience_mismatch");
         }
+        validateSourceObjectScope(page.source_step_references, view.object);
       } else if (block.type === "form") {
         const form = resolveForm(block.form_reference);
         if (form.audience !== page.audience || form.mode !== "create") {
           fail("page_block_audience_mismatch");
         }
+        validateSourceObjectScope(page.source_step_references, form.object);
       }
     }
   }
 
   for (const relationship of parsedOutput.relationships) {
-    resolveObject(relationship.source_object_reference);
-    resolveObject(relationship.target_object_reference);
+    const sourceObject = resolveObject(relationship.source_object_reference);
+    const targetObject = resolveObject(relationship.target_object_reference);
+    validateSourceObjectScope(
+      relationship.source_step_references,
+      sourceObject,
+    );
+    validateSourceObjectScope(
+      relationship.source_step_references,
+      targetObject,
+    );
   }
 
   return parsedOutput;

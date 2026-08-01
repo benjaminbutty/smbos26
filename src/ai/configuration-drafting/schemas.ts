@@ -115,6 +115,7 @@ export const draftSourceStepReferencesSchema = z
 
 const draftObjectBase = {
   reference: referenceSchema("draft_object", 60),
+  concept_reference: referenceSchema("concept"),
   source_step_references: draftSourceStepReferencesSchema,
   singular_label: labelSchema,
   plural_label: labelSchema,
@@ -123,7 +124,7 @@ const draftObjectBase = {
 
 export const draftObjectSchema = z.object(draftObjectBase).strict();
 
-const emptySettingsSchema = z.object({}).strict();
+const emptySettingsSchema = z.null();
 const optionsSettingsSchema = z
   .object({
     options: z.array(labelSchema).min(1).max(100),
@@ -204,9 +205,9 @@ export const draftRelationshipSchema = z
 const tableViewConfigurationSchema = z
   .object({
     fields: z.array(draftFieldReferenceSchema).min(1).max(50),
-    title_field: draftFieldReferenceSchema.optional(),
-    create_form_reference: draftFormReferenceSchema.optional(),
-    edit_form_reference: draftFormReferenceSchema.optional(),
+    title_field: draftFieldReferenceSchema.nullable(),
+    create_form_reference: draftFormReferenceSchema.nullable(),
+    edit_form_reference: draftFormReferenceSchema.nullable(),
   })
   .strict();
 
@@ -214,27 +215,27 @@ const listViewConfigurationSchema = z
   .object({
     primary_field: draftFieldReferenceSchema,
     secondary_fields: z.array(draftFieldReferenceSchema).max(50),
-    create_form_reference: draftFormReferenceSchema.optional(),
-    edit_form_reference: draftFormReferenceSchema.optional(),
+    create_form_reference: draftFormReferenceSchema.nullable(),
+    edit_form_reference: draftFormReferenceSchema.nullable(),
   })
   .strict();
 
 const cardsViewConfigurationSchema = z
   .object({
     title_field: draftFieldReferenceSchema,
-    subtitle_field: draftFieldReferenceSchema.optional(),
-    image_field: draftFieldReferenceSchema.optional(),
+    subtitle_field: draftFieldReferenceSchema.nullable(),
+    image_field: draftFieldReferenceSchema.nullable(),
     supporting_fields: z.array(draftFieldReferenceSchema).max(50),
-    create_form_reference: draftFormReferenceSchema.optional(),
-    edit_form_reference: draftFormReferenceSchema.optional(),
+    create_form_reference: draftFormReferenceSchema.nullable(),
+    edit_form_reference: draftFormReferenceSchema.nullable(),
   })
   .strict();
 
 const detailViewConfigurationSchema = z
   .object({
     fields: z.array(draftFieldReferenceSchema).min(1).max(50),
-    title_field: draftFieldReferenceSchema.optional(),
-    edit_form_reference: draftFormReferenceSchema.optional(),
+    title_field: draftFieldReferenceSchema.nullable(),
+    edit_form_reference: draftFormReferenceSchema.nullable(),
   })
   .strict();
 
@@ -280,8 +281,8 @@ export const draftViewSchema = z.discriminatedUnion("view_type", [
 const draftFormFieldSchema = z
   .object({
     field_reference: draftFieldReferenceSchema,
-    label: labelSchema.optional(),
-    help_text: z.string().trim().min(1).max(500).optional(),
+    label: labelSchema.nullable(),
+    help_text: z.string().trim().min(1).max(500).nullable(),
   })
   .strict();
 
@@ -294,7 +295,7 @@ export const draftFormSchema = z
     mode: experienceFormModeSchema,
     audience: experienceAudienceSchema,
     fields: z.array(draftFormFieldSchema).min(1).max(50),
-    submit_label: labelSchema.optional(),
+    submit_label: labelSchema.nullable(),
   })
   .strict();
 
