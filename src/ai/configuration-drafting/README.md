@@ -44,11 +44,16 @@ zero-priced disabled provider in both disabled and OpenAI server modes. Phase
 1A therefore makes no provider request and persists no request, context, plan
 or draft.
 
-This module is not a compiler and does not create Milestone 5 operations,
-proposals, candidates, validation results or application instructions. A later
-trusted server compiler must derive collision-safe keys, IDs, positions,
-complete definitions, operations, defaults, active/publication state and exact
-expected-head metadata before anything can enter the existing M5 lifecycle.
+This module remains the untrusted drafting boundary and does not create
+Milestone 5 operations, proposals, candidates, validation results or
+application instructions. Milestone 7 Phase 1B consumes its validated result
+in `src/core/configuration/draft-compiler/`, together with a server-supplied
+immutable configuration snapshot. That pure compiler derives collision-safe
+keys, slugs, positions, complete definitions, defaults and active state, then
+emits only strict M5 operations. It does not derive UUIDs or expected-head
+metadata; M5 later allocates trusted IDs while materialising a candidate, and a
+later orchestration phase supplies authentication, currentness and proposal
+metadata.
 
 Public Form/Page intent is design intent only. The current PostgreSQL boundary
 and public renderer do not provide generic public Form submission, so a later

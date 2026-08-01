@@ -1411,6 +1411,38 @@ required before full Corporate Catering Enquiry acceptance. The preserved
 fixture is exactly Company name, Event date, Number of guests, Budget and Notes;
 `status` is not added unless a validated owner plan explicitly requests it.
 
+### 8.5.3 Milestone 7 Phase 1B deterministic configuration draft compiler
+
+Phase 1B is a pure synchronous server-owned compiler under
+`src/core/configuration/draft-compiler/`. It accepts the Phase 1A task-input
+base contract, the strict Phase 1A configuration draft and one authoritative
+immutable `ConfigurationSnapshotV1` supplied by a trusted server boundary. It
+re-runs Phase 1A validation and re-resolves every existing Object, Field, Form
+and View reference against the snapshot, including activity, ownership and
+experience compatibility. Duplicate or inconsistent snapshot identities fail
+closed; active and archived keys, slugs and Field positions remain reserved.
+
+The compiler derives collision-safe graph keys and Page slugs with deterministic
+ASCII normalisation and finite numeric suffixes. It derives Field positions
+from canonical source-step/base/local-reference ordering: new Objects begin at
+position zero, while existing Objects append after the greatest active or
+archived position without filling gaps. It preserves nested View, Form and Page
+design order and emits only complete strict `set_object`, `set_field`,
+`set_relationship`, `set_form`, `set_view` and `set_page` operations in the
+canonical group order Object, Field, Relationship, Form, View, Page. All Pages
+compile as `draft`, including public Pages; public Form/Page intent is still not
+executable, and Relationship configuration creates metadata only.
+
+The compiler output contains no UUID, Business/actor identity, expected-head
+value, candidate snapshot, ID allocation, proposal metadata or lifecycle state.
+It performs no database or network access, does not load a Business, call a
+provider, invoke M5 lifecycle services, validate/apply/publish changes, add a
+route/UI, or mutate configuration or operational data. M5 later allocates
+trusted IDs while materialising a candidate. Phase 2 later supplies
+authentication, exact currentness and proposal orchestration. The drafting
+provider remains disabled and Terra planning evidence is unchanged and is not
+compiler evidence.
+
 ### 8.6 Validation layer
 
 Every proposed operation must validate:
