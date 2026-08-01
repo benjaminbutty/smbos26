@@ -76,6 +76,12 @@ jobs:
       - name: Run deterministic configuration draft compiler tests
         run: npm run test:configuration-draft-compiler
 
+      - name: Reset for authenticated configuration proposal orchestration tests
+        run: npm run supabase:reset
+
+      - name: Run authenticated configuration proposal orchestration tests
+        run: npm run test:builder-configuration-proposal
+
       - name: Run bounded builder planning evaluation tests
         run: npm run test:builder-evaluation
 

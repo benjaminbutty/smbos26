@@ -128,6 +128,8 @@ Included:
   normalized duplicate namespace
 - production-disabled configuration drafting in both disabled and OpenAI server
   modes; the separate Phase 1B compiler performs no provider request
+- authenticated, server-only Phase 2 handoff from a completed draft through
+  exact-currentness checks to one ordinary M5 proposed configuration change
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -137,9 +139,9 @@ Not included:
 - online payment, deposits, refunds or inventory deduction
 - user-facing AI execution or executable builder behavior
 - owner/provider/model/API-key selection and multiple external providers
-- AI proposal/operation generation, builder routes or chat UI
-- proposal creation, lifecycle orchestration and builder routes from
-  `builder_configuration_draft_v1`
+- provider-backed AI proposal/operation generation, builder routes or chat UI
+- proposal lifecycle orchestration, validation/application automation and
+  builder routes from `builder_configuration_draft_v1`
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -181,7 +183,9 @@ or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
 Production remains network-free unless `AI_PROVIDER=openai` and a server-only
 key are both configured. Even then, the current Business must separately have
 AI enabled before reservation or provider invocation. Operation generation and
-builder UI remain later work.
+builder UI remain later work. Provider-backed operation generation remains
+outside Phase 2; the authenticated handoff below can only pass a completed
+transient draft to the existing M5 proposal path.
 
 Phase 2A.1 adds the first non-AI configuration control at
 `/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
@@ -361,8 +365,8 @@ references, reserves active and archived identities, derives collision-safe
 keys, Page slugs, Field positions, complete defaults/active state and strict
 M5 operations. It produces no UUIDs, expected-head values, candidate,
 proposal or lifecycle state; M5 later allocates trusted IDs while materialising
-a candidate, and a later orchestration phase supplies authentication,
-currentness and proposal metadata.
+a candidate. Milestone 7 Phase 2 supplies authentication, exact currentness and
+fixed proposal metadata in a separate server-only handoff.
 
 Public Form/Page intent remains design intent only. PostgreSQL currently
 allows only the static published public Page resolver, and the public renderer
@@ -385,6 +389,32 @@ Object, Field, Relationship, Form, View, Page; Pages are always draft and public
 Form/Page intent remains non-executable. The compiler has no database/provider,
 UUID, currentness, proposal, route, UI or mutation dependency. Phase 2 later
 adds authenticated currentness and proposal orchestration.
+
+### Milestone 7 Phase 2 - authenticated proposal-only orchestration
+
+Phase 2 is a server-only handoff for a completed Phase 1A draft and Phase 1B
+compiler input. Its strict request contains only the tenant, expected active
+version/head, the Phase 1A task-input base contract and the validated Phase 1A
+draft. The server first loads the authenticated Owner/Admin context, compares
+the supplied currentness and canonical serialized model context exactly, and
+compiles once against that first immutable configuration snapshot. It then
+loads and projects context again, requires the second currentness and canonical
+context to match, and calls exactly one existing M5
+`ConfigurationChangeService.proposeChangeSet`.
+
+M5 remains responsible for trusted IDs, candidate materialisation and the
+operation diff. Phase 2 supplies only the fixed title `Proposed configuration
+changes` and a `null` description, and returns a frozen six-field result:
+schema version, proposal ID, `proposed` status, base version ID, base head
+revision and operation count. Stale context, compiler failures and M5 errors
+map to finite safe errors; there is no retry, rebase, validate, apply, publish,
+provider execution, raw handoff persistence, route or UI.
+
+The authenticated Catering Enquiry acceptance fixture produces one ordinary
+proposal with the expected Object, Fields, Relationship, Form, View and draft
+Page intent through existing primitives. It does not add a status field,
+change live configuration, enable generic public Form submission or claim a
+complete public submission flow; those remain later reusable capabilities.
 
 ## Requirements
 
@@ -517,42 +547,43 @@ validating from a clean state.
 
 ## Quality commands
 
-| Command                               | Purpose                                          |
-| ------------------------------------- | ------------------------------------------------ |
-| `npm test`                            | Run fast unit and component tests                |
-| `npm run test:integration`            | Run the full real Supabase/PostgreSQL suite      |
-| `npm run test:ai-context`             | Run AI-safe Business context tests               |
-| `npm run test:ai-accounting`          | Run durable AI usage-control/accounting tests    |
-| `npm run test:builder-planning`       | Run strict non-executing builder planning tests  |
-| `npm run test:manual-amendments`      | Run deterministic schedule amendment tests       |
-| `npm run test:manual-questions`       | Run deterministic preorder question tests        |
-| `npm run test:rls`                    | Run the Milestone 1 tenancy/RLS suite            |
-| `npm run test:graph`                  | Run the Milestone 2 graph integrity suite        |
-| `npm run test:experience`             | Run the Milestone 3 experience suite             |
-| `npm run test:preorder`               | Run the Milestone 4 preorder/concurrency suite   |
-| `npm run test:configuration`          | Run immutable baseline/version tests             |
-| `npm run test:changes`                | Run structured proposal and semantic-diff tests  |
-| `npm run test:validation`             | Run rollback-only compatibility validation tests |
-| `npm run test:application`            | Run atomic configuration application tests       |
-| `npm run test:configuration-boundary` | Run Phase 3B closure/demo tests                  |
-| `npm run test:rollback`               | Run forward-only rollback tests                  |
-| `npm run test:preview-foundation`     | Run authenticated candidate foundation tests     |
-| `npm run test:preview`                | Run authenticated rendered preview tests         |
-| `npm run test:changes-ui-read`        | Run read-only Changes/History and no-write tests |
-| `npm run test:changes-ui-actions`     | Run lifecycle action/security/concurrency tests  |
-| `npm run test:watch`                  | Run unit tests in watch mode                     |
-| `npm run typecheck`                   | Generate route types and run TypeScript          |
-| `npm run lint`                        | Run ESLint                                       |
-| `npm run format`                      | Format supported files with Prettier             |
-| `npm run format:check`                | Verify formatting without changing files         |
-| `npm run build`                       | Create a production Next.js build                |
-| `npm run check`                       | Run formatting, types, linting, and unit tests   |
-| `npm run supabase:start`              | Start the local Supabase stack                   |
-| `npm run supabase:status`             | Show local Supabase service details              |
-| `npm run supabase:reset`              | Recreate and migrate the local database          |
-| `npm run supabase:lint`               | Run PostgreSQL lint against the local database   |
-| `npm run supabase:stop`               | Stop the local Supabase stack                    |
-| `npm run demo:seed`                   | Seed the local-only Bedford Bakery demonstration |
+| Command                                       | Purpose                                             |
+| --------------------------------------------- | --------------------------------------------------- |
+| `npm test`                                    | Run fast unit and component tests                   |
+| `npm run test:integration`                    | Run the full real Supabase/PostgreSQL suite         |
+| `npm run test:ai-context`                     | Run AI-safe Business context tests                  |
+| `npm run test:ai-accounting`                  | Run durable AI usage-control/accounting tests       |
+| `npm run test:builder-planning`               | Run strict non-executing builder planning tests     |
+| `npm run test:builder-configuration-proposal` | Run authenticated proposal-only orchestration tests |
+| `npm run test:manual-amendments`              | Run deterministic schedule amendment tests          |
+| `npm run test:manual-questions`               | Run deterministic preorder question tests           |
+| `npm run test:rls`                            | Run the Milestone 1 tenancy/RLS suite               |
+| `npm run test:graph`                          | Run the Milestone 2 graph integrity suite           |
+| `npm run test:experience`                     | Run the Milestone 3 experience suite                |
+| `npm run test:preorder`                       | Run the Milestone 4 preorder/concurrency suite      |
+| `npm run test:configuration`                  | Run immutable baseline/version tests                |
+| `npm run test:changes`                        | Run structured proposal and semantic-diff tests     |
+| `npm run test:validation`                     | Run rollback-only compatibility validation tests    |
+| `npm run test:application`                    | Run atomic configuration application tests          |
+| `npm run test:configuration-boundary`         | Run Phase 3B closure/demo tests                     |
+| `npm run test:rollback`                       | Run forward-only rollback tests                     |
+| `npm run test:preview-foundation`             | Run authenticated candidate foundation tests        |
+| `npm run test:preview`                        | Run authenticated rendered preview tests            |
+| `npm run test:changes-ui-read`                | Run read-only Changes/History and no-write tests    |
+| `npm run test:changes-ui-actions`             | Run lifecycle action/security/concurrency tests     |
+| `npm run test:watch`                          | Run unit tests in watch mode                        |
+| `npm run typecheck`                           | Generate route types and run TypeScript             |
+| `npm run lint`                                | Run ESLint                                          |
+| `npm run format`                              | Format supported files with Prettier                |
+| `npm run format:check`                        | Verify formatting without changing files            |
+| `npm run build`                               | Create a production Next.js build                   |
+| `npm run check`                               | Run formatting, types, linting, and unit tests      |
+| `npm run supabase:start`                      | Start the local Supabase stack                      |
+| `npm run supabase:status`                     | Show local Supabase service details                 |
+| `npm run supabase:reset`                      | Recreate and migrate the local database             |
+| `npm run supabase:lint`                       | Run PostgreSQL lint against the local database      |
+| `npm run supabase:stop`                       | Stop the local Supabase stack                       |
+| `npm run demo:seed`                           | Seed the local-only Bedford Bakery demonstration    |
 
 Run the integration suite after Supabase is started and reset:
 

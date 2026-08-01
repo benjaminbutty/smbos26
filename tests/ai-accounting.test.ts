@@ -471,7 +471,7 @@ describe("Business-aware AI execution accounting", () => {
   });
 });
 
-describe("Phase 1B source boundaries", () => {
+describe("AI runtime source boundaries", () => {
   const testDirectory = path.dirname(fileURLToPath(import.meta.url));
   const repositoryRoot = path.resolve(testDirectory, "..");
   const aiSource = fs
@@ -480,7 +480,12 @@ describe("Phase 1B source boundaries", () => {
       withFileTypes: true,
     })
     .filter(
-      (entry) => entry.isFile() && /\.(?:c|m)?(?:j|t)sx?$/.test(entry.name),
+      (entry) =>
+        entry.isFile() &&
+        /\.(?:c|m)?(?:j|t)sx?$/.test(entry.name) &&
+        !path
+          .join(entry.parentPath, entry.name)
+          .includes(`${path.sep}configuration-proposal${path.sep}`),
     )
     .map((entry) => fs.readFileSync(path.join(entry.parentPath, entry.name)))
     .join("\n");

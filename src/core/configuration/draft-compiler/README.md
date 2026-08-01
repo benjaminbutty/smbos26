@@ -41,6 +41,7 @@ This module is pure and performs no database or network access. It does not
 allocate UUIDs, derive currentness, create candidate snapshots or ID
 allocations, create proposals, validate/apply/publish changes, call a provider,
 load a Business, add a route/UI, or mutate configuration or operational data.
-M5 later allocates trusted IDs while materialising a proposal candidate. A
-future orchestration phase supplies authentication, exact currentness and
-proposal metadata.
+M5 later allocates trusted IDs while materialising a proposal candidate. Phase
+2 supplies authentication, exact currentness and fixed proposal metadata in
+the separate server-only `src/ai/configuration-proposal/` handoff; this pure
+compiler remains unchanged and has no lifecycle dependency.

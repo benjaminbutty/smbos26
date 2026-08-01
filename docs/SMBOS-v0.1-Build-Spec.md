@@ -1438,10 +1438,50 @@ value, candidate snapshot, ID allocation, proposal metadata or lifecycle state.
 It performs no database or network access, does not load a Business, call a
 provider, invoke M5 lifecycle services, validate/apply/publish changes, add a
 route/UI, or mutate configuration or operational data. M5 later allocates
-trusted IDs while materialising a candidate. Phase 2 later supplies
+trusted IDs while materialising a candidate. Phase 2 supplies
 authentication, exact currentness and proposal orchestration. The drafting
 provider remains disabled and Terra planning evidence is unchanged and is not
 compiler evidence.
+
+### 8.5.4 Milestone 7 Phase 2 authenticated proposal-only orchestration
+
+Phase 2 adds one authenticated, server-only handoff under
+`src/ai/configuration-proposal/`. It accepts a strict request containing only
+`businessId`, `expectedCurrentness` (`baseVersionId` and `headRevision`), the
+Phase 1A task-input base contract and the strict Phase 1A draft. The request
+does not carry actor identity, proposal metadata, operations, candidate data,
+provider data or arbitrary instructions; those values are server- or
+compiler-owned.
+
+The handoff first loads authoritative Business context through the existing
+session-derived Owner/Admin context source. It compares the supplied
+currentness exactly and compares the supplied model context with the first
+canonical `projectAiBusinessModelContext` /
+`serializeAiBusinessModelContext` result exactly. It invokes the pure Phase 1B
+compiler once against that first immutable configuration snapshot. It then
+performs a second authoritative context load and requires the second
+session-derived Business/actor identity, currentness and canonical model
+context to match the first read and the expected handoff values. Any mismatch
+fails closed as stale; there is no retry, rebase or context substitution.
+
+After the second read, the handoff makes exactly one call to the existing M5
+`ConfigurationChangeService.proposeChangeSet` with the compiler's strict
+operations, the expected version/head, the fixed title
+`Proposed configuration changes` and `description: null`. M5 remains the sole
+owner of trusted IDs, candidate materialisation and operation diff. The
+orchestration result is a frozen, bounded six-field object containing schema
+version, proposal ID, proposed status, base version ID, base head revision and
+operation count. Errors expose only finite safe codes/messages and never raw
+request, context, plan, draft, provider or database details.
+
+This phase does not validate, apply, publish, abandon, rollback, persist the
+handoff, invoke a provider, add a route/UI, add a migration, alter the AI
+planning/drafting registries or mutate operational data. The authenticated
+Catering Enquiry proof creates one ordinary M5 proposal with ten deterministic
+operations: one Object, five Fields, one Relationship, one Form, one View and
+one draft Page. The Relationship is metadata only, no `status` field is
+introduced, and generic public Form submission remains a later reusable
+capability.
 
 ### 8.6 Validation layer
 
@@ -2163,9 +2203,10 @@ output tokens, with 393,585 estimated microusd and 108,779 ms elapsed.
 These results clear the planning gate for the frozen Terra-medium profile as
 bounded engineering evidence, not universal model perfection. Deterministic
 schemas, semantic validation and scenario gates remain authoritative, and the
-model has no mutation authority. Operation generation is still not implemented
-in Milestone 6; a later milestone may begin bounded change drafting only while
-retaining exact-head protection, deterministic validation and separate
+model has no mutation authority. Provider-backed operation generation and
+builder UI remain outside Milestone 6; Milestone 7 adds only the bounded
+server-owned draft compiler and authenticated proposal handoff while retaining
+exact-head protection, deterministic validation and separate
 configuration/operational lanes. Any material model-alias, prompt, schema,
 validator, context or provider-transport change invalidates the evidence and
 requires both gates to run again.
@@ -2183,11 +2224,18 @@ Natural-language requests in the required conversational change tests produce va
 
 ### Milestone 7 - Extensibility proof
 
-Run the Catering Enquiry test.
+Run the authenticated Catering Enquiry proposal handoff using the existing
+primitives. It must create exactly one ordinary M5 proposed change with the
+expected Object, five Fields, Relationship, Form, View and draft Page intent;
+live configuration and operational data remain unchanged, and the handoff
+does not expose lifecycle controls or claim a public submission runtime.
 
 Exit criterion:
 
-AI creates the object, fields, relationship, public form and staff view with existing primitives and no source-code change.
+An authenticated Owner/Admin can hand a completed bounded draft to the
+existing proposal boundary with exact first/second currentness protection and
+no source-code change for the business concept; later preview, deliberate
+validation/application and reusable public Form capability remain separate.
 
 At this point v0 has proven the product thesis.
 
