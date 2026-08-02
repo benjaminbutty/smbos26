@@ -75,3 +75,61 @@ assumptions, summaries, Object keys, Location references, provider IDs or
 provider bodies are recorded here. Any material model-alias, prompt, schema,
 validator, context or provider-transport change invalidates the evidence and
 requires both gates to be rerun.
+
+## Configuration drafting evaluation
+
+Milestone 8 Phase 8A qualifies the unchanged `builder_configuration_draft_v1`
+subject independently of planning. The isolated evaluation task reuses the
+exact drafting instruction, schemas and semantic validator and changes only
+the unregistered policy reference to
+`builder_configuration_drafting_terra_medium_v1`. The fixed candidate is
+`gpt-5.6-terra` with explicit `medium` reasoning; production drafting remains
+mapped to `builder_configuration_drafting_disabled_v1` in both disabled and
+OpenAI runtime modes.
+
+The suite uses exactly two frozen, schema-validated in-memory contexts:
+`rich_existing_business` and `empty_new_business`. Its eight scenarios are,
+in fixed order: `catering_enquiry_full_stack`,
+`customer_marketing_consent_field`, `customer_directory_internal`,
+`public_customer_contact_page`, `equipment_maintenance_workspace`,
+`supplier_quote_field_types`, `staff_profile_cards` and
+`order_detail_workspace`. Every code-owned ready plan parses through the real
+drafting task input schema and semantic input validator; deterministic gates
+then compare exact entity families, references, types, settings, audiences,
+relationships, links and page blocks.
+
+The two exact opt-in commands are deliberately separate:
+
+```bash
+RUN_LIVE_OPENAI_CONFIGURATION_DRAFTING_QUALIFICATION=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-configuration-drafting-terra-qualification-live
+```
+
+After independent review of qualification, reliability may be run later:
+
+```bash
+RUN_LIVE_OPENAI_CONFIGURATION_DRAFTING_RELIABILITY=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-configuration-drafting-terra-reliability-live
+```
+
+Qualification is exactly 8 sequential executions with a 5,806,080 microusd
+reservation and 6,000,000 hard ceiling. Reliability is exactly 3 sequential
+rounds (24 executions) with a 17,418,240 microusd reservation and 18,000,000
+hard ceiling. The one-execution reservation is 725,760 microusd, derived from
+the trusted integer accounting functions. Live commands are absent from CI;
+deterministic tests use injected providers only.
+
+Reports are one-line, strict, redacted metadata only: bounded scenario and
+repetition identity, pass state, entity counts, attempts, usage, integer cost,
+elapsed time and finite failure codes. No owner request, Business context,
+labels, keys, local references, page text, options, provider body/ID,
+response, raw error, stack trace, credential or model prose is emitted or
+persisted. Qualification evidence: pending deliberate live run. Reliability
+evidence: pending qualification review and deliberate live run. Any material
+change to the fixed model/policy/transport, drafting subject, synthetic
+context, ready plan, scenario order, deterministic evaluator or report
+classification invalidates both gates.

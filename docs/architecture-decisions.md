@@ -1971,3 +1971,53 @@ compilation and again atomically by M5. Live configuration is unchanged until
 the existing deliberate lifecycle, and no raw AI handoff is stored. Preview,
 validation/application, provider activation and reusable public Form
 submission remain separate future capabilities.
+
+## ADR-026 - Provider-backed configuration drafting is qualified as a frozen evaluation profile
+
+**Status:** Accepted for v0.1 (Milestone 8 Phase 8A)
+
+**Date:** 2 August 2026
+
+### Context
+
+The existing `builder_configuration_draft_v1` contract is a bounded,
+untrusted design boundary and remains production-disabled. Planning Terra
+evidence cannot establish drafting reliability because drafting has a separate
+instruction subject, schema, semantic validator and deterministic acceptance
+surface. A provider-backed drafting candidate therefore needs its own finite
+engineering evidence without introducing a production mutation path.
+
+### Decision
+
+- Qualify the exact drafting subject through an unregistered evaluation task
+  profile that reuses the production task key/version, instruction, input and
+  output schemas, and semantic validator while changing only the policy key to
+  `builder_configuration_drafting_terra_medium_v1`.
+- Fix the candidate to `gpt-5.6-terra` with explicit `medium` reasoning and
+  code-owned token, timeout, retry and pricing bounds. Derive all reservations
+  with the existing integer accounting functions: 725,760 microusd per
+  execution, 5,806,080 for qualification (8) and 17,418,240 for reliability
+  (24), with hard ceilings of 6,000,000 and 18,000,000.
+- Use exactly two frozen, schema-validated synthetic contexts and eight fixed
+  code-owned ready plans. Run qualification once sequentially and reliability
+  three sequential rounds, with strict structural, semantic, unknown,
+  provider and deterministic scenario-gate failure classification.
+- Emit only strict redacted metadata and bounded safe error codes. Keep the
+  live commands exact-opt-in and out of CI. Do not persist requests,
+  responses, reports or model prose.
+- Keep `builder_configuration_draft_v1` registered against
+  `builder_configuration_drafting_disabled_v1` in both disabled and OpenAI
+  production modes. The evaluation loader alone constructs the provider-backed
+  task service. No database, Business accounting, compiler, proposal,
+  lifecycle, route, UI or public Form runtime is added.
+
+### Consequences
+
+Phase 8A supplies bounded evidence for one frozen drafting profile rather than
+generic model correctness. Planning evidence remains separate. Any material
+model/policy/transport, drafting subject, synthetic context, ready plan,
+scenario order, evaluator or report-classification change invalidates both
+gates and requires them to be rerun. Qualification evidence is pending a
+deliberate live run; reliability evidence is pending qualification review and
+a deliberate live run. The next product step is Phase 8B authenticated
+Builder orchestration through the existing proposal boundary.

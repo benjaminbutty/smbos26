@@ -281,3 +281,15 @@ Record-to-Location links, preorder submissions, capacity counters and email
 state remain outside the configuration lifecycle. Database locks and
 idempotent applied retries—not the disabled browser button—provide concurrency
 correctness.
+
+## Milestone 8 Phase 8A adds no mutation surface
+
+The configuration-drafting qualification and reliability gates are isolated
+engineering evaluations. They use only frozen in-memory synthetic contexts,
+code-owned ready plans, the existing provider-neutral execution core and the
+existing untrusted drafting contract. They do not load tenant data, reserve
+Business accounting, create a candidate or proposal, invoke the compiler or
+lifecycle, write a file/database row, add a route/UI, or enable production
+drafting. Public Form/Page output remains design intent only. The next step is
+reviewed Phase 8B authenticated Builder orchestration through the existing
+proposal boundary.

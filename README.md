@@ -2,8 +2,10 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4C
-Terra-medium qualification and reliability gate after bounded real-model
+Phase 5B explicit Changes lifecycle interface, the Milestone 6 Phase 4C
+Terra-medium planning qualification and reliability gate, and the engineering-
+only Milestone 8 Phase 8A drafting qualification/reliability gates after
+bounded real-model
 planning diagnostics, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
@@ -88,6 +90,12 @@ Included:
   sequential repetitions (24 executions) for reliability, with frozen hard
   gates, redacted metadata-only output and ceilings of 3,700,000 and
   11,000,000 microusd
+- two engineering-only, separately activated Terra-medium configuration-
+  drafting gates over exactly two frozen synthetic contexts and eight fixed
+  scenarios: one qualification pass (8 executions) and three sequential
+  reliability rounds (24 executions), with redacted metadata-only output and
+  ceilings of 6,000,000 and 18,000,000 microusd; production drafting remains
+  disabled
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
@@ -415,6 +423,41 @@ proposal with the expected Object, Fields, Relationship, Form, View and draft
 Page intent through existing primitives. It does not add a status field,
 change live configuration, enable generic public Form submission or claim a
 complete public submission flow; those remain later reusable capabilities.
+
+### Milestone 8 Phase 8A - configuration-drafting qualification gates
+
+Phase 8A qualifies the existing `builder_configuration_draft_v1` contract in
+an isolated engineering harness. It reuses the exact production instruction,
+input/output schemas and semantic validator, but gives the unregistered
+evaluation task its separate `builder_configuration_drafting_terra_medium_v1`
+policy identity: `gpt-5.6-terra`, explicit `medium` reasoning, 256 KiB input,
+96,000 billable input tokens, 8,192 output tokens, two attempts, a 60-second
+timeout and the existing integer $2.50/M input and $15/M output rates. Its
+one-execution reservation is 725,760 microusd.
+
+The harness uses exactly two frozen, schema-validated synthetic contexts
+(`rich_existing_business` and `empty_new_business`) and eight code-owned
+ready-plan scenarios: Catering Enquiry full stack, Customer marketing
+consent, Customer Directory, public Customer contact page, Equipment and
+Maintenance workspace, Supplier Quote field types, Staff Profile cards and
+Order detail workspace. Qualification runs them once (8 executions) under a
+5,806,080 reservation and 6,000,000 hard ceiling. Reliability runs the same
+ordered set in three sequential rounds (24 executions) under a 17,418,240
+reservation and 18,000,000 hard ceiling. Both gates require exact opt-in flags,
+`AI_PROVIDER=openai` and a non-blank server-only key; the live evidence is
+pending deliberate operator runs.
+
+The deterministic evaluator emits only strict bounded counts, usage, integer
+cost, timing, repetition and finite failure codes. Provider failures expose
+only safe execution codes; output failures are classified as structural,
+semantic or unknown through bounded cause traversal. No request, context,
+model output, provider response, proposal, compiler output, database state,
+route, UI or public Form runtime claim is involved. Planning evidence is not
+drafting evidence. Any material model/policy/transport, drafting subject,
+synthetic context, ready plan, scenario order, evaluator or report-classifier
+change invalidates both gates and requires them to be rerun. The next product
+step is the reviewed Phase 8B authenticated Builder orchestration, not another
+evaluation or mutation surface.
 
 ## Requirements
 

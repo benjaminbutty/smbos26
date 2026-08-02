@@ -1,0 +1,462 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+import {
+  AI_BUSINESS_CONTEXT_MAX_BYTES,
+  aiBusinessModelContextV1Schema,
+} from "../src/ai/context/schemas";
+import { serializeAiBusinessModelContext } from "../src/ai/context/projector";
+import {
+  builderConfigurationDraftOutputSchema,
+  builderConfigurationDraftTaskInputBaseSchema,
+} from "../src/ai/configuration-drafting/schemas";
+import {
+  builderConfigurationDraftTaskInputSchema,
+  builderConfigurationDraftTaskV1,
+} from "../src/ai/configuration-drafting/task";
+import { validateConfigurationDraftInput } from "../src/ai/configuration-drafting/validation";
+import {
+  evaluateConfigurationDraft,
+  type ConfigurationDraftingExecutionMetadata,
+} from "../src/ai/evaluation/configuration-drafting/evaluator";
+import {
+  configurationDraftingSyntheticContextBytes,
+  configurationDraftingSyntheticContexts,
+} from "../evaluations/fixtures/synthetic-configuration-drafting-context";
+import {
+  configurationDraftingScenarios,
+  configurationDraftingScenarioIds,
+} from "../src/ai/evaluation/configuration-drafting/scenarios";
+import { configurationDraftingReportSchema } from "../src/ai/evaluation/configuration-drafting/schemas";
+import {
+  compliantConfigurationDraftingOutputs,
+  createInjectedConfigurationDraftingExecution,
+} from "./support/builder-configuration-drafting-evaluation-fixtures";
+
+const repositoryRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+
+const metadata: ConfigurationDraftingExecutionMetadata = {
+  attempts: 1,
+  inputTokens: 1_200,
+  outputTokens: 400,
+  usageComplete: true,
+  elapsedMs: 25,
+};
+
+function outputFor(id: (typeof configurationDraftingScenarioIds)[number]) {
+  return structuredClone(compliantConfigurationDraftingOutputs[id]);
+}
+
+describe("configuration drafting scenario and context definitions", () => {
+  it("defines exactly the approved eight scenarios in fixed order", () => {
+    expect(configurationDraftingScenarioIds).toEqual([
+      "catering_enquiry_full_stack",
+      "customer_marketing_consent_field",
+      "customer_directory_internal",
+      "public_customer_contact_page",
+      "equipment_maintenance_workspace",
+      "supplier_quote_field_types",
+      "staff_profile_cards",
+      "order_detail_workspace",
+    ]);
+    expect(configurationDraftingScenarios).toHaveLength(8);
+    expect(new Set(configurationDraftingScenarioIds).size).toBe(8);
+    expect(
+      new Set(
+        configurationDraftingScenarios.map(({ context_id }) => context_id),
+      ),
+    ).toEqual(new Set(["rich_existing_business", "empty_new_business"]));
+  });
+
+  it("parses every complete task input through the actual drafting schema", () => {
+    for (const scenario of configurationDraftingScenarios) {
+      expect(
+        builderConfigurationDraftTaskInputSchema.parse(scenario.task_input),
+      ).toEqual(scenario.task_input);
+      expect(
+        validateConfigurationDraftInput(scenario.task_input).ready_plan.state,
+      ).toBe("ready");
+      expect(scenario.ready_plan.unsupported_requirements).toEqual([]);
+      expect(scenario.ready_plan.plan.steps).toHaveLength(
+        scenario.ready_plan.plan.steps.length,
+      );
+      for (const step of scenario.ready_plan.plan.steps) {
+        expect(step.lane).toBe("configuration");
+        expect([
+          "define_object",
+          "define_field",
+          "define_relationship",
+          "configure_view",
+          "configure_form",
+          "configure_page",
+        ]).toContain(step.category);
+        expect(step.location_references).toEqual([]);
+      }
+    }
+  });
+
+  it("contains exactly two bounded, deterministic, non-operational contexts", () => {
+    expect(
+      Object.keys(configurationDraftingSyntheticContexts).toSorted(),
+    ).toEqual(["empty_new_business", "rich_existing_business"]);
+    for (const context of Object.values(
+      configurationDraftingSyntheticContexts,
+    )) {
+      expect(aiBusinessModelContextV1Schema.parse(context)).toEqual(context);
+      expect(Object.isFrozen(context)).toBe(true);
+      expect(serializeAiBusinessModelContext(context)).toBe(
+        serializeAiBusinessModelContext(structuredClone(context)),
+      );
+      expect(
+        new TextEncoder().encode(serializeAiBusinessModelContext(context))
+          .byteLength,
+      ).toBeLessThan(AI_BUSINESS_CONTEXT_MAX_BYTES);
+      const serialized = JSON.stringify(context);
+      const withoutUuidReferences = serialized.replaceAll(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gi,
+        "",
+      );
+      for (const prohibited of [
+        /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/,
+        /https?:\/\//i,
+        /\b(?:api[_ -]?key|password|secret|bearer)\b/i,
+        /\bPO-[A-F0-9]{8}\b/i,
+        /\+?\d[\d ()-]{8,}\d/,
+      ]) {
+        expect(withoutUuidReferences).not.toMatch(prohibited);
+      }
+      expect(context).not.toHaveProperty("records");
+      expect(context).not.toHaveProperty("record_relationships");
+      expect(context).not.toHaveProperty("proposals");
+      expect(context).not.toHaveProperty("provider_response");
+    }
+    expect(
+      configurationDraftingSyntheticContextBytes.rich_existing_business,
+    ).toBeGreaterThan(0);
+    expect(
+      configurationDraftingSyntheticContextBytes.empty_new_business,
+    ).toBeGreaterThan(0);
+    expect(
+      configurationDraftingSyntheticContextBytes.rich_existing_business,
+    ).toBeLessThan(128 * 1024);
+    expect(
+      configurationDraftingSyntheticContextBytes.empty_new_business,
+    ).toBeLessThan(128 * 1024);
+
+    const empty = configurationDraftingSyntheticContexts.empty_new_business;
+    expect(empty.objects).toEqual([]);
+    expect(empty.locations).toEqual([]);
+    expect(empty.relationships).toEqual([]);
+    expect(empty.views).toEqual([]);
+    expect(empty.forms).toEqual([]);
+    expect(empty.pages).toEqual([]);
+    expect(empty.preorder_experiences).toEqual([]);
+
+    const rich = configurationDraftingSyntheticContexts.rich_existing_business;
+    expect(rich.objects.map(({ key }) => key)).toEqual([
+      "customer",
+      "order",
+      "order_item",
+      "product",
+    ]);
+    expect(rich.forms.map(({ key }) => key)).toEqual([
+      "edit_order",
+      "customer_contact",
+    ]);
+    expect(rich.views.map(({ key }) => key)).toEqual([
+      "orders",
+      "order_details",
+    ]);
+    expect(rich.platform_capabilities.registry_version).toBe(1);
+  });
+});
+
+describe("actual drafting task contract and deterministic evaluator", () => {
+  it("passes all eight compliant fixtures through execution, schema, validator, and gates", async () => {
+    const execution = createInjectedConfigurationDraftingExecution(
+      async (scenarioId) => ({
+        output: structuredClone(
+          compliantConfigurationDraftingOutputs[scenarioId],
+        ),
+        usage: { inputTokens: 1_200, outputTokens: 400 },
+      }),
+    );
+    for (const scenario of configurationDraftingScenarios) {
+      const result = await execution.execute(
+        "builder_configuration_draft_v1",
+        scenario.task_input,
+      );
+      const report = evaluateConfigurationDraft(
+        scenario,
+        builderConfigurationDraftOutputSchema.parse(result.output),
+        {
+          attempts: result.accounting.attemptsStarted,
+          inputTokens: result.accounting.inputTokens,
+          outputTokens: result.accounting.outputTokens,
+          usageComplete: result.accounting.usageComplete,
+          elapsedMs: 25,
+        },
+      );
+      expect(report.passed, scenario.id).toBe(true);
+      expect(report.failed_gate_codes, scenario.id).toEqual([]);
+      expect(configurationDraftingReportSchema.parse(report)).toEqual(report);
+    }
+  });
+
+  it("keeps reports bounded and redacted", () => {
+    for (const scenario of configurationDraftingScenarios) {
+      const report = evaluateConfigurationDraft(
+        scenario,
+        compliantConfigurationDraftingOutputs[scenario.id],
+        metadata,
+      );
+      const serialized = JSON.stringify(report);
+      for (const marker of [
+        scenario.owner_request,
+        scenario.task_input.business_context.business.name,
+        "Catering Enquiry",
+        "Company name",
+        "draft_object_1",
+        "Pending",
+        "Tell us about your event",
+      ]) {
+        expect(serialized).not.toContain(marker);
+      }
+      expect(report).not.toHaveProperty("owner_request");
+      expect(report).not.toHaveProperty("business_context");
+      expect(report).not.toHaveProperty("plan");
+      expect(report).not.toHaveProperty("output");
+    }
+  });
+
+  it("fails deterministic gates for semantically valid adjacent or incorrect intent", () => {
+    const extraField = outputFor("catering_enquiry_full_stack");
+    extraField.fields.push({
+      reference: "draft_field_6",
+      source_step_references: ["step_2"],
+      object_reference: { source: "draft", object_reference: "draft_object_1" },
+      label: "Internal code",
+      field_type: "short_text",
+      required: false,
+      settings: null,
+    });
+    const extraFieldReport = evaluateAfterTaskValidation(
+      "catering_enquiry_full_stack",
+      extraField,
+    );
+    expect(extraFieldReport.passed).toBe(false);
+    expect(extraFieldReport.failed_gate_codes).toEqual(
+      expect.arrayContaining(["field_set_mismatch", "adjacent_scope_added"]),
+    );
+
+    const requiredness = outputFor("customer_marketing_consent_field");
+    requiredness.fields[0]!.required = true;
+    const requirednessReport = evaluateAfterTaskValidation(
+      "customer_marketing_consent_field",
+      requiredness,
+    );
+    expect(requirednessReport.failed_gate_codes).toContain(
+      "field_requiredness_mismatch",
+    );
+
+    const wrongFormAudience = outputFor("customer_directory_internal");
+    wrongFormAudience.forms[0]!.audience = "public";
+    wrongFormAudience.views[0]!.audience = "public";
+    const wrongFormAudienceReport = evaluateAfterTaskValidation(
+      "customer_directory_internal",
+      wrongFormAudience,
+    );
+    expect(wrongFormAudienceReport.failed_gate_codes).toEqual(
+      expect.arrayContaining(["form_mismatch", "view_mismatch"]),
+    );
+
+    const wrongCurrency = outputFor("supplier_quote_field_types");
+    const currency = wrongCurrency.fields.find(
+      ({ label }) => label === "Quote total",
+    );
+    if (!currency || currency.field_type !== "currency")
+      throw new Error("Missing currency fixture.");
+    currency.settings = { currency: "USD" };
+    const currencyReport = evaluateAfterTaskValidation(
+      "supplier_quote_field_types",
+      wrongCurrency,
+    );
+    expect(currencyReport.failed_gate_codes).toContain(
+      "field_settings_mismatch",
+    );
+
+    const wrongRelationship = outputFor("equipment_maintenance_workspace");
+    const relationship = wrongRelationship.relationships[0]!;
+    [
+      relationship.source_object_reference,
+      relationship.target_object_reference,
+    ] = [
+      relationship.target_object_reference,
+      relationship.source_object_reference,
+    ];
+    const relationshipReport = evaluateAfterTaskValidation(
+      "equipment_maintenance_workspace",
+      wrongRelationship,
+    );
+    expect(relationshipReport.failed_gate_codes).toContain(
+      "relationship_mismatch",
+    );
+
+    const wrongType = outputFor("equipment_maintenance_workspace");
+    wrongType.views[0]!.view_type = "table";
+    wrongType.views[0]!.configuration = {
+      fields: [
+        { source: "draft", field_reference: "draft_field_1" },
+        { source: "draft", field_reference: "draft_field_2" },
+      ],
+      title_field: null,
+      create_form_reference: {
+        source: "draft",
+        form_reference: "draft_form_1",
+      },
+      edit_form_reference: null,
+    };
+    const wrongTypeReport = evaluateAfterTaskValidation(
+      "equipment_maintenance_workspace",
+      wrongType,
+    );
+    expect(wrongTypeReport.failed_gate_codes).toContain("view_mismatch");
+
+    const wrongImage = outputFor("staff_profile_cards");
+    if (wrongImage.views[0]?.view_type !== "cards")
+      throw new Error("Missing Cards fixture.");
+    wrongImage.views[0].configuration.image_field = null;
+    const wrongImageReport = evaluateAfterTaskValidation(
+      "staff_profile_cards",
+      wrongImage,
+    );
+    expect(wrongImageReport.failed_gate_codes).toContain("view_mismatch");
+
+    const missingLink = outputFor("order_detail_workspace");
+    if (missingLink.views[0]?.view_type !== "detail")
+      throw new Error("Missing Detail fixture.");
+    missingLink.views[0].configuration.edit_form_reference = null;
+    const missingLinkReport = evaluateAfterTaskValidation(
+      "order_detail_workspace",
+      missingLink,
+    );
+    expect(missingLinkReport.failed_gate_codes).toContain(
+      "view_form_link_mismatch",
+    );
+
+    const pageAudience = outputFor("public_customer_contact_page");
+    pageAudience.pages[0]!.audience = "internal";
+    pageAudience.pages[0]!.blocks = pageAudience.pages[0]!.blocks.slice(0, 2);
+    const pageAudienceReport = evaluateAfterTaskValidation(
+      "public_customer_contact_page",
+      pageAudience,
+    );
+    expect(pageAudienceReport.failed_gate_codes).toEqual(
+      expect.arrayContaining(["page_mismatch", "page_block_mismatch"]),
+    );
+
+    const forbiddenStatus = outputFor("catering_enquiry_full_stack");
+    forbiddenStatus.fields.push({
+      reference: "draft_field_6",
+      source_step_references: ["step_2"],
+      object_reference: { source: "draft", object_reference: "draft_object_1" },
+      label: "Status",
+      field_type: "status",
+      required: false,
+      settings: { options: ["New", "Done"] },
+    });
+    const statusReport = evaluateAfterTaskValidation(
+      "catering_enquiry_full_stack",
+      forbiddenStatus,
+    );
+    expect(statusReport.failed_gate_codes).toContain("forbidden_status_field");
+  });
+});
+
+function evaluateAfterTaskValidation(
+  scenarioId: (typeof configurationDraftingScenarioIds)[number],
+  output: ReturnType<typeof outputFor>,
+) {
+  const scenario = configurationDraftingScenarios.find(
+    ({ id }) => id === scenarioId,
+  );
+  if (!scenario) throw new Error("Missing scenario fixture.");
+  const parsedInput = builderConfigurationDraftTaskInputBaseSchema.parse(
+    scenario.task_input,
+  );
+  const validatedInput =
+    builderConfigurationDraftTaskV1.inputSchema.parse(parsedInput);
+  const validatedOutput =
+    builderConfigurationDraftTaskV1.outputSchema.parse(output);
+  const semanticOutput = builderConfigurationDraftTaskV1.validateOutput
+    ? builderConfigurationDraftTaskV1.validateOutput(
+        validatedInput,
+        validatedOutput,
+      )
+    : validatedOutput;
+  return evaluateConfigurationDraft(scenario, semanticOutput, metadata);
+}
+
+describe("configuration drafting evaluation source boundaries", () => {
+  it("does not add application, database, lifecycle, compiler, or persistence access", () => {
+    const evaluationRoot = path.join(
+      repositoryRoot,
+      "src",
+      "ai",
+      "evaluation",
+      "configuration-drafting",
+    );
+    const source = fs
+      .readdirSync(evaluationRoot, { recursive: true, withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+      .map((entry) =>
+        fs.readFileSync(path.join(entry.parentPath, entry.name), "utf8"),
+      )
+      .join("\n");
+    expect(source).not.toMatch(
+      /supabase|createAdminClient|\.rpc\(|writeFile|appendFile/i,
+    );
+    expect(source).not.toMatch(
+      /ConfigurationChangeService|draft-compiler|configuration-proposal|proposeChangeSet|createGraphService|createRecord/i,
+    );
+    expect(source).not.toMatch(
+      /OPENAI_API_KEY.*console|console.*OPENAI_API_KEY/i,
+    );
+
+    const appSource = fs
+      .readdirSync(path.join(repositoryRoot, "src", "app"), {
+        recursive: true,
+        withFileTypes: true,
+      })
+      .filter((entry) => entry.isFile() && /\.[cm]?[jt]sx?$/.test(entry.name))
+      .map((entry) =>
+        fs.readFileSync(path.join(entry.parentPath, entry.name), "utf8"),
+      )
+      .join("\n");
+    expect(appSource).not.toMatch(
+      /configuration-drafting|builder_configuration_draft_v1/,
+    );
+
+    const ci = fs.readFileSync(
+      path.join(repositoryRoot, ".github/workflows/ci.yml"),
+      "utf8",
+    );
+    expect(ci).not.toMatch(/eval:builder-configuration-drafting/);
+    for (const script of [
+      "test:builder-configuration-drafting-evaluation",
+      "test:builder-configuration-drafting-terra-profile",
+      "test:builder-configuration-drafting-terra-qualification",
+      "test:builder-configuration-drafting-terra-reliability",
+    ]) {
+      expect(ci).toContain(script);
+    }
+  });
+});

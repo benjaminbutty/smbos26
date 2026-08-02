@@ -61,3 +61,29 @@ and public renderer do not provide generic public Form submission, so a later
 reusable public Form capability is required before a complete Corporate
 Catering Enquiry acceptance flow exists. Relationship intent likewise defines
 metadata only; it does not create operational Record Relationship edges.
+
+## Milestone 8 Phase 8A qualification boundary
+
+The existing drafting subject is qualified separately from planning through
+`src/ai/evaluation/configuration-drafting/`. That harness uses exactly two
+frozen synthetic contexts and eight code-owned ready-plan scenarios, then runs
+the real provider-neutral execution core, this task's strict schemas and this
+module's semantic validator before deterministic scenario gates. The
+evaluation-only task changes only the policy reference to
+`builder_configuration_drafting_terra_medium_v1`, using the fixed
+`gpt-5.6-terra` / `medium` candidate; it is not registered in the production
+task or runtime policy registry.
+
+Qualification is one sequential pass over eight scenarios. Reliability is
+three sequential rounds over the same eight scenarios (24 executions). The
+exact reservations are 5,806,080 microusd and 17,418,240 microusd, beneath
+6,000,000 and 18,000,000 hard ceilings respectively. Live execution requires
+an exact opt-in flag, `AI_PROVIDER=openai` and a non-blank server-only key.
+Deterministic tests inject providers and CI never invokes the live commands.
+
+The gates emit only bounded redacted metadata and finite safe failure
+classification. They do not load Business data, access a database, persist
+requests or responses, create proposals, invoke the compiler, add routes/UI,
+enable production drafting or claim that public Form/Page intent is executable.
+Qualification evidence is pending deliberate live execution; reliability
+evidence is pending qualification review and deliberate live execution.

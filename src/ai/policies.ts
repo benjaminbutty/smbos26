@@ -6,6 +6,12 @@ export const OPENAI_BUILDER_PLANNING_MODEL_KEY = "gpt-5.6-terra" as const;
 export const OPENAI_BUILDER_PLANNING_REASONING_EFFORT = "medium" as const;
 export const BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY =
   "builder_planning_terra_medium_v1" as const;
+export const OPENAI_BUILDER_CONFIGURATION_DRAFTING_MODEL_KEY =
+  "gpt-5.6-terra" as const;
+export const OPENAI_BUILDER_CONFIGURATION_DRAFTING_REASONING_EFFORT =
+  "medium" as const;
+export const BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY =
+  "builder_configuration_drafting_terra_medium_v1" as const;
 export const BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY =
   "builder_configuration_drafting_disabled_v1" as const;
 
@@ -67,6 +73,24 @@ export const openAiBuilderPlanningPolicy = Object.freeze({
   ...disabledExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
   providerKey: "openai",
   modelKey: OPENAI_BUILDER_PLANNING_MODEL_KEY,
+  inputMicrousdPerMillion: 2_500_000,
+  outputMicrousdPerMillion: 15_000_000,
+});
+
+export const openAiBuilderConfigurationDraftingPolicy = Object.freeze({
+  ...disabledExecutionPolicies[
+    BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY
+  ],
+  key: BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY,
+  providerKey: "openai",
+  modelKey: OPENAI_BUILDER_CONFIGURATION_DRAFTING_MODEL_KEY,
+  maxInputBytes: 256 * 1024,
+  maxBillableInputTokens: 96_000,
+  maxOutputTokens: 8_192,
+  timeoutMs: 60_000,
+  maxAttempts: 2,
+  retryDelayMs: 250,
+  retryableFailureKinds: Object.freeze(["rate_limited", "transient"] as const),
   inputMicrousdPerMillion: 2_500_000,
   outputMicrousdPerMillion: 15_000_000,
 });

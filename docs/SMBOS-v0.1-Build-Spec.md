@@ -1483,6 +1483,41 @@ one draft Page. The Relationship is metadata only, no `status` field is
 introduced, and generic public Form submission remains a later reusable
 capability.
 
+### 8.5.5 Milestone 8 Phase 8A configuration-drafting qualification gates
+
+Phase 8A qualifies the unchanged `builder_configuration_draft_v1` subject
+independently of planning. An unregistered evaluation profile reuses the exact
+drafting instruction, input/output schemas and semantic validator while using
+the separate `builder_configuration_drafting_terra_medium_v1` policy with
+`gpt-5.6-terra`, explicit `medium` reasoning, 256 KiB input, 96,000 billable
+input tokens, 8,192 output tokens, two attempts, a 60-second timeout and the
+existing integer $2.50/M input and $15/M output pricing. Production drafting
+remains mapped to `builder_configuration_drafting_disabled_v1` in both
+disabled and OpenAI modes; the evaluation profile is not registered.
+
+The harness has exactly two frozen, schema-validated in-memory contexts
+(`rich_existing_business` and `empty_new_business`) and exactly eight fixed
+ready-plan scenarios: Catering Enquiry full stack, Customer marketing
+consent, Customer Directory, public Customer contact page, Equipment and
+Maintenance workspace, Supplier Quote field types, Staff Profile cards and
+Order detail workspace. Qualification runs the ordered set once (8
+executions); reliability runs three ordered sequential rounds (24 executions).
+The exact one-execution reservation is 725,760 microusd; qualification derives
+5,806,080 beneath a 6,000,000 hard ceiling, and reliability derives 17,418,240
+beneath an 18,000,000 hard ceiling. Both live commands require their exact
+opt-in flag, `AI_PROVIDER=openai` and a non-blank server-only key.
+
+The execution core performs strict schema and semantic validation before the
+deterministic scenario evaluator. Reports and setup/provider failures are
+strict, finite and redacted; no owner request, context, model output, provider
+response, raw error or credential is emitted or persisted. Deterministic tests
+use injected providers and live commands are absent from CI. This phase adds
+no database, accounting reservation, compiler, proposal, lifecycle, route,
+UI, production drafting or public Form runtime. Qualification evidence is
+pending deliberate live execution and reliability evidence is pending
+qualification review and deliberate live execution. The next phase is
+authenticated Builder orchestration (Phase 8B).
+
 ### 8.6 Validation layer
 
 Every proposed operation must validate:
