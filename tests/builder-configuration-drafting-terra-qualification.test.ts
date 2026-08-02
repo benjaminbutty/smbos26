@@ -315,7 +315,7 @@ describe("configuration drafting Terra qualification gate", () => {
       new AiExecutionError("ai_output_invalid", {
         cause: new AiExecutionError("ai_execution_failed", {
           cause: new BuilderConfigurationDraftValidationError(
-            "field_object_mismatch",
+            "duplicate_view_field_reference",
           ),
         }),
       }),
@@ -326,7 +326,7 @@ describe("configuration drafting Terra qualification gate", () => {
       scenario_id: scenarioId,
       error_code: "ai_output_invalid",
       validation_stage: "semantic",
-      validation_reason_code: "field_object_mismatch",
+      validation_reason_code: "duplicate_view_field_reference",
     });
 
     const unknownMarker = "unknown-nested-failure-marker";

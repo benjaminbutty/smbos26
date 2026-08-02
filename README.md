@@ -132,8 +132,9 @@ Included:
   active context references, source-step coverage, typed experience
   dependencies and required create Form coverage
 - strict structural contracts with explicit `null` for absent optional design
-  values and `[]` for empty collections; singular/plural Object labels use one
-  normalized duplicate namespace
+  values and `[]` for empty collections; singular/plural Object labels may
+  match within one Object but use a normalized duplicate namespace across
+  Objects
 - production-disabled configuration drafting in both disabled and OpenAI server
   modes; the separate Phase 1B compiler performs no provider request
 - authenticated, server-only Phase 2 handoff from a completed draft through
@@ -426,7 +427,7 @@ complete public submission flow; those remain later reusable capabilities.
 
 ### Milestone 8 Phase 8A - configuration-drafting qualification gates
 
-Phase 8A qualifies the existing `builder_configuration_draft_v1` contract in
+Phase 8A qualifies the corrected `builder_configuration_draft_v1` contract in
 an isolated engineering harness. It reuses the exact production instruction,
 input/output schemas and semantic validator, but gives the unregistered
 evaluation task its separate `builder_configuration_drafting_terra_medium_v1`

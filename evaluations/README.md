@@ -78,7 +78,7 @@ requires both gates to be rerun.
 
 ## Configuration drafting evaluation
 
-Milestone 8 Phase 8A qualifies the unchanged `builder_configuration_draft_v1`
+Milestone 8 Phase 8A qualifies the corrected `builder_configuration_draft_v1`
 subject independently of planning. The isolated evaluation task reuses the
 exact drafting instruction, schemas and semantic validator and changes only
 the unregistered policy reference to

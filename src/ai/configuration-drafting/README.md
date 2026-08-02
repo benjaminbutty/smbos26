@@ -35,8 +35,14 @@ block. No fuzzy or free-text scope comparison is used.
 
 Every structurally optional design value is represented explicitly as `null`
 when absent, while empty collections remain `[]`; omitted properties and
-unknown properties fail the strict schema. Singular and plural new-Object
-labels share one NFKC/case-normalized duplicate namespace.
+unknown properties fail the strict schema. Within one new Object, singular and
+plural labels may normalize to the same value. Labels across different new
+Objects share one NFKC/case-normalized namespace and must not collide.
+
+The duplicate diagnostics are finite and code-owned: `duplicate_field_label_intent`,
+`duplicate_view_field_reference`, `duplicate_form_field_reference` and
+`duplicate_object_label_intent`. They expose no labels, keys, references or
+schema paths.
 
 The task is registered with policy
 `builder_configuration_drafting_disabled_v1`, which remains mapped to the

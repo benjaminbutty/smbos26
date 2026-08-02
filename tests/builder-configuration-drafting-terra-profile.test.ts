@@ -286,10 +286,10 @@ describe("configuration drafting Terra medium evaluation profile", () => {
       "cf3c6465ab24c45ee37d2340b42dcaa77fff261db916ec4e78ee50defd9fd30c",
     );
     expect(hashFile("src/ai/configuration-drafting/validation.ts")).toBe(
-      "44fe125b93b1be03005db6eca253983f4a00b042626674a8d016a6c4685f5530",
+      "183aca8affac1b45cac2a4d66d921beef3458fc2a389d7080f865f14797eebff",
     );
     expect(hashFile("src/ai/configuration-drafting/diagnostics.ts")).toBe(
-      "dd737cbdb85de43a833a34609f51d00aa8bdc5961bef1508e6b8d7ab7e15cefe",
+      "5f2c29d5df8dccb1dac49fd19201b87cf3db21934c0be320f3f97c204ec27d80",
     );
     expect(hashFile("src/ai/providers/openai.ts")).toBe(
       "8ffd0e6c067a349e10ceacb3d047d2f7428921e0e2a2ed6420cfedd380a4eed4",
@@ -304,7 +304,7 @@ describe("configuration drafting Terra medium evaluation profile", () => {
     ).toBe("f9eab00c1583299ed8ce6d3bb8bbd60c0e2bced9c9472ddaa9318229913c1d1f");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/scenarios.ts"),
-    ).toBe("3d1dad31df4d86e5a5bf7d8187eda9dab65346dffb5cd5e802fada98b3c6a9ec");
+    ).toBe("5132a687b9cb3a89f6d80b97fb2a0be0180e0be2f569a62a663c6c475bb00aae");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/evaluator.ts"),
     ).toBe("571c3f5bafce433583d7db8c75562d9a95456cb1891677722c0eea3712db39a8");

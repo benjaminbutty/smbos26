@@ -441,23 +441,14 @@ describe("fair deterministic drafting gates", () => {
     ).toMatchObject({ passed: true, failed_gate_codes: [] });
   });
 
-  it("does not gate Equipment on an invented plural label", () => {
+  it("accepts identical Equipment singular and plural labels end to end", () => {
     const output = outputFor("equipment_maintenance_workspace");
     output.objects.find(
       ({ concept_reference }) => concept_reference === "concept_1",
     )!.plural_label = "Equipment";
-    const scenario = configurationDraftingScenarios.find(
-      ({ id }) => id === "equipment_maintenance_workspace",
-    )!;
 
-    // The production semantic validator retains its frozen duplicate-intent
-    // rule; this direct evaluator assertion isolates the corrected gate.
     expect(
-      evaluateConfigurationDraft(
-        scenario,
-        builderConfigurationDraftOutputSchema.parse(output),
-        metadata,
-      ),
+      evaluateAfterTaskValidation("equipment_maintenance_workspace", output),
     ).toMatchObject({ passed: true, failed_gate_codes: [] });
   });
 

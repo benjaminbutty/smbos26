@@ -1832,7 +1832,9 @@ Form/Page design intent must therefore not imply executable publication.
   new concepts. Page steps must authorize the Objects behind referenced
   View/Form blocks. All structurally optional design properties are required
   and use explicit `null` when absent; empty collections remain `[]`.
-  Singular and plural new-Object labels share one normalized duplicate set.
+  Singular and plural labels may normalize to the same value within one new
+  Object, while labels across different new Objects share one normalized
+  duplicate set.
 - Register the output validator through the existing optional execution hook.
   Input semantic checks run during the normal task schema parse, before any
   provider invocation. Validation diagnostics are finite, code-owned and never

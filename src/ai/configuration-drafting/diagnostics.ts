@@ -28,8 +28,10 @@ export const builderConfigurationDraftDiagnosticCodes = [
   "view_form_mismatch",
   "page_block_audience_mismatch",
   "required_create_form_field_missing",
-  "duplicate_field_intent",
-  "duplicate_object_intent",
+  "duplicate_field_label_intent",
+  "duplicate_view_field_reference",
+  "duplicate_form_field_reference",
+  "duplicate_object_label_intent",
   "cards_image_field_invalid",
   "output_too_large",
 ] as const;
@@ -95,10 +97,14 @@ const internalDiagnosticMessages: Readonly<
     "The configuration draft Page and block audiences were inconsistent.",
   required_create_form_field_missing:
     "The configuration draft create Form omitted a required Field.",
-  duplicate_field_intent:
-    "The configuration draft contained duplicate Field intent.",
-  duplicate_object_intent:
-    "The configuration draft contained duplicate Object intent.",
+  duplicate_field_label_intent:
+    "The configuration draft contained duplicate Field labels.",
+  duplicate_view_field_reference:
+    "The configuration draft contained duplicate View Field references.",
+  duplicate_form_field_reference:
+    "The configuration draft contained duplicate Form Field references.",
+  duplicate_object_label_intent:
+    "The configuration draft contained duplicate Object labels.",
   cards_image_field_invalid:
     "The configuration draft Cards image Field was invalid.",
   output_too_large: "The configuration draft output exceeded its size limit.",

@@ -1380,8 +1380,9 @@ or create operations.
 
 All structurally optional design properties are required by the schema and use
 explicit `null` when absent; empty collections remain `[]`, and unknown
-properties are rejected. Singular and plural new-Object labels share one
-NFKC/case-normalized duplicate namespace.
+properties are rejected. Singular and plural labels may normalize to the same
+value within one new Object, while labels across different new Objects share
+one NFKC/case-normalized duplicate namespace.
 
 The task is production-disabled under the separate code-owned
 `builder_configuration_drafting_disabled_v1` policy. The policy is present in
@@ -1485,7 +1486,7 @@ capability.
 
 ### 8.5.5 Milestone 8 Phase 8A configuration-drafting qualification gates
 
-Phase 8A qualifies the unchanged `builder_configuration_draft_v1` subject
+Phase 8A qualifies the corrected `builder_configuration_draft_v1` subject
 independently of planning. An unregistered evaluation profile reuses the exact
 drafting instruction, input/output schemas and semantic validator while using
 the separate `builder_configuration_drafting_terra_medium_v1` policy with
