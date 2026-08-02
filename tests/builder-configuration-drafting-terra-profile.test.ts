@@ -304,7 +304,7 @@ describe("configuration drafting Terra medium evaluation profile", () => {
     ).toBe("f9eab00c1583299ed8ce6d3bb8bbd60c0e2bced9c9472ddaa9318229913c1d1f");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/scenarios.ts"),
-    ).toBe("5132a687b9cb3a89f6d80b97fb2a0be0180e0be2f569a62a663c6c475bb00aae");
+    ).toBe("2cce94960ff63663e033602f301481426b2b95b72eea8bcfede7452ce190d663");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/evaluator.ts"),
     ).toBe("571c3f5bafce433583d7db8c75562d9a95456cb1891677722c0eea3712db39a8");

@@ -63,6 +63,18 @@ function draftFieldReference(reference: string) {
   return { source: "draft" as const, field_reference: reference };
 }
 
+function setTableOrDetailTitle(
+  output: ReturnType<typeof outputFor>,
+  viewIndex: number,
+  titleField: ReturnType<typeof draftFieldReference> | null,
+): void {
+  const view = output.views[viewIndex];
+  if (!view || (view.view_type !== "table" && view.view_type !== "detail")) {
+    throw new Error("Expected a table or detail View fixture.");
+  }
+  view.configuration.title_field = titleField;
+}
+
 describe("configuration drafting scenario and context definitions", () => {
   it("defines exactly the approved eight scenarios in fixed order", () => {
     expect(configurationDraftingScenarioIds).toEqual([
@@ -419,6 +431,49 @@ describe("fair deterministic drafting gates", () => {
     expect(
       evaluateAfterTaskValidation("public_customer_contact_page", output),
     ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("keeps unrequested table/detail title choices presentation-neutral", () => {
+    const variants: Array<{
+      scenarioId: (typeof configurationDraftingScenarioIds)[number];
+      viewIndex: number;
+      titleField: ReturnType<typeof draftFieldReference> | null;
+    }> = [
+      {
+        scenarioId: "catering_enquiry_full_stack",
+        viewIndex: 0,
+        titleField: null,
+      },
+      {
+        scenarioId: "customer_directory_internal",
+        viewIndex: 0,
+        titleField: null,
+      },
+      {
+        scenarioId: "equipment_maintenance_workspace",
+        viewIndex: 1,
+        titleField: draftFieldReference("draft_field_3"),
+      },
+      {
+        scenarioId: "supplier_quote_field_types",
+        viewIndex: 0,
+        titleField: null,
+      },
+      {
+        scenarioId: "order_detail_workspace",
+        viewIndex: 0,
+        titleField: null,
+      },
+    ];
+
+    for (const { scenarioId, viewIndex, titleField } of variants) {
+      const output = outputFor(scenarioId);
+      setTableOrDetailTitle(output, viewIndex, titleField);
+      expect(
+        evaluateAfterTaskValidation(scenarioId, output),
+        scenarioId,
+      ).toMatchObject({ passed: true, failed_gate_codes: [] });
+    }
   });
 
   it("accepts Equipment and Maintenance label, relationship, and name variation", () => {
