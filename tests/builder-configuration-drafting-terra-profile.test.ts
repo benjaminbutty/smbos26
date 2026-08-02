@@ -8,7 +8,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { deriveAiReservationEnvelope } from "../src/ai/accounting/cost";
-import type { AiExecutionPolicy } from "../src/ai/contracts";
+import type {
+  AiExecutionPolicy,
+  StructuredAiProvider,
+  StructuredAiProviderRequest,
+} from "../src/ai/contracts";
 import { createAiExecutionService } from "../src/ai/execution";
 import {
   BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
@@ -19,6 +23,7 @@ import {
 } from "../src/ai/policies";
 import { OPENAI_MODEL_KEY } from "../src/ai/providers/openai";
 import { createProductionAiRuntime } from "../src/ai/registry";
+import * as aiRegistry from "../src/ai/registry";
 import {
   builderConfigurationDraftTaskV1,
   BUILDER_CONFIGURATION_DRAFT_INSTRUCTION,
@@ -27,7 +32,10 @@ import {
   deriveConfigurationDraftingQualificationEnvelope,
   deriveConfigurationDraftingReliabilityEnvelope,
 } from "../src/ai/evaluation/configuration-drafting/envelope";
-import { runLiveConfigurationDraftingQualification } from "../src/ai/evaluation/configuration-drafting/live";
+import {
+  defaultLoadProductionExecution,
+  runLiveConfigurationDraftingQualification,
+} from "../src/ai/evaluation/configuration-drafting/live";
 import { createBuilderConfigurationDraftingEvaluationTask } from "../src/ai/evaluation/configuration-drafting/task";
 import { configurationDraftingScenarios } from "../src/ai/evaluation/configuration-drafting/scenarios";
 import {
@@ -182,6 +190,69 @@ describe("configuration drafting Terra medium evaluation profile", () => {
     expect(evaluationProviderCalls).toBe(1);
   });
 
+  it("obtains the isolated evaluation provider from the production runtime factory", async () => {
+    const generateStructured = vi.fn(
+      async (request: StructuredAiProviderRequest) => {
+        expect(request.providerKey).toBe("openai");
+        expect(request.modelKey).toBe("gpt-5.6-terra");
+        return {
+          output: structuredClone(
+            compliantConfigurationDraftingOutputs.catering_enquiry_full_stack,
+          ),
+          usage: { inputTokens: 1_200, outputTokens: 400 },
+        };
+      },
+    );
+    const provider: StructuredAiProvider = {
+      key: "openai",
+      generateStructured,
+    };
+    const productionFactory = aiRegistry.createProductionAiRuntime;
+    const factory = vi
+      .spyOn(aiRegistry, "createProductionAiRuntime")
+      .mockImplementation((environment) =>
+        productionFactory(environment, {
+          createOpenAiProvider: () => provider,
+        }),
+      );
+
+    try {
+      const execution = await defaultLoadProductionExecution(
+        "synthetic-server-only-key",
+      );
+      const result = await execution.execute(
+        "builder_configuration_draft_v1",
+        configurationDraftingScenarios[0]!.task_input,
+      );
+      expect(result.metadata.providerKey).toBe("openai");
+      expect(generateStructured).toHaveBeenCalledTimes(1);
+      expect(factory).toHaveBeenCalledWith({
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-server-only-key",
+      });
+    } finally {
+      factory.mockRestore();
+    }
+  });
+
+  it("fails safely when the runtime factory does not return the OpenAI provider", async () => {
+    const factory = vi
+      .spyOn(aiRegistry, "createProductionAiRuntime")
+      .mockReturnValue({
+        providers: {
+          openai: { key: "wrong-provider", generateStructured: vi.fn() },
+        },
+      } as never);
+
+    try {
+      await expect(
+        defaultLoadProductionExecution("synthetic-server-only-key"),
+      ).rejects.toThrow("The evaluation runtime did not provide OpenAI.");
+    } finally {
+      factory.mockRestore();
+    }
+  });
+
   it("rejects an altered reservation before constructing the provider", async () => {
     const alteredPolicy: AiExecutionPolicy = {
       ...openAiBuilderConfigurationDraftingPolicy,
@@ -233,9 +304,26 @@ describe("configuration drafting Terra medium evaluation profile", () => {
     ).toBe("f9eab00c1583299ed8ce6d3bb8bbd60c0e2bced9c9472ddaa9318229913c1d1f");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/scenarios.ts"),
-    ).toBe("1873a274b471a7f26034affcebb26af97e442c4bf390956a8f2513f17d4d90e4");
+    ).toBe("3d1dad31df4d86e5a5bf7d8187eda9dab65346dffb5cd5e802fada98b3c6a9ec");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/evaluator.ts"),
-    ).toBe("575fc8a297afefd9188a73c5d261ff4f954d9bec01374827606b6ff4781114d2");
+    ).toBe("571c3f5bafce433583d7db8c75562d9a95456cb1891677722c0eea3712db39a8");
+  });
+
+  it("keeps provider construction in the runtime factory path", () => {
+    const liveSource = fs.readFileSync(
+      path.join(
+        repositoryRoot,
+        "src",
+        "ai",
+        "evaluation",
+        "configuration-drafting",
+        "live.ts",
+      ),
+      "utf8",
+    );
+    expect(liveSource).toContain("createProductionAiRuntime");
+    expect(liveSource).not.toContain("new OpenAiResponsesStructuredProvider");
+    expect(liveSource).not.toContain("Reflect.construct");
   });
 });

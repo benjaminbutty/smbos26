@@ -55,6 +55,14 @@ function outputFor(id: (typeof configurationDraftingScenarioIds)[number]) {
   return structuredClone(compliantConfigurationDraftingOutputs[id]);
 }
 
+function draftFormReference(reference: string) {
+  return { source: "draft" as const, form_reference: reference };
+}
+
+function draftFieldReference(reference: string) {
+  return { source: "draft" as const, field_reference: reference };
+}
+
 describe("configuration drafting scenario and context definitions", () => {
   it("defines exactly the approved eight scenarios in fixed order", () => {
     expect(configurationDraftingScenarioIds).toEqual([
@@ -378,6 +386,410 @@ describe("actual drafting task contract and deterministic evaluator", () => {
       forbiddenStatus,
     );
     expect(statusReport.failed_gate_codes).toContain("forbidden_status_field");
+  });
+});
+
+describe("fair deterministic drafting gates", () => {
+  it("accepts Catering wording and generated-name variation", () => {
+    const output = outputFor("catering_enquiry_full_stack");
+    output.relationships[0]!.source_label = "submits requests";
+    output.relationships[0]!.target_label = "customer record";
+    output.forms[0]!.name = "Send catering request";
+    output.views[0]!.name = "Enquiry pipeline";
+    output.pages[0]!.title = "Event enquiry form";
+    const heading = output.pages[0]!.blocks[0]!;
+    if (heading.type !== "heading") throw new Error("Missing heading fixture.");
+    heading.text = "Share your event details";
+
+    expect(
+      evaluateAfterTaskValidation("catering_enquiry_full_stack", output),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("accepts Wholesale heading and explanatory-text variation", () => {
+    const output = outputFor("public_customer_contact_page");
+    const heading = output.pages[0]!.blocks[0]!;
+    const text = output.pages[0]!.blocks[1]!;
+    if (heading.type !== "heading" || text.type !== "text") {
+      throw new Error("Missing Wholesale page prose fixtures.");
+    }
+    heading.text = "Talk to our wholesale team";
+    text.text = "Tell us what your business needs.";
+
+    expect(
+      evaluateAfterTaskValidation("public_customer_contact_page", output),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("accepts Equipment and Maintenance label, relationship, and name variation", () => {
+    const output = outputFor("equipment_maintenance_workspace");
+    output.objects.find(
+      ({ concept_reference }) => concept_reference === "concept_1",
+    )!.plural_label = "Equipment Items";
+    output.objects.find(
+      ({ concept_reference }) => concept_reference === "concept_2",
+    )!.plural_label = "Maintenance Work Items";
+    output.relationships[0]!.source_label = "tracks work for";
+    output.relationships[0]!.target_label = "equipment item";
+    output.forms[0]!.name = "Add an equipment item";
+    output.forms[1]!.name = "Log maintenance work";
+    output.views[0]!.name = "Equipment register";
+    output.views[1]!.name = "Maintenance worklist";
+
+    expect(
+      evaluateAfterTaskValidation("equipment_maintenance_workspace", output),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("does not gate Equipment on an invented plural label", () => {
+    const output = outputFor("equipment_maintenance_workspace");
+    output.objects.find(
+      ({ concept_reference }) => concept_reference === "concept_1",
+    )!.plural_label = "Equipment";
+    const scenario = configurationDraftingScenarios.find(
+      ({ id }) => id === "equipment_maintenance_workspace",
+    )!;
+
+    // The production semantic validator retains its frozen duplicate-intent
+    // rule; this direct evaluator assertion isolates the corrected gate.
+    expect(
+      evaluateConfigurationDraft(
+        scenario,
+        builderConfigurationDraftOutputSchema.parse(output),
+        metadata,
+      ),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("accepts Supplier Quote generated-name variation", () => {
+    const output = outputFor("supplier_quote_field_types");
+    output.forms[0]!.name = "Add supplier pricing";
+    output.views[0]!.name = "Quote comparison";
+
+    expect(
+      evaluateAfterTaskValidation("supplier_quote_field_types", output),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("accepts Staff Profile generated-name variation while preserving Cards mappings", () => {
+    const output = outputFor("staff_profile_cards");
+    output.forms[0]!.name = "Add team member";
+    output.views[0]!.name = "Team directory cards";
+
+    expect(
+      evaluateAfterTaskValidation("staff_profile_cards", output),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+});
+
+describe("configuration drafting evaluator negative coverage", () => {
+  it("keeps relationship direction, cardinality, and requiredness exact", () => {
+    for (const [mutation, expectedCode] of [
+      [
+        (output: ReturnType<typeof outputFor>) => {
+          const relationship = output.relationships[0]!;
+          [
+            relationship.source_object_reference,
+            relationship.target_object_reference,
+          ] = [
+            relationship.target_object_reference,
+            relationship.source_object_reference,
+          ];
+        },
+        "relationship_mismatch",
+      ],
+      [
+        (output: ReturnType<typeof outputFor>) => {
+          output.relationships[0]!.cardinality = "one_to_one";
+        },
+        "relationship_mismatch",
+      ],
+      [
+        (output: ReturnType<typeof outputFor>) => {
+          output.relationships[0]!.is_required = true;
+        },
+        "relationship_mismatch",
+      ],
+    ] as const) {
+      const output = outputFor("equipment_maintenance_workspace");
+      mutation(output);
+      const report = evaluateAfterTaskValidation(
+        "equipment_maintenance_workspace",
+        output,
+      );
+      expect(report.passed).toBe(false);
+      expect(report.failed_gate_codes).toContain(expectedCode);
+    }
+  });
+
+  it("keeps Form mode, audience, and Field set exact", () => {
+    const wrongMode = outputFor("customer_directory_internal");
+    wrongMode.forms[0]!.mode = "edit";
+    if (wrongMode.views[0]?.view_type !== "table") {
+      throw new Error("Missing Customer table fixture.");
+    }
+    wrongMode.views[0]!.configuration.create_form_reference = null;
+    wrongMode.views[0]!.configuration.edit_form_reference =
+      draftFormReference("draft_form_1");
+    expect(
+      evaluateAfterTaskValidation("customer_directory_internal", wrongMode)
+        .failed_gate_codes,
+    ).toEqual(expect.arrayContaining(["form_mismatch"]));
+
+    const wrongAudience = outputFor("customer_directory_internal");
+    wrongAudience.forms[0]!.audience = "public";
+    wrongAudience.views[0]!.audience = "public";
+    expect(
+      evaluateAfterTaskValidation("customer_directory_internal", wrongAudience)
+        .failed_gate_codes,
+    ).toEqual(expect.arrayContaining(["form_mismatch"]));
+
+    const wrongFields = outputFor("order_detail_workspace");
+    wrongFields.forms[0]!.fields.pop();
+    expect(
+      evaluateAfterTaskValidation("order_detail_workspace", wrongFields)
+        .failed_gate_codes,
+    ).toContain("form_field_set_mismatch");
+  });
+
+  it("keeps View type, audience, Field set, Cards image, and Form links exact", () => {
+    const wrongType = outputFor("equipment_maintenance_workspace");
+    wrongType.views[0]!.view_type = "table";
+    wrongType.views[0]!.configuration = {
+      fields: [
+        draftFieldReference("draft_field_1"),
+        draftFieldReference("draft_field_2"),
+      ],
+      title_field: null,
+      create_form_reference: draftFormReference("draft_form_1"),
+      edit_form_reference: null,
+    };
+    expect(
+      evaluateAfterTaskValidation("equipment_maintenance_workspace", wrongType)
+        .failed_gate_codes,
+    ).toContain("view_mismatch");
+
+    const wrongAudience = outputFor("customer_directory_internal");
+    wrongAudience.forms[0]!.audience = "public";
+    wrongAudience.views[0]!.audience = "public";
+    expect(
+      evaluateAfterTaskValidation("customer_directory_internal", wrongAudience)
+        .failed_gate_codes,
+    ).toContain("view_mismatch");
+
+    const wrongFields = outputFor("equipment_maintenance_workspace");
+    if (wrongFields.views[1]?.view_type !== "table") {
+      throw new Error("Missing Maintenance table fixture.");
+    }
+    wrongFields.views[1].configuration.fields.pop();
+    expect(
+      evaluateAfterTaskValidation(
+        "equipment_maintenance_workspace",
+        wrongFields,
+      ).failed_gate_codes,
+    ).toContain("view_field_set_mismatch");
+
+    const wrongImage = outputFor("staff_profile_cards");
+    if (wrongImage.views[0]?.view_type !== "cards") {
+      throw new Error("Missing Cards fixture.");
+    }
+    wrongImage.views[0].configuration.image_field = null;
+    expect(
+      evaluateAfterTaskValidation("staff_profile_cards", wrongImage)
+        .failed_gate_codes,
+    ).toContain("view_mismatch");
+
+    const wrongLink = outputFor("customer_directory_internal");
+    if (wrongLink.views[0]?.view_type !== "table") {
+      throw new Error("Missing Customer table fixture.");
+    }
+    wrongLink.views[0]!.configuration.create_form_reference = null;
+    expect(
+      evaluateAfterTaskValidation("customer_directory_internal", wrongLink)
+        .failed_gate_codes,
+    ).toContain("view_form_link_mismatch");
+  });
+
+  it("keeps Page block order and draft/existing link identity exact", () => {
+    const wrongOrder = outputFor("public_customer_contact_page");
+    [wrongOrder.pages[0]!.blocks[0], wrongOrder.pages[0]!.blocks[1]] = [
+      wrongOrder.pages[0]!.blocks[1]!,
+      wrongOrder.pages[0]!.blocks[0]!,
+    ];
+    expect(
+      evaluateAfterTaskValidation("public_customer_contact_page", wrongOrder)
+        .failed_gate_codes,
+    ).toContain("page_block_mismatch");
+
+    const wrongDraftForm = outputFor("catering_enquiry_full_stack");
+    wrongDraftForm.forms.push({
+      ...wrongDraftForm.forms[0]!,
+      reference: "draft_form_2",
+      name: "Another valid enquiry form",
+    });
+    wrongDraftForm.pages[0]!.blocks[1] = {
+      type: "form",
+      form_reference: draftFormReference("draft_form_2"),
+    };
+    expect(
+      evaluateAfterTaskValidation("catering_enquiry_full_stack", wrongDraftForm)
+        .failed_gate_codes,
+    ).toEqual(
+      expect.arrayContaining(["entity_count_mismatch", "page_block_mismatch"]),
+    );
+
+    const wrongExistingForm = outputFor("public_customer_contact_page");
+    wrongExistingForm.pages[0]!.blocks[2] = {
+      type: "form",
+      form_reference: draftFormReference("draft_form_1"),
+    };
+    expect(
+      evaluateConfigurationDraft(
+        configurationDraftingScenarios.find(
+          ({ id }) => id === "public_customer_contact_page",
+        )!,
+        builderConfigurationDraftOutputSchema.parse(wrongExistingForm),
+        metadata,
+      ).failed_gate_codes,
+    ).toContain("page_block_mismatch");
+  });
+
+  it("keeps required entity families, forbidden Fields, and explicit names exact", () => {
+    const missingPage = outputFor("catering_enquiry_full_stack");
+    missingPage.pages.pop();
+    expect(
+      evaluateConfigurationDraft(
+        configurationDraftingScenarios.find(
+          ({ id }) => id === "catering_enquiry_full_stack",
+        )!,
+        builderConfigurationDraftOutputSchema.parse(missingPage),
+        metadata,
+      ).failed_gate_codes,
+    ).toContain("entity_count_mismatch");
+
+    const missingView = outputFor("supplier_quote_field_types");
+    missingView.views.pop();
+    expect(
+      evaluateConfigurationDraft(
+        configurationDraftingScenarios.find(
+          ({ id }) => id === "supplier_quote_field_types",
+        )!,
+        builderConfigurationDraftOutputSchema.parse(missingView),
+        metadata,
+      ).failed_gate_codes,
+    ).toContain("entity_count_mismatch");
+
+    const missingForm = outputFor("customer_directory_internal");
+    missingForm.forms.pop();
+    expect(
+      evaluateConfigurationDraft(
+        configurationDraftingScenarios.find(
+          ({ id }) => id === "customer_directory_internal",
+        )!,
+        builderConfigurationDraftOutputSchema.parse(missingForm),
+        metadata,
+      ).failed_gate_codes,
+    ).toContain("entity_count_mismatch");
+
+    const extraObject = outputFor("catering_enquiry_full_stack");
+    extraObject.objects.push({
+      ...extraObject.objects[0]!,
+      reference: "draft_object_2",
+      concept_reference: "concept_99",
+    });
+    expect(
+      evaluateConfigurationDraft(
+        configurationDraftingScenarios.find(
+          ({ id }) => id === "catering_enquiry_full_stack",
+        )!,
+        builderConfigurationDraftOutputSchema.parse(extraObject),
+        metadata,
+      ).failed_gate_codes,
+    ).toEqual(
+      expect.arrayContaining([
+        "object_concept_mismatch",
+        "adjacent_scope_added",
+      ]),
+    );
+
+    const extraField = outputFor("catering_enquiry_full_stack");
+    extraField.fields.push({
+      ...extraField.fields[0]!,
+      reference: "draft_field_6",
+      label: "Internal code",
+      required: false,
+    });
+    expect(
+      evaluateAfterTaskValidation("catering_enquiry_full_stack", extraField)
+        .failed_gate_codes,
+    ).toEqual(
+      expect.arrayContaining(["field_set_mismatch", "adjacent_scope_added"]),
+    );
+
+    const forbiddenStatus = outputFor("catering_enquiry_full_stack");
+    forbiddenStatus.fields.push({
+      ...forbiddenStatus.fields[0]!,
+      reference: "draft_field_6",
+      label: "Status",
+      field_type: "status",
+      required: false,
+      settings: { options: ["New", "Done"] },
+    });
+    expect(
+      evaluateAfterTaskValidation(
+        "catering_enquiry_full_stack",
+        forbiddenStatus,
+      ).failed_gate_codes,
+    ).toContain("forbidden_status_field");
+
+    for (const [scenarioId, mutate, expectedCode] of [
+      [
+        "customer_directory_internal",
+        (output: ReturnType<typeof outputFor>) => {
+          output.forms[0]!.name = "Customer intake";
+        },
+        "form_mismatch",
+      ],
+      [
+        "customer_directory_internal",
+        (output: ReturnType<typeof outputFor>) => {
+          output.views[0]!.name = "Customer list";
+        },
+        "view_mismatch",
+      ],
+      [
+        "order_detail_workspace",
+        (output: ReturnType<typeof outputFor>) => {
+          output.forms[0]!.name = "Update order";
+        },
+        "form_mismatch",
+      ],
+      [
+        "order_detail_workspace",
+        (output: ReturnType<typeof outputFor>) => {
+          output.views[0]!.name = "Review orders";
+        },
+        "view_mismatch",
+      ],
+      [
+        "order_detail_workspace",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.title = "Order workspace";
+        },
+        "page_mismatch",
+      ],
+    ] as const) {
+      const output = outputFor(
+        scenarioId as keyof typeof compliantConfigurationDraftingOutputs,
+      );
+      mutate(output);
+      const report = evaluateAfterTaskValidation(
+        scenarioId as keyof typeof compliantConfigurationDraftingOutputs,
+        output,
+      );
+      expect(report.passed).toBe(false);
+      expect(report.failed_gate_codes).toContain(expectedCode);
+    }
   });
 });
 

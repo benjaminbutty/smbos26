@@ -254,8 +254,9 @@ export function evaluateConfigurationDraft(
     if (
       normalise(actual.singular_label) !==
         normalise(objectExpectation.singular_label) ||
-      normalise(actual.plural_label) !==
-        normalise(objectExpectation.plural_label)
+      (objectExpectation.plural_label !== undefined &&
+        normalise(actual.plural_label) !==
+          normalise(objectExpectation.plural_label))
     ) {
       addFailure(failures, "object_label_mismatch");
     }
@@ -344,26 +345,35 @@ export function evaluateConfigurationDraft(
   const expectedRelationships = expected.relationships.map((relationship) => ({
     source: objectIdentity(relationship.source),
     target: objectIdentity(relationship.target),
-    sourceLabel: normalise(relationship.source_label),
-    targetLabel: normalise(relationship.target_label),
+    sourceLabel:
+      relationship.source_label === undefined
+        ? undefined
+        : normalise(relationship.source_label),
+    targetLabel:
+      relationship.target_label === undefined
+        ? undefined
+        : normalise(relationship.target_label),
     cardinality: relationship.cardinality,
     isRequired: relationship.is_required,
   }));
+  const relationshipMatches = (
+    actualRelationship: (typeof actualRelationships)[number],
+    expectedRelationship: (typeof expectedRelationships)[number],
+  ): boolean =>
+    actualRelationship.source === expectedRelationship.source &&
+    actualRelationship.target === expectedRelationship.target &&
+    (expectedRelationship.sourceLabel === undefined ||
+      actualRelationship.sourceLabel === expectedRelationship.sourceLabel) &&
+    (expectedRelationship.targetLabel === undefined ||
+      actualRelationship.targetLabel === expectedRelationship.targetLabel) &&
+    actualRelationship.cardinality === expectedRelationship.cardinality &&
+    actualRelationship.isRequired === expectedRelationship.isRequired;
   if (
     actualRelationships.length !== expectedRelationships.length ||
     expectedRelationships.some(
       (expectedRelationship) =>
-        !actualRelationships.some(
-          (actualRelationship) =>
-            actualRelationship.source === expectedRelationship.source &&
-            actualRelationship.target === expectedRelationship.target &&
-            actualRelationship.sourceLabel ===
-              expectedRelationship.sourceLabel &&
-            actualRelationship.targetLabel ===
-              expectedRelationship.targetLabel &&
-            actualRelationship.cardinality ===
-              expectedRelationship.cardinality &&
-            actualRelationship.isRequired === expectedRelationship.isRequired,
+        !actualRelationships.some((actualRelationship) =>
+          relationshipMatches(actualRelationship, expectedRelationship),
         ),
     )
   ) {
@@ -372,17 +382,8 @@ export function evaluateConfigurationDraft(
   if (
     actualRelationships.some(
       (actualRelationship) =>
-        !expectedRelationships.some(
-          (expectedRelationship) =>
-            actualRelationship.source === expectedRelationship.source &&
-            actualRelationship.target === expectedRelationship.target &&
-            actualRelationship.sourceLabel ===
-              expectedRelationship.sourceLabel &&
-            actualRelationship.targetLabel ===
-              expectedRelationship.targetLabel &&
-            actualRelationship.cardinality ===
-              expectedRelationship.cardinality &&
-            actualRelationship.isRequired === expectedRelationship.isRequired,
+        !expectedRelationships.some((expectedRelationship) =>
+          relationshipMatches(actualRelationship, expectedRelationship),
         ),
     )
   ) {
@@ -398,7 +399,7 @@ export function evaluateConfigurationDraft(
       .filter((identity): identity is string => identity !== undefined);
     resolvedFormsByReference.set(form.reference, {
       reference: form.reference,
-      identity: `form:${object.identity}:${normalise(form.name)}`,
+      identity: `form:${form.reference}`,
       objectIdentity: object.identity,
       name: form.name,
       mode: form.mode,
@@ -407,25 +408,48 @@ export function evaluateConfigurationDraft(
     });
   }
 
-  function findForm(
-    name: string,
-    object: ExpectedObjectReference,
-  ): ResolvedForm | undefined {
-    return [...resolvedFormsByReference.values()].find(
-      (form) =>
-        form.objectIdentity === objectIdentity(object) &&
-        normalise(form.name) === normalise(name),
-    );
-  }
-
   function expectedFormFieldSet(form: {
     fields: readonly ExpectedFieldReference[];
   }): string[] {
     return form.fields.map(expectedFieldIdentity).toSorted();
   }
 
+  function sameFieldSet(
+    expectedFields: readonly string[],
+    actualFields: readonly string[],
+  ): boolean {
+    return !setDifference(expectedFields.toSorted(), actualFields.toSorted());
+  }
+
+  const matchedFormsByExpectedReference = new Map<string, ResolvedForm>();
   for (const expectedForm of expected.forms) {
-    const actualForm = findForm(expectedForm.name, expectedForm.object);
+    const scopedForms = [...resolvedFormsByReference.values()].filter(
+      (form) => form.objectIdentity === objectIdentity(expectedForm.object),
+    );
+    const namedForms =
+      expectedForm.name === undefined
+        ? scopedForms
+        : scopedForms.filter(
+            (form) => normalise(form.name) === normalise(expectedForm.name!),
+          );
+    const structurallyMatchingForms = namedForms.filter(
+      (form) =>
+        form.mode === expectedForm.mode &&
+        form.audience === expectedForm.audience &&
+        sameFieldSet(expectedFormFieldSet(expectedForm), form.fieldIdentities),
+    );
+    const exactForm =
+      structurallyMatchingForms.length === 1
+        ? structurallyMatchingForms[0]
+        : undefined;
+    const diagnosticForm =
+      exactForm ??
+      (namedForms.length === 1
+        ? namedForms[0]
+        : expectedForm.name === undefined && scopedForms.length === 1
+          ? scopedForms[0]
+          : undefined);
+    const actualForm = diagnosticForm;
     if (!actualForm) {
       addFailure(failures, "form_mismatch");
       continue;
@@ -437,20 +461,29 @@ export function evaluateConfigurationDraft(
       addFailure(failures, "form_mismatch");
     }
     if (
-      setDifference(expectedFormFieldSet(expectedForm), [
-        ...actualForm.fieldIdentities,
-      ])
+      !sameFieldSet(
+        expectedFormFieldSet(expectedForm),
+        actualForm.fieldIdentities,
+      )
     ) {
       addFailure(failures, "form_field_set_mismatch");
+    }
+    if (exactForm) {
+      matchedFormsByExpectedReference.set(expectedForm.reference, exactForm);
+    } else if (
+      actualForm.mode === expectedForm.mode &&
+      actualForm.audience === expectedForm.audience &&
+      expectedForm.name !== undefined &&
+      normalise(actualForm.name) !== normalise(expectedForm.name)
+    ) {
+      addFailure(failures, "form_mismatch");
     }
   }
   if (
     [...resolvedFormsByReference.values()].some(
       (actualForm) =>
-        !expected.forms.some(
-          (expectedForm) =>
-            actualForm.objectIdentity === objectIdentity(expectedForm.object) &&
-            normalise(actualForm.name) === normalise(expectedForm.name),
+        ![...matchedFormsByExpectedReference.values()].some(
+          (matchedForm) => matchedForm.reference === actualForm.reference,
         ),
     )
   ) {
@@ -459,20 +492,16 @@ export function evaluateConfigurationDraft(
 
   function formReferenceMatches(
     actualReference: DraftFormReference | null,
-    expectedName: string | null | undefined,
-    expectedObject: ExpectedObjectReference,
+    expectedReference: string | null | undefined,
   ): boolean {
-    if (expectedName === undefined) return true;
-    if (expectedName === null) return actualReference === null;
+    if (expectedReference === undefined) return true;
+    if (expectedReference === null) return actualReference === null;
     if (actualReference === null) return false;
     if (actualReference.source === "existing") return false;
-    const actualForm = resolvedFormsByReference.get(
-      actualReference.form_reference,
-    );
+    const expectedForm = matchedFormsByExpectedReference.get(expectedReference);
     return (
-      actualForm !== undefined &&
-      actualForm.objectIdentity === objectIdentity(expectedObject) &&
-      normalise(actualForm.name) === normalise(expectedName)
+      expectedForm !== undefined &&
+      actualReference.form_reference === expectedForm.reference
     );
   }
 
@@ -537,7 +566,7 @@ export function evaluateConfigurationDraft(
       reference === null ? null : (resolveFieldReference(reference) ?? null);
     resolvedViewsByReference.set(view.reference, {
       reference: view.reference,
-      identity: `view:${object.identity}:${normalise(view.name)}`,
+      identity: `view:${view.reference}`,
       objectIdentity: object.identity,
       name: view.name,
       viewType: view.view_type,
@@ -556,25 +585,41 @@ export function evaluateConfigurationDraft(
     });
   }
 
-  function findView(
-    name: string,
-    object: ExpectedObjectReference,
-  ): ResolvedView | undefined {
-    return [...resolvedViewsByReference.values()].find(
-      (view) =>
-        view.objectIdentity === objectIdentity(object) &&
-        normalise(view.name) === normalise(name),
-    );
-  }
-
   function expectedViewFieldSet(view: {
     fields: readonly ExpectedFieldReference[];
   }): string[] {
     return view.fields.map(expectedFieldIdentity).toSorted();
   }
 
+  const matchedViewsByExpectedReference = new Map<string, ResolvedView>();
   for (const expectedView of expected.views) {
-    const actualView = findView(expectedView.name, expectedView.object);
+    const scopedViews = [...resolvedViewsByReference.values()].filter(
+      (view) => view.objectIdentity === objectIdentity(expectedView.object),
+    );
+    const namedViews =
+      expectedView.name === undefined
+        ? scopedViews
+        : scopedViews.filter(
+            (view) => normalise(view.name) === normalise(expectedView.name!),
+          );
+    const structurallyMatchingViews = namedViews.filter(
+      (view) =>
+        view.viewType === expectedView.view_type &&
+        view.audience === expectedView.audience &&
+        sameFieldSet(expectedViewFieldSet(expectedView), view.fieldIdentities),
+    );
+    const exactView =
+      structurallyMatchingViews.length === 1
+        ? structurallyMatchingViews[0]
+        : undefined;
+    const diagnosticView =
+      exactView ??
+      (namedViews.length === 1
+        ? namedViews[0]
+        : expectedView.name === undefined && scopedViews.length === 1
+          ? scopedViews[0]
+          : undefined);
+    const actualView = diagnosticView;
     if (!actualView) {
       addFailure(failures, "view_mismatch");
       continue;
@@ -586,9 +631,10 @@ export function evaluateConfigurationDraft(
       addFailure(failures, "view_mismatch");
     }
     if (
-      setDifference(expectedViewFieldSet(expectedView), [
-        ...actualView.fieldIdentities,
-      ])
+      !sameFieldSet(
+        expectedViewFieldSet(expectedView),
+        actualView.fieldIdentities,
+      )
     ) {
       addFailure(failures, "view_field_set_mismatch");
     }
@@ -622,25 +668,24 @@ export function evaluateConfigurationDraft(
     if (
       !formReferenceMatches(
         actualView.createFormReference,
-        expectedView.create_form_name,
-        expectedView.object,
+        expectedView.create_form_reference,
       ) ||
       !formReferenceMatches(
         actualView.editFormReference,
-        expectedView.edit_form_name,
-        expectedView.object,
+        expectedView.edit_form_reference,
       )
     ) {
       addFailure(failures, "view_form_link_mismatch");
+    }
+    if (exactView) {
+      matchedViewsByExpectedReference.set(expectedView.reference, exactView);
     }
   }
   if (
     [...resolvedViewsByReference.values()].some(
       (actualView) =>
-        !expected.views.some(
-          (expectedView) =>
-            actualView.objectIdentity === objectIdentity(expectedView.object) &&
-            normalise(actualView.name) === normalise(expectedView.name),
+        ![...matchedViewsByExpectedReference.values()].some(
+          (matchedView) => matchedView.reference === actualView.reference,
         ),
     )
   ) {
@@ -666,13 +711,15 @@ export function evaluateConfigurationDraft(
       case "heading":
         return (
           actualBlock.type === "heading" &&
-          normalise(actualBlock.text) === normalise(expectedBlock.text) &&
+          (expectedBlock.text === undefined ||
+            normalise(actualBlock.text) === normalise(expectedBlock.text)) &&
           actualBlock.level === expectedBlock.level
         );
       case "text":
         return (
           actualBlock.type === "text" &&
-          normalise(actualBlock.text) === normalise(expectedBlock.text)
+          (expectedBlock.text === undefined ||
+            normalise(actualBlock.text) === normalise(expectedBlock.text))
         );
       case "form":
         if (actualBlock.type !== "form") return false;
@@ -683,26 +730,26 @@ export function evaluateConfigurationDraft(
               expectedBlock.existing_form_key
           );
         }
-        if (expectedBlock.form_name) {
+        if (expectedBlock.form_reference) {
           if (actualBlock.form_reference.source !== "draft") return false;
-          const form = resolvedFormsByReference.get(
-            actualBlock.form_reference.form_reference,
+          const form = matchedFormsByExpectedReference.get(
+            expectedBlock.form_reference,
           );
           return (
             form !== undefined &&
-            normalise(form.name) === normalise(expectedBlock.form_name)
+            actualBlock.form_reference.form_reference === form.reference
           );
         }
         return false;
       case "view": {
         if (actualBlock.type !== "view") return false;
         if (actualBlock.view_reference.source !== "draft") return false;
-        const view = resolvedViewsByReference.get(
-          actualBlock.view_reference.view_reference,
+        const view = matchedViewsByExpectedReference.get(
+          expectedBlock.view_reference,
         );
         return (
           view !== undefined &&
-          normalise(view.name) === normalise(expectedBlock.view_name)
+          actualBlock.view_reference.view_reference === view.reference
         );
       }
     }
@@ -715,7 +762,8 @@ export function evaluateConfigurationDraft(
       continue;
     }
     if (
-      normalise(actualPage.title) !== normalise(expectedPage.title) ||
+      (expectedPage.title !== undefined &&
+        normalise(actualPage.title) !== normalise(expectedPage.title)) ||
       actualPage.audience !== expectedPage.audience
     ) {
       addFailure(failures, "page_mismatch");

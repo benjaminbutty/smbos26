@@ -25,7 +25,7 @@ export type ExpectedFieldReference =
 export interface ExpectedObject {
   reference: ExpectedObjectReference;
   singular_label: string;
-  plural_label: string;
+  plural_label?: string;
 }
 
 export interface ExpectedField {
@@ -53,14 +53,15 @@ export interface ExpectedField {
 export interface ExpectedRelationship {
   source: ExpectedObjectReference;
   target: ExpectedObjectReference;
-  source_label: string;
-  target_label: string;
+  source_label?: string;
+  target_label?: string;
   cardinality: "one_to_one" | "one_to_many" | "many_to_many";
   is_required: boolean;
 }
 
 export interface ExpectedForm {
-  name: string;
+  reference: string;
+  name?: string;
   object: ExpectedObjectReference;
   mode: "create" | "edit";
   audience: "internal" | "public";
@@ -68,7 +69,8 @@ export interface ExpectedForm {
 }
 
 export interface ExpectedView {
-  name: string;
+  reference: string;
+  name?: string;
   object: ExpectedObjectReference;
   view_type: "table" | "list" | "cards" | "detail";
   audience: "internal" | "public";
@@ -78,15 +80,19 @@ export interface ExpectedView {
   subtitle_field?: ExpectedFieldReference | null;
   image_field?: ExpectedFieldReference | null;
   supporting_fields?: readonly ExpectedFieldReference[];
-  create_form_name?: string | null;
-  edit_form_name?: string | null;
+  create_form_reference?: string | null;
+  edit_form_reference?: string | null;
 }
 
 export type ExpectedPageBlock =
-  | { type: "heading"; text: string; level: 1 | 2 | 3 }
-  | { type: "text"; text: string }
-  | { type: "form"; existing_form_key?: string; form_name?: string }
-  | { type: "view"; view_name: string };
+  | { type: "heading"; text?: string; level: 1 | 2 | 3 }
+  | { type: "text"; text?: string }
+  | {
+      type: "form";
+      existing_form_key?: string;
+      form_reference?: string;
+    }
+  | { type: "view"; view_reference: string };
 
 export interface ConfigurationDraftingExpectations {
   objects: readonly ExpectedObject[];
@@ -95,7 +101,7 @@ export interface ConfigurationDraftingExpectations {
   forms: readonly ExpectedForm[];
   views: readonly ExpectedView[];
   pages: readonly {
-    title: string;
+    title?: string;
     audience: "internal" | "public";
     blocks: readonly ExpectedPageBlock[];
   }[];
@@ -349,7 +355,6 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             reference: cateringEnquiry,
             singular_label: "Catering Enquiry",
-            plural_label: "Catering Enquiries",
           },
         ],
         fields: [
@@ -393,15 +398,13 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             source: customer,
             target: cateringEnquiry,
-            source_label: "submits",
-            target_label: "customer",
             cardinality: "one_to_many",
             is_required: false,
           },
         ],
         forms: [
           {
-            name: "Catering Enquiry",
+            reference: "expected_form_1",
             object: cateringEnquiry,
             mode: "create",
             audience: "public",
@@ -416,7 +419,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         ],
         views: [
           {
-            name: "Catering Enquiries",
+            reference: "expected_view_1",
             object: cateringEnquiry,
             view_type: "table",
             audience: "internal",
@@ -428,17 +431,16 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
               newField(cateringEnquiry, "Notes"),
             ],
             title_field: null,
-            create_form_name: null,
-            edit_form_name: null,
+            create_form_reference: null,
+            edit_form_reference: null,
           },
         ],
         pages: [
           {
-            title: "Catering Enquiry",
             audience: "public",
             blocks: [
-              { type: "heading", text: "Tell us about your event", level: 1 },
-              { type: "form", form_name: "Catering Enquiry" },
+              { type: "heading", level: 1 },
+              { type: "form", form_reference: "expected_form_1" },
             ],
           },
         ],
@@ -529,6 +531,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         relationships: [],
         forms: [
           {
+            reference: "expected_form_1",
             name: "New Customer",
             object: customer,
             mode: "create",
@@ -542,6 +545,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         ],
         views: [
           {
+            reference: "expected_view_1",
             name: "Customer Directory",
             object: customer,
             view_type: "table",
@@ -552,8 +556,8 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
               existingField("customer", "phone"),
             ],
             title_field: null,
-            create_form_name: "New Customer",
-            edit_form_name: null,
+            create_form_reference: "expected_form_1",
+            edit_form_reference: null,
           },
         ],
         pages: [],
@@ -597,11 +601,8 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
             title: "Wholesale Enquiries",
             audience: "public",
             blocks: [
-              { type: "heading", text: "Wholesale Enquiries", level: 1 },
-              {
-                type: "text",
-                text: "Tell us how we can help with your wholesale enquiry.",
-              },
+              { type: "heading", level: 1 },
+              { type: "text" },
               { type: "form", existing_form_key: "customer_contact" },
             ],
           },
@@ -669,12 +670,10 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             reference: equipment,
             singular_label: "Equipment",
-            plural_label: "Equipment Units",
           },
           {
             reference: maintenanceJob,
             singular_label: "Maintenance Job",
-            plural_label: "Maintenance Jobs",
           },
         ],
         fields: [
@@ -718,15 +717,13 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             source: equipment,
             target: maintenanceJob,
-            source_label: "has maintenance jobs",
-            target_label: "equipment",
             cardinality: "one_to_many",
             is_required: false,
           },
         ],
         forms: [
           {
-            name: "New Equipment",
+            reference: "expected_form_1",
             object: equipment,
             mode: "create",
             audience: "internal",
@@ -736,7 +733,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
             ],
           },
           {
-            name: "New Maintenance Job",
+            reference: "expected_form_2",
             object: maintenanceJob,
             mode: "create",
             audience: "internal",
@@ -749,7 +746,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         ],
         views: [
           {
-            name: "Equipment",
+            reference: "expected_view_1",
             object: equipment,
             view_type: "list",
             audience: "internal",
@@ -759,11 +756,11 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
             ],
             primary_field: newField(equipment, "Name"),
             title_field: null,
-            create_form_name: "New Equipment",
-            edit_form_name: null,
+            create_form_reference: "expected_form_1",
+            edit_form_reference: null,
           },
           {
-            name: "Maintenance Jobs",
+            reference: "expected_view_2",
             object: maintenanceJob,
             view_type: "table",
             audience: "internal",
@@ -773,8 +770,8 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
               newField(maintenanceJob, "Notes"),
             ],
             title_field: null,
-            create_form_name: "New Maintenance Job",
-            edit_form_name: null,
+            create_form_reference: "expected_form_2",
+            edit_form_reference: null,
           },
         ],
         pages: [],
@@ -823,7 +820,6 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             reference: supplierQuote,
             singular_label: "Supplier Quote",
-            plural_label: "Supplier Quotes",
           },
         ],
         fields: [
@@ -866,7 +862,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         relationships: [],
         forms: [
           {
-            name: "New Supplier Quote",
+            reference: "expected_form_1",
             object: supplierQuote,
             mode: "create",
             audience: "internal",
@@ -881,7 +877,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         ],
         views: [
           {
-            name: "Supplier Quotes",
+            reference: "expected_view_1",
             object: supplierQuote,
             view_type: "table",
             audience: "internal",
@@ -893,8 +889,8 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
               newField(supplierQuote, "Attachment"),
             ],
             title_field: null,
-            create_form_name: "New Supplier Quote",
-            edit_form_name: null,
+            create_form_reference: "expected_form_1",
+            edit_form_reference: null,
           },
         ],
         pages: [],
@@ -943,7 +939,6 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             reference: staffProfile,
             singular_label: "Staff Profile",
-            plural_label: "Staff Profiles",
           },
         ],
         fields: [
@@ -979,7 +974,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         relationships: [],
         forms: [
           {
-            name: "New Staff Profile",
+            reference: "expected_form_1",
             object: staffProfile,
             mode: "create",
             audience: "internal",
@@ -993,7 +988,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         ],
         views: [
           {
-            name: "Staff Profiles",
+            reference: "expected_view_1",
             object: staffProfile,
             view_type: "cards",
             audience: "internal",
@@ -1007,8 +1002,8 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
             subtitle_field: newField(staffProfile, "Role"),
             image_field: newField(staffProfile, "Photo"),
             supporting_fields: [newField(staffProfile, "Bio")],
-            create_form_name: "New Staff Profile",
-            edit_form_name: null,
+            create_form_reference: "expected_form_1",
+            edit_form_reference: null,
           },
         ],
         pages: [],
@@ -1063,6 +1058,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         relationships: [],
         forms: [
           {
+            reference: "expected_form_1",
             name: "Order Update",
             object: order,
             mode: "edit",
@@ -1075,6 +1071,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
         ],
         views: [
           {
+            reference: "expected_view_1",
             name: "Order Review",
             object: order,
             view_type: "detail",
@@ -1089,15 +1086,15 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
               existingField("order", "status"),
             ],
             title_field: null,
-            create_form_name: null,
-            edit_form_name: "Order Update",
+            create_form_reference: null,
+            edit_form_reference: "expected_form_1",
           },
         ],
         pages: [
           {
             title: "Order Review Workspace",
             audience: "internal",
-            blocks: [{ type: "view", view_name: "Order Review" }],
+            blocks: [{ type: "view", view_reference: "expected_view_1" }],
           },
         ],
         forbid_status_field: false,

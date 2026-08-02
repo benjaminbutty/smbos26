@@ -334,18 +334,20 @@ function updateTotalsForFailure(
   }
 }
 
-async function defaultLoadProductionExecution(
+export async function defaultLoadProductionExecution(
   apiKey: string,
 ): Promise<ConfigurationDraftingExecution> {
-  const [{ createAiExecutionService }, { OpenAiResponsesStructuredProvider }] =
-    await Promise.all([
-      import("../../execution"),
-      import("../../providers/openai"),
-    ]);
+  const [{ createAiExecutionService }, { createProductionAiRuntime }] =
+    await Promise.all([import("../../execution"), import("../../registry")]);
+  const runtime = createProductionAiRuntime({
+    AI_PROVIDER: "openai",
+    OPENAI_API_KEY: apiKey,
+  });
+  const provider = runtime.providers.openai;
+  if (!provider || provider.key !== "openai") {
+    throw new Error("The evaluation runtime did not provide OpenAI.");
+  }
   const task = createBuilderConfigurationDraftingEvaluationTask();
-  const provider = Reflect.construct(OpenAiResponsesStructuredProvider, [
-    { apiKey },
-  ]);
   return createAiExecutionService({
     tasks: { builder_configuration_draft_v1: task },
     policies: {
