@@ -478,9 +478,12 @@ describe("production AI source boundaries", () => {
   const productionTypeScript = fs
     .readdirSync(aiRoot, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
-    .map((entry) => path.join(entry.parentPath, entry.name));
+    .map((entry) => path.join(entry.parentPath, entry.name))
+    .filter(
+      (file) => !file.includes(`${path.sep}configuration-proposal${path.sep}`),
+    );
 
-  it("contains no configuration or operational mutation dependency", () => {
+  it("keeps the provider-neutral AI runtime free of mutation dependencies", () => {
     const source = productionTypeScript
       .map((file) => fs.readFileSync(file, "utf8"))
       .join("\n");

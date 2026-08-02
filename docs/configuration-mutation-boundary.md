@@ -64,6 +64,7 @@ in the `private` schema.
 | `src/ai/planning/` | Strict non-executing planning schemas, instruction, semantic validation and authenticated composition; may read authoritative context and use AI accounting/execution, but exposes no configuration lifecycle or operational mutation method |
 | `src/ai/configuration-drafting/` | Pure server-owned untrusted additive configuration-intent schemas, fixed instruction, semantic validation and production-disabled task registration; no database/provider/accounting/lifecycle dependency and no M5 operation generation |
 | `src/core/configuration/draft-compiler/` | Pure server-owned Phase 1B compiler from a validated draft plus immutable snapshot to strict additive M5 operations; revalidates existing references and derives deterministic keys/slugs/positions; no UUID/currentness/proposal, database/provider/route/UI or mutation dependency |
+| `src/ai/configuration-proposal/` | Authenticated server-only Phase 2 handoff with first/second exact-currentness and canonical-context checks, one pure compiler call and exactly one M5 `proposeChangeSet`; no lifecycle, provider, persistence, route/UI or operational DML |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -92,8 +93,11 @@ boundary: it consumes a server-supplied immutable snapshot, revalidates
 existing references, reserves active and archived identities and emits only
 strict additive M5 operations. It creates no UUID, expected-head metadata,
 candidate, proposal or lifecycle transition. M5 later allocates trusted IDs
-while materialising a proposal candidate; a later orchestration phase supplies
-authentication, exact currentness and proposal metadata.
+while materialising a proposal candidate. Phase 2 now supplies the
+authenticated, exact-currentness handoff and fixed proposal metadata, but only
+calls the ordinary M5 proposal method once. It reloads and canonically compares
+context before compilation and again before proposal creation, persists no raw
+handoff data, and adds no lifecycle, provider, route or UI surface.
 
 Public Form/Page intent in this draft is not a public runtime capability. The
 current PostgreSQL resolver remains limited to static published Pages, the

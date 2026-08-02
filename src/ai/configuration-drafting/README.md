@@ -51,9 +51,10 @@ in `src/core/configuration/draft-compiler/`, together with a server-supplied
 immutable configuration snapshot. That pure compiler derives collision-safe
 keys, slugs, positions, complete definitions, defaults and active state, then
 emits only strict M5 operations. It does not derive UUIDs or expected-head
-metadata; M5 later allocates trusted IDs while materialising a candidate, and a
-later orchestration phase supplies authentication, currentness and proposal
-metadata.
+metadata; M5 later allocates trusted IDs while materialising a candidate. Phase
+2 now supplies the separate authenticated, exact-currentness handoff and fixed
+proposal metadata through `src/ai/configuration-proposal/`, while this module
+remains transient, provider-disabled and free of M5 imports.
 
 Public Form/Page intent is design intent only. The current PostgreSQL boundary
 and public renderer do not provide generic public Form submission, so a later

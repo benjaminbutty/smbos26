@@ -1916,3 +1916,58 @@ not silently reused, and the compiler remains testable without Supabase reset
 or provider calls. Terra planning evidence remains unchanged and is not
 evidence for drafting or compilation. Generic public Form submission and
 publication remain deferred to a later reusable runtime capability.
+
+## ADR-025 - Authenticated configuration proposal orchestration is an exact-currentness server handoff
+
+**Status:** Accepted for v0.1 (Milestone 7 Phase 2)
+
+**Date:** 1 August 2026
+
+### Context
+
+ADR-024 deliberately stops at pure compilation. The next boundary must let an
+authenticated Owner/Admin turn a completed transient draft into one ordinary
+M5 proposal without allowing the browser, model or orchestration layer to
+choose actor identity, trusted IDs, lifecycle state or stale configuration.
+The handoff must also prevent a snapshot from changing between compilation and
+proposal creation, while keeping Phase 1A/1B artifacts out of durable storage.
+
+### Decision
+
+- Keep Phase 2 under the server-only
+  `src/ai/configuration-proposal/` boundary. Its strict request contains only
+  the verified `businessId`, expected active version/head, Phase 1A task-input
+  base contract and Phase 1A draft. Actor identity, proposal metadata and
+  operations are server/compiler-owned; no route or browser contract exposes
+  them.
+- Load the existing authoritative context source first. Require authenticated
+  Owner/Admin membership, compare expected currentness exactly and compare the
+  supplied model context with the canonical projection exactly. Compile once
+  against that first immutable snapshot.
+- Load the authoritative context a second time. Require the same
+  session-derived Business/actor identity, currentness and canonical model
+  context as both the expected handoff and the first read. Treat any mismatch
+  as stale and do not retry, rebase or substitute context.
+- Make exactly one existing M5 `ConfigurationChangeService.proposeChangeSet`
+  call with the compiler's strict operations, expected version/head, fixed
+  title `Proposed configuration changes` and `description: null`. M5 remains
+  the source of trusted IDs, candidate materialisation and the operation diff.
+- Return only a frozen bounded result containing schema version, proposal ID,
+  proposed status, base version ID, base head revision and operation count.
+  Map stale, compiler, no-change and other failures to finite safe errors;
+  never expose raw request/context/plan/draft/provider/database data.
+- Do not validate, apply, publish, abandon, rollback, retry, call a provider,
+  persist the handoff, add AI execution/accounting, change planning or drafting
+  registries, add routes/UI/migrations, or mutate operational data. The
+  Catering Enquiry proof uses only existing primitives and remains design
+  intent for a draft Page and metadata-only Relationship; it adds no
+  catering-specific production path and no generic public Form runtime.
+
+### Consequences
+
+The completed Phase 1A/1B artifact can cross one auditable server boundary to
+an ordinary proposed M5 change while currentness is checked before and after
+compilation and again atomically by M5. Live configuration is unchanged until
+the existing deliberate lifecycle, and no raw AI handoff is stored. Preview,
+validation/application, provider activation and reusable public Form
+submission remain separate future capabilities.
