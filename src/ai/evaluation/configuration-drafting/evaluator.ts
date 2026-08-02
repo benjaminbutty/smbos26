@@ -18,6 +18,7 @@ import {
   type ExpectedFieldReference,
   type ExpectedObjectReference,
   type ExpectedPageBlock,
+  type ExpectedView,
 } from "./scenarios";
 
 export interface ConfigurationDraftingExecutionMetadata {
@@ -585,10 +586,48 @@ export function evaluateConfigurationDraft(
     });
   }
 
-  function expectedViewFieldSet(view: {
-    fields: readonly ExpectedFieldReference[];
-  }): string[] {
-    return view.fields.map(expectedFieldIdentity).toSorted();
+  function expectedViewRequiredFields(
+    view: ExpectedView,
+  ): readonly ExpectedFieldReference[] {
+    return view.required_fields ?? view.fields ?? [];
+  }
+
+  function expectedViewOptionalFields(
+    view: ExpectedView,
+  ): readonly ExpectedFieldReference[] {
+    return view.optional_fields ?? [];
+  }
+
+  function expectedViewFieldsMatch(
+    view: ExpectedView,
+    actualFieldIdentities: readonly string[],
+  ): boolean {
+    const requiredFieldIdentities = expectedViewRequiredFields(view).map(
+      expectedFieldIdentity,
+    );
+    const optionalFieldIdentities = expectedViewOptionalFields(view).map(
+      expectedFieldIdentity,
+    );
+    if (optionalFieldIdentities.length === 0) {
+      return sameFieldSet(
+        requiredFieldIdentities.toSorted(),
+        actualFieldIdentities,
+      );
+    }
+    const allowedFieldIdentities = new Set([
+      ...requiredFieldIdentities,
+      ...optionalFieldIdentities,
+    ]);
+    const actualFieldIdentitySet = new Set(actualFieldIdentities);
+    return (
+      actualFieldIdentities.length === actualFieldIdentitySet.size &&
+      requiredFieldIdentities.every((identity) =>
+        actualFieldIdentitySet.has(identity),
+      ) &&
+      actualFieldIdentities.every((identity) =>
+        allowedFieldIdentities.has(identity),
+      )
+    );
   }
 
   const matchedViewsByExpectedReference = new Map<string, ResolvedView>();
@@ -602,18 +641,15 @@ export function evaluateConfigurationDraft(
         : scopedViews.filter(
             (view) => normalise(view.name) === normalise(expectedView.name!),
           );
-    const structurallyMatchingViews = namedViews.filter(
+    const entityMatchingViews = namedViews.filter(
       (view) =>
         view.viewType === expectedView.view_type &&
-        view.audience === expectedView.audience &&
-        sameFieldSet(expectedViewFieldSet(expectedView), view.fieldIdentities),
+        view.audience === expectedView.audience,
     );
-    const exactView =
-      structurallyMatchingViews.length === 1
-        ? structurallyMatchingViews[0]
-        : undefined;
+    const entityView =
+      entityMatchingViews.length === 1 ? entityMatchingViews[0] : undefined;
     const diagnosticView =
-      exactView ??
+      entityView ??
       (namedViews.length === 1
         ? namedViews[0]
         : expectedView.name === undefined && scopedViews.length === 1
@@ -630,12 +666,7 @@ export function evaluateConfigurationDraft(
     ) {
       addFailure(failures, "view_mismatch");
     }
-    if (
-      !sameFieldSet(
-        expectedViewFieldSet(expectedView),
-        actualView.fieldIdentities,
-      )
-    ) {
+    if (!expectedViewFieldsMatch(expectedView, actualView.fieldIdentities)) {
       addFailure(failures, "view_field_set_mismatch");
     }
     const expectedTitle =
@@ -677,8 +708,8 @@ export function evaluateConfigurationDraft(
     ) {
       addFailure(failures, "view_form_link_mismatch");
     }
-    if (exactView) {
-      matchedViewsByExpectedReference.set(expectedView.reference, exactView);
+    if (entityView) {
+      matchedViewsByExpectedReference.set(expectedView.reference, entityView);
     }
   }
   if (
@@ -721,6 +752,8 @@ export function evaluateConfigurationDraft(
           (expectedBlock.text === undefined ||
             normalise(actualBlock.text) === normalise(expectedBlock.text))
         );
+      case "divider":
+        return actualBlock.type === "divider";
       case "form":
         if (actualBlock.type !== "form") return false;
         if (expectedBlock.existing_form_key) {
@@ -755,6 +788,38 @@ export function evaluateConfigurationDraft(
     }
   }
 
+  function pageBlocksMatch(
+    actualBlocks: readonly BuilderConfigurationDraftOutput["pages"][number]["blocks"][number][],
+    expectedPage: ConfigurationDraftingScenario["expected"]["pages"][number],
+  ): boolean {
+    if (expectedPage.block_match_mode === "exact") {
+      return (
+        actualBlocks.length === expectedPage.blocks.length &&
+        expectedPage.blocks.every((expectedBlock, blockIndex) =>
+          pageBlockMatches(actualBlocks[blockIndex], expectedBlock),
+        )
+      );
+    }
+
+    let expectedBlockIndex = 0;
+    for (const actualBlock of actualBlocks) {
+      const expectedBlock = expectedPage.blocks[expectedBlockIndex];
+      if (expectedBlock && pageBlockMatches(actualBlock, expectedBlock)) {
+        expectedBlockIndex += 1;
+        continue;
+      }
+      if (
+        actualBlock.type === "heading" ||
+        actualBlock.type === "text" ||
+        actualBlock.type === "divider"
+      ) {
+        continue;
+      }
+      return false;
+    }
+    return expectedBlockIndex === expectedPage.blocks.length;
+  }
+
   for (const [index, expectedPage] of expected.pages.entries()) {
     const actualPage = parsedOutput.pages[index];
     if (!actualPage) {
@@ -768,13 +833,7 @@ export function evaluateConfigurationDraft(
     ) {
       addFailure(failures, "page_mismatch");
     }
-    if (
-      actualPage.blocks.length !== expectedPage.blocks.length ||
-      expectedPage.blocks.some(
-        (expectedBlock, blockIndex) =>
-          !pageBlockMatches(actualPage.blocks[blockIndex], expectedBlock),
-      )
-    ) {
+    if (!pageBlocksMatch(actualPage.blocks, expectedPage)) {
       addFailure(failures, "page_block_mismatch");
     }
     for (const block of actualPage.blocks) {

@@ -68,13 +68,12 @@ export interface ExpectedForm {
   fields: readonly ExpectedFieldReference[];
 }
 
-export interface ExpectedView {
+interface ExpectedViewBase {
   reference: string;
   name?: string;
   object: ExpectedObjectReference;
   view_type: "table" | "list" | "cards" | "detail";
   audience: "internal" | "public";
-  fields: readonly ExpectedFieldReference[];
   title_field?: ExpectedFieldReference | null;
   primary_field?: ExpectedFieldReference;
   subtitle_field?: ExpectedFieldReference | null;
@@ -84,6 +83,20 @@ export interface ExpectedView {
   edit_form_reference?: string | null;
 }
 
+type ExpectedViewFieldContract =
+  | {
+      fields: readonly ExpectedFieldReference[];
+      required_fields?: never;
+      optional_fields?: never;
+    }
+  | {
+      fields?: never;
+      required_fields: readonly ExpectedFieldReference[];
+      optional_fields: readonly ExpectedFieldReference[];
+    };
+
+export type ExpectedView = ExpectedViewBase & ExpectedViewFieldContract;
+
 export type ExpectedPageBlock =
   | { type: "heading"; text?: string; level: 1 | 2 | 3 }
   | { type: "text"; text?: string }
@@ -92,7 +105,10 @@ export type ExpectedPageBlock =
       existing_form_key?: string;
       form_reference?: string;
     }
+  | { type: "divider" }
   | { type: "view"; view_reference: string };
+
+export type ExpectedPageMatchMode = "exact" | "contains_in_order";
 
 export interface ConfigurationDraftingExpectations {
   objects: readonly ExpectedObject[];
@@ -103,6 +119,7 @@ export interface ConfigurationDraftingExpectations {
   pages: readonly {
     title?: string;
     audience: "internal" | "public";
+    block_match_mode: ExpectedPageMatchMode;
     blocks: readonly ExpectedPageBlock[];
   }[];
   forbid_status_field: boolean;
@@ -423,20 +440,21 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
             object: cateringEnquiry,
             view_type: "table",
             audience: "internal",
-            fields: [
+            required_fields: [
               newField(cateringEnquiry, "Company name"),
               newField(cateringEnquiry, "Event date"),
               newField(cateringEnquiry, "Number of guests"),
+            ],
+            optional_fields: [
               newField(cateringEnquiry, "Budget"),
               newField(cateringEnquiry, "Notes"),
             ],
-            create_form_reference: null,
-            edit_form_reference: null,
           },
         ],
         pages: [
           {
             audience: "public",
+            block_match_mode: "contains_in_order",
             blocks: [
               { type: "heading", level: 1 },
               { type: "form", form_reference: "expected_form_1" },
@@ -598,6 +616,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             title: "Wholesale Enquiries",
             audience: "public",
+            block_match_mode: "exact",
             blocks: [
               { type: "heading", level: 1 },
               { type: "text" },
@@ -1089,6 +1108,7 @@ export const configurationDraftingScenarios: readonly ConfigurationDraftingScena
           {
             title: "Order Review Workspace",
             audience: "internal",
+            block_match_mode: "contains_in_order",
             blocks: [{ type: "view", view_reference: "expected_view_1" }],
           },
         ],

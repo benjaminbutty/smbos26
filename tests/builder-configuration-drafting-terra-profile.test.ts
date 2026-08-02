@@ -304,10 +304,10 @@ describe("configuration drafting Terra medium evaluation profile", () => {
     ).toBe("f9eab00c1583299ed8ce6d3bb8bbd60c0e2bced9c9472ddaa9318229913c1d1f");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/scenarios.ts"),
-    ).toBe("2cce94960ff63663e033602f301481426b2b95b72eea8bcfede7452ce190d663");
+    ).toBe("6907f74d9a1aed5eadf37b46a0c7879ddf831cbeeb2dca9464fb0f807699ef82");
     expect(
       hashFile("src/ai/evaluation/configuration-drafting/evaluator.ts"),
-    ).toBe("571c3f5bafce433583d7db8c75562d9a95456cb1891677722c0eea3712db39a8");
+    ).toBe("ed029b99b89d0ad8dd8c454d01b845eacb349a835362b14daaace423246c4200");
   });
 
   it("keeps provider construction in the runtime factory path", () => {

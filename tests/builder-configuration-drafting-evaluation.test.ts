@@ -59,6 +59,18 @@ function draftFormReference(reference: string) {
   return { source: "draft" as const, form_reference: reference };
 }
 
+function existingFormReference(formKey: string) {
+  return { source: "existing" as const, form_key: formKey };
+}
+
+function draftViewReference(reference: string) {
+  return { source: "draft" as const, view_reference: reference };
+}
+
+function existingViewReference(viewKey: string) {
+  return { source: "existing" as const, view_key: viewKey };
+}
+
 function draftFieldReference(reference: string) {
   return { source: "draft" as const, field_reference: reference };
 }
@@ -431,6 +443,93 @@ describe("fair deterministic drafting gates", () => {
     expect(
       evaluateAfterTaskValidation("public_customer_contact_page", output),
     ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("accepts contained Catering and Order page presentation blocks", () => {
+    const cateringPageVariants = [
+      [
+        { type: "heading", text: "Event details", level: 1 },
+        { type: "form", form_reference: draftFormReference("draft_form_1") },
+      ],
+      [
+        { type: "heading", text: "Event details", level: 1 },
+        { type: "text", text: "Tell us about your event." },
+        { type: "form", form_reference: draftFormReference("draft_form_1") },
+      ],
+      [
+        { type: "heading", text: "Event details", level: 1 },
+        { type: "divider" },
+        { type: "text", text: "Tell us about your event." },
+        { type: "form", form_reference: draftFormReference("draft_form_1") },
+      ],
+    ] as const;
+    for (const blocks of cateringPageVariants) {
+      const output = outputFor("catering_enquiry_full_stack");
+      output.pages[0]!.blocks = [...blocks];
+      expect(
+        evaluateAfterTaskValidation("catering_enquiry_full_stack", output),
+      ).toMatchObject({ passed: true, failed_gate_codes: [] });
+    }
+
+    const orderPageVariants = [
+      [{ type: "view", view_reference: draftViewReference("draft_view_1") }],
+      [
+        { type: "heading", text: "Order review", level: 1 },
+        { type: "view", view_reference: draftViewReference("draft_view_1") },
+      ],
+      [
+        { type: "heading", text: "Order review", level: 1 },
+        { type: "text", text: "Review the order details below." },
+        { type: "view", view_reference: draftViewReference("draft_view_1") },
+      ],
+      [
+        { type: "heading", text: "Order review", level: 1 },
+        { type: "divider" },
+        { type: "view", view_reference: draftViewReference("draft_view_1") },
+      ],
+    ] as const;
+    for (const blocks of orderPageVariants) {
+      const output = outputFor("order_detail_workspace");
+      output.pages[0]!.blocks = [...blocks];
+      expect(
+        evaluateAfterTaskValidation("order_detail_workspace", output),
+      ).toMatchObject({ passed: true, failed_gate_codes: [] });
+    }
+
+    const generatedTitle = outputFor("catering_enquiry_full_stack");
+    generatedTitle.pages[0]!.title = "Request event catering";
+    expect(
+      evaluateAfterTaskValidation(
+        "catering_enquiry_full_stack",
+        generatedTitle,
+      ),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("accepts Catering required visible fields with optional columns", () => {
+    const visibleFieldVariants = [
+      [
+        "draft_field_1",
+        "draft_field_2",
+        "draft_field_3",
+        "draft_field_4",
+        "draft_field_5",
+      ],
+      ["draft_field_1", "draft_field_2", "draft_field_3"],
+      ["draft_field_1", "draft_field_2", "draft_field_3", "draft_field_4"],
+      ["draft_field_1", "draft_field_2", "draft_field_3", "draft_field_5"],
+    ];
+    for (const visibleFields of visibleFieldVariants) {
+      const output = outputFor("catering_enquiry_full_stack");
+      const view = output.views[0];
+      if (!view || view.view_type !== "table") {
+        throw new Error("Missing Catering table fixture.");
+      }
+      view.configuration.fields = visibleFields.map(draftFieldReference);
+      expect(
+        evaluateAfterTaskValidation("catering_enquiry_full_stack", output),
+      ).toMatchObject({ passed: true, failed_gate_codes: [] });
+    }
   });
 
   it("keeps unrequested table/detail title choices presentation-neutral", () => {
@@ -839,6 +938,310 @@ describe("configuration drafting evaluator negative coverage", () => {
   });
 });
 
+describe("presentation-aware page and view gate coverage", () => {
+  it("rejects invalid Catering Page containment", () => {
+    for (const [label, mutate, expectedCode] of [
+      [
+        "missing Catering Form",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            { type: "heading", text: "Event details", level: 1 },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "wrong Form",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            { type: "heading", text: "Event details", level: 1 },
+            {
+              type: "form",
+              form_reference: existingFormReference("customer_contact"),
+            },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "two Forms",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            { type: "heading", text: "Event details", level: 1 },
+            {
+              type: "form",
+              form_reference: draftFormReference("draft_form_1"),
+            },
+            {
+              type: "form",
+              form_reference: draftFormReference("draft_form_1"),
+            },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "unexpected View",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            { type: "heading", text: "Event details", level: 1 },
+            {
+              type: "view",
+              view_reference: draftViewReference("draft_view_1"),
+            },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "Form before heading",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            {
+              type: "form",
+              form_reference: draftFormReference("draft_form_1"),
+            },
+            { type: "heading", text: "Event details", level: 1 },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "wrong audience",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.audience = "internal";
+        },
+        "page_mismatch",
+      ],
+    ] as const) {
+      const output = outputFor("catering_enquiry_full_stack");
+      mutate(output);
+      const report = evaluateAfterOutputSchema(
+        "catering_enquiry_full_stack",
+        output,
+      );
+      expect(report.passed, label).toBe(false);
+      expect(report.failed_gate_codes, label).toContain(expectedCode);
+    }
+  });
+
+  it("rejects invalid Order Workspace Page containment", () => {
+    for (const [label, mutate, expectedCode] of [
+      [
+        "missing Order Review View",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            { type: "heading", text: "Order review", level: 1 },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "wrong View",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            {
+              type: "view",
+              view_reference: existingViewReference("order_details"),
+            },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "two Views",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            {
+              type: "view",
+              view_reference: draftViewReference("draft_view_1"),
+            },
+            {
+              type: "view",
+              view_reference: draftViewReference("draft_view_1"),
+            },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "unexpected Form",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.blocks = [
+            {
+              type: "form",
+              form_reference: draftFormReference("draft_form_1"),
+            },
+          ];
+        },
+        "page_block_mismatch",
+      ],
+      [
+        "wrong title",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.title = "Order workspace";
+        },
+        "page_mismatch",
+      ],
+      [
+        "wrong audience",
+        (output: ReturnType<typeof outputFor>) => {
+          output.pages[0]!.audience = "public";
+        },
+        "page_mismatch",
+      ],
+    ] as const) {
+      const output = outputFor("order_detail_workspace");
+      mutate(output);
+      const report = evaluateAfterOutputSchema(
+        "order_detail_workspace",
+        output,
+      );
+      expect(report.passed, label).toBe(false);
+      expect(report.failed_gate_codes, label).toContain(expectedCode);
+    }
+  });
+
+  it("keeps the Catering table field contract precise", () => {
+    for (const [label, missingField] of [
+      ["missing Company name", "draft_field_1"],
+      ["missing Event date", "draft_field_2"],
+      ["missing Number of guests", "draft_field_3"],
+    ] as const) {
+      const output = outputFor("catering_enquiry_full_stack");
+      const view = output.views[0];
+      if (!view || view.view_type !== "table") {
+        throw new Error("Missing Catering table fixture.");
+      }
+      view.configuration.fields = [
+        "draft_field_1",
+        "draft_field_2",
+        "draft_field_3",
+      ]
+        .filter((fieldReference) => fieldReference !== missingField)
+        .map(draftFieldReference);
+      const report = evaluateAfterTaskValidation(
+        "catering_enquiry_full_stack",
+        output,
+      );
+      expect(report.passed, label).toBe(false);
+      expect(report.failed_gate_codes, label).toContain(
+        "view_field_set_mismatch",
+      );
+      expect(report.failed_gate_codes, label).not.toContain(
+        "adjacent_scope_added",
+      );
+    }
+
+    const additionalField = outputFor("catering_enquiry_full_stack");
+    const additionalView = additionalField.views[0];
+    if (!additionalView || additionalView.view_type !== "table") {
+      throw new Error("Missing Catering table fixture.");
+    }
+    additionalField.fields.push({
+      ...additionalField.fields[0]!,
+      reference: "draft_field_6",
+      label: "Internal code",
+      required: false,
+    });
+    additionalView.configuration.fields.push(
+      draftFieldReference("draft_field_6"),
+    );
+    const additionalReport = evaluateAfterTaskValidation(
+      "catering_enquiry_full_stack",
+      additionalField,
+    );
+    expect(additionalReport.passed).toBe(false);
+    expect(additionalReport.failed_gate_codes).toEqual(
+      expect.arrayContaining([
+        "view_field_set_mismatch",
+        "adjacent_scope_added",
+      ]),
+    );
+
+    const duplicateVisibleField = outputFor("catering_enquiry_full_stack");
+    const duplicateView = duplicateVisibleField.views[0];
+    if (!duplicateView || duplicateView.view_type !== "table") {
+      throw new Error("Missing Catering table fixture.");
+    }
+    duplicateView.configuration.fields.push(
+      draftFieldReference("draft_field_1"),
+    );
+    const duplicateReport = evaluateAfterOutputSchema(
+      "catering_enquiry_full_stack",
+      duplicateVisibleField,
+    );
+    expect(duplicateReport.passed).toBe(false);
+    expect(duplicateReport.failed_gate_codes).toContain(
+      "view_field_set_mismatch",
+    );
+
+    const foreignVisibleField = outputFor("catering_enquiry_full_stack");
+    const foreignView = foreignVisibleField.views[0];
+    if (!foreignView || foreignView.view_type !== "table") {
+      throw new Error("Missing Catering table fixture.");
+    }
+    foreignView.configuration.fields[0] = {
+      source: "existing",
+      object_key: "customer",
+      field_key: "name",
+    };
+    const foreignReport = evaluateAfterOutputSchema(
+      "catering_enquiry_full_stack",
+      foreignVisibleField,
+    );
+    expect(foreignReport.passed).toBe(false);
+    expect(foreignReport.failed_gate_codes).toContain(
+      "view_field_set_mismatch",
+    );
+
+    const wrongObject = outputFor("catering_enquiry_full_stack");
+    wrongObject.views[0]!.object_reference = {
+      source: "existing",
+      object_key: "customer",
+    };
+    const wrongObjectReport = evaluateAfterOutputSchema(
+      "catering_enquiry_full_stack",
+      wrongObject,
+    );
+    expect(wrongObjectReport.passed).toBe(false);
+    expect(wrongObjectReport.failed_gate_codes).toContain("view_mismatch");
+
+    const wrongType = outputFor("catering_enquiry_full_stack");
+    const wrongTypeView = wrongType.views[0];
+    if (!wrongTypeView) {
+      throw new Error("Missing Catering table fixture.");
+    }
+    wrongTypeView.view_type = "list";
+    wrongTypeView.configuration = {
+      primary_field: draftFieldReference("draft_field_1"),
+      secondary_fields: [
+        draftFieldReference("draft_field_2"),
+        draftFieldReference("draft_field_3"),
+        draftFieldReference("draft_field_4"),
+        draftFieldReference("draft_field_5"),
+      ],
+      create_form_reference: null,
+      edit_form_reference: null,
+    };
+    const wrongTypeReport = evaluateAfterTaskValidation(
+      "catering_enquiry_full_stack",
+      wrongType,
+    );
+    expect(wrongTypeReport.passed).toBe(false);
+    expect(wrongTypeReport.failed_gate_codes).toContain("view_mismatch");
+
+    const wrongAudience = outputFor("catering_enquiry_full_stack");
+    wrongAudience.views[0]!.audience = "public";
+    const wrongAudienceReport = evaluateAfterTaskValidation(
+      "catering_enquiry_full_stack",
+      wrongAudience,
+    );
+    expect(wrongAudienceReport.passed).toBe(false);
+    expect(wrongAudienceReport.failed_gate_codes).toContain("view_mismatch");
+  });
+});
+
 function evaluateAfterTaskValidation(
   scenarioId: (typeof configurationDraftingScenarioIds)[number],
   output: ReturnType<typeof outputFor>,
@@ -861,6 +1264,21 @@ function evaluateAfterTaskValidation(
       )
     : validatedOutput;
   return evaluateConfigurationDraft(scenario, semanticOutput, metadata);
+}
+
+function evaluateAfterOutputSchema(
+  scenarioId: (typeof configurationDraftingScenarioIds)[number],
+  output: ReturnType<typeof outputFor>,
+) {
+  const scenario = configurationDraftingScenarios.find(
+    ({ id }) => id === scenarioId,
+  );
+  if (!scenario) throw new Error("Missing scenario fixture.");
+  return evaluateConfigurationDraft(
+    scenario,
+    builderConfigurationDraftOutputSchema.parse(output),
+    metadata,
+  );
 }
 
 describe("configuration drafting evaluation source boundaries", () => {
