@@ -1,8 +1,10 @@
 # Authenticated Builder orchestration
 
-Milestone 8 Phase 8B is a server-only composition boundary for one
-authenticated owner request. It is intentionally not a route, Server Action,
-chat history store or owner-facing Builder UI.
+Milestone 8 Phase 8B is the server-only composition boundary for one
+authenticated owner request. It remains intentionally separate from the
+owner-facing surface: Milestone 8 Phase 8C adds the route, Server Action and
+ephemeral UI wrapper under `src/app/` and `src/components/`, while this module
+continues to own only the trusted orchestration contract.
 
 ## Contract
 
@@ -64,4 +66,6 @@ unchanged, drafting retains its 60-second timeout, and the Builder workflow is
 not retried. Raw request/context/plan/draft/provider data remains transient;
 durable state is limited to the existing accounting metadata and the ordinary
 proposed M5 change. No validation, application, publication, operational
-mutation or migration occurs in this phase. Phase 8C is next.
+mutation or migration occurs in this phase. Phase 8C may invoke this service
+from its authenticated Server Action, but adds no second proposal or lifecycle
+authority.

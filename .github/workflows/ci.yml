@@ -88,6 +88,12 @@ jobs:
       - name: Run authenticated Builder orchestration tests
         run: npm run test:builder-orchestration
 
+      - name: Reset for minimal Builder UI tests
+        run: npm run supabase:reset
+
+      - name: Run minimal Builder UI tests
+        run: npm run test:builder-ui
+
       - name: Run bounded builder planning evaluation tests
         run: npm run test:builder-evaluation
 

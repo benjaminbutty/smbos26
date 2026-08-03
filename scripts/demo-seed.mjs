@@ -8,6 +8,8 @@ import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 
+import { upsertLocalAuthUser } from "./support/local-auth-retry.mjs";
+
 const ownerEmail = "demo@smbos.local";
 const staffEmail = "staff@smbos.local";
 const demoPassword = "Local-demo-2026!";
@@ -84,28 +86,11 @@ function requireData(result, message) {
 }
 
 async function upsertLocalUser(admin, email) {
-  const users = requireData(
-    await admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-    "Could not inspect local demo users.",
-  ).users;
-  const existing = users.find((user) => user.email === email);
-  if (existing) {
-    return requireData(
-      await admin.auth.admin.updateUserById(existing.id, {
-        password: demoPassword,
-        email_confirm: true,
-      }),
-      `Could not refresh ${email}.`,
-    ).user;
-  }
-  return requireData(
-    await admin.auth.admin.createUser({
-      email,
-      password: demoPassword,
-      email_confirm: true,
-    }),
-    `Could not create ${email}.`,
-  ).user;
+  return upsertLocalAuthUser({
+    authAdmin: admin.auth.admin,
+    email,
+    password: demoPassword,
+  });
 }
 
 function field(
@@ -793,10 +778,8 @@ try {
       persistSession: false,
     },
   });
-  const [ownerUser, staffUser] = await Promise.all([
-    upsertLocalUser(admin, ownerEmail),
-    upsertLocalUser(admin, staffEmail),
-  ]);
+  const ownerUser = await upsertLocalUser(admin, ownerEmail);
+  const staffUser = await upsertLocalUser(admin, staffEmail);
 
   let business = requireData(
     await admin.from("businesses").select("*").eq("slug", demoBusinessSlug),

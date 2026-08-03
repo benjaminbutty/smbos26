@@ -9,14 +9,16 @@ bounded real-model
 planning diagnostics, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning, plus Milestone 8 Phase 8B authenticated server-only Builder
-orchestration: a
+orchestration and the minimal Milestone 8 Phase 8C authenticated Owner/Admin
+Builder surface: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
 The AI execution boundary is server-only and per-Business accounting is
 disabled by default. OpenAI Responses is the first external adapter, but it is
-also server-disabled by default and has no user-facing invocation surface.
+also server-disabled by default; the Phase 8C route does not invoke providers
+unless the existing server-side gates allow the request.
 
 The product and architecture sources of truth are:
 
@@ -146,6 +148,10 @@ Included:
   authoritative context for qualified planning and private qualified drafting,
   returns bounded clarification/unsupported outcomes, and hands one ready
   configuration draft to the existing proposal-only boundary
+- minimal authenticated Owner/Admin Builder at
+  `/app/[businessSlug]/builder` with ephemeral revise-and-resubmit
+  clarification, fixed safe result states and a deliberate handoff to the
+  existing Changes review
 - sequential independent planning and drafting accounting, with no drafting
   reservation on clarification or unsupported plans and no raw AI request,
   context, plan or draft durability
@@ -156,12 +162,13 @@ Included:
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
-- user-facing AI execution, Builder UI, chat history or conversational editing
+- general-purpose user-facing AI execution, chat history or conversational
+  editing
 - owner/provider/model/API-key selection and multiple external providers
 - provider-backed AI proposal/operation generation outside the authenticated
   Phase 8B server-only Builder boundary
-- proposal lifecycle orchestration, validation/application automation,
-  publication and Builder routes
+- automatic proposal lifecycle orchestration, validation/application
+  automation and publication
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -204,7 +211,9 @@ Production remains network-free unless `AI_PROVIDER=openai` and a server-only
 key are both configured. Even then, the current Business must separately have
 AI enabled before reservation or provider invocation. Phase 8B keeps Builder
 orchestration server-only and passes only a completed transient draft to the
-existing M5 proposal path; it adds no owner-facing invocation surface.
+existing M5 proposal path. Phase 8C adds the authenticated Owner/Admin
+presentation and action wrapper without adding a second proposal or lifecycle
+path.
 
 Phase 2A.1 adds the first non-AI configuration control at
 `/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
@@ -537,10 +546,40 @@ request, context, plan, raw draft, provider body or model metadata is stored;
 no Validate, Apply or Publish action is invoked, and no operational mutation is
 performed.
 
-Phase 8B proves authenticated server orchestration and proposal-only handoff,
-not a usable owner-facing Builder, generic public Form submission, operational
-AI actions, conversational editing or automatic application. Phase 8C remains
-the next phase.
+Phase 8B proves authenticated server orchestration and proposal-only handoff.
+The minimal owner-facing wrapper is documented in Phase 8C below; generic
+public Form submission, operational AI actions, conversational editing and
+automatic application remain outside the phase.
+
+### Milestone 8 Phase 8C - minimal authenticated Owner/Admin Builder
+
+Phase 8C adds the narrow owner-facing wrapper at
+`/app/[businessSlug]/builder`. The dynamic, no-store route creates an ordinary
+session Supabase client, resolves the route slug to the authenticated tenant,
+requires the existing `manage_configuration` capability and ends in a
+controlled not-found result for Staff or non-members. The capability-gated
+workspace navigation exposes Builder next to Edit setup and Changes only to
+Owner/Admin users.
+
+The route binds the trusted slug into one Server Action. The action accepts
+only the `ownerRequest` form field, trims and bounds it to the existing 4,000
+character planning contract and 16 KiB UTF-8 limit, derives Business and actor
+identity from the session, then calls `builderOrchestrationService.run()` once.
+The browser cannot supply Business, actor, proposal, operation, lifecycle or
+provider data. Invalid input returns one fixed owner-safe message; known
+failures map to finite unavailable/stale outcomes, while unexpected trusted
+errors still fail loudly.
+
+The UI uses React 19 `useActionState` with a controlled ephemeral textarea.
+Clarifications expose only bounded owner-facing understanding, assumptions,
+questions and choices; local references, impact and reason codes are removed.
+The owner revises the same request and resubmits. Unsupported requests use a
+fixed configuration-only explanation. A proposed result exposes only the
+proposal UUID, summary and operation count, then links to the existing Changes
+review with `notice=builder_prepared`. Nothing in Builder validates, applies,
+publishes, stores a transcript, writes client storage or creates a new
+mutation surface. No migration or change to the Phase 8B core or global
+production drafting registration is introduced.
 
 ## Requirements
 
@@ -682,6 +721,7 @@ validating from a clean state.
 | `npm run test:builder-planning`               | Run strict non-executing builder planning tests     |
 | `npm run test:builder-configuration-proposal` | Run authenticated proposal-only orchestration tests |
 | `npm run test:builder-orchestration`          | Run authenticated Builder orchestration tests       |
+| `npm run test:builder-ui`                     | Run Builder UI and action-boundary tests            |
 | `npm run test:manual-amendments`              | Run deterministic schedule amendment tests          |
 | `npm run test:manual-questions`               | Run deterministic preorder question tests           |
 | `npm run test:rls`                            | Run the Milestone 1 tenancy/RLS suite               |

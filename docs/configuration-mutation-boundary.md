@@ -283,7 +283,7 @@ state remain outside the configuration lifecycle. Database locks and
 idempotent applied retries—not the disabled browser button—provide concurrency
 correctness.
 
-## Milestone 8 Phase 8A and Phase 8B add no direct mutation surface
+## Milestone 8 Phase 8A, Phase 8B and Phase 8C add no new mutation surface
 
 The configuration-drafting qualification and reliability gates are isolated
 engineering evaluations. They use only frozen in-memory synthetic contexts,
@@ -301,4 +301,17 @@ successful path, uses separate planning/drafting accounting executions, and
 keeps raw requests, contexts, plans and drafts transient. Clarification,
 operational, mixed and unsupported configuration-category plans consume no
 drafting reservation. Validate, Apply, Publish, rebase and automatic retry are
-outside the phase; Phase 8C remains next.
+outside the Phase 8B core.
+
+Phase 8C adds only the authenticated presentation and invocation wrapper around
+that boundary. Its dynamic Builder route performs a no-store tenant and
+capability read; its explicit Server Action accepts only the bounded owner
+request and calls the existing orchestration service once. The action can
+therefore reach the existing ordinary proposed Change through Phase 8B, but it
+adds no compiler, proposal lifecycle, projection-table DML, operational
+mutation or second proposal path. Builder results are ephemeral UI state, with
+clarification references, impact and reason codes stripped before rendering.
+The proposed handoff links to Changes with `notice=builder_prepared`; only the
+existing Changes Validate, Apply, Publish and related lifecycle actions can
+progress it. No transcript, request log, client storage, table or migration is
+introduced, and a Builder GET performs no AI or write operation.
