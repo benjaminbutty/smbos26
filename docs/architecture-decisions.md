@@ -2019,7 +2019,29 @@ Phase 8A supplies bounded evidence for one frozen drafting profile rather than
 generic model correctness. Planning evidence remains separate. Any material
 model/policy/transport, drafting subject, synthetic context, ready plan,
 scenario order, evaluator or report-classification change invalidates both
-gates and requires them to be rerun. Qualification evidence is pending a
-deliberate live run; reliability evidence is pending qualification review and
-a deliberate live run. The next product step is Phase 8B authenticated
-Builder orchestration through the existing proposal boundary.
+gates and requires them to be rerun.
+
+The reviewed closeout evidence applies to the exact frozen code subject
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`, using task
+`builder_configuration_draft_v1`, model `gpt-5.6-terra`, explicit `medium`
+reasoning and policy `builder_configuration_drafting_terra_medium_v1`.
+Qualification ran once and passed 8/8: 8 attempts, 53,719 input tokens, 4,647
+output tokens, 204,005 estimated microusd, 41,615 ms elapsed, usage complete,
+exit code 0 and zero structural, semantic, unknown-output,
+deterministic-scenario-gate or provider/execution failures.
+
+The first reliability run remains bounded historical evidence at the same SHA:
+23/24 passed, with one 60-second `ai_timeout` for
+`equipment_maintenance_workspace` at repetition 2, provider/execution
+failures 1, all other finite failure counts 0, 155,672 input tokens, 13,059
+output tokens, 585,072 estimated microusd, 172,058 ms and exit code 1. No
+model, policy or source change followed. A single controlled complete rerun
+passed 24/24, every scenario 3/3, with 161,157 input tokens, 13,463 output
+tokens, 604,845 estimated microusd, 112,191 ms, usage complete, exit code 0
+and all finite failure counts 0.
+
+Reports remained bounded and redacted, and production drafting remains
+disabled. Milestone 8 Phase 8A is complete for this frozen profile rather than
+generic AI correctness. Phase 8B authenticated Builder orchestration through
+the existing proposal boundary is the next product phase and has not started;
+the Builder UI and generic public Form submission remain unimplemented.

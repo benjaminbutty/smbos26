@@ -91,5 +91,23 @@ The gates emit only bounded redacted metadata and finite safe failure
 classification. They do not load Business data, access a database, persist
 requests or responses, create proposals, invoke the compiler, add routes/UI,
 enable production drafting or claim that public Form/Page intent is executable.
-Qualification evidence is pending deliberate live execution; reliability
-evidence is pending qualification review and deliberate live execution.
+
+Milestone 8 Phase 8A is complete for the frozen code subject
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`: the final qualification passed
+8/8 with 8 attempts, 53,719 input tokens, 4,647 output tokens, 204,005
+estimated microusd, 41,615 ms elapsed and zero structural, semantic,
+unknown-output, deterministic scenario-gate or provider/execution failures.
+The final controlled reliability rerun passed 24/24 executions, every scenario
+3/3, with 24 attempts, 161,157 input tokens, 13,463 output tokens, 604,845
+estimated microusd, 112,191 ms elapsed and the same zero finite failure counts.
+The earlier reliability run remains historical evidence: 23/24 passed, with
+one bounded 60-second `ai_timeout` for `equipment_maintenance_workspace` at
+repetition 2; no model, policy or source change followed it.
+
+Reports remained bounded and redacted. This evidence qualifies one frozen
+`gpt-5.6-terra` / explicit `medium` /
+`builder_configuration_drafting_terra_medium_v1` profile rather than proving
+generic AI correctness. Any material change to the model, policy, provider
+transport, drafting task, schemas, semantic validator, contexts, scenarios or
+evaluator invalidates it. Production drafting remains disabled. Milestone 8
+Phase 8B authenticated Builder orchestration has not started.
