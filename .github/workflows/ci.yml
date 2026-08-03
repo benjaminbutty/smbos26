@@ -118,6 +118,9 @@ jobs:
       - name: Run configuration drafting Terra reliability gate tests
         run: npm run test:builder-configuration-drafting-terra-reliability
 
+      - name: Run Builder preorder amendment task, composer and evaluation tests
+        run: npm run test:preorder-amendment
+
       - name: Reset after builder planning acceptance
         run: npm run supabase:reset
 

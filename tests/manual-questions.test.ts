@@ -11,6 +11,7 @@ import {
   updatePreorderQuestionIntentSchema,
 } from "../src/core/configuration/manual-amendments/schemas";
 import {
+  composePreorderAmendmentBatch,
   composeNewPreorderQuestionAmendment,
   composePreorderQuestionAmendment,
   derivePreorderQuestionFieldKey,
@@ -296,6 +297,62 @@ function addIntent(
 }
 
 describe("deterministic preorder question amendments", () => {
+  it("composes combined Builder-equivalent amendments atomically through one boundary", () => {
+    const composed = composePreorderAmendmentBatch(snapshot(), {
+      preorderKey: "bakery_preorder",
+      amendments: [
+        {
+          intent: "set_existing_question_requiredness",
+          target: "customer",
+          fieldKey: "phone",
+          required: false,
+        },
+        {
+          intent: "add_preorder_question",
+          label: "Occasion",
+          helpText: null,
+          required: false,
+          answerStyle: "short_answer",
+        },
+      ],
+    });
+    expect(composed.operations.map(({ op }) => op)).toEqual([
+      "set_field",
+      "set_field",
+      "set_preorder_experience",
+    ]);
+    expect(
+      new Set(composed.operations.map((operation) => JSON.stringify(operation)))
+        .size,
+    ).toBe(composed.operations.length);
+    const preorder = composed.operations.at(-1)!;
+    expect(preorder.op).toBe("set_preorder_experience");
+    if (preorder.op === "set_preorder_experience") {
+      const addedField = composed.operations.find(
+        (operation) =>
+          operation.op === "set_field" &&
+          operation.object_key === "order" &&
+          operation.key !== "phone",
+      );
+      if (!addedField || addedField.op !== "set_field") {
+        throw new Error("Expected the appended Order Field.");
+      }
+      expect(
+        preorder.config_json.public_fields.map(({ field }) => field),
+      ).toEqual([
+        "name",
+        "email",
+        "phone",
+        "dietary_requirements",
+        addedField.key,
+      ]);
+      expect(preorder.config_json.public_fields.at(-1)).toMatchObject({
+        label: "Occasion",
+        required: false,
+      });
+    }
+  });
+
   it("changes wording only on the public question and preserves the generic Field", () => {
     const active = snapshot();
     const composed = composePreorderQuestionAmendment(

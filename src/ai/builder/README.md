@@ -37,35 +37,49 @@ drafting. Planning runs once through the existing
 core. A second authoritative read must match Business ID, actor ID, base
 version, head revision and canonical serialized model context exactly.
 
-Only a ready configuration-only plan using the six supported configuration
-categories can draft. Clarification, operational, mixed and unsupported
-configuration-category plans stop after planning. The existing
+Only a ready configuration-only plan using the six supported generic
+configuration categories can use the additive drafting task. A ready plan
+containing only `configure_preorder` and the optional `define_field` category
+routes to the separate bounded preorder-amendment task. Clarification,
+operational, mixed and unsupported configuration-category plans stop after
+planning. The existing
 `builderConfigurationDraftTaskV1` input schema and semantic output validator
 remain the defence-in-depth boundary.
 
-The existing `builderConfigurationProposalService` is called once. It owns
-its pre-compiler and post-compiler context reads, the one pure compiler call
-and the one ordinary M5 `proposeChangeSet()` call. Therefore the successful
+When more than one active preorder exists, routing proceeds only when the
+current request identifies one exact active stable key. Otherwise Builder
+returns the existing bounded clarification; unknown, inactive, duplicate and
+scope-switched keys fail closed without amendment drafting or proposal
+creation. The global/default registration keeps the amendment task disabled.
+The private OpenAI runtime maps only its authenticated private clone to the
+qualified amendment policy after the reviewed live gates pass.
+
+The existing `builderConfigurationProposalService` is called once for generic
+drafts. Preorder amendments use their narrow parallel proposal boundary, which
+shares the deterministic manual composer and fixed `Proposed preorder changes`
+metadata. Both boundaries perform their own second currentness read and call
+the ordinary M5 `proposeChangeSet()` exactly once. Therefore the successful
 path has four authoritative context loads in total; clarification and
 unsupported paths have two.
 
 ## Private runtime and accounting
 
-The global production drafting task remains mapped to
-`builder_configuration_drafting_disabled_v1`. OpenAI mode creates a private
-frozen clone whose only changed property is the qualified
-`builder_configuration_drafting_terra_medium_v1` policy key. The clone reuses
-the production task key, version, purpose label, instruction, schemas and
-semantic validator. The private registry contains only the unchanged planning
-task, that clone, the exact qualified policies and the validated configured
-provider. Disabled mode preserves the existing disabled behavior.
+The global production drafting and preorder-amendment tasks remain mapped to
+their disabled policies. OpenAI mode creates private frozen clones whose only
+changed property is the qualified policy key: generic drafting uses
+`builder_configuration_drafting_terra_medium_v1` and preorder amendment uses
+`builder_preorder_amendment_terra_medium_v1`. Each clone reuses its production
+task key, version, purpose label, instruction, schemas and semantic validator.
+The private registry contains the unchanged planning task, both private
+qualified clones, the corresponding policies and the validated configured
+providers. Disabled mode preserves the existing disabled behavior.
 
-Planning and drafting use independent execution IDs, reservations, audit rows
-and settlements, sequentially. The existing bounded retry policy remains
-unchanged, drafting retains its 60-second timeout, and the Builder workflow is
-not retried. Raw request/context/plan/draft/provider data remains transient;
-durable state is limited to the existing accounting metadata and the ordinary
-proposed M5 change. No validation, application, publication, operational
-mutation or migration occurs in this phase. Phase 8C may invoke this service
-from its authenticated Server Action, but adds no second proposal or lifecycle
-authority.
+Planning, generic drafting and preorder amendment use independent execution
+IDs, reservations, audit rows and settlements, sequentially. The existing
+bounded retry policy remains unchanged, drafting retains its 60-second
+timeout, and the Builder workflow is not retried. Raw request/context/plan/
+draft/amendment/provider data remains transient; durable state is limited to
+the existing accounting metadata and the ordinary proposed M5 change. No
+validation, application, publication, operational mutation or migration occurs
+in this phase. Phase 8C may invoke this service from its authenticated Server
+Action, but adds no second proposal or lifecycle authority.

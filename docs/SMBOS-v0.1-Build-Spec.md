@@ -2704,3 +2704,35 @@ v0 is complete when we can perform this demo from a clean business account:
 If this works reliably, the project has proven the central SMBOS thesis:
 
 > **A non-technical small-business owner can build and evolve software around their own business simply by describing what they need.**
+
+## 21. Milestone 9 Phase 9A boundary
+
+Milestone 8 is complete through Phase 8C. Phase 9A is the bounded
+Builder-generated preorder amendment proof. It supports collection schedule
+amendments, existing public preorder-question wording/help/requiredness
+amendments, new optional or required short-/long-answer Order questions, and
+the supported combined requests. A ready Builder plan routes to the separate
+`builder_preorder_amendment_v1` intent task only when it is configuration-only,
+contains `configure_preorder`, and otherwise uses only the optional
+`define_field` category.
+
+The task produces no operations, IDs, new Field keys or positions. A pure
+semantic validator rechecks the existing ready plan, exact source-step
+coverage, and a server-proven target scope: the sole active preorder or one
+exact active stable key from the current request. Multiple active preorders
+without one exact key return bounded clarification; unknown, inactive,
+duplicate and scope-switched keys fail closed. Active public question
+identities and bounded duplicate/no-op rules remain enforced. The model-facing
+context remains the existing AI-safe Business context with no Records or PII.
+The generic additive drafting task and compiler remain unchanged.
+
+Manual and Builder inputs share one trusted batch composer over an immutable
+configuration snapshot. It preserves untouched schedule, mappings, public
+Fields, allowed Locations, activation and graph identities; derives new Field
+keys and positions server-side; and emits one ordinary proposal through the
+existing Changes lifecycle. Builder does not Validate, Apply, Publish, abandon,
+undo, rebase or prepare rollback.
+
+Phase 9A adds no platform primitive, table or migration. It does not claim
+Milestone 9 complete. Later work remains undo, operational AI actions, generic
+configuration editing, clean-Business bootstrap and public Form work.

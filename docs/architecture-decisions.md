@@ -2174,3 +2174,110 @@ request and submits again. The route/action/UI adds presentation and invokes
 the existing proposal-producing orchestration, but it does not add lifecycle
 authority or durable conversational state. Future richer conversation or
 automatic lifecycle behavior requires a separate architecture decision.
+
+## ADR-029 - Builder preorder amendments use bounded model intents and trusted snapshot composition
+
+**Status:** Accepted for v0.1 (Milestone 9 Phase 9A)
+
+**Date:** 3 August 2026
+
+### Context
+
+Milestone 8 is complete through Phase 8C: an authenticated Owner/Admin can
+submit an ordinary Builder request and review a proposal, while Changes remains
+the deliberate Validate/Apply/Publish lifecycle. The next bounded proof is the
+six required preorder amendments and the existing manual amendment families.
+The generic additive drafting task and compiler must remain unchanged, and the
+model must not receive configuration mutation authority.
+
+### Decision
+
+- Register a separate server-only `builder_preorder_amendment_v1` contract.
+  Its strict input contains only the schema version, owner request, existing
+  AI-safe model context, validated ready plan and server-provided preorder
+  target scope. Its strict output contains one exact preorder key, a bounded list of source-referenced schedule, existing
+  public-question or new Order-question intents, and an owner-readable summary.
+  It contains no IDs, allocations, Field keys or positions for new Fields,
+  complete configuration, operations or lifecycle instructions.
+- Accept a ready plan only when it is configuration-only, contains
+  `configure_preorder`, and uses only `configure_preorder` plus optional
+  `define_field`. Revalidate the existing planning contract, require exact
+  source-step coverage and resolve either the sole active preorder or one exact
+  active stable key from the current request before checking active public
+  question identity. Multiple active preorders without one exact key return
+  bounded clarification. Unknown, inactive, duplicated, forged, switched,
+  out-of-scope, duplicate-label and semantic no-op requests fail closed with
+  finite internal diagnostics; fuzzy or best-match selection is not allowed.
+- Extend the existing manual amendment boundary with one bounded batch
+  composer. Manual single-intent controls and Builder intents use the same
+  immutable `ConfigurationSnapshotV1` composition rules: complete preservation,
+  server-derived keys and positions, independent public/global requiredness,
+  deterministic append order, unique operation targets, at most one preorder
+  operation and one complete Field operation per Field.
+- Add a narrow server-only preorder proposal service. It derives actor and
+  Business identity from the authenticated context, compares exact currentness
+  and canonical AI-safe context, composes once against the first snapshot,
+  reloads and compares the authoritative context again, and calls the existing
+  Milestone 5 `ConfigurationChangeService.proposeChangeSet()` exactly once.
+  The fixed title is `Proposed preorder changes`; the description is generated
+  by the trusted composer. No validation, application, publication, abandon,
+  undo or rollback preparation occurs.
+- Extend the private Builder runtime with three tasks (planning, unchanged
+  generic drafting and preorder amendment) and separate accounting executions.
+  The global/default registry keeps the new task disabled. After the exact
+  qualification and reliability gates pass, the authenticated private OpenAI
+  runtime may map only its frozen amendment clone to the qualified policy. The
+  qualified profile uses `gpt-5.6-terra` with explicit medium reasoning and
+  policy `builder_preorder_amendment_terra_medium_v1`.
+- Freeze exactly eight synthetic evaluation scenarios. The task envelope is
+  256 KiB input, 80,000 billable input tokens per attempt, 4,096 output tokens,
+  30 seconds and two attempts. Its one-execution reservation is 522,880
+  microusd; qualification reserves 4,183,040 under a 4,300,000 ceiling, and
+  reliability reserves 12,549,120 under a 12,700,000 ceiling. Live gates are
+  exact opt-in, OpenAI/key-gated, database/accounting/file-free and emit only
+  redacted metadata. The reviewed closeout evidence below records the exact
+  successful gates.
+
+### Phase 9A qualification closeout
+
+The exact qualified implementation SHA was
+`10e2dfe9859fa289bc5949fa5825fc6700a883a3`. The reviewed task was
+`builder_preorder_amendment_v1`, using model `gpt-5.6-terra`, policy
+`builder_preorder_amendment_terra_medium_v1` and explicit `medium` reasoning.
+
+Qualification completed with 8 scenarios, 8/8 passed, 0 failed and exit code
+0. It used 8 provider attempts, exactly one per scenario, with 29,948 input
+tokens, 874 output tokens, 87,982 estimated microusd and 20,758 ms elapsed.
+The scenarios were `phone_optional`, `remove_sunday`, `cutoff_to_72`,
+`remove_sunday_cutoff_72`, `occasion_optional_short`,
+`gift_message_optional_long`, `existing_question_wording_help` and
+`phone_optional_and_occasion`.
+
+Reliability completed with 8 scenarios × 3 repetitions, 24/24 passed, 0
+failed and exit code 0. It used 24 provider attempts, exactly one per
+execution, with 89,844 input tokens, 2,535 output tokens, 262,641 estimated
+microusd and 42,174 ms elapsed. Each of the same eight scenarios passed 3/3.
+
+Combined reviewed evidence was 32/32 live executions passed, 119,792 input
+tokens, 3,409 output tokens, 350,623 estimated microusd and one provider
+attempt per execution. Reports were bounded/redacted metadata only; no owner
+request, Business context, model output, provider body or ID, reasoning,
+credential or raw provider data was persisted. Any material change to the
+model alias, policy, provider transport, task instruction, schemas, validator,
+contexts, scenarios or evaluator invalidates this evidence and requires both
+gates to be rerun.
+
+The global/default registry remains disabled. The authenticated private OpenAI
+Builder runtime is now enabled only for the qualified amendment mapping
+`builder_preorder_amendment_v1` →
+`builder_preorder_amendment_terra_medium_v1`; planning and generic drafting
+mappings remain unchanged. Phase 9A still does not complete Milestone 9.
+
+### Consequences
+
+Phase 9A produces one ordinary proposed Change and leaves the live preorder,
+Records, Locations and all runtime operation unchanged until the existing
+Changes lifecycle is deliberately used. Generic configuration drafting,
+planning subjects and context projection remain unchanged. Phase 9A does not
+implement undo, operational AI actions, generic configuration editing, clean
+Business bootstrap or public Form work. Milestone 9 is not complete.

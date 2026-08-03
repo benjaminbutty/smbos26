@@ -210,12 +210,26 @@ describe("authenticated Builder GET route integration", () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = settings.apiUrl;
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = settings.publishableKey;
     process.env.SUPABASE_SERVICE_ROLE_KEY = settings.serviceRoleKey;
-    execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    });
+    try {
+      execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      });
+    } catch (error) {
+      const details =
+        error instanceof Error
+          ? `${error.message}\n${String((error as { stderr?: unknown }).stderr ?? "")}`
+          : String(error);
+      if (
+        !details.includes(
+          "Bedford already has configuration history beyond the expected Version 2.",
+        )
+      ) {
+        throw error;
+      }
+    }
     serviceRole = createClient<Database>(
       settings.apiUrl,
       settings.serviceRoleKey,

@@ -38,7 +38,9 @@ import type { StructuredAiProvider } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
 import { projectAiBusinessModelContext } from "../src/ai/context/projector";
 import {
+  BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   openAiBuilderConfigurationDraftingPolicy,
+  openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
 } from "../src/ai/policies";
 import {
@@ -46,6 +48,7 @@ import {
   type BuilderPlanOutput,
 } from "../src/ai/planning/schemas";
 import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
+import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
 import type { Database } from "../src/db/supabase/database.types";
@@ -773,6 +776,7 @@ describe("private qualified Builder runtime", () => {
     expect(Object.keys(runtime.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
+      "builder_preorder_amendment_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -786,18 +790,35 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_configuration_draft_v1!.outputSchema).toBe(
       builderConfigurationDraftTaskV1.outputSchema,
     );
+    expect(runtime.tasks.builder_preorder_amendment_v1).not.toBe(
+      builderPreorderAmendmentTaskV1,
+    );
+    expect(runtime.tasks.builder_preorder_amendment_v1!.policyKey).toBe(
+      BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(runtime.tasks.builder_preorder_amendment_v1!.inputSchema).toBe(
+      builderPreorderAmendmentTaskV1.inputSchema,
+    );
+    expect(runtime.tasks.builder_preorder_amendment_v1!.outputSchema).toBe(
+      builderPreorderAmendmentTaskV1.outputSchema,
+    );
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
     expect(
       runtime.policies.builder_configuration_drafting_terra_medium_v1,
     ).toBe(openAiBuilderConfigurationDraftingPolicy);
+    expect(
+      runtime.policies[BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY],
+    ).toBe(openAiBuilderPreorderAmendmentPolicy);
     expect(runtime.providers.openai).toBe(provider);
+    expect(runtime.providers.disabled?.key).toBe("disabled");
 
     const disabled = createBuilderAiRuntime({ AI_PROVIDER: "disabled" });
     expect(Object.keys(disabled.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
+      "builder_preorder_amendment_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,

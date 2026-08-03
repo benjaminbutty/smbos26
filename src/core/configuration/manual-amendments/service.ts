@@ -21,6 +21,9 @@ import {
 import {
   addPreorderQuestionIntentSchema,
   type AddPreorderQuestionIntent,
+  preorderAmendmentBatchSchema,
+  preorderAmendmentIntentSchema,
+  type PreorderAmendmentIntent,
   type PreorderQuestionTarget,
   updatePreorderQuestionIntentSchema,
   type UpdatePreorderQuestionIntent,
@@ -44,7 +47,8 @@ export type ManualAmendmentErrorCode =
   | "manual_preorder_question_ambiguous"
   | "manual_preorder_question_duplicate"
   | "manual_preorder_question_key_unavailable"
-  | "manual_preorder_question_not_found";
+  | "manual_preorder_question_not_found"
+  | "manual_preorder_amendment_duplicate";
 
 const errorMessages: Readonly<Record<ManualAmendmentErrorCode, string>> = {
   manual_preorder_ambiguous:
@@ -62,6 +66,8 @@ const errorMessages: Readonly<Record<ManualAmendmentErrorCode, string>> = {
     "A safe identity could not be created for this question.",
   manual_preorder_question_not_found:
     "This preorder question is no longer available.",
+  manual_preorder_amendment_duplicate:
+    "This preorder request changes the same setting more than once.",
 };
 
 export class ManualAmendmentError extends Error {
@@ -119,6 +125,13 @@ export interface ComposedNewPreorderQuestionAmendment {
   fieldKey: string;
   operations: [SetFieldOperation, SetPreorderOperation];
   title: "Add preorder question";
+}
+
+export interface ComposedPreorderAmendmentBatch {
+  description: string;
+  noOp: boolean;
+  operations: ConfigurationOperation[];
+  title: "Proposed preorder changes";
 }
 
 const dayNames = new Map([
@@ -531,25 +544,367 @@ export function listPreorderQuestionSetups(
     .map((preorder) => getPreorderQuestionsSetup(snapshot, preorder.key));
 }
 
+function questionChangeKey(target: PreorderQuestionTarget, fieldKey: string) {
+  return `${target}:${fieldKey}`;
+}
+
+interface MutableQuestionChange {
+  before: PreorderPublicField;
+  definition: SnapshotField;
+  index: number;
+  after: PreorderPublicField;
+}
+
+function appendUniqueChange(changes: Set<string>, key: string): void {
+  if (changes.has(key)) {
+    throw new ManualAmendmentError("manual_preorder_amendment_duplicate");
+  }
+  changes.add(key);
+}
+
+function equalPublicFields(
+  left: readonly PreorderPublicField[],
+  right: readonly PreorderPublicField[],
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function composePreorderAmendmentBatch(
+  snapshotInput: ConfigurationSnapshotV1,
+  input: {
+    preorderKey: string;
+    amendments: readonly PreorderAmendmentIntent[];
+  },
+): ComposedPreorderAmendmentBatch {
+  const snapshot = configurationSnapshotV1Schema.parse(snapshotInput);
+  const batch = preorderAmendmentBatchSchema.parse(input);
+  const amendments = batch.amendments.map((amendment) =>
+    preorderAmendmentIntentSchema.parse(amendment),
+  );
+  const preorder = activePreorder(snapshot, batch.preorderKey);
+  const currentSchedule = normalizedSchedule(preorder.config_json.schedule);
+  const nextSchedule = { ...currentSchedule };
+  const nextPublicFields = preorder.config_json.public_fields.map((field) =>
+    preorderPublicFieldSchema.parse(field),
+  );
+  const changedProperties = new Set<string>();
+  const questionChanges = new Map<string, MutableQuestionChange>();
+  const fieldOperations = new Map<string, SetFieldOperation>();
+  const descriptionParts: string[] = [];
+
+  let scheduleChanged = false;
+  let orderObject: SnapshotObject | undefined;
+  let orderFields: SnapshotField[] = [];
+  let nextFieldPosition = -1;
+  const usedOrderFieldKeys = new Set<string>();
+  const addedQuestionLabels = new Set<string>();
+
+  const loadOrderFields = (): SnapshotObject => {
+    if (orderObject) {
+      return orderObject;
+    }
+    orderObject = activeConfiguredObject(snapshot, preorder, "order");
+    orderFields = snapshot.field_definitions.filter(
+      (field) =>
+        field.object_key === orderObject!.key ||
+        field.object_definition_id === orderObject!.id,
+    );
+    if (
+      orderFields.some(
+        (field) =>
+          field.object_key !== orderObject!.key ||
+          field.object_definition_id !== orderObject!.id,
+      )
+    ) {
+      throw new ManualAmendmentError("manual_preorder_object_invalid");
+    }
+    nextFieldPosition = orderFields.reduce(
+      (highest, field) => Math.max(highest, field.position),
+      -1,
+    );
+    if (
+      !Number.isSafeInteger(nextFieldPosition) ||
+      nextFieldPosition >= 2_147_483_647
+    ) {
+      throw new ManualAmendmentError(
+        "manual_preorder_question_key_unavailable",
+      );
+    }
+    for (const field of orderFields) {
+      usedOrderFieldKeys.add(field.key);
+    }
+    return orderObject;
+  };
+
+  const updateQuestion = (
+    target: PreorderQuestionTarget,
+    fieldKey: string,
+    change: {
+      helpText?: string | null;
+      label?: string;
+      required?: boolean;
+    },
+    property: string,
+  ): void => {
+    const key = questionChangeKey(target, fieldKey);
+    appendUniqueChange(changedProperties, `question:${key}:${property}`);
+    let current = questionChanges.get(key);
+    if (!current) {
+      const resolved = resolveQuestion(snapshot, preorder, target, fieldKey);
+      current = {
+        before: resolved.publicField,
+        definition: resolved.definition,
+        index: nextPublicFields.findIndex(
+          (field) => field.target === target && field.field === fieldKey,
+        ),
+        after: resolved.publicField,
+      };
+      questionChanges.set(key, current);
+    }
+    if (current.index < 0) {
+      throw new ManualAmendmentError("manual_preorder_question_ambiguous");
+    }
+    current.after = changedPublicField(current.after, {
+      label: change.label ?? current.after.label,
+      helpText:
+        change.helpText !== undefined
+          ? change.helpText
+          : (current.after.help_text ?? null),
+      required: change.required ?? current.after.required,
+    });
+    nextPublicFields[current.index] = current.after;
+  };
+
+  for (const amendment of amendments) {
+    switch (amendment.intent) {
+      case "set_collection_days":
+        appendUniqueChange(changedProperties, amendment.intent);
+        nextSchedule.days_of_week = amendment.daysOfWeek.toSorted(
+          (left, right) => left - right,
+        );
+        scheduleChanged = true;
+        break;
+      case "set_collection_window":
+        appendUniqueChange(changedProperties, amendment.intent);
+        nextSchedule.start_time = amendment.startTime;
+        nextSchedule.end_time = amendment.endTime;
+        scheduleChanged = true;
+        break;
+      case "set_slot_interval_minutes":
+        appendUniqueChange(changedProperties, amendment.intent);
+        nextSchedule.slot_interval_minutes = amendment.slotIntervalMinutes;
+        scheduleChanged = true;
+        break;
+      case "set_slot_capacity":
+        appendUniqueChange(changedProperties, amendment.intent);
+        nextSchedule.slot_capacity = amendment.slotCapacity;
+        scheduleChanged = true;
+        break;
+      case "set_cutoff_hours":
+        appendUniqueChange(changedProperties, amendment.intent);
+        nextSchedule.cutoff_hours = amendment.cutoffHours;
+        scheduleChanged = true;
+        break;
+      case "set_booking_horizon_days":
+        appendUniqueChange(changedProperties, amendment.intent);
+        nextSchedule.booking_horizon_days = amendment.bookingHorizonDays;
+        scheduleChanged = true;
+        break;
+      case "set_existing_question_requiredness":
+        updateQuestion(
+          amendment.target,
+          amendment.fieldKey,
+          { required: amendment.required },
+          "requiredness",
+        );
+        break;
+      case "set_existing_question_label":
+        updateQuestion(
+          amendment.target,
+          amendment.fieldKey,
+          { label: amendment.label },
+          "label",
+        );
+        break;
+      case "set_existing_question_help_text":
+        updateQuestion(
+          amendment.target,
+          amendment.fieldKey,
+          { helpText: amendment.helpText },
+          "help_text",
+        );
+        break;
+      case "add_preorder_question": {
+        const normalizedLabel = normalizedQuestionLabel(amendment.label);
+        if (
+          nextPublicFields.some(
+            (field) => normalizedQuestionLabel(field.label) === normalizedLabel,
+          ) ||
+          addedQuestionLabels.has(normalizedLabel)
+        ) {
+          throw new ManualAmendmentError("manual_preorder_question_duplicate");
+        }
+        appendUniqueChange(
+          changedProperties,
+          `new_question:${normalizedLabel}`,
+        );
+        const object = loadOrderFields();
+        addedQuestionLabels.add(normalizedLabel);
+        const fieldKey = derivePreorderQuestionFieldKey(
+          amendment.label,
+          usedOrderFieldKeys,
+        );
+        usedOrderFieldKeys.add(fieldKey);
+        nextFieldPosition += 1;
+        if (nextFieldPosition > 2_147_483_647) {
+          throw new ManualAmendmentError(
+            "manual_preorder_question_key_unavailable",
+          );
+        }
+        const fieldOperation = setFieldOperationSchema.parse({
+          op: "set_field",
+          object_key: object.key,
+          key: fieldKey,
+          label: amendment.label,
+          field_type:
+            amendment.answerStyle === "short_answer"
+              ? "short_text"
+              : "long_text",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: nextFieldPosition,
+          is_active: true,
+        });
+        fieldOperations.set(`${object.key}:${fieldKey}`, fieldOperation);
+        nextPublicFields.push(
+          changedPublicField(
+            {
+              target: "order",
+              field: fieldKey,
+              label: amendment.label,
+              required: amendment.required,
+              autocomplete: "off",
+            },
+            amendment,
+          ),
+        );
+        descriptionParts.push(
+          `Add ${amendment.required ? "required" : "optional"} question ${amendment.label}`,
+        );
+        break;
+      }
+    }
+  }
+
+  const parsedSchedule = preorderScheduleSchema.parse(nextSchedule);
+  if (scheduleChanged && !scheduleEquals(currentSchedule, parsedSchedule)) {
+    descriptionParts.unshift(
+      describePreorderScheduleChange(currentSchedule, parsedSchedule),
+    );
+  }
+
+  for (const change of questionChanges.values()) {
+    if (!change.after.required && change.definition.required) {
+      const fieldKey = `${change.definition.object_key}:${change.definition.key}`;
+      fieldOperations.set(
+        fieldKey,
+        completeFieldOperation(change.definition, false),
+      );
+    }
+    const description = describeQuestionChange(change.before, change.after);
+    if (description) {
+      descriptionParts.push(description);
+    } else if (!change.after.required && change.definition.required) {
+      descriptionParts.push(`Make ${change.after.label} optional`);
+    }
+  }
+
+  const labels = new Set<string>();
+  for (const field of nextPublicFields) {
+    const label = normalizedQuestionLabel(field.label);
+    if (labels.has(label)) {
+      throw new ManualAmendmentError("manual_preorder_question_duplicate");
+    }
+    labels.add(label);
+  }
+
+  const preorderChanged =
+    !scheduleEquals(currentSchedule, parsedSchedule) ||
+    !equalPublicFields(preorder.config_json.public_fields, nextPublicFields);
+  const noOp = fieldOperations.size === 0 && !preorderChanged;
+  if (noOp) {
+    return {
+      title: "Proposed preorder changes",
+      description: "",
+      noOp: true,
+      operations: [],
+    };
+  }
+
+  const operations: ConfigurationOperation[] = [
+    ...fieldOperations.values(),
+    completePreorderOperation(snapshot, preorder, {
+      ...preorder.config_json,
+      schedule: parsedSchedule,
+      public_fields: nextPublicFields,
+    }),
+  ];
+  return {
+    title: "Proposed preorder changes",
+    description: descriptionParts.filter(Boolean).join(". "),
+    noOp: false,
+    operations: configurationOperationsSchema.parse(operations),
+  };
+}
+
 export function composePreorderScheduleAmendment(
   snapshotInput: ConfigurationSnapshotV1,
   intentInput: UpdatePreorderScheduleIntent,
 ): ComposedPreorderScheduleAmendment {
-  const snapshot = configurationSnapshotV1Schema.parse(snapshotInput);
   const intent = updatePreorderScheduleIntentSchema.parse(intentInput);
-  const preorder = activePreorder(snapshot, intent.preorderKey);
-  const schedule = normalizedSchedule(intent.schedule);
-  const operation = completePreorderOperation(snapshot, preorder, {
-    ...preorder.config_json,
-    schedule,
+  const composed = composePreorderAmendmentBatch(snapshotInput, {
+    preorderKey: intent.preorderKey,
+    amendments: [
+      {
+        intent: "set_collection_days",
+        daysOfWeek: intent.schedule.days_of_week,
+      },
+      {
+        intent: "set_collection_window",
+        startTime: intent.schedule.start_time,
+        endTime: intent.schedule.end_time,
+      },
+      {
+        intent: "set_slot_interval_minutes",
+        slotIntervalMinutes: intent.schedule.slot_interval_minutes,
+      },
+      {
+        intent: "set_slot_capacity",
+        slotCapacity: intent.schedule.slot_capacity,
+      },
+      { intent: "set_cutoff_hours", cutoffHours: intent.schedule.cutoff_hours },
+      {
+        intent: "set_booking_horizon_days",
+        bookingHorizonDays: intent.schedule.booking_horizon_days,
+      },
+    ],
   });
-  const noOp = scheduleEquals(preorder.config_json.schedule, schedule);
+  const snapshot = configurationSnapshotV1Schema.parse(snapshotInput);
+  const preorder = activePreorder(snapshot, intent.preorderKey);
+  const operation =
+    composed.operations.find(
+      (candidate): candidate is SetPreorderOperation =>
+        candidate.op === "set_preorder_experience",
+    ) ??
+    completePreorderOperation(snapshot, preorder, {
+      ...preorder.config_json,
+      schedule: normalizedSchedule(intent.schedule),
+    });
   return {
     title: "Update preorder collection settings",
-    description: noOp
-      ? ""
-      : describePreorderScheduleChange(preorder.config_json.schedule, schedule),
-    noOp,
+    description: composed.description,
+    noOp: composed.noOp,
     operation,
   };
 }
@@ -558,45 +913,35 @@ export function composePreorderQuestionAmendment(
   snapshotInput: ConfigurationSnapshotV1,
   intentInput: UpdatePreorderQuestionIntent,
 ): ComposedPreorderQuestionAmendment {
-  const snapshot = configurationSnapshotV1Schema.parse(snapshotInput);
   const intent = updatePreorderQuestionIntentSchema.parse(intentInput);
-  const preorder = activePreorder(snapshot, intent.preorderKey);
-  const current = resolveQuestion(
-    snapshot,
-    preorder,
-    intent.target,
-    intent.fieldKey,
-  );
-  const nextPublicField = changedPublicField(current.publicField, intent);
-  const nextPublicFields = preorder.config_json.public_fields.map((field) =>
-    field === current.publicField ? nextPublicField : field,
-  );
-  const operations: ConfigurationOperation[] = [];
-  const relaxesGlobalRequirement =
-    !intent.required && current.definition.required;
-  if (relaxesGlobalRequirement) {
-    operations.push(completeFieldOperation(current.definition, false));
-  }
-  operations.push(
-    completePreorderOperation(snapshot, preorder, {
-      ...preorder.config_json,
-      public_fields: nextPublicFields,
-    }),
-  );
-  const noOp =
-    !relaxesGlobalRequirement &&
-    current.publicField.label === nextPublicField.label &&
-    (current.publicField.help_text ?? null) ===
-      (nextPublicField.help_text ?? null) &&
-    current.publicField.required === nextPublicField.required;
+  const composed = composePreorderAmendmentBatch(snapshotInput, {
+    preorderKey: intent.preorderKey,
+    amendments: [
+      {
+        intent: "set_existing_question_label",
+        target: intent.target,
+        fieldKey: intent.fieldKey,
+        label: intent.label,
+      },
+      {
+        intent: "set_existing_question_help_text",
+        target: intent.target,
+        fieldKey: intent.fieldKey,
+        helpText: intent.helpText,
+      },
+      {
+        intent: "set_existing_question_requiredness",
+        target: intent.target,
+        fieldKey: intent.fieldKey,
+        required: intent.required,
+      },
+    ],
+  });
   return {
     title: "Update preorder question",
-    description: noOp
-      ? ""
-      : describeQuestionChange(current.publicField, nextPublicField) ||
-        `Make ${nextPublicField.label} optional`,
-    noOp,
-    operations: configurationOperationsSchema.parse(operations),
+    description: composed.description,
+    noOp: composed.noOp,
+    operations: composed.operations,
   };
 }
 
@@ -604,81 +949,33 @@ export function composeNewPreorderQuestionAmendment(
   snapshotInput: ConfigurationSnapshotV1,
   intentInput: AddPreorderQuestionIntent,
 ): ComposedNewPreorderQuestionAmendment {
-  const snapshot = configurationSnapshotV1Schema.parse(snapshotInput);
   const intent = addPreorderQuestionIntentSchema.parse(intentInput);
-  const preorder = activePreorder(snapshot, intent.preorderKey);
-  const orderObject = activeConfiguredObject(snapshot, preorder, "order");
-  if (
-    preorder.config_json.public_fields.some(
-      (field) =>
-        normalizedQuestionLabel(field.label) ===
-        normalizedQuestionLabel(intent.label),
-    )
-  ) {
-    throw new ManualAmendmentError("manual_preorder_question_duplicate");
-  }
-
-  const orderFields = snapshot.field_definitions.filter(
-    (field) =>
-      field.object_key === orderObject.key ||
-      field.object_definition_id === orderObject.id,
+  const composed = composePreorderAmendmentBatch(snapshotInput, {
+    preorderKey: intent.preorderKey,
+    amendments: [
+      {
+        intent: "add_preorder_question",
+        label: intent.label,
+        helpText: intent.helpText,
+        required: intent.required,
+        answerStyle: intent.answerStyle,
+      },
+    ],
+  });
+  const fieldOperation = composed.operations.find(
+    (candidate): candidate is SetFieldOperation => candidate.op === "set_field",
   );
-  if (
-    orderFields.some(
-      (field) =>
-        field.object_key !== orderObject.key ||
-        field.object_definition_id !== orderObject.id,
-    )
-  ) {
-    throw new ManualAmendmentError("manual_preorder_object_invalid");
-  }
-  const fieldKey = derivePreorderQuestionFieldKey(
-    intent.label,
-    orderFields.map((field) => field.key),
+  const preorderOperation = composed.operations.find(
+    (candidate): candidate is SetPreorderOperation =>
+      candidate.op === "set_preorder_experience",
   );
-  const maxPosition = orderFields.reduce(
-    (highest, field) => Math.max(highest, field.position),
-    -1,
-  );
-  if (!Number.isSafeInteger(maxPosition) || maxPosition >= 2_147_483_647) {
+  if (!fieldOperation || !preorderOperation) {
     throw new ManualAmendmentError("manual_preorder_question_key_unavailable");
   }
-
-  const fieldOperation = setFieldOperationSchema.parse({
-    op: "set_field",
-    object_key: orderObject.key,
-    key: fieldKey,
-    label: intent.label,
-    field_type:
-      intent.answerStyle === "short_answer" ? "short_text" : "long_text",
-    required: false,
-    default_value: null,
-    settings_json: {},
-    position: maxPosition + 1,
-    is_active: true,
-  });
-  const publicField = changedPublicField(
-    {
-      target: "order",
-      field: fieldKey,
-      label: intent.label,
-      required: intent.required,
-      autocomplete: "off",
-    },
-    intent,
-  );
-  const preorderOperation = completePreorderOperation(snapshot, preorder, {
-    ...preorder.config_json,
-    public_fields: [...preorder.config_json.public_fields, publicField],
-  });
-  const operations = configurationOperationsSchema.parse([
-    fieldOperation,
-    preorderOperation,
-  ]) as [SetFieldOperation, SetPreorderOperation];
   return {
     title: "Add preorder question",
-    description: `Add ${intent.required ? "required" : "optional"} question ${intent.label}`,
-    fieldKey,
-    operations,
+    description: composed.description,
+    fieldKey: fieldOperation.key,
+    operations: [fieldOperation, preorderOperation],
   };
 }

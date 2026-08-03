@@ -65,7 +65,7 @@ in the `private` schema.
 | `src/ai/configuration-drafting/` | Pure server-owned untrusted additive configuration-intent schemas, fixed instruction, semantic validation and production-disabled task registration; no database/provider/accounting/lifecycle dependency and no M5 operation generation |
 | `src/core/configuration/draft-compiler/` | Pure server-owned Phase 1B compiler from a validated draft plus immutable snapshot to strict additive M5 operations; revalidates existing references and derives deterministic keys/slugs/positions; no UUID/currentness/proposal, database/provider/route/UI or mutation dependency |
 | `src/ai/configuration-proposal/` | Authenticated server-only Phase 2 handoff with first/second exact-currentness and canonical-context checks, one pure compiler call and exactly one M5 `proposeChangeSet`; no lifecycle, provider, persistence, route/UI or operational DML |
-| `src/ai/builder/` | Authenticated server-only Phase 8B composition of authoritative context, qualified planning, private qualified drafting and the existing proposal handoff; sequential metadata-only accounting; no direct compiler, lifecycle, route/UI or operational mutation |
+| `src/ai/builder/` | Authenticated server-only Builder composition of authoritative context, qualified planning, private qualified generic drafting and private qualified preorder amendments through the existing proposal handoff; global/default amendment registration remains disabled; sequential metadata-only accounting; no direct compiler, lifecycle, route/UI or operational mutation |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -315,3 +315,28 @@ The proposed handoff links to Changes with `notice=builder_prepared`; only the
 existing Changes Validate, Apply, Publish and related lifecycle actions can
 progress it. No transcript, request log, client storage, table or migration is
 introduced, and a Builder GET performs no AI or write operation.
+
+## Milestone 9 Phase 9A preorder amendments
+
+Phase 9A adds a separate bounded Builder amendment task and proposal boundary,
+but it does not add a second configuration engine. Manual setup intents and
+validated Builder amendment intents are converted into the shared deterministic
+batch composer over one authoritative immutable snapshot. The composer emits
+at most one complete `set_preorder_experience` operation and one complete
+`set_field` operation per Field target, then the narrow server boundary calls
+the ordinary M5 proposal method exactly once after its before/after exact
+currentness checks.
+
+Builder target resolution selects the sole active preorder or one exact active
+stable key named by the current request. Multiple active preorders without one
+exact key return bounded clarification before amendment drafting; unknown,
+inactive, duplicate and scope-switched keys fail closed. No fuzzy label or
+best-match selection is permitted, and one request cannot target multiple
+preorders.
+
+The model cannot supply actor or Business identity, UUIDs, currentness, generic
+Field keys, positions, complete configuration or operations. Builder returns a
+proposal only; the existing Changes preview and deliberate Validate, Apply and
+Publish lifecycle remains authoritative. Phase 9A adds no table, migration,
+platform primitive, operational AI action, generic configuration editor or
+undo path. The generic additive drafting subject and compiler remain unchanged.

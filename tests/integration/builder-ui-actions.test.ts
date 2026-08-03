@@ -54,9 +54,29 @@ import { runBuilderAction } from "../../src/app/app/[businessSlug]/builder/actio
 import { BUILDER_UNSUPPORTED_MESSAGES } from "../../src/ai/builder/contracts";
 import { AiExecutionError } from "../../src/ai/errors";
 import { BUILDER_INITIAL_STATE } from "../../src/components/builder-ui-state";
-import { configurationOperationsSchema } from "../../src/core/configuration/schemas";
+import { ConfigurationChangeService } from "../../src/core/configuration/service";
+import { configurationSnapshotV1Schema } from "../../src/core/configuration/definition-source";
+import {
+  configurationOperationsSchema,
+  semanticDiffSchema,
+  setFieldOperationSchema,
+  setPreorderExperienceOperationSchema,
+} from "../../src/core/configuration/schemas";
+import {
+  composePreorderAmendmentBatch,
+  composePreorderQuestionAmendment,
+  getPreorderQuestionsSetup,
+  loadActiveManualAmendmentSnapshot,
+} from "../../src/core/configuration/manual-amendments/service";
+import {
+  resolveConfigurationPreviewPreorder,
+  resolvePublicPreorder,
+} from "../../src/core/preorder/service";
 import {
   createDeterministicBuilder,
+  preorderAmendmentDraft,
+  preorderAmendmentDraftForRequest,
+  preorderReadyPlan,
   providerUnavailableError,
   smallClarificationOutput,
   smallDraft,
@@ -190,6 +210,16 @@ async function proposalRows(): Promise<Record<string, unknown>[]> {
   `;
 }
 
+async function tenantRows(tableName: string): Promise<Json[]> {
+  const rows = await database<{ row: Json }[]>`
+    select to_jsonb(tenant_row) as row
+    from ${database(tableName)} as tenant_row
+    where tenant_row.business_id = ${business.id}::uuid
+    order by to_jsonb(tenant_row)::text
+  `;
+  return rows.map(({ row }) => row);
+}
+
 async function liveState() {
   const [head, versions, records, edges, locations, snapshot] =
     await Promise.all([
@@ -225,6 +255,35 @@ async function liveState() {
   ) {
     throw new Error("Could not read live Business state.");
   }
+  const [
+    recordRows,
+    relationshipRows,
+    recordLocationRows,
+    submissions,
+    slotCounters,
+    rateLimits,
+    emailStates,
+  ] = await Promise.all([
+    tenantRows("records"),
+    tenantRows("record_relationships"),
+    tenantRows("record_location_links"),
+    tenantRows("preorder_submissions"),
+    tenantRows("preorder_slot_counters"),
+    tenantRows("preorder_rate_limits"),
+    database<
+      {
+        id: string;
+        email_status: string;
+        email_error: string | null;
+        email_attempted_at: string | null;
+      }[]
+    >`
+        select id, email_status, email_error, email_attempted_at
+        from public.preorder_submissions
+        where business_id = ${business.id}::uuid
+        order by id
+      `,
+  ]);
   return {
     head: head.data,
     versionCount: versions.count,
@@ -232,7 +291,92 @@ async function liveState() {
     edgeCount: edges.count,
     locations: locations.data,
     snapshot: snapshot[0]?.snapshot,
+    recordRows,
+    relationshipRows,
+    recordLocationRows,
+    submissions,
+    slotCounters,
+    rateLimits,
+    emailStates,
   };
+}
+
+async function preparePhase9AcceptanceFixture(): Promise<void> {
+  const configuration = new ConfigurationChangeService(owner.client, {
+    businessId: business.id,
+    actorId: owner.user.id,
+  });
+  const active = await loadActiveManualAmendmentSnapshot(configuration);
+  const preorder = active.snapshot.preorder_experiences.find(
+    ({ key, is_active }) => key === "bakery_preorder" && is_active,
+  );
+  const phoneField = active.snapshot.field_definitions.find(
+    (field) => field.object_key === "customer" && field.key === "phone",
+  );
+  const occasionField = active.snapshot.field_definitions.find(
+    (field) => field.object_key === "order" && field.key === "occasion",
+  );
+  const phoneQuestion = preorder?.config_json.public_fields.find(
+    (field) => field.target === "customer" && field.field === "phone",
+  );
+  if (!preorder || !phoneField || !occasionField || !phoneQuestion) {
+    throw new Error("The Phase 9A acceptance fixture is incomplete.");
+  }
+  const phonePreorder = composePreorderQuestionAmendment(active.snapshot, {
+    intent: "update_preorder_question",
+    preorderKey: preorder.key,
+    target: "customer",
+    fieldKey: "phone",
+    label: phoneQuestion.label,
+    helpText: phoneQuestion.help_text ?? null,
+    required: true,
+  });
+  const preorderOperation = phonePreorder.operations.find(
+    (operation) => operation.op === "set_preorder_experience",
+  );
+  if (
+    !preorderOperation ||
+    preorderOperation.op !== "set_preorder_experience"
+  ) {
+    throw new Error("Could not compose the Phase 9A fixture preorder.");
+  }
+  const trimmedPublicFields =
+    preorderOperation.config_json.public_fields.filter(
+      (field) => field.field !== "occasion",
+    );
+  const operations = configurationOperationsSchema.parse([
+    setFieldOperationSchema.parse({
+      op: "set_field",
+      object_key: phoneField.object_key,
+      key: phoneField.key,
+      label: phoneField.label,
+      field_type: phoneField.field_type,
+      required: true,
+      default_value: phoneField.default_value,
+      settings_json: phoneField.settings_json,
+      position: phoneField.position,
+      is_active: phoneField.is_active,
+    }),
+    setPreorderExperienceOperationSchema.parse({
+      ...preorderOperation,
+      config_json: {
+        ...preorderOperation.config_json,
+        public_fields: trimmedPublicFields,
+      },
+    }),
+  ]);
+  const setup = await configuration.proposeChangeSet({
+    expectedBaseVersionId: active.baseVersionId,
+    expectedHeadRevision: active.headRevision,
+    title: "Phase 9A acceptance fixture setup",
+    description:
+      "Prepare the existing preorder for Builder amendment coverage.",
+    operations,
+  });
+  expect((await configuration.validateChangeSet(setup.id)).status).toBe(
+    "validated",
+  );
+  expect((await configuration.applyChangeSet(setup.id)).status).toBe("applied");
 }
 
 async function runRealAction(
@@ -487,6 +631,87 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     expect(durable).not.toContain("BUILDER_PROVIDER_MARKER");
   });
 
+  it("runs the Phase 9A combined preorder amendment through the real action boundary", async () => {
+    await enableAi();
+    const proposalsBefore = await proposalRows();
+    const before = await liveState();
+    const deterministic = createDeterministicBuilder(
+      preorderReadyPlan(),
+      smallDraft(),
+      { amendmentOutput: preorderAmendmentDraft() },
+    );
+    const result = await runRealAction(
+      deterministic.service,
+      owner,
+      "Remove Sunday collection and change the cutoff from 48 to 72 hours.",
+      true,
+    );
+
+    expect(result).toMatchObject({
+      state: "proposed",
+      operation_count: 1,
+    });
+    expect(deterministic.calls).toHaveLength(2);
+    expect(deterministic.calls.map((call) => call.outputContract.name)).toEqual(
+      ["builder_plan_v1", "builder_preorder_amendment_v1"],
+    );
+    const rows = await executionRows();
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          task_key: "builder_plan_v1",
+          policy_key: "builder_planning_terra_medium_v1",
+          status: "succeeded",
+        }),
+        expect.objectContaining({
+          task_key: "builder_preorder_amendment_v1",
+          policy_key: "builder_preorder_amendment_terra_medium_v1",
+          status: "succeeded",
+        }),
+      ]),
+    );
+    const proposals = await proposalRows();
+    expect(proposals).toHaveLength(proposalsBefore.length + 1);
+    const proposal = proposals.at(-1)!;
+    expect(proposal).toMatchObject({
+      business_id: business.id,
+      requested_by: owner.user.id,
+      kind: "change",
+      status: "proposed",
+      title: "Proposed preorder changes",
+      validated_at: null,
+      applied_at: null,
+    });
+    expect(proposal.description).toContain("Sunday");
+    expect(proposal.description).toContain("72");
+    const operations = configurationOperationsSchema.parse(
+      proposal.operations_json,
+    );
+    expect(operations).toHaveLength(1);
+    const operation = operations[0]!;
+    expect(operation).toMatchObject({
+      op: "set_preorder_experience",
+      key: "bakery_preorder",
+      config_json: {
+        schedule: {
+          days_of_week: [6],
+          cutoff_hours: 72,
+          start_time: "11:00",
+          end_time: "16:00",
+          slot_interval_minutes: 30,
+          slot_capacity: 10,
+          booking_horizon_days: 90,
+        },
+      },
+    });
+    expect(await liveState()).toEqual(before);
+    const durable = JSON.stringify({ rows, proposal });
+    expect(durable).not.toContain(
+      "Remove Sunday collection and change the cutoff",
+    );
+    expect(durable).not.toContain("BUILDER_PROVIDER_MARKER");
+  });
+
   it("maps a drafting budget reservation rejection without invoking drafting", async () => {
     await enableAi({ requestLimit: 1 });
     const proposalsBefore = await proposalRows();
@@ -655,4 +880,394 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       message: "Builder is not enabled for this Business.",
     });
   });
+
+  it("covers all six Phase 9A requests through Builder and the full Changes lifecycle", async () => {
+    await enableAi();
+    await preparePhase9AcceptanceFixture();
+
+    const proposalRequests = [
+      "Make phone optional.",
+      "Add an optional Occasion question.",
+      "Remove Sunday collection.",
+      "Change the cutoff from 48 to 72 hours.",
+      "Remove Sunday collection and require 72 hours’ notice.",
+    ] as const;
+    for (const request of proposalRequests) {
+      const deterministic = createDeterministicBuilder(
+        preorderReadyPlan(),
+        smallDraft(),
+        {
+          amendmentOutput: (input) =>
+            preorderAmendmentDraftForRequest(
+              (input as { owner_request: string }).owner_request,
+            ),
+        },
+      );
+      const proposalsBefore = await proposalRows();
+      const result = await runRealAction(deterministic.service, owner, request);
+      expect(result.state).toBe("proposed");
+      expect(
+        deterministic.calls.map((call) => call.outputContract.name),
+      ).toEqual(["builder_plan_v1", "builder_preorder_amendment_v1"]);
+      const proposals = await proposalRows();
+      expect(proposals).toHaveLength(proposalsBefore.length + 1);
+      const proposal = proposals.at(-1)!;
+      const operations = configurationOperationsSchema.parse(
+        proposal.operations_json,
+      );
+      expect(
+        operations.filter(
+          (operation) => operation.op === "set_preorder_experience",
+        ),
+      ).toHaveLength(1);
+      expect(
+        new Set(
+          operations.map((operation) =>
+            operation.op === "set_field"
+              ? `field:${operation.object_key}.${operation.key}`
+              : `${operation.op}:${operation.key}`,
+          ),
+        ).size,
+      ).toBe(operations.length);
+    }
+
+    const beforeProposal = await liveState();
+    const versionsBefore = beforeProposal.versionCount ?? 0;
+    const headBefore = beforeProposal.head.head_revision;
+    const proposalsBefore = await proposalRows();
+    const deterministic = createDeterministicBuilder(
+      preorderReadyPlan(),
+      smallDraft(),
+      {
+        amendmentOutput: (input) =>
+          preorderAmendmentDraftForRequest(
+            (input as { owner_request: string }).owner_request,
+          ),
+      },
+    );
+    const result = await runRealAction(
+      deterministic.service,
+      owner,
+      "Make phone optional and add an optional Occasion question.",
+    );
+    expect(result).toMatchObject({ state: "proposed", operation_count: 3 });
+    const proposals = await proposalRows();
+    expect(proposals).toHaveLength(proposalsBefore.length + 1);
+    const proposal = proposals.at(-1)!;
+    const operations = configurationOperationsSchema.parse(
+      proposal.operations_json,
+    );
+    expect(operations).toHaveLength(3);
+    const beforeSnapshotForParity = configurationSnapshotV1Schema.parse(
+      beforeProposal.snapshot,
+    );
+    const manualOperations = composePreorderAmendmentBatch(
+      beforeSnapshotForParity,
+      {
+        preorderKey: "bakery_preorder",
+        amendments: [
+          {
+            intent: "set_existing_question_requiredness",
+            target: "customer",
+            fieldKey: "phone",
+            required: false,
+          },
+          {
+            intent: "add_preorder_question",
+            label: "Occasion",
+            helpText: null,
+            required: false,
+            answerStyle: "short_answer",
+          },
+        ],
+      },
+    ).operations;
+    expect(operations).toEqual(manualOperations);
+    expect(
+      operations.filter(
+        (operation) => operation.op === "set_preorder_experience",
+      ),
+    ).toHaveLength(1);
+    expect(
+      new Set(
+        operations.map((operation) =>
+          operation.op === "set_field"
+            ? `field:${operation.object_key}.${operation.key}`
+            : `${operation.op}:${operation.key}`,
+        ),
+      ).size,
+    ).toBe(operations.length);
+    const preorderOperation = operations.find(
+      (operation) => operation.op === "set_preorder_experience",
+    );
+    const phoneFieldOperation = operations.find(
+      (operation) =>
+        operation.op === "set_field" &&
+        operation.object_key === "customer" &&
+        operation.key === "phone",
+    );
+    const occasionFieldOperation = operations.find(
+      (operation) =>
+        operation.op === "set_field" && operation.object_key === "order",
+    );
+    expect(preorderOperation).toMatchObject({
+      op: "set_preorder_experience",
+      key: "bakery_preorder",
+      config_json: {
+        schedule: {
+          days_of_week: [6, 7],
+          start_time: "11:00",
+          end_time: "16:00",
+          slot_interval_minutes: 30,
+          slot_capacity: 10,
+          cutoff_hours: 48,
+          booking_horizon_days: 90,
+        },
+        field_mappings: expect.any(Object),
+      },
+    });
+    expect(phoneFieldOperation).toMatchObject({
+      op: "set_field",
+      object_key: "customer",
+      key: "phone",
+      required: false,
+    });
+    expect(occasionFieldOperation).toMatchObject({
+      op: "set_field",
+      object_key: "order",
+      label: "Occasion",
+      field_type: "short_text",
+      required: false,
+      is_active: true,
+    });
+    if (
+      !preorderOperation ||
+      preorderOperation.op !== "set_preorder_experience"
+    ) {
+      throw new Error(
+        "The combined Builder proposal lacks its preorder operation.",
+      );
+    }
+    expect(preorderOperation.config_json.public_fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "customer",
+          field: "phone",
+          required: false,
+          autocomplete: "tel",
+        }),
+        expect.objectContaining({
+          target: "order",
+          field:
+            occasionFieldOperation && occasionFieldOperation.op === "set_field"
+              ? occasionFieldOperation.key
+              : "occasion_2",
+          label: "Occasion",
+          required: false,
+          autocomplete: "off",
+        }),
+      ]),
+    );
+    const semanticDiff = semanticDiffSchema.parse(proposal.semantic_diff_json);
+    expect(semanticDiff.changes.map(({ entity_key }) => entity_key)).toEqual([
+      "customer.phone",
+      "order.occasion_2",
+      "bakery_preorder",
+    ]);
+    expect(semanticDiff.changes[0]).toMatchObject({
+      entity_type: "field",
+      change_type: "updated",
+      properties: [{ property: "required", before: true, after: false }],
+    });
+    expect(semanticDiff.changes[1]).toMatchObject({
+      entity_type: "field",
+      change_type: "created",
+    });
+    expect(semanticDiff.changes[2]).toMatchObject({
+      entity_type: "preorder_experience",
+      change_type: "updated",
+      properties: [{ property: "public_fields" }],
+    });
+    expect(
+      semanticDiff.changes.some(
+        (change) =>
+          change.entity_key === "customer.phone" &&
+          change.properties.some(
+            (property) =>
+              property.property === "required" &&
+              property.before === true &&
+              property.after === false,
+          ),
+      ),
+    ).toBe(true);
+    expect(
+      semanticDiff.changes.some(
+        (change) =>
+          change.entity_type === "preorder_experience" &&
+          change.properties.some(
+            (property) => property.property === "public_fields",
+          ),
+      ),
+    ).toBe(true);
+    expect(
+      semanticDiff.changes.some((change) =>
+        change.entity_key?.includes("occasion_2"),
+      ),
+    ).toBe(true);
+    expect(await liveState()).toEqual(beforeProposal);
+
+    const candidate = await resolveConfigurationPreviewPreorder(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+      changeSetId: String(proposal.id),
+      pageKey: "public_preorder",
+      preorderKey: "bakery_preorder",
+    });
+    expect(
+      candidate?.preorder.public_fields.find(
+        (field) => field.target === "customer" && field.field === "phone",
+      ),
+    ).toMatchObject({ required: false });
+    expect(
+      candidate?.preorder.public_fields.find(
+        (field) => field.label === "Occasion",
+      ),
+    ).toMatchObject({ required: false, field_type: "short_text" });
+
+    const configuration = new ConfigurationChangeService(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const proposalId = String(proposal.id);
+    expect((await configuration.validateChangeSet(proposalId)).status).toBe(
+      "validated",
+    );
+    expect(await liveState()).toEqual(beforeProposal);
+    const applied = await configuration.applyChangeSet(proposalId);
+    expect(applied.status).toBe("applied");
+    expect(applied.applied_version_id).toBeTruthy();
+    const afterApplication = await liveState();
+    expect(afterApplication.versionCount).toBe((versionsBefore ?? 0) + 1);
+    expect(afterApplication.head.head_revision).toBe(headBefore + 1);
+    expect(afterApplication.recordRows).toEqual(beforeProposal.recordRows);
+    expect(afterApplication.relationshipRows).toEqual(
+      beforeProposal.relationshipRows,
+    );
+    expect(afterApplication.recordLocationRows).toEqual(
+      beforeProposal.recordLocationRows,
+    );
+    expect(afterApplication.submissions).toEqual(beforeProposal.submissions);
+    expect(afterApplication.slotCounters).toEqual(beforeProposal.slotCounters);
+    expect(afterApplication.rateLimits).toEqual(beforeProposal.rateLimits);
+    expect(afterApplication.emailStates).toEqual(beforeProposal.emailStates);
+    expect(afterApplication.locations).toEqual(beforeProposal.locations);
+    const live = await resolvePublicPreorder(
+      anonymous,
+      business.slug,
+      "preorder",
+      "bakery_preorder",
+    );
+    expect(
+      live?.preorder.public_fields.find(
+        (field) => field.target === "customer" && field.field === "phone",
+      ),
+    ).toMatchObject({ required: false });
+    expect(
+      live?.preorder.public_fields.find((field) => field.label === "Occasion"),
+    ).toMatchObject({ required: false, field_type: "short_text" });
+    const active = await loadActiveManualAmendmentSnapshot(configuration);
+    const manualSetup = getPreorderQuestionsSetup(
+      active.snapshot,
+      "bakery_preorder",
+    );
+    expect(manualSetup.questions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          target: "customer",
+          fieldKey: "phone",
+          required: false,
+        }),
+        expect.objectContaining({
+          target: "order",
+          label: "Occasion",
+          required: false,
+        }),
+      ]),
+    );
+    const appliedSnapshot = configurationSnapshotV1Schema.parse(
+      active.snapshot,
+    );
+    const beforeSnapshot = configurationSnapshotV1Schema.parse(
+      beforeProposal.snapshot,
+    );
+    const appliedPreorder = appliedSnapshot.preorder_experiences.find(
+      ({ key }) => key === "bakery_preorder",
+    );
+    const beforePreorder = beforeSnapshot.preorder_experiences.find(
+      ({ key }) => key === "bakery_preorder",
+    );
+    if (!appliedPreorder || !beforePreorder) {
+      throw new Error("The applied preorder is missing.");
+    }
+    const beforePhoneField = beforeSnapshot.field_definitions.find(
+      (field) => field.object_key === "customer" && field.key === "phone",
+    );
+    const appliedPhoneField = appliedSnapshot.field_definitions.find(
+      (field) => field.object_key === "customer" && field.key === "phone",
+    );
+    const occasionKey =
+      occasionFieldOperation && occasionFieldOperation.op === "set_field"
+        ? occasionFieldOperation.key
+        : "occasion_2";
+    const appliedOccasionField = appliedSnapshot.field_definitions.find(
+      (field) => field.object_key === "order" && field.key === occasionKey,
+    );
+    expect(beforePhoneField).toMatchObject({ required: true });
+    expect(appliedPhoneField).toMatchObject({ required: false });
+    expect(appliedOccasionField).toMatchObject({
+      field_type: "short_text",
+      required: false,
+      is_active: true,
+    });
+    expect(appliedSnapshot.object_definitions).toEqual(
+      beforeSnapshot.object_definitions,
+    );
+    expect(appliedSnapshot.relationship_definitions).toEqual(
+      beforeSnapshot.relationship_definitions,
+    );
+    expect(appliedSnapshot.pages).toEqual(beforeSnapshot.pages);
+    expect(appliedSnapshot.preorder_experience_locations).toEqual(
+      beforeSnapshot.preorder_experience_locations,
+    );
+    expect(appliedPreorder.config_json.schedule).toEqual(
+      beforePreorder.config_json.schedule,
+    );
+    expect(appliedPreorder.config_json.field_mappings).toEqual(
+      beforePreorder.config_json.field_mappings,
+    );
+    const existingPublicFieldKeys =
+      beforePreorder.config_json.public_fields.map(
+        ({ target, field }) => `${target}:${field}`,
+      );
+    const appliedExistingPublicFields =
+      appliedPreorder.config_json.public_fields.filter(({ target, field }) =>
+        existingPublicFieldKeys.includes(`${target}:${field}`),
+      );
+    expect(
+      appliedExistingPublicFields.map(
+        ({ target, field }) => `${target}:${field}`,
+      ),
+    ).toEqual(existingPublicFieldKeys);
+    expect(appliedExistingPublicFields).toEqual(
+      beforePreorder.config_json.public_fields.map((field) =>
+        field.target === "customer" && field.field === "phone"
+          ? { ...field, required: false }
+          : field,
+      ),
+    );
+    expect(appliedPreorder.is_active).toBe(beforePreorder.is_active);
+    expect(appliedSnapshot.preorder_experiences.map(({ key }) => key)).toEqual(
+      beforeSnapshot.preorder_experiences.map(({ key }) => key),
+    );
+  }, 90_000);
 });

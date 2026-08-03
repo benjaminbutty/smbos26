@@ -1,0 +1,172 @@
+import { z } from "zod";
+
+import { aiExecutionErrorCodes } from "../../errors";
+import { builderPreorderAmendmentDiagnosticCodes } from "../../preorder-amendment/diagnostics";
+import { builderPreorderAmendmentOutputSchema } from "../../preorder-amendment/schemas";
+
+export const builderPreorderAmendmentEvaluationScenarioIdSchema = z.enum([
+  "phone_optional",
+  "remove_sunday",
+  "cutoff_to_72",
+  "remove_sunday_cutoff_72",
+  "occasion_optional_short",
+  "gift_message_optional_long",
+  "existing_question_wording_help",
+  "phone_optional_and_occasion",
+]);
+
+export const builderPreorderAmendmentEvaluationScenarioSchema = z
+  .object({
+    id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+    owner_request: z.string().trim().min(1).max(4_000),
+    expected_output: builderPreorderAmendmentOutputSchema,
+  })
+  .strict();
+
+export const builderPreorderAmendmentEvaluationFailedGateCodeSchema = z.enum([
+  "output_contract_invalid",
+  "semantic_validation_failed",
+  "expected_amendment_missing",
+  "unexpected_amendment",
+  "expected_value_mismatch",
+  "unexpected_adjacent_value",
+  "source_step_coverage_mismatch",
+]);
+
+export const builderPreorderAmendmentFailureClassSchema = z.enum([
+  "output_contract",
+  "source_step",
+  "preorder_scope",
+  "amendment_semantic",
+  "provider_execution",
+  "unknown",
+]);
+
+export const builderPreorderAmendmentValidationReasonCodeSchema = z.union([
+  z.enum(builderPreorderAmendmentDiagnosticCodes),
+  z.literal("provider_invalid_response"),
+  z.literal("unknown_output_invalid"),
+]);
+
+const nonOutputAiExecutionErrorCodes = aiExecutionErrorCodes.filter(
+  (code) => code !== "ai_output_invalid",
+) as [
+  Exclude<(typeof aiExecutionErrorCodes)[number], "ai_output_invalid">,
+  ...Exclude<(typeof aiExecutionErrorCodes)[number], "ai_output_invalid">[],
+];
+
+export const builderPreorderAmendmentProviderFailureSchema = z.union([
+  z
+    .object({
+      schema_version: z.literal(1),
+      scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+      error_code: z.literal("ai_output_invalid"),
+      failure_class: builderPreorderAmendmentFailureClassSchema,
+      validation_reason_code:
+        builderPreorderAmendmentValidationReasonCodeSchema,
+    })
+    .strict(),
+  z
+    .object({
+      schema_version: z.literal(1),
+      scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+      error_code: z.enum(nonOutputAiExecutionErrorCodes),
+      failure_class: z.literal("provider_execution"),
+    })
+    .strict(),
+]);
+
+export const builderPreorderAmendmentReliabilityProviderFailureSchema = z.union(
+  [
+    z
+      .object({
+        schema_version: z.literal(1),
+        scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+        repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        error_code: z.literal("ai_output_invalid"),
+        failure_class: builderPreorderAmendmentFailureClassSchema,
+        validation_reason_code:
+          builderPreorderAmendmentValidationReasonCodeSchema,
+      })
+      .strict(),
+    z
+      .object({
+        schema_version: z.literal(1),
+        scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+        repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        error_code: z.enum(nonOutputAiExecutionErrorCodes),
+        failure_class: z.literal("provider_execution"),
+      })
+      .strict(),
+  ],
+);
+
+export const builderPreorderAmendmentEvaluationReportSchema = z
+  .object({
+    scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+    passed: z.boolean(),
+    amendment_count: z.number().int().nonnegative().max(12),
+    amendment_types: z.array(z.string().min(1).max(80)).max(12),
+    attempts: z.number().int().nonnegative().max(5),
+    input_tokens: z.number().int().nonnegative(),
+    output_tokens: z.number().int().nonnegative(),
+    estimated_cost_microusd: z.number().int().nonnegative(),
+    elapsed_ms: z.number().int().nonnegative(),
+    failed_gate_codes: z
+      .array(builderPreorderAmendmentEvaluationFailedGateCodeSchema)
+      .max(7),
+  })
+  .strict();
+
+export const builderPreorderAmendmentEvaluationReliabilityReportSchema =
+  builderPreorderAmendmentEvaluationReportSchema
+    .extend({ repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]) })
+    .strict();
+
+export const builderPreorderAmendmentEvaluationAggregateSchema = z
+  .object({
+    model_key: z.string().min(1).max(120),
+    policy_key: z.string().min(1).max(80),
+    reasoning_effort: z.literal("medium"),
+    total_scenarios: z.literal(8),
+    passed_scenarios: z.number().int().nonnegative().max(8),
+    failed_scenarios: z.number().int().nonnegative().max(8),
+    total_input_tokens: z.number().int().nonnegative(),
+    total_output_tokens: z.number().int().nonnegative(),
+    total_estimated_cost_microusd: z.number().int().nonnegative(),
+    total_elapsed_ms: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const builderPreorderAmendmentEvaluationReliabilityAggregateSchema =
+  builderPreorderAmendmentEvaluationAggregateSchema
+    .extend({
+      repetitions_per_scenario: z.literal(3),
+      total_executions: z.literal(24),
+      passed_executions: z.number().int().nonnegative().max(24),
+      failed_executions: z.number().int().nonnegative().max(24),
+      per_scenario_pass_counts: z
+        .array(
+          z
+            .object({
+              scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+              passed_count: z.number().int().nonnegative().max(3),
+            })
+            .strict(),
+        )
+        .length(8),
+    })
+    .strict();
+
+export type BuilderPreorderAmendmentEvaluationScenarioId = z.infer<
+  typeof builderPreorderAmendmentEvaluationScenarioIdSchema
+>;
+export type BuilderPreorderAmendmentEvaluationScenario = z.infer<
+  typeof builderPreorderAmendmentEvaluationScenarioSchema
+>;
+export type BuilderPreorderAmendmentEvaluationReport = z.infer<
+  typeof builderPreorderAmendmentEvaluationReportSchema
+>;
+export type BuilderPreorderAmendmentEvaluationReliabilityReport = z.infer<
+  typeof builderPreorderAmendmentEvaluationReliabilityReportSchema
+>;
