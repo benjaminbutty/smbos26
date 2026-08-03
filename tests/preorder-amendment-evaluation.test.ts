@@ -40,7 +40,6 @@ import {
   redactBuilderPreorderAmendmentFailure,
 } from "../src/ai/evaluation/preorder-amendment/live";
 import { builderPreorderAmendmentProviderFailureSchema } from "../src/ai/evaluation/preorder-amendment/schemas";
-import { BuilderPreorderAmendmentValidationError } from "../src/ai/preorder-amendment/diagnostics";
 
 function inputFor(
   scenario: (typeof builderPreorderAmendmentEvaluationScenarios)[number],
@@ -98,9 +97,7 @@ describe("Builder preorder amendment task and evaluation", () => {
   });
 
   it("makes the long-answer new-question contract explicit in the task instruction", () => {
-    const instruction = builderPreorderAmendmentTaskV1.buildInstruction(
-      inputFor(builderPreorderAmendmentEvaluationScenarios[5]!),
-    );
+    const instruction = builderPreorderAmendmentTaskV1.buildInstruction();
 
     expect(instruction).toContain(
       "return exactly one add_preorder_question amendment",
