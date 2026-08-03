@@ -26,7 +26,11 @@ export const builderPreorderAmendmentEvaluationScenarioSchema = z
 export const builderPreorderAmendmentEvaluationFailedGateCodeSchema = z.enum([
   "output_contract_invalid",
   "semantic_validation_failed",
-  "scenario_expectation_failed",
+  "expected_amendment_missing",
+  "unexpected_amendment",
+  "expected_value_mismatch",
+  "unexpected_adjacent_value",
+  "source_step_coverage_mismatch",
 ]);
 
 export const builderPreorderAmendmentFailureClassSchema = z.enum([
@@ -110,7 +114,7 @@ export const builderPreorderAmendmentEvaluationReportSchema = z
     elapsed_ms: z.number().int().nonnegative(),
     failed_gate_codes: z
       .array(builderPreorderAmendmentEvaluationFailedGateCodeSchema)
-      .max(3),
+      .max(7),
   })
   .strict();
 

@@ -56,6 +56,28 @@ function inputFor(
   });
 }
 
+function scenarioFor(
+  id: (typeof builderPreorderAmendmentEvaluationScenarios)[number]["id"],
+) {
+  const scenario = builderPreorderAmendmentEvaluationScenarios.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!scenario) throw new Error(`Missing synthetic scenario: ${id}`);
+  return scenario;
+}
+
+function evaluateScenario(
+  id: (typeof builderPreorderAmendmentEvaluationScenarios)[number]["id"],
+  output: unknown,
+) {
+  return evaluateBuilderPreorderAmendment(scenarioFor(id), output, {
+    attempts: 1,
+    inputTokens: 100,
+    outputTokens: 50,
+    elapsedMs: 1,
+  });
+}
+
 describe("Builder preorder amendment task and evaluation", () => {
   it("has exactly eight frozen synthetic scenarios", () => {
     expect(builderPreorderAmendmentEvaluationScenarios).toHaveLength(8);
@@ -102,7 +124,15 @@ describe("Builder preorder amendment task and evaluation", () => {
     expect(instruction).toContain(
       "return exactly one add_preorder_question amendment",
     );
-    expect(instruction).toContain("an explicit help_text string or null");
+    expect(instruction).toContain(
+      "For a new question, set help_text to null when the owner did not explicitly supply or request help text",
+    );
+    expect(instruction).toContain(
+      "use a bounded string only when the owner explicitly supplied or requested help text",
+    );
+    expect(instruction).toContain(
+      "Do not invent adjacent wording merely because the schema permits it",
+    );
     expect(instruction).toContain("answer_style exactly long_answer");
     expect(instruction).toContain(
       "both exact relevant step_N references on that one amendment",
@@ -110,6 +140,156 @@ describe("Builder preorder amendment task and evaluation", () => {
     expect(instruction).toContain(
       "Do not include a Field key, position, UUID, operation, or lifecycle instruction",
     );
+  });
+
+  it("applies least change to an unrequested Gift message help text", () => {
+    const gift = scenarioFor("gift_message_optional_long");
+    expect(gift.expected_output.amendments).toEqual([
+      expect.objectContaining({
+        type: "add_preorder_question",
+        label: "Gift message",
+        help_text: null,
+        required: false,
+        answer_style: "long_answer",
+      }),
+    ]);
+    expect(evaluateScenario(gift.id, gift.expected_output)).toMatchObject({
+      passed: true,
+      failed_gate_codes: [],
+    });
+
+    const unsolicitedHelpText = {
+      ...gift.expected_output,
+      amendments: gift.expected_output.amendments.map((amendment) => ({
+        ...amendment,
+        help_text: "Synthetic text the owner did not request.",
+      })),
+    };
+    expect(
+      evaluateScenario(gift.id, unsolicitedHelpText).failed_gate_codes,
+    ).toContain("unexpected_adjacent_value");
+  });
+
+  it("makes the Dietary wording and help-text values explicit and exact", () => {
+    const dietary = scenarioFor("existing_question_wording_help");
+    expect(dietary.owner_request).toBe(
+      'Rename Dietary requirements to Food notes and set its help text to "Tell us about allergies or preferences."',
+    );
+    expect(evaluateScenario(dietary.id, dietary.expected_output)).toMatchObject(
+      {
+        passed: true,
+        failed_gate_codes: [],
+      },
+    );
+
+    const incorrectLabel = {
+      ...dietary.expected_output,
+      amendments: dietary.expected_output.amendments.map((amendment) =>
+        amendment.type === "set_existing_question_label"
+          ? { ...amendment, label: "Meal notes" }
+          : amendment,
+      ),
+    };
+    const incorrectHelpText = {
+      ...dietary.expected_output,
+      amendments: dietary.expected_output.amendments.map((amendment) =>
+        amendment.type === "set_existing_question_help_text"
+          ? { ...amendment, help_text: "A different instruction." }
+          : amendment,
+      ),
+    };
+    expect(
+      evaluateScenario(dietary.id, incorrectLabel).failed_gate_codes,
+    ).toContain("expected_value_mismatch");
+    expect(
+      evaluateScenario(dietary.id, incorrectHelpText).failed_gate_codes,
+    ).toContain("expected_value_mismatch");
+  });
+
+  it("canonicalises amendment, source-reference and collection-day ordering", () => {
+    const combined = scenarioFor("remove_sunday_cutoff_72");
+    expect(
+      evaluateScenario(combined.id, {
+        ...combined.expected_output,
+        amendments: [...combined.expected_output.amendments].reverse(),
+      }),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+
+    const gift = scenarioFor("gift_message_optional_long");
+    expect(
+      evaluateScenario(gift.id, {
+        ...gift.expected_output,
+        amendments: gift.expected_output.amendments.map((amendment) => ({
+          ...amendment,
+          source_step_references: ["step_2", "step_1"],
+        })),
+      }),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+
+    const days = scenarioFor("remove_sunday");
+    expect(
+      evaluateScenario(days.id, {
+        ...days.expected_output,
+        amendments: days.expected_output.amendments.map((amendment) => ({
+          ...amendment,
+          days_of_week: [6, 5],
+        })),
+      }),
+    ).toMatchObject({ passed: true, failed_gate_codes: [] });
+  });
+
+  it("rejects missing, additional and source-incomplete amendments with finite codes", () => {
+    const combined = scenarioFor("remove_sunday_cutoff_72");
+    expect(
+      evaluateScenario(combined.id, {
+        ...combined.expected_output,
+        amendments: [combined.expected_output.amendments[0]],
+      }).failed_gate_codes,
+    ).toContain("expected_amendment_missing");
+    expect(
+      evaluateScenario(combined.id, {
+        ...combined.expected_output,
+        amendments: [
+          ...combined.expected_output.amendments,
+          {
+            type: "set_booking_horizon_days",
+            booking_horizon_days: 30,
+            source_step_references: ["step_1"],
+          },
+        ],
+      }).failed_gate_codes,
+    ).toContain("unexpected_amendment");
+
+    const gift = scenarioFor("gift_message_optional_long");
+    expect(
+      evaluateScenario(gift.id, {
+        ...gift.expected_output,
+        amendments: gift.expected_output.amendments.map((amendment) => ({
+          ...amendment,
+          source_step_references: ["step_1"],
+        })),
+      }).failed_gate_codes,
+    ).toContain("source_step_coverage_mismatch");
+  });
+
+  it("reports scenario mismatches without owner or model content", () => {
+    const gift = scenarioFor("gift_message_optional_long");
+    const modelMarker = "MODEL-OUTPUT-HELP-TEXT-MARKER";
+    const report = evaluateScenario(gift.id, {
+      ...gift.expected_output,
+      summary: "MODEL-OUTPUT-SUMMARY-MARKER",
+      amendments: gift.expected_output.amendments.map((amendment) => ({
+        ...amendment,
+        help_text: modelMarker,
+      })),
+    });
+    const serialized = JSON.stringify(report);
+
+    expect(report.failed_gate_codes).toContain("unexpected_adjacent_value");
+    expect(serialized).not.toContain(modelMarker);
+    expect(serialized).not.toContain("MODEL-OUTPUT-SUMMARY-MARKER");
+    expect(serialized).not.toContain(gift.owner_request);
+    expect(serialized).not.toContain("Gift message");
   });
 
   it("keeps the output strict, source-referenced and free of trusted fields", () => {

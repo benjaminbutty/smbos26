@@ -120,7 +120,7 @@ const scenarioDefinitions = [
     expected_output: amendment({
       type: "add_preorder_question",
       label: "Gift message",
-      help_text: "Add a message to include with the order.",
+      help_text: null,
       required: false,
       answer_style: "long_answer",
       source_step_references: ["step_1", "step_2"],
@@ -129,7 +129,8 @@ const scenarioDefinitions = [
   },
   {
     id: "existing_question_wording_help",
-    owner_request: "Change the dietary question wording and help text.",
+    owner_request:
+      'Rename Dietary requirements to Food notes and set its help text to "Tell us about allergies or preferences."',
     expected_output: combined([
       {
         type: "set_existing_question_label",
