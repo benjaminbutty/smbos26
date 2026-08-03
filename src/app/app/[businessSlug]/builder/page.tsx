@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { hasCapability, resolveTenant } from "../../../../auth/authorization";
+import { hasCapability } from "../../../../auth/authorization";
 import { BuilderUi } from "../../../../components/builder-ui";
 import { createServerClient } from "../../../../db/supabase/server";
 import { runBuilderAction } from "./actions";
-import { parseBuilderRouteSlug } from "./action-service";
+import { parseBuilderRouteSlug, resolveBuilderTenant } from "./action-service";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -26,7 +26,7 @@ export default async function BuilderPage({
   }
 
   const supabase = await createServerClient();
-  const tenant = await resolveTenant(businessSlug, supabase);
+  const tenant = await resolveBuilderTenant(businessSlug, supabase);
   if (!hasCapability(tenant.membership.role, "manage_configuration")) {
     notFound();
   }

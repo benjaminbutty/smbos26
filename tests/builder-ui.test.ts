@@ -492,6 +492,13 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
       ),
       "utf8",
     );
+    const changeDetailRoute = readFileSync(
+      join(
+        process.cwd(),
+        "src/app/app/[businessSlug]/changes/[changeSetId]/page.tsx",
+      ),
+      "utf8",
+    );
     const ui = readFileSync(
       join(process.cwd(), "src/components/builder-ui.tsx"),
       "utf8",
@@ -506,14 +513,20 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(route).toContain("revalidate = 0");
     expect(route).toContain("maxDuration = 120");
     expect(route).toContain("createServerClient");
-    expect(route).toContain("resolveTenant");
+    expect(route).toContain("resolveBuilderTenant");
     expect(route).toContain('"manage_configuration"');
     expect(route).toContain("notFound()");
     expect(route).not.toContain("builderOrchestrationService.run");
+    expect(changeDetailRoute).toContain(
+      "configurationActionNoticeSchema.safeParse",
+    );
+    expect(changeDetailRoute).toContain(
+      "notice={<ConfigurationActionNotice notice={notice} />}",
+    );
+    expect(changeDetailRoute).not.toContain("notice={noticeValue}");
 
     expect(action.startsWith('"use server";')).toBe(true);
-    expect(action).toContain("builderOrchestrationService.run");
-    expect(action).toContain("tenant.business.id");
+    expect(action).toContain("createBuilderAction");
     expect(action).not.toContain('formData.get("businessId")');
     expect(action).not.toContain('formData.get("actorId")');
     expect(action).not.toContain('formData.get("proposalId")');
@@ -523,6 +536,8 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(action).not.toContain(".publish");
 
     const source = `${action}\n${actionService}\n${ui}`;
+    expect(source).toContain("orchestrationService.run");
+    expect(source).toContain("tenant.business.id");
     expect(source).not.toMatch(
       /dangerouslySetInnerHTML|localStorage|sessionStorage|console\.|new OpenAI|\bfetch\s*\(/i,
     );
@@ -549,5 +564,17 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
         }),
       ),
     ).toContain("Builder prepared this proposal");
+    expect(
+      configurationActionNoticeSchema.safeParse(
+        '<script>alert("arbitrary")</script>',
+      ).success,
+    ).toBe(false);
+    expect(
+      renderToStaticMarkup(
+        createElement(ConfigurationActionNotice, {
+          notice: null,
+        }),
+      ),
+    ).not.toContain("arbitrary");
   });
 });

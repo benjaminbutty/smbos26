@@ -6,6 +6,7 @@ export default defineConfig({
     include: [
       "tests/builder-ui.test.ts",
       "tests/integration/builder-ui-actions.test.ts",
+      "tests/integration/builder-ui-route.test.ts",
     ],
     fileParallelism: false,
     testTimeout: 120_000,

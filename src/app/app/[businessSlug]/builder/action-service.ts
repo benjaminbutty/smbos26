@@ -1,7 +1,10 @@
 import "server-only";
 
+import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { notFound } from "next/navigation";
 import { z } from "zod";
 
+import { builderOrchestrationService } from "../../../../ai/builder/service";
 import {
   AiBusinessContextError,
   type AiBusinessContextErrorCode,
@@ -33,6 +36,8 @@ import {
   type BuilderUiState,
   type BuilderUnavailableReason,
 } from "../../../../components/builder-ui-state";
+import { hasCapability, resolveTenant } from "../../../../auth/authorization";
+import { createServerClient } from "../../../../db/supabase/server";
 
 export const builderRouteSlugSchema = z
   .string()
@@ -66,6 +71,49 @@ export function parseBuilderOwnerRequest(
     return { success: false };
   }
   return { success: true, ownerRequest: parsed.data };
+}
+
+type BuilderTenantDependencies = {
+  notFound: typeof notFound;
+  resolveTenant: typeof resolveTenant;
+};
+
+const productionBuilderTenantDependencies: BuilderTenantDependencies = {
+  notFound,
+  resolveTenant,
+};
+
+function redirectDestination(error: unknown): string | null {
+  if (error instanceof Error && error.name === "ActionRedirect") {
+    return error.message;
+  }
+  if (!isRedirectError(error)) {
+    return null;
+  }
+  return error.digest.split(";").slice(2, -2).join(";");
+}
+
+function isUnauthenticatedRedirect(error: unknown): boolean {
+  return redirectDestination(error) === "/sign-in";
+}
+
+export async function resolveBuilderTenant(
+  businessSlug: string,
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  overrides: Partial<BuilderTenantDependencies> = {},
+) {
+  const dependencies = {
+    ...productionBuilderTenantDependencies,
+    ...overrides,
+  };
+  try {
+    return await dependencies.resolveTenant(businessSlug, supabase);
+  } catch (error) {
+    if (isUnauthenticatedRedirect(error)) {
+      dependencies.notFound();
+    }
+    throw error;
+  }
 }
 
 export function invalidBuilderInputState(): BuilderResultUiState {
@@ -261,6 +309,86 @@ export function mapBuilderActionError(
   }
 
   return { kind: "unexpected", error };
+}
+
+type BuilderOrchestrationService = Pick<
+  typeof builderOrchestrationService,
+  "run"
+>;
+
+export type BuilderActionDependencies = {
+  createServerClient: typeof createServerClient;
+  hasCapability: typeof hasCapability;
+  notFound: typeof notFound;
+  orchestrationService: BuilderOrchestrationService;
+  resolveTenant: typeof resolveTenant;
+};
+
+const productionBuilderActionDependencies: BuilderActionDependencies = {
+  createServerClient,
+  hasCapability,
+  notFound,
+  orchestrationService: builderOrchestrationService,
+  resolveTenant,
+};
+
+export function createBuilderAction(
+  overrides: Partial<BuilderActionDependencies> = {},
+) {
+  const dependencies = {
+    ...productionBuilderActionDependencies,
+    ...overrides,
+  };
+
+  return async function executeBuilderAction(
+    businessSlugInput: string,
+    _previousState: BuilderUiState,
+    formData: FormData,
+  ): Promise<BuilderUiState> {
+    void _previousState;
+    const businessSlug = parseBuilderRouteSlug(businessSlugInput);
+    if (!businessSlug) {
+      dependencies.notFound();
+      return invalidBuilderInputState();
+    }
+
+    const parsedRequest = parseBuilderOwnerRequest(formData);
+    if (!parsedRequest.success) {
+      return invalidBuilderInputState();
+    }
+
+    const supabase = await dependencies.createServerClient();
+    const tenant = await resolveBuilderTenant(businessSlug, supabase, {
+      notFound: dependencies.notFound,
+      resolveTenant: dependencies.resolveTenant,
+    });
+    if (
+      !dependencies.hasCapability(
+        tenant.membership.role,
+        "manage_configuration",
+      )
+    ) {
+      dependencies.notFound();
+    }
+
+    try {
+      const result = await dependencies.orchestrationService.run(supabase, {
+        businessId: tenant.business.id,
+        ownerRequest: parsedRequest.ownerRequest,
+      });
+      return mapBuilderOrchestrationResult(result);
+    } catch (error) {
+      const mapped = mapBuilderActionError(error);
+      if (mapped.kind === "not_found") {
+        dependencies.notFound();
+        return invalidBuilderInputState();
+      }
+      if (mapped.kind === "unexpected") {
+        throw mapped.error;
+      }
+      return mapped.state;
+    }
+  };
 }
 
 export function mapBuilderActionResult(input: unknown): BuilderUiState {
