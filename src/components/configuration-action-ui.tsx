@@ -61,6 +61,11 @@ const noticePresentation: Readonly<
       "The rollback proposal was prepared. It must still be validated and deliberately applied.",
     tone: "success",
   },
+  builder_prepared: {
+    message:
+      "Builder prepared this proposal. Nothing is live yet—review the changes and available previews before validating it.",
+    tone: "success",
+  },
   state_changed: {
     message:
       "The proposal or version changed after the confirmation screen was loaded. Review the current authoritative state before continuing.",

@@ -41,6 +41,7 @@ export default async function TenantLayout({
           <Link href={`/app/${businessSlug}`}>Home</Link>
           {hasCapability(tenant.membership.role, "manage_configuration") ? (
             <>
+              <Link href={`/app/${businessSlug}/builder`}>Builder</Link>
               <Link href={`/app/${businessSlug}/setup`}>Edit setup</Link>
               <Link href={`/app/${businessSlug}/changes`}>Changes</Link>
             </>

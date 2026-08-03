@@ -2118,4 +2118,59 @@ chat history, conversational editing, generic public Form submission,
 operational AI actions or automatic application. The global drafting registry
 and Phase 8A qualification evidence remain unchanged; the private runtime is
 the only production composition that may use the qualified drafting policy.
-Phase 8C remains the next phase.
+Phase 8C is the separate presentation and action wrapper recorded below.
+
+## ADR-028 - Phase 8C uses an ephemeral revise-and-resubmit Builder wrapper
+
+**Status:** Accepted for v0.1 (Milestone 8 Phase 8C)
+
+**Date:** 3 August 2026
+
+### Context
+
+Phase 8B proves the authenticated planning, drafting and proposal-only
+composition but intentionally leaves invocation outside the core. The first
+owner-facing surface must let a non-technical Owner/Admin describe a setup in
+ordinary language and recover from ambiguity without becoming a general chat
+system, accepting browser-owned tenant data or introducing another mutation
+boundary. Existing Changes remains the authoritative review and lifecycle
+surface.
+
+### Decision
+
+- Add the dynamic, no-store route
+  `/app/[businessSlug]/builder`, resolving the slug through the ordinary
+  session client and requiring `manage_configuration`. Staff and non-members
+  receive a controlled not-found result; the layout link is capability-gated.
+- Bind the trusted slug into one Server Action that accepts only a trimmed,
+  schema-validated `ownerRequest` within the existing 4,000-character and
+  16 KiB UTF-8 limits. The action derives Business and actor identity from the
+  authenticated tenant and calls `builderOrchestrationService.run()` exactly
+  once. It never accepts or trusts browser Business, actor, proposal,
+  operation, provider or lifecycle fields.
+- Map the existing strict Phase 8B result and error contracts into a separate
+  owner-facing state contract: idle, fixed invalid input, bounded
+  clarification, fixed unsupported, bounded proposal summary and finite
+  unavailable/stale outcomes. Strip model-local references, impact and reason
+  codes at this boundary. Unknown trusted errors are rethrown.
+- Keep the interaction ephemeral and controlled: one textarea, React 19
+  `useActionState`, revise-and-resubmit clarification and no transcript,
+  clarification persistence, client storage, query-string request state or
+  request logging. GET performs no AI call or side effect.
+- Expose a proposed result as only proposal UUID, summary and operation count,
+  then link to the existing Changes review with `notice=builder_prepared`.
+  Builder has no Validate, Apply, Publish or operational action; the existing
+  Changes lifecycle remains the sole deliberate mutation boundary.
+- Add no migration, table, primitive, provider registration or replacement for
+  the Phase 8B core. Production drafting stays globally disabled and the
+  existing proposal service remains the only proposal creation path.
+
+### Consequences
+
+Owners and Admins have a small safe entry point for the first Builder proof,
+while Staff and non-members cannot invoke it. Clarification is intentionally
+less conversational than a chat transcript: the owner edits the original
+request and submits again. The route/action/UI adds presentation and invokes
+the existing proposal-producing orchestration, but it does not add lifecycle
+authority or durable conversational state. Future richer conversation or
+automatic lifecycle behavior requires a separate architecture decision.

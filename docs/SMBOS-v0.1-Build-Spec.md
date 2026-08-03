@@ -1590,7 +1590,45 @@ only existing metadata-only accounting rows and the ordinary proposal may be
 durable. Phase 8B proves authenticated server orchestration and proposal-only
 handoff, not a usable owner-facing Builder, generic public Form submission,
 operational AI actions, conversational editing or automatic application.
-Phase 8C remains the next phase.
+The minimal authenticated Owner/Admin wrapper is specified in Phase 8C below.
+
+### 8.5.7 Milestone 8 Phase 8C minimal authenticated Owner/Admin Builder
+
+Phase 8C adds the narrow owner-facing route
+`/app/[businessSlug]/builder`. It is dynamic, uses ordinary session-backed
+Supabase access with no-store semantics and resolves the route slug before
+requiring the existing `manage_configuration` capability. Staff, non-members
+and invalid tenant routes receive a controlled not-found result. The existing
+capability-gated workspace navigation exposes Builder next to Edit setup and
+Changes for Owner/Admin users only.
+
+The route binds the trusted slug into one Server Action. The action accepts
+only `ownerRequest`, trims and validates the existing 4,000-character planning
+contract and 16 KiB UTF-8 ceiling, derives the tenant Business and actor from
+the authenticated session, and calls `builderOrchestrationService.run()` once.
+Business IDs, actor IDs, proposal IDs, operations, lifecycle instructions,
+provider values and prior conversation state are never accepted from the
+browser. Invalid input returns one fixed owner-safe message. Known Phase 8B
+errors map to finite owner-facing input, stale or unavailable states; unknown
+trusted errors remain visible to server error handling rather than being
+silently converted.
+
+The client uses React 19 `useActionState` and a controlled ephemeral textarea.
+The only returned UI variants are idle, fixed invalid input, bounded
+needs-clarification, fixed unsupported, bounded proposed and finite
+unavailable states. Clarification strips plan-local references, impact and
+reason codes before rendering. The owner revises the same request and
+resubmits; no chat transcript, clarification record, browser storage or
+request logging is added. A proposed state exposes only proposal UUID,
+summary and operation count and links to the existing Changes review with
+`notice=builder_prepared`. Builder has no Validate, Apply or Publish control;
+the existing Changes lifecycle remains the deliberate mutation boundary.
+
+Phase 8C adds no table, migration, primitive, provider registry change or
+second proposal path. The Phase 8B orchestration core and globally disabled
+production drafting registration remain unchanged. A GET of the Builder route
+does not invoke AI or create side effects; only the explicit action may pass a
+request to the existing orchestration service.
 
 ### 8.6 Validation layer
 
@@ -1930,6 +1968,12 @@ Simple operational summary:
 Avoid dashboard-building complexity.
 
 ### 12.4 Builder
+
+The full live-preview and conversational layout below remains a later product
+direction. Milestone 8 Phase 8C intentionally proves a smaller surface: one
+owner request, an ephemeral clarification/result panel and a deliberate link
+to the existing Changes review. It does not add chat history, a live preview,
+streaming output or automatic publishing.
 
 Desktop-first v0 layout:
 

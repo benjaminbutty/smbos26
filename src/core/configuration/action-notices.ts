@@ -9,6 +9,7 @@ export const configurationActionNoticeSchema = z.enum([
   "application_conflicted",
   "abandoned",
   "rollback_prepared",
+  "builder_prepared",
   "state_changed",
   "input_invalid",
 ]);
