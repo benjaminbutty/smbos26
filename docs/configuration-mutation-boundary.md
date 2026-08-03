@@ -315,3 +315,21 @@ The proposed handoff links to Changes with `notice=builder_prepared`; only the
 existing Changes Validate, Apply, Publish and related lifecycle actions can
 progress it. No transcript, request log, client storage, table or migration is
 introduced, and a Builder GET performs no AI or write operation.
+
+## Milestone 9 Phase 9A preorder amendments
+
+Phase 9A adds a separate bounded Builder amendment task and proposal boundary,
+but it does not add a second configuration engine. Manual setup intents and
+validated Builder amendment intents are converted into the shared deterministic
+batch composer over one authoritative immutable snapshot. The composer emits
+at most one complete `set_preorder_experience` operation and one complete
+`set_field` operation per Field target, then the narrow server boundary calls
+the ordinary M5 proposal method exactly once after its before/after exact
+currentness checks.
+
+The model cannot supply actor or Business identity, UUIDs, currentness, generic
+Field keys, positions, complete configuration or operations. Builder returns a
+proposal only; the existing Changes preview and deliberate Validate, Apply and
+Publish lifecycle remains authoritative. Phase 9A adds no table, migration,
+platform primitive, operational AI action, generic configuration editor or
+undo path. The generic additive drafting subject and compiler remain unchanged.

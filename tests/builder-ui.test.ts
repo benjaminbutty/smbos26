@@ -17,6 +17,10 @@ import {
   BuilderConfigurationProposalError,
 } from "../src/ai/configuration-proposal/errors";
 import {
+  builderPreorderAmendmentProposalErrorCodes,
+  BuilderPreorderAmendmentProposalError,
+} from "../src/ai/preorder-amendment/errors";
+import {
   aiBusinessContextErrorCodes,
   AiBusinessContextError,
 } from "../src/ai/context/errors";
@@ -332,6 +336,23 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
         unavailableStateForError(new BuilderConfigurationProposalError(code))
           .reason,
       ).toBe(proposalReasons.get(code));
+    }
+
+    const preorderAmendmentReasons = new Map<
+      (typeof builderPreorderAmendmentProposalErrorCodes)[number],
+      string
+    >([
+      ["ai_preorder_amendment_request_invalid", "could_not_prepare"],
+      ["ai_preorder_amendment_context_stale", "stale"],
+      ["ai_preorder_amendment_no_changes", "nothing_to_propose"],
+      ["ai_preorder_amendment_failed", "could_not_prepare"],
+    ]);
+    for (const code of builderPreorderAmendmentProposalErrorCodes) {
+      expect(
+        unavailableStateForError(
+          new BuilderPreorderAmendmentProposalError(code),
+        ).reason,
+      ).toBe(preorderAmendmentReasons.get(code));
     }
 
     const contextReasons = new Map<

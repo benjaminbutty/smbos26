@@ -37,15 +37,20 @@ drafting. Planning runs once through the existing
 core. A second authoritative read must match Business ID, actor ID, base
 version, head revision and canonical serialized model context exactly.
 
-Only a ready configuration-only plan using the six supported configuration
-categories can draft. Clarification, operational, mixed and unsupported
-configuration-category plans stop after planning. The existing
+Only a ready configuration-only plan using the six supported generic
+configuration categories can use the additive drafting task. A ready plan
+containing only `configure_preorder` and the optional `define_field` category
+routes to the separate bounded preorder-amendment task. Clarification,
+operational, mixed and unsupported configuration-category plans stop after
+planning. The existing
 `builderConfigurationDraftTaskV1` input schema and semantic output validator
 remain the defence-in-depth boundary.
 
-The existing `builderConfigurationProposalService` is called once. It owns
-its pre-compiler and post-compiler context reads, the one pure compiler call
-and the one ordinary M5 `proposeChangeSet()` call. Therefore the successful
+The existing `builderConfigurationProposalService` is called once for generic
+drafts. Preorder amendments use their narrow parallel proposal boundary, which
+shares the deterministic manual composer and fixed `Proposed preorder changes`
+metadata. Both boundaries perform their own second currentness read and call
+the ordinary M5 `proposeChangeSet()` exactly once. Therefore the successful
 path has four authoritative context loads in total; clarification and
 unsupported paths have two.
 

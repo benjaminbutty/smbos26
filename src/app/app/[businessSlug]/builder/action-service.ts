@@ -26,6 +26,10 @@ import {
   BuilderConfigurationProposalError,
   type BuilderConfigurationProposalErrorCode,
 } from "../../../../ai/configuration-proposal/errors";
+import {
+  BuilderPreorderAmendmentProposalError,
+  type BuilderPreorderAmendmentProposalErrorCode,
+} from "../../../../ai/preorder-amendment/errors";
 import { BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS } from "../../../../ai/planning/schemas";
 import {
   BUILDER_INITIAL_STATE,
@@ -196,7 +200,8 @@ type KnownBuilderErrorCode =
   | AiBuilderErrorCode
   | AiExecutionErrorCode
   | AiBusinessContextErrorCode
-  | BuilderConfigurationProposalErrorCode;
+  | BuilderConfigurationProposalErrorCode
+  | BuilderPreorderAmendmentProposalErrorCode;
 
 function isKnownBuilderErrorCode(code: string): code is KnownBuilderErrorCode {
   return (
@@ -274,6 +279,23 @@ export function mapBuilderActionError(
       case "ai_configuration_proposal_request_invalid":
       case "ai_configuration_proposal_compile_failed":
       case "ai_configuration_proposal_failed":
+        return { kind: "state", state: unavailableState("could_not_prepare") };
+      default:
+        return { kind: "unexpected", error };
+    }
+  }
+
+  if (error instanceof BuilderPreorderAmendmentProposalError) {
+    switch (error.code) {
+      case "ai_preorder_amendment_context_stale":
+        return { kind: "state", state: unavailableState("stale") };
+      case "ai_preorder_amendment_no_changes":
+        return {
+          kind: "state",
+          state: unavailableState("nothing_to_propose"),
+        };
+      case "ai_preorder_amendment_request_invalid":
+      case "ai_preorder_amendment_failed":
         return { kind: "state", state: unavailableState("could_not_prepare") };
       default:
         return { kind: "unexpected", error };

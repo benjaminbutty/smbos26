@@ -773,6 +773,7 @@ describe("private qualified Builder runtime", () => {
     expect(Object.keys(runtime.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
+      "builder_preorder_amendment_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -798,6 +799,7 @@ describe("private qualified Builder runtime", () => {
     expect(Object.keys(disabled.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
+      "builder_preorder_amendment_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,

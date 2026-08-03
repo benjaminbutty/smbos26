@@ -99,6 +99,93 @@ export const addPreorderQuestionIntentSchema = z
   })
   .strict();
 
+const collectionDaysSchema = z
+  .array(z.number().int().min(1).max(7))
+  .min(1)
+  .max(7)
+  .refine((days) => new Set(days).size === days.length);
+const collectionTimeSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+
+export const preorderAmendmentIntentSchema = z.discriminatedUnion("intent", [
+  z
+    .object({
+      intent: z.literal("set_collection_days"),
+      daysOfWeek: collectionDaysSchema,
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_collection_window"),
+      startTime: collectionTimeSchema,
+      endTime: collectionTimeSchema,
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_slot_interval_minutes"),
+      slotIntervalMinutes: z.number().int().min(5).max(240),
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_slot_capacity"),
+      slotCapacity: z.number().int().min(1).max(1000),
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_cutoff_hours"),
+      cutoffHours: z.number().int().min(0).max(8760),
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_booking_horizon_days"),
+      bookingHorizonDays: z.number().int().min(1).max(365),
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_existing_question_requiredness"),
+      target: preorderQuestionTargetSchema,
+      fieldKey: graphKeySchema,
+      required: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_existing_question_label"),
+      target: preorderQuestionTargetSchema,
+      fieldKey: graphKeySchema,
+      label: questionLabelSchema,
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("set_existing_question_help_text"),
+      target: preorderQuestionTargetSchema,
+      fieldKey: graphKeySchema,
+      helpText: optionalQuestionHelpTextSchema,
+    })
+    .strict(),
+  z
+    .object({
+      intent: z.literal("add_preorder_question"),
+      label: questionLabelSchema,
+      helpText: optionalQuestionHelpTextSchema,
+      required: z.boolean(),
+      answerStyle: preorderQuestionAnswerStyleSchema,
+    })
+    .strict(),
+]);
+
+export const preorderAmendmentBatchSchema = z
+  .object({
+    preorderKey: graphKeySchema,
+    amendments: z.array(preorderAmendmentIntentSchema).min(1).max(20),
+  })
+  .strict();
+
 const manualQuestionCurrentnessSchema = z
   .object({
     expectedBaseVersionId: z.uuid(),
@@ -129,6 +216,9 @@ export type UpdatePreorderQuestionIntent = z.input<
 >;
 export type AddPreorderQuestionIntent = z.input<
   typeof addPreorderQuestionIntentSchema
+>;
+export type PreorderAmendmentIntent = z.input<
+  typeof preorderAmendmentIntentSchema
 >;
 export type PreorderQuestionTarget = z.infer<
   typeof preorderQuestionTargetSchema

@@ -9,8 +9,9 @@ bounded real-model
 planning diagnostics, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning, plus Milestone 8 Phase 8B authenticated server-only Builder
-orchestration and the minimal Milestone 8 Phase 8C authenticated Owner/Admin
-Builder surface: a
+orchestration, the minimal Milestone 8 Phase 8C authenticated Owner/Admin
+Builder surface, and bounded Milestone 9 Phase 9A Builder-generated preorder
+amendments: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
@@ -152,6 +153,10 @@ Included:
   `/app/[businessSlug]/builder` with ephemeral revise-and-resubmit
   clarification, fixed safe result states and a deliberate handoff to the
   existing Changes review
+- bounded `builder_preorder_amendment_v1` support for schedule, existing public
+  question and new Order question amendments, including combined requests
+- one shared trusted manual/AI preorder batch composer that preserves complete
+  snapshots and creates one ordinary proposal through Changes
 - sequential independent planning and drafting accounting, with no drafting
   reservation on clarification or unsupported plans and no raw AI request,
   context, plan or draft durability
@@ -165,8 +170,8 @@ Not included:
 - general-purpose user-facing AI execution, chat history or conversational
   editing
 - owner/provider/model/API-key selection and multiple external providers
-- provider-backed AI proposal/operation generation outside the authenticated
-  Phase 8B server-only Builder boundary
+- provider-backed AI proposal/operation generation outside the bounded Phase
+  9A preorder-amendment Builder boundary
 - automatic proposal lifecycle orchestration, validation/application
   automation and publication
 - billing, subscriptions, customer invoicing, tax, or currency conversion

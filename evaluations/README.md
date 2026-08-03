@@ -201,3 +201,31 @@ intended handoff is authenticated owner request → Business context → qualifi
 planning → bounded clarification or ready plan → qualified configuration
 drafting → deterministic compiler → authenticated ordinary M5 proposal. The
 Builder UI and generic public Form submission are not claimed here.
+
+## Builder preorder-amendment evaluation
+
+Phase 9A evaluates the separate `builder_preorder_amendment_v1` subject against
+exactly eight frozen synthetic requests: phone optional, Sunday removal, a
+72-hour cutoff, the combined Sunday/cutoff change, optional short-answer
+Occasion, optional long-answer Gift message, existing wording/help text, and
+the combined phone/Occasion request. The subject uses
+`builder_preorder_amendment_terra_medium_v1`, `gpt-5.6-terra`, explicit medium
+reasoning, a 256 KiB input ceiling, 80,000 billable input tokens per attempt,
+4,096 output tokens, a 30-second timeout and two attempts.
+
+The one-execution reservation is 522,880 microusd. Qualification is one ordered
+round of 8 executions (4,183,040 microusd reserved; 4,300,000 microusd hard
+ceiling). Reliability is three ordered rounds of 24 executions (12,549,120
+microusd reserved; 12,700,000 microusd hard ceiling). The live commands are
+opt-in only and require `AI_PROVIDER=openai` plus a non-blank server-side key.
+
+```bash
+RUN_LIVE_OPENAI_PREORDER_AMENDMENT_QUALIFICATION=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-preorder-amendment-terra-qualification-live
+```
+
+Reliability may be run only after a separately reviewed successful
+qualification. These harnesses use no Supabase client, accounting reservation,
+file write or durable persistence, and emit only bounded scenario/gate metadata.
+Live qualification and reliability were not run as part of this implementation.

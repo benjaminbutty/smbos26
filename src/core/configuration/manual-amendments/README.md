@@ -13,6 +13,12 @@ Supported intents are:
 - `add_preorder_question` for one server-keyed optional generic Order Field
   using the supported short- or long-answer style.
 
+The exported `composePreorderAmendmentBatch()` is the shared trusted boundary
+for manual and Builder-generated preorder changes. It accepts one bounded batch,
+starts from one authoritative immutable snapshot, preserves untouched
+configuration, emits at most one preorder operation and one complete Field
+operation per target, and detects semantic no-ops and duplicate targets.
+
 Question controls resolve the preorder, public Field mapping, configured Object
 and complete Field definition from the active immutable snapshot. Making a
 question optional also relaxes a globally required Field; making it required

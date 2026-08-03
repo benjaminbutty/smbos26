@@ -16,6 +16,10 @@ import {
   builderPlanOutputSchema,
   type BuilderPlanOutput,
 } from "../../../src/ai/planning/schemas";
+import {
+  builderPreorderAmendmentOutputSchema,
+  type BuilderPreorderAmendmentOutput,
+} from "../../../src/ai/preorder-amendment/schemas";
 
 export function smallClarificationOutput(): Extract<
   BuilderPlanOutput,
@@ -149,11 +153,69 @@ export function smallDraft(): BuilderConfigurationDraftOutput {
   });
 }
 
+export function preorderReadyPlan(): Extract<
+  BuilderPlanOutput,
+  { state: "ready" }
+> {
+  const parsed = builderPlanOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    understanding: "The owner wants a bounded preorder amendment.",
+    assumptions: [],
+    plan: {
+      outcome: "The owner can review the proposed preorder changes.",
+      concepts: [],
+      user_journeys: [],
+      steps: [
+        {
+          reference: "step_1",
+          sequence: 1,
+          summary: "Update the existing preorder collection settings.",
+          dependencies: [],
+          affected_concepts: [],
+          existing_object_keys: ["order"],
+          location_references: [],
+          materiality: "low",
+          requires_owner_confirmation: true,
+          lane: "configuration",
+          category: "configure_preorder",
+        },
+      ],
+    },
+    unsupported_requirements: [],
+  });
+  if (parsed.state !== "ready") {
+    throw new Error("Expected a ready preorder plan.");
+  }
+  return parsed;
+}
+
+export function preorderAmendmentDraft(): BuilderPreorderAmendmentOutput {
+  return builderPreorderAmendmentOutputSchema.parse({
+    schema_version: 1,
+    summary: "Remove Sunday collection and move the cutoff to 72 hours.",
+    preorder_key: "bakery_preorder",
+    amendments: [
+      {
+        type: "set_collection_days",
+        days_of_week: [6],
+        source_step_references: ["step_1"],
+      },
+      {
+        type: "set_cutoff_hours",
+        cutoff_hours: 72,
+        source_step_references: ["step_1"],
+      },
+    ],
+  });
+}
+
 export interface DeterministicBuilderOptions {
   failure?: {
     taskKey?: BuilderTaskKey;
     error: StructuredAiProviderError;
   };
+  amendmentOutput?: BuilderPreorderAmendmentOutput;
 }
 
 export function createDeterministicBuilder(
@@ -177,7 +239,9 @@ export function createDeterministicBuilder(
         output:
           request.outputContract.name === "builder_plan_v1"
             ? planningOutput
-            : draftOutput,
+            : request.outputContract.name === "builder_preorder_amendment_v1"
+              ? (options.amendmentOutput ?? draftOutput)
+              : draftOutput,
         usage: { inputTokens: 120, outputTokens: 40 },
         requestMetadata: {
           provider_transient_marker: "BUILDER_PROVIDER_MARKER",

@@ -2174,3 +2174,70 @@ request and submits again. The route/action/UI adds presentation and invokes
 the existing proposal-producing orchestration, but it does not add lifecycle
 authority or durable conversational state. Future richer conversation or
 automatic lifecycle behavior requires a separate architecture decision.
+
+## ADR-029 - Builder preorder amendments use bounded model intents and trusted snapshot composition
+
+**Status:** Accepted for v0.1 (Milestone 9 Phase 9A)
+
+**Date:** 3 August 2026
+
+### Context
+
+Milestone 8 is complete through Phase 8C: an authenticated Owner/Admin can
+submit an ordinary Builder request and review a proposal, while Changes remains
+the deliberate Validate/Apply/Publish lifecycle. The next bounded proof is the
+six required preorder amendments and the existing manual amendment families.
+The generic additive drafting task and compiler must remain unchanged, and the
+model must not receive configuration mutation authority.
+
+### Decision
+
+- Register a separate server-only `builder_preorder_amendment_v1` contract.
+  Its strict input contains only the schema version, owner request, existing
+  AI-safe model context and validated ready plan. Its strict output contains one
+  exact preorder key, a bounded list of source-referenced schedule, existing
+  public-question or new Order-question intents, and an owner-readable summary.
+  It contains no IDs, allocations, Field keys or positions for new Fields,
+  complete configuration, operations or lifecycle instructions.
+- Accept a ready plan only when it is configuration-only, contains
+  `configure_preorder`, and uses only `configure_preorder` plus optional
+  `define_field`. Revalidate the existing planning contract, require exact
+  source-step coverage and resolve one exact active preorder and active public
+  question identity. Mixed, operational, unsupported, duplicate, archived,
+  ambiguous, out-of-scope, duplicate-label and semantic no-op requests fail
+  closed with finite internal diagnostics.
+- Extend the existing manual amendment boundary with one bounded batch
+  composer. Manual single-intent controls and Builder intents use the same
+  immutable `ConfigurationSnapshotV1` composition rules: complete preservation,
+  server-derived keys and positions, independent public/global requiredness,
+  deterministic append order, unique operation targets, at most one preorder
+  operation and one complete Field operation per Field.
+- Add a narrow server-only preorder proposal service. It derives actor and
+  Business identity from the authenticated context, compares exact currentness
+  and canonical AI-safe context, composes once against the first snapshot,
+  reloads and compares the authoritative context again, and calls the existing
+  Milestone 5 `ConfigurationChangeService.proposeChangeSet()` exactly once.
+  The fixed title is `Proposed preorder changes`; the description is generated
+  by the trusted composer. No validation, application, publication, abandon,
+  undo or rollback preparation occurs.
+- Extend the private Builder runtime with three tasks (planning, unchanged
+  generic drafting and preorder amendment) and separate accounting executions.
+  The global registry keeps the new task disabled. The qualified profile uses
+  `gpt-5.6-terra` with explicit medium reasoning and policy
+  `builder_preorder_amendment_terra_medium_v1`.
+- Freeze exactly eight synthetic evaluation scenarios. The task envelope is
+  256 KiB input, 80,000 billable input tokens per attempt, 4,096 output tokens,
+  30 seconds and two attempts. Its one-execution reservation is 522,880
+  microusd; qualification reserves 4,183,040 under a 4,300,000 ceiling, and
+  reliability reserves 12,549,120 under a 12,700,000 ceiling. Live gates are
+  exact opt-in, OpenAI/key-gated, database/accounting/file-free and emit only
+  redacted metadata. They were not run for this implementation.
+
+### Consequences
+
+Phase 9A produces one ordinary proposed Change and leaves the live preorder,
+Records, Locations and all runtime operation unchanged until the existing
+Changes lifecycle is deliberately used. Generic configuration drafting,
+planning subjects and context projection remain unchanged. Phase 9A does not
+implement undo, operational AI actions, generic configuration editing, clean
+Business bootstrap or public Form work. Milestone 9 is not complete.

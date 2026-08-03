@@ -480,7 +480,11 @@ describe("production AI source boundaries", () => {
     .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
     .map((entry) => path.join(entry.parentPath, entry.name))
     .filter(
-      (file) => !file.includes(`${path.sep}configuration-proposal${path.sep}`),
+      (file) =>
+        !file.includes(`${path.sep}configuration-proposal${path.sep}`) &&
+        !file.endsWith(
+          `${path.sep}preorder-amendment${path.sep}proposal-service.ts`,
+        ),
     );
 
   it("keeps the provider-neutral AI runtime free of mutation dependencies", () => {

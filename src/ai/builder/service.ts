@@ -19,12 +19,23 @@ import {
   builderConfigurationDraftOutputSchema,
   type BuilderConfigurationDraftOutput,
 } from "../configuration-drafting/schemas";
+import {
+  builderPreorderAmendmentOutputSchema,
+  builderPreorderAmendmentTaskInputBaseSchema,
+} from "../preorder-amendment/schemas";
+import { builderPreorderAmendmentTaskV1 } from "../preorder-amendment/task";
 import { builderConfigurationProposalService } from "../configuration-proposal/service";
 import {
   builderConfigurationProposalResultSchema,
   type BuilderConfigurationProposalRequest,
   type BuilderConfigurationProposalResult,
 } from "../configuration-proposal/contracts";
+import {
+  builderPreorderAmendmentProposalResultSchema,
+  type BuilderPreorderAmendmentProposalRequest,
+  type BuilderPreorderAmendmentProposalResult,
+} from "../preorder-amendment/contracts";
+import { builderPreorderAmendmentProposalService } from "../preorder-amendment/proposal-service";
 import {
   builderPlanOutputSchema,
   type BuilderPlanOutput,
@@ -59,6 +70,13 @@ interface BuilderProposalService {
   ): Promise<BuilderConfigurationProposalResult>;
 }
 
+interface BuilderPreorderAmendmentProposalService {
+  propose(
+    client: SessionClient,
+    input: unknown,
+  ): Promise<BuilderPreorderAmendmentProposalResult>;
+}
+
 interface BuilderOrchestrationDependencies {
   loadContext(
     client: SessionClient,
@@ -71,6 +89,7 @@ interface BuilderOrchestrationDependencies {
     context: { businessId: string; actorId: string },
   ): AiAccountingStore;
   proposalService: BuilderProposalService;
+  preorderAmendmentProposalService: BuilderPreorderAmendmentProposalService;
   generateExecutionId(): string;
 }
 
@@ -140,6 +159,30 @@ function unsupportedResult(
   });
 }
 
+function preorderAmbiguityClarification(): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "needs_clarification",
+    clarification: builderPlanOutputSchema.parse({
+      schema_version: 1,
+      state: "needs_clarification",
+      understanding: "The request changes a preorder collection experience.",
+      known_requirements: [],
+      assumptions: [],
+      questions: [
+        {
+          reference: "question_1",
+          question: "Which collection experience should this change?",
+          reason:
+            "More than one active collection experience is available, so the request needs one clear choice.",
+          response_style: "free_text",
+        },
+      ],
+      unsupported_requirements: [],
+    }),
+  });
+}
+
 function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") {
     return value;
@@ -155,7 +198,8 @@ function deepFreeze<T>(value: T): T {
 
 function classifyReadyPlan(
   plan: BuilderReadyPlanningOutput,
-): BuilderOrchestrationResult | undefined {
+  context: ReturnType<typeof projectContext>["modelContext"],
+): "configuration_draft" | "preorder_amendment" | BuilderOrchestrationResult {
   const steps = plan.plan.steps;
   const hasOperational = steps.some((step) => step.lane === "operational");
   const hasConfiguration = steps.some((step) => step.lane === "configuration");
@@ -164,6 +208,32 @@ function classifyReadyPlan(
   }
   if (hasOperational) {
     return unsupportedResult("operational_plan_unavailable");
+  }
+
+  const preorderCategories = new Set(["configure_preorder", "define_field"]);
+  if (steps.some((step) => step.category === "configure_preorder")) {
+    if (
+      steps.some(
+        (step) =>
+          step.lane !== "configuration" ||
+          !preorderCategories.has(step.category),
+      )
+    ) {
+      return unsupportedResult("configuration_category_unavailable");
+    }
+    if (
+      context.preorder_experiences.filter(({ is_active }) => is_active)
+        .length === 0
+    ) {
+      return unsupportedResult("configuration_category_unavailable");
+    }
+    if (
+      context.preorder_experiences.filter(({ is_active }) => is_active).length >
+      1
+    ) {
+      return preorderAmbiguityClarification();
+    }
+    return "preorder_amendment";
   }
 
   const acceptedCategories = new Set([
@@ -182,7 +252,7 @@ function classifyReadyPlan(
   ) {
     return unsupportedResult("configuration_category_unavailable");
   }
-  return undefined;
+  return "configuration_draft";
 }
 
 function planningOutput(output: unknown): BuilderPlanOutput {
@@ -211,6 +281,9 @@ export function createBuilderOrchestrationService(
       ((client, context) => new SupabaseAiAccountingService(client, context)),
     proposalService:
       overrides.proposalService ?? builderConfigurationProposalService,
+    preorderAmendmentProposalService:
+      overrides.preorderAmendmentProposalService ??
+      builderPreorderAmendmentProposalService,
     generateExecutionId:
       overrides.generateExecutionId ?? (() => crypto.randomUUID()),
   };
@@ -275,9 +348,52 @@ export function createBuilderOrchestrationService(
         );
       }
 
-      const unsupported = classifyReadyPlan(plan);
-      if (unsupported) {
-        return deepFreeze(unsupported);
+      const route = classifyReadyPlan(plan, initialProjection.modelContext);
+      if (typeof route !== "string") {
+        return deepFreeze(route);
+      }
+
+      if (route === "preorder_amendment") {
+        const taskInput = builderPreorderAmendmentTaskInputBaseSchema.parse({
+          schema_version: 1,
+          owner_request: request.ownerRequest,
+          business_context: initialProjection.modelContext,
+          ready_plan: plan,
+        });
+        const amendmentExecution = await orchestrator.execute(
+          "builder_preorder_amendment_v1",
+          taskInput,
+        );
+        const draft = builderPreorderAmendmentOutputSchema.parse(
+          amendmentExecution.output,
+        );
+        const validatedDraft = builderPreorderAmendmentTaskV1.validateOutput
+          ? builderPreorderAmendmentTaskV1.validateOutput(taskInput, draft)
+          : draft;
+        const proposalInput: BuilderPreorderAmendmentProposalRequest = {
+          businessId: request.businessId,
+          expectedCurrentness: initial.currentness,
+          taskInput,
+          draft: validatedDraft,
+        };
+        const proposal = builderPreorderAmendmentProposalResultSchema.parse(
+          await dependencies.preorderAmendmentProposalService.propose(
+            client,
+            proposalInput,
+          ),
+        );
+        return deepFreeze(
+          builderOrchestrationResultSchema.parse({
+            schema_version: 1,
+            state: "proposed",
+            proposal_id: proposal.proposal_id,
+            status: proposal.status,
+            base_version_id: proposal.base_version_id,
+            base_head_revision: proposal.base_head_revision,
+            operation_count: proposal.operation_count,
+            summary: proposal.summary,
+          }),
+        );
       }
 
       const taskInput = builderConfigurationDraftTaskInputSchema.parse({

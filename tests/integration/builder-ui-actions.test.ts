@@ -57,6 +57,8 @@ import { BUILDER_INITIAL_STATE } from "../../src/components/builder-ui-state";
 import { configurationOperationsSchema } from "../../src/core/configuration/schemas";
 import {
   createDeterministicBuilder,
+  preorderAmendmentDraft,
+  preorderReadyPlan,
   providerUnavailableError,
   smallClarificationOutput,
   smallDraft,
@@ -484,6 +486,87 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     expect(await liveState()).toEqual(before);
     const durable = JSON.stringify({ rows, proposal });
     expect(durable).not.toContain("BUILDER_PROPOSAL_RAW_MARKER");
+    expect(durable).not.toContain("BUILDER_PROVIDER_MARKER");
+  });
+
+  it("runs the Phase 9A combined preorder amendment through the real action boundary", async () => {
+    await enableAi();
+    const proposalsBefore = await proposalRows();
+    const before = await liveState();
+    const deterministic = createDeterministicBuilder(
+      preorderReadyPlan(),
+      smallDraft(),
+      { amendmentOutput: preorderAmendmentDraft() },
+    );
+    const result = await runRealAction(
+      deterministic.service,
+      owner,
+      "Remove Sunday collection and change the cutoff from 48 to 72 hours.",
+      true,
+    );
+
+    expect(result).toMatchObject({
+      state: "proposed",
+      operation_count: 1,
+    });
+    expect(deterministic.calls).toHaveLength(2);
+    expect(deterministic.calls.map((call) => call.outputContract.name)).toEqual(
+      ["builder_plan_v1", "builder_preorder_amendment_v1"],
+    );
+    const rows = await executionRows();
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          task_key: "builder_plan_v1",
+          policy_key: "builder_planning_terra_medium_v1",
+          status: "succeeded",
+        }),
+        expect.objectContaining({
+          task_key: "builder_preorder_amendment_v1",
+          policy_key: "builder_preorder_amendment_terra_medium_v1",
+          status: "succeeded",
+        }),
+      ]),
+    );
+    const proposals = await proposalRows();
+    expect(proposals).toHaveLength(proposalsBefore.length + 1);
+    const proposal = proposals.at(-1)!;
+    expect(proposal).toMatchObject({
+      business_id: business.id,
+      requested_by: owner.user.id,
+      kind: "change",
+      status: "proposed",
+      title: "Proposed preorder changes",
+      validated_at: null,
+      applied_at: null,
+    });
+    expect(proposal.description).toContain("Sunday");
+    expect(proposal.description).toContain("72");
+    const operations = configurationOperationsSchema.parse(
+      proposal.operations_json,
+    );
+    expect(operations).toHaveLength(1);
+    const operation = operations[0]!;
+    expect(operation).toMatchObject({
+      op: "set_preorder_experience",
+      key: "bakery_preorder",
+      config_json: {
+        schedule: {
+          days_of_week: [6],
+          cutoff_hours: 72,
+          start_time: "11:00",
+          end_time: "16:00",
+          slot_interval_minutes: 30,
+          slot_capacity: 10,
+          booking_horizon_days: 90,
+        },
+      },
+    });
+    expect(await liveState()).toEqual(before);
+    const durable = JSON.stringify({ rows, proposal });
+    expect(durable).not.toContain(
+      "Remove Sunday collection and change the cutoff",
+    );
     expect(durable).not.toContain("BUILDER_PROVIDER_MARKER");
   });
 

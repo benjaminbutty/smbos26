@@ -485,7 +485,12 @@ describe("AI runtime source boundaries", () => {
         /\.(?:c|m)?(?:j|t)sx?$/.test(entry.name) &&
         !path
           .join(entry.parentPath, entry.name)
-          .includes(`${path.sep}configuration-proposal${path.sep}`),
+          .includes(`${path.sep}configuration-proposal${path.sep}`) &&
+        !path
+          .join(entry.parentPath, entry.name)
+          .endsWith(
+            `${path.sep}preorder-amendment${path.sep}proposal-service.ts`,
+          ),
     )
     .map((entry) => fs.readFileSync(path.join(entry.parentPath, entry.name)))
     .join("\n");
