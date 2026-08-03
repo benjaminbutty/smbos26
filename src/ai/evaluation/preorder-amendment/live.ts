@@ -1,4 +1,7 @@
+import { ZodError } from "zod";
+
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
+import { StructuredAiProviderError } from "../../contracts";
 import type { AiExecutionResult } from "../../execution";
 import { aiExecutionErrorCodes, type AiExecutionErrorCode } from "../../errors";
 import {
@@ -9,6 +12,10 @@ import {
 } from "../../policies";
 import { builderPreorderAmendmentTaskInputBaseSchema } from "../../preorder-amendment/schemas";
 import { builderPreorderAmendmentTaskV1 } from "../../preorder-amendment/task";
+import {
+  BuilderPreorderAmendmentValidationError,
+  type BuilderPreorderAmendmentDiagnosticCode,
+} from "../../preorder-amendment/diagnostics";
 import { createAiExecutionService } from "../../execution";
 import {
   aiExecutionPolicies,
@@ -27,6 +34,9 @@ import {
   builderPreorderAmendmentEvaluationAggregateSchema,
   builderPreorderAmendmentEvaluationReliabilityAggregateSchema,
   builderPreorderAmendmentEvaluationReliabilityReportSchema,
+  builderPreorderAmendmentProviderFailureSchema,
+  builderPreorderAmendmentReliabilityProviderFailureSchema,
+  builderPreorderAmendmentValidationReasonCodeSchema,
   type BuilderPreorderAmendmentEvaluationReport,
   type BuilderPreorderAmendmentEvaluationReliabilityReport,
   type BuilderPreorderAmendmentEvaluationScenarioId,
@@ -133,6 +143,122 @@ function safeErrorCode(cause: unknown): AiExecutionErrorCode {
   return "ai_execution_failed";
 }
 
+function nextCause(cause: unknown): unknown {
+  if (typeof cause !== "object" || cause === null || !("cause" in cause)) {
+    return undefined;
+  }
+  return (cause as { cause?: unknown }).cause;
+}
+
+type OutputFailureClassification = {
+  failure_class:
+    | "output_contract"
+    | "source_step"
+    | "preorder_scope"
+    | "amendment_semantic"
+    | "provider_execution"
+    | "unknown";
+  validation_reason_code:
+    | BuilderPreorderAmendmentDiagnosticCode
+    | "provider_invalid_response"
+    | "unknown_output_invalid";
+};
+
+function classifyOutputInvalidFailure(
+  cause: unknown,
+): OutputFailureClassification {
+  const seen = new Set<object>();
+  let current: unknown = cause;
+  for (let depth = 0; depth < 5 && current !== undefined; depth += 1) {
+    if (current instanceof StructuredAiProviderError) {
+      return {
+        failure_class: "provider_execution",
+        validation_reason_code: "provider_invalid_response",
+      };
+    }
+    if (current instanceof BuilderPreorderAmendmentValidationError) {
+      const diagnosticCode =
+        builderPreorderAmendmentValidationReasonCodeSchema.parse(
+          current.diagnosticCode,
+        );
+      if (
+        diagnosticCode === "source_step_unknown" ||
+        diagnosticCode === "source_step_category_mismatch" ||
+        diagnosticCode === "source_step_uncovered" ||
+        diagnosticCode === "source_step_scope_mismatch"
+      ) {
+        return {
+          failure_class: "source_step",
+          validation_reason_code: diagnosticCode,
+        };
+      }
+      if (
+        diagnosticCode === "preorder_key_unknown_or_inactive" ||
+        diagnosticCode === "preorder_key_ambiguous" ||
+        diagnosticCode === "preorder_key_scope_mismatch"
+      ) {
+        return {
+          failure_class: "preorder_scope",
+          validation_reason_code: diagnosticCode,
+        };
+      }
+      if (
+        diagnosticCode === "output_contract_invalid" ||
+        diagnosticCode === "output_too_large"
+      ) {
+        return {
+          failure_class: "output_contract",
+          validation_reason_code: diagnosticCode,
+        };
+      }
+      return {
+        failure_class: "amendment_semantic",
+        validation_reason_code: diagnosticCode,
+      };
+    }
+    if (current instanceof ZodError) {
+      return {
+        failure_class: "output_contract",
+        validation_reason_code: "output_contract_invalid",
+      };
+    }
+    if (
+      (typeof current === "object" && current !== null) ||
+      typeof current === "function"
+    ) {
+      const objectCause = current as object;
+      if (seen.has(objectCause)) break;
+      seen.add(objectCause);
+    }
+    current = nextCause(current);
+  }
+  return {
+    failure_class: "unknown",
+    validation_reason_code: "unknown_output_invalid",
+  };
+}
+
+export function redactBuilderPreorderAmendmentFailure(
+  cause: unknown,
+  scenarioId: BuilderPreorderAmendmentEvaluationScenarioId,
+) {
+  const errorCode = safeErrorCode(cause);
+  if (errorCode !== "ai_output_invalid") {
+    return builderPreorderAmendmentProviderFailureSchema.parse({
+      schema_version: 1,
+      scenario_id: scenarioId,
+      error_code: errorCode,
+      failure_class: "provider_execution",
+    });
+  }
+  return builderPreorderAmendmentProviderFailureSchema.parse({
+    schema_version: 1,
+    scenario_id: scenarioId,
+    error_code: errorCode,
+    ...classifyOutputInvalidFailure(cause),
+  });
+}
+
 function failureAccounting(cause: unknown) {
   if (
     typeof cause !== "object" ||
@@ -156,7 +282,7 @@ function redactedFailure(
   cause: unknown,
   scenarioId: BuilderPreorderAmendmentEvaluationScenarioId,
 ) {
-  return { scenario_id: scenarioId, error_code: safeErrorCode(cause) };
+  return redactBuilderPreorderAmendmentFailure(cause, scenarioId);
 }
 
 function redactedReliabilityFailure(
@@ -164,7 +290,10 @@ function redactedReliabilityFailure(
   scenarioId: BuilderPreorderAmendmentEvaluationScenarioId,
   repetition: 1 | 2 | 3,
 ) {
-  return { ...redactedFailure(cause, scenarioId), repetition };
+  return builderPreorderAmendmentReliabilityProviderFailureSchema.parse({
+    ...redactBuilderPreorderAmendmentFailure(cause, scenarioId),
+    repetition,
+  });
 }
 
 function cost(inputTokens: number, outputTokens: number) {

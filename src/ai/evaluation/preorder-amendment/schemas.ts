@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { aiExecutionErrorCodes } from "../../errors";
+import { builderPreorderAmendmentDiagnosticCodes } from "../../preorder-amendment/diagnostics";
 import { builderPreorderAmendmentOutputSchema } from "../../preorder-amendment/schemas";
 
 export const builderPreorderAmendmentEvaluationScenarioIdSchema = z.enum([
@@ -26,6 +28,74 @@ export const builderPreorderAmendmentEvaluationFailedGateCodeSchema = z.enum([
   "semantic_validation_failed",
   "scenario_expectation_failed",
 ]);
+
+export const builderPreorderAmendmentFailureClassSchema = z.enum([
+  "output_contract",
+  "source_step",
+  "preorder_scope",
+  "amendment_semantic",
+  "provider_execution",
+  "unknown",
+]);
+
+export const builderPreorderAmendmentValidationReasonCodeSchema = z.union([
+  z.enum(builderPreorderAmendmentDiagnosticCodes),
+  z.literal("provider_invalid_response"),
+  z.literal("unknown_output_invalid"),
+]);
+
+const nonOutputAiExecutionErrorCodes = aiExecutionErrorCodes.filter(
+  (code) => code !== "ai_output_invalid",
+) as [
+  Exclude<(typeof aiExecutionErrorCodes)[number], "ai_output_invalid">,
+  ...Exclude<(typeof aiExecutionErrorCodes)[number], "ai_output_invalid">[],
+];
+
+export const builderPreorderAmendmentProviderFailureSchema = z.union([
+  z
+    .object({
+      schema_version: z.literal(1),
+      scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+      error_code: z.literal("ai_output_invalid"),
+      failure_class: builderPreorderAmendmentFailureClassSchema,
+      validation_reason_code:
+        builderPreorderAmendmentValidationReasonCodeSchema,
+    })
+    .strict(),
+  z
+    .object({
+      schema_version: z.literal(1),
+      scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+      error_code: z.enum(nonOutputAiExecutionErrorCodes),
+      failure_class: z.literal("provider_execution"),
+    })
+    .strict(),
+]);
+
+export const builderPreorderAmendmentReliabilityProviderFailureSchema = z.union(
+  [
+    z
+      .object({
+        schema_version: z.literal(1),
+        scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+        repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        error_code: z.literal("ai_output_invalid"),
+        failure_class: builderPreorderAmendmentFailureClassSchema,
+        validation_reason_code:
+          builderPreorderAmendmentValidationReasonCodeSchema,
+      })
+      .strict(),
+    z
+      .object({
+        schema_version: z.literal(1),
+        scenario_id: builderPreorderAmendmentEvaluationScenarioIdSchema,
+        repetition: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        error_code: z.enum(nonOutputAiExecutionErrorCodes),
+        failure_class: z.literal("provider_execution"),
+      })
+      .strict(),
+  ],
+);
 
 export const builderPreorderAmendmentEvaluationReportSchema = z
   .object({

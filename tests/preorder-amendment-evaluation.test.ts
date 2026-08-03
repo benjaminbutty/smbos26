@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -10,6 +11,8 @@ import {
   disabledExecutionPolicies,
   openAiBuilderPreorderAmendmentPolicy,
 } from "../src/ai/policies";
+import { StructuredAiProviderError } from "../src/ai/contracts";
+import { AiExecutionError } from "../src/ai/errors";
 import {
   builderPreorderAmendmentOutputSchema,
   builderPreorderAmendmentTaskInputBaseSchema,
@@ -34,7 +37,10 @@ import { syntheticBusinessContext } from "../evaluations/fixtures/synthetic-busi
 import {
   runLiveBuilderPreorderAmendmentQualification,
   runLiveBuilderPreorderAmendmentReliability,
+  redactBuilderPreorderAmendmentFailure,
 } from "../src/ai/evaluation/preorder-amendment/live";
+import { builderPreorderAmendmentProviderFailureSchema } from "../src/ai/evaluation/preorder-amendment/schemas";
+import { BuilderPreorderAmendmentValidationError } from "../src/ai/preorder-amendment/diagnostics";
 
 function inputFor(
   scenario: (typeof builderPreorderAmendmentEvaluationScenarios)[number],
@@ -89,6 +95,24 @@ describe("Builder preorder amendment task and evaluation", () => {
       );
       expect(report.passed).toBe(true);
     }
+  });
+
+  it("makes the long-answer new-question contract explicit in the task instruction", () => {
+    const instruction = builderPreorderAmendmentTaskV1.buildInstruction(
+      inputFor(builderPreorderAmendmentEvaluationScenarios[5]!),
+    );
+
+    expect(instruction).toContain(
+      "return exactly one add_preorder_question amendment",
+    );
+    expect(instruction).toContain("an explicit help_text string or null");
+    expect(instruction).toContain("answer_style exactly long_answer");
+    expect(instruction).toContain(
+      "both exact relevant step_N references on that one amendment",
+    );
+    expect(instruction).toContain(
+      "Do not include a Field key, position, UUID, operation, or lifecycle instruction",
+    );
   });
 
   it("keeps the output strict, source-referenced and free of trusted fields", () => {
@@ -280,5 +304,111 @@ describe("Builder preorder amendment task and evaluation", () => {
     );
     expect(reliability).toMatchObject({ ran: true, passed: false });
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies invalid output causes without exposing rejected output or provider details", () => {
+    const scenarioId = "gift_message_optional_long" as const;
+    const structuralParse = z
+      .object({ value: z.string() })
+      .safeParse({ value: 123 });
+    if (structuralParse.success)
+      throw new Error("Expected a synthetic Zod error.");
+
+    const cases = [
+      [
+        new AiExecutionError("ai_output_invalid", {
+          cause: structuralParse.error,
+        }),
+        {
+          failure_class: "output_contract",
+          validation_reason_code: "output_contract_invalid",
+        },
+      ],
+      [
+        new AiExecutionError("ai_output_invalid", {
+          cause: new BuilderPreorderAmendmentValidationError(
+            "source_step_category_mismatch",
+          ),
+        }),
+        {
+          failure_class: "source_step",
+          validation_reason_code: "source_step_category_mismatch",
+        },
+      ],
+      [
+        new AiExecutionError("ai_output_invalid", {
+          cause: new BuilderPreorderAmendmentValidationError(
+            "preorder_key_scope_mismatch",
+          ),
+        }),
+        {
+          failure_class: "preorder_scope",
+          validation_reason_code: "preorder_key_scope_mismatch",
+        },
+      ],
+      [
+        new AiExecutionError("ai_output_invalid", {
+          cause: new BuilderPreorderAmendmentValidationError(
+            "new_question_label_duplicate",
+          ),
+        }),
+        {
+          failure_class: "amendment_semantic",
+          validation_reason_code: "new_question_label_duplicate",
+        },
+      ],
+      [
+        new AiExecutionError("ai_output_invalid", {
+          cause: new StructuredAiProviderError(
+            "invalid_response",
+            "raw provider body must not escape",
+          ),
+        }),
+        {
+          failure_class: "provider_execution",
+          validation_reason_code: "provider_invalid_response",
+        },
+      ],
+    ] as const;
+
+    for (const [cause, expected] of cases) {
+      expect(
+        builderPreorderAmendmentProviderFailureSchema.parse(
+          redactBuilderPreorderAmendmentFailure(cause, scenarioId),
+        ),
+      ).toMatchObject({
+        schema_version: 1,
+        scenario_id: scenarioId,
+        error_code: "ai_output_invalid",
+        ...expected,
+      });
+    }
+
+    const marker = "unknown-output-marker";
+    const unknown = redactBuilderPreorderAmendmentFailure(
+      new AiExecutionError("ai_output_invalid", {
+        cause: { cause: { cause: marker } },
+      }),
+      scenarioId,
+    );
+    expect(unknown).toMatchObject({
+      error_code: "ai_output_invalid",
+      failure_class: "unknown",
+      validation_reason_code: "unknown_output_invalid",
+    });
+    expect(JSON.stringify(unknown)).not.toContain(marker);
+
+    const providerMarker = "raw-provider-marker";
+    const provider = redactBuilderPreorderAmendmentFailure(
+      new AiExecutionError("ai_provider_unavailable", {
+        cause: new Error(providerMarker),
+      }),
+      scenarioId,
+    );
+    expect(provider).toMatchObject({
+      error_code: "ai_provider_unavailable",
+      failure_class: "provider_execution",
+    });
+    expect(JSON.stringify(provider)).not.toContain(providerMarker);
   });
 });
