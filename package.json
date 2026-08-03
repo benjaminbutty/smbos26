@@ -31,6 +31,7 @@
     "test:builder-configuration-drafting": "vitest run --config vitest.builder-configuration-drafting.config.ts",
     "test:configuration-draft-compiler": "vitest run --config vitest.configuration-draft-compiler.config.ts",
     "test:builder-configuration-proposal": "vitest run --config vitest.builder-configuration-proposal.config.ts",
+    "test:builder-orchestration": "vitest run --config vitest.builder-orchestration.config.ts",
     "test:builder-evaluation": "vitest run --config vitest.builder-evaluation.config.ts",
     "test:terra-provider-profile": "vitest run --config vitest.terra-provider-profile.config.ts",
     "test:builder-terra-qualification": "vitest run --config vitest.builder-terra-qualification.config.ts",

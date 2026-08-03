@@ -8,7 +8,8 @@ only Milestone 8 Phase 8A drafting qualification/reliability gates after
 bounded real-model
 planning diagnostics, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
-planning: a
+planning, plus Milestone 8 Phase 8B authenticated server-only Builder
+orchestration: a
 multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
@@ -122,7 +123,7 @@ Included:
 - authenticated planning orchestration with session-derived accounting
   identity, metadata-only usage settlement and post-execution context
   comparison before a plan is returned
-- in-memory-only owner requests and plans with no proposal, validation,
+- in-memory-only planning owner requests and plans, with no validation,
   application, publication, Record or Location mutation
 - one registered `builder_configuration_draft_v1` task that turns a validated
   ready configuration plan into bounded additive, untrusted, transient intent
@@ -135,10 +136,19 @@ Included:
   values and `[]` for empty collections; singular/plural Object labels may
   match within one Object but use a normalized duplicate namespace across
   Objects
-- production-disabled configuration drafting in both disabled and OpenAI server
-  modes; the separate Phase 1B compiler performs no provider request
+- globally production-disabled configuration drafting in both disabled and
+  OpenAI registries; Phase 8B privately qualifies the same task only during
+  authenticated orchestration, while the separate Phase 1B compiler performs
+  no provider request
 - authenticated, server-only Phase 2 handoff from a completed draft through
   exact-currentness checks to one ordinary M5 proposed configuration change
+- authenticated server-only Phase 8B Builder orchestration that reuses one
+  authoritative context for qualified planning and private qualified drafting,
+  returns bounded clarification/unsupported outcomes, and hands one ready
+  configuration draft to the existing proposal-only boundary
+- sequential independent planning and drafting accounting, with no drafting
+  reservation on clarification or unsupported plans and no raw AI request,
+  context, plan or draft durability
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
@@ -146,11 +156,12 @@ Included:
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
-- user-facing AI execution or executable builder behavior
+- user-facing AI execution, Builder UI, chat history or conversational editing
 - owner/provider/model/API-key selection and multiple external providers
-- provider-backed AI proposal/operation generation, builder routes or chat UI
-- proposal lifecycle orchestration, validation/application automation and
-  builder routes from `builder_configuration_draft_v1`
+- provider-backed AI proposal/operation generation outside the authenticated
+  Phase 8B server-only Builder boundary
+- proposal lifecycle orchestration, validation/application automation,
+  publication and Builder routes
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
@@ -191,10 +202,9 @@ or stack trace, and Owner/Admin reads are limited to the latest 50 rows.
 
 Production remains network-free unless `AI_PROVIDER=openai` and a server-only
 key are both configured. Even then, the current Business must separately have
-AI enabled before reservation or provider invocation. Operation generation and
-builder UI remain later work. Provider-backed operation generation remains
-outside Phase 2; the authenticated handoff below can only pass a completed
-transient draft to the existing M5 proposal path.
+AI enabled before reservation or provider invocation. Phase 8B keeps Builder
+orchestration server-only and passes only a completed transient draft to the
+existing M5 proposal path; it adds no owner-facing invocation surface.
 
 Phase 2A.1 adds the first non-AI configuration control at
 `/app/[businessSlug]/setup`. Owner/Admin users can edit preorder collection
@@ -458,9 +468,9 @@ route, UI or public Form runtime claim is involved. Planning evidence is not
 drafting evidence. Any material model/policy/transport, drafting subject,
 synthetic context, ready plan, scenario order, evaluator or report-classifier
 change invalidates both gates and requires them to be rerun. Milestone 8 Phase
-8A is complete for this frozen profile. The next product phase is Milestone 8
-Phase 8B authenticated end-to-end Builder orchestration; it has not started and
-is not another evaluation or mutation surface.
+8A is complete for this frozen profile. At that closeout, the next product
+phase was Milestone 8 Phase 8B authenticated end-to-end Builder orchestration;
+Phase 8B is documented below and is not another evaluation or mutation surface.
 
 ### Milestone 8 Phase 8A closeout evidence
 
@@ -488,11 +498,49 @@ correctness. Production drafting remains disabled; no raw requests, contexts,
 plans, model outputs, provider responses or credentials are recorded. Any
 material change to the model, policy, provider transport, drafting task,
 schemas, semantic validator, contexts, scenarios or evaluator invalidates the
-evidence. The next phase connects authenticated owner request → Business
-context → qualified planning → bounded clarification or ready plan → qualified
-configuration drafting → deterministic compiler → authenticated ordinary M5
-proposal; Phase 8B, the Builder UI and generic public Form submission have not
-started or been added.
+evidence. At this closeout, the next phase connected authenticated owner
+request → Business context → qualified planning → bounded clarification or
+ready plan → qualified configuration drafting → deterministic compiler →
+authenticated ordinary M5 proposal. Phase 8B now implements that server-only
+composition; the Builder UI and generic public Form submission remain
+unimplemented.
+
+### Milestone 8 Phase 8B - authenticated Builder orchestration
+
+Phase 8B adds the server-only `src/ai/builder/` boundary. It accepts only a
+Business UUID and a trimmed bounded owner request, loads the authenticated
+Owner/Admin AI-safe context, and reuses the first canonical projected context
+for both the unchanged `builder_plan_v1` task and the private qualified
+`builder_configuration_draft_v1` clone. Planning remains on
+`gpt-5.6-terra`, explicit `medium` reasoning and
+`builder_planning_terra_medium_v1`. The global drafting registration remains
+mapped to `builder_configuration_drafting_disabled_v1`; only this closed
+Builder runtime may use the exact qualified drafting policy.
+
+The successful path performs four authoritative context loads: Builder initial,
+Builder post-planning, existing proposal pre-compiler and existing proposal
+post-compiler. The second Builder read must match Business ID, actor ID, base
+version, head revision and canonical serialized model context exactly. A
+clarification or unsupported ready plan returns a bounded frozen result after
+planning and consumes no drafting reservation. A ready configuration-only plan
+is limited to `define_object`, `define_field`, `define_relationship`,
+`configure_view`, `configure_form` and `configure_page`; operational, mixed and
+`configure_preorder` plans stop before drafting.
+
+Planning and drafting use sequential independent accounting executions. The
+existing execution core retains its bounded provider-attempt retry policy;
+drafting uses the existing 60-second timeout and is not workflow-retried. The
+existing proposal service remains responsible for its own currentness checks,
+one deterministic compiler call and exactly one ordinary M5 `change` proposal
+with `status: proposed`, the fixed title and `description: null`. No Builder
+request, context, plan, raw draft, provider body or model metadata is stored;
+no Validate, Apply or Publish action is invoked, and no operational mutation is
+performed.
+
+Phase 8B proves authenticated server orchestration and proposal-only handoff,
+not a usable owner-facing Builder, generic public Form submission, operational
+AI actions, conversational editing or automatic application. Phase 8C remains
+the next phase.
 
 ## Requirements
 
@@ -633,6 +681,7 @@ validating from a clean state.
 | `npm run test:ai-accounting`                  | Run durable AI usage-control/accounting tests       |
 | `npm run test:builder-planning`               | Run strict non-executing builder planning tests     |
 | `npm run test:builder-configuration-proposal` | Run authenticated proposal-only orchestration tests |
+| `npm run test:builder-orchestration`          | Run authenticated Builder orchestration tests       |
 | `npm run test:manual-amendments`              | Run deterministic schedule amendment tests          |
 | `npm run test:manual-questions`               | Run deterministic preorder question tests           |
 | `npm run test:rls`                            | Run the Milestone 1 tenancy/RLS suite               |

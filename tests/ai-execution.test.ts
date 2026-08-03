@@ -491,6 +491,7 @@ describe("production AI source boundaries", () => {
       .filter(
         (file) =>
           !file.includes(`${path.sep}accounting${path.sep}`) &&
+          !file.includes(`${path.sep}builder${path.sep}`) &&
           !file.endsWith(`${path.sep}business-execution.ts`) &&
           !file.endsWith(`${path.sep}planning${path.sep}service.ts`),
       )

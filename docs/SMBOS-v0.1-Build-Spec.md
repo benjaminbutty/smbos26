@@ -1538,9 +1538,59 @@ Reports remained bounded and redacted, production drafting remains disabled,
 and this evidence qualifies one frozen profile rather than proving generic AI
 correctness. Any material change to the model, policy, provider transport,
 drafting task, schemas, semantic validator, contexts, scenarios or evaluator
-invalidates the evidence. Milestone 8 Phase 8A is complete. The next phase is
-Milestone 8 Phase 8B authenticated end-to-end Builder orchestration; it has not
-started, and no Builder UI or generic public Form submission is claimed.
+invalidates the evidence. Milestone 8 Phase 8A is complete. At this closeout,
+the next phase was Milestone 8 Phase 8B authenticated end-to-end Builder
+orchestration; no Builder UI or generic public Form submission is claimed.
+
+### 8.5.6 Milestone 8 Phase 8B authenticated Builder orchestration
+
+Phase 8B adds one server-only composition under `src/ai/builder/`. Its strict
+request contains only `businessId` and a trimmed bounded `ownerRequest`; the
+server derives actor identity, membership, role and the AI-safe Business
+context through `loadAuthoritativeAiBusinessContext()`. The result is a frozen
+strict discriminated value: an existing schema-parsed clarification, a fixed
+unsupported reason, or a bounded `proposed` result containing only proposal
+identity/currentness/count and the draft summary.
+
+The authenticated workflow loads the authoritative context once, projects and
+canonically serializes it, creates one private Builder execution boundary and
+one accounting service, and executes the unchanged `builder_plan_v1` task
+exactly once. It then loads context a second time and requires exact equality
+of Business ID, actor ID, base version, head revision and canonical serialized
+model context. A mismatch is a finite stale error with no drafting or
+proposal attempt. Clarification, operational, mixed and unsupported
+configuration-category results stop after settled planning; they reserve no
+drafting usage.
+
+Only a ready configuration-only plan using `define_object`, `define_field`,
+`define_relationship`, `configure_view`, `configure_form` or `configure_page`
+may continue. The drafting input is parsed through the existing drafting task
+schema and the task is executed exactly once with the same initial model
+context and a private frozen clone whose only changed property is the
+qualified policy key. The global production drafting task remains mapped to
+`builder_configuration_drafting_disabled_v1`; the private runtime uses the
+exact qualified `gpt-5.6-terra`/medium policy only in this authenticated path.
+
+Planning and drafting use sequential independent accounting reservations,
+execution IDs and settlements. The existing execution core keeps its bounded
+rate-limited/transient attempt retry policy; drafting retains its 60-second
+timeout and the workflow is not automatically retried. The existing
+`builderConfigurationProposalService` is called once and remains responsible
+for its pre-compiler context read, exact supplied-context/currentness check,
+single deterministic compiler call, post-compiler context read, second exact
+comparison and one ordinary M5 `proposeChangeSet()` call. A successful path
+therefore has exactly four authoritative context loads.
+
+Phase 8B creates only one ordinary `kind: change`, `status: proposed` M5
+configuration proposal with the fixed title and `description: null`. It does
+not validate, apply, publish, rebase, create operational Records or
+Relationships, or add a migration, route, Server Action or UI. Raw requests,
+contexts, plans, drafts, provider bodies and model metadata remain transient;
+only existing metadata-only accounting rows and the ordinary proposal may be
+durable. Phase 8B proves authenticated server orchestration and proposal-only
+handoff, not a usable owner-facing Builder, generic public Form submission,
+operational AI actions, conversational editing or automatic application.
+Phase 8C remains the next phase.
 
 ### 8.6 Validation layer
 

@@ -110,4 +110,7 @@ Reports remained bounded and redacted. This evidence qualifies one frozen
 generic AI correctness. Any material change to the model, policy, provider
 transport, drafting task, schemas, semantic validator, contexts, scenarios or
 evaluator invalidates it. Production drafting remains disabled. Milestone 8
-Phase 8B authenticated Builder orchestration has not started.
+Phase 8B now composes this unchanged task through a separate authenticated
+private runtime when OpenAI mode is explicitly configured; the global task and
+policy registration remain disabled, and no Builder UI or generic public Form
+submission is provided.

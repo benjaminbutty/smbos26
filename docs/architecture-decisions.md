@@ -2009,9 +2009,11 @@ engineering evidence without introducing a production mutation path.
   responses, reports or model prose.
 - Keep `builder_configuration_draft_v1` registered against
   `builder_configuration_drafting_disabled_v1` in both disabled and OpenAI
-  production modes. The evaluation loader alone constructs the provider-backed
-  task service. No database, Business accounting, compiler, proposal,
-  lifecycle, route, UI or public Form runtime is added.
+  production modes. During Phase 8A, the evaluation loader alone constructed
+  the provider-backed task service; Phase 8B adds a separate authenticated
+  private runtime for that composition without changing this global registry.
+  No Phase 8A database, Business accounting, compiler, proposal, lifecycle,
+  route, UI or public Form runtime is added.
 
 ### Consequences
 
@@ -2042,6 +2044,78 @@ and all finite failure counts 0.
 
 Reports remained bounded and redacted, and production drafting remains
 disabled. Milestone 8 Phase 8A is complete for this frozen profile rather than
-generic AI correctness. Phase 8B authenticated Builder orchestration through
-the existing proposal boundary is the next product phase and has not started;
-the Builder UI and generic public Form submission remain unimplemented.
+generic AI correctness. At this closeout, Phase 8B authenticated Builder
+orchestration through the existing proposal boundary was the next product
+phase; the Builder UI and generic public Form submission remain unimplemented.
+
+## ADR-027 - Qualified planning and drafting are composed through one authenticated proposal-only Builder service
+
+**Status:** Accepted for v0.1 (Milestone 8 Phase 8B)
+
+**Date:** 3 August 2026
+
+### Context
+
+The planning, drafting, compiler and proposal phases now have separate strict
+server boundaries. The next composition must accept an authenticated owner's
+ordinary Business request without allowing the browser or model to supply
+actor identity, context, model/policy identity, trusted IDs, operations or
+lifecycle instructions. It must also preserve exact currentness while keeping
+the existing global production drafting registration disabled and preserving
+the independent accounting model.
+
+### Decision
+
+- Add `src/ai/builder/` as a server-only orchestration boundary with a strict
+  `{ businessId, ownerRequest }` request and frozen strict clarification,
+  unsupported or proposed result variants. Request validation happens before
+  context or accounting access, and public errors expose only finite
+  `code`/`message` pairs.
+- Load `loadAuthoritativeAiBusinessContext()` once before execution, project and
+  canonically serialize the AI-safe context, and reuse that exact model value
+  for both the unchanged `builder_plan_v1` input and the eligible drafting
+  input. Create one authenticated `SupabaseAiAccountingService` and compose
+  one `createBusinessAiExecutionOrchestrator()` with the closed Builder
+  execution core.
+- Execute planning once, then perform a second authoritative read. Require
+  exact Business ID, actor ID, base version ID, head revision and canonical
+  serialized model-context equality. A mismatch raises the Builder stale
+  error, never drafts, never compiles and never retries or rebases.
+- Return clarification after settled planning without drafting. Classify all
+  operational, mixed and unsupported configuration-category ready plans before
+  drafting. Permit only `define_object`, `define_field`,
+  `define_relationship`, `configure_view`, `configure_form` and
+  `configure_page` for the drafting handoff.
+- Keep the global `builder_configuration_draft_v1` task mapped to
+  `builder_configuration_drafting_disabled_v1`. In OpenAI mode, the private
+  Builder runtime uses an unchanged planning task and a frozen drafting clone
+  whose only changed property is
+  `BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY`; it uses the exact
+  qualified planning/drafting policies and validated configured provider. No
+  evaluation code or generic registry constructor enters production.
+- Reserve and settle planning and drafting as sequential independent AI
+  executions. Clarification and unsupported plans create no drafting row;
+  planning failures do not start drafting; drafting failures do not retry the
+  full workflow. Existing timeout, bounded provider-attempt retry and
+  conservative incomplete-usage behavior remain unchanged.
+- Call `builderConfigurationProposalService.propose()` exactly once for an
+  eligible draft. That existing service remains responsible for its two
+  authoritative reads, exact supplied-context/currentness checks, one pure
+  compiler call and one ordinary M5 `proposeChangeSet()` call. A successful
+  Builder path therefore has exactly four authoritative context loads and
+  creates only a normal `kind: change`, `status: proposed` proposal with the
+  fixed title and `description: null`.
+- Keep raw request, context, plan, draft, provider body and model metadata
+  transient. Durable state is limited to existing metadata-only accounting rows
+  and the ordinary proposal. No route, UI, migration, operational mutation or
+  Validate/Apply/Publish action is added.
+
+### Consequences
+
+Phase 8B proves authenticated server orchestration and a proposal-only handoff
+through existing primitives. It does not provide an owner-facing Builder UI,
+chat history, conversational editing, generic public Form submission,
+operational AI actions or automatic application. The global drafting registry
+and Phase 8A qualification evidence remain unchanged; the private runtime is
+the only production composition that may use the qualified drafting policy.
+Phase 8C remains the next phase.
