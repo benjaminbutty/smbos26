@@ -1832,7 +1832,9 @@ Form/Page design intent must therefore not imply executable publication.
   new concepts. Page steps must authorize the Objects behind referenced
   View/Form blocks. All structurally optional design properties are required
   and use explicit `null` when absent; empty collections remain `[]`.
-  Singular and plural new-Object labels share one normalized duplicate set.
+  Singular and plural labels may normalize to the same value within one new
+  Object, while labels across different new Objects share one normalized
+  duplicate set.
 - Register the output validator through the existing optional execution hook.
   Input semantic checks run during the normal task schema parse, before any
   provider invocation. Validation diagnostics are finite, code-owned and never
@@ -1971,3 +1973,75 @@ compilation and again atomically by M5. Live configuration is unchanged until
 the existing deliberate lifecycle, and no raw AI handoff is stored. Preview,
 validation/application, provider activation and reusable public Form
 submission remain separate future capabilities.
+
+## ADR-026 - Provider-backed configuration drafting is qualified as a frozen evaluation profile
+
+**Status:** Accepted for v0.1 (Milestone 8 Phase 8A)
+
+**Date:** 2 August 2026
+
+### Context
+
+The existing `builder_configuration_draft_v1` contract is a bounded,
+untrusted design boundary and remains production-disabled. Planning Terra
+evidence cannot establish drafting reliability because drafting has a separate
+instruction subject, schema, semantic validator and deterministic acceptance
+surface. A provider-backed drafting candidate therefore needs its own finite
+engineering evidence without introducing a production mutation path.
+
+### Decision
+
+- Qualify the exact drafting subject through an unregistered evaluation task
+  profile that reuses the production task key/version, instruction, input and
+  output schemas, and semantic validator while changing only the policy key to
+  `builder_configuration_drafting_terra_medium_v1`.
+- Fix the candidate to `gpt-5.6-terra` with explicit `medium` reasoning and
+  code-owned token, timeout, retry and pricing bounds. Derive all reservations
+  with the existing integer accounting functions: 725,760 microusd per
+  execution, 5,806,080 for qualification (8) and 17,418,240 for reliability
+  (24), with hard ceilings of 6,000,000 and 18,000,000.
+- Use exactly two frozen, schema-validated synthetic contexts and eight fixed
+  code-owned ready plans. Run qualification once sequentially and reliability
+  three sequential rounds, with strict structural, semantic, unknown,
+  provider and deterministic scenario-gate failure classification.
+- Emit only strict redacted metadata and bounded safe error codes. Keep the
+  live commands exact-opt-in and out of CI. Do not persist requests,
+  responses, reports or model prose.
+- Keep `builder_configuration_draft_v1` registered against
+  `builder_configuration_drafting_disabled_v1` in both disabled and OpenAI
+  production modes. The evaluation loader alone constructs the provider-backed
+  task service. No database, Business accounting, compiler, proposal,
+  lifecycle, route, UI or public Form runtime is added.
+
+### Consequences
+
+Phase 8A supplies bounded evidence for one frozen drafting profile rather than
+generic model correctness. Planning evidence remains separate. Any material
+model/policy/transport, drafting subject, synthetic context, ready plan,
+scenario order, evaluator or report-classification change invalidates both
+gates and requires them to be rerun.
+
+The reviewed closeout evidence applies to the exact frozen code subject
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`, using task
+`builder_configuration_draft_v1`, model `gpt-5.6-terra`, explicit `medium`
+reasoning and policy `builder_configuration_drafting_terra_medium_v1`.
+Qualification ran once and passed 8/8: 8 attempts, 53,719 input tokens, 4,647
+output tokens, 204,005 estimated microusd, 41,615 ms elapsed, usage complete,
+exit code 0 and zero structural, semantic, unknown-output,
+deterministic-scenario-gate or provider/execution failures.
+
+The first reliability run remains bounded historical evidence at the same SHA:
+23/24 passed, with one 60-second `ai_timeout` for
+`equipment_maintenance_workspace` at repetition 2, provider/execution
+failures 1, all other finite failure counts 0, 155,672 input tokens, 13,059
+output tokens, 585,072 estimated microusd, 172,058 ms and exit code 1. No
+model, policy or source change followed. A single controlled complete rerun
+passed 24/24, every scenario 3/3, with 161,157 input tokens, 13,463 output
+tokens, 604,845 estimated microusd, 112,191 ms, usage complete, exit code 0
+and all finite failure counts 0.
+
+Reports remained bounded and redacted, and production drafting remains
+disabled. Milestone 8 Phase 8A is complete for this frozen profile rather than
+generic AI correctness. Phase 8B authenticated Builder orchestration through
+the existing proposal boundary is the next product phase and has not started;
+the Builder UI and generic public Form submission remain unimplemented.

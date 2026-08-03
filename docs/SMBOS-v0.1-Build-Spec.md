@@ -1380,8 +1380,9 @@ or create operations.
 
 All structurally optional design properties are required by the schema and use
 explicit `null` when absent; empty collections remain `[]`, and unknown
-properties are rejected. Singular and plural new-Object labels share one
-NFKC/case-normalized duplicate namespace.
+properties are rejected. Singular and plural labels may normalize to the same
+value within one new Object, while labels across different new Objects share
+one NFKC/case-normalized duplicate namespace.
 
 The task is production-disabled under the separate code-owned
 `builder_configuration_drafting_disabled_v1` policy. The policy is present in
@@ -1482,6 +1483,64 @@ operations: one Object, five Fields, one Relationship, one Form, one View and
 one draft Page. The Relationship is metadata only, no `status` field is
 introduced, and generic public Form submission remains a later reusable
 capability.
+
+### 8.5.5 Milestone 8 Phase 8A configuration-drafting qualification gates
+
+Phase 8A qualifies the corrected `builder_configuration_draft_v1` subject
+independently of planning. An unregistered evaluation profile reuses the exact
+drafting instruction, input/output schemas and semantic validator while using
+the separate `builder_configuration_drafting_terra_medium_v1` policy with
+`gpt-5.6-terra`, explicit `medium` reasoning, 256 KiB input, 96,000 billable
+input tokens, 8,192 output tokens, two attempts, a 60-second timeout and the
+existing integer $2.50/M input and $15/M output pricing. Production drafting
+remains mapped to `builder_configuration_drafting_disabled_v1` in both
+disabled and OpenAI modes; the evaluation profile is not registered.
+
+The harness has exactly two frozen, schema-validated in-memory contexts
+(`rich_existing_business` and `empty_new_business`) and exactly eight fixed
+ready-plan scenarios: Catering Enquiry full stack, Customer marketing
+consent, Customer Directory, public Customer contact page, Equipment and
+Maintenance workspace, Supplier Quote field types, Staff Profile cards and
+Order detail workspace. Qualification runs the ordered set once (8
+executions); reliability runs three ordered sequential rounds (24 executions).
+The exact one-execution reservation is 725,760 microusd; qualification derives
+5,806,080 beneath a 6,000,000 hard ceiling, and reliability derives 17,418,240
+beneath an 18,000,000 hard ceiling. Both live commands require their exact
+opt-in flag, `AI_PROVIDER=openai` and a non-blank server-only key.
+
+The execution core performs strict schema and semantic validation before the
+deterministic scenario evaluator. Reports and setup/provider failures are
+strict, finite and redacted; no owner request, context, model output, provider
+response, raw error or credential is emitted or persisted. Deterministic tests
+use injected providers and live commands are absent from CI. This phase adds
+no database, accounting reservation, compiler, proposal, lifecycle, route,
+UI, production drafting or public Form runtime. Qualification evidence is
+complete for the frozen code subject
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`. The final qualification passed
+8/8 with 8 attempts, 53,719 input tokens, 4,647 output tokens, 204,005
+estimated microusd and 41,615 ms elapsed; usage was complete and structural,
+semantic, unknown-output, deterministic scenario-gate and provider/execution
+failures were all 0. The profile was `builder_configuration_draft_v1` on
+`gpt-5.6-terra` with explicit `medium` reasoning and policy
+`builder_configuration_drafting_terra_medium_v1`.
+
+The first reliability run remains bounded historical evidence: 23/24 passed,
+with one 60-second `ai_timeout` for `equipment_maintenance_workspace` at
+repetition 2; provider/execution failures were 1 and all other finite failure
+counts were 0. It used 155,672 input tokens, 13,059 output tokens, 585,072
+estimated microusd and 172,058 ms, with exit code 1. No model, policy or
+source change followed. A single controlled complete rerun passed 24/24,
+every scenario 3/3, with 161,157 input tokens, 13,463 output tokens, 604,845
+estimated microusd and 112,191 ms; usage was complete, exit code 0 and all
+finite failure counts were 0.
+
+Reports remained bounded and redacted, production drafting remains disabled,
+and this evidence qualifies one frozen profile rather than proving generic AI
+correctness. Any material change to the model, policy, provider transport,
+drafting task, schemas, semantic validator, contexts, scenarios or evaluator
+invalidates the evidence. Milestone 8 Phase 8A is complete. The next phase is
+Milestone 8 Phase 8B authenticated end-to-end Builder orchestration; it has not
+started, and no Builder UI or generic public Form submission is claimed.
 
 ### 8.6 Validation layer
 

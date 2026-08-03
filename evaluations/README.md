@@ -75,3 +75,129 @@ assumptions, summaries, Object keys, Location references, provider IDs or
 provider bodies are recorded here. Any material model-alias, prompt, schema,
 validator, context or provider-transport change invalidates the evidence and
 requires both gates to be rerun.
+
+## Configuration drafting evaluation
+
+Milestone 8 Phase 8A qualifies the corrected `builder_configuration_draft_v1`
+subject independently of planning. The isolated evaluation task reuses the
+exact drafting instruction, schemas and semantic validator and changes only
+the unregistered policy reference to
+`builder_configuration_drafting_terra_medium_v1`. The fixed candidate is
+`gpt-5.6-terra` with explicit `medium` reasoning; production drafting remains
+mapped to `builder_configuration_drafting_disabled_v1` in both disabled and
+OpenAI runtime modes.
+
+The suite uses exactly two frozen, schema-validated in-memory contexts:
+`rich_existing_business` and `empty_new_business`. Its eight scenarios are,
+in fixed order: `catering_enquiry_full_stack`,
+`customer_marketing_consent_field`, `customer_directory_internal`,
+`public_customer_contact_page`, `equipment_maintenance_workspace`,
+`supplier_quote_field_types`, `staff_profile_cards` and
+`order_detail_workspace`. Every code-owned ready plan parses through the real
+drafting task input schema and semantic input validator; deterministic gates
+then compare exact entity families, references, types, settings, audiences,
+relationships, links and page blocks.
+
+The two exact opt-in commands are deliberately separate:
+
+```bash
+RUN_LIVE_OPENAI_CONFIGURATION_DRAFTING_QUALIFICATION=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-configuration-drafting-terra-qualification-live
+```
+
+After independent review of a successful qualification, the separate
+reliability command may be run for a reviewed frozen subject:
+
+```bash
+RUN_LIVE_OPENAI_CONFIGURATION_DRAFTING_RELIABILITY=1 \
+AI_PROVIDER=openai \
+OPENAI_API_KEY=... \
+npm run eval:builder-configuration-drafting-terra-reliability-live
+```
+
+Qualification is exactly 8 sequential executions with a 5,806,080 microusd
+reservation and 6,000,000 hard ceiling. Reliability is exactly 3 sequential
+rounds (24 executions) with a 17,418,240 microusd reservation and 18,000,000
+hard ceiling. The one-execution reservation is 725,760 microusd, derived from
+the trusted integer accounting functions. Live commands are absent from CI;
+deterministic tests use injected providers only.
+
+Reports are one-line, strict, redacted metadata only: bounded scenario and
+repetition identity, pass state, entity counts, attempts, usage, integer cost,
+elapsed time and finite failure codes. No owner request, Business context,
+labels, keys, local references, page text, options, provider body/ID,
+response, raw error, stack trace, credential or model prose is emitted or
+persisted. The complete Phase 8A evidence record follows. Any material change
+to the fixed model/policy/transport, drafting subject, synthetic context,
+ready plan, scenario order, deterministic evaluator or report classification
+invalidates both gates.
+
+### Milestone 8 Phase 8A closeout evidence
+
+Phase 8A is complete for the frozen code subject tested at
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`. The profile was task
+`builder_configuration_draft_v1`, model `gpt-5.6-terra`, explicit `medium`
+reasoning and policy `builder_configuration_drafting_terra_medium_v1`.
+
+#### Final qualification evidence
+
+The qualification was executed exactly once:
+
+- 8 total scenarios; 8/8 passed; 0 failed;
+- 8 total attempts;
+- 53,719 input tokens and 4,647 output tokens;
+- 204,005 estimated microusd and 41,615 ms elapsed;
+- usage complete for every execution;
+- structural failures 0, semantic failures 0, unknown-output failures 0,
+  deterministic scenario-gate failures 0 and provider/execution failures 0;
+- exit code 0.
+
+All eight scenarios passed: `catering_enquiry_full_stack`,
+`customer_marketing_consent_field`, `customer_directory_internal`,
+`public_customer_contact_page`, `equipment_maintenance_workspace`,
+`supplier_quote_field_types`, `staff_profile_cards` and
+`order_detail_workspace`.
+
+#### Final reliability evidence
+
+The first reliability run at the same exact SHA remains recorded as bounded
+historical evidence. It executed 24 times and passed 23/24; repetition 2 of
+`equipment_maintenance_workspace` had one bounded 60-second `ai_timeout`.
+Structural, semantic, unknown-output and deterministic scenario-gate failures
+were 0; provider/execution failures were 1. It used 24 attempts, 155,672 input
+tokens, 13,059 output tokens, 585,072 estimated microusd and 172,058 ms, with
+exit code 1. The Equipment scenario passed qualification and repetitions 1 and 3. No model, policy or source change was made in response to the timeout.
+
+A single controlled complete reliability rerun was then explicitly authorised
+and passed:
+
+- 8 scenarios, 3 repetitions per scenario, 24/24 executions passed;
+- 24 total attempts;
+- 161,157 input tokens and 13,463 output tokens;
+- 604,845 estimated microusd and 112,191 ms elapsed;
+- usage complete for every execution;
+- structural failures 0, semantic failures 0, unknown-output failures 0,
+  deterministic scenario-gate failures 0 and provider/execution failures 0;
+- exit code 0.
+
+Every scenario passed 3/3: `catering_enquiry_full_stack`,
+`customer_marketing_consent_field`, `customer_directory_internal`,
+`public_customer_contact_page`, `equipment_maintenance_workspace`,
+`supplier_quote_field_types`, `staff_profile_cards` and
+`order_detail_workspace`.
+
+The reports remained bounded and redacted metadata only. No owner request,
+Business context, ready plan, model output, provider response, raw error,
+credential or model prose is recorded. Production drafting remains disabled.
+This evidence qualifies one frozen profile rather than proving generic AI
+correctness. Any material change to the model, policy, provider transport,
+drafting task, input/output schemas, semantic validator, contexts, scenarios or
+evaluator invalidates this evidence and requires both gates to be rerun.
+
+Milestone 8 Phase 8B is the next product phase and has not started. Its
+intended handoff is authenticated owner request → Business context → qualified
+planning → bounded clarification or ready plan → qualified configuration
+drafting → deterministic compiler → authenticated ordinary M5 proposal. The
+Builder UI and generic public Form submission are not claimed here.

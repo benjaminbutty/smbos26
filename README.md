@@ -2,8 +2,10 @@
 
 SMBOS is an AI-native operating system for small physical businesses. The
 repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface and the Milestone 6 Phase 4C
-Terra-medium qualification and reliability gate after bounded real-model
+Phase 5B explicit Changes lifecycle interface, the Milestone 6 Phase 4C
+Terra-medium planning qualification and reliability gate, and the engineering-
+only Milestone 8 Phase 8A drafting qualification/reliability gates after
+bounded real-model
 planning diagnostics, deterministic manual setup amendments,
 data-minimised Business context and strict non-executing Business-request
 planning: a
@@ -88,6 +90,12 @@ Included:
   sequential repetitions (24 executions) for reliability, with frozen hard
   gates, redacted metadata-only output and ceilings of 3,700,000 and
   11,000,000 microusd
+- two engineering-only, separately activated Terra-medium configuration-
+  drafting gates over exactly two frozen synthetic contexts and eight fixed
+  scenarios: one qualification pass (8 executions) and three sequential
+  reliability rounds (24 executions), with redacted metadata-only output and
+  ceilings of 6,000,000 and 18,000,000 microusd; production drafting remains
+  disabled
 - one authenticated Owner/Admin-only Business context loader over ordinary
   session/RLS reads, the active immutable configuration version and current
   Locations
@@ -124,8 +132,9 @@ Included:
   active context references, source-step coverage, typed experience
   dependencies and required create Form coverage
 - strict structural contracts with explicit `null` for absent optional design
-  values and `[]` for empty collections; singular/plural Object labels use one
-  normalized duplicate namespace
+  values and `[]` for empty collections; singular/plural Object labels may
+  match within one Object but use a normalized duplicate namespace across
+  Objects
 - production-disabled configuration drafting in both disabled and OpenAI server
   modes; the separate Phase 1B compiler performs no provider request
 - authenticated, server-only Phase 2 handoff from a completed draft through
@@ -415,6 +424,75 @@ proposal with the expected Object, Fields, Relationship, Form, View and draft
 Page intent through existing primitives. It does not add a status field,
 change live configuration, enable generic public Form submission or claim a
 complete public submission flow; those remain later reusable capabilities.
+
+### Milestone 8 Phase 8A - configuration-drafting qualification gates
+
+Phase 8A qualifies the corrected `builder_configuration_draft_v1` contract in
+an isolated engineering harness. It reuses the exact production instruction,
+input/output schemas and semantic validator, but gives the unregistered
+evaluation task its separate `builder_configuration_drafting_terra_medium_v1`
+policy identity: `gpt-5.6-terra`, explicit `medium` reasoning, 256 KiB input,
+96,000 billable input tokens, 8,192 output tokens, two attempts, a 60-second
+timeout and the existing integer $2.50/M input and $15/M output rates. Its
+one-execution reservation is 725,760 microusd.
+
+The harness uses exactly two frozen, schema-validated synthetic contexts
+(`rich_existing_business` and `empty_new_business`) and eight code-owned
+ready-plan scenarios: Catering Enquiry full stack, Customer marketing
+consent, Customer Directory, public Customer contact page, Equipment and
+Maintenance workspace, Supplier Quote field types, Staff Profile cards and
+Order detail workspace. Qualification runs them once (8 executions) under a
+5,806,080 reservation and 6,000,000 hard ceiling. Reliability runs the same
+ordered set in three sequential rounds (24 executions) under a 17,418,240
+reservation and 18,000,000 hard ceiling. Both gates require exact opt-in flags,
+`AI_PROVIDER=openai` and a non-blank server-only key; the live evidence is
+recorded in the Phase 8A closeout below for the frozen code subject
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`.
+
+The deterministic evaluator emits only strict bounded counts, usage, integer
+cost, timing, repetition and finite failure codes. Provider failures expose
+only safe execution codes; output failures are classified as structural,
+semantic or unknown through bounded cause traversal. No request, context,
+model output, provider response, proposal, compiler output, database state,
+route, UI or public Form runtime claim is involved. Planning evidence is not
+drafting evidence. Any material model/policy/transport, drafting subject,
+synthetic context, ready plan, scenario order, evaluator or report-classifier
+change invalidates both gates and requires them to be rerun. Milestone 8 Phase
+8A is complete for this frozen profile. The next product phase is Milestone 8
+Phase 8B authenticated end-to-end Builder orchestration; it has not started and
+is not another evaluation or mutation surface.
+
+### Milestone 8 Phase 8A closeout evidence
+
+The final successful qualification was executed exactly once against code SHA
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90` using task
+`builder_configuration_draft_v1`, model `gpt-5.6-terra`, explicit `medium`
+reasoning and policy `builder_configuration_drafting_terra_medium_v1`. All
+eight scenarios passed: 8/8, 8 attempts, 53,719 input tokens, 4,647 output
+tokens, 204,005 estimated microusd, 41,615 ms elapsed, usage complete, and
+zero structural, semantic, unknown-output, deterministic scenario-gate or
+provider/execution failures.
+
+The first reliability run at the same SHA is retained as bounded historical
+evidence: 23/24 executions passed, with one 60-second `ai_timeout` for
+`equipment_maintenance_workspace` at repetition 2; provider/execution
+failures were 1 and all other finite failure counts were 0. It used 155,672
+input tokens, 13,059 output tokens, 585,072 estimated microusd and 172,058 ms,
+with exit code 1. No model, policy or source change was made in response. A
+single controlled complete rerun then passed 24/24, every scenario 3/3, with
+161,157 input tokens, 13,463 output tokens, 604,845 estimated microusd and
+112,191 ms, usage complete and all finite failure counts 0.
+
+This is bounded, redacted evidence for one frozen profile, not generic AI
+correctness. Production drafting remains disabled; no raw requests, contexts,
+plans, model outputs, provider responses or credentials are recorded. Any
+material change to the model, policy, provider transport, drafting task,
+schemas, semantic validator, contexts, scenarios or evaluator invalidates the
+evidence. The next phase connects authenticated owner request → Business
+context → qualified planning → bounded clarification or ready plan → qualified
+configuration drafting → deterministic compiler → authenticated ordinary M5
+proposal; Phase 8B, the Builder UI and generic public Form submission have not
+started or been added.
 
 ## Requirements
 

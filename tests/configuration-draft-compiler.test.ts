@@ -392,7 +392,7 @@ function draft(): BuilderConfigurationDraftOutput {
             fieldReference("draft_field_4"),
             fieldReference("draft_field_5"),
           ],
-          title_field: null,
+          title_field: fieldReference("draft_field_1"),
           create_form_reference: null,
           edit_form_reference: null,
         },
@@ -814,8 +814,34 @@ function existingCustomerFieldReferenceInput(): CompilerFixture {
           field_key: "name",
         },
       ],
-      title_field: null,
+      title_field: {
+        source: "existing",
+        object_key: "customer",
+        field_key: "name",
+      },
       create_form_reference: null,
+      edit_form_reference: null,
+    },
+  };
+  return input;
+}
+
+function existingCustomerDetailReferenceInput(): CompilerFixture {
+  const input = existingCustomerFieldReferenceInput();
+  const view = input.draft.views[0];
+  if (!view || view.view_type !== "table") {
+    throw new Error("Expected the existing Customer table fixture.");
+  }
+  input.draft.views[0] = {
+    ...view,
+    view_type: "detail",
+    configuration: {
+      fields: view.configuration.fields,
+      title_field: {
+        source: "existing",
+        object_key: "customer",
+        field_key: "name",
+      },
       edit_form_reference: null,
     },
   };
@@ -1037,6 +1063,7 @@ describe("Corporate Catering compilation", () => {
         "budget",
         "notes",
       ]);
+      expect(view.config_json.title_field).toBe("company_name");
       expect(view.config_json.include_archived).toBe(false);
     }
 
@@ -1342,6 +1369,23 @@ describe("fresh snapshot and additive safety checks", () => {
     expect(
       validView?.op === "set_view" ? validView.config_json.fields : [],
     ).toEqual(["name"]);
+    expect(
+      validView?.op === "set_view" ? validView.config_json.title_field : null,
+    ).toBe("name");
+
+    const validDetail = existingCustomerDetailReferenceInput();
+    const validDetailOutput = compileConfigurationDraft(validDetail);
+    const validDetailView = validDetailOutput.operations.find(
+      (operation) => operation.op === "set_view",
+    );
+    expect(validDetailView).toMatchObject({
+      op: "set_view",
+      view_type: "detail",
+    });
+    if (validDetailView?.op === "set_view") {
+      expect(validDetailView.config_json.fields).toEqual(["name"]);
+      expect(validDetailView.config_json.title_field).toBe("name");
+    }
 
     const missing = existingCustomerFieldReferenceInput();
     missing.snapshot.field_definitions =
@@ -1525,6 +1569,48 @@ describe("fresh snapshot and additive safety checks", () => {
     expect(
       compilerError(() => compileConfigurationDraft(fieldConflict)).code,
     ).toBe("configuration_draft_compile_field_label_conflict");
+  });
+
+  it("compiles identical singular and plural labels for one draft Object", () => {
+    const input = compilerInput();
+    input.draft.objects[0]!.singular_label = "Equipment";
+    input.draft.objects[0]!.plural_label = "Equipment";
+    const output = compileConfigurationDraft(input);
+    expect(
+      output.operations.find((operation) => operation.op === "set_object"),
+    ).toMatchObject({
+      singular_label: "Equipment",
+      plural_label: "Equipment",
+    });
+  });
+
+  it("rejects cross-Object label collisions before emitting compiler operations", () => {
+    const input = compilerInput();
+    if (input.taskInput.ready_plan.state !== "ready") {
+      throw new Error("Expected a ready test plan.");
+    }
+    input.taskInput.ready_plan.plan.concepts.push({
+      reference: "concept_3",
+      label: "Second new concept",
+      disposition: "new",
+      purpose: "Provide a second generic configuration concept.",
+    });
+    input.taskInput.ready_plan.plan.steps[0]!.affected_concepts.push(
+      "concept_3",
+    );
+    input.draft.objects.push({
+      ...structuredClone(input.draft.objects[0]!),
+      reference: "draft_object_2",
+      concept_reference: "concept_3",
+      singular_label: "Beta",
+      plural_label: "Gamma",
+    });
+    input.draft.objects[0]!.singular_label = "Alpha";
+    input.draft.objects[0]!.plural_label = "Beta";
+
+    expect(compilerError(() => compileConfigurationDraft(input)).code).toBe(
+      "configuration_draft_compile_input_invalid",
+    );
   });
 
   it.each([

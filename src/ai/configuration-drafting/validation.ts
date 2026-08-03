@@ -574,14 +574,15 @@ export function validateConfigurationDraftOutput(
   }
 
   function validateObjectIntentLabels(): void {
-    const labels = new Set<string>();
+    const labelOwners = new Map<string, string>();
     for (const object of parsedOutput.objects) {
       for (const value of [object.singular_label, object.plural_label]) {
         const label = normaliseLabel(value);
-        if (labels.has(label)) {
-          fail("duplicate_object_intent");
+        const owner = labelOwners.get(label);
+        if (owner !== undefined && owner !== object.reference) {
+          fail("duplicate_object_label_intent");
         }
-        labels.add(label);
+        labelOwners.set(label, object.reference);
       }
     }
   }
@@ -593,7 +594,7 @@ export function validateConfigurationDraftOutput(
       const labels = labelsByObject.get(object.identity) ?? new Set<string>();
       const label = normaliseLabel(field.label);
       if (labels.has(label)) {
-        fail("duplicate_field_intent");
+        fail("duplicate_field_label_intent");
       }
       labels.add(label);
       labelsByObject.set(object.identity, labels);
@@ -616,22 +617,30 @@ export function validateConfigurationDraftOutput(
     );
   }
 
-  function validateViewFields(
-    view: DraftView,
+  function validateViewFieldReference(
+    targetObject: ResolvedObject,
+    reference: DraftFieldReference,
+  ): string {
+    const field = resolveField(reference);
+    if (field.object.identity !== targetObject.identity) {
+      fail("view_field_object_mismatch");
+    }
+    return field.identity;
+  }
+
+  function validateViewFieldReferences(
     targetObject: ResolvedObject,
     references: ReadonlyArray<DraftFieldReference>,
-  ): void {
+  ): Set<string> {
     const identities = new Set<string>();
     for (const reference of references) {
-      const field = resolveField(reference);
-      if (identities.has(field.identity)) {
-        fail("duplicate_field_intent");
+      const identity = validateViewFieldReference(targetObject, reference);
+      if (identities.has(identity)) {
+        fail("duplicate_view_field_reference");
       }
-      identities.add(field.identity);
-      if (field.object.identity !== targetObject.identity) {
-        fail("view_field_object_mismatch");
-      }
+      identities.add(identity);
     }
+    return identities;
   }
 
   function validateViewForms(
@@ -659,12 +668,13 @@ export function validateConfigurationDraftOutput(
     validateSourceObjectScope(view.source_step_references, targetObject);
     switch (view.view_type) {
       case "table":
-        validateViewFields(view, targetObject, [
-          ...view.configuration.fields,
-          ...(view.configuration.title_field !== null
-            ? [view.configuration.title_field]
-            : []),
-        ]);
+        validateViewFieldReferences(targetObject, view.configuration.fields);
+        if (view.configuration.title_field !== null) {
+          validateViewFieldReference(
+            targetObject,
+            view.configuration.title_field,
+          );
+        }
         validateViewForms(view, targetObject, [
           ...(view.configuration.create_form_reference !== null
             ? [
@@ -684,11 +694,18 @@ export function validateConfigurationDraftOutput(
             : []),
         ]);
         break;
-      case "list":
-        validateViewFields(view, targetObject, [
+      case "list": {
+        const primaryIdentity = validateViewFieldReference(
+          targetObject,
           view.configuration.primary_field,
-          ...view.configuration.secondary_fields,
-        ]);
+        );
+        const secondaryIdentities = validateViewFieldReferences(
+          targetObject,
+          view.configuration.secondary_fields,
+        );
+        if (secondaryIdentities.has(primaryIdentity)) {
+          fail("duplicate_view_field_reference");
+        }
         validateViewForms(view, targetObject, [
           ...(view.configuration.create_form_reference !== null
             ? [
@@ -708,8 +725,9 @@ export function validateConfigurationDraftOutput(
             : []),
         ]);
         break;
+      }
       case "cards":
-        validateViewFields(view, targetObject, [
+        validateViewFieldReferences(targetObject, [
           view.configuration.title_field,
           ...(view.configuration.subtitle_field !== null
             ? [view.configuration.subtitle_field]
@@ -745,12 +763,13 @@ export function validateConfigurationDraftOutput(
         ]);
         break;
       case "detail":
-        validateViewFields(view, targetObject, [
-          ...view.configuration.fields,
-          ...(view.configuration.title_field !== null
-            ? [view.configuration.title_field]
-            : []),
-        ]);
+        validateViewFieldReferences(targetObject, view.configuration.fields);
+        if (view.configuration.title_field !== null) {
+          validateViewFieldReference(
+            targetObject,
+            view.configuration.title_field,
+          );
+        }
         validateViewForms(view, targetObject, [
           ...(view.configuration.edit_form_reference !== null
             ? [
@@ -823,7 +842,7 @@ export function validateConfigurationDraftOutput(
     for (const configuredField of form.fields) {
       const field = resolveField(configuredField.field_reference);
       if (identities.has(field.identity)) {
-        fail("duplicate_field_intent");
+        fail("duplicate_form_field_reference");
       }
       identities.add(field.identity);
       if (field.object.identity !== targetObject.identity) {

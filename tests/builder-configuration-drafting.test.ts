@@ -532,12 +532,60 @@ function expectDiagnostic(
   ).toBe(code);
 }
 
+function validateThroughDraftingTask(
+  output: unknown,
+  plan: BuilderPlanReadyResult = readyPlan(),
+): BuilderConfigurationDraftOutput {
+  const input = builderConfigurationDraftTaskV1.inputSchema.parse(
+    rawInput(plan),
+  );
+  const parsedOutput =
+    builderConfigurationDraftTaskV1.outputSchema.parse(output);
+  return builderConfigurationDraftTaskV1.validateOutput!(input, parsedOutput);
+}
+
+function expectTaskDiagnostic(
+  action: () => unknown,
+  code: BuilderConfigurationDraftDiagnosticCode,
+): void {
+  expectDiagnostic(action, code);
+}
+
 function tableView(output: BuilderConfigurationDraftOutput) {
   const view = output.views[0];
   if (!view || view.view_type !== "table") {
     throw new Error("Expected the fixture to contain a table View.");
   }
   return view;
+}
+
+function planWithSecondNewConcept(): BuilderPlanReadyResult {
+  const plan = readyPlan();
+  plan.plan.concepts.push({
+    reference: "concept_3",
+    label: "Second new concept",
+    disposition: "new",
+    purpose: "Provide a second generic configuration concept.",
+  });
+  plan.plan.steps[0]!.affected_concepts.push("concept_3");
+  return plan;
+}
+
+function twoObjectDraft(
+  firstLabels: readonly [string, string],
+  secondLabels: readonly [string, string],
+): BuilderConfigurationDraftOutput {
+  const output = validDraft();
+  output.objects[0]!.singular_label = firstLabels[0];
+  output.objects[0]!.plural_label = firstLabels[1];
+  output.objects.push({
+    ...output.objects[0]!,
+    reference: "draft_object_2",
+    concept_reference: "concept_3",
+    singular_label: secondLabels[0],
+    plural_label: secondLabels[1],
+  });
+  return output;
 }
 
 function draftExecutionService(
@@ -1343,7 +1391,7 @@ describe("builder configuration draft semantic validation", () => {
     ];
     expectDiagnostic(
       () => validateConfigurationDraftOutput(inputValue(), duplicateViewField),
-      "duplicate_field_intent",
+      "duplicate_view_field_reference",
     );
 
     const duplicateFormField = validDraft();
@@ -1361,7 +1409,7 @@ describe("builder configuration draft semantic validation", () => {
     ];
     expectDiagnostic(
       () => validateConfigurationDraftOutput(inputValue(), duplicateFormField),
-      "duplicate_field_intent",
+      "duplicate_form_field_reference",
     );
   });
 
@@ -1431,7 +1479,7 @@ describe("builder configuration draft semantic validation", () => {
           inputValue(duplicateObjectPlan),
           duplicateObject,
         ),
-      "duplicate_object_intent",
+      "duplicate_object_label_intent",
     );
 
     const duplicateField = validDraft();
@@ -1442,40 +1490,249 @@ describe("builder configuration draft semantic validation", () => {
     });
     expectDiagnostic(
       () => validateConfigurationDraftOutput(inputValue(), duplicateField),
-      "duplicate_field_intent",
+      "duplicate_field_label_intent",
     );
   });
 
-  it("normalizes one duplicate-label namespace across singular and plural labels", () => {
-    const duplicateObjectPlan = readyPlan();
-    duplicateObjectPlan.plan.concepts.push({
-      reference: "concept_3",
-      label: "Another new concept",
-      disposition: "new",
-      purpose: "Provide a distinct duplicate-label test concept.",
+  it("allows title overlap and same-Object singular/plural labels through the task boundary", () => {
+    const table = validDraft();
+    tableView(table).configuration.title_field =
+      draftFieldReference("draft_field_1");
+    expect(validateThroughDraftingTask(table)).toEqual(table);
+
+    const detail = validDraft();
+    detail.fields[0]!.label = "public_reference";
+    const sourceView = detail.views[0];
+    if (!sourceView || sourceView.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    detail.views[0] = {
+      ...sourceView,
+      view_type: "detail",
+      configuration: {
+        fields: sourceView.configuration.fields,
+        title_field: draftFieldReference("draft_field_1"),
+        edit_form_reference: null,
+      },
+    };
+    expect(validateThroughDraftingTask(detail)).toEqual(detail);
+
+    const existingObjectTable = validDraft();
+    const existingView = existingObjectTable.views[0];
+    if (!existingView || existingView.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    existingObjectTable.views[0] = {
+      ...existingView,
+      object_reference: { source: "existing", object_key: "customer" },
+      configuration: {
+        fields: [
+          { source: "existing", object_key: "customer", field_key: "name" },
+        ],
+        title_field: {
+          source: "existing",
+          object_key: "customer",
+          field_key: "name",
+        },
+        create_form_reference: null,
+        edit_form_reference: null,
+      },
+    };
+    const existingViewPlan = readyPlan();
+    const viewStep = existingViewPlan.plan.steps.find(
+      ({ reference }) => reference === "step_4",
+    );
+    if (!viewStep) throw new Error("Expected the View plan step.");
+    viewStep.affected_concepts = ["concept_2"];
+    viewStep.existing_object_keys = ["customer"];
+    expect(
+      validateThroughDraftingTask(existingObjectTable, existingViewPlan),
+    ).toEqual(existingObjectTable);
+
+    const sameObjectLabels = validDraft();
+    sameObjectLabels.objects[0]!.singular_label = "Equipment";
+    sameObjectLabels.objects[0]!.plural_label = "Equipment";
+    expect(validateThroughDraftingTask(sameObjectLabels)).toEqual(
+      sameObjectLabels,
+    );
+
+    const uniqueObjects = twoObjectDraft(
+      ["Equipment", "Equipment"],
+      ["Maintenance Job", "Maintenance Jobs"],
+    );
+    expect(
+      validateThroughDraftingTask(uniqueObjects, planWithSecondNewConcept()),
+    ).toEqual(uniqueObjects);
+  });
+
+  it("reports precise finite diagnostics for duplicate labels and references", () => {
+    const duplicateTableFields = validDraft();
+    tableView(duplicateTableFields).configuration.fields = [
+      draftFieldReference("draft_field_1"),
+      draftFieldReference("draft_field_1"),
+    ];
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateTableFields),
+      "duplicate_view_field_reference",
+    );
+
+    const duplicateDetailFields = validDraft();
+    const detailView = duplicateDetailFields.views[0];
+    if (!detailView || detailView.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    duplicateDetailFields.views[0] = {
+      ...detailView,
+      view_type: "detail",
+      configuration: {
+        fields: [
+          draftFieldReference("draft_field_1"),
+          draftFieldReference("draft_field_1"),
+        ],
+        title_field: null,
+        edit_form_reference: null,
+      },
+    };
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateDetailFields),
+      "duplicate_view_field_reference",
+    );
+
+    const listPrimaryInSecondary = validDraft();
+    const listSource = listPrimaryInSecondary.views[0];
+    if (!listSource || listSource.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    listPrimaryInSecondary.views[0] = {
+      ...listSource,
+      view_type: "list",
+      configuration: {
+        primary_field: draftFieldReference("draft_field_1"),
+        secondary_fields: [draftFieldReference("draft_field_1")],
+        create_form_reference: null,
+        edit_form_reference: null,
+      },
+    };
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(listPrimaryInSecondary),
+      "duplicate_view_field_reference",
+    );
+
+    const duplicateListSecondary = validDraft();
+    const duplicateListSource = duplicateListSecondary.views[0];
+    if (!duplicateListSource || duplicateListSource.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    duplicateListSecondary.views[0] = {
+      ...duplicateListSource,
+      view_type: "list",
+      configuration: {
+        primary_field: draftFieldReference("draft_field_1"),
+        secondary_fields: [
+          draftFieldReference("draft_field_2"),
+          draftFieldReference("draft_field_2"),
+        ],
+        create_form_reference: null,
+        edit_form_reference: null,
+      },
+    };
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateListSecondary),
+      "duplicate_view_field_reference",
+    );
+
+    const duplicateCardsSupporting = validDraft();
+    const cardsSource = duplicateCardsSupporting.views[0];
+    if (!cardsSource || cardsSource.view_type !== "table") {
+      throw new Error("Expected the fixture to contain a table View.");
+    }
+    duplicateCardsSupporting.views[0] = {
+      ...cardsSource,
+      view_type: "cards",
+      configuration: {
+        title_field: draftFieldReference("draft_field_1"),
+        subtitle_field: null,
+        image_field: null,
+        supporting_fields: [
+          draftFieldReference("draft_field_2"),
+          draftFieldReference("draft_field_2"),
+        ],
+        create_form_reference: null,
+        edit_form_reference: null,
+      },
+    };
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateCardsSupporting),
+      "duplicate_view_field_reference",
+    );
+
+    const duplicateCardRoles = structuredClone(duplicateCardsSupporting);
+    if (duplicateCardRoles.views[0]?.view_type !== "cards") {
+      throw new Error("Expected the Cards fixture.");
+    }
+    duplicateCardRoles.views[0].configuration.subtitle_field =
+      draftFieldReference("draft_field_1");
+    duplicateCardRoles.views[0].configuration.supporting_fields = [];
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateCardRoles),
+      "duplicate_view_field_reference",
+    );
+
+    const duplicateFormField = validDraft();
+    duplicateFormField.forms[0]!.fields = [
+      {
+        field_reference: draftFieldReference("draft_field_1"),
+        label: null,
+        help_text: null,
+      },
+      {
+        field_reference: draftFieldReference("draft_field_1"),
+        label: null,
+        help_text: null,
+      },
+    ];
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateFormField),
+      "duplicate_form_field_reference",
+    );
+
+    const duplicateNewFieldLabel = validDraft();
+    duplicateNewFieldLabel.fields.push({
+      ...duplicateNewFieldLabel.fields[0]!,
+      reference: "draft_field_6",
+      label: "  COMPANY NAME ",
     });
-    duplicateObjectPlan.plan.steps[0]!.affected_concepts.push("concept_3");
+    expectTaskDiagnostic(
+      () => validateThroughDraftingTask(duplicateNewFieldLabel),
+      "duplicate_field_label_intent",
+    );
 
     for (const labels of [
-      { singular_label: "Catering Enquiries", plural_label: "Other enquiries" },
-      { singular_label: "Other enquiry", plural_label: "Catering Enquiry" },
-      { singular_label: "Other enquiry", plural_label: "Catering Enquiries" },
-      { singular_label: "Same label", plural_label: "Same label" },
-    ]) {
-      const output = validDraft();
-      output.objects.push({
-        ...output.objects[0]!,
-        reference: "draft_object_2",
-        concept_reference: "concept_3",
-        ...labels,
-      });
-      expectDiagnostic(
-        () =>
-          validateConfigurationDraftOutput(
-            inputValue(duplicateObjectPlan),
-            output,
-          ),
-        "duplicate_object_intent",
+      ["Alpha", "Beta", "Beta", "Gamma"],
+      ["Alpha", "Beta", "Gamma", "Alpha"],
+      ["Alpha", "Beta", "Gamma", "Beta"],
+    ] as const) {
+      const output = twoObjectDraft(
+        [labels[0], labels[1]],
+        [labels[2], labels[3]],
+      );
+      expectTaskDiagnostic(
+        () => validateThroughDraftingTask(output, planWithSecondNewConcept()),
+        "duplicate_object_label_intent",
+      );
+    }
+
+    for (const labels of [
+      ["Ｆoo", "Fools", "foo", "Bars"],
+      ["Café", "Cafés", "Cafe\u0301", "Other"],
+    ] as const) {
+      const output = twoObjectDraft(
+        [labels[0], labels[1]],
+        [labels[2], labels[3]],
+      );
+      expectTaskDiagnostic(
+        () => validateThroughDraftingTask(output, planWithSecondNewConcept()),
+        "duplicate_object_label_intent",
       );
     }
   });
@@ -1612,7 +1869,9 @@ describe("builder configuration draft task and disabled registry", () => {
       usageReported: true,
     });
     expect(invalidProvider).toHaveBeenCalledOnce();
-    expect(JSON.stringify(caught)).not.toContain("duplicate_object_intent");
+    expect(JSON.stringify(caught)).not.toContain(
+      "existing_object_unknown_or_inactive",
+    );
     expect(JSON.stringify(caught)).not.toContain("invented");
   });
 });

@@ -35,8 +35,14 @@ block. No fuzzy or free-text scope comparison is used.
 
 Every structurally optional design value is represented explicitly as `null`
 when absent, while empty collections remain `[]`; omitted properties and
-unknown properties fail the strict schema. Singular and plural new-Object
-labels share one NFKC/case-normalized duplicate namespace.
+unknown properties fail the strict schema. Within one new Object, singular and
+plural labels may normalize to the same value. Labels across different new
+Objects share one NFKC/case-normalized namespace and must not collide.
+
+The duplicate diagnostics are finite and code-owned: `duplicate_field_label_intent`,
+`duplicate_view_field_reference`, `duplicate_form_field_reference` and
+`duplicate_object_label_intent`. They expose no labels, keys, references or
+schema paths.
 
 The task is registered with policy
 `builder_configuration_drafting_disabled_v1`, which remains mapped to the
@@ -61,3 +67,47 @@ and public renderer do not provide generic public Form submission, so a later
 reusable public Form capability is required before a complete Corporate
 Catering Enquiry acceptance flow exists. Relationship intent likewise defines
 metadata only; it does not create operational Record Relationship edges.
+
+## Milestone 8 Phase 8A qualification boundary
+
+The existing drafting subject is qualified separately from planning through
+`src/ai/evaluation/configuration-drafting/`. That harness uses exactly two
+frozen synthetic contexts and eight code-owned ready-plan scenarios, then runs
+the real provider-neutral execution core, this task's strict schemas and this
+module's semantic validator before deterministic scenario gates. The
+evaluation-only task changes only the policy reference to
+`builder_configuration_drafting_terra_medium_v1`, using the fixed
+`gpt-5.6-terra` / `medium` candidate; it is not registered in the production
+task or runtime policy registry.
+
+Qualification is one sequential pass over eight scenarios. Reliability is
+three sequential rounds over the same eight scenarios (24 executions). The
+exact reservations are 5,806,080 microusd and 17,418,240 microusd, beneath
+6,000,000 and 18,000,000 hard ceilings respectively. Live execution requires
+an exact opt-in flag, `AI_PROVIDER=openai` and a non-blank server-only key.
+Deterministic tests inject providers and CI never invokes the live commands.
+
+The gates emit only bounded redacted metadata and finite safe failure
+classification. They do not load Business data, access a database, persist
+requests or responses, create proposals, invoke the compiler, add routes/UI,
+enable production drafting or claim that public Form/Page intent is executable.
+
+Milestone 8 Phase 8A is complete for the frozen code subject
+`acc9eecf652dfcd393c63ee4b9517316a00cdf90`: the final qualification passed
+8/8 with 8 attempts, 53,719 input tokens, 4,647 output tokens, 204,005
+estimated microusd, 41,615 ms elapsed and zero structural, semantic,
+unknown-output, deterministic scenario-gate or provider/execution failures.
+The final controlled reliability rerun passed 24/24 executions, every scenario
+3/3, with 24 attempts, 161,157 input tokens, 13,463 output tokens, 604,845
+estimated microusd, 112,191 ms elapsed and the same zero finite failure counts.
+The earlier reliability run remains historical evidence: 23/24 passed, with
+one bounded 60-second `ai_timeout` for `equipment_maintenance_workspace` at
+repetition 2; no model, policy or source change followed it.
+
+Reports remained bounded and redacted. This evidence qualifies one frozen
+`gpt-5.6-terra` / explicit `medium` /
+`builder_configuration_drafting_terra_medium_v1` profile rather than proving
+generic AI correctness. Any material change to the model, policy, provider
+transport, drafting task, schemas, semantic validator, contexts, scenarios or
+evaluator invalidates it. Production drafting remains disabled. Milestone 8
+Phase 8B authenticated Builder orchestration has not started.
