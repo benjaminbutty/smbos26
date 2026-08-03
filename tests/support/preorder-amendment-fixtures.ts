@@ -351,12 +351,24 @@ export function preorderAmendmentDraft(
 
 export function preorderAmendmentTaskInput(
   authoritative: AuthoritativeAiBusinessContext = preorderAmendmentAuthoritative(),
+  overrides: {
+    ownerRequest?: string;
+    preorderScope?: {
+      preorder_key: string;
+      selection: "sole_active" | "explicit_request";
+    };
+  } = {},
 ): BuilderPreorderAmendmentTaskInput {
   return builderPreorderAmendmentTaskInputBaseSchema.parse({
     schema_version: 1,
-    owner_request: "Make the phone question optional.",
+    owner_request:
+      overrides.ownerRequest ?? "Make the phone question optional.",
     business_context: projectAiBusinessModelContext(authoritative.source)
       .modelContext,
     ready_plan: preorderAmendmentReadyPlan(),
+    preorder_scope: overrides.preorderScope ?? {
+      preorder_key: "bakery_preorder",
+      selection: "sole_active",
+    },
   });
 }

@@ -14,6 +14,7 @@ import {
   type BuilderPreorderAmendmentTaskInput,
 } from "./schemas";
 import { BuilderPreorderAmendmentValidationError } from "./diagnostics";
+import { resolvePreorderTarget } from "./targeting";
 
 export { BuilderPreorderAmendmentValidationError } from "./diagnostics";
 
@@ -84,6 +85,22 @@ function validatePlan(input: BuilderPreorderAmendmentTaskInput) {
   return parsedPlan.data;
 }
 
+function validateTargetScope(input: BuilderPreorderAmendmentTaskInput): void {
+  const resolution = resolvePreorderTarget(
+    input.business_context,
+    input.owner_request,
+  );
+  if (resolution.state === "ambiguous") fail("preorder_key_ambiguous");
+  if (resolution.state === "unknown") fail("preorder_key_unknown_or_inactive");
+  if (
+    resolution.scope.preorder_key !== input.preorder_scope.preorder_key ||
+    resolution.scope.selection !== input.preorder_scope.selection
+  ) {
+    fail("preorder_key_scope_mismatch");
+  }
+  activePreorder(input.business_context, input.preorder_scope.preorder_key);
+}
+
 function activePreorder(
   context: AiBusinessModelContextV1,
   preorderKey: string,
@@ -91,7 +108,6 @@ function activePreorder(
   const activeExperiences = context.preorder_experiences.filter(
     ({ is_active }) => is_active,
   );
-  if (activeExperiences.length > 1) fail("preorder_key_ambiguous");
   const matches = activeExperiences.filter(
     (preorder) => preorder.key === preorderKey,
   );
@@ -294,6 +310,7 @@ export function validateBuilderPreorderAmendmentInput(
   input: BuilderPreorderAmendmentTaskInput,
 ): BuilderPreorderAmendmentTaskInput {
   validatePlan(input);
+  validateTargetScope(input);
   return input;
 }
 
@@ -311,8 +328,12 @@ export function validateBuilderPreorderAmendmentOutput(
     fail("output_too_large");
   }
   validatePlan(input);
+  validateTargetScope(input);
   validateSourceScope(input, output);
   const preorder = activePreorder(input.business_context, output.preorder_key);
+  if (output.preorder_key !== input.preorder_scope.preorder_key) {
+    fail("preorder_key_scope_mismatch");
+  }
   const seen = new Set<string>();
   const labels = new Set(
     preorder.public_fields.map((field) => normalizedLabel(field.label)),

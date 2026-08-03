@@ -22,11 +22,9 @@ import {
   BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
   BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
-  BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderConfigurationDraftingPolicy,
-  openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
 } from "../policies";
 import { builderConfigurationDraftTaskV1 } from "../configuration-drafting/task";
@@ -143,7 +141,7 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
   assertTask(
     runtime.tasks.builder_preorder_amendment_v1,
     "builder_preorder_amendment_v1",
-    BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+    BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
   );
   assertPolicy(
     runtime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
@@ -154,11 +152,12 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
     openAiBuilderConfigurationDraftingPolicy,
   );
   assertPolicy(
-    runtime.policies[BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY],
-    openAiBuilderPreorderAmendmentPolicy,
+    runtime.policies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
+    disabledExecutionPolicies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
   );
   if (
-    Object.keys(runtime.providers).length !== 1 ||
+    Object.keys(runtime.providers).length !== 2 ||
+    runtime.providers.disabled?.key !== "disabled" ||
     runtime.providers.openai?.key !== "openai"
   ) {
     runtimeConfigurationError();
@@ -218,7 +217,8 @@ export function createBuilderAiRuntime(
       runtimeConfigurationError();
     }
     const configuredOpenAiProvider = productionRuntime.providers.openai;
-    if (!configuredOpenAiProvider) {
+    const disabledProvider = productionRuntime.providers.disabled;
+    if (!configuredOpenAiProvider || !disabledProvider) {
       runtimeConfigurationError();
     }
 
@@ -226,25 +226,24 @@ export function createBuilderAiRuntime(
       ...builderConfigurationDraftTaskV1,
       policyKey: BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY,
     });
-    const qualifiedPreorderAmendmentTask = Object.freeze({
-      ...builderPreorderAmendmentTaskV1,
-      policyKey: BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
-    });
     return assertPrivateRuntime({
       mode: "openai",
       tasks: Object.freeze({
         builder_plan_v1: builderPlanTaskV1,
         builder_configuration_draft_v1: qualifiedDraftTask,
-        builder_preorder_amendment_v1: qualifiedPreorderAmendmentTask,
+        builder_preorder_amendment_v1: builderPreorderAmendmentTaskV1,
       }),
       policies: Object.freeze({
         [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
         [BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY]:
           openAiBuilderConfigurationDraftingPolicy,
-        [BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY]:
-          openAiBuilderPreorderAmendmentPolicy,
+        [BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY]:
+          productionRuntime.policies[
+            BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY
+          ],
       }),
       providers: Object.freeze({
+        disabled: disabledProvider,
         openai: configuredOpenAiProvider,
       }),
     });

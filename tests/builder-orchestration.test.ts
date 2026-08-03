@@ -46,6 +46,7 @@ import {
   type BuilderPlanOutput,
 } from "../src/ai/planning/schemas";
 import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
+import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
 import type { Database } from "../src/db/supabase/database.types";
@@ -787,6 +788,12 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_configuration_draft_v1!.outputSchema).toBe(
       builderConfigurationDraftTaskV1.outputSchema,
     );
+    expect(runtime.tasks.builder_preorder_amendment_v1).toBe(
+      builderPreorderAmendmentTaskV1,
+    );
+    expect(runtime.tasks.builder_preorder_amendment_v1!.policyKey).toBe(
+      "builder_preorder_amendment_disabled_v1",
+    );
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
@@ -794,6 +801,7 @@ describe("private qualified Builder runtime", () => {
       runtime.policies.builder_configuration_drafting_terra_medium_v1,
     ).toBe(openAiBuilderConfigurationDraftingPolicy);
     expect(runtime.providers.openai).toBe(provider);
+    expect(runtime.providers.disabled?.key).toBe("disabled");
 
     const disabled = createBuilderAiRuntime({ AI_PROVIDER: "disabled" });
     expect(Object.keys(disabled.tasks)).toEqual([

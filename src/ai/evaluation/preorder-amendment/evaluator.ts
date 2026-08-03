@@ -54,6 +54,10 @@ export function evaluateBuilderPreorderAmendment(
         owner_request: scenario.owner_request,
         business_context: syntheticBusinessContext,
         ready_plan: plan,
+        preorder_scope: {
+          preorder_key: "bakery_preorder",
+          selection: "sole_active",
+        },
       });
       validateBuilderPreorderAmendmentOutput(taskInput, output);
     } catch {

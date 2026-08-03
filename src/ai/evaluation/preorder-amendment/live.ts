@@ -192,6 +192,10 @@ function inputForScenario(id: BuilderPreorderAmendmentEvaluationScenarioId) {
     owner_request: scenario.owner_request,
     business_context: syntheticBusinessContext,
     ready_plan: awaitedPlans[id],
+    preorder_scope: {
+      preorder_key: "bakery_preorder",
+      selection: "sole_active",
+    },
   });
 }
 

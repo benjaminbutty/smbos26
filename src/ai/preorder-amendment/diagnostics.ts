@@ -10,6 +10,7 @@ export const builderPreorderAmendmentDiagnosticCodes = [
   "output_too_large",
   "preorder_key_unknown_or_inactive",
   "preorder_key_ambiguous",
+  "preorder_key_scope_mismatch",
   "source_step_unknown",
   "source_step_category_mismatch",
   "source_step_uncovered",

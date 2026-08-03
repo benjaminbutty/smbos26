@@ -23,8 +23,10 @@ import {
 } from "../src/ai/preorder-amendment/contracts";
 import { BuilderPreorderAmendmentProposalError } from "../src/ai/preorder-amendment/errors";
 import { createBuilderPreorderAmendmentProposalService } from "../src/ai/preorder-amendment/proposal-service";
+import { resolvePreorderTarget } from "../src/ai/preorder-amendment/targeting";
 import { validateBuilderPreorderAmendmentOutput } from "../src/ai/preorder-amendment/validation";
 import type { ProposeConfigurationChangeInput } from "../src/core/configuration/schemas";
+import { composePreorderQuestionAmendment } from "../src/core/configuration/manual-amendments/service";
 import type { Database } from "../src/db/supabase/database.types";
 import {
   preorderAmendmentAuthoritative,
@@ -126,6 +128,21 @@ describe("Builder preorder amendment proposal boundary", () => {
         ]),
       }),
     );
+    const manualOperations = composePreorderQuestionAmendment(
+      preorderAmendmentSnapshot(),
+      {
+        intent: "update_preorder_question",
+        preorderKey: "bakery_preorder",
+        target: "customer",
+        fieldKey: "phone",
+        label: "Phone",
+        helpText: "We will only call about your order.",
+        required: false,
+      },
+    ).operations;
+    expect(proposeChangeSet).toHaveBeenCalledWith(
+      expect.objectContaining({ operations: manualOperations }),
+    );
     expect(result).toMatchObject({
       schema_version: 1,
       proposal_id: preorderAmendmentFixtureIds.proposal,
@@ -193,6 +210,115 @@ describe("Builder preorder amendment proposal boundary", () => {
       expect.objectContaining({ diagnosticCode: "preorder_key_ambiguous" }),
     );
   });
+
+  it("accepts one exact active preorder key from the request scope", () => {
+    const snapshot = preorderAmendmentSnapshot();
+    const existing = snapshot.preorder_experiences[0]!;
+    snapshot.preorder_experiences.push({
+      ...existing,
+      id: "70000000-0000-4000-8000-000000000024",
+      key: "second_preorder",
+    });
+    const authoritative = preorderAmendmentAuthoritative({
+      source: preorderAmendmentSource(snapshot),
+    });
+    const input = preorderAmendmentTaskInput(authoritative, {
+      ownerRequest: "Make phone optional for bakery_preorder.",
+      preorderScope: {
+        preorder_key: "bakery_preorder",
+        selection: "explicit_request",
+      },
+    });
+
+    expect(() =>
+      validateBuilderPreorderAmendmentOutput(input, preorderAmendmentDraft()),
+    ).not.toThrow();
+  });
+
+  it.each([
+    ["unknown", "forged_preorder", "preorder_key_unknown_or_inactive"],
+    ["inactive", "archived_preorder", "preorder_key_unknown_or_inactive"],
+  ] as const)(
+    "fails safely for an %s preorder key",
+    (kind, key, diagnosticCode) => {
+      const snapshot = preorderAmendmentSnapshot();
+      if (kind === "inactive") {
+        snapshot.preorder_experiences.push({
+          ...snapshot.preorder_experiences[0]!,
+          id: "70000000-0000-4000-8000-000000000025",
+          key,
+          is_active: false,
+        });
+      }
+      const input = preorderAmendmentTaskInput(
+        preorderAmendmentAuthoritative({
+          source: preorderAmendmentSource(snapshot),
+        }),
+        {
+          ownerRequest: `Make phone optional for preorder_key=${key}.`,
+          preorderScope: { preorder_key: key, selection: "explicit_request" },
+        },
+      );
+
+      expect(() =>
+        validateBuilderPreorderAmendmentOutput(
+          input,
+          preorderAmendmentDraft({ preorder_key: key }),
+        ),
+      ).toThrowError(expect.objectContaining({ diagnosticCode }));
+    },
+  );
+
+  it("fails closed when an explicit active preorder key is duplicated", () => {
+    const input = preorderAmendmentTaskInput();
+    const duplicateContext = {
+      ...input.business_context,
+      preorder_experiences: [
+        ...input.business_context.preorder_experiences,
+        { ...input.business_context.preorder_experiences[0]! },
+      ],
+    };
+
+    expect(
+      resolvePreorderTarget(
+        duplicateContext,
+        "Make phone optional for preorder_key=bakery_preorder.",
+      ),
+    ).toEqual({ state: "unknown" });
+  });
+
+  it("rejects a draft that switches away from the authorized preorder", () => {
+    const snapshot = preorderAmendmentSnapshot();
+    const existing = snapshot.preorder_experiences[0]!;
+    snapshot.preorder_experiences.push({
+      ...existing,
+      id: "70000000-0000-4000-8000-000000000026",
+      key: "second_preorder",
+    });
+    const input = preorderAmendmentTaskInput(
+      preorderAmendmentAuthoritative({
+        source: preorderAmendmentSource(snapshot),
+      }),
+      {
+        ownerRequest: "Make phone optional for bakery_preorder.",
+        preorderScope: {
+          preorder_key: "bakery_preorder",
+          selection: "explicit_request",
+        },
+      },
+    );
+
+    expect(() =>
+      validateBuilderPreorderAmendmentOutput(
+        input,
+        preorderAmendmentDraft({ preorder_key: "second_preorder" }),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        diagnosticCode: "preorder_key_scope_mismatch",
+      }),
+    );
+  });
 });
 
 describe("Builder Phase 9A orchestration seam", () => {
@@ -240,6 +366,7 @@ describe("Builder Phase 9A orchestration seam", () => {
       })),
     };
     const preorderProposalService = { propose: vi.fn() };
+    const accountingStore = accounting();
     const service = createBuilderOrchestrationService({
       loadContext: vi
         .fn()
@@ -247,7 +374,7 @@ describe("Builder Phase 9A orchestration seam", () => {
         .mockResolvedValueOnce(authoritative),
       createRuntime: vi.fn(() => ({}) as BuilderAiRuntime),
       createExecution: vi.fn(() => execution),
-      createAccounting: vi.fn(() => accounting()),
+      createAccounting: vi.fn(() => accountingStore),
       proposalService: { propose: vi.fn() },
       preorderAmendmentProposalService: preorderProposalService,
       generateExecutionId: vi
@@ -271,11 +398,22 @@ describe("Builder Phase 9A orchestration seam", () => {
       },
     });
     expect(execution.prepare).toHaveBeenCalledTimes(1);
+    expect(accountingStore.reserve).toHaveBeenCalledTimes(1);
+    expect(accountingStore.settle).toHaveBeenCalledTimes(1);
     expect(preorderProposalService.propose).not.toHaveBeenCalled();
   });
 
   it("routes an active configure_preorder plan to the amendment task and proposal boundary", async () => {
-    const authoritative = preorderAmendmentAuthoritative();
+    const snapshot = preorderAmendmentSnapshot();
+    const existing = snapshot.preorder_experiences[0]!;
+    snapshot.preorder_experiences.push({
+      ...existing,
+      id: "70000000-0000-4000-8000-000000000027",
+      key: "second_preorder",
+    });
+    const authoritative = preorderAmendmentAuthoritative({
+      source: preorderAmendmentSource(snapshot),
+    });
     const planningOutput = preorderAmendmentReadyPlan();
     const amendmentOutput = preorderAmendmentDraft();
     const preparedOutputs = new WeakMap<object, unknown>();
@@ -371,7 +509,7 @@ describe("Builder Phase 9A orchestration seam", () => {
 
     const result = await service.run({} as Client, {
       businessId: preorderAmendmentFixtureIds.business,
-      ownerRequest: "Make the phone question optional.",
+      ownerRequest: "Make the phone question optional for bakery_preorder.",
     });
 
     expect(preparedTasks).toEqual([
@@ -379,11 +517,15 @@ describe("Builder Phase 9A orchestration seam", () => {
       "builder_preorder_amendment_v1",
     ]);
     expect(planningInputs[0]).toMatchObject({
-      owner_request: "Make the phone question optional.",
+      owner_request: "Make the phone question optional for bakery_preorder.",
     });
     expect(amendmentInputs[0]).toMatchObject({
-      owner_request: "Make the phone question optional.",
+      owner_request: "Make the phone question optional for bakery_preorder.",
       ready_plan: planningOutput,
+      preorder_scope: {
+        preorder_key: "bakery_preorder",
+        selection: "explicit_request",
+      },
     });
     expect(preorderProposalService.propose).toHaveBeenCalledTimes(1);
     expect(result).toEqual({

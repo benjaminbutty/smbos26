@@ -16,10 +16,10 @@ import { BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY } from "../policies";
 
 export const BUILDER_PREORDER_AMENDMENT_INSTRUCTION = [
   "Use only the validated ready plan, owner request and current AI-safe Business context.",
-  "Return only bounded preorder amendment intents for the one exact active preorder identified by its existing key.",
+  "Return only bounded preorder amendment intents for the one exact active preorder identified by the server-provided preorder_scope.",
   "Cover every supported configure_preorder planning step and cite exact step_N references on every amendment.",
   "Use configure_preorder for schedule and existing-question changes; use define_field only for a new Order question.",
-  "For existing questions, copy the exact target and field_key from the current public preorder fields.",
+  "Copy the exact preorder_key from preorder_scope and the exact target and field_key from the current public preorder fields.",
   "For a new question, provide only the wording, help text, public requiredness and short_answer or long_answer style.",
   "Never invent Field keys, positions, IDs, allocations, Business or actor identity, currentness, complete configuration or M5 operations.",
   "Never output SQL, source code, tools, HTTP, Records, Locations, validation, application, publication or lifecycle instructions.",

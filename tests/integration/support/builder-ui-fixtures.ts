@@ -5,6 +5,8 @@ import {
 } from "../../../src/ai/contracts";
 import {
   createBuilderAiRuntime,
+  createBuilderExecutionCore,
+  type BuilderAiRuntime,
   type BuilderTaskKey,
 } from "../../../src/ai/builder/runtime";
 import { createBuilderOrchestrationService } from "../../../src/ai/builder/service";
@@ -20,6 +22,11 @@ import {
   builderPreorderAmendmentOutputSchema,
   type BuilderPreorderAmendmentOutput,
 } from "../../../src/ai/preorder-amendment/schemas";
+import { builderPreorderAmendmentTaskV1 } from "../../../src/ai/preorder-amendment/task";
+import {
+  BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+  openAiBuilderPreorderAmendmentPolicy,
+} from "../../../src/ai/policies";
 
 export function smallClarificationOutput(): Extract<
   BuilderPlanOutput,
@@ -210,12 +217,91 @@ export function preorderAmendmentDraft(): BuilderPreorderAmendmentOutput {
   });
 }
 
+export function preorderAmendmentDraftForRequest(
+  request: string,
+): BuilderPreorderAmendmentOutput {
+  const source = { source_step_references: ["step_1"] };
+  switch (request) {
+    case "Make phone optional.":
+      return preorderAmendmentDraft();
+    case "Add an optional Occasion question.":
+      return builderPreorderAmendmentOutputSchema.parse({
+        schema_version: 1,
+        summary: "Add an optional Occasion question.",
+        preorder_key: "bakery_preorder",
+        amendments: [
+          {
+            ...source,
+            type: "add_preorder_question",
+            label: "Occasion",
+            help_text: null,
+            required: false,
+            answer_style: "short_answer",
+          },
+        ],
+      });
+    case "Remove Sunday collection.":
+      return builderPreorderAmendmentOutputSchema.parse({
+        schema_version: 1,
+        summary: "Remove Sunday collection.",
+        preorder_key: "bakery_preorder",
+        amendments: [
+          { ...source, type: "set_collection_days", days_of_week: [6] },
+        ],
+      });
+    case "Change the cutoff from 48 to 72 hours.":
+      return builderPreorderAmendmentOutputSchema.parse({
+        schema_version: 1,
+        summary: "Change the cutoff from 48 to 72 hours.",
+        preorder_key: "bakery_preorder",
+        amendments: [{ ...source, type: "set_cutoff_hours", cutoff_hours: 72 }],
+      });
+    case "Remove Sunday collection and require 72 hours’ notice.":
+      return builderPreorderAmendmentOutputSchema.parse({
+        schema_version: 1,
+        summary: "Remove Sunday collection and require 72 hours' notice.",
+        preorder_key: "bakery_preorder",
+        amendments: [
+          { ...source, type: "set_collection_days", days_of_week: [6] },
+          { ...source, type: "set_cutoff_hours", cutoff_hours: 72 },
+        ],
+      });
+    case "Make phone optional and add an optional Occasion question.":
+      return builderPreorderAmendmentOutputSchema.parse({
+        schema_version: 1,
+        summary: "Make Phone optional and add an optional Occasion question.",
+        preorder_key: "bakery_preorder",
+        amendments: [
+          {
+            ...source,
+            type: "set_existing_question_requiredness",
+            target: "customer",
+            field_key: "phone",
+            required: false,
+          },
+          {
+            ...source,
+            type: "add_preorder_question",
+            label: "Occasion",
+            help_text: null,
+            required: false,
+            answer_style: "short_answer",
+          },
+        ],
+      });
+    default:
+      throw new Error(`No deterministic preorder output for: ${request}`);
+  }
+}
+
 export interface DeterministicBuilderOptions {
   failure?: {
     taskKey?: BuilderTaskKey;
     error: StructuredAiProviderError;
   };
-  amendmentOutput?: BuilderPreorderAmendmentOutput;
+  amendmentOutput?:
+    | BuilderPreorderAmendmentOutput
+    | ((input: unknown) => BuilderPreorderAmendmentOutput);
 }
 
 export function createDeterministicBuilder(
@@ -240,7 +326,9 @@ export function createDeterministicBuilder(
           request.outputContract.name === "builder_plan_v1"
             ? planningOutput
             : request.outputContract.name === "builder_preorder_amendment_v1"
-              ? (options.amendmentOutput ?? draftOutput)
+              ? typeof options.amendmentOutput === "function"
+                ? options.amendmentOutput(request.input)
+                : (options.amendmentOutput ?? draftOutput)
               : draftOutput,
         usage: { inputTokens: 120, outputTokens: 40 },
         requestMetadata: {
@@ -253,11 +341,28 @@ export function createDeterministicBuilder(
     { AI_PROVIDER: "openai", OPENAI_API_KEY: "test-only" },
     { createOpenAiProvider: () => provider },
   );
+  const deterministicRuntime: BuilderAiRuntime = {
+    mode: runtime.mode,
+    tasks: Object.freeze({
+      ...runtime.tasks,
+      builder_preorder_amendment_v1: Object.freeze({
+        ...builderPreorderAmendmentTaskV1,
+        policyKey: BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+      }),
+    }),
+    policies: Object.freeze({
+      ...runtime.policies,
+      [BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY]:
+        openAiBuilderPreorderAmendmentPolicy,
+    }),
+    providers: runtime.providers,
+  };
   return {
     calls,
     provider,
     service: createBuilderOrchestrationService({
-      createRuntime: () => runtime,
+      createRuntime: () => deterministicRuntime,
+      createExecution: createBuilderExecutionCore,
     }),
   };
 }

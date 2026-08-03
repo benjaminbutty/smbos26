@@ -44,6 +44,10 @@ function inputFor(
     owner_request: scenario.owner_request,
     business_context: syntheticBusinessContext,
     ready_plan: builderPreorderAmendmentEvaluationPlans[scenario.id],
+    preorder_scope: {
+      preorder_key: "bakery_preorder",
+      selection: "sole_active",
+    },
   });
 }
 

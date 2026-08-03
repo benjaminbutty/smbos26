@@ -46,6 +46,13 @@ planning. The existing
 `builderConfigurationDraftTaskV1` input schema and semantic output validator
 remain the defence-in-depth boundary.
 
+When more than one active preorder exists, routing proceeds only when the
+current request identifies one exact active stable key. Otherwise Builder
+returns the existing bounded clarification; unknown, inactive, duplicate and
+scope-switched keys fail closed without amendment drafting or proposal
+creation. The private OpenAI runtime keeps the amendment task on its disabled
+policy until both exact live gates pass.
+
 The existing `builderConfigurationProposalService` is called once for generic
 drafts. Preorder amendments use their narrow parallel proposal boundary, which
 shares the deterministic manual composer and fixed `Proposed preorder changes`
@@ -62,8 +69,9 @@ frozen clone whose only changed property is the qualified
 `builder_configuration_drafting_terra_medium_v1` policy key. The clone reuses
 the production task key, version, purpose label, instruction, schemas and
 semantic validator. The private registry contains only the unchanged planning
-task, that clone, the exact qualified policies and the validated configured
-provider. Disabled mode preserves the existing disabled behavior.
+task, that clone, the disabled preorder-amendment task, the corresponding
+policies and the validated configured providers. Disabled mode preserves the
+existing disabled behavior.
 
 Planning and drafting use independent execution IDs, reservations, audit rows
 and settlements, sequentially. The existing bounded retry policy remains

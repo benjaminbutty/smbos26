@@ -2718,10 +2718,13 @@ contains `configure_preorder`, and otherwise uses only the optional
 
 The task produces no operations, IDs, new Field keys or positions. A pure
 semantic validator rechecks the existing ready plan, exact source-step
-coverage, one exact active preorder, active public question identities and
-bounded duplicate/no-op rules. The model-facing context remains the existing
-AI-safe Business context with no Records or PII. The generic additive drafting
-task and compiler remain unchanged.
+coverage, and a server-proven target scope: the sole active preorder or one
+exact active stable key from the current request. Multiple active preorders
+without one exact key return bounded clarification; unknown, inactive,
+duplicate and scope-switched keys fail closed. Active public question
+identities and bounded duplicate/no-op rules remain enforced. The model-facing
+context remains the existing AI-safe Business context with no Records or PII.
+The generic additive drafting task and compiler remain unchanged.
 
 Manual and Builder inputs share one trusted batch composer over an immutable
 configuration snapshot. It preserves untouched schedule, mappings, public

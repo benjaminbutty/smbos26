@@ -2194,18 +2194,20 @@ model must not receive configuration mutation authority.
 
 - Register a separate server-only `builder_preorder_amendment_v1` contract.
   Its strict input contains only the schema version, owner request, existing
-  AI-safe model context and validated ready plan. Its strict output contains one
-  exact preorder key, a bounded list of source-referenced schedule, existing
+  AI-safe model context, validated ready plan and server-provided preorder
+  target scope. Its strict output contains one exact preorder key, a bounded list of source-referenced schedule, existing
   public-question or new Order-question intents, and an owner-readable summary.
   It contains no IDs, allocations, Field keys or positions for new Fields,
   complete configuration, operations or lifecycle instructions.
 - Accept a ready plan only when it is configuration-only, contains
   `configure_preorder`, and uses only `configure_preorder` plus optional
   `define_field`. Revalidate the existing planning contract, require exact
-  source-step coverage and resolve one exact active preorder and active public
-  question identity. Mixed, operational, unsupported, duplicate, archived,
-  ambiguous, out-of-scope, duplicate-label and semantic no-op requests fail
-  closed with finite internal diagnostics.
+  source-step coverage and resolve either the sole active preorder or one exact
+  active stable key from the current request before checking active public
+  question identity. Multiple active preorders without one exact key return
+  bounded clarification. Unknown, inactive, duplicated, forged, switched,
+  out-of-scope, duplicate-label and semantic no-op requests fail closed with
+  finite internal diagnostics; fuzzy or best-match selection is not allowed.
 - Extend the existing manual amendment boundary with one bounded batch
   composer. Manual single-intent controls and Builder intents use the same
   immutable `ConfigurationSnapshotV1` composition rules: complete preservation,
@@ -2222,9 +2224,10 @@ model must not receive configuration mutation authority.
   undo or rollback preparation occurs.
 - Extend the private Builder runtime with three tasks (planning, unchanged
   generic drafting and preorder amendment) and separate accounting executions.
-  The global registry keeps the new task disabled. The qualified profile uses
-  `gpt-5.6-terra` with explicit medium reasoning and policy
-  `builder_preorder_amendment_terra_medium_v1`.
+  The global registry and the private OpenAI runtime keep the new task
+  disabled until the exact qualification and reliability gates pass. The
+  evaluation-only qualified profile uses `gpt-5.6-terra` with explicit medium
+  reasoning and policy `builder_preorder_amendment_terra_medium_v1`.
 - Freeze exactly eight synthetic evaluation scenarios. The task envelope is
   256 KiB input, 80,000 billable input tokens per attempt, 4,096 output tokens,
   30 seconds and two attempts. Its one-execution reservation is 522,880

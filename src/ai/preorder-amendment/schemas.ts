@@ -9,6 +9,10 @@ import {
   builderPlanOutputSchema,
   builderPlanTaskInputSchema,
 } from "../planning/schemas";
+import {
+  preorderTargetScopeSchema,
+  type PreorderTargetScope,
+} from "./targeting";
 
 export const BUILDER_PREORDER_AMENDMENT_SCHEMA_VERSION = 1 as const;
 export const BUILDER_PREORDER_AMENDMENT_MAX_OUTPUT_BYTES = 32 * 1024;
@@ -144,6 +148,7 @@ export const builderPreorderAmendmentTaskInputBaseSchema = z
     owner_request: builderPlanTaskInputSchema.shape.owner_request,
     business_context: aiBusinessModelContextV1Schema,
     ready_plan: builderPlanOutputSchema,
+    preorder_scope: preorderTargetScopeSchema,
   })
   .strict();
 
@@ -165,4 +170,5 @@ export type BuilderPreorderAmendmentReadyTaskInput = Omit<
     { state: "ready" }
   >;
 };
+export type { PreorderTargetScope };
 export type { AiBusinessModelContextV1 };
