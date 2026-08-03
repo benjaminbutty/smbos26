@@ -2224,17 +2224,54 @@ model must not receive configuration mutation authority.
   undo or rollback preparation occurs.
 - Extend the private Builder runtime with three tasks (planning, unchanged
   generic drafting and preorder amendment) and separate accounting executions.
-  The global registry and the private OpenAI runtime keep the new task
-  disabled until the exact qualification and reliability gates pass. The
-  evaluation-only qualified profile uses `gpt-5.6-terra` with explicit medium
-  reasoning and policy `builder_preorder_amendment_terra_medium_v1`.
+  The global/default registry keeps the new task disabled. After the exact
+  qualification and reliability gates pass, the authenticated private OpenAI
+  runtime may map only its frozen amendment clone to the qualified policy. The
+  qualified profile uses `gpt-5.6-terra` with explicit medium reasoning and
+  policy `builder_preorder_amendment_terra_medium_v1`.
 - Freeze exactly eight synthetic evaluation scenarios. The task envelope is
   256 KiB input, 80,000 billable input tokens per attempt, 4,096 output tokens,
   30 seconds and two attempts. Its one-execution reservation is 522,880
   microusd; qualification reserves 4,183,040 under a 4,300,000 ceiling, and
   reliability reserves 12,549,120 under a 12,700,000 ceiling. Live gates are
   exact opt-in, OpenAI/key-gated, database/accounting/file-free and emit only
-  redacted metadata. They were not run for this implementation.
+  redacted metadata. The reviewed closeout evidence below records the exact
+  successful gates.
+
+### Phase 9A qualification closeout
+
+The exact qualified implementation SHA was
+`10e2dfe9859fa289bc5949fa5825fc6700a883a3`. The reviewed task was
+`builder_preorder_amendment_v1`, using model `gpt-5.6-terra`, policy
+`builder_preorder_amendment_terra_medium_v1` and explicit `medium` reasoning.
+
+Qualification completed with 8 scenarios, 8/8 passed, 0 failed and exit code
+0. It used 8 provider attempts, exactly one per scenario, with 29,948 input
+tokens, 874 output tokens, 87,982 estimated microusd and 20,758 ms elapsed.
+The scenarios were `phone_optional`, `remove_sunday`, `cutoff_to_72`,
+`remove_sunday_cutoff_72`, `occasion_optional_short`,
+`gift_message_optional_long`, `existing_question_wording_help` and
+`phone_optional_and_occasion`.
+
+Reliability completed with 8 scenarios × 3 repetitions, 24/24 passed, 0
+failed and exit code 0. It used 24 provider attempts, exactly one per
+execution, with 89,844 input tokens, 2,535 output tokens, 262,641 estimated
+microusd and 42,174 ms elapsed. Each of the same eight scenarios passed 3/3.
+
+Combined reviewed evidence was 32/32 live executions passed, 119,792 input
+tokens, 3,409 output tokens, 350,623 estimated microusd and one provider
+attempt per execution. Reports were bounded/redacted metadata only; no owner
+request, Business context, model output, provider body or ID, reasoning,
+credential or raw provider data was persisted. Any material change to the
+model alias, policy, provider transport, task instruction, schemas, validator,
+contexts, scenarios or evaluator invalidates this evidence and requires both
+gates to be rerun.
+
+The global/default registry remains disabled. The authenticated private OpenAI
+Builder runtime is now enabled only for the qualified amendment mapping
+`builder_preorder_amendment_v1` →
+`builder_preorder_amendment_terra_medium_v1`; planning and generic drafting
+mappings remain unchanged. Phase 9A still does not complete Milestone 9.
 
 ### Consequences
 

@@ -38,7 +38,9 @@ import type { StructuredAiProvider } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
 import { projectAiBusinessModelContext } from "../src/ai/context/projector";
 import {
+  BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   openAiBuilderConfigurationDraftingPolicy,
+  openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
 } from "../src/ai/policies";
 import {
@@ -788,11 +790,17 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_configuration_draft_v1!.outputSchema).toBe(
       builderConfigurationDraftTaskV1.outputSchema,
     );
-    expect(runtime.tasks.builder_preorder_amendment_v1).toBe(
+    expect(runtime.tasks.builder_preorder_amendment_v1).not.toBe(
       builderPreorderAmendmentTaskV1,
     );
     expect(runtime.tasks.builder_preorder_amendment_v1!.policyKey).toBe(
-      "builder_preorder_amendment_disabled_v1",
+      BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(runtime.tasks.builder_preorder_amendment_v1!.inputSchema).toBe(
+      builderPreorderAmendmentTaskV1.inputSchema,
+    );
+    expect(runtime.tasks.builder_preorder_amendment_v1!.outputSchema).toBe(
+      builderPreorderAmendmentTaskV1.outputSchema,
     );
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
@@ -800,6 +808,9 @@ describe("private qualified Builder runtime", () => {
     expect(
       runtime.policies.builder_configuration_drafting_terra_medium_v1,
     ).toBe(openAiBuilderConfigurationDraftingPolicy);
+    expect(
+      runtime.policies[BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY],
+    ).toBe(openAiBuilderPreorderAmendmentPolicy);
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
 

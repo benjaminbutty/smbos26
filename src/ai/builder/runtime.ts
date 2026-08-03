@@ -22,8 +22,10 @@ import {
   BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
   BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
+  BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
+  openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPlanningPolicy,
 } from "../policies";
@@ -141,7 +143,7 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
   assertTask(
     runtime.tasks.builder_preorder_amendment_v1,
     "builder_preorder_amendment_v1",
-    BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
+    BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   );
   assertPolicy(
     runtime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
@@ -152,8 +154,8 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
     openAiBuilderConfigurationDraftingPolicy,
   );
   assertPolicy(
-    runtime.policies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
-    disabledExecutionPolicies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
+    runtime.policies[BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY],
+    openAiBuilderPreorderAmendmentPolicy,
   );
   if (
     Object.keys(runtime.providers).length !== 2 ||
@@ -181,6 +183,41 @@ export function createBuilderAiRuntime(
   }
 
   try {
+    assertTask(
+      productionRuntime.tasks.builder_plan_v1,
+      "builder_plan_v1",
+      BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
+    );
+    assertTask(
+      productionRuntime.tasks.builder_configuration_draft_v1,
+      "builder_configuration_draft_v1",
+      BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
+    );
+    assertTask(
+      productionRuntime.tasks.builder_preorder_amendment_v1,
+      "builder_preorder_amendment_v1",
+      BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
+    );
+    assertPolicy(
+      productionRuntime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
+      providerMode === "openai"
+        ? openAiBuilderPlanningPolicy
+        : disabledExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
+    );
+    assertPolicy(
+      productionRuntime.policies[
+        BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY
+      ],
+      disabledExecutionPolicies[
+        BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY
+      ],
+    );
+    assertPolicy(
+      productionRuntime.policies[
+        BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY
+      ],
+      disabledExecutionPolicies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
+    );
     if (providerMode === "disabled") {
       const disabledProvider = productionRuntime.providers.disabled;
       if (!disabledProvider) {
@@ -226,21 +263,23 @@ export function createBuilderAiRuntime(
       ...builderConfigurationDraftTaskV1,
       policyKey: BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY,
     });
+    const qualifiedPreorderAmendmentTask = Object.freeze({
+      ...builderPreorderAmendmentTaskV1,
+      policyKey: BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+    });
     return assertPrivateRuntime({
       mode: "openai",
       tasks: Object.freeze({
         builder_plan_v1: builderPlanTaskV1,
         builder_configuration_draft_v1: qualifiedDraftTask,
-        builder_preorder_amendment_v1: builderPreorderAmendmentTaskV1,
+        builder_preorder_amendment_v1: qualifiedPreorderAmendmentTask,
       }),
       policies: Object.freeze({
         [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
         [BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY]:
           openAiBuilderConfigurationDraftingPolicy,
-        [BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY]:
-          productionRuntime.policies[
-            BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY
-          ],
+        [BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY]:
+          openAiBuilderPreorderAmendmentPolicy,
       }),
       providers: Object.freeze({
         disabled: disabledProvider,

@@ -228,4 +228,34 @@ npm run eval:builder-preorder-amendment-terra-qualification-live
 Reliability may be run only after a separately reviewed successful
 qualification. These harnesses use no Supabase client, accounting reservation,
 file write or durable persistence, and emit only bounded scenario/gate metadata.
-Live qualification and reliability were not run as part of this implementation.
+
+### Phase 9A qualification closeout evidence
+
+The reviewed live gates completed against exact qualified implementation SHA
+`10e2dfe9859fa289bc5949fa5825fc6700a883a3`. The task was
+`builder_preorder_amendment_v1`, model `gpt-5.6-terra`, policy
+`builder_preorder_amendment_terra_medium_v1`, with explicit `medium`
+reasoning.
+
+Qualification completed with 8 scenarios, 8/8 passed, 0 failed, and exit code 0. It used 8 provider attempts, exactly one per scenario, with 29,948 input
+tokens, 874 output tokens, 87,982 estimated microusd and 20,758 ms elapsed.
+The scenarios were `phone_optional`, `remove_sunday`, `cutoff_to_72`,
+`remove_sunday_cutoff_72`, `occasion_optional_short`,
+`gift_message_optional_long`, `existing_question_wording_help` and
+`phone_optional_and_occasion`.
+
+Reliability completed with 8 scenarios × 3 repetitions, 24/24 passed, 0
+failed, and exit code 0. It used 24 provider attempts, exactly one per
+execution, with 89,844 input tokens, 2,535 output tokens, 262,641 estimated
+microusd and 42,174 ms elapsed. Every scenario passed 3/3: the same eight
+scenario IDs listed above.
+
+Combined reviewed evidence was 32/32 live executions passed, 119,792 input
+tokens, 3,409 output tokens, 350,623 estimated microusd and one provider
+attempt per execution. Reports were bounded/redacted metadata only. No owner
+request, Business context, model output, provider body or ID, reasoning,
+credential or raw provider data was persisted. Any material change to the
+model alias, policy, provider transport, task instruction, schemas, validator,
+contexts, scenarios or evaluator invalidates this evidence and requires both
+gates to be rerun. The reviewed gates cleared the private runtime enablement
+boundary; global/default registration remains disabled.
