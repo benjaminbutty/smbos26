@@ -82,6 +82,12 @@ jobs:
       - name: Run authenticated configuration proposal orchestration tests
         run: npm run test:builder-configuration-proposal
 
+      - name: Reset for authenticated Builder orchestration tests
+        run: npm run supabase:reset
+
+      - name: Run authenticated Builder orchestration tests
+        run: npm run test:builder-orchestration
+
       - name: Run bounded builder planning evaluation tests
         run: npm run test:builder-evaluation
 

@@ -65,6 +65,7 @@ in the `private` schema.
 | `src/ai/configuration-drafting/` | Pure server-owned untrusted additive configuration-intent schemas, fixed instruction, semantic validation and production-disabled task registration; no database/provider/accounting/lifecycle dependency and no M5 operation generation |
 | `src/core/configuration/draft-compiler/` | Pure server-owned Phase 1B compiler from a validated draft plus immutable snapshot to strict additive M5 operations; revalidates existing references and derives deterministic keys/slugs/positions; no UUID/currentness/proposal, database/provider/route/UI or mutation dependency |
 | `src/ai/configuration-proposal/` | Authenticated server-only Phase 2 handoff with first/second exact-currentness and canonical-context checks, one pure compiler call and exactly one M5 `proposeChangeSet`; no lifecycle, provider, persistence, route/UI or operational DML |
+| `src/ai/builder/` | Authenticated server-only Phase 8B composition of authoritative context, qualified planning, private qualified drafting and the existing proposal handoff; sequential metadata-only accounting; no direct compiler, lifecycle, route/UI or operational mutation |
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
@@ -282,7 +283,7 @@ state remain outside the configuration lifecycle. Database locks and
 idempotent applied retries—not the disabled browser button—provide concurrency
 correctness.
 
-## Milestone 8 Phase 8A adds no mutation surface
+## Milestone 8 Phase 8A and Phase 8B add no direct mutation surface
 
 The configuration-drafting qualification and reliability gates are isolated
 engineering evaluations. They use only frozen in-memory synthetic contexts,
@@ -290,6 +291,14 @@ code-owned ready plans, the existing provider-neutral execution core and the
 existing untrusted drafting contract. They do not load tenant data, reserve
 Business accounting, create a candidate or proposal, invoke the compiler or
 lifecycle, write a file/database row, add a route/UI, or enable production
-drafting. Public Form/Page output remains design intent only. The next step is
-reviewed Phase 8B authenticated Builder orchestration through the existing
-proposal boundary.
+drafting. Public Form/Page output remains design intent only. Phase 8B is the
+reviewed authenticated Builder orchestration through the existing proposal
+boundary. It may call that existing ordinary proposal method once after its
+authenticated planning/drafting sequence, but it adds no new compiler,
+lifecycle, projection-table DML, operational mutation, route, UI or Server
+Action surface. It performs four authoritative context loads on the
+successful path, uses separate planning/drafting accounting executions, and
+keeps raw requests, contexts, plans and drafts transient. Clarification,
+operational, mixed and unsupported configuration-category plans consume no
+drafting reservation. Validate, Apply, Publish, rebase and automatic retry are
+outside the phase; Phase 8C remains next.
