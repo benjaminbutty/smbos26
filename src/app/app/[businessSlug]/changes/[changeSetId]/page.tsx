@@ -5,6 +5,7 @@ import { hasCapability, resolveTenant } from "@/auth/authorization";
 import { ConfigurationActionNotice } from "@/components/configuration-action-ui";
 import { ConfigurationChangeDetail } from "@/components/configuration-history-ui";
 import { configurationActionNoticeSchema } from "@/core/configuration/action-notices";
+import { deriveBuilderUndoContext } from "@/core/configuration/builder-undo/service";
 import {
   ConfigurationChangeService,
   ConfigurationChangeServiceError,
@@ -49,6 +50,7 @@ export default async function ConfigurationChangeRoute({
   let detail;
   try {
     const changeSet = await configuration.getChangeSet(changeSetId);
+    const activeHead = await configuration.getActiveHead();
     const versionIds = [
       changeSet.base_version_id,
       changeSet.rollback_target_version_id,
@@ -62,6 +64,32 @@ export default async function ConfigurationChangeRoute({
     const versionById = new Map(
       versions.map((version) => [version.id, version]),
     );
+
+    const appliedVersion = changeSet.applied_version_id
+      ? (versionById.get(changeSet.applied_version_id) ?? null)
+      : null;
+    let builderUndoEligible = false;
+    if (
+      changeSet.status === "applied" &&
+      changeSet.kind === "change" &&
+      appliedVersion
+    ) {
+      const appliedParent = appliedVersion.parent_version_id
+        ? await configuration.getVersion(appliedVersion.parent_version_id)
+        : null;
+      try {
+        builderUndoEligible =
+          deriveBuilderUndoContext({
+            activeHead,
+            businessId: tenant.business.id,
+            parentVersion: appliedParent,
+            sourceChangeSet: changeSet,
+            sourceVersion: appliedVersion,
+          }).state === "eligible";
+      } catch {
+        builderUndoEligible = false;
+      }
+    }
 
     let preview:
       | { state: "available"; pages: Tables<"pages">[] }
@@ -102,9 +130,8 @@ export default async function ConfigurationChangeRoute({
     }
 
     detail = {
-      appliedVersion: changeSet.applied_version_id
-        ? (versionById.get(changeSet.applied_version_id) ?? null)
-        : null,
+      appliedVersion,
+      builderUndoEligible,
       baseVersion: versionById.get(changeSet.base_version_id)!,
       changeSet,
       preview,
@@ -122,6 +149,7 @@ export default async function ConfigurationChangeRoute({
     <ConfigurationChangeDetail
       appliedVersion={detail.appliedVersion}
       baseVersion={detail.baseVersion}
+      builderUndoEligible={detail.builderUndoEligible}
       businessSlug={businessSlug}
       changeSet={detail.changeSet}
       notice={<ConfigurationActionNotice notice={notice} />}

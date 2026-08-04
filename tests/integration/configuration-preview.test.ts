@@ -673,6 +673,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
       operations: [await preorderOperation([6])],
     });
     rollbackProposal = await configuredService.prepareRollback({
+      ...(await configuredService.getProposalCurrentness()),
       targetVersionId: configuredVersion1Id,
       title: "Preview configuration rollback",
       description: "Rollback preview replay proof.",
@@ -1371,6 +1372,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
         ).toEqual([6]);
 
         const rollback = await configuredService.prepareRollback({
+          ...(await configuredService.getProposalCurrentness()),
           targetVersionId: configuredVersion2.id,
           title: "Restore weekend collection",
           description: "Rendered rollback preview proof.",
@@ -1515,6 +1517,7 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
           throw new Error("Missing configured rollback target Version 2.");
         }
         const rollback = await configuredService.prepareRollback({
+          ...(await configuredService.getProposalCurrentness()),
           targetVersionId: target.id,
           title: "Apply rollback during rendered preview assembly",
           description: null,

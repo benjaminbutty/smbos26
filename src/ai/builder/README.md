@@ -83,3 +83,22 @@ the existing accounting metadata and the ordinary proposed M5 change. No
 validation, application, publication, operational mutation or migration occurs
 in this phase. Phase 8C may invoke this service from its authenticated Server
 Action, but adds no second proposal or lifecycle authority.
+
+## Phase 9B contextual undo boundary
+
+The Builder UI also has a deterministic contextual mode at
+`/app/[businessSlug]/builder?undoVersion=[activeVersionId]`. This mode is not
+part of `builderOrchestrationService.run()`, does not construct a task or
+provider, and does not reserve or settle AI usage. A server-only configuration
+boundary reloads the active head and contextual Version, requires an active
+ordinary `change` with a valid immediate parent, verifies any applied source
+proposal, and derives the rollback target from `parent_version_id`.
+
+The dedicated action calls the existing `ConfigurationChangeService` rollback
+preparation boundary with expected source/head currentness. It creates only a
+proposed forward rollback and redirects to Changes; Builder still has no
+Validate or Apply action. Baseline, active rollback, historical/superseded,
+malformed and cross-Business contexts fail closed. A normal Builder request
+matching `Undo that` without this trusted route context returns fixed guidance
+and never searches history or invokes a model. Phase 9A's amendment task,
+policy, runtime mapping and qualification evidence are unchanged.

@@ -6,6 +6,7 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import postgres, { type Sql } from "postgres";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   afterAll,
   beforeAll,
@@ -27,6 +28,9 @@ const actionHarness = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
 vi.mock("../../src/db/supabase/server", () => ({
   createServerClient: async () => {
     const client = actionHarness.clients.shift();
@@ -51,6 +55,9 @@ vi.mock("next/navigation", () => ({
 
 import { createBuilderAction } from "../../src/app/app/[businessSlug]/builder/action-service";
 import { runBuilderAction } from "../../src/app/app/[businessSlug]/builder/actions";
+import { prepareBuilderUndoAction } from "../../src/app/app/[businessSlug]/builder/undo-actions";
+import BuilderPage from "../../src/app/app/[businessSlug]/builder/page";
+import ConfigurationChangeRoute from "../../src/app/app/[businessSlug]/changes/[changeSetId]/page";
 import { BUILDER_UNSUPPORTED_MESSAGES } from "../../src/ai/builder/contracts";
 import { AiExecutionError } from "../../src/ai/errors";
 import { BUILDER_INITIAL_STATE } from "../../src/components/builder-ui-state";
@@ -65,7 +72,9 @@ import {
 import {
   composePreorderAmendmentBatch,
   composePreorderQuestionAmendment,
+  composePreorderScheduleAmendment,
   getPreorderQuestionsSetup,
+  listPreorderScheduleSetups,
   loadActiveManualAmendmentSnapshot,
 } from "../../src/core/configuration/manual-amendments/service";
 import {
@@ -103,6 +112,7 @@ let administrator: Identity;
 let staff: Identity;
 let outsider: Identity;
 let business: Business;
+let outsiderBusiness: Business;
 
 function requireData<T>(
   result: { data: T; error: { message: string } | null },
@@ -171,8 +181,41 @@ function formWithRequest(request: string, forged = false): FormData {
   return form;
 }
 
+function forgedUndoForm(): FormData {
+  const form = new FormData();
+  for (const [key, value] of [
+    ["targetVersionId", "00000000-0000-4000-8000-000000000001"],
+    ["parentVersionId", "00000000-0000-4000-8000-000000000002"],
+    ["businessId", "00000000-0000-4000-8000-000000000003"],
+    ["actorId", "00000000-0000-4000-8000-000000000004"],
+    ["expectedHeadRevision", "999"],
+    ["title", "Forged title"],
+    ["description", "Forged description"],
+    ["kind", "change"],
+    ["status", "applied"],
+  ] as const) {
+    form.set(key, value);
+  }
+  return form;
+}
+
 async function expectNotFound(action: Promise<unknown>): Promise<void> {
   await expect(action).rejects.toMatchObject({ name: "ActionNotFound" });
+}
+
+async function renderContextualBuilder(
+  identity: Identity | Client,
+  sourceVersionId: string,
+  queryOverride?: { undoVersion?: string | string[] },
+): Promise<string> {
+  queueActionClient("client" in identity ? identity.client : identity);
+  const page = await BuilderPage({
+    params: Promise.resolve({ businessSlug: business.slug }),
+    searchParams: Promise.resolve(
+      queryOverride ?? { undoVersion: sourceVersionId },
+    ),
+  });
+  return renderToStaticMarkup(page);
 }
 
 async function enableAi(
@@ -299,6 +342,70 @@ async function liveState() {
     rateLimits,
     emailStates,
   };
+}
+
+function expectOperationalStateUnchanged(
+  before: Awaited<ReturnType<typeof liveState>>,
+  after: Awaited<ReturnType<typeof liveState>>,
+): void {
+  expect(after.recordRows).toEqual(before.recordRows);
+  expect(after.relationshipRows).toEqual(before.relationshipRows);
+  expect(after.recordLocationRows).toEqual(before.recordLocationRows);
+  expect(after.locations).toEqual(before.locations);
+  expect(after.submissions).toEqual(before.submissions);
+  expect(after.slotCounters).toEqual(before.slotCounters);
+  expect(after.rateLimits).toEqual(before.rateLimits);
+  expect(after.emailStates).toEqual(before.emailStates);
+}
+
+function createRpcRaceClient(hook: () => Promise<void>): Client {
+  const base = owner.client;
+  return new Proxy(base, {
+    get(target, property) {
+      if (property === "rpc") {
+        return async (functionName: string, args: Record<string, unknown>) => {
+          if (functionName === "prepare_configuration_rollback") {
+            await hook();
+          }
+          return target.rpc(functionName as never, args as never);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as unknown as Client;
+}
+
+async function applyOrdinaryCutoffChange(cutoffHours: number) {
+  const configuration = new ConfigurationChangeService(owner.client, {
+    businessId: business.id,
+    actorId: owner.user.id,
+  });
+  const active = await loadActiveManualAmendmentSnapshot(configuration);
+  const preorder = active.snapshot.preorder_experiences.find(
+    ({ key, is_active }) => key === "bakery_preorder" && is_active,
+  );
+  if (!preorder) {
+    throw new Error("The Bedford preorder fixture is incomplete.");
+  }
+  const amendment = composePreorderScheduleAmendment(active.snapshot, {
+    intent: "update_preorder_schedule",
+    preorderKey: preorder.key,
+    schedule: { ...preorder.config_json.schedule, cutoff_hours: cutoffHours },
+  });
+  const proposal = await configuration.proposeChangeSet({
+    expectedBaseVersionId: active.baseVersionId,
+    expectedHeadRevision: active.headRevision,
+    title: amendment.title,
+    description: amendment.description,
+    operations: [amendment.operation],
+  });
+  expect((await configuration.validateChangeSet(proposal.id)).status).toBe(
+    "validated",
+  );
+  const applied = await configuration.applyChangeSet(proposal.id);
+  expect(applied.status).toBe("applied");
+  return applied;
 }
 
 async function preparePhase9AcceptanceFixture(): Promise<void> {
@@ -449,6 +556,14 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     if (membership.error) {
       throw membership.error;
     }
+    outsiderBusiness = requireData(
+      await outsider.client.rpc("create_business", {
+        business_name: `Other Bakery ${crypto.randomUUID()}`,
+        requested_business_type: "test",
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create the cross-Business fixture.",
+    );
   }, 180_000);
 
   beforeEach(async () => {
@@ -466,6 +581,12 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
 
   afterAll(async () => {
     if (database) {
+      if (outsiderBusiness) {
+        await database`
+          delete from public.businesses
+          where id = ${outsiderBusiness.id}::uuid
+        `;
+      }
       await database`
         delete from public.business_memberships
         where user_id in ${database(createdUserIds)}
@@ -879,6 +1000,407 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       reason: "ai_disabled",
       message: "Builder is not enabled for this Business.",
     });
+  });
+
+  it("prepares one server-derived forward undo proposal through the real action boundary", async () => {
+    const before = await liveState();
+    const proposalsBefore = await proposalRows();
+    const sourceVersionId = before.head.active_version_id;
+    const sourceVersion = requireData(
+      await serviceRole
+        .from("configuration_versions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("id", sourceVersionId)
+        .single(),
+      "Could not load the active source Version.",
+    );
+
+    queueActionClient(owner.client);
+    await expect(
+      prepareBuilderUndoAction(business.slug, sourceVersionId, new FormData()),
+    ).rejects.toMatchObject({
+      name: "ActionRedirect",
+      message: expect.stringMatching(
+        new RegExp(
+          `/app/${business.slug}/changes/[0-9a-f-]+\\?notice=rollback_prepared`,
+        ),
+      ),
+    });
+
+    const proposals = await proposalRows();
+    expect(proposals).toHaveLength(proposalsBefore.length + 1);
+    const proposal = proposals.at(-1)!;
+    expect(proposal).toMatchObject({
+      business_id: business.id,
+      kind: "rollback",
+      status: "proposed",
+      title: "Undo latest configuration change",
+      base_version_id: sourceVersionId,
+      rollback_target_version_id: sourceVersion.parent_version_id,
+      requested_by: owner.user.id,
+    });
+    expect(String(proposal.base_head_revision)).toBe(
+      String(before.head.head_revision),
+    );
+    expect(proposal.description).toContain(
+      `immediately before Version ${sourceVersion.version_number}`,
+    );
+    expect(await liveState()).toEqual(before);
+  });
+
+  it("covers contextual authorization, malformed routes and forged form data", async () => {
+    const before = await liveState();
+    const sourceVersionId = before.head.active_version_id;
+    const proposalsBefore = await proposalRows();
+    const executionsBefore = await executionRows();
+
+    const adminHtml = await renderContextualBuilder(
+      administrator,
+      sourceVersionId,
+    );
+    expect(adminHtml).toContain("Undo that.");
+    expect(adminHtml).toContain(`Version ${before.head.head_revision}`);
+
+    queueActionClient(administrator.client);
+    await expect(
+      prepareBuilderUndoAction(
+        business.slug,
+        sourceVersionId,
+        forgedUndoForm(),
+      ),
+    ).rejects.toMatchObject({ name: "ActionRedirect" });
+    const adminProposalRows = await proposalRows();
+    expect(adminProposalRows).toHaveLength(proposalsBefore.length + 1);
+    const adminProposal = adminProposalRows.at(-1)!;
+    expect(adminProposal).toMatchObject({
+      requested_by: administrator.user.id,
+      kind: "rollback",
+      status: "proposed",
+      base_version_id: sourceVersionId,
+      base_head_revision: String(before.head.head_revision),
+    });
+    expect(adminProposal.rollback_target_version_id).not.toBe(
+      "00000000-0000-4000-8000-000000000002",
+    );
+    expect(adminProposal.title).toBe("Undo latest configuration change");
+    expect(adminProposal.description).toContain(
+      `Version ${before.head.head_revision}`,
+    );
+    expect(JSON.stringify(adminProposal)).not.toContain("Forged");
+    expect(await executionRows()).toEqual(executionsBefore);
+
+    for (const identity of [staff, outsider]) {
+      await expectNotFound(renderContextualBuilder(identity, sourceVersionId));
+      queueActionClient("client" in identity ? identity.client : identity);
+      await expectNotFound(
+        prepareBuilderUndoAction(
+          business.slug,
+          sourceVersionId,
+          forgedUndoForm(),
+        ),
+      );
+    }
+    await expectNotFound(renderContextualBuilder(anonymous, sourceVersionId));
+    queueActionClient(anonymous);
+    await expect(
+      prepareBuilderUndoAction(
+        business.slug,
+        sourceVersionId,
+        forgedUndoForm(),
+      ),
+    ).rejects.toMatchObject({ name: "ActionRedirect", message: "/sign-in" });
+
+    await expectNotFound(
+      renderContextualBuilder(owner, "not-a-version-id", {
+        undoVersion: "not-a-version-id",
+      }),
+    );
+    await expectNotFound(
+      renderContextualBuilder(owner, sourceVersionId, {
+        undoVersion: [sourceVersionId, sourceVersionId],
+      }),
+    );
+    queueActionClient(owner.client);
+    await expectNotFound(
+      prepareBuilderUndoAction(
+        business.slug,
+        "not-a-version-id",
+        forgedUndoForm(),
+      ),
+    );
+
+    expect(await proposalRows()).toHaveLength(proposalsBefore.length + 1);
+    expect(await liveState()).toEqual(before);
+    expect(await executionRows()).toEqual(executionsBefore);
+  });
+
+  it("intercepts every normal no-context undo phrase without AI or proposal state", async () => {
+    const orchestrationService = { run: vi.fn() };
+    for (const phrase of ["Undo that", "Undo that.", "undo that"]) {
+      const proposalsBefore = await proposalRows();
+      const executionsBefore = await executionRows();
+      queueActionClient(owner.client);
+      await expect(
+        createBuilderAction({ orchestrationService })(
+          business.slug,
+          BUILDER_INITIAL_STATE,
+          formWithRequest(phrase),
+        ),
+      ).resolves.toMatchObject({ state: "context_required" });
+      expect(orchestrationService.run).not.toHaveBeenCalled();
+      expect(await proposalRows()).toEqual(proposalsBefore);
+      expect(await executionRows()).toEqual(executionsBefore);
+    }
+  });
+
+  it("rejects a stale contextual confirmation at the rollback RPC boundary", async () => {
+    const before = await liveState();
+    const staleSourceVersionId = before.head.active_version_id;
+    const rollbackCountBefore = (await proposalRows()).filter(
+      (proposal) => proposal.kind === "rollback",
+    ).length;
+    const executionsBefore = await executionRows();
+    let advancedState: Awaited<ReturnType<typeof liveState>> | undefined;
+    let raceApplied = false;
+    const racingClient = createRpcRaceClient(async () => {
+      if (!raceApplied) {
+        raceApplied = true;
+        await applyOrdinaryCutoffChange(72);
+        advancedState = await liveState();
+      }
+    });
+
+    try {
+      queueActionClient(racingClient);
+      await expect(
+        prepareBuilderUndoAction(
+          business.slug,
+          staleSourceVersionId,
+          forgedUndoForm(),
+        ),
+      ).rejects.toMatchObject({
+        name: "ActionRedirect",
+        message: `/app/${business.slug}/builder?undoVersion=${staleSourceVersionId}`,
+      });
+
+      expect(raceApplied).toBe(true);
+      expect(advancedState).toBeDefined();
+      expect(
+        (await proposalRows()).filter(
+          (proposal) => proposal.kind === "rollback",
+        ),
+      ).toHaveLength(rollbackCountBefore);
+      expect(await liveState()).toEqual(advancedState);
+      expect(await executionRows()).toEqual(executionsBefore);
+
+      const movedOnHtml = await renderContextualBuilder(
+        owner,
+        staleSourceVersionId,
+      );
+      expect(movedOnHtml).toContain("The setup has moved on");
+      expect(movedOnHtml).not.toContain("Undo that.");
+    } finally {
+      if (raceApplied) {
+        await applyOrdinaryCutoffChange(48);
+      }
+    }
+  });
+
+  it("proves the complete contextual undo lifecycle through Changes", async () => {
+    await enableAi();
+    const operationalBefore = await liveState();
+    expect(
+      (
+        await resolvePublicPreorder(
+          anonymous,
+          business.slug,
+          "preorder",
+          "bakery_preorder",
+        )
+      )?.preorder.schedule.days_of_week,
+    ).toEqual([6, 7]);
+
+    const amendmentBuilder = createDeterministicBuilder(
+      preorderReadyPlan(),
+      smallDraft(),
+      {
+        amendmentOutput: preorderAmendmentDraftForRequest(
+          "Remove Sunday collection.",
+        ),
+      },
+    );
+    const amendmentResult = await runRealAction(
+      amendmentBuilder.service,
+      owner,
+      "Remove Sunday collection.",
+    );
+    expect(amendmentResult).toMatchObject({
+      state: "proposed",
+      operation_count: 1,
+    });
+    const amendmentProposal = (await proposalRows()).at(-1)!;
+    expect(amendmentProposal).toMatchObject({
+      kind: "change",
+      status: "proposed",
+      requested_by: owner.user.id,
+    });
+
+    const configuration = new ConfigurationChangeService(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const amendmentProposalId = String(amendmentProposal.id);
+    expect(
+      (await configuration.validateChangeSet(amendmentProposalId)).status,
+    ).toBe("validated");
+    const appliedAmendment =
+      await configuration.applyChangeSet(amendmentProposalId);
+    expect(appliedAmendment.status).toBe("applied");
+    const afterAmendment = await liveState();
+    const amendmentVersion = await configuration.getVersion(
+      appliedAmendment.applied_version_id!,
+    );
+    expect(amendmentVersion).toMatchObject({
+      id: afterAmendment.head.active_version_id,
+      kind: "change",
+      parent_version_id: operationalBefore.head.active_version_id,
+    });
+    expect(amendmentVersion.version_number).toBe(
+      afterAmendment.head.head_revision,
+    );
+    expect(
+      (
+        await resolvePublicPreorder(
+          anonymous,
+          business.slug,
+          "preorder",
+          "bakery_preorder",
+        )
+      )?.preorder.schedule.days_of_week,
+    ).toEqual([6]);
+    expectOperationalStateUnchanged(operationalBefore, afterAmendment);
+
+    const executionsBeforeContext = await executionRows();
+    const contextualHtml = await renderContextualBuilder(
+      owner,
+      amendmentVersion.id,
+    );
+    expect(contextualHtml).toContain(
+      `Version ${amendmentVersion.version_number}`,
+    );
+    expect(contextualHtml).toContain("Undo that.");
+    expect(await executionRows()).toEqual(executionsBeforeContext);
+
+    const proposalsBeforeUndo = await proposalRows();
+    queueActionClient(owner.client);
+    await expect(
+      prepareBuilderUndoAction(
+        business.slug,
+        amendmentVersion.id,
+        forgedUndoForm(),
+      ),
+    ).rejects.toMatchObject({ name: "ActionRedirect" });
+    const proposalsAfterUndo = await proposalRows();
+    expect(proposalsAfterUndo).toHaveLength(proposalsBeforeUndo.length + 1);
+    const rollbackProposal = proposalsAfterUndo.at(-1)!;
+    const rollbackProposalId = String(rollbackProposal.id);
+    expect(rollbackProposal).toMatchObject({
+      kind: "rollback",
+      status: "proposed",
+      base_version_id: amendmentVersion.id,
+      base_head_revision: String(afterAmendment.head.head_revision),
+      rollback_target_version_id: amendmentVersion.parent_version_id,
+      requested_by: owner.user.id,
+    });
+    expect(rollbackProposal.title).toBe("Undo latest configuration change");
+    expect(JSON.stringify(rollbackProposal)).not.toContain("Forged");
+    expect(await liveState()).toEqual(afterAmendment);
+    expectOperationalStateUnchanged(operationalBefore, await liveState());
+    expect(await executionRows()).toEqual(executionsBeforeContext);
+
+    queueActionClient(owner.client);
+    const detailPage = await ConfigurationChangeRoute({
+      params: Promise.resolve({
+        businessSlug: business.slug,
+        changeSetId: rollbackProposalId,
+      }),
+      searchParams: Promise.resolve({ notice: "rollback_prepared" }),
+    });
+    const detailHtml = renderToStaticMarkup(detailPage);
+    expect(detailHtml).toContain("Undo latest configuration change");
+    expect(detailHtml).toContain("Preview");
+
+    const preview = await configuration.loadPreview(rollbackProposalId);
+    expect(preview).toMatchObject({
+      proposalId: rollbackProposalId,
+      kind: "rollback",
+      status: "proposed",
+    });
+    const previewPreorder = await resolveConfigurationPreviewPreorder(
+      owner.client,
+      {
+        businessId: business.id,
+        actorId: owner.user.id,
+        changeSetId: rollbackProposalId,
+        pageKey: "public_preorder",
+        preorderKey: "bakery_preorder",
+      },
+    );
+    expect(previewPreorder?.preorder.schedule.days_of_week).toEqual([6, 7]);
+
+    const beforeValidation = await liveState();
+    expect(
+      (await configuration.validateChangeSet(rollbackProposalId)).status,
+    ).toBe("validated");
+    expect(await liveState()).toEqual(beforeValidation);
+    expectOperationalStateUnchanged(operationalBefore, await liveState());
+    expect(
+      (
+        await resolvePublicPreorder(
+          anonymous,
+          business.slug,
+          "preorder",
+          "bakery_preorder",
+        )
+      )?.preorder.schedule.days_of_week,
+    ).toEqual([6]);
+
+    const versionsBeforeRollback = beforeValidation.versionCount ?? 0;
+    const headBeforeRollback = beforeValidation.head.head_revision;
+    const appliedRollback =
+      await configuration.applyChangeSet(rollbackProposalId);
+    expect(appliedRollback.status).toBe("applied");
+    const rollbackVersion = await configuration.getVersion(
+      appliedRollback.applied_version_id!,
+    );
+    expect(rollbackVersion).toMatchObject({
+      kind: "rollback",
+      parent_version_id: amendmentVersion.id,
+      restored_from_version_id: amendmentVersion.parent_version_id,
+    });
+    const finalState = await liveState();
+    expect(finalState.versionCount).toBe(versionsBeforeRollback + 1);
+    expect(finalState.head.head_revision).toBe(headBeforeRollback + 1);
+    expect(finalState.head.active_version_id).toBe(rollbackVersion.id);
+    expectOperationalStateUnchanged(operationalBefore, finalState);
+    expect(
+      (
+        await resolvePublicPreorder(
+          anonymous,
+          business.slug,
+          "preorder",
+          "bakery_preorder",
+        )
+      )?.preorder.schedule.days_of_week,
+    ).toEqual([6, 7]);
+    const manual = await loadActiveManualAmendmentSnapshot(configuration);
+    expect(
+      listPreorderScheduleSetups(manual.snapshot).find(
+        ({ key }) => key === "bakery_preorder",
+      )?.schedule.days_of_week,
+    ).toEqual([6, 7]);
+    expect(await executionRows()).toEqual(executionsBeforeContext);
   });
 
   it("covers all six Phase 9A requests through Builder and the full Changes lifecycle", async () => {

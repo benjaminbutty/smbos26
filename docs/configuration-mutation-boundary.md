@@ -31,7 +31,7 @@ Classification: **close direct mutation; runtime read only**.
 
 | Surface | Final classification |
 | --- | --- |
-| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle. Ordinary proposal creation requires the exact expected active version and head revision. |
+| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle. Ordinary proposal creation and rollback preparation require exact expected active currentness under the Business-head lock. |
 | `list_configuration_change_sets`, `get_configuration_change_set`, `list_configuration_versions`, `get_configuration_version` | Owner/Admin history reads |
 | `load_configuration_preview` | Authenticated Owner/Admin identifier-only read; replays and verifies an open candidate against the current head without lifecycle or projection writes |
 | `resolve_configuration_preview_preorder` | Authenticated Owner/Admin read of candidate configuration joined to current operational Product, price, Location-link and counter state |
@@ -340,3 +340,20 @@ proposal only; the existing Changes preview and deliberate Validate, Apply and
 Publish lifecycle remains authoritative. Phase 9A adds no table, migration,
 platform primitive, operational AI action, generic configuration editor or
 undo path. The generic additive drafting subject and compiler remain unchanged.
+
+## Milestone 9 Phase 9B Builder-assisted forward undo
+
+The contextual Builder entry point is a deterministic server-only handoff at
+`/app/[businessSlug]/builder?undoVersion=[activeVersionId]`. It loads only
+tenant-scoped configuration history and verified applied-change provenance.
+The contextual source must still be the active ordinary `change` Version; its
+immediate parent is loaded and becomes the rollback target. No browser field,
+model output or Builder orchestration may choose a target.
+
+The dedicated contextual action calls the strengthened sole
+`prepare_configuration_rollback` boundary, creating only a proposed forward
+rollback. It does not invoke AI, reserve usage, validate, apply, write a
+projection table or touch Records, Relationships, Locations, Orders,
+Customers, Products, preorder submissions, counters or email state. The
+normal Builder phrase `Undo that` without the trusted route context is fixed
+guidance only. Historical rollback remains a deliberate Changes action.

@@ -1866,6 +1866,8 @@ export type Database = {
         Args: {
           expected_actor_id: string;
           expected_business_id: string;
+          expected_active_source_version_id: string;
+          expected_head_revision: number;
           requested_description: string;
           requested_target_version_id: string;
           requested_title: string;

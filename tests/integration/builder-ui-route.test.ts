@@ -200,6 +200,18 @@ async function renderBuilder(identity: { client: Client }): Promise<string> {
   return renderToStaticMarkup(page);
 }
 
+async function renderContextualBuilder(
+  identity: { client: Client },
+  sourceVersionId: string,
+): Promise<string> {
+  queueRouteClient(identity.client);
+  const page = await BuilderPage({
+    params: Promise.resolve({ businessSlug: business.slug }),
+    searchParams: Promise.resolve({ undoVersion: sourceVersionId }),
+  });
+  return renderToStaticMarkup(page);
+}
+
 async function expectNotFound(render: Promise<unknown>): Promise<void> {
   await expect(render).rejects.toMatchObject({ name: "RouteNotFound" });
 }
@@ -310,9 +322,32 @@ describe("authenticated Builder GET route integration", () => {
     expect(await routeState()).toEqual(before);
   });
 
+  it("renders contextual undo for the active ordinary change without side effects", async () => {
+    const before = await routeState();
+    const html = await renderContextualBuilder(
+      owner,
+      before.head.active_version_id,
+    );
+
+    expect(html).toContain("Undo the latest setup change");
+    expect(html).toContain("Undo that.");
+    expect(html).toContain("Nothing changes until this rollback proposal");
+    expect(html).not.toContain('name="ownerRequest"');
+    expect(html).not.toContain('name="targetVersionId"');
+    expect(await routeState()).toEqual(before);
+  });
+
   it("returns controlled notFound for Staff", async () => {
     const before = await routeState();
     await expectNotFound(renderBuilder(staff));
+    expect(await routeState()).toEqual(before);
+  });
+
+  it("denies contextual undo to Staff before loading configuration context", async () => {
+    const before = await routeState();
+    await expectNotFound(
+      renderContextualBuilder(staff, before.head.active_version_id),
+    );
     expect(await routeState()).toEqual(before);
   });
 

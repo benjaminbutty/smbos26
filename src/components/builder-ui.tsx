@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 
+import type { BuilderUndoPresentation } from "../core/configuration/builder-undo/contracts";
 import { BUILDER_INITIAL_STATE, type BuilderUiState } from "./builder-ui-state";
 import { PendingSubmitButton } from "./pending-submit-button";
 
@@ -33,6 +34,21 @@ export function BuilderResultPanel({
       <div className="builder-result builder-result-error" role="alert">
         <strong>{state.message}</strong>
       </div>
+    );
+  }
+
+  if (state.state === "context_required") {
+    return (
+      <section
+        aria-labelledby="builder-context-required-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <h2 id="builder-context-required-heading">
+          Open the change to undo it
+        </h2>
+        <p>{state.message}</p>
+      </section>
     );
   }
 
@@ -245,6 +261,129 @@ export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
       </section>
 
       <BuilderResultPanel businessSlug={businessSlug} state={state} />
+    </section>
+  );
+}
+
+type BuilderUndoAction = (formData: FormData) => Promise<void>;
+
+interface BuilderUndoUiProps {
+  action: BuilderUndoAction;
+  businessSlug: string;
+  context: BuilderUndoPresentation;
+}
+
+function changesPath(businessSlug: string): string {
+  return `/app/${encodeURIComponent(businessSlug)}/changes`;
+}
+
+function versionHistoryPath(businessSlug: string): string {
+  return `${changesPath(businessSlug)}#version-history`;
+}
+
+export function BuilderUndoUi({
+  action,
+  businessSlug,
+  context,
+}: Readonly<BuilderUndoUiProps>) {
+  const sourceTitle =
+    context.state === "eligible"
+      ? (context.source_proposal_title ?? "Latest configuration change")
+      : null;
+
+  return (
+    <section className="tenant-content builder-page">
+      <p className="eyebrow">Business Builder</p>
+      <h1 className="runtime-title">Undo the latest setup change</h1>
+
+      {context.state === "eligible" ? (
+        <section
+          aria-labelledby="builder-undo-heading"
+          className="builder-result builder-result-warning"
+        >
+          <p className="eyebrow">Latest applied configuration change</p>
+          <h2 id="builder-undo-heading">{sourceTitle}</h2>
+          <p>
+            Version {context.source_version_number} is selected. SMBOS will
+            restore the setup from immediately before this Version, which is
+            Version {context.previous_version_number}.
+          </p>
+          <p>
+            Existing Orders, Customers, Products and Locations will not be
+            rolled back. Nothing changes until this rollback proposal is
+            validated and deliberately applied in Changes.
+          </p>
+          <p className="builder-undo-phrase">
+            <strong>Undo that.</strong>
+          </p>
+          <form action={action} className="builder-request-panel">
+            <PendingSubmitButton
+              label="Prepare undo proposal"
+              pendingLabel="Preparing undo proposal…"
+            />
+            <Link
+              className="button button-secondary"
+              href={changesPath(businessSlug)}
+            >
+              Cancel
+            </Link>
+          </form>
+        </section>
+      ) : context.state === "superseded" ? (
+        <section
+          aria-labelledby="builder-undo-superseded-heading"
+          className="builder-result builder-result-warning"
+          role="status"
+        >
+          <h2 id="builder-undo-superseded-heading">The setup has moved on</h2>
+          <p>
+            Version {context.source_version_number} is no longer the active
+            setup. SMBOS will not silently choose a newer change.
+          </p>
+          <p>Review the current Changes and Version history instead.</p>
+        </section>
+      ) : context.state === "baseline" ? (
+        <section
+          aria-labelledby="builder-undo-baseline-heading"
+          className="builder-result builder-result-warning"
+          role="status"
+        >
+          <h2 id="builder-undo-baseline-heading">
+            There is no preceding setup to restore
+          </h2>
+          <p>
+            Version {context.source_version_number} is the starting
+            configuration, or it has no preceding configuration available.
+          </p>
+        </section>
+      ) : (
+        <section
+          aria-labelledby="builder-undo-rollback-heading"
+          className="builder-result builder-result-warning"
+          role="status"
+        >
+          <h2 id="builder-undo-rollback-heading">
+            This Version is already a rollback
+          </h2>
+          <p>
+            Contextual undo is available only for the latest ordinary
+            configuration change. Use Changes history to choose a Version
+            deliberately.
+          </p>
+        </section>
+      )}
+
+      <nav aria-label="Configuration history" className="builder-undo-links">
+        <Link
+          className="button button-secondary"
+          href={changesPath(businessSlug)}
+        >
+          Open Changes
+        </Link>
+        <Link className="text-link" href={versionHistoryPath(businessSlug)}>
+          View Version history
+        </Link>
+      </nav>
     </section>
   );
 }
