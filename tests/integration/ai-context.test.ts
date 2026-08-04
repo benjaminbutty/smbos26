@@ -26,6 +26,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 
 type Client = SupabaseClient<Database>;
 type Identity = { client: Client; user: User };
@@ -251,11 +252,13 @@ describe("Milestone 6 Phase 3A authenticated AI Business context", () => {
     }
 
     const inactiveLocation = requireData(
-      await owner.client.rpc("create_location", {
-        target_business_id: business.id,
-        location_name: "Closed kiosk",
-        requested_timezone: "Europe/London",
-      }),
+      await createLocationWithCurrentness(
+        owner.client,
+        owner.user.id,
+        business.id,
+        "Closed kiosk",
+        "Europe/London",
+      ),
       "Could not create the inactive context Location.",
     );
     const deactivated = await owner.client

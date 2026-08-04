@@ -9,6 +9,10 @@ import {
   builderPlanTaskInputSchema,
   type BuilderPlanOutput,
 } from "../planning/schemas";
+import {
+  BUILDER_LOCATION_CREATION_INTENT_SCHEMA_VERSION,
+  builderLocationCreationIntentReadySchema,
+} from "../location-creation-intent/schemas";
 
 export const BUILDER_ORCHESTRATION_SCHEMA_VERSION = 1 as const;
 export const BUILDER_ORCHESTRATION_MAX_OWNER_REQUEST_BYTES = 16 * 1024;
@@ -92,10 +96,36 @@ export const builderProposedResultSchema = z
   })
   .strict();
 
+export const builderLocationConfirmationResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("location_confirmation"),
+    intent_schema_version: z.literal(
+      BUILDER_LOCATION_CREATION_INTENT_SCHEMA_VERSION,
+    ),
+    location_name: builderLocationCreationIntentReadySchema.shape.location_name,
+    timezone: z.string().trim().min(1).max(80),
+    timezone_source: z.enum(["business_timezone", "explicit_timezone"]),
+    business_timezone: z.string().trim().min(1).max(80),
+    location_state_digest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+
+export const builderLocationConflictResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("location_conflict"),
+    location_name: builderLocationCreationIntentReadySchema.shape.location_name,
+    duplicate_kind: z.enum(["active", "inactive"]),
+  })
+  .strict();
+
 export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderClarificationResultSchema,
   builderUnsupportedResultSchema,
   builderProposedResultSchema,
+  builderLocationConfirmationResultSchema,
+  builderLocationConflictResultSchema,
 ]);
 
 export type BuilderOrchestrationResult = z.infer<

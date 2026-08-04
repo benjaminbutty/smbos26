@@ -6,6 +6,11 @@ import { z } from "zod";
 
 import { requireCapability, resolveTenant } from "../auth/authorization";
 import { createServerClient } from "../db/supabase/server";
+import {
+  createLocationService,
+  LocationServiceError,
+  locationServiceOwnerMessage,
+} from "../core/locations/service";
 
 const businessSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -69,13 +74,22 @@ export async function createLocation(
   const tenant = await resolveTenant(businessSlug, supabase);
   requireCapability(tenant.membership.role, "manage_locations");
 
-  const { error } = await supabase.rpc("create_location", {
-    target_business_id: tenant.business.id,
-    location_name: values.data.name,
-    requested_timezone: values.data.timezone,
-  });
-
-  if (error) {
+  try {
+    const service = createLocationService(supabase, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    });
+    const state = await service.readCreationState();
+    await service.create({
+      name: values.data.name,
+      timezone: values.data.timezone,
+      expectedBusinessTimezone: state.business_timezone,
+      expectedLocationStateDigest: state.location_state_digest,
+    });
+  } catch (error) {
+    if (error instanceof LocationServiceError) {
+      redirectWithError(path, locationServiceOwnerMessage(error.code));
+    }
     redirectWithError(path, "We could not add that location.");
   }
 

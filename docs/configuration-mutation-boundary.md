@@ -357,3 +357,28 @@ projection table or touch Records, Relationships, Locations, Orders,
 Customers, Products, preorder submissions, counters or email state. The
 normal Builder phrase `Undo that` without the trusted route context is fixed
 guidance only. Historical rollback remains a deliberate Changes action.
+
+## Milestone 10 Phase 10A - operational Location boundary
+
+Location creation is intentionally outside the configuration mutation boundary.
+Phase 10A creates one ordinary first-class `public.locations` row after a
+separate bounded Location intent and explicit owner confirmation. It creates
+no proposal, candidate, configuration Version, Changes entry or rollback, and
+the final confirmation performs no AI call or accounting. Manual Location
+creation and Builder confirmation share the trusted server-only Location
+service; update and deactivation remain manual-only.
+
+The Location RPC locks its parent Business, checks the authenticated actor and
+`manage_locations`, compares the Business timezone and a SHA-256 digest of the
+complete canonical Location collection, rechecks normalized active/inactive
+duplicates and derives the slug server-side. Database triggers make IANA
+timezone validity and the parent-Business lock reusable across Business and
+Location writes. A transient signed confirmation binds the name, resolved
+timezone and digest without exposing UUIDs or slugs to the browser.
+
+Builder supports only one exact operational `create_location` plan. Product or
+Record work, Location update/reactivation/deletion, multiple Locations and
+mixed configuration/operational requests remain bounded unsupported results.
+No generic operational action registry or operational undo is added. The
+separate intent task and Terra policy remain disabled in production pending
+their reviewed qualification and reliability evidence.

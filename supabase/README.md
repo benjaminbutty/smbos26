@@ -16,3 +16,9 @@ Normal application roles, including `service_role`, cannot directly mutate the
 eight versioned configuration projection tables. Do not add fixture grants or
 public setup RPCs to work around that boundary; integration setup belongs in
 the test-only database-owner helper.
+
+Phase 10A's forward migration keeps Location creation outside the M5
+configuration lifecycle. It validates existing timezone/name data before
+installing the normalized-name index and fails clearly rather than rewriting
+conflicts. The authenticated state-read and strict expected-state
+`create_location` RPCs are the only normal application creation boundary.

@@ -1559,9 +1559,12 @@ export type Database = {
       };
       create_location: {
         Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          expected_business_timezone: string;
+          expected_location_state_digest: string;
           location_name: string;
-          requested_timezone?: string;
-          target_business_id: string;
+          requested_timezone: string;
         };
         Returns: {
           address_json: Json;
@@ -1582,6 +1585,20 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      get_location_creation_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+        };
+        Returns: {
+          actor_id: string;
+          business_id: string;
+          business_timezone: string;
+          location_state_digest: string;
+          locations: Json;
+          schema_version: number;
+        }[];
       };
       create_preorder_experience: {
         Args: {

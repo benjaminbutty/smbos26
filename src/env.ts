@@ -23,6 +23,7 @@ export const environmentSchema = z
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().trim().min(1),
     SUPABASE_SERVICE_ROLE_KEY: optionalString,
     PREORDER_RATE_LIMIT_SECRET: optionalString,
+    BUILDER_OPERATIONAL_CONFIRMATION_SECRET: optionalString,
   })
   .superRefine((environment, context) => {
     if (
@@ -67,5 +68,7 @@ export function getEnvironment(): Environment {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     PREORDER_RATE_LIMIT_SECRET: process.env.PREORDER_RATE_LIMIT_SECRET,
+    BUILDER_OPERATIONAL_CONFIRMATION_SECRET:
+      process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET,
   });
 }

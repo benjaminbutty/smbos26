@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
 
 import {
   SupabaseAiAccountingService,
@@ -44,6 +45,12 @@ import {
   builderPlanOutputSchema,
   type BuilderPlanOutput,
 } from "../planning/schemas";
+import {
+  builderLocationCreationIntentOutputSchema,
+  builderLocationCreationIntentTaskInputSchema,
+} from "../location-creation-intent/schemas";
+import { createLocationService } from "../../core/locations/service";
+import type { LocationCreationState } from "../../core/locations/schemas";
 import { AiBusinessContextError } from "../context/errors";
 import type { Database } from "../../db/supabase/database.types";
 import {
@@ -94,6 +101,10 @@ interface BuilderOrchestrationDependencies {
   ): AiAccountingStore;
   proposalService: BuilderProposalService;
   preorderAmendmentProposalService: BuilderPreorderAmendmentProposalService;
+  readLocationCreationState(
+    client: SessionClient,
+    context: { businessId: string; actorId: string },
+  ): Promise<LocationCreationState>;
   generateExecutionId(): string;
 }
 
@@ -200,6 +211,93 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
+function normalizeLocationName(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase("en");
+}
+
+function locationDuplicate(
+  state: LocationCreationState,
+  locationName: string,
+): "active" | "inactive" | null {
+  const normalized = normalizeLocationName(locationName);
+  const location = state.locations.find(
+    (candidate) => normalizeLocationName(candidate.name) === normalized,
+  );
+  if (!location) {
+    return null;
+  }
+  return location.is_active ? "active" : "inactive";
+}
+
+function ownerRequestMentionsLocation(
+  ownerRequest: string,
+  locationName: string,
+): boolean {
+  const normalize = (value: string) =>
+    value
+      .normalize("NFKC")
+      .toLocaleLowerCase("en")
+      .replace(/[^\p{L}\p{N}]+/gu, " ")
+      .trim()
+      .replace(/\s+/g, " ");
+  const request = ` ${normalize(ownerRequest)} `;
+  const name = normalize(locationName);
+  return Boolean(name) && request.includes(` ${name} `);
+}
+
+function locationStateMatches(
+  first: LocationCreationState,
+  second: LocationCreationState,
+): boolean {
+  return (
+    first.schema_version === second.schema_version &&
+    first.business_id === second.business_id &&
+    first.actor_id === second.actor_id &&
+    first.business_timezone === second.business_timezone &&
+    first.location_state_digest === second.location_state_digest
+  );
+}
+
+function locationIntentClarification(
+  output: Extract<
+    z.infer<typeof builderLocationCreationIntentOutputSchema>,
+    { state: "needs_clarification" }
+  >,
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "needs_clarification",
+    clarification: builderPlanOutputSchema.parse({
+      schema_version: 1,
+      state: "needs_clarification",
+      understanding: output.understanding,
+      known_requirements: [],
+      assumptions: [],
+      questions: [
+        {
+          reference: "question_1",
+          question: output.question,
+          reason: output.reason,
+          response_style: "free_text",
+        },
+      ],
+      unsupported_requirements: [],
+    }),
+  });
+}
+
+function locationConflictResult(
+  locationName: string,
+  duplicateKind: "active" | "inactive",
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "location_conflict",
+    location_name: locationName,
+    duplicate_kind: duplicateKind,
+  });
+}
+
 function classifyReadyPlan(
   plan: BuilderReadyPlanningOutput,
   context: ReturnType<typeof projectContext>["modelContext"],
@@ -207,6 +305,7 @@ function classifyReadyPlan(
 ):
   | "configuration_draft"
   | { kind: "preorder_amendment"; scope: PreorderTargetScope }
+  | { kind: "location_creation" }
   | BuilderOrchestrationResult {
   const steps = plan.plan.steps;
   const hasOperational = steps.some((step) => step.lane === "operational");
@@ -215,6 +314,15 @@ function classifyReadyPlan(
     return unsupportedResult("mixed_plan_unavailable");
   }
   if (hasOperational) {
+    const [step] = steps;
+    if (
+      step &&
+      steps.length === 1 &&
+      step.lane === "operational" &&
+      step.category === "create_location"
+    ) {
+      return { kind: "location_creation" };
+    }
     return unsupportedResult("operational_plan_unavailable");
   }
 
@@ -287,6 +395,10 @@ export function createBuilderOrchestrationService(
     preorderAmendmentProposalService:
       overrides.preorderAmendmentProposalService ??
       builderPreorderAmendmentProposalService,
+    readLocationCreationState:
+      overrides.readLocationCreationState ??
+      ((client, context) =>
+        createLocationService(client, context).readCreationState()),
     generateExecutionId:
       overrides.generateExecutionId ?? (() => crypto.randomUUID()),
   };
@@ -357,6 +469,94 @@ export function createBuilderOrchestrationService(
         request.ownerRequest,
       );
       if (typeof route !== "string") {
+        if ("kind" in route && route.kind === "location_creation") {
+          const firstLocationState =
+            await dependencies.readLocationCreationState(
+              client,
+              initial.executionContext,
+            );
+          if (
+            firstLocationState.business_id !== request.businessId ||
+            firstLocationState.actor_id !== initial.executionContext.actorId ||
+            firstLocationState.business_timezone !==
+              afterPlanningProjection.modelContext.business.timezone
+          ) {
+            builderContextStale();
+          }
+
+          const requestDuplicate = firstLocationState.locations.find(
+            (location) =>
+              ownerRequestMentionsLocation(request.ownerRequest, location.name),
+          );
+          if (requestDuplicate) {
+            return deepFreeze(
+              locationConflictResult(
+                requestDuplicate.name,
+                requestDuplicate.is_active ? "active" : "inactive",
+              ),
+            );
+          }
+
+          const intentInput =
+            builderLocationCreationIntentTaskInputSchema.parse({
+              schema_version: 1,
+              owner_request: request.ownerRequest,
+              business_context: afterPlanningProjection.modelContext,
+              ready_plan: plan,
+            });
+          const intentExecution = await orchestrator.execute(
+            "builder_location_creation_intent_v1",
+            intentInput,
+          );
+          const intent = builderLocationCreationIntentOutputSchema.parse(
+            intentExecution.output,
+          );
+          if (intent.state === "needs_clarification") {
+            return deepFreeze(locationIntentClarification(intent));
+          }
+
+          const secondLocationState =
+            await dependencies.readLocationCreationState(
+              client,
+              initial.executionContext,
+            );
+          if (!locationStateMatches(firstLocationState, secondLocationState)) {
+            builderContextStale();
+          }
+
+          const timezone =
+            intent.timezone_intent.kind === "explicit_timezone"
+              ? intent.timezone_intent.timezone
+              : secondLocationState.business_timezone;
+          if (!timezone) {
+            builderContextStale();
+          }
+          const duplicate = locationDuplicate(
+            secondLocationState,
+            intent.location_name,
+          );
+          if (duplicate) {
+            return deepFreeze(
+              locationConflictResult(intent.location_name, duplicate),
+            );
+          }
+
+          return deepFreeze(
+            builderOrchestrationResultSchema.parse({
+              schema_version: 1,
+              state: "location_confirmation",
+              intent_schema_version: 1,
+              location_name: intent.location_name,
+              timezone,
+              timezone_source:
+                intent.timezone_intent.kind === "explicit_timezone"
+                  ? "explicit_timezone"
+                  : "business_timezone",
+              business_timezone: secondLocationState.business_timezone,
+              location_state_digest: secondLocationState.location_state_digest,
+            }),
+          );
+        }
         if ("kind" in route) {
           const taskInput = builderPreorderAmendmentTaskInputBaseSchema.parse({
             schema_version: 1,

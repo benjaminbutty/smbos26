@@ -12,11 +12,13 @@ import {
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
+  BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderPlanningPolicy,
 } from "./policies";
 import { builderConfigurationDraftTaskV1 } from "./configuration-drafting/task";
 import { builderPreorderAmendmentTaskV1 } from "./preorder-amendment/task";
+import { builderLocationCreationIntentTaskV1 } from "./location-creation-intent/task";
 import { builderPlanTaskV1 } from "./planning/task";
 import { DisabledStructuredAiProvider } from "./providers/disabled";
 import { OpenAiResponsesStructuredProvider } from "./providers/openai";
@@ -47,6 +49,7 @@ const allRegisteredAiTasks = Object.freeze({
   builder_plan_v1: builderPlanTaskV1,
   builder_configuration_draft_v1: builderConfigurationDraftTaskV1,
   builder_preorder_amendment_v1: builderPreorderAmendmentTaskV1,
+  builder_location_creation_intent_v1: builderLocationCreationIntentTaskV1,
 }) satisfies RegisteredAiTaskRegistry;
 
 export interface AiRuntimeServerEnvironment {
@@ -65,6 +68,7 @@ export interface ProductionAiRuntime {
     builder_planning_terra_medium_v1: AiExecutionPolicy;
     builder_configuration_drafting_disabled_v1: AiExecutionPolicy;
     builder_preorder_amendment_disabled_v1: AiExecutionPolicy;
+    builder_location_creation_intent_disabled_v1: AiExecutionPolicy;
   }>;
   providers: StructuredAiProviderRegistry;
 }
@@ -157,6 +161,10 @@ export function createProductionAiRuntime(
       [BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY]:
         disabledExecutionPolicies[
           BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY
+        ],
+      [BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY]:
+        disabledExecutionPolicies[
+          BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY
         ],
     }),
     providers: Object.freeze({

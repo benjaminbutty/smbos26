@@ -46,6 +46,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 
 type Client = SupabaseClient<Database>;
 type Identity = { client: Client; user: User };
@@ -576,11 +577,13 @@ describe("Milestone 7 Phase 2 authenticated configuration proposal orchestration
       throw membership.error;
     }
     location = requireData(
-      await owner.client.rpc("create_location", {
-        target_business_id: business.id,
-        location_name: "Bedford",
-        requested_timezone: "Europe/London",
-      }),
+      await createLocationWithCurrentness(
+        owner.client,
+        owner.user.id,
+        business.id,
+        "Bedford",
+        "Europe/London",
+      ),
       "Could not create the test Location.",
     );
     await applyConfiguration(owner, customerOperations(), "Install Customer");

@@ -88,6 +88,18 @@ jobs:
       - name: Run authenticated Builder orchestration tests
         run: npm run test:builder-orchestration
 
+      - name: Run deterministic Location Builder boundary tests
+        run: npm run test:builder-location-creation
+
+      - name: Run Location intent contract tests
+        run: npm run test:location-creation-intent
+
+      - name: Run Location evaluation envelope tests
+        run: npm run test:location-creation-evaluation
+
+      - name: Run confirmation-token boundary tests
+        run: npm run test:location-service
+
       - name: Reset for minimal Builder UI tests
         run: npm run supabase:reset
 
@@ -177,6 +189,9 @@ jobs:
           npm run supabase:stop
           npm run supabase:start
           npm run supabase:reset
+
+      - name: Seed the local demonstration data
+        run: npm run demo:seed
 
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration

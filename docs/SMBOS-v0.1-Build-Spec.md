@@ -2733,16 +2733,16 @@ keys and positions server-side; and emits one ordinary proposal through the
 existing Changes lifecycle. Builder does not Validate, Apply, Publish, abandon,
 undo, rebase or prepare rollback.
 
-Phase 9A adds no platform primitive, table or migration. It does not claim
-Milestone 9 complete. Later work remains undo, operational AI actions, generic
-configuration editing, clean-Business bootstrap and public Form work.
+Phase 9A adds no platform primitive, table or migration. Milestone 9 is
+complete and merged after Phase 9B; later work includes operational AI actions,
+generic configuration editing, clean-Business bootstrap and public Form work.
 
 ## 22. Milestone 9 Phase 9B boundary
 
 Phase 9B adds deterministic Builder-assisted forward undo for the latest
-applied ordinary configuration change. Phase 9A is complete and merged at the
-current repository head; Phase 9B is the bounded feature implementation that
-must still be reviewed and merged before Milestone 9 is complete.
+applied ordinary configuration change. Phase 9A and Phase 9B are complete and
+merged at the current repository head. Milestone 9 is complete; Phase 10A is
+the next independently reviewable feature slice.
 
 The contextual route is
 `/app/[businessSlug]/builder?undoVersion=[sourceVersionId]`. The source value
@@ -2772,6 +2772,36 @@ No new model subject, provider policy, qualification scenario, table,
 primitive, conversation persistence, natural-language history search or
 operational undo is introduced. Rollback remains forward-only: applying the
 proposal later creates a new rollback Version whose parent is the previously
-active source Version. Product v0 remains incomplete after Milestone 9;
-bounded clarification continuity and operational Builder actions are later
-milestones.
+active source Version. Product v0 remains in progress after Milestone 9;
+Phase 10A is the bounded operational Builder action documented below.
+
+### Milestone 10 Phase 10A - Builder-assisted creation of one Location
+
+Milestone 9 is complete and merged. Milestone 10 begins with Phase 10A, which
+is not claimed as merged until reviewed. Phase 10A supports one authenticated
+Owner/Admin request for one new first-class Location. Location remains an
+ordinary operational platform row, not a metadata Object/Record and not an M5
+proposal, candidate, configuration Version, Changes entry or rollback.
+
+The flow is qualified planning, a separate
+`builder_location_creation_intent_v1` task, deterministic semantic validation,
+authoritative operational currentness re-read, explicit owner confirmation and
+one trusted Location-service write. The final confirmation uses a transient
+server-signed HMAC token, performs no AI call or accounting, and links to
+Locations. Manual Location management remains available and uses the same
+trusted service; manual update and deactivation remain manual-only.
+
+The database reserves normalized names across active and inactive Locations,
+validates Business and Location timezones against `pg_timezone_names`, derives
+slugs server-side and serializes Location writes on the parent Business row.
+The state digest covers the Business timezone and complete canonical Location
+collection. A Business-timezone default is allowed when the owner supplies no
+different exact IANA timezone; city or region inference is not allowed.
+
+Only the exact one-Location create path is supported. Product/Record work,
+Location updates, reactivation, deletion, multiple Locations and mixed
+configuration/operational requests remain unsupported. No generic operational
+action registry or operational undo is introduced. The Location-intent Terra
+policy is evaluation-only until deterministic tests, exact-head CI, 8/8 live
+qualification and 24/24 live reliability are reviewed; Product v0 remains in
+progress.

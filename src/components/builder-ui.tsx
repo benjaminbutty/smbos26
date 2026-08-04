@@ -11,6 +11,7 @@ type BuilderAction = (
   previousState: BuilderUiState,
   formData: FormData,
 ) => Promise<BuilderUiState>;
+type BuilderFormAction = (formData: FormData) => void | Promise<void>;
 
 interface BuilderUiProps {
   action: BuilderAction;
@@ -21,10 +22,19 @@ function proposalPath(businessSlug: string, proposalId: string): string {
   return `/app/${encodeURIComponent(businessSlug)}/changes/${encodeURIComponent(proposalId)}?notice=builder_prepared`;
 }
 
+function locationsPath(businessSlug: string): string {
+  return `/app/${encodeURIComponent(businessSlug)}/locations`;
+}
+
 export function BuilderResultPanel({
+  action,
   businessSlug,
   state,
-}: Readonly<{ businessSlug: string; state: BuilderUiState }>) {
+}: Readonly<{
+  action?: BuilderFormAction;
+  businessSlug: string;
+  state: BuilderUiState;
+}>) {
   if (state.state === "idle") {
     return null;
   }
@@ -74,9 +84,96 @@ export function BuilderResultPanel({
         <p>
           Builder currently prepares configuration proposals such as Business
           information types, questions and fields, connections, forms, screens
-          and pages. It does not carry out operational actions. Try a smaller
-          configuration-only request.
+          and pages, plus selected operational actions such as adding one
+          Location. Try one complete request at a time.
         </p>
+      </section>
+    );
+  }
+
+  if (state.state === "location_confirmation") {
+    return (
+      <section
+        aria-labelledby="builder-location-confirmation-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <p className="eyebrow">Ready for confirmation</p>
+        <h2 id="builder-location-confirmation-heading">
+          Add {state.location_name} as a new Location?
+        </h2>
+        <p>
+          SMBOS will add one new Location named{" "}
+          <strong>{state.location_name}</strong> using the{" "}
+          <strong>{state.timezone}</strong> timezone
+          {state.timezone_source === "business_timezone"
+            ? " from your Business settings."
+            : "."}
+        </p>
+        <p className="builder-safety-note">
+          Warning: confirming changes your live Business setup immediately. This
+          creates ordinary operational Business data and will not appear in
+          configuration history or Changes. It creates one Location only; it
+          does not reactivate or rename an existing Location.
+        </p>
+        <p className="builder-safety-note">
+          No Products, preorder settings, staff, opening hours or other setup
+          will be added.
+        </p>
+        <form action={action} className="builder-request-panel">
+          <input
+            name="confirmationToken"
+            type="hidden"
+            value={state.confirmation_token}
+          />
+          <PendingSubmitButton
+            label="Confirm and add Location"
+            pendingLabel="Adding Location…"
+          />
+          <Link
+            className="button button-secondary"
+            href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+          >
+            Cancel
+          </Link>
+        </form>
+      </section>
+    );
+  }
+
+  if (state.state === "location_conflict") {
+    return (
+      <section
+        aria-labelledby="builder-location-conflict-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <h2 id="builder-location-conflict-heading">
+          This Location needs your attention
+        </h2>
+        <p>{state.message}</p>
+        <Link className="button" href={locationsPath(businessSlug)}>
+          Review Locations
+        </Link>
+      </section>
+    );
+  }
+
+  if (state.state === "location_created") {
+    return (
+      <section
+        aria-labelledby="builder-location-created-heading"
+        className="builder-result builder-result-success"
+        role="status"
+      >
+        <p className="eyebrow">Location added</p>
+        <h2 id="builder-location-created-heading">{state.location_name}</h2>
+        <p>
+          {state.location_name} has been added using timezone {state.timezone}.
+        </p>
+        <Link className="button" href={locationsPath(businessSlug)}>
+          Open Locations
+        </Link>
       </section>
     );
   }
@@ -203,9 +300,9 @@ export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
         What would you like your business to do?
       </h1>
       <p className="lede">
-        Describe a form, screen, information type or way of working that you
-        need. SMBOS will prepare a proposal for review. Nothing goes live
-        automatically.
+        Describe a safe setup change or one selected operational action you
+        need. SMBOS will prepare a proposal or ask for confirmation before
+        anything changes.
       </p>
 
       <div className="builder-safety-banner" role="note">
@@ -225,7 +322,7 @@ export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
           maxLength={4_000}
           name="ownerRequest"
           onChange={(event) => setOwnerRequest(event.target.value)}
-          placeholder="Create a catering enquiry form that asks for company name, event date, guest count, budget and notes, with an internal list for staff to review enquiries."
+          placeholder="Add Cambridge as a new Location."
           required
           rows={8}
           value={ownerRequest}
@@ -240,8 +337,8 @@ export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
           </output>
         </div>
         <PendingSubmitButton
-          label="Prepare proposal"
-          pendingLabel="Preparing proposal…"
+          label="Prepare request"
+          pendingLabel="Preparing request…"
         />
       </form>
 
@@ -260,7 +357,11 @@ export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
         </ul>
       </section>
 
-      <BuilderResultPanel businessSlug={businessSlug} state={state} />
+      <BuilderResultPanel
+        action={formAction}
+        businessSlug={businessSlug}
+        state={state}
+      />
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { revalidatePath } from "next/cache";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { notFound } from "next/navigation";
 import { z } from "zod";
@@ -30,12 +31,24 @@ import {
   BuilderPreorderAmendmentProposalError,
   type BuilderPreorderAmendmentProposalErrorCode,
 } from "../../../../ai/preorder-amendment/errors";
+import {
+  LocationConfirmationTokenError,
+  createLocationConfirmationTokenService,
+  type LocationConfirmationTokenService,
+} from "../../../../ai/builder/location-confirmation-token";
+import {
+  createLocationService,
+  LocationServiceError,
+} from "../../../../core/locations/service";
 import { BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS } from "../../../../ai/planning/schemas";
 import {
   BUILDER_INITIAL_STATE,
   BUILDER_UI_CONTEXT_REQUIRED_MESSAGE,
   BUILDER_UI_INPUT_INVALID_MESSAGE,
   BUILDER_UI_UNAVAILABLE_MESSAGES,
+  BUILDER_UI_LOCATION_ACTIVE_DUPLICATE_MESSAGE,
+  BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE,
+  BUILDER_UI_LOCATION_CREATED_MESSAGE,
   freezeBuilderUiState,
   type BuilderResultUiState,
   type BuilderUiState,
@@ -182,6 +195,11 @@ function mapClarification(
 
 export function mapBuilderOrchestrationResult(
   input: unknown,
+  confirmation?: {
+    businessId: string;
+    actorId: string;
+    tokenService: LocationConfirmationTokenService;
+  },
 ): BuilderResultUiState {
   const result = builderOrchestrationResultSchema.parse(input);
   if (result.state === "needs_clarification") {
@@ -198,6 +216,37 @@ export function mapBuilderOrchestrationResult(
     return freezeBuilderUiState({
       state: "unsupported",
       message: result.message,
+    });
+  }
+  if (result.state === "location_confirmation") {
+    if (!confirmation) {
+      return unavailableState("temporarily_unavailable");
+    }
+    return freezeBuilderUiState({
+      state: "location_confirmation",
+      confirmation_token: confirmation.tokenService.sign({
+        businessId: confirmation.businessId,
+        actorId: confirmation.actorId,
+        locationName: result.location_name,
+        timezone: result.timezone,
+        timezoneSource: result.timezone_source,
+        businessTimezone: result.business_timezone,
+        locationStateDigest: result.location_state_digest,
+      }),
+      location_name: result.location_name,
+      timezone: result.timezone,
+      timezone_source: result.timezone_source,
+    });
+  }
+  if (result.state === "location_conflict") {
+    return freezeBuilderUiState({
+      state: "location_conflict",
+      location_name: result.location_name,
+      duplicate_kind: result.duplicate_kind,
+      message:
+        result.duplicate_kind === "active"
+          ? BUILDER_UI_LOCATION_ACTIVE_DUPLICATE_MESSAGE
+          : BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE,
     });
   }
   return freezeBuilderUiState({
@@ -314,6 +363,55 @@ export function mapBuilderActionError(
     }
   }
 
+  if (error instanceof LocationConfirmationTokenError) {
+    return {
+      kind: "state",
+      state: unavailableState(
+        error.code === "location_confirmation_secret_unavailable"
+          ? "temporarily_unavailable"
+          : "stale",
+      ),
+    };
+  }
+
+  if (error instanceof LocationServiceError) {
+    switch (error.code) {
+      case "location_creation_state_changed":
+        return { kind: "state", state: unavailableState("stale") };
+      case "location_active_duplicate":
+      case "location_inactive_duplicate":
+        return {
+          kind: "state",
+          state: freezeBuilderUiState({
+            state: "location_conflict",
+            location_name: "That Location",
+            duplicate_kind:
+              error.code === "location_active_duplicate"
+                ? "active"
+                : "inactive",
+            message:
+              error.code === "location_active_duplicate"
+                ? BUILDER_UI_LOCATION_ACTIVE_DUPLICATE_MESSAGE
+                : BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE,
+          }),
+        };
+      case "location_authentication_required":
+      case "location_actor_context_mismatch":
+      case "location_owner_or_admin_required":
+      case "location_business_not_found":
+        return { kind: "not_found" };
+      case "location_name_invalid":
+      case "location_timezone_invalid":
+        return { kind: "state", state: unavailableState("could_not_prepare") };
+      case "location_creation_failed":
+      case "location_response_invalid":
+        return {
+          kind: "state",
+          state: unavailableState("temporarily_unavailable"),
+        };
+    }
+  }
+
   if (error instanceof AiBusinessContextError) {
     switch (error.code) {
       case "ai_context_unauthorized":
@@ -356,6 +454,8 @@ export type BuilderActionDependencies = {
   notFound: typeof notFound;
   orchestrationService: BuilderOrchestrationService;
   resolveTenant: typeof resolveTenant;
+  createLocationService: typeof createLocationService;
+  createLocationConfirmationTokenService: typeof createLocationConfirmationTokenService;
 };
 
 const productionBuilderActionDependencies: BuilderActionDependencies = {
@@ -364,7 +464,80 @@ const productionBuilderActionDependencies: BuilderActionDependencies = {
   notFound,
   orchestrationService: builderOrchestrationService,
   resolveTenant,
+  createLocationService,
+  createLocationConfirmationTokenService,
 };
+
+function confirmationTokenFormValue(formData: FormData): string | null {
+  if (!formData.has("confirmationToken")) {
+    return null;
+  }
+  const value = formData.get("confirmationToken");
+  return typeof value === "string" && value.trim() ? value : "";
+}
+
+async function executeLocationConfirmation(
+  dependencies: BuilderActionDependencies,
+  businessSlug: string,
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  formData: FormData,
+): Promise<BuilderUiState> {
+  const token = confirmationTokenFormValue(formData);
+  if (!token) {
+    return unavailableState("stale");
+  }
+  const tenant = await resolveBuilderTenant(businessSlug, supabase, {
+    notFound: dependencies.notFound,
+    resolveTenant: dependencies.resolveTenant,
+  });
+  if (!dependencies.hasCapability(tenant.membership.role, "manage_locations")) {
+    dependencies.notFound();
+  }
+
+  let confirmedLocationName: string | undefined;
+  try {
+    const tokenService = dependencies.createLocationConfirmationTokenService();
+    const payload = tokenService.verify(token, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    });
+    confirmedLocationName = payload.location_name;
+    await dependencies
+      .createLocationService(supabase, {
+        businessId: tenant.business.id,
+        actorId: tenant.user.id,
+      })
+      .create({
+        name: payload.location_name,
+        timezone: payload.timezone,
+        expectedBusinessTimezone: payload.business_timezone,
+        expectedLocationStateDigest: payload.location_state_digest,
+      });
+    revalidatePath(`/app/${encodeURIComponent(businessSlug)}/locations`);
+    return freezeBuilderUiState({
+      state: "location_created",
+      location_name: payload.location_name,
+      timezone: payload.timezone,
+      message: BUILDER_UI_LOCATION_CREATED_MESSAGE,
+    });
+  } catch (error) {
+    const mapped = mapBuilderActionError(error);
+    if (mapped.kind === "not_found") {
+      dependencies.notFound();
+      return invalidBuilderInputState();
+    }
+    if (mapped.kind === "unexpected") {
+      throw mapped.error;
+    }
+    if (mapped.state.state === "location_conflict" && confirmedLocationName) {
+      return freezeBuilderUiState({
+        ...mapped.state,
+        location_name: confirmedLocationName,
+      });
+    }
+    return mapped.state;
+  }
+}
 
 export function createBuilderAction(
   overrides: Partial<BuilderActionDependencies> = {},
@@ -384,6 +557,17 @@ export function createBuilderAction(
     if (!businessSlug) {
       dependencies.notFound();
       return invalidBuilderInputState();
+    }
+
+    const confirmationToken = confirmationTokenFormValue(formData);
+    if (confirmationToken !== null) {
+      const supabase = await dependencies.createServerClient();
+      return executeLocationConfirmation(
+        dependencies,
+        businessSlug,
+        supabase,
+        formData,
+      );
     }
 
     const parsedRequest = parseBuilderOwnerRequest(formData);
@@ -414,7 +598,20 @@ export function createBuilderAction(
         businessId: tenant.business.id,
         ownerRequest: parsedRequest.ownerRequest,
       });
-      return mapBuilderOrchestrationResult(result);
+      let tokenService: LocationConfirmationTokenService | undefined;
+      if (result.state === "location_confirmation") {
+        tokenService = dependencies.createLocationConfirmationTokenService();
+      }
+      return mapBuilderOrchestrationResult(
+        result,
+        tokenService
+          ? {
+              businessId: tenant.business.id,
+              actorId: tenant.user.id,
+              tokenService,
+            }
+          : undefined,
+      );
     } catch (error) {
       const mapped = mapBuilderActionError(error);
       if (mapped.kind === "not_found") {

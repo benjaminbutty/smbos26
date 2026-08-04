@@ -7,6 +7,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Database, Tables } from "../../src/db/supabase/database.types";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
@@ -424,14 +425,14 @@ describe("tenant row level security", () => {
   });
 
   it("lets an Owner create, edit, and deactivate their own Locations", async () => {
-    const { data: created, error: createError } = await ownerA.client.rpc(
-      "create_location",
-      {
-        target_business_id: businessA.id,
-        location_name: "Owner location",
-        requested_timezone: "Europe/London",
-      },
-    );
+    const { data: created, error: createError } =
+      await createLocationWithCurrentness(
+        ownerA.client,
+        ownerA.user.id,
+        businessA.id,
+        "Owner location",
+        "Europe/London",
+      );
 
     expect(createError).toBeNull();
     expect(created?.business_id).toBe(businessA.id);
@@ -595,11 +596,13 @@ describe("tenant row level security", () => {
 
   it("lets Admin manage locations but not change ownership", async () => {
     const { data: location, error: locationError } =
-      await administratorA.client.rpc("create_location", {
-        target_business_id: businessA.id,
-        location_name: "Admin location",
-        requested_timezone: "UTC",
-      });
+      await createLocationWithCurrentness(
+        administratorA.client,
+        administratorA.user.id,
+        businessA.id,
+        "Admin location",
+        "UTC",
+      );
 
     expect(locationError).toBeNull();
     expect(location?.business_id).toBe(businessA.id);

@@ -22,6 +22,22 @@ export const BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY =
   "builder_preorder_amendment_terra_medium_v1" as const;
 export const BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY =
   "builder_preorder_amendment_disabled_v1" as const;
+export const OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY =
+  "gpt-5.6-terra" as const;
+export const OPENAI_BUILDER_LOCATION_CREATION_REASONING_EFFORT =
+  "medium" as const;
+export const BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY =
+  "builder_location_creation_intent_terra_medium_v1" as const;
+export const BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY =
+  "builder_location_creation_intent_disabled_v1" as const;
+export const BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY =
+  BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY;
+export const BUILDER_LOCATION_CREATION_INTENT_DISABLED_POLICY_KEY =
+  BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY;
+export const OPENAI_BUILDER_LOCATION_CREATION_INTENT_MODEL_KEY =
+  OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY;
+export const OPENAI_BUILDER_LOCATION_CREATION_INTENT_REASONING_EFFORT =
+  OPENAI_BUILDER_LOCATION_CREATION_REASONING_EFFORT;
 
 export const disabledExecutionPolicies = Object.freeze({
   bounded_structured_v1: Object.freeze({
@@ -92,6 +108,23 @@ export const disabledExecutionPolicies = Object.freeze({
     inputMicrousdPerMillion: 0,
     outputMicrousdPerMillion: 0,
   }),
+  [BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY]: Object.freeze({
+    key: BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
+    providerKey: "disabled",
+    modelKey: "unconfigured",
+    maxInputBytes: 256 * 1024,
+    maxBillableInputTokens: 80_000,
+    maxOutputTokens: 2_048,
+    timeoutMs: 30_000,
+    maxAttempts: 2,
+    retryDelayMs: 250,
+    retryableFailureKinds: Object.freeze([
+      "rate_limited",
+      "transient",
+    ] as const),
+    inputMicrousdPerMillion: 0,
+    outputMicrousdPerMillion: 0,
+  }),
 }) satisfies AiExecutionPolicyRegistry;
 
 export const openAiBuilderPlanningPolicy = Object.freeze({
@@ -125,6 +158,20 @@ export const openAiBuilderPreorderAmendmentPolicy = Object.freeze({
   key: BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   providerKey: "openai",
   modelKey: OPENAI_BUILDER_PREORDER_AMENDMENT_MODEL_KEY,
+  inputMicrousdPerMillion: 2_500_000,
+  outputMicrousdPerMillion: 15_000_000,
+});
+
+/**
+ * Evaluation-only until the required live qualification and reliability
+ * evidence has been reviewed. It is intentionally not in the production
+ * OpenAI policy registry.
+ */
+export const openAiBuilderLocationCreationPolicy = Object.freeze({
+  ...disabledExecutionPolicies[BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY],
+  key: BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
+  providerKey: "openai",
+  modelKey: OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY,
   inputMicrousdPerMillion: 2_500_000,
   outputMicrousdPerMillion: 15_000_000,
 });

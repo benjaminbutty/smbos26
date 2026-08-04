@@ -2343,9 +2343,50 @@ Phase 9A remains frozen: its `builder_preorder_amendment_v1` subject, qualified
 policy, schemas, validator, runtime mapping, evaluation contexts and evidence
 are unchanged. Phase 9B introduces no model task, provider profile,
 qualification scenario, table, primitive, conversation persistence or history
-search. Builder still prepares proposals only, and the existing Changes
-lifecycle remains the sole deliberate validation/application boundary.
+search. Configuration-lane Builder work still prepares proposals only and the
+existing Changes lifecycle remains the sole deliberate configuration
+validation/application boundary; Phase 10A is the separately documented
+operational Location path.
 
-Milestone 9 becomes complete only when this Phase 9B implementation is
-reviewed and merged. Product v0 remains incomplete after Milestone 9; bounded
-clarification continuity and operational Builder actions are later milestones.
+Phase 9B is implemented and merged, so Milestone 9 is complete. Product v0
+remains in progress; Phase 10A is the next independently reviewable operational
+Builder slice.
+
+## ADR-031 — Builder-assisted Location creation uses bounded operational intent and explicit deterministic confirmation
+
+Milestone 9 is complete and merged. Milestone 10 begins with Phase 10A,
+which remains independently reviewable and is not claimed as merged until its
+implementation is reviewed. Location is a first-class platform primitive;
+business-created concepts continue to use metadata graph Objects and Records.
+
+Planning remains non-executing. An exact one-step operational
+`create_location` plan enters the separate
+`builder_location_creation_intent_v1` task. Its output is pure transient intent
+with no IDs, slugs, lifecycle instructions or mutation authority. The server
+revalidates the plan, applies the explicit-IANA or authoritative
+Business-timezone rule, reads a canonical operational currentness digest and
+requires explicit owner confirmation before calling the trusted Location
+service.
+
+The confirmation is a versioned, 15-minute HMAC-SHA-256 token bound to the
+authenticated Business and actor. It contains the interpreted name, resolved
+timezone, timezone source, Business timezone, state digest and issued/expiry
+times, but no UUID or slug. The final confirmation performs no AI call,
+provider invocation or accounting reservation. The shared server-only Location
+service is used by both manual and Builder creation; manual update and
+deactivation remain manual-only.
+
+PostgreSQL is authoritative for normalized name uniqueness across active and
+inactive Locations, exact IANA timezone validity, server-derived slugs and
+Business-row serialization of Location writes. The digest covers the Business
+timezone and complete deterministically ordered Location collection. There is
+no M5 proposal/version, Changes entry, configuration rollback or operational
+undo for this action. Mixed configuration/operational requests, Product/Record
+work and generic operational actions remain unsupported; no generic operational
+action registry is introduced.
+
+The Location-intent task has an independent disabled policy and evaluation-only
+Terra policy. Its exact qualification/reliability harness is separate from
+planning, and the private Builder mapping remains disabled until deterministic
+tests, exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence
+are reviewed. Product v0 remains in progress.

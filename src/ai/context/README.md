@@ -43,3 +43,14 @@ Phase 3B planning reloads and reprojects this source after execution. A change
 to the base version, head revision or canonical model context discards the
 result as stale. Future operation generation must still reload context and use
 expected-head protection.
+
+## Phase 10A Location context boundary
+
+The existing model-facing Business context remains unchanged. A Location
+creation intent receives only that AI-safe context and a validated ready plan;
+it does not receive Business or actor UUIDs, configuration currentness,
+operational Records, the Location digest, membership rows, RPC names or the
+confirmation secret. The server-only Location service separately reads the
+authoritative Business timezone and complete operational Location-state digest
+before and after intent generation. Location creation therefore remains a
+deterministic operational boundary rather than a model-authorised mutation.

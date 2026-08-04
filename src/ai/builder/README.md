@@ -102,3 +102,25 @@ malformed and cross-Business contexts fail closed. A normal Builder request
 matching `Undo that` without this trusted route context returns fixed guidance
 and never searches history or invokes a model. Phase 9A's amendment task,
 policy, runtime mapping and qualification evidence are unchanged.
+
+## Phase 10A Location creation
+
+The Builder runtime contains exactly four private tasks: planning, generic
+configuration drafting, preorder amendment and
+`builder_location_creation_intent_v1`. The fourth task is globally and
+privately disabled until its independent Terra qualification and reliability
+evidence is reviewed. It is not a configuration-draft substitute and is never
+given database, identity, digest, token or mutation inputs.
+
+Only a ready plan with exactly one operational `create_location` step enters
+the Location path. The service reads the authoritative Location currentness
+state before and after intent generation, then returns a confirmation-required
+internal result. It never creates a Location during planning, intent generation
+or GET. The Server Action signs the transient confirmation only after the
+tenant and capability checks; the final POST verifies the token and calls the
+shared Location service once without AI or accounting.
+
+Location creation is ordinary operational data and does not go through M5,
+Changes or configuration history. Mixed work, Product/Record work and Location
+updates remain bounded unsupported results. No generic operational action
+registry or operational undo is present.

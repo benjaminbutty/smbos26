@@ -259,3 +259,21 @@ model alias, policy, provider transport, task instruction, schemas, validator,
 contexts, scenarios or evaluator invalidates this evidence and requires both
 gates to be rerun. The reviewed gates cleared the private runtime enablement
 boundary; global/default registration remains disabled.
+
+### Milestone 10 Phase 10A Location-intent gates
+
+`builder_location_creation_intent_v1` has its own disabled production policy and
+evaluation-only `builder_location_creation_intent_terra_medium_v1` policy:
+`gpt-5.6-terra`, medium reasoning, 256 KiB input, 80,000 billable input
+tokens, 2,048 output tokens, 30-second timeout and two attempts. The exact
+reservation is 461,440 microusd per execution; the eight-scenario qualification
+ceiling is 3,800,000 microusd and the 24-execution reliability ceiling is
+11,200,000 microusd.
+
+Qualification and reliability are separate, sequential, explicitly opted-in
+commands. CI runs only deterministic evaluator tests and never activates live
+OpenAI gates. When live credentials or reviewed evidence are unavailable, the
+private Builder mapping remains disabled; no qualification result is inferred
+or claimed. Reports are bounded redacted metadata and omit owner requests,
+Business context, Location names/timezones, model output, credentials and
+tokens.

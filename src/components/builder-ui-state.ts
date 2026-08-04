@@ -18,6 +18,13 @@ export const BUILDER_UI_UNAVAILABLE_MESSAGES = Object.freeze({
     "Builder could not prepare a safe proposal from this request. Your live Business setup has not changed.",
 } as const);
 
+export const BUILDER_UI_LOCATION_ACTIVE_DUPLICATE_MESSAGE =
+  "That Location is already active. Review Locations to use the existing Location.";
+export const BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE =
+  "That Location already exists but is inactive. Review Locations; Builder will not reactivate or rename it.";
+export const BUILDER_UI_LOCATION_CREATED_MESSAGE =
+  "The Location was added to your Business.";
+
 export type BuilderUnavailableReason =
   keyof typeof BUILDER_UI_UNAVAILABLE_MESSAGES;
 
@@ -130,6 +137,47 @@ const builderUiStateSchemas = [
         });
       }
     }),
+  z
+    .object({
+      state: z.literal("location_confirmation"),
+      confirmation_token: z.string().trim().min(1).max(20_000),
+      location_name: boundedText.max(120),
+      timezone: z.string().trim().min(1).max(80),
+      timezone_source: z.enum(["business_timezone", "explicit_timezone"]),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("location_conflict"),
+      location_name: boundedText.max(120),
+      duplicate_kind: z.enum(["active", "inactive"]),
+      message: z.union([
+        z.literal(BUILDER_UI_LOCATION_ACTIVE_DUPLICATE_MESSAGE),
+        z.literal(BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE),
+      ]),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      const expected =
+        value.duplicate_kind === "active"
+          ? BUILDER_UI_LOCATION_ACTIVE_DUPLICATE_MESSAGE
+          : BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE;
+      if (value.message !== expected) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["message"],
+          message: "The Location conflict message is not fixed.",
+        });
+      }
+    }),
+  z
+    .object({
+      state: z.literal("location_created"),
+      location_name: boundedText.max(120),
+      timezone: z.string().trim().min(1).max(80),
+      message: z.literal(BUILDER_UI_LOCATION_CREATED_MESSAGE),
+    })
+    .strict(),
 ] as const;
 
 export const builderUiStateSchema = z.discriminatedUnion(

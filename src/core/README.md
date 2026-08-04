@@ -13,3 +13,16 @@ configuration RPCs are not production capabilities. See
 for the audited surface and
 [`configuration/README.md`](configuration/README.md) for the bounded read model
 and Phase 5A route boundary.
+
+## Phase 10A Locations
+
+`src/core/locations/` is the neutral server-only Location service used by both
+manual Location creation and the final authenticated Builder confirmation. It
+parses trusted requests, reads the operational currentness state, invokes the
+hardened RPC and maps finite owner-safe errors. It owns no model execution,
+configuration lifecycle, pending-action table or generic operational registry.
+
+Location is a first-class platform concept. Builder can create only one new
+Location after explicit confirmation; updates, deactivation and reactivation
+remain manual-only. The operation is outside M5 Changes/versioning and has no
+operational undo.

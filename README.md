@@ -16,9 +16,9 @@ multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
-The current feature branch also contains the bounded Milestone 9 Phase 9B
-deterministic Builder-assisted latest-change undo implementation; it is not
-claimed as merged until reviewed.
+Milestone 9 is complete and merged at the current repository head. Milestone
+10 has begun; Phase 10A is an independently reviewable implementation on this
+branch and is not claimed as merged until reviewed.
 The AI execution boundary is server-only and per-Business accounting is
 disabled by default. OpenAI Responses is the first external adapter, but it is
 also server-disabled by default; the Phase 8C route does not invoke providers
@@ -58,6 +58,9 @@ Included:
 - mandatory propose → validate → apply configuration mutation boundary
 - forward-only rollback proposals and rollback version provenance
 - deterministic Builder-assisted undo of the latest active ordinary change
+- Builder-assisted preparation and explicit confirmation for one ordinary
+  operational Location creation; Location intent remains disabled in the
+  production OpenAI mapping until its separate live gates are reviewed
 - atomic expected-source/head comparison at rollback preparation
 - authenticated verified candidate preview for internal and public Pages
 - read-only Owner/Admin Changes, proposal detail, and Version history routes
@@ -168,6 +171,27 @@ Included:
 - Bedford Bakery installed as empty Version 1 followed by configured Version 2
 - PostgreSQL validation and RLS for every tenant-owned table
 - real PostgreSQL/RLS/integrity integration tests
+
+## Milestone 10 Phase 10A - Builder-assisted Location creation
+
+Phase 10A adds the first bounded operational Builder journey. An authenticated
+Owner/Admin may request one new Location, receive a separately generated and
+deterministically validated Location intent, review a signed 15-minute
+confirmation, and then create one ordinary `public.locations` row through the
+shared server-only Location service. Preparation and GET requests create no
+Location; the final confirmation performs no AI call or AI accounting.
+
+Location is a first-class platform concept, not a metadata Object or Record.
+The operation is outside the M5 proposal/version/Changes lifecycle, and no
+operational undo or generic operational action registry exists. Manual Location
+creation remains available and shares the same normalized-name, timezone and
+server-derived slug boundary. Active and inactive names are reserved; mixed
+configuration/operational requests, Product work and Location updates remain
+unsupported in Builder.
+
+The separate `builder_location_creation_intent_v1` task is globally and
+privately disabled pending its exact 8-scenario qualification and 24-execution
+reliability evidence. Product v0 remains in progress.
 
 Not included:
 
@@ -609,9 +633,9 @@ rollback journey supplies the same currentness. Superseded, baseline, active
 rollback, malformed and cross-Business contexts fail closed. The rollback is
 forward-only and affects configuration only; operational data is untouched.
 The normal Builder phrase without trusted context returns fixed guidance rather
-than searching history. Milestone 9 becomes complete only after Phase 9B is
-reviewed and merged. Product v0 remains incomplete; bounded clarification
-continuity and operational Builder actions are later milestones.
+than searching history. Phase 9B is implemented and merged, so Milestone 9 is
+complete. Product v0 remains in progress; Phase 10A is the next independently
+reviewable operational Builder slice.
 
 ## Requirements
 
@@ -649,7 +673,9 @@ Supabase project using the CLI defaults.
    `SERVICE_ROLE_KEY` value reported by `npm run supabase:status` into the
    server-only `SUPABASE_SERVICE_ROLE_KEY` variable. Never expose that value
    through a `NEXT_PUBLIC_` variable. Leave `AI_PROVIDER` and `OPENAI_API_KEY`
-   empty to keep external execution disabled.
+   empty to keep external execution disabled. For local Builder Location
+   confirmation tests, set `BUILDER_OPERATIONAL_CONFIRMATION_SECRET` to at least
+   32 random bytes; it is server-only and never belongs in a public variable.
 
 4. Start the development server:
 
@@ -753,6 +779,10 @@ validating from a clean state.
 | `npm run test:builder-planning`               | Run strict non-executing builder planning tests     |
 | `npm run test:builder-configuration-proposal` | Run authenticated proposal-only orchestration tests |
 | `npm run test:builder-orchestration`          | Run authenticated Builder orchestration tests       |
+| `npm run test:builder-location-creation`      | Run the Builder Location creation boundary tests    |
+| `npm run test:location-service`               | Run transient Location confirmation boundary tests  |
+| `npm run test:location-creation-intent`       | Run Location intent contract and validator tests    |
+| `npm run test:location-creation-evaluation`   | Run deterministic Location evaluation tests         |
 | `npm run test:builder-ui`                     | Run Builder UI and action-boundary tests            |
 | `npm run test:manual-amendments`              | Run deterministic schedule amendment tests          |
 | `npm run test:manual-questions`               | Run deterministic preorder question tests           |
