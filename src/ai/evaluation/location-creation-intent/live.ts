@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 import { StructuredAiProviderError } from "../../contracts";
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
 import type { AiExecutionResult } from "../../execution";
@@ -9,6 +11,7 @@ import {
   openAiBuilderLocationCreationPolicy,
 } from "../../policies";
 import { builderLocationCreationIntentTaskV1 } from "../../location-creation-intent/task";
+import { BuilderLocationCreationIntentValidationError } from "../../location-creation-intent/diagnostics";
 import { createAiExecutionService } from "../../execution";
 import {
   builderLocationCreationEvaluationScenarios,
@@ -26,12 +29,13 @@ import {
 } from "./envelope";
 import {
   evaluateBuilderLocationCreationIntent,
-  providerFailureReport,
+  executionFailureReport,
 } from "./evaluator";
 import {
   builderLocationCreationEvaluationQualificationAggregateSchema,
   builderLocationCreationEvaluationReliabilityAggregateSchema,
   builderLocationCreationEvaluationSetupFailureSchema,
+  builderLocationCreationEvaluationValidationReasonCodeSchema,
   type BuilderLocationCreationEvaluationReport,
   type BuilderLocationCreationEvaluationSetupReason,
 } from "./schemas";
@@ -312,6 +316,93 @@ function safeErrorCode(
   return "evaluation_execution_failed";
 }
 
+function nextCause(cause: unknown): unknown {
+  if (typeof cause !== "object" || cause === null || !("cause" in cause)) {
+    return undefined;
+  }
+  return (cause as { cause?: unknown }).cause;
+}
+
+function classifyOutputInvalidFailure(cause: unknown): {
+  failureClass:
+    | "output_contract"
+    | "semantic_validation"
+    | "provider_execution"
+    | "unknown";
+  failedGateCode:
+    | "output_contract"
+    | "semantic_validation"
+    | "provider_execution"
+    | "unknown_output";
+  validationReasonCode: BuilderLocationCreationEvaluationReport["validation_reason_code"];
+} {
+  const seen = new Set<object>();
+  let current: unknown = cause;
+  for (let depth = 0; depth < 5 && current !== undefined; depth += 1) {
+    if (
+      current instanceof StructuredAiProviderError &&
+      current.kind === "invalid_response"
+    ) {
+      return {
+        failureClass: "provider_execution",
+        failedGateCode: "provider_execution",
+        validationReasonCode: "provider_invalid_response",
+      };
+    }
+    if (current instanceof BuilderLocationCreationIntentValidationError) {
+      const diagnosticCode =
+        builderLocationCreationEvaluationValidationReasonCodeSchema.parse(
+          current.diagnosticCode,
+        );
+      const outputContract = diagnosticCode === "output_contract_invalid";
+      return {
+        failureClass: outputContract
+          ? "output_contract"
+          : "semantic_validation",
+        failedGateCode: outputContract
+          ? "output_contract"
+          : "semantic_validation",
+        validationReasonCode: diagnosticCode,
+      };
+    }
+    if (current instanceof ZodError) {
+      return {
+        failureClass: "output_contract",
+        failedGateCode: "output_contract",
+        validationReasonCode: "output_contract_invalid",
+      };
+    }
+    if (
+      (typeof current === "object" && current !== null) ||
+      typeof current === "function"
+    ) {
+      const objectCause = current as object;
+      if (seen.has(objectCause)) break;
+      seen.add(objectCause);
+    }
+    current = nextCause(current);
+  }
+  return {
+    failureClass: "unknown",
+    failedGateCode: "unknown_output",
+    validationReasonCode: "unknown_output_invalid",
+  };
+}
+
+function failureClassification(
+  cause: unknown,
+  errorCode: BuilderLocationCreationEvaluationReport["error_code"],
+) {
+  if (errorCode === "ai_output_invalid") {
+    return classifyOutputInvalidFailure(cause);
+  }
+  return {
+    failureClass: "provider_execution" as const,
+    failedGateCode: "provider_execution" as const,
+    validationReasonCode: null,
+  };
+}
+
 function boundedNumber(value: unknown): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
@@ -436,14 +527,16 @@ async function runScenario(
     return report;
   } catch (cause) {
     const usage = failureAccounting(cause);
-    const report = providerFailureReport(
+    const errorCode = safeErrorCode(cause);
+    const report = executionFailureReport(
       scenario,
       {
         ...usage,
         elapsedMs: Math.max(0, Math.round(dependencies.now() - started)),
       },
-      safeErrorCode(cause),
+      errorCode,
       repetition,
+      failureClassification(cause, errorCode),
     );
     dependencies.emit(report);
     return report;

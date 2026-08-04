@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -17,6 +18,8 @@ import {
   builderLocationCreationEvaluationReliabilityAggregateSchema,
 } from "../src/ai/evaluation/location-creation-intent/schemas";
 import { AiExecutionError } from "../src/ai/errors";
+import { StructuredAiProviderError } from "../src/ai/contracts";
+import { BuilderLocationCreationIntentValidationError } from "../src/ai/location-creation-intent/diagnostics";
 import { builderLocationCreationIntentOutputSchema } from "../src/ai/location-creation-intent/schemas";
 
 describe("Builder Location creation evaluation harness", () => {
@@ -55,6 +58,7 @@ describe("Builder Location creation evaluation harness", () => {
         "scenario_id",
         "timezone_intent",
         "usage_complete",
+        "validation_reason_code",
       ]);
     }
   });
@@ -78,6 +82,114 @@ describe("Builder Location creation evaluation harness", () => {
     expect(report.failed_gate_codes).toEqual(
       expect.arrayContaining(["semantic_validation", "expected_state"]),
     );
+    expect(report.validation_reason_code).toBe("duplicate_location_in_context");
+  });
+
+  it("classifies invalid-output cause chains with finite redacted diagnostics", async () => {
+    const accounting = {
+      attemptsStarted: 1,
+      inputTokens: 100,
+      outputTokens: 20,
+      usageReported: true,
+      usageComplete: true,
+      providerInvocationStarted: true,
+      failureBeforeProviderInvocation: false,
+    };
+    const structuralParse = z
+      .object({ state: z.literal("ready") })
+      .safeParse({ state: "invalid" });
+    if (structuralParse.success) {
+      throw new Error("Expected a synthetic output-contract error.");
+    }
+
+    async function reportFor(cause: unknown) {
+      let calls = 0;
+      const result = await runLiveBuilderLocationCreationQualification(
+        {
+          RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+          AI_PROVIDER: "openai",
+          OPENAI_API_KEY: "synthetic-key",
+        },
+        {
+          emit: () => undefined,
+          now: () => 10,
+          execute: async () => {
+            calls += 1;
+            throw cause;
+          },
+        },
+      );
+      expect(result).toMatchObject({ ran: true, passed: false });
+      if (!result.ran) throw new Error("Qualification did not run.");
+      expect(calls).toBe(1);
+      expect(result.reports).toHaveLength(1);
+      expect(result.reports[0]).toMatchObject({
+        error_code: "ai_output_invalid",
+        attempts: 1,
+        input_tokens: 100,
+        output_tokens: 20,
+        usage_complete: true,
+        estimated_microusd: 550,
+      });
+      return result.reports[0]!;
+    }
+
+    const semantic = await reportFor(
+      new AiExecutionError("ai_output_invalid", {
+        accounting,
+        cause: new BuilderLocationCreationIntentValidationError(
+          "duplicate_location_in_context",
+        ),
+      }),
+    );
+    expect(semantic).toMatchObject({
+      failure_class: "semantic_validation",
+      failed_gate_codes: ["semantic_validation"],
+      validation_reason_code: "duplicate_location_in_context",
+    });
+
+    const structural = await reportFor(
+      new AiExecutionError("ai_output_invalid", {
+        accounting,
+        cause: structuralParse.error,
+      }),
+    );
+    expect(structural).toMatchObject({
+      failure_class: "output_contract",
+      failed_gate_codes: ["output_contract"],
+      validation_reason_code: "output_contract_invalid",
+    });
+
+    const providerMarker = "raw-provider-body-marker";
+    const provider = await reportFor(
+      new AiExecutionError("ai_output_invalid", {
+        accounting,
+        cause: new StructuredAiProviderError(
+          "invalid_response",
+          providerMarker,
+        ),
+      }),
+    );
+    expect(provider).toMatchObject({
+      failure_class: "provider_execution",
+      failed_gate_codes: ["provider_execution"],
+      validation_reason_code: "provider_invalid_response",
+    });
+    expect(JSON.stringify(provider)).not.toContain(providerMarker);
+
+    const unknownMarker = "unknown-invalid-output-marker";
+    const unknown = await reportFor(
+      new AiExecutionError("ai_output_invalid", {
+        accounting,
+        cause: { cause: { cause: unknownMarker } },
+      }),
+    );
+    expect(unknown).toMatchObject({
+      failure_class: "unknown",
+      failed_gate_codes: ["unknown_output"],
+      validation_reason_code: "unknown_output_invalid",
+    });
+    expect(JSON.stringify(unknown)).not.toContain(unknownMarker);
   });
 
   it("runs qualification in the frozen order and emits the required aggregate", async () => {

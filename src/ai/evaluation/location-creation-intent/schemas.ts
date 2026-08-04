@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { aiExecutionErrorCodes } from "../../errors";
+import { builderLocationCreationIntentDiagnosticCodes } from "../../location-creation-intent/diagnostics";
 import {
   BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
   OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY,
@@ -41,6 +42,13 @@ export const builderLocationCreationEvaluationFailedGateCodeSchema = z.enum([
   "unknown_output",
 ]);
 
+export const builderLocationCreationEvaluationValidationReasonCodeSchema =
+  z.union([
+    z.enum(builderLocationCreationIntentDiagnosticCodes),
+    z.literal("provider_invalid_response"),
+    z.literal("unknown_output_invalid"),
+  ]);
+
 const safeExecutionErrorCodeSchema = z.enum([
   ...aiExecutionErrorCodes,
   "evaluation_execution_failed",
@@ -79,6 +87,8 @@ const reportMetadata = {
   estimated_microusd: z.number().int().nonnegative().max(1_000_000_000),
   elapsed_ms: z.number().int().nonnegative().max(120_000),
   error_code: safeExecutionErrorCodeSchema.nullable(),
+  validation_reason_code:
+    builderLocationCreationEvaluationValidationReasonCodeSchema.nullable(),
 };
 
 export const builderLocationCreationEvaluationReportSchema = z
@@ -142,6 +152,9 @@ export type BuilderLocationCreationEvaluationScenarioId = z.infer<
 >;
 export type BuilderLocationCreationEvaluationFailureClass = z.infer<
   typeof builderLocationCreationEvaluationFailureClassSchema
+>;
+export type BuilderLocationCreationEvaluationValidationReasonCode = z.infer<
+  typeof builderLocationCreationEvaluationValidationReasonCodeSchema
 >;
 export type BuilderLocationCreationEvaluationReport = z.infer<
   typeof builderLocationCreationEvaluationReportSchema

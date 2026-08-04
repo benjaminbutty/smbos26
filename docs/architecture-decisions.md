@@ -2410,3 +2410,21 @@ the first failure. It reports finite failure classes and remains separately
 gated. The private Builder mapping remains disabled until deterministic tests,
 exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence are
 reviewed. Product v0 remains in progress.
+
+The first reviewed qualification attempt was run once against exact candidate
+SHA `27f2c122f08ddc52f417bc60861f164bc96f8edd`. It passed
+`explicit_timezone`, `business_timezone` and `alternate_wording`, then stopped
+on `active_duplicate`: 3 passed, 1 failed, 4 attempts, 12,737 input tokens, 263
+output tokens, 35,788 estimated microusd, 7,703 ms and exit code 1. The bounded
+failure was `ai_output_invalid`. Because raw model output is intentionally
+unavailable, the diagnosis is limited to the clear contract mismatch: the
+validator required exact active/inactive duplicates to clarify, while the
+server-owned instruction did not state that rule. The correction explicitly
+requires clarification for exact normalized active or inactive duplicates and
+forbids ready, rename, numeric-suffix, update or reactivation behavior, while
+retaining exact rather than fuzzy or substring identity. The validator and
+Location-intent input/output schemas remain unchanged; only the evaluation
+report schema gains a finite redacted invalid-output reason. Reliability was
+not run, successful live evidence remains absent, and every production runtime
+mapping remains disabled pending reviewed 8/8 qualification and 24/24
+reliability evidence.

@@ -4,6 +4,7 @@ import {
   builderLocationCreationIntentOutputSchema,
   type BuilderLocationCreationIntentOutput,
 } from "../../location-creation-intent/schemas";
+import { BuilderLocationCreationIntentValidationError } from "../../location-creation-intent/diagnostics";
 import { validateBuilderLocationCreationIntentOutput } from "../../location-creation-intent/validation";
 import {
   builderLocationCreationEvaluationReportSchema,
@@ -51,6 +52,7 @@ function report(
     failureClass: BuilderLocationCreationEvaluationReport["failure_class"];
     failedGateCodes: BuilderLocationCreationEvaluationReport["failed_gate_codes"];
     errorCode: BuilderLocationCreationEvaluationReport["error_code"];
+    validationReasonCode: BuilderLocationCreationEvaluationReport["validation_reason_code"];
   },
 ): BuilderLocationCreationEvaluationReport {
   return builderLocationCreationEvaluationReportSchema.parse({
@@ -71,6 +73,7 @@ function report(
     ),
     elapsed_ms: metadata.elapsedMs,
     error_code: fields.errorCode,
+    validation_reason_code: fields.validationReasonCode,
   });
 }
 
@@ -116,17 +119,24 @@ export function evaluateBuilderLocationCreationIntent(
     BuilderLocationCreationEvaluationReport["failed_gate_codes"][number]
   >();
   let parsed: BuilderLocationCreationIntentOutput | null = null;
+  let validationReasonCode: BuilderLocationCreationEvaluationReport["validation_reason_code"] =
+    null;
   try {
     parsed = builderLocationCreationIntentOutputSchema.parse(output);
   } catch {
     failed.add("output_contract");
+    validationReasonCode = "output_contract_invalid";
   }
 
   if (parsed) {
     try {
       validateBuilderLocationCreationIntentOutput(scenario.input, parsed);
-    } catch {
+    } catch (cause) {
       failed.add("semantic_validation");
+      validationReasonCode =
+        cause instanceof BuilderLocationCreationIntentValidationError
+          ? cause.diagnosticCode
+          : null;
     }
 
     const expected = scenario.expected_output;
@@ -177,22 +187,35 @@ export function evaluateBuilderLocationCreationIntent(
     failureClass: failureClassFor(failedGateCodes),
     failedGateCodes,
     errorCode: null,
+    validationReasonCode,
   });
 }
 
-export function providerFailureReport(
+export function executionFailureReport(
   scenario: BuilderLocationCreationEvaluationScenario,
   metadata: BuilderLocationCreationEvaluationExecutionMetadata,
   errorCode: BuilderLocationCreationEvaluationReport["error_code"],
   repetition: 1 | 2 | 3,
+  classification: {
+    failureClass: NonNullable<
+      BuilderLocationCreationEvaluationReport["failure_class"]
+    >;
+    failedGateCode: BuilderLocationCreationEvaluationReport["failed_gate_codes"][number];
+    validationReasonCode: BuilderLocationCreationEvaluationReport["validation_reason_code"];
+  } = {
+    failureClass: "provider_execution",
+    failedGateCode: "provider_execution",
+    validationReasonCode: null,
+  },
 ): BuilderLocationCreationEvaluationReport {
   const result = report(scenario, metadata, repetition, {
     passed: false,
     outputState: null,
     timezoneIntent: null,
-    failureClass: "provider_execution",
-    failedGateCodes: ["provider_execution"],
+    failureClass: classification.failureClass,
+    failedGateCodes: [classification.failedGateCode],
     errorCode,
+    validationReasonCode: classification.validationReasonCode,
   });
   return builderLocationCreationEvaluationReportSchema.parse({
     ...result,

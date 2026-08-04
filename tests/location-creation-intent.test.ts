@@ -37,6 +37,25 @@ import {
 } from "../src/ai/evaluation/location-creation-intent/live";
 
 describe("Builder Location creation intent boundary", () => {
+  it("states the bounded active and inactive duplicate contract", () => {
+    const instruction = builderLocationCreationIntentTaskV1.buildInstruction();
+
+    expect(instruction).toContain(
+      "every active and inactive Location in the supplied Business context using exact normalized identity only",
+    );
+    expect(instruction).toContain(
+      "If an existing Location has the same normalized name, return needs_clarification",
+    );
+    expect(instruction).toContain(
+      "do not return ready, slightly rename the Location, add a numeric suffix, propose reactivation, propose updating the existing Location, or include adjacent work",
+    );
+    expect(instruction).toContain("do not use fuzzy or substring matching");
+    expect(instruction).toContain(
+      "Cambridge does not conflict with Cambridge North",
+    );
+    expect(instruction).toContain("York does not conflict with New York");
+  });
+
   it("freezes exactly the eight required evaluation scenarios", () => {
     expect(builderLocationCreationEvaluationScenarios).toHaveLength(8);
     expect(
@@ -191,6 +210,68 @@ describe("Builder Location creation intent boundary", () => {
       location_name: "New York",
       timezone_intent: { kind: "use_business_timezone" },
     });
+  });
+
+  it("preserves exact duplicate clarification semantics without substring matching", () => {
+    const active = locationCreationEvaluationScenario("active_duplicate");
+    const inactive = locationCreationEvaluationScenario("inactive_duplicate");
+    const readyCambridge = builderLocationCreationIntentOutputSchema.parse({
+      schema_version: 1,
+      state: "ready",
+      summary: "Add Cambridge as one new Location.",
+      location_name: "Cambridge",
+      timezone_intent: { kind: "use_business_timezone" },
+      source_step_references: ["step_1"],
+    });
+
+    for (const scenario of [active, inactive]) {
+      expect(() =>
+        validateBuilderLocationCreationIntentOutput(
+          scenario.input,
+          readyCambridge,
+        ),
+      ).toThrowError(
+        expect.objectContaining<
+          Partial<BuilderLocationCreationIntentValidationError>
+        >({
+          diagnosticCode:
+            "duplicate_location_in_context" satisfies BuilderLocationCreationIntentDiagnosticCode,
+        }),
+      );
+    }
+
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        active.input,
+        active.expected_output,
+      ),
+    ).not.toThrow();
+
+    const cambridgeNorthInput = {
+      ...active.input,
+      owner_request: "Add Cambridge North as a new Location.",
+    };
+    const readyCambridgeNorth = builderLocationCreationIntentOutputSchema.parse(
+      {
+        ...readyCambridge,
+        summary: "Add Cambridge North as one new Location.",
+        location_name: "Cambridge North",
+      },
+    );
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        cambridgeNorthInput,
+        readyCambridgeNorth,
+      ),
+    ).not.toThrow();
+
+    const newYork = locationCreationEvaluationScenario("multi_word_identity");
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        newYork.input,
+        newYork.expected_output,
+      ),
+    ).not.toThrow();
   });
 
   it("requires both live gates to be separately and explicitly activated", () => {

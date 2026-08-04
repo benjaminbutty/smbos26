@@ -301,3 +301,30 @@ evidence are unavailable, the private Builder mapping remains disabled; no
 qualification result is inferred or claimed. Reports are bounded redacted
 metadata and omit owner requests, Business context, Location names/timezones,
 model output, credentials and tokens.
+
+#### Failed qualification evidence and bounded correction
+
+The operator ran qualification once against exact candidate SHA
+`27f2c122f08ddc52f417bc60861f164bc96f8edd`. The first three scenarios,
+`explicit_timezone`, `business_timezone` and `alternate_wording`, passed.
+`active_duplicate` failed with `ai_output_invalid`, and the gate correctly
+stopped before the remaining four scenarios. The aggregate was 3 passed, 1
+failed, 4 attempts, 12,737 input tokens, 263 output tokens, 35,788 estimated
+microusd, 7,703 ms and exit code 1. Reliability was not run.
+
+No hidden model output was inspected or retained. The bounded diagnosis is an
+instruction/validator mismatch: the semantic validator already rejected a
+ready exact active or inactive duplicate, but the instruction did not tell the
+model to return `needs_clarification` for those contexts. The correction adds
+that exact duplicate rule, forbids ready, slight rename, numeric suffix,
+reactivation, update and adjacent work, and explicitly rejects fuzzy or
+substring matching. The deterministic validator remains authoritative and is
+unchanged. Evaluation-only cause-chain metadata now separates output-contract,
+semantic-validation, provider invalid-response and unknown invalid-output
+causes using finite redacted reason codes.
+
+This failed run is historical evidence only. Successful qualification and
+reliability evidence remain absent; Phase 10A is not qualified or enabled. All
+production mappings remain on
+`builder_location_creation_intent_disabled_v1`, and the operator must review
+the correction before deliberately rerunning qualification.
