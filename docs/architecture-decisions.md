@@ -2425,6 +2425,34 @@ forbids ready, rename, numeric-suffix, update or reactivation behavior, while
 retaining exact rather than fuzzy or substring identity. The validator and
 Location-intent input/output schemas remain unchanged; only the evaluation
 report schema gains a finite redacted invalid-output reason. Reliability was
-not run, successful live evidence remains absent, and every production runtime
-mapping remains disabled pending reviewed 8/8 qualification and 24/24
-reliability evidence.
+not run after this first failed qualification, and every production runtime
+mapping remained disabled.
+
+Qualification was later run against exact SHA
+`372bff1276ec430124bab546d33488c4c63b6250` and passed all 8/8 scenarios in the
+frozen order: 8 provider attempts, 26,387 input tokens, 703 output tokens,
+76,515 estimated microusd, 29,411 ms and exit code 0. Reliability then ran
+against the same SHA. Its first 15 executions passed before
+`multi_word_identity`, repetition 2, failed with output state `ready`, timezone
+intent `use_business_timezone`, failure class `scenario_expectation`, failed
+gate code `expected_name`, one attempt, complete usage, 3,319 input tokens, 134
+output tokens, 10,308 estimated microusd, 2,660 ms, no execution error code and
+no semantic-validation reason code. The stopped reliability aggregate had 15
+passed executions and 1 failed execution, 52,774 input tokens, 1,551 output
+tokens, 155,205 estimated microusd, 38,728 ms and exit code 1. It correctly
+reported no scenario at 3/3 because execution stopped during repetition 2.
+
+Raw model output was intentionally not retained, so the hidden returned name
+is unknown and is not claimed. The frozen owner request
+`Open a New York Location.` admitted more than one plausible request-contained
+name boundary, including `New York` and `New York Location`, while the exact
+expected name remained `New York`. Exact-name evaluation remains unchanged.
+The eighth `multi_word_identity` fixture retains the active `York` context,
+expected `New York` name, Business-timezone intent and frozen position, but now
+uses the explicit request `Create a new Location called New York.`
+
+Because a frozen scenario changed, successful evidence must be recollected from
+qualification onward. Phase 10A is not claimed as qualified, reliable, enabled,
+complete or merged, and every production runtime still maps
+`builder_location_creation_intent_v1` to
+`builder_location_creation_intent_disabled_v1`.

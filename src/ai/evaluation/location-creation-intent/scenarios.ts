@@ -158,7 +158,7 @@ const definitions = [
   },
   {
     id: "multi_word_identity",
-    owner_request: "Open a New York Location.",
+    owner_request: "Create a new Location called New York.",
     business_context: contextWithLocation("York", true),
     expected_output: expectedReady({
       locationName: "New York",

@@ -73,6 +73,68 @@ describe("Builder Location creation intent boundary", () => {
     expect(Object.isFrozen(builderLocationCreationEvaluationScenarios)).toBe(
       true,
     );
+
+    const multiWord = builderLocationCreationEvaluationScenarios.at(-1);
+    if (!multiWord) {
+      throw new Error("Missing the eighth Location evaluation scenario.");
+    }
+    expect(multiWord).toMatchObject({
+      id: "multi_word_identity",
+      owner_request: "Create a new Location called New York.",
+      expected_output: {
+        state: "ready",
+        location_name: "New York",
+        timezone_intent: { kind: "use_business_timezone" },
+      },
+    });
+    expect(multiWord.input.owner_request).toBe(
+      "Create a new Location called New York.",
+    );
+    expect(multiWord.input.business_context.locations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "York", is_active: true }),
+      ]),
+    );
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        multiWord.input,
+        multiWord.expected_output,
+      ),
+    ).not.toThrow();
+  });
+
+  it("keeps the multi-word identity exact at the scenario-expectation boundary", () => {
+    const scenario = locationCreationEvaluationScenario("multi_word_identity");
+    const requestContainedDifferentName =
+      builderLocationCreationIntentOutputSchema.parse({
+        ...scenario.expected_output,
+        summary: "Add New as one new Location.",
+        location_name: "New",
+      });
+
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        scenario.input,
+        requestContainedDifferentName,
+      ),
+    ).not.toThrow();
+    expect(
+      evaluateBuilderLocationCreationIntent(
+        scenario,
+        requestContainedDifferentName,
+        {
+          attempts: 1,
+          inputTokens: 100,
+          outputTokens: 50,
+          elapsedMs: 1,
+        },
+      ),
+    ).toMatchObject({
+      passed: false,
+      failure_class: "scenario_expectation",
+      failed_gate_codes: ["expected_name"],
+      validation_reason_code: null,
+    });
   });
 
   it("uses the exact disabled and evaluation-only Terra policy identities", () => {
