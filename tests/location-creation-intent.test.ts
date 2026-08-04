@@ -1,0 +1,362 @@
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+import {
+  BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
+  BUILDER_LOCATION_CREATION_INTENT_DISABLED_POLICY_KEY,
+  BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+  OPENAI_BUILDER_LOCATION_CREATION_INTENT_MODEL_KEY,
+  OPENAI_BUILDER_LOCATION_CREATION_INTENT_REASONING_EFFORT,
+  disabledExecutionPolicies,
+  openAiBuilderLocationCreationPolicy,
+} from "../src/ai/policies";
+import { deriveAiReservationEnvelope } from "../src/ai/accounting/cost";
+import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
+import {
+  BuilderLocationCreationIntentValidationError,
+  type BuilderLocationCreationIntentDiagnosticCode,
+} from "../src/ai/location-creation-intent/diagnostics";
+import { validateBuilderLocationCreationIntentOutput } from "../src/ai/location-creation-intent/validation";
+import { builderLocationCreationIntentOutputSchema } from "../src/ai/location-creation-intent/schemas";
+import { normalizeLocationName } from "../src/core/locations/schemas";
+import {
+  builderLocationCreationEvaluationScenarios,
+  locationCreationEvaluationScenario,
+} from "../src/ai/evaluation/location-creation-intent/scenarios";
+import { evaluateBuilderLocationCreationIntent } from "../src/ai/evaluation/location-creation-intent/evaluator";
+import {
+  BUILDER_LOCATION_CREATION_INTENT_QUALIFICATION_HARD_CEILING_MICROUSD,
+  BUILDER_LOCATION_CREATION_INTENT_RELIABILITY_HARD_CEILING_MICROUSD,
+  deriveBuilderLocationCreationQualificationEnvelope,
+  deriveBuilderLocationCreationReliabilityEnvelope,
+} from "../src/ai/evaluation/location-creation-intent/envelope";
+import {
+  liveBuilderLocationCreationQualificationIsActivated,
+  liveBuilderLocationCreationReliabilityIsActivated,
+} from "../src/ai/evaluation/location-creation-intent/live";
+
+describe("Builder Location creation intent boundary", () => {
+  it("states the bounded active and inactive duplicate contract", () => {
+    const instruction = builderLocationCreationIntentTaskV1.buildInstruction();
+
+    expect(instruction).toContain(
+      "every active and inactive Location in the supplied Business context using exact normalized identity only",
+    );
+    expect(instruction).toContain(
+      "If an existing Location has the same normalized name, return needs_clarification",
+    );
+    expect(instruction).toContain(
+      "do not return ready, slightly rename the Location, add a numeric suffix, propose reactivation, propose updating the existing Location, or include adjacent work",
+    );
+    expect(instruction).toContain("do not use fuzzy or substring matching");
+    expect(instruction).toContain(
+      "Cambridge does not conflict with Cambridge North",
+    );
+    expect(instruction).toContain("York does not conflict with New York");
+  });
+
+  it("freezes exactly the eight required evaluation scenarios", () => {
+    expect(builderLocationCreationEvaluationScenarios).toHaveLength(8);
+    expect(
+      builderLocationCreationEvaluationScenarios.map(({ id }) => id),
+    ).toEqual([
+      "explicit_timezone",
+      "business_timezone",
+      "alternate_wording",
+      "active_duplicate",
+      "inactive_duplicate",
+      "missing_name",
+      "local_timezone_without_iana",
+      "multi_word_identity",
+    ]);
+    expect(Object.isFrozen(builderLocationCreationEvaluationScenarios)).toBe(
+      true,
+    );
+
+    const multiWord = builderLocationCreationEvaluationScenarios.at(-1);
+    if (!multiWord) {
+      throw new Error("Missing the eighth Location evaluation scenario.");
+    }
+    expect(multiWord).toMatchObject({
+      id: "multi_word_identity",
+      owner_request: "Create a new Location called New York.",
+      expected_output: {
+        state: "ready",
+        location_name: "New York",
+        timezone_intent: { kind: "use_business_timezone" },
+      },
+    });
+    expect(multiWord.input.owner_request).toBe(
+      "Create a new Location called New York.",
+    );
+    expect(multiWord.input.business_context.locations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "York", is_active: true }),
+      ]),
+    );
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        multiWord.input,
+        multiWord.expected_output,
+      ),
+    ).not.toThrow();
+  });
+
+  it("keeps the multi-word identity exact at the scenario-expectation boundary", () => {
+    const scenario = locationCreationEvaluationScenario("multi_word_identity");
+    const requestContainedDifferentName =
+      builderLocationCreationIntentOutputSchema.parse({
+        ...scenario.expected_output,
+        summary: "Add New as one new Location.",
+        location_name: "New",
+      });
+
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        scenario.input,
+        requestContainedDifferentName,
+      ),
+    ).not.toThrow();
+    expect(
+      evaluateBuilderLocationCreationIntent(
+        scenario,
+        requestContainedDifferentName,
+        {
+          attempts: 1,
+          inputTokens: 100,
+          outputTokens: 50,
+          elapsedMs: 1,
+        },
+      ),
+    ).toMatchObject({
+      passed: false,
+      failure_class: "scenario_expectation",
+      failed_gate_codes: ["expected_name"],
+      validation_reason_code: null,
+    });
+  });
+
+  it("uses the exact disabled and evaluation-only Terra policy identities", () => {
+    expect(BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY).toBe(
+      "builder_location_creation_intent_disabled_v1",
+    );
+    expect(BUILDER_LOCATION_CREATION_INTENT_DISABLED_POLICY_KEY).toBe(
+      BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
+    );
+    expect(BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY).toBe(
+      "builder_location_creation_intent_terra_medium_v1",
+    );
+    expect(builderLocationCreationIntentTaskV1.policyKey).toBe(
+      BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
+    );
+    expect(openAiBuilderLocationCreationPolicy).toMatchObject({
+      key: BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+      modelKey: OPENAI_BUILDER_LOCATION_CREATION_INTENT_MODEL_KEY,
+      providerKey: "openai",
+      maxInputBytes: 256 * 1024,
+      maxBillableInputTokens: 80_000,
+      maxOutputTokens: 2_048,
+      timeoutMs: 30_000,
+      maxAttempts: 2,
+    });
+    expect(OPENAI_BUILDER_LOCATION_CREATION_INTENT_REASONING_EFFORT).toBe(
+      "medium",
+    );
+    expect(disabledExecutionPolicies).not.toHaveProperty(
+      BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+  });
+
+  it("reserves the exact stated cost envelope", () => {
+    const single = deriveAiReservationEnvelope(
+      openAiBuilderLocationCreationPolicy,
+    );
+    expect(single.reservedCostMicrousd).toBe(461_440);
+    expect(deriveBuilderLocationCreationQualificationEnvelope()).toMatchObject({
+      reservedCostMicrousd: 3_691_520,
+      hardCeilingMicrousd:
+        BUILDER_LOCATION_CREATION_INTENT_QUALIFICATION_HARD_CEILING_MICROUSD,
+    });
+    expect(deriveBuilderLocationCreationReliabilityEnvelope()).toMatchObject({
+      reservedCostMicrousd: 11_074_560,
+      hardCeilingMicrousd:
+        BUILDER_LOCATION_CREATION_INTENT_RELIABILITY_HARD_CEILING_MICROUSD,
+    });
+  });
+
+  it("accepts the code-owned expected outputs through the real validator", () => {
+    for (const scenario of builderLocationCreationEvaluationScenarios) {
+      expect(() =>
+        validateBuilderLocationCreationIntentOutput(
+          scenario.input,
+          scenario.expected_output,
+        ),
+      ).not.toThrow();
+      expect(
+        evaluateBuilderLocationCreationIntent(
+          scenario,
+          scenario.expected_output,
+          {
+            attempts: 1,
+            inputTokens: 100,
+            outputTokens: 50,
+            elapsedMs: 1,
+          },
+        ),
+      ).toMatchObject({ passed: true, failed_gate_codes: [] });
+    }
+  });
+
+  it("rejects names not stated by the owner and implicit timezone inference", () => {
+    const neutral = locationCreationEvaluationScenario("multi_word_identity");
+    const wrongName = builderLocationCreationIntentOutputSchema.parse({
+      ...neutral.expected_output,
+      location_name: "Birmingham",
+    });
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(neutral.input, wrongName),
+    ).toThrowError(
+      expect.objectContaining<
+        Partial<BuilderLocationCreationIntentValidationError>
+      >({
+        diagnosticCode:
+          "location_name_not_in_request" satisfies BuilderLocationCreationIntentDiagnosticCode,
+      }),
+    );
+
+    const implied = locationCreationEvaluationScenario(
+      "local_timezone_without_iana",
+    );
+    const inferred = builderLocationCreationIntentOutputSchema.parse({
+      schema_version: 1,
+      state: "ready",
+      summary: "Add Cambridge as one new Location.",
+      location_name: "Cambridge",
+      timezone_intent: { kind: "use_business_timezone" },
+      source_step_references: ["step_1"],
+    });
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(implied.input, inferred),
+    ).toThrowError(
+      expect.objectContaining<
+        Partial<BuilderLocationCreationIntentValidationError>
+      >({
+        diagnosticCode:
+          "timezone_implicit_or_ambiguous" satisfies BuilderLocationCreationIntentDiagnosticCode,
+      }),
+    );
+  });
+
+  it("uses exact normalized identity and a neutral timezone override rule", () => {
+    expect(normalizeLocationName("  Ｃａｍｂｒｉｄｇｅ  ")).toBe("cambridge");
+    expect(normalizeLocationName("Cafe\u0301")).toBe(
+      normalizeLocationName("Café"),
+    );
+
+    const multiWord = locationCreationEvaluationScenario("multi_word_identity");
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        multiWord.input,
+        multiWord.expected_output,
+      ),
+    ).not.toThrow();
+
+    const localTimezone = locationCreationEvaluationScenario(
+      "local_timezone_without_iana",
+    );
+    expect(localTimezone.expected_output.state).toBe("needs_clarification");
+    const newYork = locationCreationEvaluationScenario("multi_word_identity");
+    expect(newYork.expected_output).toMatchObject({
+      state: "ready",
+      location_name: "New York",
+      timezone_intent: { kind: "use_business_timezone" },
+    });
+  });
+
+  it("preserves exact duplicate clarification semantics without substring matching", () => {
+    const active = locationCreationEvaluationScenario("active_duplicate");
+    const inactive = locationCreationEvaluationScenario("inactive_duplicate");
+    const readyCambridge = builderLocationCreationIntentOutputSchema.parse({
+      schema_version: 1,
+      state: "ready",
+      summary: "Add Cambridge as one new Location.",
+      location_name: "Cambridge",
+      timezone_intent: { kind: "use_business_timezone" },
+      source_step_references: ["step_1"],
+    });
+
+    for (const scenario of [active, inactive]) {
+      expect(() =>
+        validateBuilderLocationCreationIntentOutput(
+          scenario.input,
+          readyCambridge,
+        ),
+      ).toThrowError(
+        expect.objectContaining<
+          Partial<BuilderLocationCreationIntentValidationError>
+        >({
+          diagnosticCode:
+            "duplicate_location_in_context" satisfies BuilderLocationCreationIntentDiagnosticCode,
+        }),
+      );
+    }
+
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        active.input,
+        active.expected_output,
+      ),
+    ).not.toThrow();
+
+    const cambridgeNorthInput = {
+      ...active.input,
+      owner_request: "Add Cambridge North as a new Location.",
+    };
+    const readyCambridgeNorth = builderLocationCreationIntentOutputSchema.parse(
+      {
+        ...readyCambridge,
+        summary: "Add Cambridge North as one new Location.",
+        location_name: "Cambridge North",
+      },
+    );
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        cambridgeNorthInput,
+        readyCambridgeNorth,
+      ),
+    ).not.toThrow();
+
+    const newYork = locationCreationEvaluationScenario("multi_word_identity");
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        newYork.input,
+        newYork.expected_output,
+      ),
+    ).not.toThrow();
+  });
+
+  it("requires both live gates to be separately and explicitly activated", () => {
+    expect(
+      liveBuilderLocationCreationQualificationIsActivated({
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "secret",
+      }),
+    ).toBe(true);
+    expect(
+      liveBuilderLocationCreationQualificationIsActivated({
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "disabled",
+        OPENAI_API_KEY: "secret",
+      }),
+    ).toBe(false);
+    expect(
+      liveBuilderLocationCreationReliabilityIsActivated({
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_RELIABILITY: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "secret",
+      }),
+    ).toBe(true);
+  });
+});

@@ -2343,9 +2343,144 @@ Phase 9A remains frozen: its `builder_preorder_amendment_v1` subject, qualified
 policy, schemas, validator, runtime mapping, evaluation contexts and evidence
 are unchanged. Phase 9B introduces no model task, provider profile,
 qualification scenario, table, primitive, conversation persistence or history
-search. Builder still prepares proposals only, and the existing Changes
-lifecycle remains the sole deliberate validation/application boundary.
+search. Configuration-lane Builder work still prepares proposals only and the
+existing Changes lifecycle remains the sole deliberate configuration
+validation/application boundary; Phase 10A is the separately documented
+operational Location path.
 
-Milestone 9 becomes complete only when this Phase 9B implementation is
-reviewed and merged. Product v0 remains incomplete after Milestone 9; bounded
-clarification continuity and operational Builder actions are later milestones.
+Phase 9B is implemented and merged, so Milestone 9 is complete. Product v0
+remains in progress; Phase 10A is the next independently reviewable operational
+Builder slice.
+
+## ADR-031 — Builder-assisted Location creation uses bounded operational intent and explicit deterministic confirmation
+
+Milestone 9 is complete and merged. Milestone 10 begins with Phase 10A,
+which remains independently reviewable and is not claimed as merged until its
+implementation is reviewed. Location is a first-class platform primitive;
+business-created concepts continue to use metadata graph Objects and Records.
+
+Planning remains non-executing. An exact one-step operational
+`create_location` plan enters the separate
+`builder_location_creation_intent_v1` task. Its output is pure transient intent
+with no IDs, slugs, lifecycle instructions or mutation authority. The server
+revalidates the plan, applies the explicit-IANA or authoritative
+Business-timezone rule, reads a canonical operational currentness digest and
+requires explicit owner confirmation before calling the trusted Location
+service.
+
+The confirmation is a versioned, 15-minute HMAC-SHA-256 token bound to the
+authenticated Business and actor. It contains the interpreted name, resolved
+timezone, timezone source, Business timezone, state digest and issued/expiry
+times, but no UUID or slug. The final confirmation performs no AI call,
+provider invocation or accounting reservation. The shared server-only Location
+service is used by both manual and Builder creation; manual update and
+deactivation remain manual-only.
+
+PostgreSQL is authoritative for Location identity through one immutable
+`private.normalize_location_name(value)` function: NFKC normalization,
+surrounding whitespace trim, then lower casing with the explicit locale-neutral
+`und-x-icu` collation. The same function is used by migration preflight, the
+tenant-scoped unique index, bounded state summaries and duplicate lookup; the
+application helper is parity-tested against the database-derived normalized
+value. Active and inactive identities remain reserved. PostgreSQL also remains
+authoritative for exact IANA timezone validity, server-derived slugs and
+Business-row serialization of Location writes. The digest covers the Business
+timezone and complete deterministically ordered Location collection. There is
+no M5 proposal/version, Changes entry, configuration rollback or operational
+undo for this action. Mixed configuration/operational requests, Product/Record
+work and generic operational actions remain unsupported; no generic operational
+action registry is introduced.
+
+The timezone policy is neutral rather than geographic: an exact valid IANA
+value copied from the owner request may be selected; otherwise the current
+Business timezone may be used. Generic local/different-timezone wording without
+an exact IANA value requires clarification. No city/country/region list,
+geocoding, timezone lookup or external API is used.
+
+The Location-intent task has an independent disabled policy and a
+private-runtime-qualified Terra policy. Its provider-backed qualification is frozen to exactly eight
+task-valid scenarios (including exact active/inactive duplicates, generic
+timezone clarification and a multi-word identity such as New York with an
+existing York Location). Mixed Location/preorder plans, Location updates and
+deactivation are deterministic pre-provider routing cases: they must not invoke
+the intent task or reserve intent accounting. The live harness validates the
+task/policy/model/reasoning/envelope before provider construction, uses actual
+reported usage for aggregate cost, preserves bounded failure usage and stops on
+the first failure. It reports finite failure classes and remains separately
+gated. The private Builder mapping was disabled until deterministic tests,
+exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence were
+reviewed; the accepted closeout below records the resulting private-runtime
+enablement. Product v0 remains in progress.
+
+The first reviewed qualification attempt was run once against exact candidate
+SHA `27f2c122f08ddc52f417bc60861f164bc96f8edd`. It passed
+`explicit_timezone`, `business_timezone` and `alternate_wording`, then stopped
+on `active_duplicate`: 3 passed, 1 failed, 4 attempts, 12,737 input tokens, 263
+output tokens, 35,788 estimated microusd, 7,703 ms and exit code 1. The bounded
+failure was `ai_output_invalid`. Because raw model output is intentionally
+unavailable, the diagnosis is limited to the clear contract mismatch: the
+validator required exact active/inactive duplicates to clarify, while the
+server-owned instruction did not state that rule. The correction explicitly
+requires clarification for exact normalized active or inactive duplicates and
+forbids ready, rename, numeric-suffix, update or reactivation behavior, while
+retaining exact rather than fuzzy or substring identity. The validator and
+Location-intent input/output schemas remain unchanged; only the evaluation
+report schema gains a finite redacted invalid-output reason. Reliability was
+not run after this first failed qualification, and every production runtime
+mapping remained disabled.
+
+Qualification was later run against exact SHA
+`372bff1276ec430124bab546d33488c4c63b6250` and passed all 8/8 scenarios in the
+frozen order: 8 provider attempts, 26,387 input tokens, 703 output tokens,
+76,515 estimated microusd, 29,411 ms and exit code 0. Reliability then ran
+against the same SHA. Its first 15 executions passed before
+`multi_word_identity`, repetition 2, failed with output state `ready`, timezone
+intent `use_business_timezone`, failure class `scenario_expectation`, failed
+gate code `expected_name`, one attempt, complete usage, 3,319 input tokens, 134
+output tokens, 10,308 estimated microusd, 2,660 ms, no execution error code and
+no semantic-validation reason code. The stopped reliability aggregate had 15
+passed executions and 1 failed execution, 52,774 input tokens, 1,551 output
+tokens, 155,205 estimated microusd, 38,728 ms and exit code 1. It correctly
+reported no scenario at 3/3 because execution stopped during repetition 2.
+
+Raw model output was intentionally not retained, so the hidden returned name
+is unknown and is not claimed. The frozen owner request
+`Open a New York Location.` admitted more than one plausible request-contained
+name boundary, including `New York` and `New York Location`, while the exact
+expected name remained `New York`. Exact-name evaluation remains unchanged.
+The eighth `multi_word_identity` fixture retains the active `York` context,
+expected `New York` name, Business-timezone intent and frozen position, but now
+uses the explicit request `Create a new Location called New York.`
+
+The corrected subject was then run without changing its task, instruction,
+schemas, validator, scenarios, evaluator, model, policy parameters, limits,
+pricing or provider transport. The first reliability attempt on this exact
+subject passed 16 executions before execution 17 failed at
+`explicit_timezone`, repetition 3, with `provider_execution` / `ai_timeout`,
+30,030 ms elapsed, incomplete usage and zero input/output tokens. Its stopped
+aggregate was 52,778 input tokens, 1,488 output tokens, 154,270 estimated
+microusd, 77,651 ms and exit code 1. This remains historical evidence.
+
+The final accepted qualification ran against exact SHA
+`0598068617f25e541ef49cde50aea307dc98047e` and passed 8/8: 8 attempts,
+26,389 input tokens, 700 output tokens, 76,475 estimated microusd, 23,479 ms
+and exit code 0. The final accepted reliability rerun against the same exact
+SHA passed all 24 executions: 8/8 scenarios, every scenario 3/3, 24 attempts,
+79,167 input tokens, 2,145 output tokens, 230,100 estimated microusd, 48,334
+ms and exit code 0. Every successful report had complete usage, one attempt,
+no failure class, no failed gate codes, no execution error and no semantic
+validation reason.
+
+The successful reliability rerun supersedes the isolated timeout for
+acceptance; the timeout remains recorded as historical evidence. The
+`builder_location_creation_intent_v1` task, instruction, schemas, validator,
+scenarios, evaluator, model, reasoning effort, policy parameters, token
+limits, timeout, retries, pricing and provider transport were unchanged
+between qualification and reliability. After exact-head CI passed, the
+private authenticated OpenAI Builder runtime is enabled only through
+`builder_location_creation_intent_terra_medium_v1`; the global/default task
+and disabled runtime remain on
+`builder_location_creation_intent_disabled_v1`. This enablement commit changes
+only that private runtime binding, its assertions, and evidence documentation;
+it is not itself live-qualified. Phase 10A is implemented, qualified and
+enabled in the private runtime, but remains unmerged pending final review.

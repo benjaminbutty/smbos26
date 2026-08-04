@@ -437,7 +437,7 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(initialHtml).toContain('name="ownerRequest"');
     expect(initialHtml).toContain('maxLength="4000"');
     expect(initialHtml).toContain("0 / 4,000 characters");
-    expect(initialHtml).toContain("Prepare proposal");
+    expect(initialHtml).toContain("Prepare request");
     expect(initialHtml).toContain("Ideas to get started");
 
     const clarificationHtml = renderToStaticMarkup(

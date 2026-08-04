@@ -40,6 +40,7 @@ import {
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
 import { createConfigurationFixtures } from "./support/configuration-fixtures";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 
 vi.mock("server-only", () => ({}));
 
@@ -465,11 +466,13 @@ describe("Milestone 4 preorder", () => {
       "Could not create the other tenant",
     );
     const otherLocation = requireData(
-      await otherOwner.client.rpc("create_location", {
-        target_business_id: otherBusiness.id,
-        location_name: "Other Location",
-        requested_timezone: "Europe/London",
-      }),
+      await createLocationWithCurrentness(
+        otherOwner.client,
+        otherOwner.user.id,
+        otherBusiness.id,
+        "Other Location",
+        "Europe/London",
+      ),
       "Could not create the other Location",
     );
     const otherObjects = await configurationFixtures.insert(
@@ -1642,11 +1645,13 @@ describe("Milestone 4 preorder", () => {
     expect(inactiveLink.error).toBeNull();
 
     const inactiveLocation = requireData(
-      await owner.rpc("create_location", {
-        target_business_id: business.id,
-        location_name: `Inactive ${crypto.randomUUID()}`,
-        requested_timezone: "Europe/London",
-      }),
+      await createLocationWithCurrentness(
+        owner,
+        undefined,
+        business.id,
+        `Inactive ${crypto.randomUUID()}`,
+        "Europe/London",
+      ),
       "Could not create inactive Location",
     );
     const [inactiveAssociation] = await configurationFixtures.insert(

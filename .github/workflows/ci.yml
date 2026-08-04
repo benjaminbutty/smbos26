@@ -55,17 +55,26 @@ jobs:
       - name: Apply migrations from clean state
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after clean migration reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run OpenAI provider safety tests with injected clients
         run: npm run test:openai-provider
 
       - name: Reset after OpenAI provider acceptance
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after provider reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run AI-safe Business context tests
         run: npm run test:ai-context
 
       - name: Reset for strict builder planning tests
         run: npm run supabase:reset
+
+      - name: Wait for local Auth after planning reset
+        run: npm run supabase:auth:ready:ci
 
       - name: Run strict builder planning tests
         run: npm run test:builder-planning
@@ -79,17 +88,38 @@ jobs:
       - name: Reset for authenticated configuration proposal orchestration tests
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after configuration proposal reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run authenticated configuration proposal orchestration tests
         run: npm run test:builder-configuration-proposal
 
       - name: Reset for authenticated Builder orchestration tests
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after Builder orchestration reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run authenticated Builder orchestration tests
         run: npm run test:builder-orchestration
 
+      - name: Run deterministic Location Builder boundary tests
+        run: npm run test:builder-location-creation
+
+      - name: Run Location intent contract tests
+        run: npm run test:location-creation-intent
+
+      - name: Run Location evaluation envelope tests
+        run: npm run test:location-creation-evaluation
+
+      - name: Run confirmation-token boundary tests
+        run: npm run test:location-service
+
       - name: Reset for minimal Builder UI tests
         run: npm run supabase:reset
+
+      - name: Wait for local Auth after Builder UI reset
+        run: npm run supabase:auth:ready:ci
 
       - name: Run minimal Builder UI tests
         run: npm run test:builder-ui
@@ -124,17 +154,26 @@ jobs:
       - name: Reset after builder planning acceptance
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after planning acceptance reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run deterministic manual question tests
         run: npm run test:manual-questions
 
       - name: Reset after manual question acceptance
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after manual question reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run deterministic manual amendment tests
         run: npm run test:manual-amendments
 
       - name: Reset after manual amendment acceptance
         run: npm run supabase:reset
+
+      - name: Wait for local Auth after manual amendment reset
+        run: npm run supabase:auth:ready:ci
 
       - name: Run AI accounting and usage-control tests
         run: npm run test:ai-accounting
@@ -154,11 +193,17 @@ jobs:
       - name: Reset for forward configuration rollback tests
         run: npm run supabase:reset
 
+      - name: Wait for local Auth after rollback reset
+        run: npm run supabase:auth:ready:ci
+
       - name: Run forward configuration rollback tests
         run: npm run test:rollback
 
       - name: Reset for authenticated preview foundation tests
         run: npm run supabase:reset
+
+      - name: Wait for local Auth after preview reset
+        run: npm run supabase:auth:ready:ci
 
       - name: Run authenticated preview foundation tests
         run: npm run test:preview-foundation
@@ -177,6 +222,12 @@ jobs:
           npm run supabase:stop
           npm run supabase:start
           npm run supabase:reset
+
+      - name: Wait for local Auth after final clean reset
+        run: npm run supabase:auth:ready:ci
+
+      - name: Seed the local demonstration data
+        run: npm run demo:seed
 
       - name: Run PostgreSQL RLS integration tests
         run: npm run test:integration

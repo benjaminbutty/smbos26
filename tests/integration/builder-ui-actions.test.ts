@@ -59,6 +59,7 @@ import { prepareBuilderUndoAction } from "../../src/app/app/[businessSlug]/build
 import BuilderPage from "../../src/app/app/[businessSlug]/builder/page";
 import ConfigurationChangeRoute from "../../src/app/app/[businessSlug]/changes/[changeSetId]/page";
 import { BUILDER_UNSUPPORTED_MESSAGES } from "../../src/ai/builder/contracts";
+import { createLocationConfirmationTokenService } from "../../src/ai/builder/location-confirmation-token";
 import { AiExecutionError } from "../../src/ai/errors";
 import { BUILDER_INITIAL_STATE } from "../../src/components/builder-ui-state";
 import { ConfigurationChangeService } from "../../src/core/configuration/service";
@@ -83,6 +84,7 @@ import {
 } from "../../src/core/preorder/service";
 import {
   createDeterministicBuilder,
+  locationIntentOutput,
   preorderAmendmentDraft,
   preorderAmendmentDraftForRequest,
   preorderReadyPlan,
@@ -655,7 +657,7 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
   });
 
   it("settles one planning execution for operational and mixed unsupported requests", async () => {
-    for (const kind of ["operational", "mixed"] as const) {
+    for (const kind of ["operational_update", "mixed"] as const) {
       await database`
         delete from public.ai_execution_runs
         where business_id = ${business.id}::uuid
@@ -669,7 +671,7 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       expect(result).toEqual({
         state: "unsupported",
         message:
-          kind === "operational"
+          kind === "operational_update"
             ? BUILDER_UNSUPPORTED_MESSAGES.operational_plan_unavailable
             : BUILDER_UNSUPPORTED_MESSAGES.mixed_plan_unavailable,
       });
@@ -678,6 +680,90 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       expect(await proposalRows()).toHaveLength(proposalsBefore.length);
       expect(await liveState()).toEqual(before);
     }
+  });
+
+  it("prepares and confirms one Location without M5 or a second AI execution", async () => {
+    await enableAi();
+    const proposalsBefore = await proposalRows();
+    const before = await liveState();
+    const deterministic = createDeterministicBuilder(
+      smallReadyPlan("operational"),
+      smallDraft(),
+      { locationIntentOutput: locationIntentOutput("Cambridge") },
+    );
+    const tokenService = createLocationConfirmationTokenService({
+      secret: "location-confirmation-test-secret-0123456789",
+      now: () => 1_000,
+    });
+    const action = createBuilderAction({
+      orchestrationService: deterministic.service,
+      createLocationConfirmationTokenService: () => tokenService,
+    });
+
+    queueActionClient(owner.client);
+    const prepared = await action(
+      business.slug,
+      BUILDER_INITIAL_STATE,
+      formWithRequest("Add Cambridge as a new Location.", true),
+    );
+    expect(prepared).toMatchObject({
+      state: "location_confirmation",
+      location_name: "Cambridge",
+      timezone: "Europe/London",
+      timezone_source: "business_timezone",
+    });
+    expect(prepared).toHaveProperty("confirmation_token");
+    expect(await executionRows()).toHaveLength(2);
+    expect(await proposalRows()).toHaveLength(proposalsBefore.length);
+    expect((await liveState()).locations).toEqual(before.locations);
+    expect(deterministic.calls.map((call) => call.outputContract.name)).toEqual(
+      ["builder_plan_v1", "builder_location_creation_intent_v1"],
+    );
+
+    const confirmation = new FormData();
+    confirmation.set(
+      "confirmationToken",
+      (prepared as { confirmation_token: string }).confirmation_token,
+    );
+    confirmation.set("businessId", "forged-business");
+    confirmation.set("locationName", "forged-name");
+    confirmation.set("timezone", "Mars/Olympus");
+    queueActionClient(owner.client);
+    const created = await action(business.slug, prepared, confirmation);
+
+    expect(created).toEqual({
+      state: "location_created",
+      location_name: "Cambridge",
+      timezone: "Europe/London",
+      message: "The Location was added to your Business.",
+    });
+    expect(deterministic.calls).toHaveLength(2);
+    expect(await executionRows()).toHaveLength(2);
+    expect(await proposalRows()).toHaveLength(proposalsBefore.length);
+    const after = await liveState();
+    expect(after.head).toEqual(before.head);
+    expect(after.versionCount).toBe(before.versionCount);
+    expect(after.recordCount).toBe(before.recordCount);
+    expect(after.edgeCount).toBe(before.edgeCount);
+    expect(after.recordRows).toEqual(before.recordRows);
+    expect(after.relationshipRows).toEqual(before.relationshipRows);
+    expect(after.recordLocationRows).toEqual(before.recordLocationRows);
+    expect(after.submissions).toEqual(before.submissions);
+    expect(after.slotCounters).toEqual(before.slotCounters);
+    expect(after.rateLimits).toEqual(before.rateLimits);
+    expect(after.emailStates).toEqual(before.emailStates);
+    expect(after.locations).toHaveLength(before.locations.length + 1);
+    expect(after.locations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          business_id: business.id,
+          name: "Cambridge",
+          slug: "cambridge",
+          timezone: "Europe/London",
+          is_active: true,
+        }),
+      ]),
+    );
   });
 
   it("runs planning and drafting once for a small additive generic object proposal", async () => {

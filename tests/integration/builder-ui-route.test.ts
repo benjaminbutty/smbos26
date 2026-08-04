@@ -318,7 +318,7 @@ describe("authenticated Builder GET route integration", () => {
     const html = await renderBuilder(administrator);
 
     expect(html).toContain("Business Builder");
-    expect(html).toContain("Prepare proposal");
+    expect(html).toContain("Prepare request");
     expect(await routeState()).toEqual(before);
   });
 

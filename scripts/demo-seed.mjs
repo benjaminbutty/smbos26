@@ -8,6 +8,10 @@ import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 
+import {
+  createLocalAuthAdminProbe,
+  waitForLocalAuthReadiness,
+} from "./support/local-auth-readiness.mjs";
 import { upsertLocalAuthUser } from "./support/local-auth-retry.mjs";
 
 const ownerEmail = "demo@smbos.local";
@@ -499,9 +503,28 @@ async function ensureLocation(owner, businessId, name) {
     }
     return rows[0];
   }
+  const authenticated = await owner.auth.getUser();
+  const ownerId = authenticated.data.user?.id;
+  if (authenticated.error || !ownerId) {
+    throw authenticated.error ?? new Error("Could not resolve the demo Owner.");
+  }
+  const state = requireData(
+    await owner.rpc("get_location_creation_state", {
+      expected_actor_id: ownerId,
+      expected_business_id: businessId,
+    }),
+    `Could not read Location creation state for ${name}.`,
+  );
+  const current = state[0];
+  if (!current) {
+    throw new Error(`Could not read Location creation state for ${name}.`);
+  }
   return requireData(
     await owner.rpc("create_location", {
-      target_business_id: businessId,
+      expected_actor_id: ownerId,
+      expected_business_id: businessId,
+      expected_business_timezone: current.business_timezone,
+      expected_location_state_digest: current.location_state_digest,
       location_name: name,
       requested_timezone: "Europe/London",
     }),
@@ -769,6 +792,9 @@ async function ensureOperationalProducts(owner, businessId, locationsByName) {
 
 const { apiUrl, databaseUrl, publishableKey, serviceRoleKey } =
   loadLocalSupabase();
+await waitForLocalAuthReadiness({
+  probe: createLocalAuthAdminProbe({ apiUrl, serviceRoleKey }),
+});
 const sql = postgres(databaseUrl, { max: 1 });
 try {
   const admin = createClient(apiUrl, serviceRoleKey, {
@@ -833,10 +859,12 @@ try {
     throw new Error("The authenticated Bedford demo Owner identity changed.");
   }
 
-  const [bedford, miltonKeynes] = await Promise.all([
-    ensureLocation(owner, business.id, "Bedford"),
-    ensureLocation(owner, business.id, "Milton Keynes"),
-  ]);
+  const bedford = await ensureLocation(owner, business.id, "Bedford");
+  const miltonKeynes = await ensureLocation(
+    owner,
+    business.id,
+    "Milton Keynes",
+  );
   await ensureConfiguredVersionTwo({
     admin,
     owner,

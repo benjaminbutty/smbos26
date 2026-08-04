@@ -40,6 +40,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 
 vi.mock("server-only", () => ({}));
 
@@ -149,11 +150,13 @@ async function createLocation(
   name: string,
 ): Promise<Tables<"locations">> {
   return requireData(
-    await owner.client.rpc("create_location", {
-      target_business_id: business.id,
-      location_name: name,
-      requested_timezone: "Europe/London",
-    }),
+    await createLocationWithCurrentness(
+      owner.client,
+      owner.user.id,
+      business.id,
+      name,
+      "Europe/London",
+    ),
     `Could not create ${name}`,
   );
 }

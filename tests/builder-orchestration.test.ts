@@ -16,6 +16,7 @@ import {
   builderConfigurationDraftOutputSchema,
   type BuilderConfigurationDraftOutput,
 } from "../src/ai/configuration-drafting/schemas";
+import { builderLocationCreationIntentOutputSchema } from "../src/ai/location-creation-intent/schemas";
 import { BuilderConfigurationProposalError } from "../src/ai/configuration-proposal/errors";
 import {
   builderConfigurationProposalResultSchema,
@@ -38,7 +39,9 @@ import type { StructuredAiProvider } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
 import { projectAiBusinessModelContext } from "../src/ai/context/projector";
 import {
+  BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+  openAiBuilderLocationCreationPolicy,
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
@@ -48,9 +51,14 @@ import {
   type BuilderPlanOutput,
 } from "../src/ai/planning/schemas";
 import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
+import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
+import {
+  normalizeLocationName,
+  type LocationCreationState,
+} from "../src/core/locations/schemas";
 import type { Database } from "../src/db/supabase/database.types";
 
 type Client = SupabaseClient<Database>;
@@ -134,15 +142,54 @@ function authoritative(
   };
 }
 
+function locationCreationState(
+  overrides: Partial<LocationCreationState> = {},
+): LocationCreationState {
+  return {
+    schema_version: 1,
+    business_id: ids.business,
+    actor_id: ids.actor,
+    business_timezone: "Europe/London",
+    location_state_digest: "a".repeat(64),
+    locations: [],
+    ...overrides,
+  };
+}
+
+function locationSummary(name: string, isActive = true) {
+  return {
+    id: ids.location,
+    name,
+    normalized_name: normalizeLocationName(name),
+    slug: normalizeLocationName(name).replace(/[^a-z0-9]+/g, "-") || "location",
+    timezone: "Europe/London",
+    is_active: isActive,
+  };
+}
+
+function locationIntentOutput(name: string) {
+  return builderLocationCreationIntentOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    summary: `Add ${name} as one new Location.`,
+    location_name: name,
+    timezone_intent: { kind: "use_business_timezone" },
+    source_step_references: ["step_1"],
+  });
+}
+
 function readyPlan(
   category:
     | "define_object"
     | "configure_preorder"
     | "create_location"
+    | "update_location"
     | "configure_view" = "define_object",
 ): Extract<BuilderPlanOutput, { state: "ready" }> {
   const configuration =
-    category === "create_location" ? "operational" : "configuration";
+    category === "create_location" || category === "update_location"
+      ? "operational"
+      : "configuration";
   const parsed = builderPlanOutputSchema.parse({
     schema_version: 1,
     state: "ready",
@@ -282,6 +329,10 @@ interface HarnessOptions {
   secondContext?: AuthoritativeAiBusinessContext;
   planningFailure?: unknown;
   draftingFailure?: unknown;
+  locationIntentOutput?: unknown;
+  locationIntentFailure?: unknown;
+  firstLocationState?: LocationCreationState;
+  secondLocationState?: LocationCreationState;
   settings?: BusinessAiSettings;
   reserveFailure?: { taskKey: string; error: unknown };
   proposalError?: unknown;
@@ -291,6 +342,7 @@ function harness(options: HarnessOptions = {}) {
   const events: string[] = [];
   const planningInputs: unknown[] = [];
   const draftingInputs: unknown[] = [];
+  const locationIntentInputs: unknown[] = [];
   const contexts = [
     options.firstContext ?? authoritative(),
     options.secondContext ?? options.firstContext ?? authoritative(),
@@ -302,6 +354,20 @@ function harness(options: HarnessOptions = {}) {
       throw new Error("Unexpected context load.");
     }
     return context;
+  });
+  const locationStates = [
+    options.firstLocationState ?? locationCreationState(),
+    options.secondLocationState ??
+      options.firstLocationState ??
+      locationCreationState(),
+  ];
+  const readLocationCreationState = vi.fn(async () => {
+    events.push("location-state");
+    const state = locationStates.shift();
+    if (!state) {
+      throw new Error("Unexpected Location state load.");
+    }
+    return state;
   });
   const accounting: AiAccountingStore = {
     readSettings: vi.fn(async () => options.settings ?? enabledSettings),
@@ -324,9 +390,20 @@ function harness(options: HarnessOptions = {}) {
   >();
   const execution: BuilderExecutionCore = {
     prepare: vi.fn((taskKey, input) => {
-      events.push(taskKey === "builder_plan_v1" ? "planning" : "drafting");
+      const isPlanning = taskKey === "builder_plan_v1";
+      const isLocationIntent =
+        taskKey === "builder_location_creation_intent_v1";
+      events.push(
+        isPlanning
+          ? "planning"
+          : isLocationIntent
+            ? "location-intent"
+            : "drafting",
+      );
       if (taskKey === "builder_plan_v1") {
         planningInputs.push(input);
+      } else if (isLocationIntent) {
+        locationIntentInputs.push(input);
       } else {
         draftingInputs.push(input);
       }
@@ -337,11 +414,15 @@ function harness(options: HarnessOptions = {}) {
           purposeLabel:
             taskKey === "builder_plan_v1"
               ? "Plan a bounded Business request"
-              : "Draft bounded additive configuration intent",
+              : isLocationIntent
+                ? "Draft one bounded Location creation intent"
+                : "Draft bounded additive configuration intent",
           policy:
             taskKey === "builder_plan_v1"
               ? openAiBuilderPlanningPolicy
-              : openAiBuilderConfigurationDraftingPolicy,
+              : isLocationIntent
+                ? openAiBuilderLocationCreationPolicy
+                : openAiBuilderConfigurationDraftingPolicy,
         },
       };
       preparedOutputs.set(prepared, {
@@ -349,11 +430,23 @@ function harness(options: HarnessOptions = {}) {
         output:
           taskKey === "builder_plan_v1"
             ? (options.planningOutput ?? readyPlan())
-            : (options.draftOutput ?? draft()),
+            : isLocationIntent
+              ? (options.locationIntentOutput ??
+                builderLocationCreationIntentOutputSchema.parse({
+                  schema_version: 1,
+                  state: "ready",
+                  summary: "Add Cambridge as one new Location.",
+                  location_name: "Cambridge",
+                  timezone_intent: { kind: "use_business_timezone" },
+                  source_step_references: ["step_1"],
+                }))
+              : (options.draftOutput ?? draft()),
         failure:
           taskKey === "builder_plan_v1"
             ? options.planningFailure
-            : options.draftingFailure,
+            : isLocationIntent
+              ? options.locationIntentFailure
+              : options.draftingFailure,
       });
       return prepared;
     }),
@@ -405,6 +498,7 @@ function harness(options: HarnessOptions = {}) {
     createExecution: vi.fn(() => execution),
     createAccounting: vi.fn(() => accounting),
     proposalService,
+    readLocationCreationState,
     generateExecutionId: vi
       .fn()
       .mockReturnValueOnce("90000000-0000-4000-8000-000000000009")
@@ -416,10 +510,12 @@ function harness(options: HarnessOptions = {}) {
     events,
     planningInputs,
     draftingInputs,
+    locationIntentInputs,
     loadContext,
     accounting,
     execution,
     proposalService,
+    readLocationCreationState,
   };
 }
 
@@ -522,7 +618,7 @@ describe("authenticated Builder orchestration contract", () => {
 
   it("returns the bounded unsupported result for operational, mixed, and preorder plans", async () => {
     for (const [plan, reason] of [
-      [readyPlan("create_location"), "operational_plan_unavailable"],
+      [readyPlan("update_location"), "operational_plan_unavailable"],
       [mixedPlan(), "mixed_plan_unavailable"],
       [readyPlan("configure_preorder"), "configuration_category_unavailable"],
     ] as const) {
@@ -537,11 +633,145 @@ describe("authenticated Builder orchestration contract", () => {
       });
       expect(Object.isFrozen(result)).toBe(true);
       expect(test.execution.prepare).toHaveBeenCalledTimes(1);
+      expect(test.locationIntentInputs).toHaveLength(0);
+      expect(test.accounting.reserve).toHaveBeenCalledTimes(1);
       expect(test.proposalService.propose).not.toHaveBeenCalled();
       expect(builderUnsupportedResultSchema.safeParse(result).success).toBe(
         true,
       );
     }
+  });
+
+  it("routes one create_location step through a separate intent and currentness read", async () => {
+    const test = harness({ planningOutput: readyPlan("create_location") });
+    const result = await test.service.run(test.client, {
+      businessId: ids.business,
+      ownerRequest: "Add Cambridge as a new Location.",
+    });
+
+    expect(result).toEqual({
+      schema_version: 1,
+      state: "location_confirmation",
+      intent_schema_version: 1,
+      location_name: "Cambridge",
+      timezone: "Europe/London",
+      timezone_source: "business_timezone",
+      business_timezone: "Europe/London",
+      location_state_digest: "a".repeat(64),
+    });
+    expect(test.events).toEqual([
+      "context",
+      "planning",
+      "reserve:builder_plan_v1",
+      "settle:90000000-0000-4000-8000-000000000009",
+      "context",
+      "location-state",
+      "location-intent",
+      "reserve:builder_location_creation_intent_v1",
+      "settle:90000000-0000-4000-8000-000000000010",
+      "location-state",
+    ]);
+    expect(test.locationIntentInputs).toHaveLength(1);
+    expect(test.locationIntentInputs[0]).toEqual(
+      expect.objectContaining({
+        owner_request: "Add Cambridge as a new Location.",
+        ready_plan: readyPlan("create_location"),
+      }),
+    );
+    expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
+    expect(test.proposalService.propose).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      existing: "Cambridge",
+      active: true,
+      requested: "Cambridge",
+      ownerRequest: "Add Cambridge as a new Location.",
+      expectedState: "location_conflict",
+      expectedDuplicate: "active",
+    },
+    {
+      existing: "Cambridge",
+      active: false,
+      requested: "Cambridge",
+      ownerRequest: "Add Cambridge as a new Location.",
+      expectedState: "location_conflict",
+      expectedDuplicate: "inactive",
+    },
+    {
+      existing: "Cambridge",
+      active: true,
+      requested: "Cambridge North",
+      ownerRequest: "Add Cambridge North as a new Location.",
+      expectedState: "location_confirmation",
+    },
+    {
+      existing: "York",
+      active: true,
+      requested: "New York",
+      ownerRequest: "Open a New York Location.",
+      expectedState: "location_confirmation",
+    },
+    {
+      existing: "Cambridge North",
+      active: true,
+      requested: "Cambridge",
+      ownerRequest: "Add Cambridge as a new Location.",
+      expectedState: "location_confirmation",
+    },
+  ] as const)(
+    "uses only the exact interpreted Location name for duplicate checks: $existing -> $requested",
+    async ({
+      existing,
+      active,
+      requested,
+      ownerRequest,
+      expectedState,
+      expectedDuplicate,
+    }) => {
+      const test = harness({
+        planningOutput: readyPlan("create_location"),
+        firstLocationState: locationCreationState({
+          locations: [locationSummary(existing, active)],
+        }),
+        locationIntentOutput: locationIntentOutput(requested),
+      });
+
+      const result = await test.service.run(test.client, {
+        businessId: ids.business,
+        ownerRequest,
+      });
+
+      expect(result).toMatchObject({
+        state: expectedState,
+        location_name: requested,
+      });
+      if (expectedState === "location_conflict") {
+        expect(result).toMatchObject({ duplicate_kind: expectedDuplicate });
+      }
+      expect(test.locationIntentInputs).toHaveLength(1);
+    },
+  );
+
+  it("discards the Location confirmation when operational state changes during intent generation", async () => {
+    const test = harness({
+      planningOutput: readyPlan("create_location"),
+      firstLocationState: locationCreationState(),
+      secondLocationState: locationCreationState({
+        location_state_digest: "b".repeat(64),
+      }),
+    });
+
+    await expect(
+      test.service.run(test.client, {
+        businessId: ids.business,
+        ownerRequest: "Add Cambridge as a new Location.",
+      }),
+    ).rejects.toMatchObject({ code: "ai_builder_context_stale" });
+    expect(test.proposalService.propose).not.toHaveBeenCalled();
+    expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
+    expect(test.readLocationCreationState).toHaveBeenCalledTimes(2);
   });
 
   it("runs one authenticated planning/drafting handoff with exact inputs", async () => {
@@ -777,6 +1007,7 @@ describe("private qualified Builder runtime", () => {
       "builder_plan_v1",
       "builder_configuration_draft_v1",
       "builder_preorder_amendment_v1",
+      "builder_location_creation_intent_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -802,6 +1033,18 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_preorder_amendment_v1!.outputSchema).toBe(
       builderPreorderAmendmentTaskV1.outputSchema,
     );
+    expect(runtime.tasks.builder_location_creation_intent_v1!.policyKey).toBe(
+      BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(runtime.tasks.builder_location_creation_intent_v1).not.toBe(
+      builderLocationCreationIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_location_creation_intent_v1!.inputSchema).toBe(
+      builderLocationCreationIntentTaskV1.inputSchema,
+    );
+    expect(
+      runtime.tasks.builder_location_creation_intent_v1!.outputSchema,
+    ).toBe(builderLocationCreationIntentTaskV1.outputSchema);
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
@@ -811,6 +1054,9 @@ describe("private qualified Builder runtime", () => {
     expect(
       runtime.policies[BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY],
     ).toBe(openAiBuilderPreorderAmendmentPolicy);
+    expect(
+      runtime.policies[BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY],
+    ).toBe(openAiBuilderLocationCreationPolicy);
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
 
@@ -819,6 +1065,7 @@ describe("private qualified Builder runtime", () => {
       "builder_plan_v1",
       "builder_configuration_draft_v1",
       "builder_preorder_amendment_v1",
+      "builder_location_creation_intent_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,
@@ -883,7 +1130,9 @@ describe("Builder source boundaries", () => {
     expect(sourceText).not.toMatch(/Server Action|use server|route\.ts/i);
     expect(sourceText).not.toMatch(/OpenAI.*SDK|new OpenAI/i);
     expect(sourceText).not.toMatch(/\bfetch\s*\(/i);
-    expect(sourceText).not.toMatch(/insert\(|update\(|delete\(/i);
+    expect(sourceText).not.toMatch(
+      /\b(?:supabase|client|database|db)\.(?:from|rpc|insert|update|delete)\s*\(/i,
+    );
     expect(sourceText).not.toMatch(
       /\b(RecordService|LocationService|validateAndApply|applyConfiguration|publishConfiguration)\b/i,
     );

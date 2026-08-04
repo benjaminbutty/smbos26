@@ -64,15 +64,17 @@ unsupported paths have two.
 
 ## Private runtime and accounting
 
-The global production drafting and preorder-amendment tasks remain mapped to
-their disabled policies. OpenAI mode creates private frozen clones whose only
-changed property is the qualified policy key: generic drafting uses
-`builder_configuration_drafting_terra_medium_v1` and preorder amendment uses
-`builder_preorder_amendment_terra_medium_v1`. Each clone reuses its production
-task key, version, purpose label, instruction, schemas and semantic validator.
-The private registry contains the unchanged planning task, both private
-qualified clones, the corresponding policies and the validated configured
-providers. Disabled mode preserves the existing disabled behavior.
+The global production drafting, preorder-amendment and Location-intent tasks
+remain mapped to their disabled policies. OpenAI mode creates private frozen
+clones whose only changed property is the qualified policy key: generic
+drafting uses `builder_configuration_drafting_terra_medium_v1`, preorder
+amendment uses `builder_preorder_amendment_terra_medium_v1`, and Location
+intent uses `builder_location_creation_intent_terra_medium_v1`. Each clone
+reuses its production task key, version, purpose label, instruction, schemas
+and semantic validator. The private registry contains the unchanged planning
+task, all three private qualified clones, the corresponding policies and the
+validated configured providers. Disabled mode preserves the existing disabled
+behavior.
 
 Planning, generic drafting and preorder amendment use independent execution
 IDs, reservations, audit rows and settlements, sequentially. The existing
@@ -102,3 +104,32 @@ malformed and cross-Business contexts fail closed. A normal Builder request
 matching `Undo that` without this trusted route context returns fixed guidance
 and never searches history or invokes a model. Phase 9A's amendment task,
 policy, runtime mapping and qualification evidence are unchanged.
+
+## Phase 10A Location creation
+
+The Builder runtime contains exactly four private tasks: planning, generic
+configuration drafting, preorder amendment and
+`builder_location_creation_intent_v1`. The fourth task remains globally and
+default-disabled, while the private authenticated OpenAI runtime maps its
+frozen clone to `builder_location_creation_intent_terra_medium_v1` after the
+independent Terra qualification and reliability evidence passed. It is not a
+configuration-draft substitute and is never given database, identity, digest,
+token or mutation inputs.
+
+Only a ready plan with exactly one operational `create_location` step enters
+the Location path. The service reads the authoritative Location currentness
+state before and after intent generation, then returns a confirmation-required
+internal result. It never creates a Location during planning, intent generation
+or GET. The Server Action signs the transient confirmation only after the
+tenant and capability checks; the final POST verifies the token and calls the
+shared Location service once without AI or accounting.
+
+Location creation is ordinary operational data and does not go through M5,
+Changes or configuration history. Mixed work, Product/Record work and Location
+updates remain bounded unsupported results. No generic operational action
+registry or operational undo is present. PostgreSQL owns the single
+NFKC/trim/locale-neutral-lower Location identity rule across active and
+inactive rows; the intent validator checks exact interpreted names after the
+task runs, not owner-request substring matches. Exact IANA timezone text may be
+copied from the request, otherwise Business timezone is the default unless
+generic local/different-timezone wording requires clarification.

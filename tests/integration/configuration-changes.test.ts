@@ -34,6 +34,7 @@ import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
 } from "./support/local-supabase";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 
 vi.mock("server-only", () => ({}));
 
@@ -574,11 +575,13 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     );
     createdBusinessIds.push(otherBusiness.id);
     otherLocation = requireData(
-      await otherOwner.client.rpc("create_location", {
-        target_business_id: otherBusiness.id,
-        location_name: "Other Location",
-        requested_timezone: "Europe/London",
-      }),
+      await createLocationWithCurrentness(
+        otherOwner.client,
+        otherOwner.user.id,
+        otherBusiness.id,
+        "Other Location",
+        "Europe/London",
+      ),
       "Could not create the other Location",
     );
 

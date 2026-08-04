@@ -24,7 +24,14 @@ import {
 } from "../../../src/ai/preorder-amendment/schemas";
 import { builderPreorderAmendmentTaskV1 } from "../../../src/ai/preorder-amendment/task";
 import {
+  builderLocationCreationIntentOutputSchema,
+  type BuilderLocationCreationIntentOutput,
+} from "../../../src/ai/location-creation-intent/schemas";
+import { builderLocationCreationIntentTaskV1 } from "../../../src/ai/location-creation-intent/task";
+import {
+  BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+  openAiBuilderLocationCreationPolicy,
   openAiBuilderPreorderAmendmentPolicy,
 } from "../../../src/ai/policies";
 
@@ -84,7 +91,11 @@ function configurationStep(
   };
 }
 
-function operationalStep(reference: string, sequence: number) {
+function operationalStep(
+  reference: string,
+  sequence: number,
+  category: "create_location" | "update_location" = "create_location",
+) {
   return {
     reference,
     sequence,
@@ -96,19 +107,38 @@ function operationalStep(reference: string, sequence: number) {
     materiality: "low" as const,
     requires_owner_confirmation: true as const,
     lane: "operational" as const,
-    category: "create_location" as const,
+    category,
   };
 }
 
+export function locationIntentOutput(
+  locationName = "Cambridge",
+): BuilderLocationCreationIntentOutput {
+  return builderLocationCreationIntentOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    summary: `Add ${locationName} as one new Location.`,
+    location_name: locationName,
+    timezone_intent: { kind: "use_business_timezone" },
+    source_step_references: ["step_1"],
+  });
+}
+
 export function smallReadyPlan(
-  kind: "configuration" | "operational" | "mixed" = "configuration",
+  kind:
+    | "configuration"
+    | "operational"
+    | "operational_update"
+    | "mixed" = "configuration",
 ): Extract<BuilderPlanOutput, { state: "ready" }> {
   const steps =
     kind === "configuration"
       ? [configurationStep("step_1", 1)]
       : kind === "operational"
         ? [operationalStep("step_1", 1)]
-        : [configurationStep("step_1", 1), operationalStep("step_2", 2)];
+        : kind === "operational_update"
+          ? [operationalStep("step_1", 1, "update_location")]
+          : [configurationStep("step_1", 1), operationalStep("step_2", 2)];
   const parsed = builderPlanOutputSchema.parse({
     schema_version: 1,
     state: "ready",
@@ -117,7 +147,7 @@ export function smallReadyPlan(
     plan: {
       outcome: "The Business can review the proposed setup.",
       concepts:
-        kind === "operational"
+        kind === "operational" || kind === "operational_update"
           ? []
           : [
               {
@@ -302,6 +332,9 @@ export interface DeterministicBuilderOptions {
   amendmentOutput?:
     | BuilderPreorderAmendmentOutput
     | ((input: unknown) => BuilderPreorderAmendmentOutput);
+  locationIntentOutput?:
+    | BuilderLocationCreationIntentOutput
+    | ((input: unknown) => BuilderLocationCreationIntentOutput);
 }
 
 export function createDeterministicBuilder(
@@ -329,7 +362,12 @@ export function createDeterministicBuilder(
               ? typeof options.amendmentOutput === "function"
                 ? options.amendmentOutput(request.input)
                 : (options.amendmentOutput ?? draftOutput)
-              : draftOutput,
+              : request.outputContract.name ===
+                  "builder_location_creation_intent_v1"
+                ? typeof options.locationIntentOutput === "function"
+                  ? options.locationIntentOutput(request.input)
+                  : (options.locationIntentOutput ?? locationIntentOutput())
+                : draftOutput,
         usage: { inputTokens: 120, outputTokens: 40 },
         requestMetadata: {
           provider_transient_marker: "BUILDER_PROVIDER_MARKER",
@@ -349,11 +387,17 @@ export function createDeterministicBuilder(
         ...builderPreorderAmendmentTaskV1,
         policyKey: BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
       }),
+      builder_location_creation_intent_v1: Object.freeze({
+        ...builderLocationCreationIntentTaskV1,
+        policyKey: BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+      }),
     }),
     policies: Object.freeze({
       ...runtime.policies,
       [BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY]:
         openAiBuilderPreorderAmendmentPolicy,
+      [BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY]:
+        openAiBuilderLocationCreationPolicy,
     }),
     providers: runtime.providers,
   };

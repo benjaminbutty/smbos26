@@ -259,3 +259,117 @@ model alias, policy, provider transport, task instruction, schemas, validator,
 contexts, scenarios or evaluator invalidates this evidence and requires both
 gates to be rerun. The reviewed gates cleared the private runtime enablement
 boundary; global/default registration remains disabled.
+
+### Milestone 10 Phase 10A Location-intent gates
+
+`builder_location_creation_intent_v1` has its own disabled production policy and
+private-runtime-qualified `builder_location_creation_intent_terra_medium_v1` policy:
+`gpt-5.6-terra`, medium reasoning, 256 KiB input, 80,000 billable input
+tokens, 2,048 output tokens, 30-second timeout and two attempts. The exact
+reservation is 461,440 microusd per execution; the eight-scenario qualification
+ceiling is 3,800,000 microusd and the 24-execution reliability ceiling is
+11,200,000 microusd.
+
+Qualification and reliability are separate, sequential, explicitly opted-in
+commands. Their provider-backed subject is frozen to this exact ordered set:
+
+1. `explicit_timezone`
+2. `business_timezone`
+3. `alternate_wording`
+4. `active_duplicate`
+5. `inactive_duplicate`
+6. `missing_name`
+7. `local_timezone_without_iana`
+8. `multi_word_identity`
+
+Every input is valid for the strict one-step Location-intent task. Mixed
+Location/preorder plans, Location updates and deactivation are tested
+separately at deterministic Builder routing and must stop after planning with
+no intent execution or intent reservation. They are not provider-backed intent
+scenarios.
+
+Before provider construction, each live command validates the exact scenario
+count/order, repetition and execution counts, task/policy/model/reasoning
+identities, reservation totals and hard ceilings. Reports preserve bounded
+attempt/usage completeness on failures, classify failures as output contract,
+semantic validation, scenario expectation, provider execution, setup or
+unknown, stop on the first failure, and aggregate actual reported token cost.
+Qualification requires 8/8 and reliability requires 24/24 with every scenario
+3/3 and actual cost below the relevant ceiling. CI runs only deterministic
+tests and never activates live OpenAI gates. When live credentials or reviewed
+evidence are unavailable, the private Builder mapping remains disabled; no
+qualification result is inferred or claimed. Reports are bounded redacted
+metadata and omit owner requests, Business context, Location names/timezones,
+model output, credentials and tokens.
+
+#### Failed qualification evidence and bounded correction
+
+The operator ran qualification once against exact candidate SHA
+`27f2c122f08ddc52f417bc60861f164bc96f8edd`. The first three scenarios,
+`explicit_timezone`, `business_timezone` and `alternate_wording`, passed.
+`active_duplicate` failed with `ai_output_invalid`, and the gate correctly
+stopped before the remaining four scenarios. The aggregate was 3 passed, 1
+failed, 4 attempts, 12,737 input tokens, 263 output tokens, 35,788 estimated
+microusd, 7,703 ms and exit code 1. Reliability was not run.
+
+No hidden model output was inspected or retained. The bounded diagnosis is an
+instruction/validator mismatch: the semantic validator already rejected a
+ready exact active or inactive duplicate, but the instruction did not tell the
+model to return `needs_clarification` for those contexts. The correction adds
+that exact duplicate rule, forbids ready, slight rename, numeric suffix,
+reactivation, update and adjacent work, and explicitly rejects fuzzy or
+substring matching. The deterministic validator remains authoritative and is
+unchanged. Evaluation-only cause-chain metadata now separates output-contract,
+semantic-validation, provider invalid-response and unknown invalid-output
+causes using finite redacted reason codes.
+
+This first failed run is historical evidence only. It did not qualify or enable
+Phase 10A, and all production mappings remained on
+`builder_location_creation_intent_disabled_v1`.
+
+#### Accepted qualification and reliability evidence
+
+The corrected frozen subject was qualified against exact SHA
+`0598068617f25e541ef49cde50aea307dc98047e`. Qualification passed all 8/8
+scenarios with 8 attempts, 26,389 input tokens, 700 output tokens, 76,475
+estimated microusd, 23,479 ms elapsed and exit code 0.
+
+The first reliability attempt on this exact subject is retained as historical
+evidence. It passed 16 executions before execution 17 failed at
+`explicit_timezone`, repetition 3, with `provider_execution` / `ai_timeout`,
+30,030 ms elapsed, incomplete usage and zero input/output tokens. Its stopped
+aggregate was 52,778 input tokens, 1,488 output tokens, 154,270 estimated
+microusd, 77,651 ms and exit code 1.
+
+The final accepted reliability rerun used the same exact SHA and passed all 24
+executions: 8/8 scenarios, every scenario 3/3, 24 attempts, 79,167 input
+tokens, 2,145 output tokens, 230,100 estimated microusd, 48,334 ms elapsed and
+exit code 0. Every scenario passed 3/3:
+
+```text
+explicit_timezone: 3
+business_timezone: 3
+alternate_wording: 3
+active_duplicate: 3
+inactive_duplicate: 3
+missing_name: 3
+local_timezone_without_iana: 3
+multi_word_identity: 3
+```
+
+Every successful report had `passed: true`, `failure_class: null`, empty
+`failed_gate_codes`, null `error_code`, null `validation_reason_code`,
+`usage_complete: true` and `attempts: 1`. No task, instruction, schema,
+validator, scenario, evaluator, model, policy parameters, limits, pricing or
+provider transport changed between qualification and the final reliability
+rerun. The successful rerun supersedes the isolated timeout for acceptance;
+the timeout remains historical evidence.
+
+After exact-head CI passed, the private authenticated OpenAI Builder runtime
+maps `builder_location_creation_intent_v1` to
+`builder_location_creation_intent_terra_medium_v1`. The global/default task
+and disabled runtime remain mapped to
+`builder_location_creation_intent_disabled_v1`. The enablement commit changes
+only this private runtime binding, assertions and documentation; it is not
+itself live-qualified. Phase 10A is implemented, qualified and enabled in the
+private authenticated runtime, while PR #16 remains open, draft and unmerged.
