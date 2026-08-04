@@ -8,6 +8,10 @@ import { URL } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import postgres from "postgres";
 
+import {
+  createLocalAuthAdminProbe,
+  waitForLocalAuthReadiness,
+} from "./support/local-auth-readiness.mjs";
 import { upsertLocalAuthUser } from "./support/local-auth-retry.mjs";
 
 const ownerEmail = "demo@smbos.local";
@@ -788,6 +792,9 @@ async function ensureOperationalProducts(owner, businessId, locationsByName) {
 
 const { apiUrl, databaseUrl, publishableKey, serviceRoleKey } =
   loadLocalSupabase();
+await waitForLocalAuthReadiness({
+  probe: createLocalAuthAdminProbe({ apiUrl, serviceRoleKey }),
+});
 const sql = postgres(databaseUrl, { max: 1 });
 try {
   const admin = createClient(apiUrl, serviceRoleKey, {
