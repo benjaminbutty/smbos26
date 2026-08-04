@@ -2791,12 +2791,16 @@ server-signed HMAC token, performs no AI call or accounting, and links to
 Locations. Manual Location management remains available and uses the same
 trusted service; manual update and deactivation remain manual-only.
 
-The database reserves normalized names across active and inactive Locations,
-validates Business and Location timezones against `pg_timezone_names`, derives
-slugs server-side and serializes Location writes on the parent Business row.
-The state digest covers the Business timezone and complete canonical Location
-collection. A Business-timezone default is allowed when the owner supplies no
-different exact IANA timezone; city or region inference is not allowed.
+The database reserves names across active and inactive Locations using one
+canonical `private.normalize_location_name(name)` function: PostgreSQL NFKC,
+surrounding trim and lower casing under the explicit locale-neutral `und-x-icu`
+collation. It validates Business and Location timezones against
+`pg_timezone_names`, derives slugs server-side and serializes Location writes on
+the parent Business row. The state digest covers the Business timezone and
+complete canonical Location collection. A Business-timezone default is allowed
+when the owner supplies no exact IANA timezone; generic local/different-timezone
+wording without an exact IANA value requires clarification, and no geographic
+inference or external lookup is used.
 
 Only the exact one-Location create path is supported. Product/Record work,
 Location updates, reactivation, deletion, multiple Locations and mixed

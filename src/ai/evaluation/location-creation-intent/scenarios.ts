@@ -55,6 +55,17 @@ function contextWithLocation(name: string, isActive: boolean) {
   });
 }
 
+export const BUILDER_LOCATION_CREATION_EVALUATION_SCENARIO_IDS = [
+  "explicit_timezone",
+  "business_timezone",
+  "alternate_wording",
+  "active_duplicate",
+  "inactive_duplicate",
+  "missing_name",
+  "local_timezone_without_iana",
+  "multi_word_identity",
+] as const satisfies readonly BuilderLocationCreationEvaluationScenarioId[];
+
 function expectedReady(input: {
   locationName: string;
   timezoneIntent: "explicit_timezone" | "use_business_timezone";
@@ -138,19 +149,19 @@ const definitions = [
     ),
   },
   {
-    id: "different_timezone_implied",
-    owner_request: "Open a New York Location.",
+    id: "local_timezone_without_iana",
+    owner_request: "Add Cambridge using its local timezone.",
     business_context: syntheticBusinessContext,
     expected_output: expectedClarification(
       "Which exact IANA timezone should this Location use?",
     ),
   },
   {
-    id: "neutral_business_wording",
-    owner_request: "Create our new Manchester office.",
-    business_context: syntheticBusinessContext,
+    id: "multi_word_identity",
+    owner_request: "Open a New York Location.",
+    business_context: contextWithLocation("York", true),
     expected_output: expectedReady({
-      locationName: "Manchester",
+      locationName: "New York",
       timezoneIntent: "use_business_timezone",
     }),
   },

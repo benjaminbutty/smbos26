@@ -53,7 +53,10 @@ import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-draftin
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
-import type { LocationCreationState } from "../src/core/locations/schemas";
+import {
+  normalizeLocationName,
+  type LocationCreationState,
+} from "../src/core/locations/schemas";
 import type { Database } from "../src/db/supabase/database.types";
 
 type Client = SupabaseClient<Database>;
@@ -149,6 +152,28 @@ function locationCreationState(
     locations: [],
     ...overrides,
   };
+}
+
+function locationSummary(name: string, isActive = true) {
+  return {
+    id: ids.location,
+    name,
+    normalized_name: normalizeLocationName(name),
+    slug: normalizeLocationName(name).replace(/[^a-z0-9]+/g, "-") || "location",
+    timezone: "Europe/London",
+    is_active: isActive,
+  };
+}
+
+function locationIntentOutput(name: string) {
+  return builderLocationCreationIntentOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    summary: `Add ${name} as one new Location.`,
+    location_name: name,
+    timezone_intent: { kind: "use_business_timezone" },
+    source_step_references: ["step_1"],
+  });
 }
 
 function readyPlan(
@@ -606,6 +631,8 @@ describe("authenticated Builder orchestration contract", () => {
       });
       expect(Object.isFrozen(result)).toBe(true);
       expect(test.execution.prepare).toHaveBeenCalledTimes(1);
+      expect(test.locationIntentInputs).toHaveLength(0);
+      expect(test.accounting.reserve).toHaveBeenCalledTimes(1);
       expect(test.proposalService.propose).not.toHaveBeenCalled();
       expect(builderUnsupportedResultSchema.safeParse(result).success).toBe(
         true,
@@ -652,6 +679,78 @@ describe("authenticated Builder orchestration contract", () => {
     expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
     expect(test.proposalService.propose).not.toHaveBeenCalled();
   });
+
+  it.each([
+    {
+      existing: "Cambridge",
+      active: true,
+      requested: "Cambridge",
+      ownerRequest: "Add Cambridge as a new Location.",
+      expectedState: "location_conflict",
+      expectedDuplicate: "active",
+    },
+    {
+      existing: "Cambridge",
+      active: false,
+      requested: "Cambridge",
+      ownerRequest: "Add Cambridge as a new Location.",
+      expectedState: "location_conflict",
+      expectedDuplicate: "inactive",
+    },
+    {
+      existing: "Cambridge",
+      active: true,
+      requested: "Cambridge North",
+      ownerRequest: "Add Cambridge North as a new Location.",
+      expectedState: "location_confirmation",
+    },
+    {
+      existing: "York",
+      active: true,
+      requested: "New York",
+      ownerRequest: "Open a New York Location.",
+      expectedState: "location_confirmation",
+    },
+    {
+      existing: "Cambridge North",
+      active: true,
+      requested: "Cambridge",
+      ownerRequest: "Add Cambridge as a new Location.",
+      expectedState: "location_confirmation",
+    },
+  ] as const)(
+    "uses only the exact interpreted Location name for duplicate checks: $existing -> $requested",
+    async ({
+      existing,
+      active,
+      requested,
+      ownerRequest,
+      expectedState,
+      expectedDuplicate,
+    }) => {
+      const test = harness({
+        planningOutput: readyPlan("create_location"),
+        firstLocationState: locationCreationState({
+          locations: [locationSummary(existing, active)],
+        }),
+        locationIntentOutput: locationIntentOutput(requested),
+      });
+
+      const result = await test.service.run(test.client, {
+        businessId: ids.business,
+        ownerRequest,
+      });
+
+      expect(result).toMatchObject({
+        state: expectedState,
+        location_name: requested,
+      });
+      if (expectedState === "location_conflict") {
+        expect(result).toMatchObject({ duplicate_kind: expectedDuplicate });
+      }
+      expect(test.locationIntentInputs).toHaveLength(1);
+    },
+  );
 
   it("discards the Location confirmation when operational state changes during intent generation", async () => {
     const test = harness({

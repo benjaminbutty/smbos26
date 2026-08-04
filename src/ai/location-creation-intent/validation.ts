@@ -1,4 +1,7 @@
-import { isValidIanaTimezone } from "../../core/locations/schemas";
+import {
+  isValidIanaTimezone,
+  normalizeLocationName,
+} from "../../core/locations/schemas";
 import { validateBuilderPlanOutput } from "../planning/validation";
 import type {
   BuilderPlanOutput,
@@ -38,25 +41,18 @@ function phraseInText(text: string, phrase: string): boolean {
   );
 }
 
-function normalizedLocationName(value: string): string {
-  return value.normalize("NFKC").trim().toLocaleLowerCase("en");
-}
-
 function hasDuplicateLocation(
   context: BuilderLocationCreationIntentTaskInput["business_context"],
   locationName: string,
 ): boolean {
-  const normalized = normalizedLocationName(locationName);
+  const normalized = normalizeLocationName(locationName);
   return context.locations.some(
-    (location) => normalizedLocationName(location.name) === normalized,
+    (location) => normalizeLocationName(location.name) === normalized,
   );
 }
 
-function hasImplicitTimezonePhrase(ownerRequest: string): boolean {
-  // This is deliberately a small ambiguity detector, not a city-to-timezone
-  // map. It prevents the model from silently turning a city mention into a
-  // timezone while leaving the exact IANA value to the owner.
-  return /\b(?:new\s+york|los\s+angeles|chicago|denver|phoenix|london|paris|berlin|tokyo|sydney|singapore|dubai|toronto|vancouver)\b/i.test(
+function requestsUnspecifiedTimezoneOverride(ownerRequest: string): boolean {
+  return /\b(?:local\s+(?:time|timezone|time\s+zone)|(?:different|another)\s+(?:timezone|time\s+zone)|(?:timezone|time\s+zone)\s+(?:for|of|at))\b/i.test(
     ownerRequest,
   );
 }
@@ -156,7 +152,7 @@ function validateTimezone(
     if (!isValidIanaTimezone(input.business_context.business.timezone)) {
       fail("timezone_invalid");
     }
-    if (hasImplicitTimezonePhrase(input.owner_request)) {
+    if (requestsUnspecifiedTimezoneOverride(input.owner_request)) {
       fail("timezone_implicit_or_ambiguous");
     }
     return;

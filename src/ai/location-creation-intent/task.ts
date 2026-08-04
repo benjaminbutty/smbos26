@@ -21,8 +21,8 @@ export const BUILDER_LOCATION_CREATION_INTENT_INSTRUCTION = [
   "Return a short owner-readable summary of this one Location request.",
   "Return timezone_intent {kind: use_business_timezone} when the owner did not state one exact valid IANA timezone and the request contains no timezone ambiguity.",
   "Return timezone_intent {kind: explicit_timezone, timezone: exact IANA value} only when the owner stated one exact valid IANA timezone, copied character-for-character.",
-  "If the request implies a different timezone through a city or region without an exact valid IANA timezone, return needs_clarification.",
-  "Never infer a timezone from a city, country, address or name.",
+  "If the request explicitly asks for a local, different or otherwise overridden timezone without an exact valid IANA timezone, return needs_clarification.",
+  "Never infer a timezone from geographic wording, an address or a name.",
   "Never output IDs, UUIDs, slugs, Business identity, actor identity, currentness, tokens, SQL, source code, HTTP, tools or execution instructions.",
   `Return exactly the registered schema-v${BUILDER_LOCATION_CREATION_INTENT_SCHEMA_VERSION} output and cite the one exact source step reference.`,
 ].join(" ");

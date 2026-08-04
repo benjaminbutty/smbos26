@@ -11,6 +11,7 @@ export const locationCreationStateSummarySchema = z
   .object({
     id: z.uuid(),
     name: locationNameSchema,
+    normalized_name: z.string().trim().min(1).max(120),
     slug: z
       .string()
       .min(1)
@@ -75,6 +76,19 @@ export const createLocationRequestSchema = z
 export type LocationCreationState = z.infer<typeof locationCreationStateSchema>;
 export type CreateLocationRequest = z.infer<typeof createLocationRequestSchema>;
 export type Location = Tables<"locations">;
+
+/**
+ * This must remain byte-for-byte equivalent in intent to
+ * private.normalize_location_name(value) in the Phase 10A migration:
+ * PostgreSQL NFKC normalization, surrounding whitespace trim, then lower
+ * casing under the locale-neutral und-x-icu collation. The database-derived
+ * normalized_name in the bounded state response is the authoritative value
+ * for existing rows; this helper is only used to compare a newly interpreted
+ * name before the final RPC recheck.
+ */
+export function normalizeLocationName(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase("und");
+}
 
 /**
  * This is intentionally an early-feedback check only. PostgreSQL's

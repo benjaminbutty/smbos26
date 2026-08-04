@@ -271,9 +271,33 @@ ceiling is 3,800,000 microusd and the 24-execution reliability ceiling is
 11,200,000 microusd.
 
 Qualification and reliability are separate, sequential, explicitly opted-in
-commands. CI runs only deterministic evaluator tests and never activates live
-OpenAI gates. When live credentials or reviewed evidence are unavailable, the
-private Builder mapping remains disabled; no qualification result is inferred
-or claimed. Reports are bounded redacted metadata and omit owner requests,
-Business context, Location names/timezones, model output, credentials and
-tokens.
+commands. Their provider-backed subject is frozen to this exact ordered set:
+
+1. `explicit_timezone`
+2. `business_timezone`
+3. `alternate_wording`
+4. `active_duplicate`
+5. `inactive_duplicate`
+6. `missing_name`
+7. `local_timezone_without_iana`
+8. `multi_word_identity`
+
+Every input is valid for the strict one-step Location-intent task. Mixed
+Location/preorder plans, Location updates and deactivation are tested
+separately at deterministic Builder routing and must stop after planning with
+no intent execution or intent reservation. They are not provider-backed intent
+scenarios.
+
+Before provider construction, each live command validates the exact scenario
+count/order, repetition and execution counts, task/policy/model/reasoning
+identities, reservation totals and hard ceilings. Reports preserve bounded
+attempt/usage completeness on failures, classify failures as output contract,
+semantic validation, scenario expectation, provider execution, setup or
+unknown, stop on the first failure, and aggregate actual reported token cost.
+Qualification requires 8/8 and reliability requires 24/24 with every scenario
+3/3 and actual cost below the relevant ceiling. CI runs only deterministic
+tests and never activates live OpenAI gates. When live credentials or reviewed
+evidence are unavailable, the private Builder mapping remains disabled; no
+qualification result is inferred or claimed. Reports are bounded redacted
+metadata and omit owner requests, Business context, Location names/timezones,
+model output, credentials and tokens.

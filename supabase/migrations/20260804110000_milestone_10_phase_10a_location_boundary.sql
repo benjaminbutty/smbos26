@@ -25,6 +25,34 @@ $$;
 revoke all on function private.is_valid_iana_timezone(text)
   from public, anon, authenticated, service_role;
 
+-- PostgreSQL 17.6 supports Unicode normalization with the NFKC form. The
+-- explicit und-x-icu collation keeps case normalization locale-neutral rather
+-- than inheriting the database default collation. Application comparisons use
+-- the same NFKC -> trim -> lower(und-x-icu) rule, while PostgreSQL remains the
+-- identity authority through this function and the unique index below.
+create function private.normalize_location_name(value text)
+returns text
+language sql
+immutable
+strict
+security definer
+set search_path = ''
+as $$
+  select lower(
+    btrim(normalize(value, NFKC)) collate "und-x-icu"
+  );
+$$;
+
+revoke all on function private.normalize_location_name(text)
+  from public, anon, authenticated, service_role;
+
+-- PostgreSQL evaluates the function as part of the Locations unique index
+-- during authenticated/service-role writes. Keep direct public/anonymous
+-- access closed while granting the writer roles the execution privilege
+-- required for index maintenance.
+grant execute on function private.normalize_location_name(text)
+  to authenticated, service_role;
+
 do $$
 begin
   if exists (
@@ -50,18 +78,18 @@ begin
   if exists (
     select 1
     from public.locations as location
-    group by location.business_id, lower(btrim(location.name))
+    group by location.business_id, private.normalize_location_name(location.name)
     having count(*) > 1
   ) then
     raise exception
-      'Milestone 10 Phase 10A cannot continue: existing Locations conflict under lower(btrim(name)) within a Business.'
+      'Milestone 10 Phase 10A cannot continue: existing Locations conflict under private.normalize_location_name(name) within a Business.'
       using errcode = '23505';
   end if;
 end;
 $$;
 
 create unique index locations_business_normalized_name_uidx
-  on public.locations (business_id, lower(btrim(name)));
+  on public.locations (business_id, private.normalize_location_name(name));
 
 create function private.validate_timezone_value()
 returns trigger
@@ -140,6 +168,7 @@ as $$
           jsonb_build_object(
             'id', location.id,
             'name', location.name,
+            'normalized_name', private.normalize_location_name(location.name),
             'slug', location.slug,
             'address_json', location.address_json,
             'opening_hours_json', location.opening_hours_json,
@@ -241,6 +270,7 @@ begin
       jsonb_build_object(
         'id', location.id,
         'name', location.name,
+        'normalized_name', private.normalize_location_name(location.name),
         'slug', location.slug,
         'timezone', location.timezone,
         'is_active', location.is_active
@@ -293,7 +323,7 @@ declare
   base_slug text;
   candidate_slug text;
   created_location public.locations;
-  normalized_name text := lower(btrim(location_name));
+  normalized_name text := private.normalize_location_name(location_name);
   normalized_requested_timezone text := btrim(requested_timezone);
 begin
   if current_actor_id is null then
@@ -335,7 +365,7 @@ begin
     into existing_location
     from public.locations as location
     where location.business_id = expected_business_id
-      and lower(btrim(location.name)) = normalized_name
+      and private.normalize_location_name(location.name) = normalized_name
     order by location.is_active desc, location.id
     limit 1;
 
@@ -362,7 +392,7 @@ begin
   into existing_location
   from public.locations as location
   where location.business_id = expected_business_id
-    and lower(btrim(location.name)) = normalized_name
+    and private.normalize_location_name(location.name) = normalized_name
   order by location.is_active desc, location.id
   limit 1;
 
@@ -409,7 +439,7 @@ begin
         into existing_location
         from public.locations as location
         where location.business_id = expected_business_id
-          and lower(btrim(location.name)) = normalized_name
+          and private.normalize_location_name(location.name) = normalized_name
         order by location.is_active desc, location.id
         limit 1;
 

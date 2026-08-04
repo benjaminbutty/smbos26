@@ -2376,8 +2376,14 @@ provider invocation or accounting reservation. The shared server-only Location
 service is used by both manual and Builder creation; manual update and
 deactivation remain manual-only.
 
-PostgreSQL is authoritative for normalized name uniqueness across active and
-inactive Locations, exact IANA timezone validity, server-derived slugs and
+PostgreSQL is authoritative for Location identity through one immutable
+`private.normalize_location_name(value)` function: NFKC normalization,
+surrounding whitespace trim, then lower casing with the explicit locale-neutral
+`und-x-icu` collation. The same function is used by migration preflight, the
+tenant-scoped unique index, bounded state summaries and duplicate lookup; the
+application helper is parity-tested against the database-derived normalized
+value. Active and inactive identities remain reserved. PostgreSQL also remains
+authoritative for exact IANA timezone validity, server-derived slugs and
 Business-row serialization of Location writes. The digest covers the Business
 timezone and complete deterministically ordered Location collection. There is
 no M5 proposal/version, Changes entry, configuration rollback or operational
@@ -2385,8 +2391,22 @@ undo for this action. Mixed configuration/operational requests, Product/Record
 work and generic operational actions remain unsupported; no generic operational
 action registry is introduced.
 
+The timezone policy is neutral rather than geographic: an exact valid IANA
+value copied from the owner request may be selected; otherwise the current
+Business timezone may be used. Generic local/different-timezone wording without
+an exact IANA value requires clarification. No city/country/region list,
+geocoding, timezone lookup or external API is used.
+
 The Location-intent task has an independent disabled policy and evaluation-only
-Terra policy. Its exact qualification/reliability harness is separate from
-planning, and the private Builder mapping remains disabled until deterministic
-tests, exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence
-are reviewed. Product v0 remains in progress.
+Terra policy. Its provider-backed qualification is frozen to exactly eight
+task-valid scenarios (including exact active/inactive duplicates, generic
+timezone clarification and a multi-word identity such as New York with an
+existing York Location). Mixed Location/preorder plans, Location updates and
+deactivation are deterministic pre-provider routing cases: they must not invoke
+the intent task or reserve intent accounting. The live harness validates the
+task/policy/model/reasoning/envelope before provider construction, uses actual
+reported usage for aggregate cost, preserves bounded failure usage and stops on
+the first failure. It reports finite failure classes and remains separately
+gated. The private Builder mapping remains disabled until deterministic tests,
+exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence are
+reviewed. Product v0 remains in progress.

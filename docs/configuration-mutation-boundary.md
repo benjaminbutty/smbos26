@@ -370,8 +370,10 @@ service; update and deactivation remain manual-only.
 
 The Location RPC locks its parent Business, checks the authenticated actor and
 `manage_locations`, compares the Business timezone and a SHA-256 digest of the
-complete canonical Location collection, rechecks normalized active/inactive
-duplicates and derives the slug server-side. Database triggers make IANA
+complete canonical Location collection, rechecks exact active/inactive
+duplicates through PostgreSQL's canonical NFKC/trim/locale-neutral-lower
+`private.normalize_location_name(name)` function and derives the slug
+server-side. Database triggers make IANA
 timezone validity and the parent-Business lock reusable across Business and
 Location writes. A transient signed confirmation binds the name, resolved
 timezone and digest without exposing UUIDs or slugs to the browser.

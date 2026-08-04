@@ -184,9 +184,13 @@ Location; the final confirmation performs no AI call or AI accounting.
 Location is a first-class platform concept, not a metadata Object or Record.
 The operation is outside the M5 proposal/version/Changes lifecycle, and no
 operational undo or generic operational action registry exists. Manual Location
-creation remains available and shares the same normalized-name, timezone and
-server-derived slug boundary. Active and inactive names are reserved; mixed
-configuration/operational requests, Product work and Location updates remain
+creation remains available and shares the same canonical
+NFKC/trim/locale-neutral-lower name, timezone and server-derived slug boundary.
+Active and inactive names are reserved; an exact IANA timezone may be copied
+from the request, otherwise the Business timezone is shown as the default.
+Generic local/different-timezone wording clarifies without an exact IANA value;
+no geographic inference is used. Mixed configuration/operational requests,
+Product work and Location updates remain
 unsupported in Builder.
 
 The separate `builder_location_creation_intent_v1` task is globally and

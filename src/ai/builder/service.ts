@@ -50,7 +50,10 @@ import {
   builderLocationCreationIntentTaskInputSchema,
 } from "../location-creation-intent/schemas";
 import { createLocationService } from "../../core/locations/service";
-import type { LocationCreationState } from "../../core/locations/schemas";
+import {
+  normalizeLocationName,
+  type LocationCreationState,
+} from "../../core/locations/schemas";
 import { AiBusinessContextError } from "../context/errors";
 import type { Database } from "../../db/supabase/database.types";
 import {
@@ -211,38 +214,18 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function normalizeLocationName(value: string): string {
-  return value.normalize("NFKC").trim().toLocaleLowerCase("en");
-}
-
 function locationDuplicate(
   state: LocationCreationState,
   locationName: string,
 ): "active" | "inactive" | null {
   const normalized = normalizeLocationName(locationName);
   const location = state.locations.find(
-    (candidate) => normalizeLocationName(candidate.name) === normalized,
+    (candidate) => candidate.normalized_name === normalized,
   );
   if (!location) {
     return null;
   }
   return location.is_active ? "active" : "inactive";
-}
-
-function ownerRequestMentionsLocation(
-  ownerRequest: string,
-  locationName: string,
-): boolean {
-  const normalize = (value: string) =>
-    value
-      .normalize("NFKC")
-      .toLocaleLowerCase("en")
-      .replace(/[^\p{L}\p{N}]+/gu, " ")
-      .trim()
-      .replace(/\s+/g, " ");
-  const request = ` ${normalize(ownerRequest)} `;
-  const name = normalize(locationName);
-  return Boolean(name) && request.includes(` ${name} `);
 }
 
 function locationStateMatches(
@@ -482,19 +465,6 @@ export function createBuilderOrchestrationService(
               afterPlanningProjection.modelContext.business.timezone
           ) {
             builderContextStale();
-          }
-
-          const requestDuplicate = firstLocationState.locations.find(
-            (location) =>
-              ownerRequestMentionsLocation(request.ownerRequest, location.name),
-          );
-          if (requestDuplicate) {
-            return deepFreeze(
-              locationConflictResult(
-                requestDuplicate.name,
-                requestDuplicate.is_active ? "active" : "inactive",
-              ),
-            );
           }
 
           const intentInput =

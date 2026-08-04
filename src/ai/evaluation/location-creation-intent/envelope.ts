@@ -1,6 +1,8 @@
 import { deriveAiReservationEnvelope } from "../../accounting/cost";
 import {
   BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+  OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY,
+  OPENAI_BUILDER_LOCATION_CREATION_REASONING_EFFORT,
   openAiBuilderLocationCreationPolicy,
 } from "../../policies";
 
@@ -22,6 +24,8 @@ export function deriveBuilderLocationCreationQualificationEnvelope() {
   return Object.freeze({
     taskKey: "builder_location_creation_intent_v1" as const,
     policyKey: BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    modelKey: OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY,
+    reasoningEffort: OPENAI_BUILDER_LOCATION_CREATION_REASONING_EFFORT,
     reservedCostMicrousdPerExecution: single.reservedCostMicrousd,
     reservedCostMicrousd:
       single.reservedCostMicrousd *
@@ -38,6 +42,8 @@ export function deriveBuilderLocationCreationReliabilityEnvelope() {
   return Object.freeze({
     taskKey: "builder_location_creation_intent_v1" as const,
     policyKey: BUILDER_LOCATION_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    modelKey: OPENAI_BUILDER_LOCATION_CREATION_MODEL_KEY,
+    reasoningEffort: OPENAI_BUILDER_LOCATION_CREATION_REASONING_EFFORT,
     reservedCostMicrousdPerExecution: single.reservedCostMicrousd,
     reservedCostMicrousd:
       single.reservedCostMicrousd *

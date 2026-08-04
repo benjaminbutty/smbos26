@@ -4,9 +4,19 @@ vi.mock("server-only", () => ({}));
 
 import { evaluateBuilderLocationCreationIntent } from "../src/ai/evaluation/location-creation-intent/evaluator";
 import {
+  liveBuilderLocationCreationQualificationIsActivated,
+  runLiveBuilderLocationCreationQualification,
+  runLiveBuilderLocationCreationReliability,
+} from "../src/ai/evaluation/location-creation-intent/live";
+import {
   builderLocationCreationEvaluationScenarios,
   locationCreationEvaluationScenario,
 } from "../src/ai/evaluation/location-creation-intent/scenarios";
+import {
+  builderLocationCreationEvaluationQualificationAggregateSchema,
+  builderLocationCreationEvaluationReliabilityAggregateSchema,
+} from "../src/ai/evaluation/location-creation-intent/schemas";
+import { AiExecutionError } from "../src/ai/errors";
 import { builderLocationCreationIntentOutputSchema } from "../src/ai/location-creation-intent/schemas";
 
 describe("Builder Location creation evaluation harness", () => {
@@ -36,6 +46,7 @@ describe("Builder Location creation evaluation harness", () => {
         "error_code",
         "estimated_microusd",
         "failed_gate_codes",
+        "failure_class",
         "input_tokens",
         "output_state",
         "output_tokens",
@@ -43,6 +54,7 @@ describe("Builder Location creation evaluation harness", () => {
         "repetition",
         "scenario_id",
         "timezone_intent",
+        "usage_complete",
       ]);
     }
   });
@@ -66,5 +78,274 @@ describe("Builder Location creation evaluation harness", () => {
     expect(report.failed_gate_codes).toEqual(
       expect.arrayContaining(["semantic_validation", "expected_state"]),
     );
+  });
+
+  it("runs qualification in the frozen order and emits the required aggregate", async () => {
+    const emitted: unknown[] = [];
+    const calls: string[] = [];
+    const result = await runLiveBuilderLocationCreationQualification(
+      {
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      },
+      {
+        now: () => 10,
+        emit: (value) => emitted.push(value),
+        execute: async (_taskKey, input) => {
+          const scenario = builderLocationCreationEvaluationScenarios.find(
+            (candidate) => candidate.input === input,
+          );
+          if (!scenario) throw new Error("Unknown injected scenario.");
+          calls.push(scenario.id);
+          return {
+            output: scenario.expected_output,
+            accounting: {
+              attemptsStarted: 1,
+              inputTokens: 120,
+              outputTokens: 40,
+              usageReported: true,
+              usageComplete: true,
+              providerInvocationStarted: true,
+              failureBeforeProviderInvocation: false,
+            },
+            metadata: {
+              taskKey: "builder_location_creation_intent_v1",
+              taskVersion: 1,
+              purposeLabel: "test",
+              providerKey: "openai",
+              modelKey: "gpt-5.6-terra",
+              attempts: 1,
+              usage: { inputTokens: 120, outputTokens: 40, complete: true },
+            },
+          };
+        },
+      },
+    );
+
+    expect(
+      liveBuilderLocationCreationQualificationIsActivated({
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      }),
+    ).toBe(true);
+    expect(result).toMatchObject({ ran: true, passed: true });
+    if (!result.ran) throw new Error("Qualification did not run.");
+    expect(calls).toEqual(
+      builderLocationCreationEvaluationScenarios.map(({ id }) => id),
+    );
+    expect(result.reports).toHaveLength(8);
+    expect(
+      builderLocationCreationEvaluationQualificationAggregateSchema.parse(
+        emitted.at(-1),
+      ),
+    ).toMatchObject({
+      total_scenarios: 8,
+      passed_scenarios: 8,
+      failed_scenarios: 0,
+      total_attempts: 8,
+      total_input_tokens: 960,
+      total_output_tokens: 320,
+      total_estimated_cost_microusd: 7_200,
+    });
+  });
+
+  it("runs reliability sequentially and reports three passes per scenario", async () => {
+    const emitted: unknown[] = [];
+    let running = 0;
+    let maximumRunning = 0;
+    const result = await runLiveBuilderLocationCreationReliability(
+      {
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_RELIABILITY: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      },
+      {
+        now: () => 10,
+        emit: (value) => emitted.push(value),
+        execute: async (_taskKey, input) => {
+          const scenario = builderLocationCreationEvaluationScenarios.find(
+            (candidate) => candidate.input === input,
+          );
+          if (!scenario) throw new Error("Unknown injected scenario.");
+          running += 1;
+          maximumRunning = Math.max(maximumRunning, running);
+          await Promise.resolve();
+          running -= 1;
+          return {
+            output: scenario.expected_output,
+            accounting: {
+              attemptsStarted: 1,
+              inputTokens: 120,
+              outputTokens: 40,
+              usageReported: true,
+              usageComplete: true,
+              providerInvocationStarted: true,
+              failureBeforeProviderInvocation: false,
+            },
+            metadata: {
+              taskKey: "builder_location_creation_intent_v1",
+              taskVersion: 1,
+              purposeLabel: "test",
+              providerKey: "openai",
+              modelKey: "gpt-5.6-terra",
+              attempts: 1,
+              usage: { inputTokens: 120, outputTokens: 40, complete: true },
+            },
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: true });
+    if (!result.ran) throw new Error("Reliability did not run.");
+    expect(result.reports).toHaveLength(24);
+    expect(maximumRunning).toBe(1);
+    expect(
+      builderLocationCreationEvaluationReliabilityAggregateSchema.parse(
+        emitted.at(-1),
+      ),
+    ).toMatchObject({
+      total_executions: 24,
+      passed_executions: 24,
+      failed_executions: 0,
+      total_attempts: 24,
+      total_estimated_cost_microusd: 21_600,
+      per_scenario_pass_counts: builderLocationCreationEvaluationScenarios.map(
+        ({ id }) => ({ scenario_id: id, passed_count: 3 }),
+      ),
+    });
+  });
+
+  it("stops qualification on the first failure and does not double-classify provider failure", async () => {
+    const emitted: unknown[] = [];
+    let calls = 0;
+    const result = await runLiveBuilderLocationCreationQualification(
+      {
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      },
+      {
+        emit: (value) => emitted.push(value),
+        execute: async () => {
+          calls += 1;
+          throw new AiExecutionError("ai_provider_unavailable", {
+            accounting: {
+              attemptsStarted: 2,
+              inputTokens: 240,
+              outputTokens: 80,
+              usageReported: true,
+              usageComplete: true,
+              providerInvocationStarted: true,
+              failureBeforeProviderInvocation: false,
+            },
+          });
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    if (!result.ran) throw new Error("Qualification did not run.");
+    expect(calls).toBe(1);
+    expect(result.reports).toHaveLength(1);
+    expect(result.reports[0]).toMatchObject({
+      failure_class: "provider_execution",
+      failed_gate_codes: ["provider_execution"],
+      error_code: "ai_provider_unavailable",
+      attempts: 2,
+      input_tokens: 240,
+      output_tokens: 80,
+      usage_complete: true,
+    });
+    expect(JSON.stringify(result.reports[0])).not.toContain("Cambridge");
+    expect(emitted).toHaveLength(2);
+  });
+
+  it("rejects a reservation-envelope mismatch before loading execution dependencies", async () => {
+    const emitted: unknown[] = [];
+    const loadDependencies = vi.fn();
+    const result = await runLiveBuilderLocationCreationQualification(
+      {
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      },
+      {
+        emit: (value) => emitted.push(value),
+        loadDependencies,
+        deriveQualificationEnvelope: () => ({
+          taskKey: "builder_location_creation_intent_v1",
+          policyKey: "builder_location_creation_intent_terra_medium_v1",
+          modelKey: "gpt-5.6-terra",
+          reasoningEffort: "medium",
+          reservedCostMicrousdPerExecution: 1,
+          reservedCostMicrousd: 8,
+          hardCeilingMicrousd: 3_800_000,
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    expect(loadDependencies).not.toHaveBeenCalled();
+    expect(emitted).toEqual([
+      {
+        evaluation_error_code: "evaluation_setup_failed",
+        reason_code: "reservation_envelope_mismatch",
+      },
+    ]);
+  });
+
+  it("enforces the qualification ceiling using actual reported usage", async () => {
+    const emitted: unknown[] = [];
+    const result = await runLiveBuilderLocationCreationQualification(
+      {
+        RUN_LIVE_OPENAI_LOCATION_CREATION_TERRA_QUALIFICATION: "1",
+        AI_PROVIDER: "openai",
+        OPENAI_API_KEY: "synthetic-key",
+      },
+      {
+        emit: (value) => emitted.push(value),
+        execute: async (_taskKey, input) => {
+          const scenario = builderLocationCreationEvaluationScenarios.find(
+            (candidate) => candidate.input === input,
+          );
+          if (!scenario) throw new Error("Unknown injected scenario.");
+          return {
+            output: scenario.expected_output,
+            accounting: {
+              attemptsStarted: 1,
+              inputTokens: 2_000_000,
+              outputTokens: 0,
+              usageReported: true,
+              usageComplete: true,
+              providerInvocationStarted: true,
+              failureBeforeProviderInvocation: false,
+            },
+            metadata: {
+              taskKey: "builder_location_creation_intent_v1",
+              taskVersion: 1,
+              purposeLabel: "test",
+              providerKey: "openai",
+              modelKey: "gpt-5.6-terra",
+              attempts: 1,
+              usage: {
+                inputTokens: 2_000_000,
+                outputTokens: 0,
+                complete: true,
+              },
+            },
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    if (!result.ran) throw new Error("Qualification did not run.");
+    expect(result.reports).toHaveLength(8);
+    expect(emitted.at(-1)).toMatchObject({
+      total_estimated_cost_microusd: 40_000_000,
+    });
   });
 });

@@ -19,6 +19,7 @@ the test-only database-owner helper.
 
 Phase 10A's forward migration keeps Location creation outside the M5
 configuration lifecycle. It validates existing timezone/name data before
-installing the normalized-name index and fails clearly rather than rewriting
-conflicts. The authenticated state-read and strict expected-state
+installing the `private.normalize_location_name(name)` index (NFKC, trim,
+locale-neutral lower case) and fails clearly rather than rewriting conflicts.
+The authenticated state-read and strict expected-state
 `create_location` RPCs are the only normal application creation boundary.

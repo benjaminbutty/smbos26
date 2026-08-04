@@ -123,4 +123,9 @@ shared Location service once without AI or accounting.
 Location creation is ordinary operational data and does not go through M5,
 Changes or configuration history. Mixed work, Product/Record work and Location
 updates remain bounded unsupported results. No generic operational action
-registry or operational undo is present.
+registry or operational undo is present. PostgreSQL owns the single
+NFKC/trim/locale-neutral-lower Location identity rule across active and
+inactive rows; the intent validator checks exact interpreted names after the
+task runs, not owner-request substring matches. Exact IANA timezone text may be
+copied from the request, otherwise Business timezone is the default unless
+generic local/different-timezone wording requires clarification.

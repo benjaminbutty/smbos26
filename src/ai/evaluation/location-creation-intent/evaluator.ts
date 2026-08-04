@@ -15,6 +15,7 @@ export interface BuilderLocationCreationEvaluationExecutionMetadata {
   attempts: number;
   inputTokens: number;
   outputTokens: number;
+  usageComplete?: boolean;
   elapsedMs: number;
 }
 
@@ -28,11 +29,88 @@ function safeOutputState(
   return state === "ready" || state === "needs_clarification" ? state : null;
 }
 
+function estimatedCost(inputTokens: number, outputTokens: number): number {
+  return calculateAiTokenCostMicrousd({
+    inputTokens,
+    outputTokens,
+    inputMicrousdPerMillion:
+      openAiBuilderLocationCreationPolicy.inputMicrousdPerMillion,
+    outputMicrousdPerMillion:
+      openAiBuilderLocationCreationPolicy.outputMicrousdPerMillion,
+  });
+}
+
+function report(
+  scenario: BuilderLocationCreationEvaluationScenario,
+  metadata: BuilderLocationCreationEvaluationExecutionMetadata,
+  repetition: 1 | 2 | 3,
+  fields: {
+    passed: boolean;
+    outputState: BuilderLocationCreationIntentOutput["state"] | null;
+    timezoneIntent: "explicit_timezone" | "use_business_timezone" | null;
+    failureClass: BuilderLocationCreationEvaluationReport["failure_class"];
+    failedGateCodes: BuilderLocationCreationEvaluationReport["failed_gate_codes"];
+    errorCode: BuilderLocationCreationEvaluationReport["error_code"];
+  },
+): BuilderLocationCreationEvaluationReport {
+  return builderLocationCreationEvaluationReportSchema.parse({
+    scenario_id: scenario.id,
+    repetition,
+    passed: fields.passed,
+    output_state: fields.outputState,
+    timezone_intent: fields.timezoneIntent,
+    failure_class: fields.failureClass,
+    failed_gate_codes: fields.failedGateCodes,
+    attempts: metadata.attempts,
+    usage_complete: metadata.usageComplete ?? true,
+    input_tokens: metadata.inputTokens,
+    output_tokens: metadata.outputTokens,
+    estimated_microusd: estimatedCost(
+      metadata.inputTokens,
+      metadata.outputTokens,
+    ),
+    elapsed_ms: metadata.elapsedMs,
+    error_code: fields.errorCode,
+  });
+}
+
+function failureClassFor(
+  failedGateCodes: readonly BuilderLocationCreationEvaluationReport["failed_gate_codes"][number][],
+): BuilderLocationCreationEvaluationReport["failure_class"] {
+  if (failedGateCodes.includes("output_contract")) {
+    return "output_contract";
+  }
+  if (failedGateCodes.includes("semantic_validation")) {
+    return "semantic_validation";
+  }
+  if (
+    failedGateCodes.some((code) =>
+      [
+        "scenario_expectation",
+        "expected_state",
+        "expected_name",
+        "expected_timezone_intent",
+        "explicit_timezone_not_in_request",
+        "duplicate_was_ready",
+      ].includes(code),
+    )
+  ) {
+    return "scenario_expectation";
+  }
+  if (failedGateCodes.includes("usage_incomplete")) {
+    return "provider_execution";
+  }
+  if (failedGateCodes.includes("unknown_output")) {
+    return "unknown";
+  }
+  return null;
+}
+
 export function evaluateBuilderLocationCreationIntent(
   scenario: BuilderLocationCreationEvaluationScenario,
   output: unknown,
   metadata: BuilderLocationCreationEvaluationExecutionMetadata,
-  options: { repetition?: number; errorCode?: string } = {},
+  options: { repetition?: 1 | 2 | 3 } = {},
 ): BuilderLocationCreationEvaluationReport {
   const failed = new Set<
     BuilderLocationCreationEvaluationReport["failed_gate_codes"][number]
@@ -84,33 +162,40 @@ export function evaluateBuilderLocationCreationIntent(
     ) {
       failed.add("explicit_timezone_not_in_request");
     }
-  } else if (options.errorCode) {
-    failed.add("provider_failure");
-  } else {
-    failed.add("unknown_output");
   }
 
-  const estimatedMicrousd = calculateAiTokenCostMicrousd({
-    inputTokens: metadata.inputTokens,
-    outputTokens: metadata.outputTokens,
-    inputMicrousdPerMillion:
-      openAiBuilderLocationCreationPolicy.inputMicrousdPerMillion,
-    outputMicrousdPerMillion:
-      openAiBuilderLocationCreationPolicy.outputMicrousdPerMillion,
+  if (metadata.usageComplete === false) {
+    failed.add("usage_incomplete");
+  }
+
+  const failedGateCodes = [...failed];
+  return report(scenario, metadata, options.repetition ?? 1, {
+    passed: failed.size === 0,
+    outputState: safeOutputState(output),
+    timezoneIntent:
+      parsed?.state === "ready" ? parsed.timezone_intent.kind : null,
+    failureClass: failureClassFor(failedGateCodes),
+    failedGateCodes,
+    errorCode: null,
+  });
+}
+
+export function providerFailureReport(
+  scenario: BuilderLocationCreationEvaluationScenario,
+  metadata: BuilderLocationCreationEvaluationExecutionMetadata,
+  errorCode: BuilderLocationCreationEvaluationReport["error_code"],
+  repetition: 1 | 2 | 3,
+): BuilderLocationCreationEvaluationReport {
+  const result = report(scenario, metadata, repetition, {
+    passed: false,
+    outputState: null,
+    timezoneIntent: null,
+    failureClass: "provider_execution",
+    failedGateCodes: ["provider_execution"],
+    errorCode,
   });
   return builderLocationCreationEvaluationReportSchema.parse({
-    scenario_id: scenario.id,
-    repetition: options.repetition ?? 1,
-    passed: failed.size === 0,
-    output_state: safeOutputState(output),
-    timezone_intent:
-      parsed?.state === "ready" ? parsed.timezone_intent.kind : null,
-    failed_gate_codes: [...failed],
-    attempts: metadata.attempts,
-    input_tokens: metadata.inputTokens,
-    output_tokens: metadata.outputTokens,
-    estimated_microusd: estimatedMicrousd,
-    elapsed_ms: metadata.elapsedMs,
-    error_code: options.errorCode ?? null,
+    ...result,
+    repetition,
   });
 }

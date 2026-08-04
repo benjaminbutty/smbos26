@@ -19,6 +19,7 @@ import {
 } from "../src/ai/location-creation-intent/diagnostics";
 import { validateBuilderLocationCreationIntentOutput } from "../src/ai/location-creation-intent/validation";
 import { builderLocationCreationIntentOutputSchema } from "../src/ai/location-creation-intent/schemas";
+import { normalizeLocationName } from "../src/core/locations/schemas";
 import {
   builderLocationCreationEvaluationScenarios,
   locationCreationEvaluationScenario,
@@ -47,8 +48,8 @@ describe("Builder Location creation intent boundary", () => {
       "active_duplicate",
       "inactive_duplicate",
       "missing_name",
-      "different_timezone_implied",
-      "neutral_business_wording",
+      "local_timezone_without_iana",
+      "multi_word_identity",
     ]);
     expect(Object.isFrozen(builderLocationCreationEvaluationScenarios)).toBe(
       true,
@@ -127,9 +128,7 @@ describe("Builder Location creation intent boundary", () => {
   });
 
   it("rejects names not stated by the owner and implicit timezone inference", () => {
-    const neutral = locationCreationEvaluationScenario(
-      "neutral_business_wording",
-    );
+    const neutral = locationCreationEvaluationScenario("multi_word_identity");
     const wrongName = builderLocationCreationIntentOutputSchema.parse({
       ...neutral.expected_output,
       location_name: "Birmingham",
@@ -146,13 +145,13 @@ describe("Builder Location creation intent boundary", () => {
     );
 
     const implied = locationCreationEvaluationScenario(
-      "different_timezone_implied",
+      "local_timezone_without_iana",
     );
     const inferred = builderLocationCreationIntentOutputSchema.parse({
       schema_version: 1,
       state: "ready",
-      summary: "Add New York as one new Location.",
-      location_name: "New York",
+      summary: "Add Cambridge as one new Location.",
+      location_name: "Cambridge",
       timezone_intent: { kind: "use_business_timezone" },
       source_step_references: ["step_1"],
     });
@@ -166,6 +165,32 @@ describe("Builder Location creation intent boundary", () => {
           "timezone_implicit_or_ambiguous" satisfies BuilderLocationCreationIntentDiagnosticCode,
       }),
     );
+  });
+
+  it("uses exact normalized identity and a neutral timezone override rule", () => {
+    expect(normalizeLocationName("  Ｃａｍｂｒｉｄｇｅ  ")).toBe("cambridge");
+    expect(normalizeLocationName("Cafe\u0301")).toBe(
+      normalizeLocationName("Café"),
+    );
+
+    const multiWord = locationCreationEvaluationScenario("multi_word_identity");
+    expect(() =>
+      validateBuilderLocationCreationIntentOutput(
+        multiWord.input,
+        multiWord.expected_output,
+      ),
+    ).not.toThrow();
+
+    const localTimezone = locationCreationEvaluationScenario(
+      "local_timezone_without_iana",
+    );
+    expect(localTimezone.expected_output.state).toBe("needs_clarification");
+    const newYork = locationCreationEvaluationScenario("multi_word_identity");
+    expect(newYork.expected_output).toMatchObject({
+      state: "ready",
+      location_name: "New York",
+      timezone_intent: { kind: "use_business_timezone" },
+    });
   });
 
   it("requires both live gates to be separately and explicitly activated", () => {

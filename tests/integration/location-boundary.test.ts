@@ -6,6 +6,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { Database, Tables } from "../../src/db/supabase/database.types";
+import { normalizeLocationName } from "../../src/core/locations/schemas";
 import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
@@ -200,6 +201,36 @@ describe("Milestone 10 Location operational boundary", () => {
     } as never);
     expect(legacy.error?.message).toMatch(
       /Could not find the function public\.create_location.*schema cache/i,
+    );
+  });
+
+  it("uses one database-backed canonical identity for Unicode-equivalent names", async () => {
+    const composed = await createWithState("Café", "Europe/London");
+    expect(composed.error).toBeNull();
+
+    const state = await readState();
+    const summaries = state.locations as Array<{
+      name: string;
+      normalized_name: string;
+    }>;
+    expect(
+      summaries.find((location) => location.name === "Café")?.normalized_name,
+    ).toBe(normalizeLocationName("Café"));
+
+    const decomposed = await createWithState("Cafe\u0301", "Europe/London");
+    expect(decomposed.error?.message).toContain("location_active_duplicate");
+
+    const fullWidth = await createWithState(
+      "Ｆｕｌｌｗｉｄｔｈ",
+      "Europe/London",
+    );
+    expect(fullWidth.error).toBeNull();
+    const compatibilityDuplicate = await createWithState(
+      "fullwidth",
+      "Europe/London",
+    );
+    expect(compatibilityDuplicate.error?.message).toContain(
+      "location_active_duplicate",
     );
   });
 
