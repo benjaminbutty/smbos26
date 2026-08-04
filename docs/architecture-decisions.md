@@ -2281,3 +2281,71 @@ Changes lifecycle is deliberately used. Generic configuration drafting,
 planning subjects and context projection remain unchanged. Phase 9A does not
 implement undo, operational AI actions, generic configuration editing, clean
 Business bootstrap or public Form work. Milestone 9 is not complete.
+
+## ADR-030 - Builder-assisted latest configuration undo uses trusted version context and deterministic parent derivation
+
+**Status:** Accepted for v0.1 (Milestone 9 Phase 9B implementation)
+
+### Context
+
+After an Owner/Admin applies an ordinary configuration change, the product
+needs a bounded way to ask for the immediately preceding setup without turning
+Builder into a history search or giving a model rollback authority. The
+existing Changes lifecycle and forward-only rollback engine already provide
+the required proposal, preview, validation, application and provenance
+semantics. The missing boundary is a trusted contextual handoff from the
+latest applied result into that engine.
+
+### Decision
+
+- The contextual Builder URL is
+  `/app/[businessSlug]/builder?undoVersion=[activeVersionId]`. The query value
+  is untrusted routing context and is always reloaded through the authenticated
+  Business-scoped configuration service.
+- “That” means the ordinary `change` Version represented by the contextual
+  active head. The server proves the source Version ID and version number equal
+  the active head, requires an eligible immediate parent, and derives the
+  rollback target only from `parent_version_id`. The browser supplies no target,
+  parent, Business, actor, head revision, metadata, candidate or lifecycle
+  value.
+- Active baseline, active rollback, missing-parent, historical/superseded,
+  malformed, cross-Business and inconsistent sources cannot prepare a
+  contextual proposal. Deliberate historical `Prepare rollback` remains
+  available in Changes.
+- The contextual panel displays the source Version, safely verified source
+  proposal title when available, `Undo that.`, the operational-data boundary
+  and the proposal-only lifecycle warning. Its dedicated deterministic action
+  calls the existing `ConfigurationChangeService.prepareRollback()` boundary;
+  it does not call Builder orchestration, a model, a provider registry or AI
+  accounting.
+- The sole rollback preparation RPC now requires the expected active source
+  Version ID and expected head revision. It compares both under the existing
+  Business-head lock, using the existing stale/state-changed taxonomy, and the
+  weaker overload is revoked and dropped. Manual Changes rollback passes the
+  same expected currentness values.
+- A successful contextual action creates exactly one ordinary
+  `kind: rollback`, `status: proposed` Change. Builder redirects to the
+  existing Changes proposal detail. Validate and Apply remain deliberate
+  Changes actions; applying later creates a new forward rollback Version whose
+  parent is the previously active source Version and whose provenance points
+  to the server-derived historical target.
+- A normal Builder submission matching only `Undo that`, with no trusted
+  contextual source, returns fixed guidance to open the latest applied Change
+  or active Version. It does not search history, invoke a model or guess a
+  Version.
+- Configuration rollback remains configuration-lane only. Orders, Customers,
+  Products, Locations, Records, Relationships, preorder submissions, counters,
+  email state, AI settings and audit are not restored or mutated.
+
+### Consequences
+
+Phase 9A remains frozen: its `builder_preorder_amendment_v1` subject, qualified
+policy, schemas, validator, runtime mapping, evaluation contexts and evidence
+are unchanged. Phase 9B introduces no model task, provider profile,
+qualification scenario, table, primitive, conversation persistence or history
+search. Builder still prepares proposals only, and the existing Changes
+lifecycle remains the sole deliberate validation/application boundary.
+
+Milestone 9 becomes complete only when this Phase 9B implementation is
+reviewed and merged. Product v0 remains incomplete after Milestone 9; bounded
+clarification continuity and operational Builder actions are later milestones.

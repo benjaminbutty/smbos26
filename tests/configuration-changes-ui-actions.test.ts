@@ -181,6 +181,7 @@ describe("Milestone 5 Phase 5B configuration lifecycle controls", () => {
         appliedVersion: resulting,
         baseVersion: base,
         businessSlug: "bedford-bakery",
+        builderUndoEligible: true,
         changeSet: changeSet("applied", {
           applied_version_id: resulting.id,
         }),
@@ -195,6 +196,10 @@ describe("Milestone 5 Phase 5B configuration lifecycle controls", () => {
     expect(validatedHtml).toContain("Apply configuration");
     expect(validatedHtml).not.toContain("Abandon proposal");
     expect(appliedHtml).toContain("View resulting Version 2");
+    expect(appliedHtml).toContain("Undo this change in Builder");
+    expect(appliedHtml).toContain(
+      `/app/bedford-bakery/builder?undoVersion=${resulting.id}`,
+    );
 
     for (const status of ["rejected", "conflicted", "abandoned"] as const) {
       const html = renderToStaticMarkup(
@@ -217,6 +222,7 @@ describe("Milestone 5 Phase 5B configuration lifecycle controls", () => {
       createElement(ConfigurationVersionDetail, {
         active: true,
         businessSlug: "bedford-bakery",
+        builderUndoEligible: true,
         diff: null,
         parent: base,
         restoredFrom: null,
@@ -240,6 +246,10 @@ describe("Milestone 5 Phase 5B configuration lifecycle controls", () => {
       }),
     );
     expect(activeVersionHtml).not.toContain("Prepare rollback");
+    expect(activeVersionHtml).toContain("Undo this change in Builder");
+    expect(activeVersionHtml).toContain(
+      `/app/bedford-bakery/builder?undoVersion=${resulting.id}`,
+    );
     expect(historicalVersionHtml).toContain("Prepare rollback");
     expect(historicalVersionHtml).toContain(`/versions/${base.id}/rollback`);
   });

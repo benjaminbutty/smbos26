@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const BUILDER_UI_INPUT_INVALID_MESSAGE =
   "Describe what you would like SMBOS to build in 4,000 characters or fewer.";
+export const BUILDER_UI_CONTEXT_REQUIRED_MESSAGE =
+  'To undo the latest setup change, open its applied Change or active Version and choose "Undo this change in Builder."';
 
 export const BUILDER_UI_UNAVAILABLE_MESSAGES = Object.freeze({
   ai_disabled: "Builder is not enabled for this Business.",
@@ -47,6 +49,12 @@ const builderUiStateSchemas = [
     .object({
       state: z.literal("input_invalid"),
       message: z.literal(BUILDER_UI_INPUT_INVALID_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("context_required"),
+      message: z.literal(BUILDER_UI_CONTEXT_REQUIRED_MESSAGE),
     })
     .strict(),
   z

@@ -33,6 +33,7 @@ import {
 import { BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS } from "../../../../ai/planning/schemas";
 import {
   BUILDER_INITIAL_STATE,
+  BUILDER_UI_CONTEXT_REQUIRED_MESSAGE,
   BUILDER_UI_INPUT_INVALID_MESSAGE,
   BUILDER_UI_UNAVAILABLE_MESSAGES,
   freezeBuilderUiState,
@@ -125,6 +126,17 @@ export function invalidBuilderInputState(): BuilderResultUiState {
     state: "input_invalid",
     message: BUILDER_UI_INPUT_INVALID_MESSAGE,
   });
+}
+
+export function contextRequiredBuilderState(): BuilderResultUiState {
+  return freezeBuilderUiState({
+    state: "context_required",
+    message: BUILDER_UI_CONTEXT_REQUIRED_MESSAGE,
+  });
+}
+
+export function isUncontextualizedUndoPhrase(ownerRequest: string): boolean {
+  return /^undo that[.!?]*$/i.test(ownerRequest.trim());
 }
 
 function unavailableState(
@@ -391,6 +403,10 @@ export function createBuilderAction(
       )
     ) {
       dependencies.notFound();
+    }
+
+    if (isUncontextualizedUndoPhrase(parsedRequest.ownerRequest)) {
+      return contextRequiredBuilderState();
     }
 
     try {

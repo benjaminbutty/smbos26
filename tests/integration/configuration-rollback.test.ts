@@ -412,11 +412,15 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     ).toBeTruthy();
 
     const rollback = await ownerService.prepareRollback({
+      expectedBaseVersionId: version3.id,
+      expectedHeadRevision: 3,
       targetVersionId: version2.id,
       title: "Restore weekend collection",
       description: "Restore the configured Version 2 schedule.",
     });
     const competing = await adminService.prepareRollback({
+      expectedBaseVersionId: version3.id,
+      expectedHeadRevision: 3,
       targetVersionId: version2.id,
       title: "Competing weekend rollback",
       description: null,
@@ -447,12 +451,57 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
       ),
     ).toBe(true);
 
+    const proposalCountBeforeStaleChecks = (
+      await sql<{ count: number }[]>`
+        select count(*)::integer as count
+        from public.configuration_change_sets
+        where business_id = ${business.id}::uuid
+      `
+    )[0]?.count;
+    for (const [expectedSource, expectedRevision] of [
+      [version2.id, 3],
+      [version3.id, 2],
+    ] as const) {
+      const stale = await owner.client.rpc("prepare_configuration_rollback", {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        expected_active_source_version_id: expectedSource,
+        expected_head_revision: expectedRevision,
+        requested_target_version_id: version2.id,
+        requested_title: "Stale rollback context",
+        requested_description: null as unknown as string,
+      });
+      expect(stale.error?.message).toContain("configuration_proposal_stale");
+    }
+    const proposalCountAfterStaleChecks = (
+      await sql<{ count: number }[]>`
+        select count(*)::integer as count
+        from public.configuration_change_sets
+        where business_id = ${business.id}::uuid
+      `
+    )[0]?.count;
+    expect(proposalCountAfterStaleChecks).toBe(proposalCountBeforeStaleChecks);
+
+    const obsoleteSignature = await owner.client.rpc(
+      "prepare_configuration_rollback",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_target_version_id: version2.id,
+        requested_title: "Obsolete rollback signature",
+        requested_description: null as unknown as string,
+      } as never,
+    );
+    expect(obsoleteSignature.error).not.toBeNull();
+
     const staffService = new ConfigurationChangeService(staff.client, {
       businessId: business.id,
       actorId: staff.user.id,
     });
     await expect(
       staffService.prepareRollback({
+        expectedBaseVersionId: version3.id,
+        expectedHeadRevision: 3,
         targetVersionId: version2.id,
         title: "Forbidden Staff rollback",
         description: null,
@@ -468,6 +517,8 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     }).listVersions();
     await expect(
       ownerService.prepareRollback({
+        expectedBaseVersionId: version3.id,
+        expectedHeadRevision: 3,
         targetVersionId: otherVersions[0]!.id,
         title: "Cross-Business rollback",
         description: null,
@@ -477,6 +528,8 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     });
     await expect(
       ownerService.prepareRollback({
+        expectedBaseVersionId: version3.id,
+        expectedHeadRevision: 3,
         targetVersionId: version3.id,
         title: "Active-version rollback",
         description: null,
@@ -486,6 +539,8 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     const mismatch = await owner.client.rpc("prepare_configuration_rollback", {
       expected_business_id: business.id,
       expected_actor_id: administrator.user.id,
+      expected_active_source_version_id: version3.id,
+      expected_head_revision: 3,
       requested_target_version_id: version2.id,
       requested_title: "Actor mismatch",
       requested_description: null as unknown as string,
@@ -497,6 +552,8 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
       const denied = await client.rpc("prepare_configuration_rollback", {
         expected_business_id: business.id,
         expected_actor_id: owner.user.id,
+        expected_active_source_version_id: version3.id,
+        expected_head_revision: 3,
         requested_target_version_id: version2.id,
         requested_title: "Unauthenticated rollback",
         requested_description: null as unknown as string,
@@ -649,6 +706,7 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     };
 
     const rollback = await ownerService.prepareRollback({
+      ...(await ownerService.getProposalCurrentness()),
       targetVersionId: version2.id,
       title: "Restore Version 2 and archive later workspace",
       description: null,
@@ -772,6 +830,7 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     );
     const beforeOperational = await operationalCounts();
     const rollback = await ownerService.prepareRollback({
+      ...(await ownerService.getProposalCurrentness()),
       targetVersionId: version2.id,
       title: "Restore both historical Locations",
       description: null,
@@ -888,6 +947,7 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     );
     const beforeOperational = await operationalCounts();
     const rollback = await ownerService.prepareRollback({
+      ...(await ownerService.getProposalCurrentness()),
       targetVersionId: oldStatusVersion.id,
       title: "Restore the older status options",
       description: null,
@@ -1008,6 +1068,7 @@ describe("Milestone 5 Phase 4A forward configuration rollback", () => {
     await cascadeService.validateChangeSet(cascadeV3Proposal.id);
     await cascadeService.applyChangeSet(cascadeV3Proposal.id);
     const cascadeRollback = await cascadeService.prepareRollback({
+      ...(await cascadeService.getProposalCurrentness()),
       targetVersionId: cascadeV2.id,
       title: "Restore cascade probe",
       description: null,

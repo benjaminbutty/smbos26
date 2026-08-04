@@ -2736,3 +2736,42 @@ undo, rebase or prepare rollback.
 Phase 9A adds no platform primitive, table or migration. It does not claim
 Milestone 9 complete. Later work remains undo, operational AI actions, generic
 configuration editing, clean-Business bootstrap and public Form work.
+
+## 22. Milestone 9 Phase 9B boundary
+
+Phase 9B adds deterministic Builder-assisted forward undo for the latest
+applied ordinary configuration change. Phase 9A is complete and merged at the
+current repository head; Phase 9B is the bounded feature implementation that
+must still be reviewed and merged before Milestone 9 is complete.
+
+The contextual route is
+`/app/[businessSlug]/builder?undoVersion=[sourceVersionId]`. The source value
+is untrusted. An authenticated Owner/Admin contextual read revalidates the
+Business, active head, source Version, ordinary `change` kind, immediate
+parent and (when present) applied source proposal. The target is always the
+server-derived `sourceVersion.parent_version_id`. A contextual action prepares
+one normal `kind: rollback`, `status: proposed` Change and redirects to the
+existing Changes detail. Builder does not Validate or Apply it.
+
+The sole rollback preparation RPC now requires the expected active source
+Version ID and expected head revision and compares both while holding the
+existing head lock. The older weaker overload is removed. The existing manual
+Changes rollback action supplies those expected values, so its deliberate
+historical journey remains unchanged.
+
+The contextual panel uses the explicit confirmation `Undo that.` and explains
+that the previous setup will be restored only after deliberate validation and
+application. Existing Orders, Customers, Products, Locations, Records,
+Relationships, preorder submissions, counters and email state are untouched.
+Baseline, active rollback, missing-parent, historical/superseded, malformed
+and cross-Business sources do not prepare a proposal. A normal Builder phrase
+such as `Undo that` without trusted context returns fixed guidance and does not
+search history or invoke a model.
+
+No new model subject, provider policy, qualification scenario, table,
+primitive, conversation persistence, natural-language history search or
+operational undo is introduced. Rollback remains forward-only: applying the
+proposal later creates a new rollback Version whose parent is the previously
+active source Version. Product v0 remains incomplete after Milestone 9;
+bounded clarification continuity and operational Builder actions are later
+milestones.

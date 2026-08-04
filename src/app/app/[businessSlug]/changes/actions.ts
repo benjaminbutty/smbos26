@@ -78,6 +78,7 @@ function isStateChangedError(error: unknown): boolean {
       "configuration_change_set_not_validatable",
       "configuration_change_set_not_applicable",
       "configuration_change_set_not_abandonable",
+      "configuration_proposal_stale",
       "configuration_rollback_target_invalid",
       "configuration_rollback_target_not_found",
       "configuration_owner_or_admin_required",
@@ -328,7 +329,11 @@ export async function prepareConfigurationRollbackAction(
 
   let proposal: ChangeSet;
   try {
-    proposal = await configuration.prepareRollback(rollbackInput.data);
+    proposal = await configuration.prepareRollback({
+      ...rollbackInput.data,
+      expectedBaseVersionId: activeHead.active_version_id,
+      expectedHeadRevision: activeHead.head_revision,
+    });
   } catch (error) {
     if (isStateChangedError(error)) {
       redirectWithNotice(path, "state_changed");

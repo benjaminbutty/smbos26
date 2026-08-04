@@ -230,6 +230,14 @@ export const prepareConfigurationRollbackSchema = z
   })
   .strict();
 
+export const prepareConfigurationRollbackRequestSchema =
+  prepareConfigurationRollbackSchema
+    .extend({
+      expectedBaseVersionId: z.uuid(),
+      expectedHeadRevision: z.number().int().positive(),
+    })
+    .strict();
+
 export const configurationDisplayContextSchema = z
   .object({
     schema_version: z.literal(1),
@@ -339,7 +347,7 @@ export type ProposeConfigurationChangeInput = z.input<
   typeof proposeConfigurationChangeSchema
 >;
 export type PrepareConfigurationRollbackInput = z.input<
-  typeof prepareConfigurationRollbackSchema
+  typeof prepareConfigurationRollbackRequestSchema
 >;
 export type SemanticDiff = z.infer<typeof semanticDiffSchema>;
 export type ConfigurationValidationResult = z.infer<

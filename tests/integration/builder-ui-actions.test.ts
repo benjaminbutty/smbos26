@@ -27,6 +27,9 @@ const actionHarness = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
 vi.mock("../../src/db/supabase/server", () => ({
   createServerClient: async () => {
     const client = actionHarness.clients.shift();
@@ -51,6 +54,7 @@ vi.mock("next/navigation", () => ({
 
 import { createBuilderAction } from "../../src/app/app/[businessSlug]/builder/action-service";
 import { runBuilderAction } from "../../src/app/app/[businessSlug]/builder/actions";
+import { prepareBuilderUndoAction } from "../../src/app/app/[businessSlug]/builder/undo-actions";
 import { BUILDER_UNSUPPORTED_MESSAGES } from "../../src/ai/builder/contracts";
 import { AiExecutionError } from "../../src/ai/errors";
 import { BUILDER_INITIAL_STATE } from "../../src/components/builder-ui-state";
@@ -879,6 +883,53 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       reason: "ai_disabled",
       message: "Builder is not enabled for this Business.",
     });
+  });
+
+  it("prepares one server-derived forward undo proposal through the real action boundary", async () => {
+    const before = await liveState();
+    const proposalsBefore = await proposalRows();
+    const sourceVersionId = before.head.active_version_id;
+    const sourceVersion = requireData(
+      await serviceRole
+        .from("configuration_versions")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("id", sourceVersionId)
+        .single(),
+      "Could not load the active source Version.",
+    );
+
+    queueActionClient(owner.client);
+    await expect(
+      prepareBuilderUndoAction(business.slug, sourceVersionId, new FormData()),
+    ).rejects.toMatchObject({
+      name: "ActionRedirect",
+      message: expect.stringMatching(
+        new RegExp(
+          `/app/${business.slug}/changes/[0-9a-f-]+\\?notice=rollback_prepared`,
+        ),
+      ),
+    });
+
+    const proposals = await proposalRows();
+    expect(proposals).toHaveLength(proposalsBefore.length + 1);
+    const proposal = proposals.at(-1)!;
+    expect(proposal).toMatchObject({
+      business_id: business.id,
+      kind: "rollback",
+      status: "proposed",
+      title: "Undo latest configuration change",
+      base_version_id: sourceVersionId,
+      rollback_target_version_id: sourceVersion.parent_version_id,
+      requested_by: owner.user.id,
+    });
+    expect(String(proposal.base_head_revision)).toBe(
+      String(before.head.head_revision),
+    );
+    expect(proposal.description).toContain(
+      `immediately before Version ${sourceVersion.version_number}`,
+    );
+    expect(await liveState()).toEqual(before);
   });
 
   it("covers all six Phase 9A requests through Builder and the full Changes lifecycle", async () => {

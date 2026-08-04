@@ -16,6 +16,9 @@ multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
+The current feature branch also contains the bounded Milestone 9 Phase 9B
+deterministic Builder-assisted latest-change undo implementation; it is not
+claimed as merged until reviewed.
 The AI execution boundary is server-only and per-Business accounting is
 disabled by default. OpenAI Responses is the first external adapter, but it is
 also server-disabled by default; the Phase 8C route does not invoke providers
@@ -54,6 +57,8 @@ Included:
   diffs, rollback-only compatibility validation, and atomic application
 - mandatory propose → validate → apply configuration mutation boundary
 - forward-only rollback proposals and rollback version provenance
+- deterministic Builder-assisted undo of the latest active ordinary change
+- atomic expected-source/head comparison at rollback preparation
 - authenticated verified candidate preview for internal and public Pages
 - read-only Owner/Admin Changes, proposal detail, and Version history routes
 - authenticated POST-only lifecycle Server Actions and read-only confirmation
@@ -181,6 +186,7 @@ Not included:
 - automatic rebase/merge or AI/LLM integration
 - Location or operational Record versioning
 - workflow/rule execution
+- arbitrary historical natural-language rollback and operational undo
 
 ## Milestone 6 change boundaries
 
@@ -585,6 +591,27 @@ review with `notice=builder_prepared`. Nothing in Builder validates, applies,
 publishes, stores a transcript, writes client storage or creates a new
 mutation surface. No migration or change to the Phase 8B core or global
 production drafting registration is introduced.
+
+### Milestone 9 Phase 9B - deterministic Builder-assisted forward undo
+
+Phase 9A is complete and merged. The Phase 9B implementation adds a bounded
+contextual route at
+`/app/[businessSlug]/builder?undoVersion=[activeVersionId]`. Owner/Admin users
+can enter it from an applied ordinary Change or an eligible active Version.
+Builder verifies the active source and derives its immediate parent on the
+server, presents `Undo that.`, and creates only a normal proposed rollback
+through the existing Changes engine. Builder does not invoke a model, reserve
+AI usage, validate or apply.
+
+The rollback preparation boundary atomically checks the expected source
+Version and head revision under the existing head lock; the manual historical
+rollback journey supplies the same currentness. Superseded, baseline, active
+rollback, malformed and cross-Business contexts fail closed. The rollback is
+forward-only and affects configuration only; operational data is untouched.
+The normal Builder phrase without trusted context returns fixed guidance rather
+than searching history. Milestone 9 becomes complete only after Phase 9B is
+reviewed and merged. Product v0 remains incomplete; bounded clarification
+continuity and operational Builder actions are later milestones.
 
 ## Requirements
 

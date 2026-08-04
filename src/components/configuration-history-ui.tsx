@@ -67,6 +67,14 @@ function pathForVersion(businessSlug: string, versionId: string): string {
   return `/app/${encodeURIComponent(businessSlug)}/changes/versions/${encodeURIComponent(versionId)}`;
 }
 
+function pathForBuilderUndo(
+  businessSlug: string,
+  sourceVersionId: string,
+): string {
+  const query = new URLSearchParams({ undoVersion: sourceVersionId });
+  return `/app/${encodeURIComponent(businessSlug)}/builder?${query.toString()}`;
+}
+
 function previewPath(
   businessSlug: string,
   changeSetId: string,
@@ -707,6 +715,7 @@ export function ConfigurationChangesOverview({
 
 export interface ConfigurationChangeDetailProps {
   appliedVersion: Version | null;
+  builderUndoEligible?: boolean;
   baseVersion: Version;
   businessSlug: string;
   changeSet: ChangeSet;
@@ -721,6 +730,7 @@ export interface ConfigurationChangeDetailProps {
 
 export function ConfigurationChangeDetail({
   appliedVersion,
+  builderUndoEligible = false,
   baseVersion,
   businessSlug,
   changeSet,
@@ -791,6 +801,14 @@ export function ConfigurationChangeDetail({
             >
               View resulting Version {appliedVersion.version_number}
             </Link>
+            {builderUndoEligible ? (
+              <Link
+                className="button button-secondary"
+                href={pathForBuilderUndo(businessSlug, appliedVersion.id)}
+              >
+                Undo this change in Builder
+              </Link>
+            ) : null}
           </div>
         ) : (
           <p className="muted">
@@ -963,6 +981,7 @@ export interface SnapshotCount {
 
 export interface ConfigurationVersionDetailProps {
   active: boolean;
+  builderUndoEligible?: boolean;
   businessSlug: string;
   diff: SemanticDiff | null;
   notice?: ReactNode;
@@ -976,6 +995,7 @@ export interface ConfigurationVersionDetailProps {
 
 export function ConfigurationVersionDetail({
   active,
+  builderUndoEligible = false,
   businessSlug,
   diff,
   notice,
@@ -1019,7 +1039,22 @@ export function ConfigurationVersionDetail({
 
       {notice}
 
-      {!active ? (
+      {active && builderUndoEligible ? (
+        <section
+          className="change-section configuration-action-panel"
+          aria-labelledby="version-actions-heading"
+        >
+          <h2 id="version-actions-heading">Available actions</h2>
+          <div className="configuration-action-links">
+            <Link
+              className="button button-secondary"
+              href={pathForBuilderUndo(businessSlug, version.id)}
+            >
+              Undo this change in Builder
+            </Link>
+          </div>
+        </section>
+      ) : !active ? (
         <section
           className="change-section configuration-action-panel"
           aria-labelledby="version-actions-heading"

@@ -5,6 +5,7 @@ import { hasCapability, resolveTenant } from "@/auth/authorization";
 import { ConfigurationActionNotice } from "@/components/configuration-action-ui";
 import { ConfigurationVersionDetail } from "@/components/configuration-history-ui";
 import { configurationActionNoticeSchema } from "@/core/configuration/action-notices";
+import { deriveBuilderUndoContext } from "@/core/configuration/builder-undo/service";
 import type { SemanticDiff } from "@/core/configuration/schemas";
 import {
   ConfigurationChangeService,
@@ -73,8 +74,25 @@ export default async function ConfigurationVersionRoute({
       ]),
     );
 
+    let builderUndoEligible = false;
+    try {
+      builderUndoEligible =
+        deriveBuilderUndoContext({
+          activeHead,
+          businessId: tenant.business.id,
+          parentVersion: version.parent_version_id
+            ? (versionById.get(version.parent_version_id) ?? null)
+            : null,
+          sourceChangeSet,
+          sourceVersion: version,
+        }).state === "eligible";
+    } catch {
+      builderUndoEligible = false;
+    }
+
     detail = {
       active: activeHead.active_version_id === version.id,
+      builderUndoEligible,
       diff: sourceChangeSet
         ? (sourceChangeSet.semantic_diff_json as unknown as SemanticDiff)
         : null,
@@ -97,6 +115,7 @@ export default async function ConfigurationVersionRoute({
   return (
     <ConfigurationVersionDetail
       active={detail.active}
+      builderUndoEligible={detail.builderUndoEligible}
       businessSlug={businessSlug}
       diff={detail.diff}
       notice={<ConfigurationActionNotice notice={notice} />}

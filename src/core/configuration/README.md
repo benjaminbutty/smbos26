@@ -73,3 +73,24 @@ no-ops and creates only an ordinary proposal. There is still no raw operation
 editor, general manual builder, natural-language builder, AI integration,
 automatic validation/application, automatic merge/rebase or permanent
 demonstration proposal.
+
+## Milestone 9 Phase 9B Builder-assisted undo
+
+The configuration-owned Builder undo boundary is deterministic and
+server-only. The contextual source is the untrusted active Version ID in
+`/app/[businessSlug]/builder?undoVersion=[activeVersionId]`. The service
+reloads the tenant-scoped active head and source Version, requires an ordinary
+active `change`, loads its immediate parent, and verifies any applied source
+Change provenance. It never accepts a browser-supplied target or parent.
+
+The dedicated Builder action calls the existing rollback preparation method
+with expected active-source and head-revision values. PostgreSQL compares those
+values under the existing head lock, and a mismatch creates no proposal. A
+successful request creates only a proposed forward rollback and hands it to
+Changes; validation and application remain deliberate Changes actions.
+
+Baseline, active rollback, historical/superseded, malformed and cross-Business
+contexts are bounded ineligible/not-found states. `Undo that` without trusted
+context is fixed guidance, not a history search. Configuration rollback leaves
+operational Records, Relationships, Locations, Orders, Customers, Products,
+preorder submissions, counters and email state untouched.

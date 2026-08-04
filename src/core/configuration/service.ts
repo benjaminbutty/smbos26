@@ -12,7 +12,7 @@ import {
 import {
   configurationDisplayContextSchema,
   configurationValidationResultSchema,
-  prepareConfigurationRollbackSchema,
+  prepareConfigurationRollbackRequestSchema,
   proposeConfigurationChangeSchema,
   semanticDiffSchema,
   type PrepareConfigurationRollbackInput,
@@ -389,12 +389,14 @@ export class ConfigurationChangeService {
   async prepareRollback(
     input: PrepareConfigurationRollbackInput,
   ): Promise<ConfigurationChangeSet> {
-    const rollback = prepareConfigurationRollbackSchema.parse(input);
+    const rollback = prepareConfigurationRollbackRequestSchema.parse(input);
     const { data, error } = await this.#client.rpc(
       "prepare_configuration_rollback",
       {
         expected_business_id: this.#businessId,
         expected_actor_id: this.#actorId,
+        expected_active_source_version_id: rollback.expectedBaseVersionId,
+        expected_head_revision: rollback.expectedHeadRevision,
         requested_target_version_id: rollback.targetVersionId,
         requested_title: rollback.title,
         requested_description: rollback.description as string,
@@ -406,10 +408,17 @@ export class ConfigurationChangeService {
         error,
       );
     }
-    if (data.requested_by !== this.#actorId || data.kind !== "rollback") {
+    if (
+      data.requested_by !== this.#actorId ||
+      data.kind !== "rollback" ||
+      data.status !== "proposed" ||
+      data.base_version_id !== rollback.expectedBaseVersionId ||
+      data.base_head_revision !== rollback.expectedHeadRevision ||
+      data.rollback_target_version_id !== rollback.targetVersionId
+    ) {
       throw new ConfigurationChangeServiceError(
         "The rollback proposal response did not match the trusted request.",
-        { message: "configuration_response_actor_mismatch" },
+        { message: "configuration_response_rollback_mismatch" },
       );
     }
     return assertTrustedResponse(data, this.#businessId);
