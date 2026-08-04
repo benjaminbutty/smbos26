@@ -163,9 +163,8 @@ export const openAiBuilderPreorderAmendmentPolicy = Object.freeze({
 });
 
 /**
- * Evaluation-only until the required live qualification and reliability
- * evidence has been reviewed. It is intentionally not in the production
- * OpenAI policy registry.
+ * Qualified for the private authenticated Builder runtime only. It remains
+ * outside the global/default production policy registry.
  */
 export const openAiBuilderLocationCreationPolicy = Object.freeze({
   ...disabledExecutionPolicies[BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY],

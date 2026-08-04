@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 import { createBuilderAiRuntime } from "../src/ai/builder/runtime";
 import { AiBuilderError } from "../src/ai/builder/errors";
 import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
+import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import { builderPlanTaskV1 } from "../src/ai/planning/task";
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import type { StructuredAiProvider } from "../src/ai/contracts";
@@ -12,10 +13,13 @@ import * as aiRegistry from "../src/ai/registry";
 import {
   BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
   BUILDER_CONFIGURATION_DRAFTING_TERRA_MEDIUM_POLICY_KEY,
+  BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
+  BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
+  openAiBuilderLocationCreationPolicy,
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
@@ -56,6 +60,19 @@ function expectInvalidProductionRuntime(runtime: unknown): void {
 }
 
 describe("private Builder runtime qualification boundary", () => {
+  it("keeps the global Location registration disabled", () => {
+    expect(
+      aiRegistry.registeredAiTasks.builder_location_creation_intent_v1,
+    ).toBe(builderLocationCreationIntentTaskV1);
+    expect(
+      aiRegistry.registeredAiTasks.builder_location_creation_intent_v1
+        .policyKey,
+    ).toBe(BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY);
+    expect(aiRegistry.aiExecutionPolicies).not.toHaveProperty(
+      BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
+    );
+  });
+
   it("keeps the global amendment registration disabled", () => {
     expect(aiRegistry.registeredAiTasks.builder_preorder_amendment_v1).toBe(
       builderPreorderAmendmentTaskV1,
@@ -79,10 +96,18 @@ describe("private Builder runtime qualification boundary", () => {
     expect(runtime.tasks.builder_preorder_amendment_v1).toBe(
       builderPreorderAmendmentTaskV1,
     );
+    expect(runtime.tasks.builder_location_creation_intent_v1).toBe(
+      builderLocationCreationIntentTaskV1,
+    );
     expect(
       runtime.policies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
     ).toBe(
       disabledExecutionPolicies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
+    );
+    expect(
+      runtime.policies[BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY],
+    ).toBe(
+      disabledExecutionPolicies[BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY],
     );
     expect(runtime.providers.disabled?.key).toBe("disabled");
   });
@@ -120,6 +145,39 @@ describe("private Builder runtime qualification boundary", () => {
     expect(
       runtime.policies[BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY],
     ).toBe(openAiBuilderPreorderAmendmentPolicy);
+    const locationIntentTask =
+      runtime.tasks.builder_location_creation_intent_v1!;
+    expect(locationIntentTask).not.toBe(builderLocationCreationIntentTaskV1);
+    expect(locationIntentTask.policyKey).toBe(
+      BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(locationIntentTask.key).toBe(
+      builderLocationCreationIntentTaskV1.key,
+    );
+    expect(locationIntentTask.version).toBe(
+      builderLocationCreationIntentTaskV1.version,
+    );
+    expect(locationIntentTask.purposeLabel).toBe(
+      builderLocationCreationIntentTaskV1.purposeLabel,
+    );
+    expect(locationIntentTask.inputSchema).toBe(
+      builderLocationCreationIntentTaskV1.inputSchema,
+    );
+    expect(locationIntentTask.outputSchema).toBe(
+      builderLocationCreationIntentTaskV1.outputSchema,
+    );
+    expect(locationIntentTask.buildInstruction).toBe(
+      builderLocationCreationIntentTaskV1.buildInstruction,
+    );
+    expect(locationIntentTask.validateOutput).toBe(
+      builderLocationCreationIntentTaskV1.validateOutput,
+    );
+    expect(
+      runtime.policies[BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY],
+    ).toBe(openAiBuilderLocationCreationPolicy);
+    expect(runtime.policies).not.toHaveProperty(
+      BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
+    );
     expect(runtime.providers.openai).toBe(provider);
 
     expect(runtime.tasks.builder_plan_v1).toBe(builderPlanTaskV1);

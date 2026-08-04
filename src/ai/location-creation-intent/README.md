@@ -18,3 +18,10 @@ geocoding or timezone-lookup table: local/different-timezone wording without an
 exact IANA value clarifies, while otherwise the authoritative Business timezone
 is allowed. The shared Location service and hardened database RPC remain the
 only operational creation boundary.
+
+The registered task and disabled runtime remain mapped to
+`builder_location_creation_intent_disabled_v1`. After the reviewed exact
+qualification and reliability gates passed, only the private authenticated
+OpenAI Builder runtime uses the immutable task clone with policy
+`builder_location_creation_intent_terra_medium_v1`; the global/default registry
+does not expose that policy.

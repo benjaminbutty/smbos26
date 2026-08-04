@@ -64,15 +64,17 @@ unsupported paths have two.
 
 ## Private runtime and accounting
 
-The global production drafting and preorder-amendment tasks remain mapped to
-their disabled policies. OpenAI mode creates private frozen clones whose only
-changed property is the qualified policy key: generic drafting uses
-`builder_configuration_drafting_terra_medium_v1` and preorder amendment uses
-`builder_preorder_amendment_terra_medium_v1`. Each clone reuses its production
-task key, version, purpose label, instruction, schemas and semantic validator.
-The private registry contains the unchanged planning task, both private
-qualified clones, the corresponding policies and the validated configured
-providers. Disabled mode preserves the existing disabled behavior.
+The global production drafting, preorder-amendment and Location-intent tasks
+remain mapped to their disabled policies. OpenAI mode creates private frozen
+clones whose only changed property is the qualified policy key: generic
+drafting uses `builder_configuration_drafting_terra_medium_v1`, preorder
+amendment uses `builder_preorder_amendment_terra_medium_v1`, and Location
+intent uses `builder_location_creation_intent_terra_medium_v1`. Each clone
+reuses its production task key, version, purpose label, instruction, schemas
+and semantic validator. The private registry contains the unchanged planning
+task, all three private qualified clones, the corresponding policies and the
+validated configured providers. Disabled mode preserves the existing disabled
+behavior.
 
 Planning, generic drafting and preorder amendment use independent execution
 IDs, reservations, audit rows and settlements, sequentially. The existing
@@ -107,10 +109,12 @@ policy, runtime mapping and qualification evidence are unchanged.
 
 The Builder runtime contains exactly four private tasks: planning, generic
 configuration drafting, preorder amendment and
-`builder_location_creation_intent_v1`. The fourth task is globally and
-privately disabled until its independent Terra qualification and reliability
-evidence is reviewed. It is not a configuration-draft substitute and is never
-given database, identity, digest, token or mutation inputs.
+`builder_location_creation_intent_v1`. The fourth task remains globally and
+default-disabled, while the private authenticated OpenAI runtime maps its
+frozen clone to `builder_location_creation_intent_terra_medium_v1` after the
+independent Terra qualification and reliability evidence passed. It is not a
+configuration-draft substitute and is never given database, identity, digest,
+token or mutation inputs.
 
 Only a ready plan with exactly one operational `create_location` step enters
 the Location path. The service reads the authoritative Location currentness

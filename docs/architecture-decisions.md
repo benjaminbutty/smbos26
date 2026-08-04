@@ -2397,8 +2397,8 @@ Business timezone may be used. Generic local/different-timezone wording without
 an exact IANA value requires clarification. No city/country/region list,
 geocoding, timezone lookup or external API is used.
 
-The Location-intent task has an independent disabled policy and evaluation-only
-Terra policy. Its provider-backed qualification is frozen to exactly eight
+The Location-intent task has an independent disabled policy and a
+private-runtime-qualified Terra policy. Its provider-backed qualification is frozen to exactly eight
 task-valid scenarios (including exact active/inactive duplicates, generic
 timezone clarification and a multi-word identity such as New York with an
 existing York Location). Mixed Location/preorder plans, Location updates and
@@ -2407,9 +2407,10 @@ the intent task or reserve intent accounting. The live harness validates the
 task/policy/model/reasoning/envelope before provider construction, uses actual
 reported usage for aggregate cost, preserves bounded failure usage and stops on
 the first failure. It reports finite failure classes and remains separately
-gated. The private Builder mapping remains disabled until deterministic tests,
-exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence are
-reviewed. Product v0 remains in progress.
+gated. The private Builder mapping was disabled until deterministic tests,
+exact-head non-live CI, 8/8 qualification and 24/24 reliability evidence were
+reviewed; the accepted closeout below records the resulting private-runtime
+enablement. Product v0 remains in progress.
 
 The first reviewed qualification attempt was run once against exact candidate
 SHA `27f2c122f08ddc52f417bc60861f164bc96f8edd`. It passed
@@ -2451,8 +2452,35 @@ The eighth `multi_word_identity` fixture retains the active `York` context,
 expected `New York` name, Business-timezone intent and frozen position, but now
 uses the explicit request `Create a new Location called New York.`
 
-Because a frozen scenario changed, successful evidence must be recollected from
-qualification onward. Phase 10A is not claimed as qualified, reliable, enabled,
-complete or merged, and every production runtime still maps
-`builder_location_creation_intent_v1` to
-`builder_location_creation_intent_disabled_v1`.
+The corrected subject was then run without changing its task, instruction,
+schemas, validator, scenarios, evaluator, model, policy parameters, limits,
+pricing or provider transport. The first reliability attempt on this exact
+subject passed 16 executions before execution 17 failed at
+`explicit_timezone`, repetition 3, with `provider_execution` / `ai_timeout`,
+30,030 ms elapsed, incomplete usage and zero input/output tokens. Its stopped
+aggregate was 52,778 input tokens, 1,488 output tokens, 154,270 estimated
+microusd, 77,651 ms and exit code 1. This remains historical evidence.
+
+The final accepted qualification ran against exact SHA
+`0598068617f25e541ef49cde50aea307dc98047e` and passed 8/8: 8 attempts,
+26,389 input tokens, 700 output tokens, 76,475 estimated microusd, 23,479 ms
+and exit code 0. The final accepted reliability rerun against the same exact
+SHA passed all 24 executions: 8/8 scenarios, every scenario 3/3, 24 attempts,
+79,167 input tokens, 2,145 output tokens, 230,100 estimated microusd, 48,334
+ms and exit code 0. Every successful report had complete usage, one attempt,
+no failure class, no failed gate codes, no execution error and no semantic
+validation reason.
+
+The successful reliability rerun supersedes the isolated timeout for
+acceptance; the timeout remains recorded as historical evidence. The
+`builder_location_creation_intent_v1` task, instruction, schemas, validator,
+scenarios, evaluator, model, reasoning effort, policy parameters, token
+limits, timeout, retries, pricing and provider transport were unchanged
+between qualification and reliability. After exact-head CI passed, the
+private authenticated OpenAI Builder runtime is enabled only through
+`builder_location_creation_intent_terra_medium_v1`; the global/default task
+and disabled runtime remain on
+`builder_location_creation_intent_disabled_v1`. This enablement commit changes
+only that private runtime binding, its assertions, and evidence documentation;
+it is not itself live-qualified. Phase 10A is implemented, qualified and
+enabled in the private runtime, but remains unmerged pending final review.

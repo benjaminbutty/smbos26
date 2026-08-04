@@ -263,7 +263,7 @@ boundary; global/default registration remains disabled.
 ### Milestone 10 Phase 10A Location-intent gates
 
 `builder_location_creation_intent_v1` has its own disabled production policy and
-evaluation-only `builder_location_creation_intent_terra_medium_v1` policy:
+private-runtime-qualified `builder_location_creation_intent_terra_medium_v1` policy:
 `gpt-5.6-terra`, medium reasoning, 256 KiB input, 80,000 billable input
 tokens, 2,048 output tokens, 30-second timeout and two attempts. The exact
 reservation is 461,440 microusd per execution; the eight-scenario qualification
@@ -327,34 +327,49 @@ This first failed run is historical evidence only. It did not qualify or enable
 Phase 10A, and all production mappings remained on
 `builder_location_creation_intent_disabled_v1`.
 
-#### Successful qualification and failed reliability evidence
+#### Accepted qualification and reliability evidence
 
-The operator later ran qualification against exact SHA
-`372bff1276ec430124bab546d33488c4c63b6250`. Qualification passed all 8/8
-scenarios in the frozen order with 8 provider attempts, 26,387 input tokens,
-703 output tokens, 76,515 estimated microusd, 29,411 ms and exit code 0.
+The corrected frozen subject was qualified against exact SHA
+`0598068617f25e541ef49cde50aea307dc98047e`. Qualification passed all 8/8
+scenarios with 8 attempts, 26,389 input tokens, 700 output tokens, 76,475
+estimated microusd, 23,479 ms elapsed and exit code 0.
 
-Reliability then ran against the same SHA. Its first 15 executions passed, and
-execution 16 stopped on `multi_word_identity`, repetition 2, with output state
-`ready`, timezone intent `use_business_timezone`, failure class
-`scenario_expectation`, failed gate code `expected_name`, one attempt, complete
-usage, 3,319 input tokens, 134 output tokens, 10,308 estimated microusd, 2,660
-ms, no execution error code and no semantic-validation reason code. The
-aggregate therefore correctly reported no scenario at 3/3. Across the stopped
-run, 15 executions passed and 1 failed, using 52,774 input tokens, 1,551 output
-tokens, 155,205 estimated microusd and 38,728 ms; reliability exited 1.
+The first reliability attempt on this exact subject is retained as historical
+evidence. It passed 16 executions before execution 17 failed at
+`explicit_timezone`, repetition 3, with `provider_execution` / `ai_timeout`,
+30,030 ms elapsed, incomplete usage and zero input/output tokens. Its stopped
+aggregate was 52,778 input tokens, 1,488 output tokens, 154,270 estimated
+microusd, 77,651 ms and exit code 1.
 
-Raw model output was intentionally not retained, so the hidden returned name
-is unknown and is not claimed. The frozen request `Open a New York Location.`
-allowed more than one plausible request-contained name boundary, including
-`New York` and `New York Location`, while the exact scenario expectation
-remained `New York`. This is a scenario-fixture ambiguity, not a reason to
-weaken exact-name evaluation. The eighth scenario retains its ID, active `York`
-context, expected `New York` name, Business-timezone intent and position, but
-now uses the explicit request `Create a new Location called New York.`
+The final accepted reliability rerun used the same exact SHA and passed all 24
+executions: 8/8 scenarios, every scenario 3/3, 24 attempts, 79,167 input
+tokens, 2,145 output tokens, 230,100 estimated microusd, 48,334 ms elapsed and
+exit code 0. Every scenario passed 3/3:
 
-Changing the frozen scenario invalidates the successful qualification evidence
-for the corrected subject. Evidence must be recollected from qualification
-onward before any reliability claim. Phase 10A is not claimed as qualified,
-reliable, enabled, complete or merged, and every production mapping remains on
-`builder_location_creation_intent_disabled_v1`.
+```text
+explicit_timezone: 3
+business_timezone: 3
+alternate_wording: 3
+active_duplicate: 3
+inactive_duplicate: 3
+missing_name: 3
+local_timezone_without_iana: 3
+multi_word_identity: 3
+```
+
+Every successful report had `passed: true`, `failure_class: null`, empty
+`failed_gate_codes`, null `error_code`, null `validation_reason_code`,
+`usage_complete: true` and `attempts: 1`. No task, instruction, schema,
+validator, scenario, evaluator, model, policy parameters, limits, pricing or
+provider transport changed between qualification and the final reliability
+rerun. The successful rerun supersedes the isolated timeout for acceptance;
+the timeout remains historical evidence.
+
+After exact-head CI passed, the private authenticated OpenAI Builder runtime
+maps `builder_location_creation_intent_v1` to
+`builder_location_creation_intent_terra_medium_v1`. The global/default task
+and disabled runtime remain mapped to
+`builder_location_creation_intent_disabled_v1`. The enablement commit changes
+only this private runtime binding, assertions and documentation; it is not
+itself live-qualified. Phase 10A is implemented, qualified and enabled in the
+private authenticated runtime, while PR #16 remains open, draft and unmerged.

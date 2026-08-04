@@ -59,8 +59,9 @@ Included:
 - forward-only rollback proposals and rollback version provenance
 - deterministic Builder-assisted undo of the latest active ordinary change
 - Builder-assisted preparation and explicit confirmation for one ordinary
-  operational Location creation; Location intent remains disabled in the
-  production OpenAI mapping until its separate live gates are reviewed
+  operational Location creation; Location intent is enabled only in the
+  private authenticated OpenAI Builder mapping after its separate live gates
+  passed, while global/default registration remains disabled
 - atomic expected-source/head comparison at rollback preparation
 - authenticated verified candidate preview for internal and public Pages
 - read-only Owner/Admin Changes, proposal detail, and Version history routes
@@ -193,9 +194,11 @@ no geographic inference is used. Mixed configuration/operational requests,
 Product work and Location updates remain
 unsupported in Builder.
 
-The separate `builder_location_creation_intent_v1` task is globally and
-privately disabled pending its exact 8-scenario qualification and 24-execution
-reliability evidence. Product v0 remains in progress.
+The separate `builder_location_creation_intent_v1` task remains globally and
+default-disabled. Its exact 8-scenario qualification and 24-execution
+reliability evidence has passed; only the private authenticated OpenAI Builder
+runtime maps it to `builder_location_creation_intent_terra_medium_v1`.
+Product v0 remains in progress.
 
 Not included:
 
