@@ -107,9 +107,11 @@ policy, runtime mapping and qualification evidence are unchanged.
 
 ## Phase 10A Location creation
 
-The Builder runtime contains exactly four private tasks: planning, generic
-configuration drafting, preorder amendment and
-`builder_location_creation_intent_v1`. The fourth task remains globally and
+The Builder runtime contains exactly five private tasks: planning, generic
+configuration drafting, preorder amendment,
+`builder_location_creation_intent_v1` and
+`builder_record_creation_intent_v1`. The Location and Record tasks remain
+globally and
 default-disabled, while the private authenticated OpenAI runtime maps its
 frozen clone to `builder_location_creation_intent_terra_medium_v1` after the
 independent Terra qualification and reliability evidence passed. It is not a
@@ -133,3 +135,24 @@ inactive rows; the intent validator checks exact interpreted names after the
 task runs, not owner-request substring matches. Exact IANA timezone text may be
 copied from the request, otherwise Business timezone is the default unless
 generic local/different-timezone wording requires clarification.
+
+## Phase 12A generic Record creation
+
+The fifth task is the disabled `builder_record_creation_intent_v1` task. The
+production and default OpenAI runtimes deliberately keep it disabled; the
+Terra policy and evaluation harness are separate engineering-only artifacts.
+The task receives the unchanged AI-safe Business context and one validated
+ready `create_record` plan. Its strict output is a typed, transient set of
+owner-supplied Field values and contains no UUIDs, defaults, Record data,
+relationships, files, PII or mutation instructions.
+
+The authenticated service allows only one eligible generic Object: it must be
+active, have writable Fields, have the required incoming relationship, and
+contain no active non-file Fields. It reads defaults only after intent
+validation, returns an explicit Owner/Admin confirmation, and signs a
+Business/actor-bound 15-minute token. The final action rechecks the
+PII-free schema/state digests and calls the narrow confirmed-create RPC once;
+the existing graph trigger applies normal Record validation. The result opens
+the existing internal View selected by the server. No AI, accounting,
+configuration mutation, file upload, relationship creation or Record update/
+delete is part of this phase.

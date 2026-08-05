@@ -115,6 +115,24 @@ jobs:
       - name: Run confirmation-token boundary tests
         run: npm run test:location-service
 
+      - name: Run generic Record intent contract tests
+        run: npm run test:record-creation-intent
+
+      - name: Run generic Record deterministic evaluation tests
+        run: npm run test:record-creation-evaluation
+
+      - name: Reset for generic Record service tests
+        run: npm run supabase:reset
+
+      - name: Wait for local Auth after generic Record reset
+        run: npm run supabase:auth:ready:ci
+
+      - name: Run generic Record service integration tests
+        run: npm run test:record-creation-service
+
+      - name: Run Builder generic Record orchestration tests
+        run: npm run test:builder-record-creation
+
       - name: Reset for minimal Builder UI tests
         run: npm run supabase:reset
 
@@ -229,8 +247,11 @@ jobs:
       - name: Seed the local demonstration data
         run: npm run demo:seed
 
-      - name: Run PostgreSQL RLS integration tests
+      - name: Run full PostgreSQL integration suite
         run: npm run test:integration
+
+      - name: Run PostgreSQL RLS integration suite separately
+        run: npm run test:rls
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high

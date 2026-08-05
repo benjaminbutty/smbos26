@@ -140,10 +140,48 @@ const builderUiStateSchemas = [
   z
     .object({
       state: z.literal("location_confirmation"),
-      confirmation_token: z.string().trim().min(1).max(20_000),
+      confirmation_token: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024),
       location_name: boundedText.max(120),
       timezone: z.string().trim().min(1).max(80),
       timezone_source: z.enum(["business_timezone", "explicit_timezone"]),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("record_confirmation"),
+      confirmation_token: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024),
+      object_label: boundedText.max(120),
+      explicit_fields: z
+        .array(
+          z
+            .object({
+              label: boundedText.max(120),
+              formatted_value: boundedText,
+              source: z.literal("explicit"),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(50),
+      default_fields: z
+        .array(
+          z
+            .object({
+              label: boundedText.max(120),
+              formatted_value: boundedText,
+              source: z.literal("default"),
+            })
+            .strict(),
+        )
+        .max(100),
     })
     .strict(),
   z
@@ -176,6 +214,20 @@ const builderUiStateSchemas = [
       location_name: boundedText.max(120),
       timezone: z.string().trim().min(1).max(80),
       message: z.literal(BUILDER_UI_LOCATION_CREATED_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("record_created"),
+      object_label: boundedText.max(120),
+      message: boundedText.max(240),
+      destination_path: z
+        .string()
+        .trim()
+        .min(1)
+        .max(2_048)
+        .regex(/^\/app\/[a-z0-9-]+\/workspace\//)
+        .optional(),
     })
     .strict(),
 ] as const;

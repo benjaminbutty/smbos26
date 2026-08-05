@@ -122,6 +122,11 @@ export function BuilderResultPanel({
         </p>
         <form action={action} className="builder-request-panel">
           <input
+            name="confirmationKind"
+            type="hidden"
+            value="create_location"
+          />
+          <input
             name="confirmationToken"
             type="hidden"
             value={state.confirmation_token}
@@ -159,6 +164,59 @@ export function BuilderResultPanel({
     );
   }
 
+  if (state.state === "record_confirmation") {
+    return (
+      <section
+        aria-labelledby="builder-record-confirmation-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <p className="eyebrow">Ready for confirmation</p>
+        <h2 id="builder-record-confirmation-heading">
+          Add {state.object_label}
+        </h2>
+        <dl className="builder-confirmation-fields">
+          {state.explicit_fields.map((field) => (
+            <div key={`explicit-${field.label}`}>
+              <dt>{field.label}</dt>
+              <dd>{field.formatted_value}</dd>
+            </div>
+          ))}
+          {state.default_fields.map((field) => (
+            <div key={`default-${field.label}`}>
+              <dt>{field.label}</dt>
+              <dd>
+                {field.formatted_value} <span className="muted">(default)</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="builder-safety-note">
+          This creates one new {state.object_label}. It is ordinary business
+          data and will not appear in configuration history.
+        </p>
+        <form action={action} className="builder-request-panel">
+          <input name="confirmationKind" type="hidden" value="create_record" />
+          <input
+            name="confirmationToken"
+            type="hidden"
+            value={state.confirmation_token}
+          />
+          <PendingSubmitButton
+            label="Confirm and create"
+            pendingLabel="Creating…"
+          />
+          <Link
+            className="button button-secondary"
+            href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+          >
+            Cancel
+          </Link>
+        </form>
+      </section>
+    );
+  }
+
   if (state.state === "location_created") {
     return (
       <section
@@ -173,6 +231,30 @@ export function BuilderResultPanel({
         </p>
         <Link className="button" href={locationsPath(businessSlug)}>
           Open Locations
+        </Link>
+      </section>
+    );
+  }
+
+  if (state.state === "record_created") {
+    return (
+      <section
+        aria-labelledby="builder-record-created-heading"
+        className="builder-result builder-result-success"
+        role="status"
+      >
+        <p className="eyebrow">Record added</p>
+        <h2 id="builder-record-created-heading">{state.object_label} added</h2>
+        <p>{state.message}</p>
+        <Link
+          className="button"
+          href={
+            state.destination_path ?? `/app/${encodeURIComponent(businessSlug)}`
+          }
+        >
+          {state.destination_path
+            ? `Open ${state.object_label}`
+            : "Open workspace"}
         </Link>
       </section>
     );

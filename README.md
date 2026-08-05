@@ -200,6 +200,24 @@ reliability evidence has passed; only the private authenticated OpenAI Builder
 runtime maps it to `builder_location_creation_intent_terra_medium_v1`.
 Product v0 remains in progress.
 
+## Milestone 12 Phase 12A - Builder-assisted generic Record creation
+
+Phase 12A is implemented on this feature branch and is not claimed as merged.
+It adds one bounded generic `create_record` path for any eligible metadata
+Object, including concepts such as Equipment and Catering Enquiry. The path
+uses the existing Object/Field/Record primitives and runtime: strict typed
+intent, deterministic validation, explicit Owner/Admin confirmation, and one
+atomic server-checked Record insert. Product remains generic and receives no
+Product-specific production path.
+
+The model receives the unchanged AI-safe Business context and ready plan only.
+The server reads defaults and currentness outside the model boundary, signs a
+15-minute Business/actor-bound confirmation, rechecks a PII-free state digest,
+and calls the narrow confirmed-create RPC once. The final action performs no
+AI, accounting, provider or configuration work and opens the existing internal
+View selected by the server. The task, Terra policy and evaluation gates are
+production-disabled; live evaluation is never run implicitly.
+
 Not included:
 
 - online payment, deposits, refunds or inventory deduction
@@ -790,6 +808,10 @@ validating from a clean state.
 | `npm run test:location-service`               | Run transient Location confirmation boundary tests  |
 | `npm run test:location-creation-intent`       | Run Location intent contract and validator tests    |
 | `npm run test:location-creation-evaluation`   | Run deterministic Location evaluation tests         |
+| `npm run test:record-creation-intent`         | Run generic Record intent contract tests            |
+| `npm run test:record-creation-evaluation`     | Run deterministic generic Record evaluation tests   |
+| `npm run test:record-creation-service`        | Run generic Record Supabase boundary tests          |
+| `npm run test:builder-record-creation`        | Run all Phase 12A Builder Record tests              |
 | `npm run test:builder-ui`                     | Run Builder UI and action-boundary tests            |
 | `npm run test:manual-amendments`              | Run deterministic schedule amendment tests          |
 | `npm run test:manual-questions`               | Run deterministic preorder question tests           |
@@ -821,12 +843,19 @@ validating from a clean state.
 | `npm run supabase:stop`                       | Stop the local Supabase stack                       |
 | `npm run demo:seed`                           | Seed the local-only Bedford Bakery demonstration    |
 
-Run the integration suite after Supabase is started and reset:
+For an authoritative clean integration run, use the same isolation boundary as
+CI. The stop/start/reset sequence matters: running the suite against a locally
+mutated database can produce failures that are not reproducible from a clean
+checkout.
 
 ```bash
+npm run supabase:stop
 npm run supabase:start
 npm run supabase:reset
+npm run supabase:auth:ready
+npm run demo:seed
 npm run test:integration
+npm run test:rls
 ```
 
 To verify the production server locally:

@@ -1535,6 +1535,34 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      create_confirmed_graph_record: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          expected_object_schema_digest: string;
+          expected_record_state_digest: string;
+          requested_data: Json;
+          target_object_key: string;
+        };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          created_by: string | null;
+          data_json: Json;
+          id: string;
+          object_definition_id: string;
+          record_status: Database["public"]["Enums"]["graph_record_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_graph_relationship: {
         Args: {
           expected_business_id: string;
@@ -1585,6 +1613,30 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      get_confirmed_graph_record_creation_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          target_object_key: string;
+        };
+        Returns: {
+          actor_id: string;
+          base_version_id: string;
+          business_id: string;
+          eligibility: Json;
+          fields: Json;
+          head_revision: number;
+          internal_views: Json;
+          is_active: boolean;
+          object_definition_id: string;
+          object_key: string;
+          object_schema_digest: string;
+          plural_label: string;
+          record_state_digest: string;
+          schema_version: number;
+          singular_label: string;
+        }[];
       };
       get_location_creation_state: {
         Args: {

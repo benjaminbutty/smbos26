@@ -2809,3 +2809,43 @@ action registry or operational undo is introduced. The Location-intent Terra
 policy is evaluation-only until deterministic tests, exact-head CI, 8/8 live
 qualification and 24/24 live reliability are reviewed; Product v0 remains in
 progress.
+
+### Milestone 12 Phase 12A - Builder-assisted creation of one generic Record
+
+Phase 12A is a feature-branch implementation and is not claimed as merged. It
+extends the Builder with one bounded generic Record creation flow using the
+existing Object, Field, Record and runtime primitives. Product remains a
+normal generic Object/Record concept; no Product-specific production code,
+new custom-object table, relationship table, queue or configuration-version
+path is introduced.
+
+The exact flow is unchanged planning, one eligible `create_record` step, the
+strict `builder_record_creation_intent_v1` task, deterministic semantic
+validation, explicit Owner/Admin confirmation, and one atomic generic Record
+insert. The model receives the unchanged AI-safe Business context and ready
+plan only. It cannot provide UUIDs, Field keys, defaults, Record data, PII,
+relationships, files, SQL, code or mutation authority. Typed values are
+limited to text, number, boolean, date, datetime, URL, one option and
+multi-select; required values must be explicitly owner-supplied or resolved
+from authoritative server defaults after validation. Omitted optional values
+are not included in requested data.
+
+The server reads a PII-free Object/Field state and signs a 15-minute HMAC
+confirmation bound to the authenticated Business and actor. The final action
+rechecks the schema/state digest and eligibility, then calls
+`create_confirmed_graph_record` exactly once. PostgreSQL checks membership and
+capability, locks the Business head for share then the Object definition for
+update, applies existing graph triggers and derives `created_by`. A stale or
+replayed confirmation fails without a second insert. The successful result
+opens the existing server-selected internal View and performs no AI call,
+accounting, provider call or configuration mutation.
+
+Eligibility is deliberately narrow: the Object must be active with writable
+Fields, have the required incoming relationship, contain no active non-file
+Field, and have no unsupported file requirement. Product, Equipment, Catering
+Enquiry and other business concepts therefore share one generic path. Record
+update/delete, relationship creation, file upload, public form changes and
+generic operational dispatch remain out of scope. The default and production
+runtime mappings remain disabled; the Terra policy, exact reservation
+envelope, frozen two-context/eight-scenario harness and live qualification /
+reliability flags are engineering-only.

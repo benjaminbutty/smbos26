@@ -11,6 +11,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "tests/builder-ui.test.ts",
+      "tests/integration/builder-record-creation.test.ts",
       "tests/integration/builder-ui-actions.test.ts",
       "tests/integration/builder-ui-route.test.ts",
     ],

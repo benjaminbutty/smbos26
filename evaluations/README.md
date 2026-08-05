@@ -373,3 +373,40 @@ and disabled runtime remain mapped to
 only this private runtime binding, assertions and documentation; it is not
 itself live-qualified. Phase 10A is implemented, qualified and enabled in the
 private authenticated runtime, while PR #16 remains open, draft and unmerged.
+
+## Milestone 12 Phase 12A generic Record-intent gates
+
+Phase 12A uses two frozen strict AI-safe contexts and exactly eight ordered
+deterministic scenarios, each repeated once for qualification and three times
+for reliability. Context A contains generic Product and Menu-item metadata;
+Context B contains Equipment, Catering Enquiry and Lead/contact metadata. They
+contain no Records, Record values, PII or owner data. The scenario fixture is
+owned by `src/ai/evaluation/record-creation-intent/scenarios.ts` and the
+deterministic evaluator compares output state, exact Field set, types, values,
+omitted optionals and bounded failure codes without a model judge.
+
+The exact Terra profile is `gpt-5.6-terra` with `medium` reasoning. It uses the
+independent `builder_record_creation_intent_v1` task, the disabled production
+policy's limits and the exact maximum reservation of 522,880 microusd per
+execution. Qualification is capped at 8 executions / 4,300,000 microusd;
+reliability is capped at 24 executions / 12,700,000 microusd. Actual reported
+usage is aggregated, and setup, contract, semantic, scenario and provider
+failures are emitted only as finite redacted metadata. Reports contain no
+Object labels or keys, Field labels or keys, values, requests, context, model
+prose, provider IDs/bodies, credentials or raw errors.
+
+The live commands are opt-in only:
+
+```bash
+RUN_LIVE_OPENAI_RECORD_CREATION_TERRA_QUALIFICATION=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-creation-terra-qualification-live
+
+RUN_LIVE_OPENAI_RECORD_CREATION_TERRA_RELIABILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-creation-terra-reliability-live
+```
+
+Normal tests and CI never activate these flags. No live run is claimed for
+this feature branch, and the global/default/OpenAI production runtime mappings
+remain on `builder_record_creation_intent_disabled_v1`.

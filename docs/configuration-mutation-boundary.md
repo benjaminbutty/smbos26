@@ -384,3 +384,28 @@ mixed configuration/operational requests remain bounded unsupported results.
 No generic operational action registry or operational undo is added. The
 separate intent task and Terra policy remain disabled in production pending
 their reviewed qualification and reliability evidence.
+
+## Milestone 12 Phase 12A - operational generic Record boundary
+
+Generic Record creation is also outside configuration versioning. The Builder
+path creates one ordinary `public.records` row only after a separate typed
+Record intent, deterministic validation and explicit Owner/Admin confirmation.
+It creates no proposal, candidate, configuration Version, Changes entry,
+relationship, file, queue or operational undo. Manual/runtime Record writes
+continue to use the existing GraphService boundary; this phase adds no
+Product-specific path.
+
+The authenticated state RPC exposes only the eligible Object/Field metadata,
+PII-free schema/state digests and the server-selected internal View. Defaults
+are read after intent validation, never guessed by the model. The confirmed
+RPC checks tenant membership and capability, locks the Business head for
+share then the Object definition for update, compares the expected state and
+inserts through the existing graph trigger. The transient 15-minute HMAC
+token binds Business and actor; stale or replayed confirmations fail closed.
+
+Only one eligible Object and one `create_record` step are supported. Required
+incoming relationships, file-only defaults and active non-file Fields gate
+eligibility; Record update/delete, relationship creation, file upload, public
+forms and configuration mutation remain outside the phase. The
+`builder_record_creation_intent_v1` task and Terra evaluation harness are
+production-disabled and separately gated.

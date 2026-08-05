@@ -501,13 +501,18 @@ describe("production AI source boundaries", () => {
       )
       .map((file) => fs.readFileSync(file, "utf8"))
       .join("\n");
+    const nonBuilderAiSource = productionTypeScript
+      .filter((file) => !file.includes(`${path.sep}builder${path.sep}`))
+      .map((file) => fs.readFileSync(file, "utf8"))
+      .join("\n");
 
     expect(source).not.toMatch(
       /core\/(?:configuration|graph|preorder|experience)\/service/,
     );
     expect(source).not.toMatch(
-      /propose_configuration_change|apply_configuration_change|validate_configuration_change|create_record|submit_preorder/,
+      /propose_configuration_change|apply_configuration_change|validate_configuration_change|submit_preorder/,
     );
+    expect(nonBuilderAiSource).not.toMatch(/create_record/);
     expect(providerNeutralCore).not.toMatch(/supabase|service[_-]?role/i);
   });
 
