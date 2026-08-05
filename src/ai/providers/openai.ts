@@ -18,15 +18,22 @@ import {
   OpenAiSchemaAdaptationError,
 } from "./openai-schema";
 import {
+  OpenAiAuthenticationDiagnostic,
   OpenAiInvalidRequestDiagnostic,
+  parseOpenAiSafeSchemaContext,
   type OpenAiInvalidRequestReasonCode,
 } from "./openai-diagnostics";
 
 export {
+  OpenAiAuthenticationDiagnostic,
   OpenAiInvalidRequestDiagnostic,
   openAiInvalidRequestReasonCodes,
+  parseOpenAiSafeSchemaContext,
 } from "./openai-diagnostics";
-export type { OpenAiInvalidRequestReasonCode } from "./openai-diagnostics";
+export type {
+  OpenAiInvalidRequestReasonCode,
+  OpenAiSafeSchemaContext,
+} from "./openai-diagnostics";
 
 export const OPENAI_PROVIDER_KEY = "openai";
 export const OPENAI_MODEL_KEY = OPENAI_BUILDER_PLANNING_MODEL_KEY;
@@ -242,14 +249,24 @@ function mapSdkFailure(cause: unknown): StructuredAiProviderError {
     return providerError("transient");
   }
   if (status === 400 || status === 422) {
+    const reasonCode = invalidRequestReasonCode(cause);
     return providerError(
       "invalid_request",
       undefined,
-      new OpenAiInvalidRequestDiagnostic(invalidRequestReasonCode(cause)),
+      new OpenAiInvalidRequestDiagnostic(
+        reasonCode,
+        reasonCode === "provider_schema_rejected"
+          ? parseOpenAiSafeSchemaContext(cause)
+          : "unknown",
+      ),
     );
   }
   if (status === 401 || status === 403) {
-    return providerError("unavailable");
+    return providerError(
+      "unavailable",
+      undefined,
+      new OpenAiAuthenticationDiagnostic(),
+    );
   }
 
   const name = cause.name;
@@ -386,4 +403,10 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
       throw mapSdkFailure(cause);
     }
   }
+}
+
+export function createOpenAiResponsesStructuredProvider(
+  apiKey: string,
+): OpenAiResponsesStructuredProvider {
+  return new OpenAiResponsesStructuredProvider({ apiKey });
 }

@@ -509,6 +509,122 @@ is silently forwarded. Production remains disabled and no further live spend
 occurred. The next live evidence must begin qualification against the final
 correction SHA because the emitted Record transport schema changed.
 
+#### Third failed qualification and compatibility isolation boundary
+
+The operator ran qualification against exact SHA
+`c6e4cf6e72d0a59231eb729489319de2c6a62b0b`. It again stopped on
+`product_text_currency_default`, repetition 1, before model output:
+
+```text
+passed: false
+output_state: null
+field_value_count: 0
+failure_class: provider_execution
+failed_gate_codes:
+  - provider_execution
+attempts: 1
+usage_complete: false
+input_tokens: 0
+output_tokens: 0
+estimated_microusd: 0
+elapsed_ms: 3507
+error_code: ai_execution_failed
+validation_reason_code: null
+provider_reason_code: provider_schema_rejected
+```
+
+The aggregate was 8 total scenarios, 0 passed, 1 failed, 1 attempt, zero
+input/output tokens, zero estimated microusd, 3507 ms and exit code 1. No model
+output or scenario quality was evaluated. The URL correction did not resolve
+the complete schema rejection, and no further root cause is claimed.
+Qualification is paused until the exact full Record schema passes the bounded
+compatibility gate. Reliability was not run and production remains disabled.
+
+The engineering-only command is:
+
+```bash
+RUN_LIVE_OPENAI_RECORD_CREATION_SCHEMA_COMPATIBILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-creation-schema-compatibility-live
+```
+
+All three activation values are mandatory; a key alone grants no permission.
+The command uses only the fixed synthetic input `Return the smallest valid
+result.` with the existing OpenAI Responses provider, `gpt-5.6-terra`, medium
+reasoning, strict `text.format`, `store: false`, one attempt and 128 maximum
+output tokens. It receives no owner request, Business context, Object/Field
+values, operational Record, tenant/actor ID or real PII.
+
+The 20 frozen base probes are ordered as follows:
+
+```text
+a_transport_baseline
+b_state_union
+c_short_text
+d_long_text
+d_email
+d_phone
+d_url
+d_text_like_cumulative
+e_number
+e_currency
+e_boolean
+e_date
+e_datetime
+e_primitive_cumulative
+f_select
+f_status
+f_multi_select
+f_option_cumulative
+g_complete_field_union
+h_exact_full_record_schema
+```
+
+Schema rejections continue through the matrix. Authentication failure,
+provider outage, rate limiting, timeout and unexpected non-schema failures
+stop immediately. A failed complete union triggers no more than five ordered
+branch-count/rotated-combination probes. A complete-ready pass followed by an
+exact-schema failure triggers no more than four clarification, source-step,
+annotation and rebuilt-composition probes. The first structural failure then
+receives seven remove-one-keyword-family diagnostics for string bounds,
+patterns, formats, numeric bounds, array bounds, annotations and safely
+inlineable `$defs`/`$ref` reuse. Diagnostic variants never replace the exact
+Record contract.
+
+The maximum is 32 probes. Each reserves 16,000 input tokens and 128 output
+tokens, or exactly 41,920 microusd; the aggregate reservation is 1,341,440
+microusd under a 1,350,000-microusd hard ceiling. Each probe emits only:
+
+```text
+schema_version
+probe_id
+schema_digest
+accepted
+result_class
+provider_reason_code
+safe_schema_context
+attempts
+usage_complete
+input_tokens
+output_tokens
+estimated_microusd
+elapsed_ms
+schema_metrics
+```
+
+`safe_schema_context` is either `unknown` or an allow-listed JSON Schema
+keyword plus a bounded path containing only code-owned structural tokens and
+numeric union/array indexes. Any unrecognised token collapses the entire
+context to `unknown`. Reports exclude schema JSON, inputs, prompts, model
+output, provider messages/parameters, headers, bodies and credentials.
+
+The installed OpenAI SDK comparison uses `zodTextFormat` with the strict root
+`{ result: builderRecordCreationIntentOutputSchema }`. It reports only helper
+generation success, canonical digests, deterministic metrics and finite
+keyword/path difference categories. It does not print either schema or alter
+the production provider. This diagnostic implementation has not been run
+live, so it incurred no additional provider spend.
+
 Normal tests and CI never activate these flags. No live run is claimed for
 this feature branch, and the global/default/OpenAI production runtime mappings
 remain on `builder_record_creation_intent_disabled_v1`.

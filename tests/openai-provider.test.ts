@@ -23,6 +23,7 @@ import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation
 import {
   createOpenAiResponsesClient,
   OPENAI_MODEL_KEY,
+  OpenAiAuthenticationDiagnostic,
   OpenAiInvalidRequestDiagnostic,
   OpenAiResponsesStructuredProvider,
   serializeOpenAiStructuredInput,
@@ -787,6 +788,68 @@ describe("OpenAI Responses structured provider", () => {
       expect(create).toHaveBeenCalledOnce();
     },
   );
+
+  it("extracts only allow-listed schema context from an SDK rejection", async () => {
+    const create = vi.fn().mockRejectedValue({
+      status: 400,
+      code: "invalid_json_schema",
+      message:
+        "Invalid schema in context=('properties','result','anyOf',0,'properties','field_values','items'): 'anyOf' is not permitted. raw-provider-marker",
+    });
+    const provider = new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } },
+    });
+
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(request());
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+
+    expect(caught?.cause).toBeInstanceOf(OpenAiInvalidRequestDiagnostic);
+    expect(
+      (caught?.cause as OpenAiInvalidRequestDiagnostic).safeSchemaContext,
+    ).toEqual({
+      keyword: "anyOf",
+      path: [
+        "properties",
+        "result",
+        "anyOf",
+        0,
+        "properties",
+        "field_values",
+        "items",
+      ],
+    });
+    expect(JSON.stringify(caught)).not.toContain("raw-provider-marker");
+  });
+
+  it("distinguishes authentication failure without retaining provider material", async () => {
+    const create = vi.fn().mockRejectedValue({
+      status: 401,
+      message: "raw-authentication-provider-marker",
+      headers: { authorization: "raw-credential-marker" },
+    });
+    const provider = new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } },
+    });
+
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(request());
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+
+    expect(caught).toMatchObject({
+      kind: "unavailable",
+      cause: expect.any(OpenAiAuthenticationDiagnostic),
+    });
+    expect(JSON.stringify(caught)).not.toMatch(
+      /raw-authentication-provider-marker|raw-credential-marker/,
+    );
+  });
 });
 
 describe("server-owned OpenAI runtime and pricing", () => {
