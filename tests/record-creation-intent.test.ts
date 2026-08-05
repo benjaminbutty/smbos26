@@ -8,6 +8,7 @@ import {
   builderRecordCreationIntentOutputSchema,
   builderRecordCreationIntentTaskInputSchema,
 } from "../src/ai/record-creation-intent/schemas";
+import { recordCreationUrlValueSchema } from "../src/core/graph/record-creation/schemas";
 import { BUILDER_RECORD_CREATION_INTENT_INSTRUCTION } from "../src/ai/record-creation-intent/task";
 import {
   validateBuilderRecordCreationIntentInput,
@@ -341,6 +342,99 @@ describe("generic Record creation intent", () => {
         extra: "rejected",
       }).success,
     ).toBe(false);
+  });
+
+  it("keeps URL transport structural while enforcing the shared runtime contract", () => {
+    const accepted = [
+      "https://example.test",
+      "http://example.test/path",
+      "https://example.test/path?query=value",
+    ];
+    for (const value of accepted) {
+      expect(recordCreationUrlValueSchema.parse(value)).toBe(value);
+      expect(
+        builderRecordCreationFieldValueSchema.parse({
+          field_key: "website",
+          field_type: "url",
+          string_value: value,
+        }),
+      ).toMatchObject({ string_value: value });
+    }
+
+    const rejected = [
+      "ftp://example.test",
+      "javascript:alert(1)",
+      "https://",
+      "example.test",
+      "arbitrary text",
+      "https://[example.test",
+      `https://example.test/${"a".repeat(2_040)}`,
+    ];
+    for (const value of rejected) {
+      expect(recordCreationUrlValueSchema.safeParse(value).success).toBe(false);
+    }
+
+    const urlContext = aiBusinessModelContextV1Schema.parse({
+      ...context,
+      objects: [
+        {
+          ...context.objects[0]!,
+          fields: [
+            ...context.objects[0]!.fields,
+            {
+              key: "website",
+              label: "Website",
+              field_type: "url" as const,
+              required: false,
+              position: 4,
+              is_active: true,
+              has_default: false,
+              settings: {},
+            },
+          ],
+        },
+      ],
+    });
+    const ownerUrl = "https://example.test/path?query=value";
+    const urlInput = builderRecordCreationIntentTaskInputSchema.parse({
+      ...input,
+      owner_request: `Add a Product named Tea with website ${ownerUrl}.`,
+      business_context: urlContext,
+    });
+    const output = {
+      schema_version: 1 as const,
+      state: "ready" as const,
+      summary: "Add Tea.",
+      source_step_references: ["step_1"],
+      object_key: "product",
+      field_values: [
+        {
+          field_key: "name",
+          field_type: "short_text" as const,
+          string_value: "Tea",
+        },
+        {
+          field_key: "website",
+          field_type: "url" as const,
+          string_value: ownerUrl,
+        },
+      ],
+    };
+    expect(validateBuilderRecordCreationIntentOutput(urlInput, output)).toEqual(
+      output,
+    );
+    expect(
+      (output.field_values[1] as { string_value: string }).string_value,
+    ).toBe(ownerUrl);
+    expect(() =>
+      validateBuilderRecordCreationIntentOutput(urlInput, {
+        ...output,
+        field_values: [
+          output.field_values[0],
+          { ...output.field_values[1], string_value: "https://other.test" },
+        ],
+      }),
+    ).toThrow(/owner|supplied/i);
   });
 
   it("accepts one typed owner-supplied Record and omits configured defaults", () => {

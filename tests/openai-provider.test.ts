@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,9 @@ import { AiExecutionError } from "../src/ai/errors";
 import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
 import { builderRecordCreationEvaluationScenarios } from "../src/ai/evaluation/record-creation-intent/scenarios";
 import { builderPlanTaskV1 } from "../src/ai/planning/task";
+import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
+import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
+import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import {
   createOpenAiResponsesClient,
   OPENAI_MODEL_KEY,
@@ -28,6 +32,7 @@ import {
 } from "../src/ai/providers/openai";
 import {
   adaptRegisteredSchemaForOpenAi,
+  OPENAI_SUPPORTED_SCHEMA_FORMATS,
   OpenAiSchemaAdaptationError,
 } from "../src/ai/providers/openai-schema";
 import {
@@ -120,19 +125,64 @@ function clientReturning(value: unknown): {
   };
 }
 
-function collectObjectSchemas(value: unknown): Record<string, unknown>[] {
+function collectSchemaNodes(
+  value: unknown,
+  seen = new Set<object>(),
+): Record<string, unknown>[] {
   if (Array.isArray(value)) {
-    return value.flatMap(collectObjectSchemas);
+    return value.flatMap((item) => collectSchemaNodes(item, seen));
   }
   if (typeof value !== "object" || value === null) {
     return [];
   }
   const record = value as Record<string, unknown>;
+  if (seen.has(record)) return [];
+  seen.add(record);
   return [
-    ...(record.type === "object" || "properties" in record ? [record] : []),
-    ...Object.values(record).flatMap(collectObjectSchemas),
+    record,
+    ...Object.values(record).flatMap((item) => collectSchemaNodes(item, seen)),
   ];
 }
+
+function collectObjectSchemas(value: unknown): Record<string, unknown>[] {
+  return collectSchemaNodes(value).filter(
+    (record) => record.type === "object" || "properties" in record,
+  );
+}
+
+function canonicalSchemaValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalSchemaValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalSchemaValue(item)]),
+    );
+  }
+  return value;
+}
+
+function adaptedTaskSchemaDigest(task: { outputSchema: z.ZodType }): string {
+  const registered = z.toJSONSchema(task.outputSchema, {
+    target: "draft-7",
+    unrepresentable: "throw",
+  });
+  const adapted = adaptRegisteredSchemaForOpenAi(registered);
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalSchemaValue(adapted)))
+    .digest("hex");
+}
+
+const PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS = {
+  builder_plan_v1:
+    "2ecc17b6136d7058def5c37c7459230ec8c36338e6d4f7af5cde89ef40bc189f",
+  builder_configuration_draft_v1:
+    "7116b5ce046caebb1e3d8603c25d766bbb5141470d36485d684c012a341d83b1",
+  builder_preorder_amendment_v1:
+    "c452e5ef07da361d9b9c938727d325c67b9db346dddbf043f4744e9da5c310e5",
+  builder_location_creation_intent_v1:
+    "57869c426420b08f12de94d947db3cc53e3fc5e896af746fb9e7d9e58a1a6d3a",
+} as const;
 
 describe("OpenAI strict schema adaptation", () => {
   it("adapts the actual builder plan contract into one strict object root", () => {
@@ -161,7 +211,7 @@ describe("OpenAI strict schema adaptation", () => {
     }
   });
 
-  it("converts oneOf explicitly, removes the dialect, and preserves formats", () => {
+  it("converts oneOf explicitly, removes the dialect, and preserves supported formats", () => {
     expect(
       adaptRegisteredSchemaForOpenAi({
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -229,21 +279,22 @@ describe("OpenAI strict schema adaptation", () => {
       vi.spyOn(console, "error").mockImplementation(() => {}),
     ];
 
-    await expect(
-      provider.generateStructured({
-        providerKey: "openai",
-        modelKey: OPENAI_MODEL_KEY,
-        instruction: builderRecordCreationIntentTaskV1.buildInstruction(),
-        input: scenario.input,
-        outputContract: {
-          name: builderRecordCreationIntentTaskV1.key,
-          version: builderRecordCreationIntentTaskV1.version,
-          jsonSchema: registered,
-        },
-        maxOutputTokens: 4_096,
-        signal: new AbortController().signal,
-      }),
-    ).resolves.toMatchObject({ output: scenario.expected_output });
+    const response = await provider.generateStructured({
+      providerKey: "openai",
+      modelKey: OPENAI_MODEL_KEY,
+      instruction: builderRecordCreationIntentTaskV1.buildInstruction(),
+      input: scenario.input,
+      outputContract: {
+        name: builderRecordCreationIntentTaskV1.key,
+        version: builderRecordCreationIntentTaskV1.version,
+        jsonSchema: registered,
+      },
+      maxOutputTokens: 4_096,
+      signal: new AbortController().signal,
+    });
+    expect(
+      builderRecordCreationIntentTaskV1.outputSchema.parse(response.output),
+    ).toEqual(scenario.expected_output);
 
     expect(adapted).toMatchObject({
       type: "object",
@@ -262,6 +313,36 @@ describe("OpenAI strict schema adaptation", () => {
     expect((format.name as string).length).toBeLessThanOrEqual(64);
     expect(JSON.stringify(schema)).not.toContain('"oneOf"');
     expect(JSON.stringify(schema)).toContain('"anyOf"');
+    const schemaNodes = collectSchemaNodes(schema);
+    const formats = schemaNodes
+      .filter((node) => "format" in node)
+      .map((node) => node.format);
+    expect(formats).not.toContain("uri");
+    expect(
+      formats.every(
+        (format) =>
+          typeof format === "string" &&
+          OPENAI_SUPPORTED_SCHEMA_FORMATS.includes(
+            format as (typeof OPENAI_SUPPORTED_SCHEMA_FORMATS)[number],
+          ),
+      ),
+    ).toBe(true);
+    const urlSchemas = schemaNodes.filter(
+      (node) =>
+        node.type === "string" &&
+        typeof node.pattern === "string" &&
+        node.pattern.includes("https?"),
+    );
+    expect(urlSchemas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "string",
+          minLength: 1,
+          maxLength: 2_048,
+          pattern: "^https?:\\/\\/",
+        }),
+      ]),
+    );
     for (const objectSchema of collectObjectSchemas(schema)) {
       expect(objectSchema.additionalProperties).toBe(false);
       expect(new Set(objectSchema.required as string[])).toEqual(
@@ -277,6 +358,21 @@ describe("OpenAI strict schema adaptation", () => {
         "Afternoon Tea Box",
       );
     }
+  });
+
+  it("preserves the adapted schemas for previously qualified task families", () => {
+    expect(adaptedTaskSchemaDigest(builderPlanTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_plan_v1,
+    );
+    expect(adaptedTaskSchemaDigest(builderConfigurationDraftTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_configuration_draft_v1,
+    );
+    expect(adaptedTaskSchemaDigest(builderPreorderAmendmentTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_preorder_amendment_v1,
+    );
+    expect(adaptedTaskSchemaDigest(builderLocationCreationIntentTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_location_creation_intent_v1,
+    );
   });
 });
 
@@ -425,6 +521,21 @@ describe("OpenAI Responses structured provider", () => {
     );
   });
 
+  it("allows only the finite OpenAI format subset and rejects unsupported formats", () => {
+    for (const format of OPENAI_SUPPORTED_SCHEMA_FORMATS) {
+      expect(
+        adaptRegisteredSchemaForOpenAi({ type: "string", format }),
+      ).toMatchObject({
+        properties: { result: { type: "string", format } },
+      });
+    }
+    for (const format of ["uri", "uri-reference", "binary", "unknown"]) {
+      expect(() =>
+        adaptRegisteredSchemaForOpenAi({ type: "string", format }),
+      ).toThrow(OpenAiSchemaAdaptationError);
+    }
+  });
+
   it("adapts before invocation and unwraps without changing the task result", async () => {
     const { client, create } = clientReturning(completedResponse({ ok: true }));
     const provider = new OpenAiResponsesStructuredProvider({ client });
@@ -439,6 +550,40 @@ describe("OpenAI Responses structured provider", () => {
     let caught: StructuredAiProviderError | undefined;
     try {
       await provider.generateStructured(unsafe);
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+    expect(caught).toMatchObject({
+      kind: "invalid_request",
+      cause: expect.any(OpenAiInvalidRequestDiagnostic),
+    });
+    expect((caught?.cause as OpenAiInvalidRequestDiagnostic).reasonCode).toBe(
+      "local_schema_adaptation",
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("maps an unsupported format to local schema adaptation before invocation", async () => {
+    const { client, create } = clientReturning(completedResponse({ ok: true }));
+    const provider = new OpenAiResponsesStructuredProvider({ client });
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(
+        request({
+          outputContract: {
+            name: "url_contract",
+            version: 1,
+            jsonSchema: {
+              type: "object",
+              properties: {
+                website: { type: "string", format: "uri" },
+              },
+              required: ["website"],
+              additionalProperties: false,
+            },
+          },
+        }),
+      );
     } catch (cause) {
       caught = cause as StructuredAiProviderError;
     }

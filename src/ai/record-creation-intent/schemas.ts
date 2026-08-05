@@ -9,6 +9,7 @@ import {
   builderPlanTaskInputSchema,
 } from "../planning/schemas";
 import { graphKeySchema } from "../../core/graph/schemas";
+import { recordCreationUrlValueSchema } from "../../core/graph/record-creation/schemas";
 
 export const BUILDER_RECORD_CREATION_INTENT_SCHEMA_VERSION = 1 as const;
 export const BUILDER_RECORD_CREATION_INTENT_MAX_OUTPUT_BYTES = 64 * 1024;
@@ -94,15 +95,7 @@ const textLikeFieldValueSchema = z.discriminatedUnion("field_type", [
     .object({
       field_key: graphKeySchema,
       field_type: z.literal("url"),
-      string_value: z
-        .string()
-        .trim()
-        .url()
-        .max(2_048)
-        .refine(
-          (value) => /^https?:\/\//i.test(value),
-          "URL must use http or https.",
-        ),
+      string_value: recordCreationUrlValueSchema,
     })
     .strict(),
 ]);

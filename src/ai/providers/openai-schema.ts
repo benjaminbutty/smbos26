@@ -32,6 +32,22 @@ const EXPLICITLY_REMOVED_KEYWORDS = new Set([
   "$schema",
 ]);
 
+export const OPENAI_SUPPORTED_SCHEMA_FORMATS = Object.freeze([
+  "date-time",
+  "time",
+  "date",
+  "duration",
+  "email",
+  "hostname",
+  "ipv4",
+  "ipv6",
+  "uuid",
+] as const);
+
+const OPENAI_SUPPORTED_SCHEMA_FORMAT_SET = new Set<string>(
+  OPENAI_SUPPORTED_SCHEMA_FORMATS,
+);
+
 export class OpenAiSchemaAdaptationError extends Error {
   constructor() {
     super("The registered output schema is not OpenAI-compatible.");
@@ -109,6 +125,15 @@ function adaptSchemaNode(value: unknown): unknown {
       case "anyOf":
       case "oneOf":
         adapted.anyOf = adaptArray(item);
+        break;
+      case "format":
+        if (
+          typeof item !== "string" ||
+          !OPENAI_SUPPORTED_SCHEMA_FORMAT_SET.has(item)
+        ) {
+          throw new OpenAiSchemaAdaptationError();
+        }
+        adapted.format = item;
         break;
       default:
         adapted[keyword] = item;

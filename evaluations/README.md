@@ -468,6 +468,47 @@ Reliability was not run, qualification was not rerun, production remains
 disabled, and no additional live provider spend occurred. This failure remains
 historical evidence only and does not claim schema rejection as the cause.
 
+#### Current-head transport diagnosis
+
+The operator subsequently ran qualification against exact head
+`a6054b63477664cc9e422e4c2cb6e8179dcddd84`. It stopped on the same first
+scenario, `product_text_currency_default`, repetition 1, with the following
+bounded report:
+
+```text
+passed: false
+output_state: null
+field_value_count: 0
+failure_class: provider_execution
+failed_gate_codes:
+  - provider_execution
+attempts: 1
+usage_complete: false
+input_tokens: 0
+output_tokens: 0
+estimated_microusd: 0
+elapsed_ms: 715
+error_code: ai_execution_failed
+validation_reason_code: null
+provider_reason_code: provider_schema_rejected
+```
+
+The aggregate was 8 total scenarios, 0 passed, 1 failed, 1 attempt, zero
+input/output tokens, zero estimated microusd, 715 ms and exit code 1. No model
+output was produced or evaluated, and reliability was not run.
+
+The exact unsupported transport was identified: the Record URL variant used
+`z.string().url()`, which emitted `format: "uri"` in draft-7 JSON Schema, while
+the documented OpenAI Structured Outputs subset supports only
+`date-time`, `time`, `date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`
+and `uuid`. The correction therefore keeps URL Fields and deterministic
+HTTP(S) URL validation, but emits a bounded structural string with
+`minLength: 1`, `maxLength: 2048` and an HTTP(S) prefix pattern. Unsupported
+formats now fail locally as `local_schema_adaptation`; no unsupported format
+is silently forwarded. Production remains disabled and no further live spend
+occurred. The next live evidence must begin qualification against the final
+correction SHA because the emitted Record transport schema changed.
+
 Normal tests and CI never activate these flags. No live run is claimed for
 this feature branch, and the global/default/OpenAI production runtime mappings
 remain on `builder_record_creation_intent_disabled_v1`.

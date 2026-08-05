@@ -10,6 +10,30 @@ import {
 
 export const RECORD_CREATION_STATE_SCHEMA_VERSION = 1 as const;
 
+export const recordCreationUrlValueSchema = z
+  .string()
+  .min(1)
+  .max(2_048)
+  .regex(/^https?:\/\//i, "URL must use http or https.")
+  .superRefine((value, context) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "URL must be syntactically valid.",
+      });
+      return;
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "URL must use http or https.",
+      });
+    }
+  });
+
 export const recordCreationEligibilityReasonSchema = z.enum([
   "inactive_object",
   "required_relationship_target",
@@ -103,15 +127,7 @@ export const recordCreationTextFieldValueSchema = z.discriminatedUnion(
       .object({
         field_key: graphKeySchema,
         field_type: z.literal("url"),
-        string_value: z
-          .string()
-          .trim()
-          .url()
-          .max(2_048)
-          .refine(
-            (value) => /^https?:\/\//i.test(value),
-            "URL must use http or https.",
-          ),
+        string_value: recordCreationUrlValueSchema,
       })
       .strict(),
   ],

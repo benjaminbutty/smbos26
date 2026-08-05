@@ -35,7 +35,9 @@ wrapped under one required `result` property and unwrapped before registered
 Zod and semantic validation. Object properties remain required and reject
 extras; `oneOf` is explicitly converted to `anyOf`; only the provider-owned
 `$schema` dialect declaration is removed. Provider-supported format
-constraints are preserved, and server-side Zod validation remains
+constraints are preserved only for the finite allow-list `date-time`, `time`,
+`date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6` and `uuid`; unsupported
+formats fail locally before an SDK request. Server-side Zod validation remains
 authoritative. Unsafe schemas fail before an
 SDK request.
 

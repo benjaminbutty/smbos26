@@ -53,6 +53,16 @@ const state = {
       position: 3,
       is_active: true,
     },
+    {
+      key: "website",
+      label: "Website",
+      field_type: "url" as const,
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 4,
+      is_active: true,
+    },
   ],
   internal_views: [
     {
@@ -128,5 +138,51 @@ describe("generic Record creation confirmation boundary", () => {
         actorId: state.business_id,
       }),
     ).toThrow(/no longer valid|confirmation/i);
+  });
+
+  it("preserves an exact owner-supplied URL through composition and confirmation", () => {
+    const website = "https://example.test/path?query=value";
+    const values = [
+      ...fieldValues,
+      {
+        field_key: "website",
+        field_type: "url" as const,
+        string_value: website,
+      },
+    ];
+    const composition = composeConfirmedGraphRecordData(state, values);
+    expect(composition.requestedData.website).toBe(website);
+    expect(composition.fieldValues.at(-1)).toEqual(values.at(-1));
+
+    const service = createRecordConfirmationTokenService({
+      secret: "0123456789abcdef0123456789abcdef",
+      now: () => 1_000,
+    });
+    const token = service.sign({
+      businessId: state.business_id,
+      actorId: state.actor_id,
+      baseVersionId: state.base_version_id,
+      headRevision: state.head_revision,
+      objectKey: state.object_key,
+      objectSchemaDigest: state.object_schema_digest,
+      recordStateDigest: state.record_state_digest,
+      fieldValues: values,
+    });
+    expect(
+      service.verify(token, {
+        businessId: state.business_id,
+        actorId: state.actor_id,
+      }).field_values,
+    ).toEqual(expect.arrayContaining([values.at(-1)]));
+    expect(() =>
+      composeConfirmedGraphRecordData(state, [
+        ...fieldValues,
+        {
+          field_key: "website",
+          field_type: "url" as const,
+          string_value: "ftp://example.test",
+        },
+      ]),
+    ).toThrow(/invalid|Field/i);
   });
 });
