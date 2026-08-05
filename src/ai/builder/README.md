@@ -143,16 +143,19 @@ production and default OpenAI runtimes deliberately keep it disabled; the
 Terra policy and evaluation harness are separate engineering-only artifacts.
 The task receives the unchanged AI-safe Business context and one validated
 ready `create_record` plan. Its strict output is a typed, transient set of
-owner-supplied Field values and contains no UUIDs, defaults, Record data,
-relationships, files, PII or mutation instructions.
+owner-supplied Field values and may return only exact existing Object and Field
+keys present in the supplied configuration context. It may not invent new
+keys, UUIDs, IDs, defaults, Records, relationships or mutation authority.
 
-The authenticated service allows only one eligible generic Object: it must be
-active, have writable Fields, have the required incoming relationship, and
-contain no active non-file Fields. It reads defaults only after intent
-validation, returns an explicit Owner/Admin confirmation, and signs a
-Business/actor-bound 15-minute token. The final action rechecks the
-PII-free schema/state digests and calls the narrow confirmed-create RPC once;
-the existing graph trigger applies normal Record validation. The result opens
-the existing internal View selected by the server. No AI, accounting,
+The authenticated service allows only one eligible generic Object. It must
+exist and be active, have at least one active non-file writable Field, have no
+active required incoming Relationship that makes standalone creation
+incomplete, not be an active preorder Order or Order Item Object, and have no
+required File Field without a usable default. It reads defaults only after
+intent validation, returns an explicit Owner/Admin confirmation, and signs a
+Business/actor-bound 15-minute token. The final action rechecks the PII-free
+schema/state digests and calls the narrow confirmed-create RPC once; the
+existing graph trigger applies normal Record validation. The result opens the
+existing internal View selected by the server. No AI, accounting,
 configuration mutation, file upload, relationship creation or Record update/
 delete is part of this phase.

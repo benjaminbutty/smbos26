@@ -218,6 +218,9 @@ function failureClassFor(
   if (failedGateCodes.includes("provider_execution")) {
     return "provider_execution";
   }
+  if (failedGateCodes.includes("usage_incomplete")) {
+    return "provider_execution";
+  }
   if (failedGateCodes.includes("unknown_output")) return "unknown";
   return null;
 }

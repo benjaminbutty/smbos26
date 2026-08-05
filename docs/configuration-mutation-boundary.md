@@ -403,9 +403,12 @@ share then the Object definition for update, compares the expected state and
 inserts through the existing graph trigger. The transient 15-minute HMAC
 token binds Business and actor; stale or replayed confirmations fail closed.
 
-Only one eligible Object and one `create_record` step are supported. Required
-incoming relationships, file-only defaults and active non-file Fields gate
-eligibility; Record update/delete, relationship creation, file upload, public
-forms and configuration mutation remain outside the phase. The
+Only one eligible Object and one `create_record` step are supported. Eligibility
+requires an existing active Object with at least one active non-file writable
+Field, no active required incoming Relationship that makes standalone creation
+incomplete, no active preorder Order or Order Item Object mapping, and no
+required File Field without a usable default. Record update/delete,
+relationship creation, file upload, public forms and configuration mutation
+remain outside the phase. The
 `builder_record_creation_intent_v1` task and Terra evaluation harness are
 production-disabled and separately gated.

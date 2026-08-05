@@ -397,25 +397,33 @@ const definitions = [
   {
     id: "optional_fields_omitted",
     owner_request:
-      "Add a Projector to Equipment. Its hire price is £50 and it is available.",
+      "Add a Lead named Bedford Events Ltd. Their email is events@example.test and phone is 01234567890.",
     input: taskInput(
-      "Add a Projector to Equipment. Its hire price is £50 and it is available.",
+      "Add a Lead named Bedford Events Ltd. Their email is events@example.test and phone is 01234567890.",
       recordCreationEvaluationContextB,
-      "equipment",
-      "Equipment",
+      "lead",
+      "Lead",
     ),
     expected_output: readyOutput(
-      "equipment",
+      "lead",
       [
         {
           field_key: "name",
           field_type: "short_text",
-          string_value: "Projector",
+          string_value: "Bedford Events Ltd",
         },
-        { field_key: "hire_price", field_type: "currency", number_value: 50 },
-        { field_key: "available", field_type: "boolean", boolean_value: true },
+        {
+          field_key: "email",
+          field_type: "email",
+          string_value: "events@example.test",
+        },
+        {
+          field_key: "phone",
+          field_type: "phone",
+          string_value: "01234567890",
+        },
       ],
-      "Add the required Projector equipment values only.",
+      "Add the Bedford Events Ltd Lead contact without a website.",
     ),
   },
   {

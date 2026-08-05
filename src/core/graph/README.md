@@ -38,8 +38,16 @@ under `tests/integration/support`, never production code.
 composition boundary for one confirmed generic Record. It reads a bounded
 Object/Field eligibility state, composes only typed owner-supplied values and
 authoritative defaults, and calls the narrow Supabase RPC through the resolved
-tenant client. It accepts no browser-supplied Business ID, actor, UUID,
-relationship, file or arbitrary data shape.
+tenant client. The model may return only exact existing Object and Field keys
+present in the supplied configuration context; it may not invent new keys,
+UUIDs, IDs, defaults, Records, relationships or mutation authority. The
+boundary accepts no browser-supplied Business ID, actor, UUID, relationship,
+file or arbitrary data shape.
+
+Eligibility requires an existing active target Object with at least one active
+non-file writable Field, no active required incoming Relationship that makes
+standalone creation incomplete, no active preorder Order or Order Item Object
+mapping, and no required File Field without a usable default.
 
 PostgreSQL is authoritative for the tenant, Object lock, schema/state digest,
 Field validation, default application, `created_by` and atomic insert. The

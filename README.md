@@ -211,12 +211,20 @@ atomic server-checked Record insert. Product remains generic and receives no
 Product-specific production path.
 
 The model receives the unchanged AI-safe Business context and ready plan only.
-The server reads defaults and currentness outside the model boundary, signs a
-15-minute Business/actor-bound confirmation, rechecks a PII-free state digest,
-and calls the narrow confirmed-create RPC once. The final action performs no
-AI, accounting, provider or configuration work and opens the existing internal
-View selected by the server. The task, Terra policy and evaluation gates are
+It may return only exact existing Object and Field keys present in the supplied
+configuration context. It may not invent new keys, UUIDs, IDs, defaults,
+Records, relationships or mutation authority. The server reads defaults and
+currentness outside the model boundary, signs a 15-minute Business/actor-bound
+confirmation, rechecks a PII-free state digest, and calls the narrow
+confirmed-create RPC once. The final action performs no AI, accounting,
+provider or configuration work and opens the existing internal View selected
+by the server. The task, Terra policy and evaluation gates are
 production-disabled; live evaluation is never run implicitly.
+
+An Object is eligible only when it exists and is active, has at least one
+active non-file writable Field, has no active required incoming Relationship
+that makes standalone creation incomplete, is not an active preorder Order or
+Order Item Object, and has no required File Field without a usable default.
 
 Not included:
 

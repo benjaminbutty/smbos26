@@ -65,8 +65,8 @@ export interface BuilderRecordCreationLiveOverrides {
   now?: () => number;
   emit?: (value: unknown) => void;
   loadDependencies?: () => Promise<BuilderRecordCreationLiveDependencies>;
-  deriveQualificationEnvelope?: typeof deriveBuilderRecordCreationQualificationEnvelope;
-  deriveReliabilityEnvelope?: typeof deriveBuilderRecordCreationReliabilityEnvelope;
+  deriveQualificationEnvelope?: () => GateEnvelope;
+  deriveReliabilityEnvelope?: () => GateEnvelope;
 }
 
 interface GateEnvelope {
@@ -410,6 +410,12 @@ function reliabilityAggregate(
   totals: GateTotals,
   passCounts: ReadonlyMap<string, number>,
 ) {
+  const passedScenarios = [...passCounts.values()].filter(
+    (passedCount) => passedCount === 3,
+  ).length;
+  const failedScenarios = [...passCounts.values()].filter(
+    (passedCount) => passedCount < 3,
+  ).length;
   return builderRecordCreationEvaluationReliabilityAggregateSchema.parse({
     schema_version: 1,
     gate: "reliability",
@@ -417,8 +423,8 @@ function reliabilityAggregate(
     policy_key: BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
     reasoning_effort: OPENAI_BUILDER_RECORD_CREATION_INTENT_REASONING_EFFORT,
     total_scenarios: 8,
-    passed_scenarios: Math.min(8, totals.passedExecutions),
-    failed_scenarios: Math.min(8, totals.failedExecutions),
+    passed_scenarios: passedScenarios,
+    failed_scenarios: failedScenarios,
     total_attempts: totals.attempts,
     total_input_tokens: totals.inputTokens,
     total_output_tokens: totals.outputTokens,

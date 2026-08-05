@@ -2498,10 +2498,16 @@ The exact one-step `create_record` path runs through the unchanged planning
 boundary, a separate strict `builder_record_creation_intent_v1` task, pure
 semantic validation, explicit Owner/Admin confirmation, and one atomic
 `create_confirmed_graph_record` RPC. The model sees only the unchanged AI-safe
-Business context and ready plan. It cannot supply UUIDs, Field keys, defaults,
-Record data, PII, relationships, files, SQL, code or mutation authority.
+Business context and ready plan. It may return only exact existing Object and
+Field keys present in the supplied configuration context. It may not invent new
+keys, UUIDs, IDs, defaults, Records, relationships or mutation authority.
 Defaults are read authoritatively by the server only after the intent is
 validated; omitted optional fields remain omitted from the requested data.
+
+Eligibility requires an existing active target Object with at least one active
+non-file writable Field, no active required incoming Relationship that makes
+standalone creation incomplete, no active preorder Order or Order Item Object
+mapping, and no required File Field without a usable default.
 
 The server signs a neutral, 15-minute HMAC confirmation envelope bound to the
 authenticated Business and actor. The final action rechecks the Object,

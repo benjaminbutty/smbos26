@@ -70,13 +70,45 @@ function dateMentioned(text: string, value: string): boolean {
   ).test(text);
 }
 
-function booleanMentioned(text: string, value: boolean): boolean {
-  const normalized = normalize(text);
-  const negative =
-    /\b(?:false|no|unavailable|inactive|disabled)\b/.test(normalized) ||
-    /\bnot\s+(?:available|active|enabled)\b/.test(normalized);
-  const positive = /\b(?:true|yes|available|active|enabled)\b/.test(
-    normalized.replace(/\bnot\s+(?:available|active|enabled)\b/g, ""),
+function booleanMentioned(
+  text: string,
+  field: { key: string; label: string },
+  value: boolean,
+): boolean {
+  const fieldPhrases = [field.label, field.key.replace(/_/g, " ")]
+    .map(normalize)
+    .filter(
+      (phrase, index, phrases) => phrase && phrases.indexOf(phrase) === index,
+    );
+  const mentioned = fieldPhrases.some((phrase) => phraseInText(text, phrase));
+  if (!mentioned) return false;
+
+  const negative = fieldPhrases.some((phrase) =>
+    [
+      `not ${phrase}`,
+      `no ${phrase}`,
+      `is not ${phrase}`,
+      `isn t ${phrase}`,
+      `are not ${phrase}`,
+      `aren t ${phrase}`,
+      `${phrase} false`,
+      `${phrase} no`,
+      `${phrase} unavailable`,
+      `${phrase} inactive`,
+      `${phrase} disabled`,
+    ].some((candidate) => phraseInText(text, candidate)),
+  );
+  const positive = fieldPhrases.some((phrase) =>
+    [
+      `is ${phrase}`,
+      `are ${phrase}`,
+      `be ${phrase}`,
+      `${phrase} true`,
+      `${phrase} yes`,
+      `${phrase} available`,
+      `${phrase} active`,
+      `${phrase} enabled`,
+    ].some((candidate) => phraseInText(text, candidate)),
   );
   return value ? positive && !negative : negative && !positive;
 }
@@ -226,7 +258,7 @@ function validateFieldValue(
       }
       break;
     case "boolean":
-      if (!booleanMentioned(input.owner_request, value.boolean_value)) {
+      if (!booleanMentioned(input.owner_request, field, value.boolean_value)) {
         fail("field_value_not_owner_supplied");
       }
       break;

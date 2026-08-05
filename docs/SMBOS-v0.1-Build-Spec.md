@@ -2823,8 +2823,9 @@ The exact flow is unchanged planning, one eligible `create_record` step, the
 strict `builder_record_creation_intent_v1` task, deterministic semantic
 validation, explicit Owner/Admin confirmation, and one atomic generic Record
 insert. The model receives the unchanged AI-safe Business context and ready
-plan only. It cannot provide UUIDs, Field keys, defaults, Record data, PII,
-relationships, files, SQL, code or mutation authority. Typed values are
+plan only. It may return only exact existing Object and Field keys present in
+the supplied configuration context. It may not invent new keys, UUIDs, IDs,
+defaults, Records, relationships or mutation authority. Typed values are
 limited to text, number, boolean, date, datetime, URL, one option and
 multi-select; required values must be explicitly owner-supplied or resolved
 from authoritative server defaults after validation. Omitted optional values
@@ -2840,10 +2841,12 @@ replayed confirmation fails without a second insert. The successful result
 opens the existing server-selected internal View and performs no AI call,
 accounting, provider call or configuration mutation.
 
-Eligibility is deliberately narrow: the Object must be active with writable
-Fields, have the required incoming relationship, contain no active non-file
-Field, and have no unsupported file requirement. Product, Equipment, Catering
-Enquiry and other business concepts therefore share one generic path. Record
+Eligibility is deliberately narrow. A target Object is eligible only when it
+exists and is active; at least one active non-file writable Field exists; no
+active required incoming Relationship makes standalone creation incomplete; it
+is not an active preorder Order or Order Item Object; and no required File
+Field without a usable default exists. Product, Equipment, Catering Enquiry
+and other business concepts therefore share one generic path. Record
 update/delete, relationship creation, file upload, public form changes and
 generic operational dispatch remain out of scope. The default and production
 runtime mappings remain disabled; the Terra policy, exact reservation

@@ -18,7 +18,12 @@ import {
   builderRecordCreationEvaluationQualificationAggregateSchema,
   builderRecordCreationEvaluationReliabilityAggregateSchema,
 } from "../src/ai/evaluation/record-creation-intent/schemas";
-import { builderRecordCreationEvaluationScenarios } from "../src/ai/evaluation/record-creation-intent/scenarios";
+import {
+  BUILDER_RECORD_CREATION_EVALUATION_SCENARIO_IDS,
+  builderRecordCreationEvaluationScenarios,
+} from "../src/ai/evaluation/record-creation-intent/scenarios";
+import { AiExecutionError } from "../src/ai/errors";
+import { validateBuilderRecordCreationIntentOutput } from "../src/ai/record-creation-intent/validation";
 
 const activeEnvironment = {
   RUN_LIVE_OPENAI_RECORD_CREATION_TERRA_QUALIFICATION: "1",
@@ -81,7 +86,15 @@ describe("Builder generic Record creation evaluation harness", () => {
       );
       expect(report.passed).toBe(true);
       expect(report.failed_gate_codes).toEqual([]);
-      expect(JSON.stringify(report)).not.toContain(scenario.owner_request);
+      const serializedReport = JSON.stringify(report);
+      expect(serializedReport).not.toContain(scenario.owner_request);
+      if (scenario.expected_output.state === "ready") {
+        for (const value of scenario.expected_output.field_values) {
+          if ("string_value" in value) {
+            expect(serializedReport).not.toContain(value.string_value);
+          }
+        }
+      }
       expect(Object.keys(report).sort()).toEqual([
         "attempts",
         "elapsed_ms",
@@ -101,6 +114,71 @@ describe("Builder generic Record creation evaluation harness", () => {
         "value_kind_counts",
       ]);
     }
+  });
+
+  it("freezes eight distinct ordered inputs whose expected outputs pass the real validator", () => {
+    expect(builderRecordCreationEvaluationScenarios).toHaveLength(8);
+    expect(
+      builderRecordCreationEvaluationScenarios.map(({ id }) => id),
+    ).toEqual(BUILDER_RECORD_CREATION_EVALUATION_SCENARIO_IDS);
+    const serializedInputs = builderRecordCreationEvaluationScenarios.map(
+      ({ input }) => JSON.stringify(input),
+    );
+    expect(new Set(serializedInputs).size).toBe(8);
+
+    const optionalScenario = builderRecordCreationEvaluationScenarios.find(
+      ({ id }) => id === "optional_fields_omitted",
+    );
+    expect(optionalScenario).toBeDefined();
+    if (
+      !optionalScenario ||
+      optionalScenario.expected_output.state !== "ready"
+    ) {
+      throw new Error("The optional omission scenario must be ready.");
+    }
+    expect(
+      optionalScenario.expected_output.field_values.map(
+        ({ field_key }) => field_key,
+      ),
+    ).toEqual(["name", "email", "phone"]);
+    expect(
+      optionalScenario.expected_output.field_values.some(
+        ({ field_key }) => field_key === "website",
+      ),
+    ).toBe(false);
+
+    for (const scenario of builderRecordCreationEvaluationScenarios) {
+      expect(
+        validateBuilderRecordCreationIntentOutput(
+          scenario.input,
+          scenario.expected_output,
+        ),
+      ).toEqual(scenario.expected_output);
+    }
+  });
+
+  it("classifies incomplete usage as provider execution without exposing input or values", () => {
+    const scenario = builderRecordCreationEvaluationScenarios[0]!;
+    const report = evaluateBuilderRecordCreationIntent(
+      scenario,
+      scenario.expected_output,
+      {
+        attempts: 1,
+        inputTokens: 120,
+        outputTokens: 40,
+        usageComplete: false,
+        elapsedMs: 12,
+      },
+    );
+
+    expect(report).toMatchObject({
+      passed: false,
+      failure_class: "provider_execution",
+      failed_gate_codes: ["usage_incomplete"],
+      usage_complete: false,
+    });
+    expect(JSON.stringify(report)).not.toContain(scenario.owner_request);
+    expect(JSON.stringify(report)).not.toContain("Afternoon Tea Box");
   });
 
   it("runs qualification sequentially and stops before provider construction when inactive", async () => {
@@ -151,6 +229,57 @@ describe("Builder generic Record creation evaluation harness", () => {
       ),
     ).resolves.toMatchObject({ ran: false, passed: false });
     expect(loadDependencies).not.toHaveBeenCalled();
+
+    await expect(
+      runLiveBuilderRecordCreationReliability(
+        { AI_PROVIDER: "openai", OPENAI_API_KEY: "key" },
+        { loadDependencies },
+      ),
+    ).resolves.toMatchObject({ ran: false, passed: false });
+    expect(loadDependencies).not.toHaveBeenCalled();
+  });
+
+  it("stops qualification on the first failed scenario", async () => {
+    const emitted: unknown[] = [];
+    const calls: string[] = [];
+    const firstScenario = builderRecordCreationEvaluationScenarios[0]!;
+    const secondScenario = builderRecordCreationEvaluationScenarios[1]!;
+    const result = await runLiveBuilderRecordCreationQualification(
+      activeEnvironment,
+      {
+        now: () => 10,
+        emit: (value) => emitted.push(value),
+        execute: async (_taskKey, input) => {
+          const scenario = builderRecordCreationEvaluationScenarios.find(
+            (candidate) => candidate.input === input,
+          );
+          if (!scenario) throw new Error("Unknown injected scenario.");
+          calls.push(scenario.id);
+          return {
+            ...injectedExecution(input),
+            output:
+              scenario.id === firstScenario.id
+                ? secondScenario.expected_output
+                : scenario.expected_output,
+          };
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    if (!result.ran) throw new Error("Qualification did not run.");
+    expect(calls).toEqual([firstScenario.id]);
+    expect(result.reports).toHaveLength(1);
+    expect(result.reports[0]?.passed).toBe(false);
+    expect(
+      builderRecordCreationEvaluationQualificationAggregateSchema.parse(
+        emitted.at(-1),
+      ),
+    ).toMatchObject({
+      total_scenarios: 8,
+      passed_scenarios: 0,
+      failed_scenarios: 1,
+    });
   });
 
   it("runs reliability in ordered sequential rounds", async () => {
@@ -182,7 +311,164 @@ describe("Builder generic Record creation evaluation harness", () => {
       total_executions: 24,
       passed_executions: 24,
       failed_executions: 0,
+      passed_scenarios: 8,
+      failed_scenarios: 0,
       total_estimated_cost_microusd: 21_600,
+      per_scenario_pass_counts: builderRecordCreationEvaluationScenarios.map(
+        ({ id }) => ({ scenario_id: id, passed_count: 3 }),
+      ),
     });
+  });
+
+  it("derives reliability scenario counts from three-pass completion, not execution totals", async () => {
+    const emitted: unknown[] = [];
+    let calls = 0;
+    const result = await runLiveBuilderRecordCreationReliability(
+      activeEnvironment,
+      {
+        now: () => 10,
+        emit: (value) => emitted.push(value),
+        execute: async (_taskKey, input) => {
+          const scenario = builderRecordCreationEvaluationScenarios.find(
+            (candidate) => candidate.input === input,
+          );
+          if (!scenario) throw new Error("Unknown injected scenario.");
+          const callNumber = calls;
+          calls += 1;
+          if (callNumber === 8) {
+            throw new AiExecutionError("ai_provider_unavailable", {
+              accounting: {
+                attemptsStarted: 2,
+                inputTokens: 240,
+                outputTokens: 80,
+                usageReported: true,
+                usageComplete: true,
+                providerInvocationStarted: true,
+                failureBeforeProviderInvocation: false,
+              },
+            });
+          }
+          return injectedExecution(input);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    if (!result.ran) throw new Error("Reliability did not run.");
+    expect(result.reports).toHaveLength(9);
+    const aggregate =
+      builderRecordCreationEvaluationReliabilityAggregateSchema.parse(
+        emitted.at(-1),
+      );
+    expect(aggregate).toMatchObject({
+      total_executions: 24,
+      passed_executions: 8,
+      failed_executions: 1,
+      passed_scenarios: 0,
+      failed_scenarios: 8,
+      total_attempts: 10,
+      total_input_tokens: 1_200,
+      total_output_tokens: 400,
+      total_estimated_cost_microusd: 9_000,
+    });
+    expect(aggregate.per_scenario_pass_counts).toEqual(
+      builderRecordCreationEvaluationScenarios.map(({ id }) => ({
+        scenario_id: id,
+        passed_count: 1,
+      })),
+    );
+  });
+
+  it("reports one completed scenario when the next scenario fails after its third repetition", async () => {
+    const emitted: unknown[] = [];
+    let calls = 0;
+    const result = await runLiveBuilderRecordCreationReliability(
+      activeEnvironment,
+      {
+        now: () => 10,
+        emit: (value) => emitted.push(value),
+        execute: async (_taskKey, input) => {
+          const scenario = builderRecordCreationEvaluationScenarios.find(
+            (candidate) => candidate.input === input,
+          );
+          if (!scenario) throw new Error("Unknown injected scenario.");
+          const callNumber = calls;
+          calls += 1;
+          if (callNumber === 17) {
+            throw new AiExecutionError("ai_provider_unavailable", {
+              accounting: {
+                attemptsStarted: 1,
+                inputTokens: 120,
+                outputTokens: 40,
+                usageReported: true,
+                usageComplete: true,
+                providerInvocationStarted: true,
+                failureBeforeProviderInvocation: false,
+              },
+            });
+          }
+          return injectedExecution(input);
+        },
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    if (!result.ran) throw new Error("Reliability did not run.");
+    expect(result.reports).toHaveLength(18);
+    const aggregate =
+      builderRecordCreationEvaluationReliabilityAggregateSchema.parse(
+        emitted.at(-1),
+      );
+    expect(aggregate).toMatchObject({
+      total_executions: 24,
+      passed_executions: 17,
+      failed_executions: 1,
+      passed_scenarios: 1,
+      failed_scenarios: 7,
+      total_attempts: 18,
+      total_input_tokens: 2_160,
+      total_output_tokens: 720,
+      total_estimated_cost_microusd: 16_200,
+    });
+    expect(aggregate.per_scenario_pass_counts).toEqual([
+      {
+        scenario_id: builderRecordCreationEvaluationScenarios[0]!.id,
+        passed_count: 3,
+      },
+      ...builderRecordCreationEvaluationScenarios.slice(1).map(({ id }) => ({
+        scenario_id: id,
+        passed_count: 2,
+      })),
+    ]);
+  });
+
+  it("performs reservation and ceiling preflight before provider construction", async () => {
+    const emitted: unknown[] = [];
+    const loadDependencies = vi.fn();
+    const result = await runLiveBuilderRecordCreationQualification(
+      activeEnvironment,
+      {
+        emit: (value) => emitted.push(value),
+        loadDependencies,
+        deriveQualificationEnvelope: () => ({
+          taskKey: "builder_record_creation_intent_v1",
+          policyKey: "builder_record_creation_intent_terra_medium_v1",
+          modelKey: "gpt-5.6-terra",
+          reasoningEffort: "medium",
+          reservedCostMicrousdPerExecution: 522_880,
+          reservedCostMicrousd: 4_183_040,
+          hardCeilingMicrousd: 1,
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({ ran: true, passed: false });
+    expect(loadDependencies).not.toHaveBeenCalled();
+    expect(emitted).toEqual([
+      {
+        evaluation_error_code: "evaluation_setup_failed",
+        reason_code: "qualification_ceiling_mismatch",
+      },
+    ]);
   });
 });

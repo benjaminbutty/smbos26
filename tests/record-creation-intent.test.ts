@@ -8,6 +8,7 @@ import {
   builderRecordCreationIntentOutputSchema,
   builderRecordCreationIntentTaskInputSchema,
 } from "../src/ai/record-creation-intent/schemas";
+import { BUILDER_RECORD_CREATION_INTENT_INSTRUCTION } from "../src/ai/record-creation-intent/task";
 import {
   validateBuilderRecordCreationIntentInput,
   validateBuilderRecordCreationIntentOutput,
@@ -184,7 +185,90 @@ const input = builderRecordCreationIntentTaskInputSchema.parse({
   ready_plan: readyPlan,
 });
 
+const booleanContext = aiBusinessModelContextV1Schema.parse({
+  ...context,
+  objects: [
+    {
+      ...context.objects[0]!,
+      fields: [
+        ...context.objects[0]!.fields,
+        {
+          key: "available",
+          label: "Available",
+          field_type: "boolean" as const,
+          required: false,
+          position: 4,
+          is_active: true,
+          has_default: false,
+          settings: {},
+        },
+        {
+          key: "featured",
+          label: "Featured",
+          field_type: "boolean" as const,
+          required: false,
+          position: 5,
+          is_active: true,
+          has_default: false,
+          settings: {},
+        },
+      ],
+    },
+  ],
+});
+
+function booleanInput(ownerRequest: string) {
+  return builderRecordCreationIntentTaskInputSchema.parse({
+    ...input,
+    owner_request: ownerRequest,
+    business_context: booleanContext,
+  });
+}
+
+function booleanOutput(fieldKey: "available" | "featured", value: boolean) {
+  return {
+    schema_version: 1 as const,
+    state: "ready" as const,
+    summary: "Add Tea.",
+    source_step_references: ["step_1"],
+    object_key: "product",
+    field_values: [
+      {
+        field_key: "name",
+        field_type: "short_text" as const,
+        string_value: "Tea",
+      },
+      {
+        field_key: fieldKey,
+        field_type: "boolean" as const,
+        boolean_value: value,
+      },
+    ],
+  };
+}
+
 describe("generic Record creation intent", () => {
+  it("states the owner-supply, status and hidden-default rules", () => {
+    expect(BUILDER_RECORD_CREATION_INTENT_INSTRUCTION).toContain(
+      "Omit a Field with a configured default when the owner did not explicitly supply a value for it.",
+    );
+    expect(BUILDER_RECORD_CREATION_INTENT_INSTRUCTION).toContain(
+      "If the owner explicitly supplied a value for that configured Field, return that exact value.",
+    );
+    expect(BUILDER_RECORD_CREATION_INTENT_INSTRUCTION).not.toContain(
+      "Omit Fields that have configured defaults",
+    );
+    expect(BUILDER_RECORD_CREATION_INTENT_INSTRUCTION).toContain(
+      "Do not output or choose the platform-owned Record lifecycle value record_status.",
+    );
+    expect(BUILDER_RECORD_CREATION_INTENT_INSTRUCTION).toContain(
+      "A normal configured Field whose field_type is status may be returned only when the owner explicitly supplied one of its configured options.",
+    );
+    expect(BUILDER_RECORD_CREATION_INTENT_INSTRUCTION).toContain(
+      "Do not request, expose or invent a hidden default value",
+    );
+  });
+
   it("supports every typed Field variant and rejects invalid temporal or URL values", () => {
     const validValues = [
       { field_key: "name", field_type: "short_text", string_value: "Tea" },
@@ -279,6 +363,101 @@ describe("generic Record creation intent", () => {
     expect(validateBuilderRecordCreationIntentOutput(input, output)).toEqual(
       output,
     );
+    if (output.state !== "ready") {
+      throw new Error("Expected a ready Record intent.");
+    }
+    expect(output.field_values).not.toContainEqual(
+      expect.objectContaining({ field_key: "status" }),
+    );
+  });
+
+  it("returns an explicitly supplied configured status and never the platform lifecycle value", () => {
+    const statusInput = builderRecordCreationIntentTaskInputSchema.parse({
+      ...input,
+      owner_request:
+        "Add a Product named Afternoon Tea Box with a price of 30. Its status is Active.",
+    });
+    const output = {
+      schema_version: 1 as const,
+      state: "ready" as const,
+      summary: "Add Afternoon Tea Box at £30 and set it Active.",
+      source_step_references: ["step_1"],
+      object_key: "product",
+      field_values: [
+        {
+          field_key: "name",
+          field_type: "short_text" as const,
+          string_value: "Afternoon Tea Box",
+        },
+        {
+          field_key: "price",
+          field_type: "currency" as const,
+          number_value: 30,
+        },
+        {
+          field_key: "status",
+          field_type: "status" as const,
+          option_value: "Active",
+        },
+      ],
+    };
+    expect(
+      validateBuilderRecordCreationIntentOutput(statusInput, output),
+    ).toEqual(output);
+
+    expect(() =>
+      validateBuilderRecordCreationIntentOutput(statusInput, {
+        ...output,
+        field_values: [
+          ...output.field_values,
+          {
+            field_key: "record_status",
+            field_type: "status",
+            option_value: "Active",
+          },
+        ],
+      }),
+    ).toThrow(/unknown|unavailable|Field/i);
+  });
+
+  it("requires Boolean evidence to name the target Field", () => {
+    const availableTrueInput = booleanInput(
+      "Add a Product named Tea; it is available.",
+    );
+    const availableFalseInput = booleanInput(
+      "Add a Product named Tea; it is not available.",
+    );
+    const activeStatusInput = booleanInput(
+      "Add a Product named Tea; its status is Active.",
+    );
+    const featuredInput = booleanInput(
+      "Add a Product named Tea; it is featured.",
+    );
+
+    expect(
+      validateBuilderRecordCreationIntentOutput(
+        availableTrueInput,
+        booleanOutput("available", true),
+      ),
+    ).toEqual(booleanOutput("available", true));
+    expect(
+      validateBuilderRecordCreationIntentOutput(
+        availableFalseInput,
+        booleanOutput("available", false),
+      ),
+    ).toEqual(booleanOutput("available", false));
+    expect(
+      validateBuilderRecordCreationIntentOutput(
+        featuredInput,
+        booleanOutput("featured", true),
+      ),
+    ).toEqual(booleanOutput("featured", true));
+    expect(() =>
+      validateBuilderRecordCreationIntentOutput(
+        activeStatusInput,
+        booleanOutput("available", true),
+      ),
+    ).toThrow(/owner|supplied/i);
   });
 
   it("rejects guessed values, configuration scope and duplicate Field values", () => {
