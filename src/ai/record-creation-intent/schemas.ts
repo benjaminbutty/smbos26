@@ -9,7 +9,10 @@ import {
   builderPlanTaskInputSchema,
 } from "../planning/schemas";
 import { graphKeySchema } from "../../core/graph/schemas";
-import { recordCreationUrlValueSchema } from "../../core/graph/record-creation/schemas";
+import {
+  recordCreationEmailValueSchema,
+  recordCreationUrlValueSchema,
+} from "../../core/graph/record-creation/schemas";
 
 export const BUILDER_RECORD_CREATION_INTENT_SCHEMA_VERSION = 1 as const;
 export const BUILDER_RECORD_CREATION_INTENT_MAX_OUTPUT_BYTES = 64 * 1024;
@@ -81,7 +84,7 @@ const textLikeFieldValueSchema = z.discriminatedUnion("field_type", [
     .object({
       field_key: graphKeySchema,
       field_type: z.literal("email"),
-      string_value: z.string().trim().email().max(320),
+      string_value: recordCreationEmailValueSchema,
     })
     .strict(),
   z

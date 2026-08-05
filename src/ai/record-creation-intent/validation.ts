@@ -244,10 +244,14 @@ function validateFieldValue(
   switch (value.field_type) {
     case "short_text":
     case "long_text":
-    case "email":
     case "phone":
     case "url":
       if (!phraseInText(input.owner_request, value.string_value)) {
+        fail("field_value_not_owner_supplied");
+      }
+      break;
+    case "email":
+      if (!input.owner_request.includes(value.string_value)) {
         fail("field_value_not_owner_supplied");
       }
       break;

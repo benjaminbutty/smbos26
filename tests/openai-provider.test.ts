@@ -151,6 +151,46 @@ function collectObjectSchemas(value: unknown): Record<string, unknown>[] {
   );
 }
 
+function fieldTypeForSchemaBranch(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const properties = (value as Record<string, unknown>).properties;
+  if (
+    typeof properties !== "object" ||
+    properties === null ||
+    Array.isArray(properties)
+  ) {
+    return null;
+  }
+  const fieldType = (properties as Record<string, unknown>).field_type;
+  if (
+    typeof fieldType !== "object" ||
+    fieldType === null ||
+    Array.isArray(fieldType)
+  ) {
+    return null;
+  }
+  const literal = (fieldType as Record<string, unknown>).const;
+  return typeof literal === "string" ? literal : null;
+}
+
+const RECORD_FIELD_TYPES = [
+  "short_text",
+  "long_text",
+  "email",
+  "phone",
+  "url",
+  "number",
+  "currency",
+  "boolean",
+  "date",
+  "datetime",
+  "select",
+  "status",
+  "multi_select",
+] as const;
+
 function canonicalSchemaValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalSchemaValue);
   if (value && typeof value === "object") {
@@ -263,7 +303,9 @@ describe("OpenAI strict schema adaptation", () => {
   });
 
   it("converts the exact Record schema through the Responses request boundary", async () => {
-    const scenario = builderRecordCreationEvaluationScenarios[0]!;
+    const scenario = builderRecordCreationEvaluationScenarios.find(
+      ({ id }) => id === "contact_field_types",
+    )!;
     const registered = z.toJSONSchema(
       builderRecordCreationIntentTaskV1.outputSchema,
       { target: "draft-7", unrepresentable: "throw" },
@@ -315,6 +357,42 @@ describe("OpenAI strict schema adaptation", () => {
     expect(JSON.stringify(schema)).not.toContain('"oneOf"');
     expect(JSON.stringify(schema)).toContain('"anyOf"');
     const schemaNodes = collectSchemaNodes(schema);
+    const rejectedEmailPatternSchema = z.toJSONSchema(z.string().email(), {
+      target: "draft-7",
+      unrepresentable: "throw",
+    }) as Record<string, unknown>;
+    expect(rejectedEmailPatternSchema.pattern).toEqual(expect.any(String));
+    expect(
+      schemaNodes.some(
+        (node) => node.pattern === rejectedEmailPatternSchema.pattern,
+      ),
+    ).toBe(false);
+    const emailBranches = schemaNodes.filter(
+      (node) => fieldTypeForSchemaBranch(node) === "email",
+    );
+    expect(emailBranches).not.toHaveLength(0);
+    for (const emailBranch of emailBranches) {
+      const properties = emailBranch.properties as Record<string, unknown>;
+      expect(properties.string_value).toEqual({
+        type: "string",
+        minLength: 1,
+        maxLength: 320,
+      });
+    }
+    const completeFieldUnions = schemaNodes.filter((node) => {
+      if (!Array.isArray(node.anyOf) || node.anyOf.length !== 13) return false;
+      return new Set(node.anyOf.map(fieldTypeForSchemaBranch)).size === 13;
+    });
+    expect(completeFieldUnions).toHaveLength(1);
+    expect(
+      new Set(
+        (completeFieldUnions[0]!.anyOf as unknown[]).map(
+          fieldTypeForSchemaBranch,
+        ),
+      ),
+    ).toEqual(new Set(RECORD_FIELD_TYPES));
+    expect(JSON.stringify(schema)).toContain('"needs_clarification"');
+    expect(JSON.stringify(schema)).toContain('"ready"');
     const formats = schemaNodes
       .filter((node) => "format" in node)
       .map((node) => node.format);
@@ -356,7 +434,7 @@ describe("OpenAI strict schema adaptation", () => {
         scenario.owner_request,
       );
       expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
-        "Afternoon Tea Box",
+        "events@example.test",
       );
     }
   });

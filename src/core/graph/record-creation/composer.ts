@@ -100,10 +100,11 @@ function jsonValueForFieldValue(value: RecordCreationFieldValue): Json {
   switch (value.field_type) {
     case "short_text":
     case "long_text":
-    case "email":
     case "phone":
     case "url":
       return value.string_value.normalize("NFKC").trim();
+    case "email":
+      return value.string_value;
     case "number":
     case "currency":
       return value.number_value;
@@ -194,13 +195,14 @@ function canonicalizeValue(
   switch (raw.field_type) {
     case "short_text":
     case "long_text":
-    case "email":
     case "phone":
     case "url":
       return {
         ...raw,
         string_value: raw.string_value.normalize("NFKC").trim(),
       };
+    case "email":
+      return raw;
     case "number":
     case "currency":
     case "boolean":

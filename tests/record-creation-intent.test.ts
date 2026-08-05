@@ -4,11 +4,15 @@ vi.mock("server-only", () => ({}));
 
 import { aiBusinessModelContextV1Schema } from "../src/ai/context/schemas";
 import {
+  recordCreationEmailValueSchema,
+  recordCreationFieldValueSchema,
+  recordCreationUrlValueSchema,
+} from "../src/core/graph/record-creation/schemas";
+import {
   builderRecordCreationFieldValueSchema,
   builderRecordCreationIntentOutputSchema,
   builderRecordCreationIntentTaskInputSchema,
 } from "../src/ai/record-creation-intent/schemas";
-import { recordCreationUrlValueSchema } from "../src/core/graph/record-creation/schemas";
 import { BUILDER_RECORD_CREATION_INTENT_INSTRUCTION } from "../src/ai/record-creation-intent/task";
 import {
   validateBuilderRecordCreationIntentInput,
@@ -342,6 +346,130 @@ describe("generic Record creation intent", () => {
         extra: "rejected",
       }).success,
     ).toBe(false);
+  });
+
+  it("shares one strict exact-preserving email contract across AI and trusted Record values", () => {
+    const accepted = [
+      "owner@example.test",
+      "events@example.test",
+      "first.last+tag@example.co.uk",
+      "a@example.com",
+    ];
+    for (const value of accepted) {
+      expect(recordCreationEmailValueSchema.parse(value)).toBe(value);
+      expect(
+        builderRecordCreationFieldValueSchema.parse({
+          field_key: "email",
+          field_type: "email",
+          string_value: value,
+        }),
+      ).toMatchObject({ string_value: value });
+      expect(
+        recordCreationFieldValueSchema.parse({
+          field_key: "email",
+          field_type: "email",
+          string_value: value,
+        }),
+      ).toMatchObject({ string_value: value });
+    }
+
+    const rejected = [
+      "plain text",
+      "@example.com",
+      "owner@",
+      "owner@example",
+      "owner@@example.com",
+      "owner example@example.com",
+      "owner@example .com",
+      "",
+      `${"a".repeat(310)}@example.com`,
+    ];
+    for (const value of rejected) {
+      expect(recordCreationEmailValueSchema.safeParse(value).success).toBe(
+        false,
+      );
+      expect(
+        builderRecordCreationFieldValueSchema.safeParse({
+          field_key: "email",
+          field_type: "email",
+          string_value: value,
+        }).success,
+      ).toBe(false);
+      expect(
+        recordCreationFieldValueSchema.safeParse({
+          field_key: "email",
+          field_type: "email",
+          string_value: value,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("requires the exact owner-supplied email and rejects inventions or normalization", () => {
+    const emailContext = aiBusinessModelContextV1Schema.parse({
+      ...context,
+      objects: [
+        {
+          ...context.objects[0]!,
+          fields: [
+            ...context.objects[0]!.fields,
+            {
+              key: "email",
+              label: "Email",
+              field_type: "email" as const,
+              required: false,
+              position: 4,
+              is_active: true,
+              has_default: false,
+              settings: {},
+            },
+          ],
+        },
+      ],
+    });
+    const email = "events@example.test";
+    const emailInput = builderRecordCreationIntentTaskInputSchema.parse({
+      ...input,
+      owner_request: `Add a Product named Tea with email ${email}.`,
+      business_context: emailContext,
+    });
+    const output = {
+      schema_version: 1 as const,
+      state: "ready" as const,
+      summary: "Add Tea.",
+      source_step_references: ["step_1"],
+      object_key: "product",
+      field_values: [
+        {
+          field_key: "name",
+          field_type: "short_text" as const,
+          string_value: "Tea",
+        },
+        {
+          field_key: "email",
+          field_type: "email" as const,
+          string_value: email,
+        },
+      ],
+    };
+
+    expect(
+      validateBuilderRecordCreationIntentOutput(emailInput, output),
+    ).toEqual(output);
+    for (const inventedOrChanged of [
+      "another@example.test",
+      "Events@example.test",
+    ]) {
+      expect(() =>
+        validateBuilderRecordCreationIntentOutput(emailInput, {
+          ...output,
+          field_values: [
+            output.field_values[0],
+            { ...output.field_values[1], string_value: inventedOrChanged },
+          ],
+        }),
+      ).toThrow(/owner|supplied/i);
+    }
   });
 
   it("keeps URL transport structural while enforcing the shared runtime contract", () => {

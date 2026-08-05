@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 vi.mock("server-only", () => ({}));
 
@@ -81,7 +82,77 @@ function objectKeys(value: unknown): string[] {
   return [...Object.keys(value), ...Object.values(value).flatMap(objectKeys)];
 }
 
+function schemaNodes(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.flatMap(schemaNodes);
+  if (typeof value !== "object" || value === null) return [];
+  const record = value as Record<string, unknown>;
+  return [record, ...Object.values(record).flatMap(schemaNodes)];
+}
+
+function emailStringSchemas(value: unknown): Record<string, unknown>[] {
+  return schemaNodes(value).flatMap((node) => {
+    const properties = node.properties;
+    if (
+      typeof properties !== "object" ||
+      properties === null ||
+      Array.isArray(properties)
+    ) {
+      return [];
+    }
+    const propertyMap = properties as Record<string, unknown>;
+    const fieldType = propertyMap.field_type;
+    if (
+      typeof fieldType !== "object" ||
+      fieldType === null ||
+      Array.isArray(fieldType) ||
+      (fieldType as Record<string, unknown>).const !== "email"
+    ) {
+      return [];
+    }
+    const stringValue = propertyMap.string_value;
+    return typeof stringValue === "object" &&
+      stringValue !== null &&
+      !Array.isArray(stringValue)
+      ? [stringValue as Record<string, unknown>]
+      : [];
+  });
+}
+
 describe("OpenAI Record-schema compatibility gate", () => {
+  it("keeps d_email and the exact Record transport free of the rejected email pattern", () => {
+    const rejectedEmailSchema = z.toJSONSchema(z.string().email(), {
+      target: "draft-7",
+      unrepresentable: "throw",
+    }) as Record<string, unknown>;
+    expect(rejectedEmailSchema.pattern).toEqual(expect.any(String));
+
+    for (const probeId of ["d_email", "h_exact_full_record_schema"]) {
+      const probe = builderRecordSchemaCompatibilityBaseProbes.find(
+        ({ id }) => id === probeId,
+      );
+      expect(probe?.transportSchema).not.toBeNull();
+      const transportSchema = probe!.transportSchema!;
+      expect(
+        schemaNodes(transportSchema).some(
+          (node) => node.pattern === rejectedEmailSchema.pattern,
+        ),
+      ).toBe(false);
+      expect(emailStringSchemas(transportSchema)).toEqual(
+        expect.arrayContaining([
+          {
+            type: "string",
+            minLength: 1,
+            maxLength: 320,
+          },
+        ]),
+      );
+      for (const emailSchema of emailStringSchemas(transportSchema)) {
+        expect(emailSchema).not.toHaveProperty("pattern");
+        expect(emailSchema).not.toHaveProperty("format");
+      }
+    }
+  });
+
   it("requires the exact three-part activation and constructs no provider while inactive", async () => {
     const loadDependencies = vi.fn();
     const inactiveEnvironments = [
@@ -403,10 +474,10 @@ describe("OpenAI Record-schema compatibility gate", () => {
       "cc617d94cacaf4e9d301cc769a959ffeaa8516b481999ae189747584a8178757",
     );
     expect(fileDigest("src/ai/record-creation-intent/schemas.ts")).toBe(
-      "9aeab1ab9214cc95181fbc576e5004abf0688125d74f654ccc349f7df5e03360",
+      "70356630c22c024e55262d473994c993dd0618d437706da1f0fe18d097d62e29",
     );
     expect(fileDigest("src/ai/record-creation-intent/validation.ts")).toBe(
-      "977aa28a9f04a0eabfddce921b031da3c4999bdcd3313f1e22be80cd30cb966e",
+      "6c63a553d2208dceeca5349018de141c8b41deda34932b57de39507723a5777f",
     );
     expect(
       fileDigest("src/ai/evaluation/record-creation-intent/scenarios.ts"),

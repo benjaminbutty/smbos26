@@ -10,6 +10,21 @@ import {
 
 export const RECORD_CREATION_STATE_SCHEMA_VERSION = 1 as const;
 
+const strictRecordCreationEmailValueSchema = z.string().email();
+
+export const recordCreationEmailValueSchema = z
+  .string()
+  .min(1)
+  .max(320)
+  .superRefine((value, context) => {
+    if (!strictRecordCreationEmailValueSchema.safeParse(value).success) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Email must be valid.",
+      });
+    }
+  });
+
 export const recordCreationUrlValueSchema = z
   .string()
   .min(1)
@@ -113,7 +128,7 @@ export const recordCreationTextFieldValueSchema = z.discriminatedUnion(
       .object({
         field_key: graphKeySchema,
         field_type: z.literal("email"),
-        string_value: z.string().trim().email().max(320),
+        string_value: recordCreationEmailValueSchema,
       })
       .strict(),
     z

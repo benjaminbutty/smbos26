@@ -540,6 +540,40 @@ the complete schema rejection, and no further root cause is claimed.
 Qualification is paused until the exact full Record schema passes the bounded
 compatibility gate. Reliability was not run and production remains disabled.
 
+The operator then ran the bounded compatibility diagnostic against exact SHA
+`356b5fd237a7f821cda4744a7b51a7a0fb45e4b7`. It completed normally with:
+
+```text
+stop_reason: completed
+probes_executed: 27
+accepted_probes: 17
+rejected_probes: 10
+exact_schema_accepted: false
+first_structural_failure_probe_id: d_email
+family: text_like
+conclusion: individual_branch_rejected
+
+d_email: rejected
+keyword_without_patterns: accepted
+keyword_without_formats: rejected
+```
+
+The email branch was the first individual failure. Removing its generated
+email regex pattern made that probe provider-compatible, while removing its
+email format and retaining the pattern did not. Every non-email individual
+Field branch passed, and both primitive and option cumulative families passed.
+The complete Field union and exact Record schema failed because they contained
+the email branch. No model output or business-quality evaluation occurred.
+
+The subsequent Record-local correction uses one shared server-owned email
+value schema in the AI intent and trusted creation/confirmation boundaries.
+Its provider-facing JSON Schema is a bounded string with `minLength: 1`,
+`maxLength: 320`, no email format and no email pattern; strict deterministic
+runtime validation still delegates to Zod's email parser and preserves valid
+owner-supplied strings exactly. The correction is not yet live-compatible or
+qualified: the compatibility diagnostic has not been rerun, qualification
+remains paused, reliability was not run and production remains disabled.
+
 The engineering-only command is:
 
 ```bash

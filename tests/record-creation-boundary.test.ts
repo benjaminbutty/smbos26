@@ -63,6 +63,16 @@ const state = {
       position: 4,
       is_active: true,
     },
+    {
+      key: "email",
+      label: "Email",
+      field_type: "email" as const,
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 5,
+      is_active: true,
+    },
   ],
   internal_views: [
     {
@@ -184,5 +194,62 @@ describe("generic Record creation confirmation boundary", () => {
         },
       ]),
     ).toThrow(/invalid|Field/i);
+  });
+
+  it("preserves an exact email through composition, token signing and verification", () => {
+    const email = "first.last+tag@example.co.uk";
+    const emailValue = {
+      field_key: "email",
+      field_type: "email" as const,
+      string_value: email,
+    };
+    const values = [...fieldValues, emailValue];
+    const composition = composeConfirmedGraphRecordData(state, values);
+    expect(composition.requestedData.email).toBe(email);
+    expect(composition.fieldValues).toContainEqual(emailValue);
+
+    const service = createRecordConfirmationTokenService({
+      secret: "0123456789abcdef0123456789abcdef",
+      now: () => 1_000,
+    });
+    const token = service.sign({
+      businessId: state.business_id,
+      actorId: state.actor_id,
+      baseVersionId: state.base_version_id,
+      headRevision: state.head_revision,
+      objectKey: state.object_key,
+      objectSchemaDigest: state.object_schema_digest,
+      recordStateDigest: state.record_state_digest,
+      fieldValues: values,
+    });
+    const verified = service.verify(token, {
+      businessId: state.business_id,
+      actorId: state.actor_id,
+    });
+    expect(verified.field_values).toContainEqual(emailValue);
+    expect(
+      composeConfirmedGraphRecordData(state, verified.field_values)
+        .requestedData.email,
+    ).toBe(email);
+
+    const invalidEmailValue = { ...emailValue, string_value: "owner@" };
+    expect(() =>
+      composeConfirmedGraphRecordData(state, [
+        ...fieldValues,
+        invalidEmailValue,
+      ]),
+    ).toThrow(/invalid|Field/i);
+    expect(() =>
+      service.sign({
+        businessId: state.business_id,
+        actorId: state.actor_id,
+        baseVersionId: state.base_version_id,
+        headRevision: state.head_revision,
+        objectKey: state.object_key,
+        objectSchemaDigest: state.object_schema_digest,
+        recordStateDigest: state.record_state_digest,
+        fieldValues: [...fieldValues, invalidEmailValue],
+      }),
+    ).toThrow(/confirmation|valid/i);
   });
 });
