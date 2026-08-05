@@ -13,10 +13,13 @@ import {
   type StructuredAiProviderRequest,
 } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
+import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
+import { builderRecordCreationEvaluationScenarios } from "../src/ai/evaluation/record-creation-intent/scenarios";
 import { builderPlanTaskV1 } from "../src/ai/planning/task";
 import {
   createOpenAiResponsesClient,
   OPENAI_MODEL_KEY,
+  OpenAiInvalidRequestDiagnostic,
   OpenAiResponsesStructuredProvider,
   serializeOpenAiStructuredInput,
   type OpenAiResponsesClient,
@@ -207,6 +210,74 @@ describe("OpenAI strict schema adaptation", () => {
       }),
     ).toThrow(OpenAiSchemaAdaptationError);
   });
+
+  it("converts the exact Record schema through the Responses request boundary", async () => {
+    const scenario = builderRecordCreationEvaluationScenarios[0]!;
+    const registered = z.toJSONSchema(
+      builderRecordCreationIntentTaskV1.outputSchema,
+      { target: "draft-7", unrepresentable: "throw" },
+    ) as Record<string, unknown>;
+    const adapted = adaptRegisteredSchemaForOpenAi(registered);
+    const { client, create } = clientReturning(
+      completedResponse(scenario.expected_output, { input: 0, output: 0 }),
+    );
+    const provider = new OpenAiResponsesStructuredProvider({ client });
+    const loggerSpies = [
+      vi.spyOn(console, "debug").mockImplementation(() => {}),
+      vi.spyOn(console, "info").mockImplementation(() => {}),
+      vi.spyOn(console, "warn").mockImplementation(() => {}),
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+    ];
+
+    await expect(
+      provider.generateStructured({
+        providerKey: "openai",
+        modelKey: OPENAI_MODEL_KEY,
+        instruction: builderRecordCreationIntentTaskV1.buildInstruction(),
+        input: scenario.input,
+        outputContract: {
+          name: builderRecordCreationIntentTaskV1.key,
+          version: builderRecordCreationIntentTaskV1.version,
+          jsonSchema: registered,
+        },
+        maxOutputTokens: 4_096,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({ output: scenario.expected_output });
+
+    expect(adapted).toMatchObject({
+      type: "object",
+      properties: { result: expect.anything() },
+      required: ["result"],
+      additionalProperties: false,
+    });
+    const [body] = create.mock.calls[0]!;
+    const bodyRecord = body as Record<string, unknown>;
+    const format = (bodyRecord.text as Record<string, unknown>)
+      .format as Record<string, unknown>;
+    const schema = format.schema as Record<string, unknown>;
+    expect(create).toHaveBeenCalledOnce();
+    expect(format.name).toEqual("builder_record_creation_intent_v1_v1");
+    expect(format.name).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect((format.name as string).length).toBeLessThanOrEqual(64);
+    expect(JSON.stringify(schema)).not.toContain('"oneOf"');
+    expect(JSON.stringify(schema)).toContain('"anyOf"');
+    for (const objectSchema of collectObjectSchemas(schema)) {
+      expect(objectSchema.additionalProperties).toBe(false);
+      expect(new Set(objectSchema.required as string[])).toEqual(
+        new Set(Object.keys(objectSchema.properties as object)),
+      );
+    }
+    for (const loggerSpy of loggerSpies) {
+      expect(loggerSpy).not.toHaveBeenCalled();
+      expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
+        scenario.owner_request,
+      );
+      expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
+        "Afternoon Tea Box",
+      );
+    }
+  });
 });
 
 describe("OpenAI Responses structured provider", () => {
@@ -365,9 +436,19 @@ describe("OpenAI Responses structured provider", () => {
       },
     });
 
-    await expect(provider.generateStructured(unsafe)).rejects.toMatchObject({
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(unsafe);
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+    expect(caught).toMatchObject({
       kind: "invalid_request",
+      cause: expect.any(OpenAiInvalidRequestDiagnostic),
     });
+    expect((caught?.cause as OpenAiInvalidRequestDiagnostic).reasonCode).toBe(
+      "local_schema_adaptation",
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -487,6 +568,78 @@ describe("OpenAI Responses structured provider", () => {
         cause: caught,
       });
       expect(JSON.stringify(publicError)).not.toContain(secret);
+      expect(JSON.stringify(publicError)).toBe(
+        JSON.stringify({
+          code: "ai_execution_failed",
+          message: "The AI request could not be completed safely.",
+        }),
+      );
+    },
+  );
+
+  it.each([
+    [
+      "schema code",
+      { status: 400, code: "invalid_json_schema" },
+      "provider_schema_rejected",
+    ],
+    [
+      "schema parameter",
+      { status: 422, param: "text.format.schema" },
+      "provider_schema_rejected",
+    ],
+    [
+      "response-format parameter",
+      { status: 400, param: "text.format" },
+      "provider_response_format_rejected",
+    ],
+    [
+      "model parameter",
+      { status: 422, param: "model" },
+      "provider_model_rejected",
+    ],
+    [
+      "other allow-listed parameter",
+      { status: 400, param: "max_output_tokens" },
+      "provider_parameter_rejected",
+    ],
+    [
+      "unknown request",
+      {
+        status: 400,
+        code: "unrecognised_provider_code",
+        param: "secret.parameter.value",
+        message: "raw-provider-message-marker",
+        body: "raw-provider-body-marker",
+      },
+      "provider_invalid_request_unknown",
+    ],
+  ])(
+    "classifies %s with a finite reason and no raw provider material",
+    async (_label, sdkFailure, expectedReason) => {
+      const create = vi.fn().mockRejectedValue(sdkFailure);
+      const provider = new OpenAiResponsesStructuredProvider({
+        client: { responses: { create } },
+      });
+      let caught: StructuredAiProviderError | undefined;
+      try {
+        await provider.generateStructured(request());
+      } catch (cause) {
+        caught = cause as StructuredAiProviderError;
+      }
+
+      expect(caught).toMatchObject({
+        kind: "invalid_request",
+        cause: expect.any(OpenAiInvalidRequestDiagnostic),
+      });
+      expect((caught?.cause as OpenAiInvalidRequestDiagnostic).reasonCode).toBe(
+        expectedReason,
+      );
+      const serialized = JSON.stringify(caught);
+      expect(serialized).not.toContain("raw-provider-message-marker");
+      expect(serialized).not.toContain("raw-provider-body-marker");
+      expect(serialized).not.toContain("secret.parameter.value");
+      expect(create).toHaveBeenCalledOnce();
     },
   );
 });

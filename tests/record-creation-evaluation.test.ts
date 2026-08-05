@@ -8,7 +8,10 @@ import {
   deriveBuilderRecordCreationQualificationEnvelope,
   deriveBuilderRecordCreationReliabilityEnvelope,
 } from "../src/ai/evaluation/record-creation-intent/envelope";
-import { evaluateBuilderRecordCreationIntent } from "../src/ai/evaluation/record-creation-intent/evaluator";
+import {
+  evaluateBuilderRecordCreationIntent,
+  executionFailureReport,
+} from "../src/ai/evaluation/record-creation-intent/evaluator";
 import {
   liveBuilderRecordCreationQualificationIsActivated,
   runLiveBuilderRecordCreationQualification,
@@ -22,8 +25,10 @@ import {
   BUILDER_RECORD_CREATION_EVALUATION_SCENARIO_IDS,
   builderRecordCreationEvaluationScenarios,
 } from "../src/ai/evaluation/record-creation-intent/scenarios";
+import { StructuredAiProviderError } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
 import { validateBuilderRecordCreationIntentOutput } from "../src/ai/record-creation-intent/validation";
+import { OpenAiInvalidRequestDiagnostic } from "../src/ai/providers/openai-diagnostics";
 
 const activeEnvironment = {
   RUN_LIVE_OPENAI_RECORD_CREATION_TERRA_QUALIFICATION: "1",
@@ -107,6 +112,7 @@ describe("Builder generic Record creation evaluation harness", () => {
         "output_state",
         "output_tokens",
         "passed",
+        "provider_reason_code",
         "repetition",
         "scenario_id",
         "usage_complete",
@@ -179,6 +185,63 @@ describe("Builder generic Record creation evaluation harness", () => {
     });
     expect(JSON.stringify(report)).not.toContain(scenario.owner_request);
     expect(JSON.stringify(report)).not.toContain("Afternoon Tea Box");
+  });
+
+  it("carries only a finite provider reason through bounded causes into the report", () => {
+    const scenario = builderRecordCreationEvaluationScenarios[0]!;
+    const rawProviderCause = {
+      message: "raw-provider-message-marker",
+      body: "raw-provider-body-marker",
+      param: "secret.parameter.value",
+      cause: new OpenAiInvalidRequestDiagnostic(
+        "provider_invalid_request_unknown",
+      ),
+    };
+    const providerFailure = new StructuredAiProviderError(
+      "invalid_request",
+      "safe provider message",
+      { cause: rawProviderCause },
+    );
+    const executionFailure = new AiExecutionError("ai_execution_failed", {
+      accounting: {
+        attemptsStarted: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        usageReported: false,
+        usageComplete: false,
+        providerInvocationStarted: true,
+        failureBeforeProviderInvocation: false,
+      },
+      cause: providerFailure,
+    });
+    const report = executionFailureReport(
+      scenario,
+      {
+        attempts: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        usageComplete: false,
+        elapsedMs: 1_061,
+      },
+      "ai_execution_failed",
+      1,
+      executionFailure,
+    );
+
+    expect(report).toMatchObject({
+      failure_class: "provider_execution",
+      failed_gate_codes: ["provider_execution"],
+      error_code: "ai_execution_failed",
+      provider_reason_code: "provider_invalid_request_unknown",
+      usage_complete: false,
+      input_tokens: 0,
+      output_tokens: 0,
+      estimated_microusd: 0,
+    });
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain("raw-provider-message-marker");
+    expect(serialized).not.toContain("raw-provider-body-marker");
+    expect(serialized).not.toContain("secret.parameter.value");
   });
 
   it("runs qualification sequentially and stops before provider construction when inactive", async () => {

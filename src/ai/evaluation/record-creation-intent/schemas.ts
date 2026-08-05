@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { aiExecutionErrorCodes } from "../../errors";
+import { openAiInvalidRequestReasonCodes } from "../../providers/openai-diagnostics";
 import {
   BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   OPENAI_BUILDER_RECORD_CREATION_INTENT_MODEL_KEY,
@@ -77,6 +78,10 @@ const safeExecutionErrorCodeSchema = z.enum([
   "evaluation_execution_failed",
 ] as const);
 
+export const builderRecordCreationEvaluationProviderReasonCodeSchema = z.enum(
+  openAiInvalidRequestReasonCodes,
+);
+
 export const builderRecordCreationEvaluationScenarioSchema = z
   .object({
     id: builderRecordCreationEvaluationScenarioIdSchema,
@@ -117,6 +122,8 @@ const reportMetadata = {
   error_code: safeExecutionErrorCodeSchema.nullable(),
   validation_reason_code:
     builderRecordCreationEvaluationValidationReasonCodeSchema.nullable(),
+  provider_reason_code:
+    builderRecordCreationEvaluationProviderReasonCodeSchema.nullable(),
 };
 
 export const builderRecordCreationEvaluationReportSchema = z

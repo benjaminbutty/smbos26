@@ -407,6 +407,67 @@ AI_PROVIDER=openai OPENAI_API_KEY=... \
 npm run eval:builder-record-creation-terra-reliability-live
 ```
 
+### Failed Phase 12A qualification evidence and bounded correction
+
+The first Phase 12A qualification run was executed against exact SHA
+`7c03b743480016f24c5d6922ec6e4933103dce35` and stopped on its first scenario.
+No model output was returned, so no scenario quality or deterministic semantic
+gate was evaluated:
+
+```text
+scenario_id: product_text_currency_default
+repetition: 1
+passed: false
+output_state: null
+field_value_count: 0
+failure_class: provider_execution
+failed_gate_codes:
+  - provider_execution
+attempts: 1
+usage_complete: false
+input_tokens: 0
+output_tokens: 0
+estimated_microusd: 0
+elapsed_ms: 1061
+error_code: ai_execution_failed
+validation_reason_code: null
+```
+
+The aggregate was:
+
+```text
+gate: qualification
+total_scenarios: 8
+passed_scenarios: 0
+failed_scenarios: 1
+total_attempts: 1
+total_input_tokens: 0
+total_output_tokens: 0
+total_estimated_cost_microusd: 0
+total_elapsed_ms: 1061
+exit_code: 1
+```
+
+The existing OpenAI boundary mapped both local `OpenAiSchemaAdaptationError`
+and provider HTTP 400/422 failures to the same public
+`StructuredAiProviderError(kind: invalid_request)`, while the redacted
+engineering report had no safe stage diagnostic. The exact provider cause was
+not inferred. The bounded correction adds the finite internal taxonomy
+`local_schema_adaptation`, `provider_schema_rejected`,
+`provider_response_format_rejected`, `provider_model_rejected`,
+`provider_parameter_rejected` and `provider_invalid_request_unknown`, carries
+only that code through a depth- and cycle-bounded cause traversal, and exposes
+it only as `provider_reason_code` in the engineering evaluation report.
+Provider messages, bodies, headers, arbitrary parameters, requests, schema
+JSON, model output and Field values remain excluded. The exact Record output
+schema was then deterministically converted through draft-7 generation,
+OpenAI adaptation and an injected Responses client request; local adaptation
+succeeded and the injected client received one valid request.
+
+Reliability was not run, qualification was not rerun, production remains
+disabled, and no additional live provider spend occurred. This failure remains
+historical evidence only and does not claim schema rejection as the cause.
+
 Normal tests and CI never activate these flags. No live run is claimed for
 this feature branch, and the global/default/OpenAI production runtime mappings
 remain on `builder_record_creation_intent_disabled_v1`.

@@ -19,6 +19,7 @@ import {
   createAiExecutionService,
 } from "../src/ai/execution";
 import { aiExecutionPolicies, registeredAiTasks } from "../src/ai/registry";
+import { OpenAiInvalidRequestDiagnostic } from "../src/ai/providers/openai-diagnostics";
 
 const testDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(testDirectory, "..");
@@ -284,6 +285,44 @@ describe("provider-neutral structured AI execution", () => {
     ).rejects.toMatchObject({ code: "ai_provider_unavailable" });
     expect(generateStructured).toHaveBeenCalledOnce();
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("keeps public errors and zero-usage accounting unchanged for invalid requests", async () => {
+    const generateStructured = vi.fn().mockRejectedValue(
+      new StructuredAiProviderError("invalid_request", "provider detail", {
+        cause: new OpenAiInvalidRequestDiagnostic(
+          "provider_invalid_request_unknown",
+        ),
+      }),
+    );
+
+    let caught: unknown;
+    try {
+      await serviceWith({ generateStructured }).execute("contract_probe_v1", {
+        subject: "Readiness",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expectAiError(caught, "ai_execution_failed");
+    expect(caught.accounting).toEqual({
+      attemptsStarted: 1,
+      inputTokens: 0,
+      outputTokens: 0,
+      usageReported: false,
+      usageComplete: false,
+      providerInvocationStarted: true,
+      failureBeforeProviderInvocation: false,
+    });
+    expect(caught.toJSON()).toEqual({
+      code: "ai_execution_failed",
+      message: "The AI request could not be completed safely.",
+    });
+    expect(JSON.stringify(caught)).not.toContain(
+      "provider_invalid_request_unknown",
+    );
+    expect(generateStructured).toHaveBeenCalledOnce();
   });
 
   it("retries a transient failure only to the fixed maximum", async () => {

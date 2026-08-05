@@ -14,6 +14,7 @@ import {
 } from "../../record-creation-intent/schemas";
 import { BuilderRecordCreationIntentValidationError } from "../../record-creation-intent/diagnostics";
 import { validateBuilderRecordCreationIntentOutput } from "../../record-creation-intent/validation";
+import { OpenAiInvalidRequestDiagnostic } from "../../providers/openai-diagnostics";
 import {
   builderRecordCreationEvaluationReportSchema,
   builderRecordCreationEvaluationValidationReasonCodeSchema,
@@ -165,6 +166,7 @@ function report(
     failedGateCodes: BuilderRecordCreationEvaluationReport["failed_gate_codes"];
     errorCode: BuilderRecordCreationEvaluationReport["error_code"];
     validationReasonCode: BuilderRecordCreationEvaluationReport["validation_reason_code"];
+    providerReasonCode: BuilderRecordCreationEvaluationReport["provider_reason_code"];
     fieldValueCount: number;
     valueKindCounts: BuilderRecordCreationEvaluationReport["value_kind_counts"];
   },
@@ -189,6 +191,7 @@ function report(
     elapsed_ms: metadata.elapsedMs,
     error_code: fields.errorCode,
     validation_reason_code: fields.validationReasonCode,
+    provider_reason_code: fields.providerReasonCode,
   });
 }
 
@@ -309,6 +312,7 @@ export function evaluateBuilderRecordCreationIntent(
     failedGateCodes,
     errorCode: null,
     validationReasonCode,
+    providerReasonCode: null,
     fieldValueCount: values.length,
     valueKindCounts: valueKindCounts(output),
   });
@@ -343,6 +347,28 @@ function nextCause(cause: unknown): unknown {
     return undefined;
   }
   return (cause as { cause?: unknown }).cause;
+}
+
+function providerReasonCodeFor(
+  cause: unknown,
+): BuilderRecordCreationEvaluationReport["provider_reason_code"] {
+  const seen = new Set<object>();
+  let current: unknown = cause;
+  for (let depth = 0; depth < 6 && current !== undefined; depth += 1) {
+    if (current instanceof OpenAiInvalidRequestDiagnostic) {
+      return current.reasonCode;
+    }
+    if (
+      (typeof current === "object" && current !== null) ||
+      typeof current === "function"
+    ) {
+      const objectCause = current as object;
+      if (seen.has(objectCause)) break;
+      seen.add(objectCause);
+    }
+    current = nextCause(current);
+  }
+  return null;
 }
 
 function classifyOutputInvalidFailure(cause: unknown) {
@@ -447,9 +473,10 @@ export function executionFailureReport(
     failedGateCodes: [classification.failedGateCode],
     errorCode,
     validationReasonCode: classification.validationReasonCode,
+    providerReasonCode: providerReasonCodeFor(cause),
     fieldValueCount: 0,
     valueKindCounts: emptyValueKindCounts(),
   });
 }
 
-export { failureAccounting, safeErrorCode };
+export { failureAccounting, providerReasonCodeFor, safeErrorCode };
