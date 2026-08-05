@@ -26,12 +26,14 @@ import {
   BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
   BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
+  BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderLocationCreationPolicy,
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPlanningPolicy,
+  openAiBuilderRecordCreationIntentPolicy,
 } from "../policies";
 import { builderConfigurationDraftTaskV1 } from "../configuration-drafting/task";
 import { builderPreorderAmendmentTaskV1 } from "../preorder-amendment/task";
@@ -181,7 +183,7 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
   assertTask(
     runtime.tasks.builder_record_creation_intent_v1,
     "builder_record_creation_intent_v1",
-    BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
+    BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   );
   assertPolicy(
     runtime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
@@ -200,10 +202,8 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
     openAiBuilderLocationCreationPolicy,
   );
   assertPolicy(
-    runtime.policies[BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY],
-    disabledExecutionPolicies[
-      BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
-    ],
+    runtime.policies[BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY],
+    openAiBuilderRecordCreationIntentPolicy,
   );
   if (
     Object.keys(runtime.providers).length !== 2 ||
@@ -352,6 +352,10 @@ export function createBuilderAiRuntime(
       ...builderLocationCreationIntentTaskV1,
       policyKey: BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
     });
+    const qualifiedRecordCreationIntentTask = Object.freeze({
+      ...builderRecordCreationIntentTaskV1,
+      policyKey: BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    });
     return assertPrivateRuntime({
       mode: "openai",
       tasks: Object.freeze({
@@ -360,7 +364,7 @@ export function createBuilderAiRuntime(
         builder_preorder_amendment_v1: qualifiedPreorderAmendmentTask,
         builder_location_creation_intent_v1:
           qualifiedLocationCreationIntentTask,
-        builder_record_creation_intent_v1: builderRecordCreationIntentTaskV1,
+        builder_record_creation_intent_v1: qualifiedRecordCreationIntentTask,
       }),
       policies: Object.freeze({
         [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
@@ -370,10 +374,8 @@ export function createBuilderAiRuntime(
           openAiBuilderPreorderAmendmentPolicy,
         [BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY]:
           openAiBuilderLocationCreationPolicy,
-        [BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY]:
-          disabledExecutionPolicies[
-            BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
-          ],
+        [BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY]:
+          openAiBuilderRecordCreationIntentPolicy,
       }),
       providers: Object.freeze({
         disabled: disabledProvider,

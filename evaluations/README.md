@@ -505,9 +505,9 @@ and `uuid`. The correction therefore keeps URL Fields and deterministic
 HTTP(S) URL validation, but emits a bounded structural string with
 `minLength: 1`, `maxLength: 2048` and an HTTP(S) prefix pattern. Unsupported
 formats now fail locally as `local_schema_adaptation`; no unsupported format
-is silently forwarded. Production remains disabled and no further live spend
-occurred. The next live evidence must begin qualification against the final
-correction SHA because the emitted Record transport schema changed.
+is silently forwarded. At that historical point production remained disabled
+and no further live spend had occurred; the final correction still required
+fresh compatibility and qualification evidence, which is recorded below.
 
 #### Third failed qualification and compatibility isolation boundary
 
@@ -536,9 +536,11 @@ provider_reason_code: provider_schema_rejected
 The aggregate was 8 total scenarios, 0 passed, 1 failed, 1 attempt, zero
 input/output tokens, zero estimated microusd, 3507 ms and exit code 1. No model
 output or scenario quality was evaluated. The URL correction did not resolve
-the complete schema rejection, and no further root cause is claimed.
-Qualification is paused until the exact full Record schema passes the bounded
-compatibility gate. Reliability was not run and production remains disabled.
+the complete schema rejection, and no further root cause is claimed. At that
+historical point qualification was paused pending the bounded compatibility
+gate; reliability had not run and production remained disabled. The accepted
+evidence below subsequently cleared that gate without changing the frozen
+subject.
 
 The operator then ran the bounded compatibility diagnostic against exact SHA
 `356b5fd237a7f821cda4744a7b51a7a0fb45e4b7`. It completed normally with:
@@ -570,9 +572,10 @@ value schema in the AI intent and trusted creation/confirmation boundaries.
 Its provider-facing JSON Schema is a bounded string with `minLength: 1`,
 `maxLength: 320`, no email format and no email pattern; strict deterministic
 runtime validation still delegates to Zod's email parser and preserves valid
-owner-supplied strings exactly. The correction is not yet live-compatible or
-qualified: the compatibility diagnostic has not been rerun, qualification
-remains paused, reliability was not run and production remains disabled.
+owner-supplied strings exactly. At the time of this historical correction
+record, the compatibility diagnostic and ordinary qualification had not yet
+been rerun. The accepted final evidence below supersedes that interim status;
+the failed runs remain retained historical evidence.
 
 The engineering-only command is:
 
@@ -659,6 +662,41 @@ keyword/path difference categories. It does not print either schema or alter
 the production provider. This diagnostic implementation has not been run
 live, so it incurred no additional provider spend.
 
-Normal tests and CI never activate these flags. No live run is claimed for
-this feature branch, and the global/default/OpenAI production runtime mappings
-remain on `builder_record_creation_intent_disabled_v1`.
+Normal tests and CI never activate these flags. The accepted final evidence
+for the frozen subject is recorded below; these engineering-only commands are
+not part of ordinary runtime startup.
+
+#### Accepted Phase 12A qualification and private enablement
+
+Compatibility, qualification and reliability were accepted against exact head
+SHA `99988cc7950bb009f290f9f23f84f61dbbef4d0e`:
+
+```text
+compatibility: completed; 20/20 probes accepted; 0 rejected;
+  exact_schema_accepted: true; exit_code: 0; cost_microusd: 29976
+qualification: 8/8 scenarios passed; 0 failed; 8 attempts;
+  input_tokens: 17265; output_tokens: 937; cost_microusd: 57220; exit_code: 0
+reliability: 24/24 executions passed; 8/8 scenarios; 3 repetitions each;
+  attempts: 24; input_tokens: 51795; output_tokens: 2831;
+  cost_microusd: 171960; exit_code: 0
+```
+
+No failure, error, validation or provider reason codes were reported. Only the
+private authenticated Builder OpenAI runtime is enabled:
+`builder_record_creation_intent_v1` resolves through the private frozen clone
+to `builder_record_creation_intent_terra_medium_v1` and
+`openAiBuilderRecordCreationIntentPolicy`. The global/default production
+runtime, including OpenAI mode, remains disabled for Record intent and does
+not register the Terra policy; disabled Builder mode remains disabled. The
+private registry remains exactly five tasks and five policies.
+
+The qualification/reliability reports are not a claim that the frozen subject
+changed. A new live rerun is required only if the frozen subject changes.
+Planning still precedes intent generation, and only a ready one-step
+`create_initial_record` route reaches the intent task. Unsupported or mixed
+plans do not. Final confirmation remains deterministic and AI-free: no
+provider call, task/accounting reservation, planning, configuration mutation,
+or provider-version change occurs after confirmation.
+
+PR #17 remains open, draft and unmerged. Phase 12A is not claimed as merged
+until review and merge.

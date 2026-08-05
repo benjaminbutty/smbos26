@@ -1332,9 +1332,9 @@ describe("private qualified Builder runtime", () => {
       runtime.tasks.builder_location_creation_intent_v1!.outputSchema,
     ).toBe(builderLocationCreationIntentTaskV1.outputSchema);
     expect(runtime.tasks.builder_record_creation_intent_v1!.policyKey).toBe(
-      "builder_record_creation_intent_disabled_v1",
+      "builder_record_creation_intent_terra_medium_v1",
     );
-    expect(runtime.tasks.builder_record_creation_intent_v1).toBe(
+    expect(runtime.tasks.builder_record_creation_intent_v1).not.toBe(
       builderRecordCreationIntentTaskV1,
     );
     expect(runtime.tasks.builder_record_creation_intent_v1!.inputSchema).toBe(
@@ -1356,8 +1356,8 @@ describe("private qualified Builder runtime", () => {
       runtime.policies[BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY],
     ).toBe(openAiBuilderLocationCreationPolicy);
     expect(
-      runtime.policies.builder_record_creation_intent_disabled_v1,
-    ).toBeDefined();
+      runtime.policies.builder_record_creation_intent_terra_medium_v1,
+    ).toBe(openAiBuilderRecordCreationIntentPolicy);
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
 

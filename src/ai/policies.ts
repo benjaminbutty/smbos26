@@ -202,8 +202,7 @@ export const openAiBuilderLocationCreationPolicy = Object.freeze({
 
 /**
  * Qualified for the private authenticated Builder runtime only. It remains
- * disabled in the default production mapping until the Phase 12A evidence
- * gate is explicitly opened.
+ * outside the global/default production policy registry.
  */
 export const openAiBuilderRecordCreationIntentPolicy = Object.freeze({
   ...disabledExecutionPolicies[

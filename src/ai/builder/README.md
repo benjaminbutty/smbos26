@@ -138,9 +138,13 @@ generic local/different-timezone wording requires clarification.
 
 ## Phase 12A generic Record creation
 
-The fifth task is the disabled `builder_record_creation_intent_v1` task. The
-production and default OpenAI runtimes deliberately keep it disabled; the
-Terra policy and evaluation harness are separate engineering-only artifacts.
+The fifth task is the frozen `builder_record_creation_intent_v1` task. The
+production and default OpenAI runtimes deliberately keep the registered task
+disabled; the private authenticated OpenAI Builder runtime uses a frozen clone
+whose only changed property is the qualified policy key
+`builder_record_creation_intent_terra_medium_v1`. The Terra policy and
+evaluation harness remain engineering-only artifacts outside the global
+registry.
 The task receives the unchanged AI-safe Business context and one validated
 ready `create_record` plan. Its strict output is a typed, transient set of
 owner-supplied Field values and may return only exact existing Object and Field
@@ -156,6 +160,23 @@ intent validation, returns an explicit Owner/Admin confirmation, and signs a
 Business/actor-bound 15-minute token. The final action rechecks the PII-free
 schema/state digests and calls the narrow confirmed-create RPC once; the
 existing graph trigger applies normal Record validation. The result opens the
-existing internal View selected by the server. No AI, accounting,
-configuration mutation, file upload, relationship creation or Record update/
-delete is part of this phase.
+existing internal View selected by the server. The final confirmation performs
+no AI, accounting, configuration mutation, file upload, relationship creation
+or Record update/delete.
+
+The accepted compatibility, qualification and reliability evidence is against
+exact head SHA `99988cc7950bb009f290f9f23f84f61dbbef4d0e`: compatibility
+completed with 20/20 probes accepted and the exact schema accepted (0 rejected,
+exit code 0, 29,976 microusd); qualification passed 8/8 scenarios (8 attempts,
+17,265 input tokens, 937 output tokens, 57,220 microusd, exit code 0); and
+reliability passed 24/24 executions across 8/8 scenarios with three repetitions
+each (24 attempts, 51,795 input tokens, 2,831 output tokens, 171,960
+microusd, exit code 0). No failure, error, validation or provider reason codes
+were reported. A live rerun is not required unless the frozen subject changes.
+
+The private Builder registry still contains exactly five tasks and five
+policies. Planning precedes intent generation, and only a ready one-step
+`create_initial_record` plan reaches this task; unsupported or mixed plans do
+not. Final confirmation is deterministic and AI-free, with no provider call,
+task/accounting reservation, planning, configuration mutation or provider
+version change.
