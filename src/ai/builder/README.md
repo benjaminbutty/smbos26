@@ -107,7 +107,8 @@ policy, runtime mapping and qualification evidence are unchanged.
 
 ## Phase 10A Location creation
 
-The Builder runtime contains exactly five private tasks: planning, generic
+At Phase 10A the Builder runtime contained exactly five private tasks:
+planning, generic
 configuration drafting, preorder amendment,
 `builder_location_creation_intent_v1` and
 `builder_record_creation_intent_v1`. The Location and Record tasks remain
@@ -174,9 +175,42 @@ each (24 attempts, 51,795 input tokens, 2,831 output tokens, 171,960
 microusd, exit code 0). No failure, error, validation or provider reason codes
 were reported. A live rerun is not required unless the frozen subject changes.
 
-The private Builder registry still contains exactly five tasks and five
+At Phase 12A, the private Builder registry contained exactly five tasks and five
 policies. Planning precedes intent generation, and only a ready one-step
 `create_initial_record` plan reaches this task; unsupported or mixed plans do
 not. Final confirmation is deterministic and AI-free, with no provider call,
 task/accounting reservation, planning, configuration mutation or provider
 version change.
+
+## Phase 12B generic Record update
+
+The global/default registry and disabled private Builder keep
+`builder_record_update_intent_v1` mapped to
+`builder_record_update_intent_disabled_v1`. The authenticated private OpenAI
+Builder uses a frozen task clone mapped to
+`builder_record_update_intent_terra_medium_v1`, backed by
+`openAiBuilderRecordUpdateIntentPolicy`, model `gpt-5.6-terra` and medium
+reasoning. The qualified subject is exact SHA
+`30dbab41d4f63a160370287a2411f8fbd254e95a`.
+
+Compatibility, qualification and reliability evidence is recorded in
+`evaluations/README.md`. This private enablement does not make the task
+globally available or alter Phase 12A's frozen task, policy or evidence.
+
+The update route accepts exactly one operational `update_record` plan. The
+intent task sees only the unchanged AI-safe configuration context and returns
+one exact selector over a supported scalar Field plus one to three explicit
+absolute Field values. It sees no Records, current values or identifiers. The
+server asks PostgreSQL to resolve zero, one or multiple active matches; it
+returns only a bounded owner-safe state and never exposes candidate rows.
+Owner/Admin confirmation shows the actual current values and the proposed
+changes for the one target.
+
+The final `recordUpdateConfirmationToken` action performs no AI or accounting
+work. It carries only the server-selected target ID, its `updated_at`
+currentness and the typed patch, then calls the confirmed generic graph update
+boundary once. PostgreSQL rechecks the head, target Object and currentness,
+locks the target Record once, and relies on the existing graph validation and
+timestamp triggers. The write is operational only: it creates no
+configuration Version, Change, history entry or undo state. The server selects
+the existing internal View after success.

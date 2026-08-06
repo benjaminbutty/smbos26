@@ -17,3 +17,10 @@ for the target Object and redirects the owner there. If no eligible View is
 available, the Record remains created and the owner receives the bounded
 existing fallback destination; runtime rendering still reads generic graph
 metadata rather than Product-specific code.
+
+The Phase 12B update path reuses the same generic Record renderer and selects
+the first active internal non-detail View for the target Object by stable key.
+The model and browser cannot choose that destination. If no suitable View
+exists, the update still succeeds and the owner receives the normal workspace
+fallback. The update is ordinary operational data and does not create a
+configuration-history entry.

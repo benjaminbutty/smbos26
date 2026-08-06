@@ -1638,6 +1638,16 @@ export type Database = {
           singular_label: string;
         }[];
       };
+      get_confirmed_graph_record_update_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_selector: Json;
+          requested_update_field_keys: string[];
+          target_object_key: string;
+        };
+        Returns: Json;
+      };
       get_location_creation_state: {
         Args: {
           expected_actor_id: string;
@@ -2163,6 +2173,35 @@ export type Database = {
           expected_business_id: string;
           requested_record_status?: Database["public"]["Enums"]["graph_record_status"];
           target_record_id: string;
+        };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          created_by: string | null;
+          data_json: Json;
+          id: string;
+          object_definition_id: string;
+          record_status: Database["public"]["Enums"]["graph_record_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      update_confirmed_graph_record: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          expected_object_definition_id: string;
+          expected_record_updated_at: string;
+          requested_data_patch: Json;
+          target_record_id: string;
+          target_object_key: string;
         };
         Returns: {
           business_id: string;

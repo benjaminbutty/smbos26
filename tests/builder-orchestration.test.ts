@@ -41,11 +41,15 @@ import { projectAiBusinessModelContext } from "../src/ai/context/projector";
 import {
   BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+  BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+  BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
   openAiBuilderLocationCreationPolicy,
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
   openAiBuilderRecordCreationIntentPolicy,
+  openAiBuilderRecordUpdateIntentPolicy,
+  disabledExecutionPolicies,
 } from "../src/ai/policies";
 import {
   builderPlanOutputSchema,
@@ -55,6 +59,7 @@ import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-draftin
 import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
+import { builderRecordUpdateIntentTaskV1 } from "../src/ai/record-update-intent/task";
 import { builderRecordCreationIntentOutputSchema } from "../src/ai/record-creation-intent/schemas";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
@@ -1288,12 +1293,16 @@ describe("private qualified Builder runtime", () => {
       { AI_PROVIDER: "openai", OPENAI_API_KEY: "test-key" },
       { createOpenAiProvider: () => provider },
     );
+    expect(runtime.mode).toBe("openai");
+    expect(Object.keys(runtime.tasks)).toHaveLength(6);
+    expect(Object.keys(runtime.policies)).toHaveLength(6);
     expect(Object.keys(runtime.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
       "builder_preorder_amendment_v1",
       "builder_location_creation_intent_v1",
       "builder_record_creation_intent_v1",
+      "builder_record_update_intent_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -1343,6 +1352,33 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_record_creation_intent_v1!.outputSchema).toBe(
       builderRecordCreationIntentTaskV1.outputSchema,
     );
+    expect(runtime.tasks.builder_record_update_intent_v1!.policyKey).toBe(
+      BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1).not.toBe(
+      builderRecordUpdateIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1!.key).toBe(
+      builderRecordUpdateIntentTaskV1.key,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1!.version).toBe(
+      builderRecordUpdateIntentTaskV1.version,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1!.purposeLabel).toBe(
+      builderRecordUpdateIntentTaskV1.purposeLabel,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1!.inputSchema).toBe(
+      builderRecordUpdateIntentTaskV1.inputSchema,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1!.outputSchema).toBe(
+      builderRecordUpdateIntentTaskV1.outputSchema,
+    );
+    expect(
+      runtime.tasks.builder_record_update_intent_v1!.buildInstruction,
+    ).toBe(builderRecordUpdateIntentTaskV1.buildInstruction);
+    expect(runtime.tasks.builder_record_update_intent_v1!.validateOutput).toBe(
+      builderRecordUpdateIntentTaskV1.validateOutput,
+    );
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
@@ -1358,19 +1394,43 @@ describe("private qualified Builder runtime", () => {
     expect(
       runtime.policies.builder_record_creation_intent_terra_medium_v1,
     ).toBe(openAiBuilderRecordCreationIntentPolicy);
+    expect(
+      runtime.policies[BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY],
+    ).toBe(openAiBuilderRecordUpdateIntentPolicy);
+    expect(runtime.policies).not.toHaveProperty(
+      BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+    );
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
 
     const disabled = createBuilderAiRuntime({ AI_PROVIDER: "disabled" });
+    expect(disabled.mode).toBe("disabled");
     expect(Object.keys(disabled.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
       "builder_preorder_amendment_v1",
       "builder_location_creation_intent_v1",
       "builder_record_creation_intent_v1",
+      "builder_record_update_intent_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,
+    );
+    expect(disabled.tasks.builder_record_update_intent_v1).toBe(
+      builderRecordUpdateIntentTaskV1,
+    );
+    expect(disabled.tasks.builder_record_update_intent_v1!.policyKey).toBe(
+      BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+    );
+    expect(
+      disabled.policies[BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY],
+    ).toBe(
+      disabledExecutionPolicies[
+        BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
+      ],
+    );
+    expect(disabled.policies).not.toHaveProperty(
+      BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
     );
     expect(Object.keys(disabled.providers)).toEqual(["disabled"]);
   });
@@ -1408,8 +1468,23 @@ describe("private qualified Builder runtime", () => {
     expect(
       registry.registeredAiTasks.builder_configuration_draft_v1.policyKey,
     ).toBe("builder_configuration_drafting_disabled_v1");
+    expect(
+      registry.registeredAiTasks.builder_record_update_intent_v1.policyKey,
+    ).toBe(BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY);
     expect(registry.aiExecutionPolicies).not.toHaveProperty(
       "builder_configuration_drafting_terra_medium_v1",
+    );
+    expect(registry.aiExecutionPolicies).not.toHaveProperty(
+      BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(
+      registry.aiExecutionPolicies[
+        BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
+      ],
+    ).toBe(
+      disabledExecutionPolicies[
+        BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
+      ],
     );
   });
 });

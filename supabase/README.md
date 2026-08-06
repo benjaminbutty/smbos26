@@ -29,3 +29,12 @@ RPCs. They are intentionally narrow and disabled from anonymous/public use;
 they lock the Business/Object in a fixed order, compare a PII-free expected
 state, and insert through the existing graph trigger. The migration adds no
 Record-specific table, receipt table, queue or configuration-version path.
+
+Phase 12B keeps Record updates in the generic graph. Its one chronological
+migration adds bounded exact-selector target resolution and the authenticated
+confirmed update RPC; it does not add Product, Equipment, Catering Enquiry,
+history, queue, receipt or configuration tables. PostgreSQL owns the exact
+zero/one/multiple match result, returns no candidate rows, and the final call
+rechecks the Business head and target `updated_at` before writing through the
+existing graph validation trigger. The migration file is
+`20260806100000_milestone_12_phase_12b_record_update.sql`.

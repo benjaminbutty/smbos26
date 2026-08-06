@@ -27,6 +27,8 @@ import {
   BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
   BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+  BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+  BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderLocationCreationPolicy,
@@ -34,12 +36,14 @@ import {
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPlanningPolicy,
   openAiBuilderRecordCreationIntentPolicy,
+  openAiBuilderRecordUpdateIntentPolicy,
 } from "../policies";
 import { builderConfigurationDraftTaskV1 } from "../configuration-drafting/task";
 import { builderPreorderAmendmentTaskV1 } from "../preorder-amendment/task";
 import { builderPlanTaskV1 } from "../planning/task";
 import { builderLocationCreationIntentTaskV1 } from "../location-creation-intent/task";
 import { builderRecordCreationIntentTaskV1 } from "../record-creation-intent/task";
+import { builderRecordUpdateIntentTaskV1 } from "../record-update-intent/task";
 import { AiBuilderError } from "./errors";
 
 export type BuilderTaskKey =
@@ -47,7 +51,8 @@ export type BuilderTaskKey =
   | "builder_configuration_draft_v1"
   | "builder_preorder_amendment_v1"
   | "builder_location_creation_intent_v1"
-  | "builder_record_creation_intent_v1";
+  | "builder_record_creation_intent_v1"
+  | "builder_record_update_intent_v1";
 
 export interface BuilderAiRuntime {
   readonly mode: "disabled" | "openai";
@@ -95,8 +100,8 @@ function assertPolicy(
 
 function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
   if (
-    Object.keys(runtime.tasks).length !== 5 ||
-    Object.keys(runtime.policies).length !== 5
+    Object.keys(runtime.tasks).length !== 6 ||
+    Object.keys(runtime.policies).length !== 6
   ) {
     runtimeConfigurationError();
   }
@@ -127,6 +132,11 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
       "builder_record_creation_intent_v1",
       BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
     );
+    assertTask(
+      runtime.tasks.builder_record_update_intent_v1,
+      "builder_record_update_intent_v1",
+      BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+    );
     assertPolicy(
       runtime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
       disabledExecutionPolicies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
@@ -149,6 +159,12 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
       runtime.policies[BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY],
       disabledExecutionPolicies[
         BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
+      ],
+    );
+    assertPolicy(
+      runtime.policies[BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY],
+      disabledExecutionPolicies[
+        BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
       ],
     );
     if (
@@ -185,6 +201,11 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
     "builder_record_creation_intent_v1",
     BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   );
+  assertTask(
+    runtime.tasks.builder_record_update_intent_v1,
+    "builder_record_update_intent_v1",
+    BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
+  );
   assertPolicy(
     runtime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
     openAiBuilderPlanningPolicy,
@@ -204,6 +225,10 @@ function assertPrivateRuntime(runtime: BuilderAiRuntime): BuilderAiRuntime {
   assertPolicy(
     runtime.policies[BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY],
     openAiBuilderRecordCreationIntentPolicy,
+  );
+  assertPolicy(
+    runtime.policies[BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY],
+    openAiBuilderRecordUpdateIntentPolicy,
   );
   if (
     Object.keys(runtime.providers).length !== 2 ||
@@ -256,6 +281,11 @@ export function createBuilderAiRuntime(
       "builder_record_creation_intent_v1",
       BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
     );
+    assertTask(
+      productionRuntime.tasks.builder_record_update_intent_v1,
+      "builder_record_update_intent_v1",
+      BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+    );
     assertPolicy(
       productionRuntime.policies[BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY],
       providerMode === "openai"
@@ -288,6 +318,14 @@ export function createBuilderAiRuntime(
         BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
       ],
     );
+    assertPolicy(
+      productionRuntime.policies[
+        BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
+      ],
+      disabledExecutionPolicies[
+        BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
+      ],
+    );
     if (providerMode === "disabled") {
       const disabledProvider = productionRuntime.providers.disabled;
       if (!disabledProvider) {
@@ -302,6 +340,7 @@ export function createBuilderAiRuntime(
           builder_location_creation_intent_v1:
             builderLocationCreationIntentTaskV1,
           builder_record_creation_intent_v1: builderRecordCreationIntentTaskV1,
+          builder_record_update_intent_v1: builderRecordUpdateIntentTaskV1,
         }),
         policies: Object.freeze({
           [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]:
@@ -323,6 +362,10 @@ export function createBuilderAiRuntime(
           [BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY]:
             productionRuntime.policies[
               BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
+            ],
+          [BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY]:
+            productionRuntime.policies[
+              BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
             ],
         }),
         providers: Object.freeze({
@@ -356,6 +399,10 @@ export function createBuilderAiRuntime(
       ...builderRecordCreationIntentTaskV1,
       policyKey: BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
     });
+    const qualifiedRecordUpdateIntentTask = Object.freeze({
+      ...builderRecordUpdateIntentTaskV1,
+      policyKey: BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    });
     return assertPrivateRuntime({
       mode: "openai",
       tasks: Object.freeze({
@@ -365,6 +412,7 @@ export function createBuilderAiRuntime(
         builder_location_creation_intent_v1:
           qualifiedLocationCreationIntentTask,
         builder_record_creation_intent_v1: qualifiedRecordCreationIntentTask,
+        builder_record_update_intent_v1: qualifiedRecordUpdateIntentTask,
       }),
       policies: Object.freeze({
         [BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY]: openAiBuilderPlanningPolicy,
@@ -376,6 +424,8 @@ export function createBuilderAiRuntime(
           openAiBuilderLocationCreationPolicy,
         [BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY]:
           openAiBuilderRecordCreationIntentPolicy,
+        [BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY]:
+          openAiBuilderRecordUpdateIntentPolicy,
       }),
       providers: Object.freeze({
         disabled: disabledProvider,

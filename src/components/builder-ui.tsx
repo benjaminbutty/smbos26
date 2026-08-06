@@ -217,6 +217,79 @@ export function BuilderResultPanel({
     );
   }
 
+  if (state.state === "record_update_confirmation") {
+    return (
+      <section
+        aria-labelledby="builder-record-update-confirmation-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <p className="eyebrow">Ready for confirmation</p>
+        <h2 id="builder-record-update-confirmation-heading">
+          Update {state.object_label}?
+        </h2>
+        <p>SMBOS found one active {state.object_label} matching:</p>
+        <dl className="builder-confirmation-fields">
+          <div>
+            <dt>{state.selector_presentation.label}</dt>
+            <dd>{state.selector_presentation.formatted_value}</dd>
+          </div>
+        </dl>
+        <p>It will change:</p>
+        <dl className="builder-confirmation-fields">
+          {state.change_rows.map((change) => (
+            <div key={`change-${change.label}`}>
+              <dt>{change.label}</dt>
+              <dd>
+                {change.formatted_before} <span aria-hidden="true">→</span>{" "}
+                <strong>{change.formatted_after}</strong>
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="builder-safety-note">
+          Confirming changes this one existing {state.object_label} Record. It
+          will not appear in configuration history.
+        </p>
+        <form action={action} className="builder-request-panel">
+          <input
+            name="recordUpdateConfirmationToken"
+            type="hidden"
+            value={state.confirmation_token}
+          />
+          <PendingSubmitButton
+            label="Confirm and update"
+            pendingLabel="Updating…"
+          />
+          <Link
+            className="button button-secondary"
+            href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+          >
+            Cancel
+          </Link>
+        </form>
+      </section>
+    );
+  }
+
+  if (
+    state.state === "record_update_not_found" ||
+    state.state === "record_update_ambiguous" ||
+    state.state === "record_update_ineligible" ||
+    state.state === "record_update_no_change"
+  ) {
+    return (
+      <section
+        aria-labelledby="builder-record-update-result-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <h2 id="builder-record-update-result-heading">{state.object_label}</h2>
+        <p>{state.message}</p>
+      </section>
+    );
+  }
+
   if (state.state === "location_created") {
     return (
       <section
@@ -245,6 +318,30 @@ export function BuilderResultPanel({
       >
         <p className="eyebrow">Record added</p>
         <h2 id="builder-record-created-heading">{state.object_label} added</h2>
+        <p>{state.message}</p>
+        <Link
+          className="button"
+          href={
+            state.destination_path ?? `/app/${encodeURIComponent(businessSlug)}`
+          }
+        >
+          {state.destination_path
+            ? `Open ${state.object_label}`
+            : "Open workspace"}
+        </Link>
+      </section>
+    );
+  }
+
+  if (state.state === "record_updated") {
+    return (
+      <section
+        aria-labelledby="builder-record-updated-heading"
+        className="builder-result builder-result-success"
+        role="status"
+      >
+        <p className="eyebrow">Record updated</p>
+        <h2 id="builder-record-updated-heading">{state.object_label}</h2>
         <p>{state.message}</p>
         <Link
           className="button"

@@ -2487,8 +2487,8 @@ enabled in the private runtime, but remains unmerged pending final review.
 
 ## ADR-032 — Builder-assisted generic Record creation uses typed intent and explicit confirmation
 
-Milestone 12 Phase 12A is a feature-branch implementation and is not claimed
-as merged. It adds one bounded Builder path for creating one generic graph
+Milestone 12 Phase 12A is complete and merged through PR #17. It adds one
+bounded Builder path for creating one generic graph
 Record while preserving the existing Product, Customer, Order and Order Item
 data model and runtime. Business-created concepts such as Equipment and
 Catering Enquiry remain metadata-defined Objects with Fields and Records; no
@@ -2517,10 +2517,62 @@ head for share, the Object definition for update, and inserts through the
 existing graph validation trigger. PII-free schema/state digests and the
 immutable expected state make stale and replayed confirmations fail closed.
 
-The default and production runtime mappings remain disabled. The Terra policy,
-exact reservation envelope, frozen two-context/eight-scenario evaluation
-harness, deterministic contract tests and live gates are separate engineering
-artifacts; no live provider run or production enablement is implied by this
-feature branch. Record update/delete, relationship creation, file upload,
+The default runtime mapping remains disabled. The private runtime enablement
+uses the accepted Terra evidence; the exact reservation envelope, frozen
+two-context/eight-scenario evaluation harness and deterministic contract tests
+remain separate engineering artifacts. Record update/delete, relationship creation, file upload,
 public form changes, arbitrary operational dispatch and configuration
 versioning remain outside this phase.
+
+## ADR-033 — Builder-assisted generic Record updates
+
+Phase 12B is implemented on its feature branch, qualified against one frozen
+profile and privately enabled only in the authenticated OpenAI Builder. It
+remains draft and unmerged pending final independent review. The global/default
+registry and disabled private Builder remain disabled. It adds one generic
+operational `update_record` path: one active eligible Object, one exact
+selector over a supported scalar Field, and one to three explicit absolute
+Field values. Product is only an acceptance fixture; Equipment and Catering
+Enquiry use the same primitives and path.
+
+The unchanged AI-safe model context contains no operational Records, current
+values or identifiers. The model supplies one Object key, one selector and the
+requested absolute values, but never a Record ID. PostgreSQL is the sole
+selector and target authority. It returns only bounded zero-match,
+multiple-match or ready state, with the actual current values needed for
+confirmation; candidate rows and full Records are never disclosed.
+
+The signed 15-minute confirmation token is bound to the authenticated Business
+and actor and contains only the schema/action envelope, head identity, target
+Object identity, server-selected Record ID, expected `updated_at` currentness,
+typed patch, destination and token timestamps. The final action is AI-free and
+does no accounting or configuration mutation. PostgreSQL reads the Business
+head `FOR SHARE`, locks the target Record `FOR UPDATE` once, verifies
+currentness, and lets the existing `records_validate` and `set_updated_at`
+triggers authoritatively validate and write the merged patch. It does not
+re-query the selector, take an explicit Object `FOR UPDATE` lock or duplicate
+the target lock.
+
+Customer, Order and Order Item exclusions derive from active trusted preorder
+capability mappings; Product remains eligible. The write is ordinary
+operational data: it creates no configuration Version, Change, history entry,
+undo record, domain table, queue or new primitive. Fuzzy, substring, bulk,
+relative, null/File, lifecycle, relationship, location and Phase 12C work
+remain unsupported. The model remains configuration-only, the deterministic
+PostgreSQL boundary is unchanged, and final mutation remains AI-free. The
+qualified intent task is enabled only in the authenticated private OpenAI
+Builder runtime; the global/default registry and disabled private runtime map
+to `builder_record_update_intent_disabled_v1`. Phase 12A's frozen subject and
+evidence are untouched.
+
+The accepted frozen profile uses
+`builder_record_update_intent_terra_medium_v1`, `gpt-5.6-terra` and medium
+reasoning. Exact schema compatibility was accepted; qualification passed 8/8
+and reliability passed 24/24 with every scenario 3/3. The accepted subject is
+exact SHA `30dbab41d4f63a160370287a2411f8fbd254e95a`; the evidence and the two
+earlier failed attempts remain recorded in `evaluations/README.md`. This
+evidence applies only to that frozen profile and is invalidated by changes to
+the model alias, policy, reasoning effort, provider transport, task
+instruction, schemas, semantic validator, material context, scenario set or
+evaluator. The private-runtime mapping-only closeout does not alter the
+qualified subject. PR #18 remains unmerged pending final independent review.

@@ -2812,8 +2812,8 @@ progress.
 
 ### Milestone 12 Phase 12A - Builder-assisted creation of one generic Record
 
-Phase 12A is a feature-branch implementation and is not claimed as merged. It
-extends the Builder with one bounded generic Record creation flow using the
+Phase 12A is complete and merged through PR #17. It extends the Builder with
+one bounded generic Record creation flow using the
 existing Object, Field, Record and runtime primitives. Product remains a
 normal generic Object/Record concept; no Product-specific production code,
 new custom-object table, relationship table, queue or configuration-version
@@ -2852,3 +2852,22 @@ generic operational dispatch remain out of scope. The default and production
 runtime mappings remain disabled; the Terra policy, exact reservation
 envelope, frozen two-context/eight-scenario harness and live qualification /
 reliability flags are engineering-only.
+
+## Milestone 12 Phase 12B - Builder-assisted generic Record updates
+
+Phase 12B is the operational follow-on proof and does not change the frozen
+Phase 12A creation subject. The only new operation is generic `update_record`:
+one existing active eligible Object, one uniquely matched active Record,
+one-to-three exact AND-only selector clauses and one-to-five explicit absolute
+Field values. The model receives no operational Records or current values and
+cannot choose a Record ID. The server resolves the target, returns no
+candidates, builds an exact before/after confirmation and performs one
+AI-free atomic update through the existing graph trigger after Owner/Admin
+confirmation.
+
+The operation is outside configuration versioning and creates no Change,
+Version, proposal, history or undo record. Relative arithmetic, bulk/filter
+mutation, fuzzy/substring matching, null/File clearing, Record lifecycle,
+Relationships, Locations, public Form changes and Phase 12C remain out of
+scope. Product and Equipment are generic acceptance fixtures, not special
+production paths.

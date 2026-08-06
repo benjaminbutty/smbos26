@@ -26,3 +26,13 @@ Location is a first-class platform concept. Builder can create only one new
 Location after explicit confirmation; updates, deactivation and reactivation
 remain manual-only. The operation is outside M5 Changes/versioning and has no
 operational undo.
+
+## Phase 12B generic Record update
+
+`src/core/graph/record-update/` is the provider-neutral boundary for one
+existing active Record update. It validates one exact selector and one to three
+typed absolute values, composes a minimal patch and owner-safe diff, and calls
+the confirmed RPC. PostgreSQL is the sole target/match authority and returns
+only bounded not-found, ambiguous or ready state. The boundary has no broad
+Record query, model, Product-specific path, configuration lifecycle or
+operational history.

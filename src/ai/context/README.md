@@ -63,3 +63,12 @@ Object UUIDs, defaults, currentness digests, actor/business identity or
 confirmation data to `modelContext`. The server reads the authoritative Object
 schema, eligibility and defaults only outside the model boundary, then performs
 the final Record write through the graph RPC after explicit confirmation.
+
+## Phase 12B Record-update context boundary
+
+The generic Record-update intent uses the same unchanged configuration-only
+context. It adds no Records, current values, Record/Object/Field UUIDs,
+Relationships, Locations, digests, tokens or provider data. The model returns
+only an exact Object key, one selector over a supported scalar Field and one to
+three explicit absolute Field values; PostgreSQL-owned targeting and the
+AI-free final write happen outside `modelContext`.

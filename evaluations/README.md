@@ -681,14 +681,16 @@ reliability: 24/24 executions passed; 8/8 scenarios; 3 repetitions each;
   cost_microusd: 171960; exit_code: 0
 ```
 
-No failure, error, validation or provider reason codes were reported. Only the
-private authenticated Builder OpenAI runtime is enabled:
+No failure, error, validation or provider reason codes were reported. At the
+Phase 12A enablement point, only the private authenticated Builder OpenAI runtime
+was enabled:
 `builder_record_creation_intent_v1` resolves through the private frozen clone
 to `builder_record_creation_intent_terra_medium_v1` and
 `openAiBuilderRecordCreationIntentPolicy`. The global/default production
 runtime, including OpenAI mode, remains disabled for Record intent and does
 not register the Terra policy; disabled Builder mode remains disabled. The
-private registry remains exactly five tasks and five policies.
+Phase 12A private registry contained exactly five tasks and five policies;
+Phase 12B adds a sixth update task that remains disabled pending its own gates.
 
 The qualification/reliability reports are not a claim that the frozen subject
 changed. A new live rerun is required only if the frozen subject changes.
@@ -698,5 +700,219 @@ plans do not. Final confirmation remains deterministic and AI-free: no
 provider call, task/accounting reservation, planning, configuration mutation,
 or provider-version change occurs after confirmation.
 
-PR #17 remains open, draft and unmerged. Phase 12A is not claimed as merged
-until review and merge.
+PR #17 merged the Phase 12A implementation. Phase 12B remains independently
+reviewable on its feature branch.
+
+## Phase 12B Record-update evaluation
+
+The independent Record-update subject is
+`builder_record_update_intent_v1`. The global/default registry and disabled
+private Builder runtime remain disabled; the authenticated private OpenAI
+Builder runtime is enabled only after the accepted evidence recorded below.
+Its deterministic task tests cover one exact selector, bounded one-to-three
+absolute updates, configured option handling, unsupported relative requests
+and missing-target clarification. The scenario fixture remains
+configuration-only and never loads operational Records or current values.
+
+The compatibility command is opt-in only:
+
+```bash
+RUN_LIVE_OPENAI_RECORD_UPDATE_SCHEMA_COMPATIBILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-update-schema-compatibility-live
+```
+
+It remains opt-in engineering scaffolding only: compatibility, qualification
+and reliability require separate explicit flags and are not run by CI, build,
+seed or application startup. The accepted evidence below is for one frozen
+subject profile; reports are metadata-only and never include owner requests,
+context, values, model output, provider bodies or credentials. Phase 12B
+remains unmerged and globally/default disabled pending final review.
+
+#### Failed Phase 12B qualification evidence and bounded correction
+
+The first Phase 12B qualification run was executed once against exact SHA
+`aab28f6fa0d9036f84579f4261e32641ab033146`. The run stopped correctly at the
+fifth scenario because the scenario expectation did not match the approved
+one-selector boundary:
+
+```text
+Exact SHA:
+aab28f6fa0d9036f84579f4261e32641ab033146
+
+Passed:
+4
+
+Failed:
+1
+
+Failure scenario:
+single_selector_update
+
+Failure class:
+scenario_expectation
+
+Failed gate:
+expected_update_set
+
+Attempts:
+5
+
+Input tokens:
+14370
+
+Output tokens:
+622
+
+Estimated cost:
+45256 microusd
+
+Exit:
+1
+```
+
+No structural failure occurred. No semantic-validator failure occurred. No
+provider failure occurred. Reliability was not run. The correction removes a
+scenario inconsistent with the approved one-selector boundary and replaces it
+with a missing-replacement clarification scenario. No hidden model output was
+inspected or retained.
+
+#### Second failed Phase 12B qualification evidence and bounded correction
+
+The second Phase 12B qualification run was executed once against exact SHA
+`e232686eacc3ef47e3f0a66f015eac081dfebb83`. It stopped immediately on the core
+Product rename scenario because the task returned clarification instead of the
+expected ready intent:
+
+```text
+Exact SHA:
+e232686eacc3ef47e3f0a66f015eac081dfebb83
+
+Passed:
+0
+
+Failed:
+1
+
+Failure scenario:
+product_rename
+
+Expected state:
+ready
+
+Actual state:
+needs_clarification
+
+Failure class:
+scenario_expectation
+
+Failed gate:
+expected_state
+
+Attempts:
+1
+
+Input tokens:
+3408
+
+Output tokens:
+121
+
+Estimated cost:
+10335 microusd
+
+Exit:
+1
+```
+
+No output-contract failure occurred. No semantic-validator failure occurred.
+No provider failure occurred. Usage was complete. Reliability was not run. No
+hidden model output was inspected or retained. The correction clarifies a
+common explicit rename instruction without expanding the Phase 12B scope.
+
+#### Accepted Phase 12B qualification and private enablement
+
+The accepted frozen subject is `builder_record_update_intent_v1` at exact SHA
+`30dbab41d4f63a160370287a2411f8fbd254e95a`. Its Terra-medium policy is
+`builder_record_update_intent_terra_medium_v1`, using model `gpt-5.6-terra`
+with `medium` reasoning.
+
+Schema compatibility accepted the exact registered output schema:
+
+```text
+exact_schema_accepted: true
+probe: i_exact_registered_record_update_schema
+result: accepted_completed
+probes_executed: 1
+accepted_probes: 1
+rejected_probes: 0
+attempts: 1
+usage_complete: true
+input_tokens: 1026
+output_tokens: 71
+estimated_cost_microusd: 3630
+elapsed_ms: 4251
+stop_reason: completed
+exit: 0
+```
+
+Qualification passed all eight scenarios once:
+
+```text
+scenarios: 8
+passed: 8
+failed: 0
+attempts: 8
+input_tokens: 24371
+output_tokens: 876
+estimated_cost_microusd: 74069
+elapsed_ms: 24900
+exit: 0
+```
+
+Reliability passed all 24 executions across three repetitions:
+
+```text
+scenarios: 8
+repetitions_per_scenario: 3
+executions: 24
+passed_executions: 24
+failed_executions: 0
+attempts: 24
+input_tokens: 73113
+output_tokens: 2611
+estimated_cost_microusd: 221952
+elapsed_ms: 64269
+exit: 0
+```
+
+Every scenario passed 3/3:
+
+```text
+product_rename: 3/3
+product_absolute_currency: 3/3
+equipment_multi_field: 3/3
+catering_date_budget: 3/3
+status_option: 3/3
+missing_target_clarification: 3/3
+missing_replacement_clarification: 3/3
+relative_value_clarification: 3/3
+```
+
+Combined qualification and reliability evidence was 32/32 executions passed,
+with 32 provider attempts, 97,484 input tokens, 3,487 output tokens and
+296,021 estimated microusd. All reports remained bounded and redacted: no owner
+request, Business context, model prose, provider body or ID, reasoning,
+credential or raw error was persisted. The two failed qualification attempts
+above remain historical evidence.
+
+This evidence qualifies one frozen profile rather than universal model
+correctness. Changes to the model alias, policy, reasoning effort, provider
+transport, task instruction, input/output schemas, semantic validator,
+material context, scenario set/order or evaluator invalidate it. A
+private-runtime mapping-only change does not alter the qualified subject.
+
+The final runtime position is private-only: the global/default registry and
+disabled private Builder map Record-update intent to
+`builder_record_update_intent_disabled_v1`; only the authenticated private
+OpenAI Builder maps it to `builder_record_update_intent_terra_medium_v1`.

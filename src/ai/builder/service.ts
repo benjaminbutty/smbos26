@@ -54,9 +54,24 @@ import {
   builderRecordCreationIntentTaskInputSchema,
 } from "../record-creation-intent/schemas";
 import { builderRecordCreationIntentTaskV1 } from "../record-creation-intent/task";
+import {
+  builderRecordUpdateIntentOutputSchema,
+  builderRecordUpdateIntentTaskInputSchema,
+} from "../record-update-intent/schemas";
+import { builderRecordUpdateIntentTaskV1 } from "../record-update-intent/task";
 import { composeRecordCreationPresentation } from "../../core/graph/record-creation/composer";
 import { type RecordCreationState } from "../../core/graph/record-creation/schemas";
 import { createConfirmedRecordCreationService } from "../../core/graph/record-creation/service";
+import {
+  composeConfirmedGraphRecordUpdate,
+  RecordUpdateCompositionError,
+} from "../../core/graph/record-update/composer";
+import {
+  type RecordUpdateReadyState,
+  type RecordUpdateSelector,
+  type RecordUpdateTargetState,
+} from "../../core/graph/record-update/schemas";
+import { createConfirmedRecordUpdateService } from "../../core/graph/record-update/service";
 import { createLocationService } from "../../core/locations/service";
 import {
   normalizeLocationName,
@@ -66,6 +81,7 @@ import { AiBusinessContextError } from "../context/errors";
 import type { Database } from "../../db/supabase/database.types";
 import {
   BUILDER_ORCHESTRATION_MAX_OWNER_REQUEST_BYTES,
+  BUILDER_RECORD_UPDATE_MESSAGES,
   BUILDER_UNSUPPORTED_MESSAGES,
   builderOrchestrationRequestSchema,
   builderOrchestrationResultSchema,
@@ -121,6 +137,15 @@ interface BuilderOrchestrationDependencies {
     context: { businessId: string; actorId: string },
     objectKey: string,
   ): Promise<RecordCreationState>;
+  readRecordUpdateState(
+    client: SessionClient,
+    context: { businessId: string; actorId: string },
+    input: {
+      objectKey: string;
+      selector: RecordUpdateSelector;
+      updateFieldKeys: readonly string[];
+    },
+  ): Promise<RecordUpdateTargetState>;
   generateExecutionId(): string;
 }
 
@@ -275,6 +300,20 @@ function recordCreationStateMatches(
   );
 }
 
+function recordUpdateStateMatchesContext(
+  state: RecordUpdateReadyState,
+  context: AuthoritativeAiBusinessContext,
+  objectKey: string,
+): boolean {
+  return (
+    state.business_id === context.executionContext.businessId &&
+    state.actor_id === context.executionContext.actorId &&
+    state.base_version_id === context.currentness.baseVersionId &&
+    state.head_revision === context.currentness.headRevision &&
+    state.object_key === objectKey
+  );
+}
+
 function recordIntentClarification(
   output: Extract<
     z.infer<typeof builderRecordCreationIntentOutputSchema>,
@@ -343,6 +382,99 @@ function locationConflictResult(
   });
 }
 
+function recordUpdateIntentClarification(
+  output: Extract<
+    z.infer<typeof builderRecordUpdateIntentOutputSchema>,
+    { state: "needs_clarification" }
+  >,
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "needs_clarification",
+    clarification: builderPlanOutputSchema.parse({
+      schema_version: 1,
+      state: "needs_clarification",
+      understanding: output.understanding,
+      known_requirements: [],
+      assumptions: [],
+      questions: [
+        {
+          reference: "question_1",
+          question: output.question,
+          reason: output.reason,
+          response_style: "free_text",
+        },
+      ],
+      unsupported_requirements: [],
+    }),
+  });
+}
+
+function recordUpdateTerminalResult(
+  state:
+    | "record_update_not_found"
+    | "record_update_ambiguous"
+    | "record_update_ineligible"
+    | "record_update_no_change",
+  objectLabel: string,
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state,
+    object_label: objectLabel,
+    message:
+      state === "record_update_not_found"
+        ? BUILDER_RECORD_UPDATE_MESSAGES.not_found
+        : state === "record_update_ambiguous"
+          ? BUILDER_RECORD_UPDATE_MESSAGES.ambiguous
+          : state === "record_update_ineligible"
+            ? BUILDER_RECORD_UPDATE_MESSAGES.ineligible
+            : BUILDER_RECORD_UPDATE_MESSAGES.no_change,
+  });
+}
+
+function contextRecordUpdateEligibility(
+  context: ReturnType<typeof projectContext>["modelContext"],
+  objectKey: string,
+): { eligible: boolean; objectLabel: string } {
+  const object = context.objects.find(
+    (candidate) => candidate.key === objectKey,
+  );
+  if (!object) return { eligible: false, objectLabel: "Record" };
+  const excluded = context.preorder_experiences.some(
+    (preorder) =>
+      preorder.is_active &&
+      (preorder.customer_object_key === objectKey ||
+        preorder.order_object_key === objectKey ||
+        preorder.order_item_object_key === objectKey),
+  );
+  const hasSelectorField = object.fields.some(
+    (field) =>
+      field.is_active &&
+      [
+        "short_text",
+        "email",
+        "phone",
+        "url",
+        "number",
+        "currency",
+        "boolean",
+        "date",
+        "datetime",
+        "select",
+        "status",
+      ].includes(field.field_type),
+  );
+  const hasUpdateField = object.fields.some(
+    (field) => field.is_active && field.field_type !== "file",
+  );
+  return {
+    eligible:
+      object.is_active && !excluded && hasSelectorField && hasUpdateField,
+    objectLabel: object.singular_label,
+  };
+}
+
 function classifyReadyPlan(
   plan: BuilderReadyPlanningOutput,
   context: ReturnType<typeof projectContext>["modelContext"],
@@ -352,6 +484,8 @@ function classifyReadyPlan(
   | { kind: "preorder_amendment"; scope: PreorderTargetScope }
   | { kind: "location_creation" }
   | { kind: "record_creation"; objectKey: string }
+  | { kind: "record_update"; objectKey: string }
+  | { kind: "record_update_ineligible"; objectKey: string; objectLabel: string }
   | BuilderOrchestrationResult {
   const steps = plan.plan.steps;
   const hasOperational = steps.some((step) => step.lane === "operational");
@@ -387,6 +521,38 @@ function classifyReadyPlan(
         kind: "record_creation",
         objectKey: existingConcept.existing_object_key,
       };
+    }
+    if (
+      steps.length === 1 &&
+      step?.lane === "operational" &&
+      step.category === "update_record" &&
+      existingConcept !== undefined &&
+      step.dependencies.length === 0 &&
+      step.affected_concepts.length === 1 &&
+      step.affected_concepts[0] === existingConcept.reference &&
+      step.existing_object_keys.length === 1 &&
+      step.existing_object_keys[0] === existingConcept.existing_object_key &&
+      step.location_references.length === 0 &&
+      step.requires_owner_confirmation &&
+      plan.unsupported_requirements.length === 0 &&
+      context.objects.some(
+        (object) => object.key === existingConcept.existing_object_key,
+      )
+    ) {
+      const eligibility = contextRecordUpdateEligibility(
+        context,
+        existingConcept.existing_object_key,
+      );
+      return eligibility.eligible
+        ? {
+            kind: "record_update",
+            objectKey: existingConcept.existing_object_key,
+          }
+        : {
+            kind: "record_update_ineligible",
+            objectKey: existingConcept.existing_object_key,
+            objectLabel: eligibility.objectLabel,
+          };
     }
     if (
       step &&
@@ -478,6 +644,14 @@ export function createBuilderOrchestrationService(
         createConfirmedRecordCreationService(client, context).readState(
           objectKey,
         )),
+    readRecordUpdateState:
+      overrides.readRecordUpdateState ??
+      ((client, context, input) =>
+        createConfirmedRecordUpdateService(client, context).readState({
+          objectKey: input.objectKey,
+          selector: input.selector,
+          updateFieldKeys: input.updateFieldKeys,
+        })),
     generateExecutionId:
       overrides.generateExecutionId ?? (() => crypto.randomUUID()),
   };
@@ -700,6 +874,120 @@ export function createBuilderOrchestrationService(
               head_revision: secondRecordState.head_revision,
               object_schema_digest: secondRecordState.object_schema_digest,
               record_state_digest: secondRecordState.record_state_digest,
+            }),
+          );
+        }
+        if ("kind" in route && route.kind === "record_update_ineligible") {
+          return deepFreeze(
+            recordUpdateTerminalResult(
+              "record_update_ineligible",
+              route.objectLabel,
+            ),
+          );
+        }
+        if ("kind" in route && route.kind === "record_update") {
+          const intentInput = builderRecordUpdateIntentTaskInputSchema.parse({
+            schema_version: 1,
+            owner_request: request.ownerRequest,
+            business_context: afterPlanningProjection.modelContext,
+            ready_plan: plan,
+          });
+          const intentExecution = await orchestrator.execute(
+            "builder_record_update_intent_v1",
+            intentInput,
+          );
+          const parsedIntent = builderRecordUpdateIntentOutputSchema.parse(
+            intentExecution.output,
+          );
+          const intent = builderRecordUpdateIntentTaskV1.validateOutput
+            ? builderRecordUpdateIntentTaskV1.validateOutput(
+                intentInput,
+                parsedIntent,
+              )
+            : parsedIntent;
+          if (intent.state === "needs_clarification") {
+            return deepFreeze(recordUpdateIntentClarification(intent));
+          }
+
+          const targetState = await dependencies.readRecordUpdateState(
+            client,
+            initial.executionContext,
+            {
+              objectKey: route.objectKey,
+              selector: intent.selector,
+              updateFieldKeys: intent.field_updates.map(
+                (value) => value.field_key,
+              ),
+            },
+          );
+          if (targetState.state === "not_found") {
+            return deepFreeze(
+              recordUpdateTerminalResult(
+                "record_update_not_found",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "ambiguous") {
+            return deepFreeze(
+              recordUpdateTerminalResult(
+                "record_update_ambiguous",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "ineligible") {
+            return deepFreeze(
+              recordUpdateTerminalResult(
+                "record_update_ineligible",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (
+            !recordUpdateStateMatchesContext(
+              targetState,
+              afterPlanning,
+              route.objectKey,
+            )
+          ) {
+            builderContextStale();
+          }
+          let composition;
+          try {
+            composition = composeConfirmedGraphRecordUpdate(
+              targetState,
+              intent,
+            );
+          } catch (cause) {
+            if (
+              cause instanceof RecordUpdateCompositionError &&
+              cause.code === "no_change"
+            ) {
+              return deepFreeze(
+                recordUpdateTerminalResult(
+                  "record_update_no_change",
+                  targetState.singular_label,
+                ),
+              );
+            }
+            throw cause;
+          }
+          return deepFreeze(
+            builderOrchestrationResultSchema.parse({
+              schema_version: 1,
+              state: "record_update_confirmation",
+              object_label: composition.object_label,
+              selector_presentation: composition.selector,
+              change_rows: composition.changes,
+              base_version_id: targetState.base_version_id,
+              head_revision: targetState.head_revision,
+              object_definition_id: targetState.object_definition_id,
+              object_key: targetState.object_key,
+              target_record_id: targetState.target_record_id,
+              expected_updated_at: targetState.expected_updated_at,
+              data_patch: composition.data_patch,
+              destination_view_key: composition.destination_view_key,
             }),
           );
         }
