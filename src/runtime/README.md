@@ -22,4 +22,5 @@ The Phase 12B update path reuses the same generic Record renderer and selects
 the first active internal non-detail View for the target Object by stable key.
 The model and browser cannot choose that destination. If no suitable View
 exists, the update still succeeds and the owner receives the normal workspace
-fallback.
+fallback. The update is ordinary operational data and does not create a
+configuration-history entry.

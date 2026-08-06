@@ -14,30 +14,18 @@ import {
   type RecordCreationFieldValue,
 } from "../../core/graph/record-creation/schemas";
 import {
-  recordUpdateSelectorClausesSchema,
-  type RecordUpdateSelectorClause,
+  recordUpdateSelectorSchema,
+  type RecordUpdateSelector,
 } from "../../core/graph/record-update/schemas";
 
 export const BUILDER_RECORD_UPDATE_INTENT_SCHEMA_VERSION = 1 as const;
 export const BUILDER_RECORD_UPDATE_INTENT_MAX_OUTPUT_BYTES = 64 * 1024;
 
 const ownerReadableTextSchema = z.string().trim().min(1).max(2_000);
-const sourceStepReferencesSchema = z
-  .array(
-    z
-      .string()
-      .max(80)
-      .regex(/^step_[1-9][0-9]*$/),
-  )
-  .length(1)
-  .superRefine((references, context) => {
-    if (new Set(references).size !== references.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "The Record update intent source step must be unique.",
-      });
-    }
-  });
+const sourceStepReferenceSchema = z
+  .string()
+  .max(80)
+  .regex(/^step_[1-9][0-9]*$/);
 
 export const builderRecordUpdateIntentTaskInputSchema = z
   .object({
@@ -53,10 +41,10 @@ const readySchema = z
     schema_version: z.literal(BUILDER_RECORD_UPDATE_INTENT_SCHEMA_VERSION),
     state: z.literal("ready"),
     summary: ownerReadableTextSchema,
-    source_step_references: sourceStepReferencesSchema,
+    source_step_reference: sourceStepReferenceSchema,
     object_key: graphKeySchema,
-    selector_clauses: recordUpdateSelectorClausesSchema,
-    field_updates: z.array(recordCreationFieldValueSchema).min(1).max(5),
+    selector: recordUpdateSelectorSchema,
+    field_updates: z.array(recordCreationFieldValueSchema).min(1).max(3),
   })
   .strict()
   .superRefine((value, context) => {
@@ -77,7 +65,7 @@ const clarificationSchema = z
     understanding: ownerReadableTextSchema,
     question: ownerReadableTextSchema,
     reason: ownerReadableTextSchema,
-    source_step_references: sourceStepReferencesSchema,
+    source_step_reference: sourceStepReferenceSchema,
   })
   .strict();
 
@@ -94,4 +82,4 @@ export type BuilderRecordUpdateIntentOutput = z.infer<
 >;
 export type BuilderRecordUpdateIntentReady = z.infer<typeof readySchema>;
 export type BuilderRecordUpdateFieldValue = RecordCreationFieldValue;
-export type { AiBusinessModelContextV1, RecordUpdateSelectorClause };
+export type { AiBusinessModelContextV1, RecordUpdateSelector };

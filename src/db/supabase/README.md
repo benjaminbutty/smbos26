@@ -55,10 +55,12 @@ Record inserts for the Builder flow.
 
 The Phase 12B migration adds only the narrow authenticated
 `get_confirmed_graph_record_update_state` and
-`update_confirmed_graph_record` RPCs plus private eligibility, schema,
-selector and target-digest helpers. The final lock order is head share,
-bounded selector read, target Record update, Object update, selector rerun and
-the existing `update_graph_record` call. It adds no domain table, index,
+`update_confirmed_graph_record` RPCs plus private eligibility and selector
+helpers. PostgreSQL resolves one exact selector with zero/one/multiple
+outcomes, returns bounded state with actual current values, and does not expose
+candidate rows or full Records. The final RPC checks the head, locks the target
+Record once, verifies its `updated_at` currentness and writes through the
+existing graph validation/timestamp triggers. It adds no domain table, index,
 history, queue, receipt or configuration-version path. Generated type
 definitions include the two JSON/Record RPC contracts; a fresh CLI generation
 attempt remains required after the installed CLI/config parser mismatch is

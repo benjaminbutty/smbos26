@@ -33,11 +33,13 @@ The product and architecture sources of truth are:
 
 Milestone 12 Phase 12B is implemented on the current feature branch but is
 not merged. It adds a generic authenticated Builder path for one existing
-Record update: exact AND-only owner-supplied selectors, one-to-five explicit
-absolute values, server-owned target resolution, exact before/after
-confirmation and an AI-free atomic graph update. Operational Records remain
-outside model context; the model supplies no Record ID. The update creates no
-configuration Version or Change, and Product is only an acceptance fixture.
+Record update: one exact owner-supplied selector, one-to-three explicit
+absolute values, PostgreSQL-owned zero/one/multiple target resolution, bounded
+before/after confirmation and an AI-free atomic graph update. Operational
+Records remain outside model context; the model supplies no Record ID. The
+update creates no configuration Version, Change or history entry, and Product
+is only an acceptance fixture. The task remains global/default/private
+disabled; no live qualification or reliability gate has enabled it.
 Phase 12A generic Record creation is complete and merged through PR #17.
 
 ## Current scope

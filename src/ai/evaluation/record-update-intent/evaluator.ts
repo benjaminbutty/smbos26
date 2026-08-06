@@ -44,13 +44,16 @@ function safeCounts(output: unknown) {
     return { selectorCount: 0, updateCount: 0 };
   }
   const value = output as {
-    selector_clauses?: unknown;
+    selector?: unknown;
     field_updates?: unknown;
   };
   return {
-    selectorCount: Array.isArray(value.selector_clauses)
-      ? value.selector_clauses.length
-      : 0,
+    selectorCount:
+      typeof value.selector === "object" &&
+      value.selector !== null &&
+      !Array.isArray(value.selector)
+        ? 1
+        : 0,
     updateCount: Array.isArray(value.field_updates)
       ? value.field_updates.length
       : 0,
@@ -79,28 +82,12 @@ function compareReadyOutput(
 ) {
   if (actual.object_key !== expected.object_key) failed.add("expected_object");
 
-  const expectedSelectors = new Map(
-    expected.selector_clauses.map((clause) => [clause.field_key, clause]),
-  );
-  const actualSelectors = new Map(
-    actual.selector_clauses.map((clause) => [clause.field_key, clause]),
-  );
-  if (
-    actualSelectors.size !== expectedSelectors.size ||
-    [...actualSelectors.keys()].some((key) => !expectedSelectors.has(key))
+  if (actual.selector.field_type !== expected.selector.field_type) {
+    failed.add("expected_selector_type");
+  } else if (
+    comparableValue(actual.selector) !== comparableValue(expected.selector)
   ) {
-    failed.add("expected_selector_set");
-  }
-  for (const [fieldKey, expectedClause] of expectedSelectors) {
-    const actualClause = actualSelectors.get(fieldKey);
-    if (!actualClause) continue;
-    if (actualClause.field_type !== expectedClause.field_type) {
-      failed.add("expected_selector_type");
-    } else if (
-      comparableValue(actualClause) !== comparableValue(expectedClause)
-    ) {
-      failed.add("expected_selector_value");
-    }
+    failed.add("expected_selector_value");
   }
 
   const expectedUpdates = new Map(

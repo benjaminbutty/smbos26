@@ -202,15 +202,13 @@ describe("generic Record update intent", () => {
       schema_version: 1 as const,
       state: "ready" as const,
       summary: "Rename one Product and make it unavailable.",
-      source_step_references: ["step_1"],
+      source_step_reference: "step_1",
       object_key: "product",
-      selector_clauses: [
-        {
-          field_key: "name",
-          field_type: "short_text" as const,
-          string_value: "Celebration Box",
-        },
-      ],
+      selector: {
+        field_key: "name",
+        field_type: "short_text" as const,
+        string_value: "Celebration Box",
+      },
       field_updates: [
         {
           field_key: "name",
@@ -230,22 +228,20 @@ describe("generic Record update intent", () => {
     );
   });
 
-  it("rejects a selector/update semantic no-op", () => {
+  it("leaves actual-value no-op detection to the server-owned composer", () => {
     const taskInput = input("Rename Celebration Box to Celebration Box.");
-    expect(() =>
+    expect(
       validateBuilderRecordUpdateIntentOutput(taskInput, {
         schema_version: 1,
         state: "ready",
         summary: "No-op rename.",
-        source_step_references: ["step_1"],
+        source_step_reference: "step_1",
         object_key: "product",
-        selector_clauses: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Celebration Box",
-          },
-        ],
+        selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Celebration Box",
+        },
         field_updates: [
           {
             field_key: "name",
@@ -254,7 +250,7 @@ describe("generic Record update intent", () => {
           },
         ],
       }),
-    ).toThrow("same value");
+    ).toMatchObject({ state: "ready" });
   });
 
   it("rejects relative arithmetic even when the model invents a numeric result", () => {
@@ -264,15 +260,13 @@ describe("generic Record update intent", () => {
         schema_version: 1,
         state: "ready",
         summary: "Increase a price.",
-        source_step_references: ["step_1"],
+        source_step_reference: "step_1",
         object_key: "product",
-        selector_clauses: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Celebration Box",
-          },
-        ],
+        selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Celebration Box",
+        },
         field_updates: [
           {
             field_key: "price",
@@ -284,22 +278,20 @@ describe("generic Record update intent", () => {
     ).toThrow("absolute");
   });
 
-  it("requires boolean grounding to mention the Boolean Field or its value form", () => {
+  it("does not use broad language-grounding heuristics", () => {
     const taskInput = input("Change Celebration Box to a new name.");
-    expect(() =>
+    expect(
       validateBuilderRecordUpdateIntentOutput(taskInput, {
         schema_version: 1,
         state: "ready",
         summary: "Rename a Product.",
-        source_step_references: ["step_1"],
+        source_step_reference: "step_1",
         object_key: "product",
-        selector_clauses: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Celebration Box",
-          },
-        ],
+        selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Celebration Box",
+        },
         field_updates: [
           {
             field_key: "available",
@@ -308,7 +300,7 @@ describe("generic Record update intent", () => {
           },
         ],
       }),
-    ).toThrow("stated by the owner");
+    ).toMatchObject({ state: "ready" });
 
     const grounded = input(
       "Rename Celebration Box to Celebration Platter and mark it unavailable.",
@@ -318,15 +310,13 @@ describe("generic Record update intent", () => {
         schema_version: 1,
         state: "ready",
         summary: "Rename a Product and make it unavailable.",
-        source_step_references: ["step_1"],
+        source_step_reference: "step_1",
         object_key: "product",
-        selector_clauses: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Celebration Box",
-          },
-        ],
+        selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Celebration Box",
+        },
         field_updates: [
           {
             field_key: "available",
@@ -352,7 +342,7 @@ describe("generic Record update intent", () => {
       question: "Which Product currently needs its price changed?",
       reason:
         "Builder needs one exact current detail before it can target a Record.",
-      source_step_references: ["step_1"],
+      source_step_reference: "step_1",
     };
     expect(
       validateBuilderRecordUpdateIntentOutput(taskInput, clarification),

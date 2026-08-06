@@ -4,13 +4,21 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import postgres, { type Sql } from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 import type {
   Database,
   Json,
   Tables,
 } from "../../src/db/supabase/database.types";
+import { createGraphService } from "../../src/core/graph/service";
+import {
+  recordUpdateTargetStateSchema,
+  type RecordUpdateReadyState,
+} from "../../src/core/graph/record-update/schemas";
+import { submitExperienceForm } from "../../src/runtime/forms/submission";
 import { getLocalSupabaseSettings } from "./support/local-supabase";
 import { createConfigurationFixtures } from "./support/configuration-fixtures";
 
@@ -56,47 +64,83 @@ async function createSignedInIdentity(
   return { client, user: signedIn.data.user };
 }
 
+async function createRecord(
+  objectDefinitionId: string,
+  data: Record<string, Json>,
+): Promise<Tables<"records">> {
+  const result = await owner.rpc("create_graph_record", {
+    expected_business_id: business.id,
+    target_object_definition_id: objectDefinitionId,
+    requested_data: data,
+    requested_record_status: "active",
+  });
+  if (result.error || !result.data) {
+    throw result.error ?? new Error("Could not create Record fixture.");
+  }
+  return result.data;
+}
+
+async function readRecord(recordId: string): Promise<Tables<"records">> {
+  const result = await admin
+    .from("records")
+    .select("*")
+    .eq("business_id", business.id)
+    .eq("id", recordId)
+    .single();
+  if (result.error || !result.data) {
+    throw result.error ?? new Error("Could not read Record fixture.");
+  }
+  return result.data;
+}
+
 async function readState(
   targetObjectKey = "product",
   selectorValue = "Celebration Box",
   requestedUpdateFieldKeys = ["name", "price", "available"],
-) {
+): Promise<RecordUpdateReadyState | Extract<RecordUpdateReadyState, never>> {
   const { data, error } = await owner.rpc(
     "get_confirmed_graph_record_update_state",
     {
       expected_business_id: business.id,
       expected_actor_id: ownerUser.id,
       target_object_key: targetObjectKey,
-      requested_selector: [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: selectorValue,
-        },
-      ],
+      requested_selector: {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: selectorValue,
+      },
       requested_update_field_keys: requestedUpdateFieldKeys,
     },
   );
   if (error || !data || typeof data !== "object" || Array.isArray(data)) {
     throw error ?? new Error("Could not read Record update state.");
   }
-  return data as {
-    state: string;
-    business_id: string;
-    actor_id: string;
-    base_version_id: string;
-    head_revision: number;
-    object_definition_id: string;
-    object_key: string;
-    object_schema_digest: string;
-    canonical_selector: unknown;
-    selector_digest: string;
-    target_record_id: string;
-    target_record_digest: string;
-  };
+  const parsed = recordUpdateTargetStateSchema.parse(data);
+  if (parsed.state !== "ready") {
+    throw new Error(`Expected ready state, received ${parsed.state}.`);
+  }
+  return parsed;
 }
 
-describe("confirmed generic Record update boundary", () => {
+function timestamp(value: string): number {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) throw new Error(`Invalid timestamp: ${value}`);
+  return parsed;
+}
+
+async function expectUpdatedAtChanges(
+  recordId: string,
+  mutate: () => Promise<unknown>,
+): Promise<void> {
+  const before = await readRecord(recordId);
+  await mutate();
+  const after = await readRecord(recordId);
+  expect(timestamp(after.updated_at)).toBeGreaterThan(
+    timestamp(before.updated_at),
+  );
+}
+
+describe("lean confirmed generic Record update boundary", () => {
   beforeAll(async () => {
     const settings = getLocalSupabaseSettings();
     sql = postgres(settings.databaseUrl, { max: 1 });
@@ -180,19 +224,22 @@ describe("confirmed generic Record update boundary", () => {
       config_json: { fields: ["name", "price", "available"] },
       audience: "internal",
     });
-    const created = await owner.rpc("create_graph_record", {
-      expected_business_id: business.id,
-      target_object_definition_id: product.id,
-      requested_data: {
-        name: "Celebration Box",
-        price: 25,
-        available: true,
+    await fixtures.insert("forms", {
+      business_id: business.id,
+      key: "product_edit",
+      name: "Edit Product",
+      object_definition_id: product.id,
+      mode: "edit",
+      audience: "internal",
+      config_json: {
+        fields: [{ field: "name" }, { field: "price" }, { field: "available" }],
       },
-      requested_record_status: "active",
     });
-    if (created.error || !created.data) {
-      throw created.error ?? new Error("Could not create Record fixture.");
-    }
+    await createRecord(product.id, {
+      name: "Celebration Box",
+      price: 25,
+      available: true,
+    });
 
     const [createdEquipment] = await fixtures.insert("object_definitions", {
       business_id: business.id,
@@ -242,22 +289,11 @@ describe("confirmed generic Record update boundary", () => {
         position: 3,
       },
     ]);
-    const equipmentRecord = await owner.rpc("create_graph_record", {
-      expected_business_id: business.id,
-      target_object_definition_id: equipment.id,
-      requested_data: {
-        name: "Projector",
-        hire_price: 50,
-        available: true,
-      },
-      requested_record_status: "active",
+    await createRecord(equipment.id, {
+      name: "Projector",
+      hire_price: 50,
+      available: true,
     });
-    if (equipmentRecord.error || !equipmentRecord.data) {
-      throw (
-        equipmentRecord.error ??
-        new Error("Could not create Equipment Record fixture.")
-      );
-    }
   });
 
   afterAll(async () => {
@@ -267,150 +303,267 @@ describe("confirmed generic Record update boundary", () => {
     await sql?.end();
   });
 
-  it("resolves one Product and atomically updates the generic Record", async () => {
-    const state = await readState();
+  it("accepts the generic Product rename and returns only bounded state", async () => {
+    const state = await readState("product", "Celebration Box", ["name"]);
     expect(state).toMatchObject({
       state: "ready",
       business_id: business.id,
       actor_id: ownerUser.id,
       object_key: "product",
+      object_definition_id: product.id,
+      selector: { field_key: "name", value: "Celebration Box" },
     });
-    const { data, error } = await owner.rpc("update_confirmed_graph_record", {
+    expect(state).not.toHaveProperty("data_json");
+    expect(state).not.toHaveProperty("candidates");
+    expect(state).not.toHaveProperty("object_schema_digest");
+
+    const before = await readRecord(state.target_record_id);
+    const result = await owner.rpc("update_confirmed_graph_record", {
       expected_business_id: business.id,
       expected_actor_id: ownerUser.id,
       expected_base_version_id: state.base_version_id,
       expected_head_revision: state.head_revision,
       target_object_key: state.object_key,
       expected_object_definition_id: state.object_definition_id,
-      expected_object_schema_digest: state.object_schema_digest,
-      requested_selector: state.canonical_selector as Json,
-      expected_selector_digest: state.selector_digest,
-      expected_record_id: state.target_record_id,
-      expected_record_digest: state.target_record_digest,
-      requested_data_patch: { name: "Celebration Platter", price: 30 },
+      target_record_id: state.target_record_id,
+      expected_record_updated_at: state.expected_updated_at,
+      requested_data_patch: { name: "Celebration Platter" },
     });
-    expect(error).toBeNull();
-    expect(data).toMatchObject({
+    expect(result.error).toBeNull();
+    expect(result.data).toMatchObject({
       id: state.target_record_id,
       business_id: business.id,
       object_definition_id: product.id,
       record_status: "active",
       data_json: {
         name: "Celebration Platter",
-        price: 30,
+        price: 25,
         available: true,
+      },
+    });
+    expect(timestamp(result.data!.updated_at)).toBeGreaterThan(
+      timestamp(before.updated_at),
+    );
+  });
+
+  it("accepts the generic Equipment price and availability update", async () => {
+    const state = await readState("equipment", "Projector", [
+      "hire_price",
+      "available",
+    ]);
+    const result = await owner.rpc("update_confirmed_graph_record", {
+      expected_business_id: business.id,
+      expected_actor_id: ownerUser.id,
+      expected_base_version_id: state.base_version_id,
+      expected_head_revision: state.head_revision,
+      target_object_key: state.object_key,
+      expected_object_definition_id: state.object_definition_id,
+      target_record_id: state.target_record_id,
+      expected_record_updated_at: state.expected_updated_at,
+      requested_data_patch: { hire_price: 65, available: false },
+    });
+    expect(result.error).toBeNull();
+    expect(result.data).toMatchObject({
+      id: state.target_record_id,
+      object_definition_id: equipment.id,
+      data_json: {
+        name: "Projector",
+        hire_price: 65,
+        available: false,
       },
     });
   });
 
-  it("does not replay a stale target digest and discloses no candidate rows", async () => {
-    const missing = await readState();
-    expect(missing).toEqual({
+  it("classifies zero and multiple matches without returning candidate rows", async () => {
+    const missing = await owner.rpc("get_confirmed_graph_record_update_state", {
+      expected_business_id: business.id,
+      expected_actor_id: ownerUser.id,
+      target_object_key: "product",
+      requested_selector: {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "No Such Product",
+      },
+      requested_update_field_keys: ["price"],
+    });
+    expect(missing.error).toBeNull();
+    expect(missing.data).toEqual({
       schema_version: 1,
       state: "not_found",
       object_key: "product",
       singular_label: "Product",
     });
-    const state = await readState("product", "Celebration Platter");
-    expect(state.state).toBe("ready");
-    const secondRecord = await owner.rpc("create_graph_record", {
-      expected_business_id: business.id,
-      target_object_definition_id: product.id,
-      requested_data: {
-        name: "Second Box",
-        price: 20,
-        available: true,
-      },
-      requested_record_status: "active",
+
+    await createRecord(product.id, {
+      name: "Duplicate Product",
+      price: 20,
+      available: true,
     });
-    expect(secondRecord.error).toBeNull();
-    const { data: ambiguousData, error: ambiguousError } = await owner.rpc(
+    await createRecord(product.id, {
+      name: "Duplicate Product",
+      price: 21,
+      available: true,
+    });
+    const ambiguous = await owner.rpc(
       "get_confirmed_graph_record_update_state",
       {
         expected_business_id: business.id,
         expected_actor_id: ownerUser.id,
         target_object_key: "product",
-        requested_selector: [
-          {
-            field_key: "available",
-            field_type: "boolean",
-            boolean_value: true,
-          },
-        ],
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Duplicate Product",
+        },
         requested_update_field_keys: ["price"],
       },
     );
-    expect(ambiguousError).toBeNull();
-    expect(ambiguousData).toEqual({
+    expect(ambiguous.error).toBeNull();
+    expect(ambiguous.data).toEqual({
       schema_version: 1,
       state: "ambiguous",
       object_key: "product",
       singular_label: "Product",
       match_count_class: "2_or_more",
     });
+    expect(ambiguous.data).not.toHaveProperty("candidate_records");
+  });
 
+  it("updates the prepared ID when a duplicate is created afterwards", async () => {
+    const original = await createRecord(product.id, {
+      name: "Duplicate After Preparation",
+      price: 40,
+      available: true,
+    });
+    const state = await readState("product", "Duplicate After Preparation", [
+      "price",
+    ]);
+    await createRecord(product.id, {
+      name: "Duplicate After Preparation",
+      price: 41,
+      available: true,
+    });
+
+    const result = await owner.rpc("update_confirmed_graph_record", {
+      expected_business_id: business.id,
+      expected_actor_id: ownerUser.id,
+      expected_base_version_id: state.base_version_id,
+      expected_head_revision: state.head_revision,
+      target_object_key: state.object_key,
+      expected_object_definition_id: state.object_definition_id,
+      target_record_id: state.target_record_id,
+      expected_record_updated_at: state.expected_updated_at,
+      requested_data_patch: { price: 45 },
+    });
+    expect(result.error).toBeNull();
+    expect(result.data?.id).toBe(original.id);
+    expect((await readRecord(original.id)).data_json).toMatchObject({
+      price: 45,
+    });
+  });
+
+  it("rejects stale replay and lets only one concurrent confirmation win", async () => {
+    const staleState = await readState("product", "Celebration Platter", [
+      "price",
+    ]);
     const changed = await owner.rpc("update_graph_record", {
       expected_business_id: business.id,
-      target_record_id: state.target_record_id,
-      data_patch: { price: 29 },
+      target_record_id: staleState.target_record_id,
+      data_patch: { price: 26 },
     });
     expect(changed.error).toBeNull();
-
     const replay = await owner.rpc("update_confirmed_graph_record", {
       expected_business_id: business.id,
       expected_actor_id: ownerUser.id,
-      expected_base_version_id: state.base_version_id,
-      expected_head_revision: state.head_revision,
-      target_object_key: state.object_key,
-      expected_object_definition_id: state.object_definition_id,
-      expected_object_schema_digest: state.object_schema_digest,
-      requested_selector: state.canonical_selector as Json,
-      expected_selector_digest: state.selector_digest,
-      expected_record_id: state.target_record_id,
-      expected_record_digest: state.target_record_digest,
-      requested_data_patch: { price: 31 },
+      expected_base_version_id: staleState.base_version_id,
+      expected_head_revision: staleState.head_revision,
+      target_object_key: staleState.object_key,
+      expected_object_definition_id: staleState.object_definition_id,
+      target_record_id: staleState.target_record_id,
+      expected_record_updated_at: staleState.expected_updated_at,
+      requested_data_patch: { price: 27 },
     });
     expect(replay.data).toBeNull();
-    expect(replay.error?.message).toMatch(
-      /record_update_(?:target_changed|selector_not_found)/,
+    expect(replay.error?.message).toMatch(/record_update_target_changed/);
+
+    const concurrentRecord = await createRecord(product.id, {
+      name: "Concurrent Confirmation",
+      price: 60,
+      available: true,
+    });
+    const concurrentState = await readState(
+      "product",
+      "Concurrent Confirmation",
+      ["price"],
     );
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        owner.rpc("update_confirmed_graph_record", {
+          expected_business_id: business.id,
+          expected_actor_id: ownerUser.id,
+          expected_base_version_id: concurrentState.base_version_id,
+          expected_head_revision: concurrentState.head_revision,
+          target_object_key: concurrentState.object_key,
+          expected_object_definition_id: concurrentState.object_definition_id,
+          target_record_id: concurrentState.target_record_id,
+          expected_record_updated_at: concurrentState.expected_updated_at,
+          requested_data_patch: { price: 61 },
+        }),
+      ),
+    );
+    expect(results.filter((result) => result.error === null)).toHaveLength(1);
+    expect(results.filter((result) => result.data === null)).toHaveLength(1);
+    expect((await readRecord(concurrentRecord.id)).data_json).toMatchObject({
+      price: 61,
+    });
   });
 
-  it("updates a generic Equipment Record with one selector and two Fields", async () => {
-    const state = await readState("equipment", "Projector", [
-      "hire_price",
-      "available",
-    ]);
-    expect(state).toMatchObject({
-      state: "ready",
-      object_key: "equipment",
-      object_definition_id: equipment.id,
+  it("proves updated_at changes across the bounded material update paths", async () => {
+    const publicRecord = await createRecord(product.id, {
+      name: "Timestamp Public RPC",
+      price: 70,
+      available: true,
     });
-    const { data, error } = await owner.rpc("update_confirmed_graph_record", {
-      expected_business_id: business.id,
-      expected_actor_id: ownerUser.id,
-      expected_base_version_id: state.base_version_id,
-      expected_head_revision: state.head_revision,
-      target_object_key: state.object_key,
-      expected_object_definition_id: state.object_definition_id,
-      expected_object_schema_digest: state.object_schema_digest,
-      requested_selector: state.canonical_selector as Json,
-      expected_selector_digest: state.selector_digest,
-      expected_record_id: state.target_record_id,
-      expected_record_digest: state.target_record_digest,
-      requested_data_patch: { hire_price: 65, available: false },
+    await expectUpdatedAtChanges(publicRecord.id, async () => {
+      const result = await owner.rpc("update_graph_record", {
+        expected_business_id: business.id,
+        target_record_id: publicRecord.id,
+        data_patch: { price: 71 },
+      });
+      expect(result.error).toBeNull();
     });
-    expect(error).toBeNull();
-    expect(data).toMatchObject({
-      id: state.target_record_id,
-      business_id: business.id,
-      object_definition_id: equipment.id,
-      record_status: "active",
-      data_json: {
-        name: "Projector",
-        hire_price: 65,
-        available: false,
-      },
+
+    const graphRecord = await createRecord(product.id, {
+      name: "Timestamp Graph Service",
+      price: 72,
+      available: true,
+    });
+    await expectUpdatedAtChanges(graphRecord.id, async () => {
+      const updated = await createGraphService(owner, {
+        businessId: business.id,
+      }).updateRecord({
+        recordId: graphRecord.id,
+        dataPatch: { price: 73 },
+      });
+      expect(updated.id).toBe(graphRecord.id);
+    });
+
+    const formRecord = await createRecord(product.id, {
+      name: "Timestamp Generated Form",
+      price: 74,
+      available: true,
+    });
+    await expectUpdatedAtChanges(formRecord.id, async () => {
+      const formData = new FormData();
+      formData.set("name", "Timestamp Generated Form");
+      formData.set("price", "75");
+      formData.set("available", "true");
+      const updated = await submitExperienceForm(
+        owner,
+        { businessId: business.id },
+        { formKey: "product_edit", formData, recordId: formRecord.id },
+      );
+      expect(updated.id).toBe(formRecord.id);
     });
   });
 
@@ -421,13 +574,11 @@ describe("confirmed generic Record update boundary", () => {
         expected_business_id: business.id,
         expected_actor_id: outsiderUser.id,
         target_object_key: "product",
-        requested_selector: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Celebration Platter",
-          },
-        ],
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Celebration Platter",
+        },
         requested_update_field_keys: ["price"],
       },
     );

@@ -22,7 +22,6 @@ import {
   graphKeySchema,
   jsonValueSchema,
 } from "../../core/graph/schemas";
-import { recordUpdateCanonicalSelectorSchema } from "../../core/graph/record-update/schemas";
 
 export const BUILDER_ORCHESTRATION_SCHEMA_VERSION = 1 as const;
 export const BUILDER_ORCHESTRATION_MAX_OWNER_REQUEST_BYTES = 16 * 1024;
@@ -195,20 +194,14 @@ export const builderRecordUpdateConfirmationResultSchema = z
     schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
     state: z.literal("record_update_confirmation"),
     object_label: z.string().trim().min(1).max(120),
-    selector_presentation: z
-      .array(recordUpdateSelectorPresentationSchema)
-      .min(1)
-      .max(3),
-    change_rows: z.array(recordUpdateChangeRowSchema).min(1).max(5),
+    selector_presentation: recordUpdateSelectorPresentationSchema,
+    change_rows: z.array(recordUpdateChangeRowSchema).min(1).max(3),
     base_version_id: z.uuid(),
     head_revision: z.number().int().positive(),
     object_definition_id: z.uuid(),
     object_key: graphKeySchema,
-    object_schema_digest: z.string().regex(/^[a-f0-9]{64}$/),
-    canonical_selector: recordUpdateCanonicalSelectorSchema,
-    selector_digest: z.string().regex(/^[a-f0-9]{64}$/),
     target_record_id: z.uuid(),
-    target_record_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    expected_updated_at: z.string().min(1),
     data_patch: z.record(z.string(), jsonValueSchema),
     destination_view_key: graphKeySchema.nullable(),
   })

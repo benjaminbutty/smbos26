@@ -205,16 +205,11 @@ const builderUiStateSchemas = [
         .max(64 * 1024),
       object_label: boundedText.max(120),
       selector_presentation: z
-        .array(
-          z
-            .object({
-              label: boundedText.max(120),
-              formatted_value: boundedText,
-            })
-            .strict(),
-        )
-        .min(1)
-        .max(3),
+        .object({
+          label: boundedText.max(120),
+          formatted_value: boundedText,
+        })
+        .strict(),
       change_rows: z
         .array(
           z

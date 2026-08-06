@@ -306,18 +306,15 @@ export function mapBuilderOrchestrationResult(
         headRevision: result.head_revision,
         objectDefinitionId: result.object_definition_id,
         objectKey: result.object_key,
-        objectSchemaDigest: result.object_schema_digest,
-        canonicalSelector: result.canonical_selector,
-        selectorDigest: result.selector_digest,
         targetRecordId: result.target_record_id,
-        targetRecordDigest: result.target_record_digest,
+        expectedRecordCurrentness: {
+          updatedAt: result.expected_updated_at,
+        },
         dataPatch: result.data_patch,
         destinationViewKey: result.destination_view_key,
       }),
       object_label: result.object_label,
-      selector_presentation: result.selector_presentation.map(
-        ({ label, formatted_value }) => ({ label, formatted_value }),
-      ),
+      selector_presentation: result.selector_presentation,
       change_rows: result.change_rows.map(
         ({ label, formatted_before, formatted_after }) => ({
           label,
@@ -575,8 +572,6 @@ export function mapBuilderActionError(
           }),
         };
       case "record_update_configuration_changed":
-      case "record_update_schema_changed":
-      case "record_update_selector_changed":
       case "record_update_state_changed":
       case "record_update_target_changed":
       case "record_update_target_archived":
@@ -914,11 +909,8 @@ async function executeRecordUpdateConfirmation(
         headRevision: payload.head_revision,
         objectKey: payload.object_key,
         expectedObjectDefinitionId: payload.object_definition_id,
-        objectSchemaDigest: payload.object_schema_digest,
-        canonicalSelector: payload.canonical_selector,
-        selectorDigest: payload.selector_digest,
-        expectedRecordId: payload.target_record_id,
-        recordDigest: payload.target_record_digest,
+        targetRecordId: payload.target_record_id,
+        expectedRecordUpdatedAt: payload.expected_record_currentness.updated_at,
         dataPatch: payload.data_patch,
       });
     if (

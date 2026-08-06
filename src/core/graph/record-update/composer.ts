@@ -3,18 +3,12 @@ import { z } from "zod";
 import type { Json } from "../../../db/supabase/database.types";
 import {
   recordUpdateFieldValueSchema,
-  recordUpdateSelectorClausesSchema,
+  recordUpdateSelectorSchema,
   recordUpdateTargetStateSchema,
-  type RecordUpdateCanonicalSelector,
   type RecordUpdateField,
   type RecordUpdateFieldValue,
   type RecordUpdateReadyState,
-  type RecordUpdateSelectorClause,
 } from "./schemas";
-import {
-  canonicalRecordUpdateSelectorClausesEqual,
-  normalizeSelectorText,
-} from "./selector";
 
 export const recordUpdateCompositionErrorCodes = [
   "state_invalid",
@@ -26,7 +20,6 @@ export const recordUpdateCompositionErrorCodes = [
   "field_type_mismatch",
   "file_field_not_supported",
   "option_invalid",
-  "option_ambiguous",
   "option_duplicate",
   "value_invalid",
   "no_change",
@@ -46,7 +39,6 @@ const messages: Readonly<Record<RecordUpdateCompositionErrorCode, string>> = {
     "The Record update Field type did not match configuration.",
   file_field_not_supported: "File Fields are not writable through Builder.",
   option_invalid: "The Record option is not configured for this Field.",
-  option_ambiguous: "The configured Record option is ambiguous.",
   option_duplicate: "A multi-select option was repeated.",
   value_invalid: "The Record update value was invalid.",
   no_change: "This Record already has those values.",
@@ -68,8 +60,8 @@ export class RecordUpdateCompositionError extends Error {
 const intentReadyShapeSchema = z
   .object({
     object_key: z.string().min(1).max(80),
-    selector_clauses: recordUpdateSelectorClausesSchema,
-    field_updates: z.array(recordUpdateFieldValueSchema).min(1).max(5),
+    selector: recordUpdateSelectorSchema,
+    field_updates: z.array(recordUpdateFieldValueSchema).min(1).max(3),
   })
   .strict()
   .superRefine((value, context) => {
@@ -100,9 +92,8 @@ export interface RecordUpdateChangeRow {
 
 export interface RecordUpdateComposition {
   readonly object_label: string;
-  readonly selector_fields: readonly RecordUpdateSelectorPresentation[];
+  readonly selector: RecordUpdateSelectorPresentation;
   readonly changes: readonly RecordUpdateChangeRow[];
-  readonly canonical_selector: RecordUpdateCanonicalSelector;
   readonly data_patch: Record<string, Json>;
   readonly destination_view_key: string | null;
 }
@@ -118,27 +109,12 @@ function optionsForField(field: RecordUpdateField): string[] {
     : [];
 }
 
-function normalizeOption(value: string): string {
-  return normalizeSelectorText(value);
-}
-
-function canonicalOption(field: RecordUpdateField, value: string): string {
-  const normalized = normalizeOption(value);
-  const matches = optionsForField(field).filter(
-    (option) => normalizeOption(option) === normalized,
-  );
-  if (matches.length === 0) fail("option_invalid");
-  if (matches.length !== 1) fail("option_ambiguous");
-  return matches[0]!;
-}
-
 function jsonValueForFieldValue(value: RecordUpdateFieldValue): Json {
   switch (value.field_type) {
     case "short_text":
     case "long_text":
     case "phone":
     case "url":
-      return value.string_value.normalize("NFKC").trim();
     case "email":
       return value.string_value;
     case "number":
@@ -158,50 +134,37 @@ function jsonValueForFieldValue(value: RecordUpdateFieldValue): Json {
   }
 }
 
-function canonicalizeValue(
+function validateValue(
   field: RecordUpdateField,
   value: RecordUpdateFieldValue,
 ): RecordUpdateFieldValue {
   if (field.field_type === "file") fail("file_field_not_supported");
   if (field.field_type !== value.field_type) fail("field_type_mismatch");
+
   switch (value.field_type) {
-    case "short_text":
-    case "long_text":
-    case "phone":
-    case "url":
-      return {
-        ...value,
-        string_value: value.string_value.normalize("NFKC").trim(),
-      };
-    case "email":
-    case "number":
-    case "currency":
-    case "boolean":
-    case "date":
-    case "datetime":
-      return value;
     case "select":
     case "status":
-      return {
-        ...value,
-        option_value: canonicalOption(field, value.option_value),
-      };
+      if (!optionsForField(field).includes(value.option_value)) {
+        fail("option_invalid");
+      }
+      return value;
     case "multi_select": {
-      const optionValues = value.option_values.map((option) =>
-        canonicalOption(field, option),
-      );
-      if (
-        new Set(optionValues.map(normalizeOption)).size !== optionValues.length
-      ) {
+      const options = optionsForField(field);
+      if (value.option_values.some((option) => !options.includes(option))) {
+        fail("option_invalid");
+      }
+      if (new Set(value.option_values).size !== value.option_values.length) {
         fail("option_duplicate");
       }
-      return { ...value, option_values: optionValues };
+      return value;
     }
+    default:
+      return value;
   }
 }
 
 function valueEqual(left: Json | undefined, right: Json): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right);
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function formatDate(value: string): string {
@@ -260,53 +223,6 @@ function formatValue(
   }
 }
 
-function canonicalizeAgainstServerSelector(
-  input: unknown,
-  serverSelector: RecordUpdateCanonicalSelector,
-): RecordUpdateSelectorClause[] {
-  const parsed = recordUpdateSelectorClausesSchema.safeParse(input);
-  if (!parsed.success) fail("selector_mismatch", parsed.error);
-  const serverByKey = new Map(
-    serverSelector.clauses.map((clause) => [clause.field_key, clause]),
-  );
-  const canonical = parsed.data.map((clause) => {
-    const expected = serverByKey.get(clause.field_key);
-    if (!expected || expected.field_type !== clause.field_type) {
-      fail("selector_mismatch");
-    }
-    switch (clause.field_type) {
-      case "short_text":
-        return {
-          ...clause,
-          string_value: normalizeSelectorText(clause.string_value),
-        };
-      case "select":
-      case "status":
-        if (!("option_value" in expected)) fail("selector_mismatch");
-        if (
-          normalizeOption(clause.option_value) !==
-          normalizeOption(expected.option_value)
-        ) {
-          fail("selector_mismatch");
-        }
-        return { ...clause, option_value: expected.option_value };
-      default:
-        return clause;
-    }
-  });
-  if (
-    !canonicalRecordUpdateSelectorClausesEqual(
-      canonical,
-      serverSelector.clauses,
-    )
-  ) {
-    fail("selector_mismatch");
-  }
-  return canonical.sort((left, right) =>
-    left.field_key.localeCompare(right.field_key),
-  );
-}
-
 export function composeConfirmedGraphRecordUpdate(
   stateInput: unknown,
   intentInput: unknown,
@@ -321,10 +237,13 @@ export function composeConfirmedGraphRecordUpdate(
   if (intent.data.object_key !== readyState.object_key) {
     fail("object_mismatch");
   }
-  const canonicalSelectorClauses = canonicalizeAgainstServerSelector(
-    intent.data.selector_clauses,
-    readyState.canonical_selector,
-  );
+  if (
+    intent.data.selector.field_key !== readyState.selector.field_key ||
+    intent.data.selector.field_type !== readyState.selector.field_type
+  ) {
+    fail("selector_mismatch");
+  }
+
   const fieldsByKey = new Map(
     readyState.update_fields.map((field) => [field.key, field]),
   );
@@ -334,17 +253,15 @@ export function composeConfirmedGraphRecordUpdate(
       value.value,
     ]),
   );
-  const seen = new Set<string>();
   const dataPatch: Record<string, Json> = {};
   const changes: RecordUpdateChangeRow[] = [];
+
   for (const rawValue of intent.data.field_updates) {
-    if (seen.has(rawValue.field_key)) fail("field_values_invalid");
-    seen.add(rawValue.field_key);
     const field = fieldsByKey.get(rawValue.field_key);
     if (!field || !field.is_active) fail("field_unknown_or_inactive");
     let value: RecordUpdateFieldValue;
     try {
-      value = canonicalizeValue(field, rawValue);
+      value = validateValue(field, rawValue);
     } catch (cause) {
       if (cause instanceof RecordUpdateCompositionError) throw cause;
       fail("value_invalid", cause);
@@ -370,29 +287,23 @@ export function composeConfirmedGraphRecordUpdate(
       new_value: jsonValue,
     });
   }
+
   if (changes.length === 0) fail("no_change");
-  const selectorFields = readyState.selector_current_values
-    .slice()
-    .sort((left, right) => left.field_key.localeCompare(right.field_key))
-    .map((value) => ({
-      field_key: value.field_key,
-      label: value.label,
-      formatted_value: formatValue(
-        value.field_type,
-        value.value,
-        value.settings_json,
-      ),
-    }));
+
   return {
     object_label: readyState.singular_label,
-    selector_fields: selectorFields,
-    changes,
-    canonical_selector: {
-      ...readyState.canonical_selector,
-      clauses: canonicalSelectorClauses,
+    selector: {
+      field_key: readyState.selector.field_key,
+      label: readyState.selector.label,
+      formatted_value: formatValue(
+        readyState.selector.field_type,
+        readyState.selector.value,
+        readyState.selector.settings_json,
+      ),
     },
+    changes,
     data_patch: dataPatch,
-    destination_view_key: readyState.internal_views[0]?.key ?? null,
+    destination_view_key: readyState.destination_view_key,
   };
 }
 

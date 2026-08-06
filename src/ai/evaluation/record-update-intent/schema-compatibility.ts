@@ -36,7 +36,7 @@ import {
   BUILDER_RECORD_UPDATE_INTENT_SCHEMA_VERSION,
 } from "../../record-update-intent/schemas";
 import { recordCreationFieldValueSchema } from "../../../core/graph/record-creation/schemas";
-import { recordUpdateSelectorClauseSchema } from "../../../core/graph/record-update/schemas";
+import { recordUpdateSelectorSchema } from "../../../core/graph/record-update/schemas";
 
 export const BUILDER_RECORD_UPDATE_SCHEMA_COMPATIBILITY_SCHEMA_VERSION =
   1 as const;
@@ -439,7 +439,7 @@ function fieldValueSubset(
 
 function selectorSubset(selected: readonly SelectorFieldType[]) {
   const options = selected.map((fieldType) => {
-    const option = recordUpdateSelectorClauseSchema.options.find(
+    const option = recordUpdateSelectorSchema.options.find(
       (candidate) => candidate.shape.field_type.value === fieldType,
     );
     if (!option) throw new Error("Unknown selector compatibility branch.");
@@ -451,7 +451,7 @@ function selectorSubset(selected: readonly SelectorFieldType[]) {
 }
 
 const ownerTextSchema = z.string().trim().min(1).max(2_000);
-const sourceRefs = z.array(z.string().regex(/^step_[1-9][0-9]*$/)).length(1);
+const sourceStepReference = z.string().regex(/^step_[1-9][0-9]*$/);
 const objectKey = z.string().regex(/^[a-z][a-z0-9_]*$/);
 
 function readyProbeSchema(
@@ -463,10 +463,10 @@ function readyProbeSchema(
       schema_version: z.literal(BUILDER_RECORD_UPDATE_INTENT_SCHEMA_VERSION),
       state: z.literal("ready"),
       summary: ownerTextSchema,
-      source_step_references: sourceRefs,
+      source_step_reference: sourceStepReference,
       object_key: objectKey,
-      selector_clauses: z.array(selectorSubset(selectors)).min(1).max(3),
-      field_updates: z.array(fieldValueSubset(updates)).min(1).max(5),
+      selector: selectorSubset(selectors),
+      field_updates: z.array(fieldValueSubset(updates)).min(1).max(3),
     })
     .strict();
 }
@@ -478,7 +478,7 @@ const clarificationProbeSchema = z
     understanding: ownerTextSchema,
     question: ownerTextSchema,
     reason: ownerTextSchema,
-    source_step_references: sourceRefs,
+    source_step_reference: sourceStepReference,
   })
   .strict();
 

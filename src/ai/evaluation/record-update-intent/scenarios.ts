@@ -237,7 +237,7 @@ function taskInput(
 
 function readyOutput(
   objectKey: string,
-  selectorClauses: readonly unknown[],
+  selector: unknown,
   fieldUpdates: readonly unknown[],
   summary: string,
 ) {
@@ -245,9 +245,9 @@ function readyOutput(
     schema_version: 1,
     state: "ready",
     summary,
-    source_step_references: ["step_1"],
+    source_step_reference: "step_1",
     object_key: objectKey,
-    selector_clauses: selectorClauses,
+    selector,
     field_updates: fieldUpdates,
   });
 }
@@ -260,7 +260,7 @@ function clarification(question: string) {
     question,
     reason:
       "Builder needs one exact current Record detail and an explicit new value.",
-    source_step_references: ["step_1"],
+    source_step_reference: "step_1",
   });
 }
 
@@ -279,13 +279,11 @@ const definitions = [
     ),
     expected_output: readyOutput(
       "product",
-      [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: "Celebration Box",
-        },
-      ],
+      {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "Celebration Box",
+      },
       [
         {
           field_key: "name",
@@ -307,13 +305,11 @@ const definitions = [
     ),
     expected_output: readyOutput(
       "product",
-      [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: "Afternoon Tea Box",
-        },
-      ],
+      {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "Afternoon Tea Box",
+      },
       [{ field_key: "price", field_type: "currency", number_value: 32 }],
       "Change the Afternoon Tea Box price to £32.",
     ),
@@ -330,13 +326,11 @@ const definitions = [
     ),
     expected_output: readyOutput(
       "equipment",
-      [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: "Projector",
-        },
-      ],
+      {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "Projector",
+      },
       [
         { field_key: "hire_price", field_type: "currency", number_value: 65 },
         { field_key: "available", field_type: "boolean", boolean_value: false },
@@ -356,13 +350,11 @@ const definitions = [
     ),
     expected_output: readyOutput(
       "catering_enquiry",
-      [
-        {
-          field_key: "company_name",
-          field_type: "short_text",
-          string_value: "Bedford Events Ltd",
-        },
-      ],
+      {
+        field_key: "company_name",
+        field_type: "short_text",
+        string_value: "Bedford Events Ltd",
+      },
       [
         {
           field_key: "event_date",
@@ -375,7 +367,7 @@ const definitions = [
     ),
   },
   {
-    id: "multi_clause_selector",
+    id: "single_selector_update",
     owner_request:
       "Rename the Projector with hire price £50 to Conference Projector.",
     input: taskInput(
@@ -386,14 +378,11 @@ const definitions = [
     ),
     expected_output: readyOutput(
       "equipment",
-      [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: "Projector",
-        },
-        { field_key: "hire_price", field_type: "currency", number_value: 50 },
-      ],
+      {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "Projector",
+      },
       [
         {
           field_key: "name",
@@ -415,13 +404,11 @@ const definitions = [
     ),
     expected_output: readyOutput(
       "supplier_quote",
-      [
-        {
-          field_key: "quote_reference",
-          field_type: "short_text",
-          string_value: "SQ-104",
-        },
-      ],
+      {
+        field_key: "quote_reference",
+        field_type: "short_text",
+        string_value: "SQ-104",
+      },
       [{ field_key: "status", field_type: "status", option_value: "Approved" }],
       "Change Supplier Quote SQ-104 to Approved.",
     ),
@@ -459,7 +446,7 @@ export const BUILDER_RECORD_UPDATE_EVALUATION_SCENARIO_IDS = [
   "product_absolute_currency",
   "equipment_multi_field",
   "catering_date_budget",
-  "multi_clause_selector",
+  "single_selector_update",
   "status_option",
   "relative_value_clarification",
   "missing_target_clarification",

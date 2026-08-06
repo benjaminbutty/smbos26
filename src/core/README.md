@@ -30,7 +30,9 @@ operational undo.
 ## Phase 12B generic Record update
 
 `src/core/graph/record-update/` is the provider-neutral boundary for one
-existing active Record update. It canonicalises exact selectors, validates
-typed absolute values, composes a minimal patch and owner-safe diff, parses
-bounded target state and calls the confirmed RPC. It has no broad Record query,
-model, Product-specific path, configuration lifecycle or operational history.
+existing active Record update. It validates one exact selector and one to three
+typed absolute values, composes a minimal patch and owner-safe diff, and calls
+the confirmed RPC. PostgreSQL is the sole target/match authority and returns
+only bounded not-found, ambiguous or ready state. The boundary has no broad
+Record query, model, Product-specific path, configuration lifecycle or
+operational history.

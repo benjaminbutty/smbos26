@@ -416,15 +416,19 @@ production-disabled and separately gated.
 ## Milestone 12 Phase 12B - operational generic Record update boundary
 
 Record updates remain outside configuration mutation. Builder may prepare one
-`update_record` operation for one active eligible Object and one uniquely
-matched active Record using one-to-three exact AND-only selectors and one-to-
-five explicit absolute Field values. No configuration Change, Version,
+`update_record` operation for one active eligible Object and one active Record
+resolved by one exact selector, with one to three explicit absolute Field
+values. PostgreSQL returns only bounded zero-match, multiple-match or ready
+state; candidate rows are never exposed. No configuration Change, Version,
 proposal, candidate, rollback target or operational undo is created.
 
 The model receives no Records or current Record data and supplies no Record
-identifier. PostgreSQL owns the bounded target lookup, schema/selector/target
-digests, selector revalidation and atomic call through the existing generic
-graph update trigger. The final action is AI-free and requires explicit
-Owner/Admin confirmation. Product, Equipment and Catering Enquiry are generic
-Object fixtures; Customer/Order/Order Item exclusions derive from trusted
-preorder configuration. Phase 12C is separate.
+identifier. PostgreSQL owns selector matching, target identity and the
+`updated_at` currentness check. The signed confirmation carries only the
+server-selected target ID, currentness and typed patch. The final action is
+AI-free, requires explicit Owner/Admin confirmation, locks the target Record
+once and writes through the existing graph validation/timestamp triggers.
+Product, Equipment and Catering Enquiry are generic Object fixtures;
+Customer/Order/Order Item exclusions derive from trusted preorder configuration.
+The task remains global/default/private disabled, no live gate is claimed, and
+Phase 12C is separate.

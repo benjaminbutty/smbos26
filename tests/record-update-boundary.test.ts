@@ -7,43 +7,10 @@ import {
   composeConfirmedGraphRecordUpdate,
   RecordUpdateCompositionError,
 } from "../src/core/graph/record-update/composer";
-import { parseRecordUpdateSelector } from "../src/core/graph/record-update/selector";
 import type {
   RecordUpdateField,
   RecordUpdateReadyState,
 } from "../src/core/graph/record-update/schemas";
-
-const objectId = "44444444-4444-4444-8444-444444444444";
-
-const fields: RecordUpdateField[] = [
-  {
-    key: "name",
-    label: "Name",
-    field_type: "short_text",
-    required: true,
-    settings_json: {},
-    position: 1,
-    is_active: true,
-  },
-  {
-    key: "price",
-    label: "Price",
-    field_type: "currency",
-    required: false,
-    settings_json: { currency: "GBP" },
-    position: 2,
-    is_active: true,
-  },
-  {
-    key: "status",
-    label: "Status",
-    field_type: "status",
-    required: false,
-    settings_json: { options: ["Active", "Paused"] },
-    position: 3,
-    is_active: true,
-  },
-];
 
 const state: RecordUpdateReadyState = {
   schema_version: 1,
@@ -52,87 +19,65 @@ const state: RecordUpdateReadyState = {
   actor_id: "22222222-2222-4222-8222-222222222222",
   base_version_id: "33333333-3333-4333-8333-333333333333",
   head_revision: 3,
-  object_definition_id: objectId,
+  object_definition_id: "44444444-4444-4444-8444-444444444444",
   object_key: "product",
   singular_label: "Product",
-  object_schema_digest: "a".repeat(64),
-  canonical_selector: {
-    schema_version: 1,
-    object_definition_id: objectId,
-    clauses: [
-      {
-        field_key: "name",
-        field_type: "short_text",
-        string_value: "celebration box",
-      },
-    ],
-  },
-  selector_digest: "c".repeat(64),
   target_record_id: "55555555-5555-4555-8555-555555555555",
-  target_record_digest: "b".repeat(64),
-  selector_current_values: [
+  expected_updated_at: "2026-08-06T10:00:00+00:00",
+  selector: {
+    field_key: "name",
+    field_type: "short_text",
+    label: "Name",
+    settings_json: {},
+    value: "Celebration Box",
+  },
+  update_fields: [
     {
-      field_key: "name",
-      field_type: "short_text",
+      key: "name",
       label: "Name",
+      field_type: "short_text",
+      required: true,
       settings_json: {},
-      value: "Celebration Box",
+      position: 1,
+      is_active: true,
     },
-  ],
-  update_fields: fields,
+    {
+      key: "price",
+      label: "Price",
+      field_type: "currency",
+      required: false,
+      settings_json: { currency: "GBP" },
+      position: 2,
+      is_active: true,
+    },
+    {
+      key: "status",
+      label: "Status",
+      field_type: "status",
+      required: false,
+      settings_json: { options: ["Active", "Paused"] },
+      position: 3,
+      is_active: true,
+    },
+  ] satisfies RecordUpdateField[],
   current_update_values: [
     { field_key: "name", field_type: "short_text", value: "Celebration Box" },
     { field_key: "price", field_type: "currency", value: 25 },
   ],
-  internal_views: [
-    {
-      key: "products",
-      name: "Products",
-      view_type: "table",
-      object_key: "product",
-    },
-  ],
+  destination_view_key: "products",
 };
 
-describe("generic Record update boundary", () => {
-  it("canonicalizes selectors and composes only the changed fields", () => {
-    const parsedSelector = parseRecordUpdateSelector(
-      [
-        {
-          field_key: "status",
-          field_type: "status",
-          option_value: " active ",
-        },
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: " Celebration Box ",
-        },
-      ],
-      fields,
-    );
-    expect(parsedSelector).toEqual([
-      {
-        field_key: "name",
-        field_type: "short_text",
-        string_value: "celebration box",
-      },
-      {
-        field_key: "status",
-        field_type: "status",
-        option_value: "Active",
-      },
-    ]);
+const intentSelector = {
+  field_key: "name",
+  field_type: "short_text" as const,
+  string_value: "Celebration Box",
+};
 
+describe("lean generic Record update boundary", () => {
+  it("composes one selector and only the changed values", () => {
     const composition = composeConfirmedGraphRecordUpdate(state, {
       object_key: "product",
-      selector_clauses: [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: " Celebration Box ",
-        },
-      ],
+      selector: intentSelector,
       field_updates: [
         {
           field_key: "name",
@@ -145,6 +90,12 @@ describe("generic Record update boundary", () => {
           number_value: 30,
         },
       ],
+    });
+
+    expect(composition.selector).toEqual({
+      field_key: "name",
+      label: "Name",
+      formatted_value: "Celebration Box",
     });
     expect(composition.data_patch).toEqual({
       name: "Celebration Platter",
@@ -162,23 +113,17 @@ describe("generic Record update boundary", () => {
     );
   });
 
-  it("rejects selector tampering and no-op updates", () => {
+  it("rejects selector-field tampering and actual-value no-ops", () => {
     expect(() =>
       composeConfirmedGraphRecordUpdate(state, {
         object_key: "product",
-        selector_clauses: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Other Product",
-          },
-        ],
+        selector: {
+          field_key: "price",
+          field_type: "currency",
+          number_value: 25,
+        },
         field_updates: [
-          {
-            field_key: "price",
-            field_type: "currency",
-            number_value: 30,
-          },
+          { field_key: "price", field_type: "currency", number_value: 30 },
         ],
       }),
     ).toThrow(RecordUpdateCompositionError);
@@ -186,81 +131,45 @@ describe("generic Record update boundary", () => {
     expect(() =>
       composeConfirmedGraphRecordUpdate(state, {
         object_key: "product",
-        selector_clauses: [
-          {
-            field_key: "name",
-            field_type: "short_text",
-            string_value: "Celebration Box",
-          },
-        ],
+        selector: intentSelector,
         field_updates: [
           {
             field_key: "name",
             field_type: "short_text",
             string_value: "Celebration Box",
           },
-          {
-            field_key: "price",
-            field_type: "currency",
-            number_value: 25,
-          },
+          { field_key: "price", field_type: "currency", number_value: 25 },
         ],
       }),
     ).toThrow("already has those values");
   });
 
-  it("rejects padded phone selectors and unknown options", () => {
+  it("validates configured options without normalizing targeting values", () => {
     expect(() =>
-      parseRecordUpdateSelector(
-        [
-          {
-            field_key: "phone",
-            field_type: "phone",
-            string_value: " 020 0000 0000 ",
-          },
-        ],
-        [
-          ...fields,
-          {
-            key: "phone",
-            label: "Phone",
-            field_type: "phone",
-            required: false,
-            settings_json: {},
-            position: 4,
-            is_active: true,
-          },
-        ],
-      ),
-    ).toThrow("invalid");
-    expect(() =>
-      parseRecordUpdateSelector(
-        [
+      composeConfirmedGraphRecordUpdate(state, {
+        object_key: "product",
+        selector: intentSelector,
+        field_updates: [
           {
             field_key: "status",
             field_type: "status",
             option_value: "Unknown",
           },
         ],
-        fields,
-      ),
+      }),
     ).toThrow("configured");
   });
 
-  it("binds the update token to identity, selector, target and patch", () => {
+  it("signs only the server-selected target, currentness and patch", () => {
     const service = createRecordUpdateConfirmationTokenService({
       secret: "0123456789abcdef0123456789abcdef",
       now: () => 1_000,
     });
     const composition = composeConfirmedGraphRecordUpdate(state, {
       object_key: "product",
-      selector_clauses: state.canonical_selector.clauses,
+      selector: intentSelector,
       field_updates: [
-        {
-          field_key: "price",
-          field_type: "currency",
-          number_value: 30,
-        },
+        { field_key: "price", field_type: "currency", number_value: 30 },
       ],
     });
     const token = service.sign({
@@ -270,25 +179,25 @@ describe("generic Record update boundary", () => {
       headRevision: state.head_revision,
       objectDefinitionId: state.object_definition_id,
       objectKey: state.object_key,
-      objectSchemaDigest: state.object_schema_digest,
-      canonicalSelector: composition.canonical_selector,
-      selectorDigest: state.selector_digest,
       targetRecordId: state.target_record_id,
-      targetRecordDigest: state.target_record_digest,
+      expectedRecordCurrentness: { updatedAt: state.expected_updated_at },
       dataPatch: composition.data_patch,
       destinationViewKey: composition.destination_view_key,
     });
-    expect(
-      service.verify(token, {
-        businessId: state.business_id,
-        actorId: state.actor_id,
-      }),
-    ).toMatchObject({
+    const payload = service.verify(token, {
+      businessId: state.business_id,
+      actorId: state.actor_id,
+    });
+    expect(payload).toMatchObject({
       action: "update_record",
       object_key: "product",
       target_record_id: state.target_record_id,
+      expected_record_currentness: { updated_at: state.expected_updated_at },
       data_patch: { price: 30 },
     });
+    expect(payload).not.toHaveProperty("selector");
+    expect(payload).not.toHaveProperty("canonical_selector");
+    expect(payload).not.toHaveProperty("target_record_digest");
     expect(() =>
       service.verify(token, {
         businessId: state.business_id,

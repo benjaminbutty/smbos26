@@ -2,7 +2,6 @@ import "server-only";
 
 import { z } from "zod";
 
-import { recordUpdateCanonicalSelectorSchema } from "../../core/graph/record-update/schemas";
 import { graphKeySchema, jsonObjectSchema } from "../../core/graph/schemas";
 import {
   createOperationalConfirmationEnvelopeService,
@@ -26,11 +25,10 @@ const confirmationPayloadSchema = z
     head_revision: z.number().int().positive(),
     object_definition_id: z.uuid(),
     object_key: graphKeySchema,
-    object_schema_digest: z.string().regex(/^[a-f0-9]{64}$/),
-    canonical_selector: recordUpdateCanonicalSelectorSchema,
-    selector_digest: z.string().regex(/^[a-f0-9]{64}$/),
     target_record_id: z.uuid(),
-    target_record_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    expected_record_currentness: z
+      .object({ updated_at: z.string().min(1) })
+      .strict(),
     data_patch: jsonObjectSchema,
     destination_view_key: graphKeySchema.nullable(),
     issued_at: z.number().int().nonnegative(),
@@ -46,16 +44,6 @@ const confirmationPayloadSchema = z
         code: z.ZodIssueCode.custom,
         path: ["expires_at"],
         message: "Record update confirmation expiry must be 15 minutes.",
-      });
-    }
-    if (
-      payload.canonical_selector.object_definition_id !==
-      payload.object_definition_id
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["canonical_selector"],
-        message: "Record update selector Object identity must match.",
       });
     }
   });
@@ -99,11 +87,8 @@ export interface RecordUpdateConfirmationTokenService {
     headRevision: number;
     objectDefinitionId: string;
     objectKey: string;
-    objectSchemaDigest: string;
-    canonicalSelector: unknown;
-    selectorDigest: string;
     targetRecordId: string;
-    targetRecordDigest: string;
+    expectedRecordCurrentness: { updatedAt: string };
     dataPatch: Record<string, unknown>;
     destinationViewKey: string | null;
   }): string;
@@ -145,11 +130,10 @@ export function createRecordUpdateConfirmationTokenService(
           head_revision: input.headRevision,
           object_definition_id: input.objectDefinitionId,
           object_key: input.objectKey,
-          object_schema_digest: input.objectSchemaDigest,
-          canonical_selector: input.canonicalSelector,
-          selector_digest: input.selectorDigest,
           target_record_id: input.targetRecordId,
-          target_record_digest: input.targetRecordDigest,
+          expected_record_currentness: {
+            updated_at: input.expectedRecordCurrentness.updatedAt,
+          },
           data_patch: input.dataPatch,
           destination_view_key: input.destinationViewKey,
           issued_at: issuedAt,

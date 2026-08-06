@@ -6,11 +6,10 @@ import { z } from "zod";
 import type { Database, Tables } from "../../../db/supabase/database.types";
 import { graphKeySchema, jsonObjectSchema } from "../schemas";
 import {
-  recordUpdateCanonicalSelectorSchema,
-  recordUpdateSelectorClausesSchema,
+  recordUpdateSelectorSchema,
   recordUpdateTargetStateSchema,
-  type RecordUpdateCanonicalSelector,
-  type RecordUpdateSelectorClause,
+  type RecordUpdateReadyState,
+  type RecordUpdateSelector,
   type RecordUpdateTargetState,
 } from "./schemas";
 
@@ -27,8 +26,6 @@ export const recordUpdateServiceErrorCodes = [
   "record_update_selector_not_found",
   "record_update_selector_ambiguous",
   "record_update_configuration_changed",
-  "record_update_schema_changed",
-  "record_update_selector_changed",
   "record_update_state_changed",
   "record_update_target_changed",
   "record_update_target_archived",
@@ -60,10 +57,6 @@ const messages: Readonly<Record<RecordUpdateServiceErrorCode, string>> = {
     "More than one active Record matched those exact details.",
   record_update_configuration_changed:
     "The Business configuration changed while this Record was being prepared.",
-  record_update_schema_changed:
-    "The Object schema changed while this Record was being prepared.",
-  record_update_selector_changed:
-    "The Record selector changed while this Record was being prepared.",
   record_update_state_changed:
     "The selected Record changed while this Record was being prepared.",
   record_update_target_changed:
@@ -92,22 +85,24 @@ const serviceContextSchema = z
   .object({ businessId: z.uuid(), actorId: z.uuid() })
   .strict();
 
+const updateFieldKeysSchema = z
+  .array(graphKeySchema)
+  .min(1)
+  .max(3)
+  .superRefine((keys, context) => {
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Update Field keys must be unique.",
+      });
+    }
+  });
+
 const readStateRequestSchema = z
   .object({
     objectKey: graphKeySchema,
-    selectorClauses: recordUpdateSelectorClausesSchema,
-    updateFieldKeys: z
-      .array(graphKeySchema)
-      .min(1)
-      .max(5)
-      .superRefine((keys, context) => {
-        if (new Set(keys).size !== keys.length) {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: "Update Field keys must be unique.",
-          });
-        }
-      }),
+    selector: recordUpdateSelectorSchema,
+    updateFieldKeys: updateFieldKeysSchema,
   })
   .strict();
 
@@ -117,11 +112,8 @@ const updateConfirmedRequestSchema = z
     headRevision: z.number().int().positive(),
     objectKey: graphKeySchema,
     expectedObjectDefinitionId: z.uuid(),
-    objectSchemaDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    canonicalSelector: recordUpdateCanonicalSelectorSchema,
-    selectorDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    expectedRecordId: z.uuid(),
-    recordDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    targetRecordId: z.uuid(),
+    expectedRecordUpdatedAt: z.string().min(1),
     dataPatch: jsonObjectSchema,
   })
   .strict();
@@ -161,7 +153,7 @@ function unwrapState(data: unknown): unknown {
 
 export interface RecordUpdateReadStateInput {
   readonly objectKey: string;
-  readonly selectorClauses: readonly RecordUpdateSelectorClause[];
+  readonly selector: RecordUpdateSelector;
   readonly updateFieldKeys: readonly string[];
 }
 
@@ -170,11 +162,8 @@ export interface ConfirmedRecordUpdateInput {
   readonly headRevision: number;
   readonly objectKey: string;
   readonly expectedObjectDefinitionId: string;
-  readonly objectSchemaDigest: string;
-  readonly canonicalSelector: RecordUpdateCanonicalSelector;
-  readonly selectorDigest: string;
-  readonly expectedRecordId: string;
-  readonly recordDigest: string;
+  readonly targetRecordId: string;
+  readonly expectedRecordUpdatedAt: string;
   readonly dataPatch: Record<string, unknown>;
 }
 
@@ -202,7 +191,7 @@ export function createConfirmedRecordUpdateService(
           expected_business_id: trustedContext.businessId,
           expected_actor_id: trustedContext.actorId,
           target_object_key: request.objectKey,
-          requested_selector: request.selectorClauses,
+          requested_selector: request.selector,
           requested_update_field_keys: request.updateFieldKeys,
         },
       );
@@ -231,12 +220,6 @@ export function createConfirmedRecordUpdateService(
 
     async updateConfirmed(input) {
       const request = updateConfirmedRequestSchema.parse(input);
-      if (
-        request.canonicalSelector.object_definition_id !==
-        request.expectedObjectDefinitionId
-      ) {
-        throw new RecordUpdateServiceError("record_update_response_invalid");
-      }
       const { data, error } = await client.rpc(
         "update_confirmed_graph_record",
         {
@@ -246,11 +229,8 @@ export function createConfirmedRecordUpdateService(
           expected_head_revision: request.headRevision,
           target_object_key: request.objectKey,
           expected_object_definition_id: request.expectedObjectDefinitionId,
-          expected_object_schema_digest: request.objectSchemaDigest,
-          requested_selector: request.canonicalSelector,
-          expected_selector_digest: request.selectorDigest,
-          expected_record_id: request.expectedRecordId,
-          expected_record_digest: request.recordDigest,
+          target_record_id: request.targetRecordId,
+          expected_record_updated_at: request.expectedRecordUpdatedAt,
           requested_data_patch: request.dataPatch,
         },
       );
@@ -263,7 +243,7 @@ export function createConfirmedRecordUpdateService(
         parsed.data.business_id !== trustedContext.businessId ||
         parsed.data.object_definition_id !==
           request.expectedObjectDefinitionId ||
-        parsed.data.id !== request.expectedRecordId
+        parsed.data.id !== request.targetRecordId
       ) {
         throw new RecordUpdateServiceError(
           "record_update_response_invalid",
@@ -274,3 +254,5 @@ export function createConfirmedRecordUpdateService(
     },
   };
 }
+
+export type { RecordUpdateReadyState };

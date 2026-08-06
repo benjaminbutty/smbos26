@@ -184,22 +184,25 @@ version change.
 
 ## Phase 12B generic Record update
 
-The current private Builder runtime extends that frozen five-task baseline with
-the disabled `builder_record_update_intent_v1` task and its separate disabled
-policy. Only a private authenticated OpenAI clone may later map it to the
-Terra-medium policy after its independent compatibility, qualification and
-reliability gates pass.
+The Builder registry keeps `builder_record_update_intent_v1` and its policy
+global, default and private-disabled. No live qualification or reliability
+gate has enabled this task. Phase 12A's frozen task, policy and evidence are
+unchanged.
 
 The update route accepts exactly one operational `update_record` plan. The
 intent task sees only the unchanged AI-safe configuration context and returns
-one-to-three exact AND-only selector clauses plus one-to-five explicit absolute
-Field values. It sees no Records, current values or identifiers. The server
-resolves at most two exact active matches, discloses no candidates, composes a
-generic before/after diff and requires Owner/Admin confirmation.
+one exact selector over a supported scalar Field plus one to three explicit
+absolute Field values. It sees no Records, current values or identifiers. The
+server asks PostgreSQL to resolve zero, one or multiple active matches; it
+returns only a bounded owner-safe state and never exposes candidate rows.
+Owner/Admin confirmation shows the actual current values and the proposed
+changes for the one target.
 
 The final `recordUpdateConfirmationToken` action performs no AI or accounting
-work and calls the confirmed generic graph update boundary once. PostgreSQL
-checks the head, schema, selector and target digests, locks the target Record
-before the Object, reruns the selector under the Object lock and delegates
-complete Record validation to the existing graph trigger. The write is
-operational only: it creates no configuration Version, Change or undo state.
+work. It carries only the server-selected target ID, its `updated_at`
+currentness and the typed patch, then calls the confirmed generic graph update
+boundary once. PostgreSQL rechecks the head, target Object and currentness,
+locks the target Record once, and relies on the existing graph validation and
+timestamp triggers. The write is operational only: it creates no
+configuration Version, Change, history entry or undo state. The server selects
+the existing internal View after success.

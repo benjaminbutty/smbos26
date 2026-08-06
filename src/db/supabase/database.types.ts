@@ -2198,12 +2198,9 @@ export type Database = {
           expected_business_id: string;
           expected_head_revision: number;
           expected_object_definition_id: string;
-          expected_object_schema_digest: string;
-          expected_record_digest: string;
-          expected_selector_digest: string;
-          expected_record_id: string;
+          expected_record_updated_at: string;
           requested_data_patch: Json;
-          requested_selector: Json;
+          target_record_id: string;
           target_object_key: string;
         };
         Returns: {

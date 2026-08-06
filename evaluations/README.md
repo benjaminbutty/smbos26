@@ -706,12 +706,12 @@ reviewable on its feature branch.
 ## Phase 12B Record-update evaluation
 
 The independent Record-update subject is
-`builder_record_update_intent_v1`, with the disabled production policy and a
-private Terra-medium evaluation policy. Its eight frozen configuration-only
-scenarios are `product_rename`, `product_absolute_currency`,
-`equipment_multi_field`, `catering_date_budget`, `multi_clause_selector`,
-`status_option`, `relative_value_clarification` and
-`missing_target_clarification`.
+`builder_record_update_intent_v1`, with the global/default/private-disabled
+production task and no enabled Terra mapping. Its deterministic task tests
+cover one exact selector, bounded one-to-three absolute updates, configured
+option handling, unsupported relative requests and missing-target
+clarification. The scenario fixture remains configuration-only and never
+loads operational Records or current values.
 
 The compatibility command is opt-in only:
 
@@ -721,12 +721,10 @@ AI_PROVIDER=openai OPENAI_API_KEY=... \
 npm run eval:builder-record-update-schema-compatibility-live
 ```
 
-It starts with the exact registered schema, uses a fixed synthetic request,
-permits at most 32 sequential probes and reserves 1,341,440 microusd under a
-1,350,000-microusd ceiling. Qualification reserves 4,183,040 microusd under
-4,300,000; reliability reserves 12,549,120 under 12,700,000. They require
-separate explicit flags and are not run by CI, build, seed or application
-startup. Reports are metadata-only and never include owner requests, context,
-values, model output, provider bodies or credentials. Phase 12B remains
-unmerged until deterministic, database, UI and independent live evidence are
-reviewed.
+It remains opt-in engineering scaffolding only: compatibility, qualification
+and reliability require separate explicit flags and are not run by CI, build,
+seed or application startup. No live Phase 12B command has been run or used to
+qualify or enable the task. Reports are metadata-only and never include owner
+requests, context, values, model output, provider bodies or credentials.
+Phase 12B remains unmerged and private-disabled pending any separately
+authorized evidence review.

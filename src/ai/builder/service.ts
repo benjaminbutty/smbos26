@@ -68,7 +68,7 @@ import {
 } from "../../core/graph/record-update/composer";
 import {
   type RecordUpdateReadyState,
-  type RecordUpdateSelectorClause,
+  type RecordUpdateSelector,
   type RecordUpdateTargetState,
 } from "../../core/graph/record-update/schemas";
 import { createConfirmedRecordUpdateService } from "../../core/graph/record-update/service";
@@ -142,7 +142,7 @@ interface BuilderOrchestrationDependencies {
     context: { businessId: string; actorId: string },
     input: {
       objectKey: string;
-      selectorClauses: readonly RecordUpdateSelectorClause[];
+      selector: RecordUpdateSelector;
       updateFieldKeys: readonly string[];
     },
   ): Promise<RecordUpdateTargetState>;
@@ -649,7 +649,7 @@ export function createBuilderOrchestrationService(
       ((client, context, input) =>
         createConfirmedRecordUpdateService(client, context).readState({
           objectKey: input.objectKey,
-          selectorClauses: input.selectorClauses,
+          selector: input.selector,
           updateFieldKeys: input.updateFieldKeys,
         })),
     generateExecutionId:
@@ -914,7 +914,7 @@ export function createBuilderOrchestrationService(
             initial.executionContext,
             {
               objectKey: route.objectKey,
-              selectorClauses: intent.selector_clauses,
+              selector: intent.selector,
               updateFieldKeys: intent.field_updates.map(
                 (value) => value.field_key,
               ),
@@ -978,17 +978,14 @@ export function createBuilderOrchestrationService(
               schema_version: 1,
               state: "record_update_confirmation",
               object_label: composition.object_label,
-              selector_presentation: composition.selector_fields,
+              selector_presentation: composition.selector,
               change_rows: composition.changes,
               base_version_id: targetState.base_version_id,
               head_revision: targetState.head_revision,
               object_definition_id: targetState.object_definition_id,
               object_key: targetState.object_key,
-              object_schema_digest: targetState.object_schema_digest,
-              canonical_selector: composition.canonical_selector,
-              selector_digest: targetState.selector_digest,
               target_record_id: targetState.target_record_id,
-              target_record_digest: targetState.target_record_digest,
+              expected_updated_at: targetState.expected_updated_at,
               data_patch: composition.data_patch,
               destination_view_key: composition.destination_view_key,
             }),

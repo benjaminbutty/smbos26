@@ -2526,23 +2526,36 @@ versioning remain outside this phase.
 
 ## ADR-033 — Builder-assisted generic Record updates
 
-Phase 12B is implemented on its feature branch and is not merged. It adds one
-generic operational `update_record` path: one active eligible Object, one
-active Record, one-to-three exact AND-only selector clauses and one-to-five
-explicit absolute Field values. Product is only an acceptance fixture;
-Equipment and Catering Enquiry use the same primitives and production path.
+Phase 12B is implemented on its feature branch and remains draft, disabled,
+unqualified and unmerged. It adds one generic operational `update_record`
+path: one active eligible Object, one exact selector over a supported scalar
+Field, and one to three explicit absolute Field values. Product is only an
+acceptance fixture; Equipment and Catering Enquiry use the same primitives and
+path.
 
-The unchanged AI-safe model context contains no operational Records or current
-Record values. The model supplies no Record ID. The server canonicalises and
-resolves the selector with a two-row cap and discloses no candidates. A signed
-before/after confirmation is required before one AI-free action calls the
-existing generic `update_graph_record` RPC. The final RPC checks the
-configuration head, Object schema digest, selector digest and target Record
-digest, locks the Record before the Object, reruns the selector under the
-Object lock and preserves the existing graph trigger as final authority.
+The unchanged AI-safe model context contains no operational Records, current
+values or identifiers. The model supplies one Object key, one selector and the
+requested absolute values, but never a Record ID. PostgreSQL is the sole
+selector and target authority. It returns only bounded zero-match,
+multiple-match or ready state, with the actual current values needed for
+confirmation; candidate rows and full Records are never disclosed.
+
+The signed 15-minute confirmation token is bound to the authenticated Business
+and actor and contains only the schema/action envelope, head identity, target
+Object identity, server-selected Record ID, expected `updated_at` currentness,
+typed patch, destination and token timestamps. The final action is AI-free and
+does no accounting or configuration mutation. PostgreSQL reads the Business
+head `FOR SHARE`, locks the target Record `FOR UPDATE` once, verifies
+currentness, and lets the existing `records_validate` and `set_updated_at`
+triggers authoritatively validate and write the merged patch. It does not
+re-query the selector, take an explicit Object `FOR UPDATE` lock or duplicate
+the target lock.
 
 Customer, Order and Order Item exclusions derive from active trusted preorder
-capability mappings; Product remains eligible. No configuration Version,
-Change, proposal, history, undo record, domain table, queue or new primitive is
-introduced. Fuzzy matching, substring matching, bulk updates, null/File
-clearing, lifecycle changes and Phase 12C remain unsupported.
+capability mappings; Product remains eligible. The write is ordinary
+operational data: it creates no configuration Version, Change, history entry,
+undo record, domain table, queue or new primitive. Fuzzy, substring, bulk,
+relative, null/File, lifecycle, relationship, location and Phase 12C work
+remain unsupported. The task remains global/default/private disabled and no
+live qualification or reliability evidence is claimed. Phase 12A's frozen
+subject and evidence are untouched.

@@ -14,118 +14,14 @@ import {
   type BuilderRecordUpdateIntentReady,
   type BuilderRecordUpdateIntentTaskInput,
 } from "./schemas";
-import type { RecordUpdateSelectorClause } from "../../core/graph/record-update/schemas";
+import type { RecordUpdateSelector } from "../../core/graph/record-update/schemas";
 
 function fail(code: BuilderRecordUpdateIntentDiagnosticCode): never {
   throw new BuilderRecordUpdateIntentValidationError(code);
 }
 
-function normalize(value: string): string {
-  return value
-    .normalize("NFKC")
-    .toLocaleLowerCase("en")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-function phraseInText(text: string, phrase: string): boolean {
-  const normalizedText = normalize(text);
-  const normalizedPhrase = normalize(phrase);
-  return (
-    Boolean(normalizedPhrase) &&
-    ` ${normalizedText} `.includes(` ${normalizedPhrase} `)
-  );
-}
-
-function exactValueInText(text: string, value: string): boolean {
-  return text.includes(value);
-}
-
-function numberMentioned(text: string, value: number): boolean {
-  const alternatives = new Set([
-    String(value),
-    String(value).replace(".", ","),
-    value.toLocaleString("en-GB"),
-    value.toLocaleString("en-US"),
-  ]);
-  return [...alternatives].some((candidate) => {
-    const escaped = candidate.replace(/[.,]/g, "[.,]");
-    return new RegExp(`(^|[^0-9])${escaped}([^0-9]|$)`).test(text);
-  });
-}
-
-function dateMentioned(text: string, value: string): boolean {
-  if (text.includes(value)) return true;
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year!, month! - 1, day));
-  const monthName = new Intl.DateTimeFormat("en-GB", {
-    month: "long",
-    timeZone: "UTC",
-  }).format(date);
-  const monthShortName = new Intl.DateTimeFormat("en-GB", {
-    month: "short",
-    timeZone: "UTC",
-  }).format(date);
-  return new RegExp(
-    `\\b${day}(?:st|nd|rd|th)?\\s+(?:${monthName}|${monthShortName})\\s+${year}\\b`,
-    "i",
-  ).test(text);
-}
-
-function fieldPhrases(field: { key: string; label: string }): string[] {
-  return [field.label, field.key.replace(/_/g, " ")]
-    .map(normalize)
-    .filter(
-      (phrase, index, phrases) =>
-        Boolean(phrase) && phrases.indexOf(phrase) === index,
-    );
-}
-
-function booleanMentioned(
-  text: string,
-  field: { key: string; label: string },
-  value: boolean,
-): boolean {
-  const phrases = fieldPhrases(field);
-  const positiveWords = ["true", "yes", "available", "enabled", "active"];
-  const negativeWords = ["false", "no", "unavailable", "disabled", "inactive"];
-  const words = value ? positiveWords : negativeWords;
-  return phrases.some((phrase) =>
-    words.some(
-      (word) =>
-        phraseInText(text, `${phrase} ${word}`) ||
-        phraseInText(text, `${word} ${phrase}`) ||
-        phraseInText(text, `${phrase} to ${word}`) ||
-        phraseInText(text, `${phrase} as ${word}`) ||
-        (normalize(word).includes(normalize(phrase)) &&
-          phraseInText(text, word)),
-    ),
-  );
-}
-
-function configuredOptions(field: {
-  settings: { options?: string[] | undefined };
-}): string[] {
-  return field.settings.options ?? [];
-}
-
-function normalizeOption(value: string): string {
-  return normalize(value);
-}
-
-function configuredOption(
-  field: { settings: { options?: string[] | undefined } },
-  value: string,
-): string | undefined {
-  const normalized = normalizeOption(value);
-  return configuredOptions(field).find(
-    (option) => normalizeOption(option) === normalized,
-  );
-}
-
 function relativeValueRequested(ownerRequest: string): boolean {
-  return /\b(?:increase|decrease|raise|lower|cheaper|more\s+expensive|add|subtract|increment|decrement|latest|most\s+recent|last|next|same\s+as|a\s+little|one\s+week|tomorrow|today|yesterday|relative)\b/i.test(
+  return /\b(?:increase|decrease|raise|lower|cheaper|more\s+expensive|same\s+as|latest|most\s+recent)\b|\bby\s+\d+(?:\.\d+)?%/i.test(
     ownerRequest,
   );
 }
@@ -181,13 +77,8 @@ function validateReadyPlan(input: BuilderRecordUpdateIntentTaskInput) {
   return { plan, concept, step };
 }
 
-function validateSourceStep(
-  references: readonly string[],
-  stepReference: string,
-): void {
-  if (references.length !== 1 || references[0] !== stepReference) {
-    fail("source_step_references_invalid");
-  }
+function validateSourceStep(reference: string, stepReference: string): void {
+  if (reference !== stepReference) fail("source_step_reference_invalid");
 }
 
 function targetObject(
@@ -233,216 +124,83 @@ function targetObject(
   return object;
 }
 
-function validateSelectorValueGrounding(
-  input: BuilderRecordUpdateIntentTaskInput,
-  field: {
-    key: string;
-    label: string;
-    settings: { options?: string[] | undefined };
-  },
-  clause: RecordUpdateSelectorClause,
-): void {
-  switch (clause.field_type) {
-    case "short_text":
-      if (!phraseInText(input.owner_request, clause.string_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-    case "email":
-    case "phone":
-    case "url":
-      if (!exactValueInText(input.owner_request, clause.string_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-    case "number":
-    case "currency":
-      if (!numberMentioned(input.owner_request, clause.number_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-    case "boolean":
-      if (!booleanMentioned(input.owner_request, field, clause.boolean_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-    case "date":
-      if (!dateMentioned(input.owner_request, clause.date_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-    case "datetime":
-      if (!exactValueInText(input.owner_request, clause.datetime_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-    case "select":
-    case "status":
-      if (!configuredOption(field, clause.option_value)) {
-        fail("selector_option_invalid");
-      }
-      if (!phraseInText(input.owner_request, clause.option_value)) {
-        fail("selector_value_not_owner_supplied");
-      }
-      break;
-  }
+const selectorFieldTypes = new Set([
+  "short_text",
+  "email",
+  "phone",
+  "url",
+  "number",
+  "currency",
+  "boolean",
+  "date",
+  "datetime",
+  "select",
+  "status",
+]);
+
+function configuredOptions(field: {
+  settings: { options?: string[] | undefined };
+}): string[] {
+  return field.settings.options ?? [];
 }
 
 function validateSelector(
-  input: BuilderRecordUpdateIntentTaskInput,
   object: ReturnType<typeof targetObject>,
-  clauses: readonly RecordUpdateSelectorClause[],
+  selector: RecordUpdateSelector,
 ): void {
-  if (clauses.length < 1) fail("selector_empty");
-  const seen = new Set<string>();
-  for (const clause of clauses) {
-    if (seen.has(clause.field_key)) fail("selector_duplicate");
-    seen.add(clause.field_key);
-    const field = object.fields.find(
-      (candidate) => candidate.key === clause.field_key,
-    );
-    if (!field || !field.is_active) fail("selector_field_unknown_or_inactive");
-    if (field.field_type !== clause.field_type) {
-      fail("selector_field_type_mismatch");
-    }
-    if (
-      ![
-        "short_text",
-        "email",
-        "phone",
-        "url",
-        "number",
-        "currency",
-        "boolean",
-        "date",
-        "datetime",
-        "select",
-        "status",
-      ].includes(field.field_type)
-    ) {
-      fail("selector_type_not_supported");
-    }
-    validateSelectorValueGrounding(input, field, clause);
+  const field = object.fields.find(
+    (candidate) => candidate.key === selector.field_key,
+  );
+  if (!field || !field.is_active) {
+    fail("selector_field_unknown_or_inactive");
+  }
+  if (field.field_type !== selector.field_type) {
+    fail("selector_field_type_mismatch");
+  }
+  if (!selectorFieldTypes.has(field.field_type)) {
+    fail("selector_type_not_supported");
+  }
+  if (
+    (selector.field_type === "select" || selector.field_type === "status") &&
+    !configuredOptions(field).includes(selector.option_value)
+  ) {
+    fail("selector_option_invalid");
   }
 }
 
-function validateUpdateValueGrounding(
-  input: BuilderRecordUpdateIntentTaskInput,
-  field: {
-    key: string;
-    label: string;
-    settings: { options?: string[] | undefined };
-  },
-  value: BuilderRecordUpdateIntentReady["field_updates"][number],
+function validateFieldUpdates(
+  object: ReturnType<typeof targetObject>,
+  values: BuilderRecordUpdateIntentReady["field_updates"],
 ): void {
-  switch (value.field_type) {
-    case "short_text":
-    case "long_text":
-    case "phone":
-    case "url":
-      if (!phraseInText(input.owner_request, value.string_value)) {
-        fail("field_value_not_owner_supplied");
+  const seen = new Set<string>();
+  for (const value of values) {
+    if (seen.has(value.field_key)) fail("field_updates_duplicate");
+    seen.add(value.field_key);
+    if (value.field_key === "record_status") fail("field_unknown_or_inactive");
+    const field = object.fields.find(
+      (candidate) => candidate.key === value.field_key,
+    );
+    if (!field || !field.is_active) fail("field_unknown_or_inactive");
+    if (field.field_type === "file") fail("file_field_not_supported");
+    if (field.field_type !== value.field_type) fail("field_type_mismatch");
+    if (
+      (value.field_type === "select" || value.field_type === "status") &&
+      !configuredOptions(field).includes(value.option_value)
+    ) {
+      fail("option_invalid");
+    }
+    if (value.field_type === "multi_select") {
+      if (new Set(value.option_values).size !== value.option_values.length) {
+        fail("option_duplicate");
       }
-      break;
-    case "email":
-      if (!exactValueInText(input.owner_request, value.string_value)) {
-        fail("field_value_not_owner_supplied");
-      }
-      break;
-    case "number":
-    case "currency":
-      if (!numberMentioned(input.owner_request, value.number_value)) {
-        fail("field_value_not_owner_supplied");
-      }
-      break;
-    case "boolean":
-      if (!booleanMentioned(input.owner_request, field, value.boolean_value)) {
-        fail("field_value_not_owner_supplied");
-      }
-      break;
-    case "date":
-      if (!dateMentioned(input.owner_request, value.date_value)) {
-        fail("field_value_not_owner_supplied");
-      }
-      break;
-    case "datetime":
-      if (!exactValueInText(input.owner_request, value.datetime_value)) {
-        fail("field_value_not_owner_supplied");
-      }
-      break;
-    case "select":
-    case "status":
-      if (!configuredOption(field, value.option_value)) {
+      if (
+        value.option_values.some(
+          (option) => !configuredOptions(field).includes(option),
+        )
+      ) {
         fail("option_invalid");
       }
-      if (!phraseInText(input.owner_request, value.option_value)) {
-        fail("field_value_not_owner_supplied");
-      }
-      break;
-    case "multi_select": {
-      const normalized = value.option_values.map(normalizeOption);
-      if (new Set(normalized).size !== normalized.length)
-        fail("option_duplicate");
-      for (const option of value.option_values) {
-        if (!configuredOption(field, option)) fail("option_invalid");
-        if (!phraseInText(input.owner_request, option)) {
-          fail("field_value_not_owner_supplied");
-        }
-      }
-      break;
     }
-  }
-}
-
-function semanticallyEqual(
-  selector: RecordUpdateSelectorClause,
-  update: BuilderRecordUpdateIntentReady["field_updates"][number],
-  field: { settings: { options?: string[] | undefined } },
-): boolean {
-  if (selector.field_type !== update.field_type) return false;
-  switch (selector.field_type) {
-    case "short_text":
-      return (
-        update.field_type === "short_text" &&
-        normalize(selector.string_value) === normalize(update.string_value)
-      );
-    case "email":
-    case "phone":
-    case "url":
-      return (
-        (update.field_type === "email" ||
-          update.field_type === "phone" ||
-          update.field_type === "url") &&
-        selector.string_value === update.string_value
-      );
-    case "number":
-    case "currency":
-      return (
-        (update.field_type === "number" || update.field_type === "currency") &&
-        selector.number_value === update.number_value
-      );
-    case "boolean":
-      return (
-        update.field_type === "boolean" &&
-        selector.boolean_value === update.boolean_value
-      );
-    case "date":
-      return (
-        update.field_type === "date" &&
-        selector.date_value === update.date_value
-      );
-    case "datetime":
-      return (
-        update.field_type === "datetime" &&
-        selector.datetime_value === update.datetime_value
-      );
-    case "select":
-    case "status":
-      return (
-        (update.field_type === "select" || update.field_type === "status") &&
-        configuredOption(field, selector.option_value) ===
-          configuredOption(field, update.option_value)
-      );
   }
 }
 
@@ -463,7 +221,7 @@ export function validateBuilderRecordUpdateIntentOutput(
   const output = builderRecordUpdateIntentOutputSchema.safeParse(parsedOutput);
   if (!output.success) fail("output_contract_invalid");
   validateSourceStep(
-    output.data.source_step_references,
+    output.data.source_step_reference,
     planInfo.step.reference,
   );
   if (output.data.state === "needs_clarification") return output.data;
@@ -475,31 +233,8 @@ export function validateBuilderRecordUpdateIntentOutput(
     fail("target_object_unknown_or_inactive");
   }
   const object = targetObject(parsedInput, output.data.object_key);
-  validateSelector(parsedInput, object, output.data.selector_clauses);
-  const updateKeys = new Set<string>();
-  for (const value of output.data.field_updates) {
-    if (updateKeys.has(value.field_key)) fail("field_updates_duplicate");
-    updateKeys.add(value.field_key);
-    const field = object.fields.find(
-      (candidate) => candidate.key === value.field_key,
-    );
-    if (!field || !field.is_active) fail("field_unknown_or_inactive");
-    if (field.field_type === "file") fail("file_field_not_supported");
-    if (field.field_type !== value.field_type) fail("field_type_mismatch");
-    validateUpdateValueGrounding(parsedInput, field, value);
-  }
-  const selectorsByKey = new Map(
-    output.data.selector_clauses.map((clause) => [clause.field_key, clause]),
-  );
-  for (const value of output.data.field_updates) {
-    const selector = selectorsByKey.get(value.field_key);
-    if (!selector) continue;
-    const field = object.fields.find(
-      (candidate) => candidate.key === value.field_key,
-    )!;
-    if (semanticallyEqual(selector, value, field))
-      fail("selector_update_no_change");
-  }
+  validateSelector(object, output.data.selector);
+  validateFieldUpdates(object, output.data.field_updates);
   return output.data;
 }
 

@@ -230,12 +230,10 @@ export function BuilderResultPanel({
         </h2>
         <p>SMBOS found one active {state.object_label} matching:</p>
         <dl className="builder-confirmation-fields">
-          {state.selector_presentation.map((field) => (
-            <div key={`selector-${field.label}`}>
-              <dt>{field.label}</dt>
-              <dd>{field.formatted_value}</dd>
-            </div>
-          ))}
+          <div>
+            <dt>{state.selector_presentation.label}</dt>
+            <dd>{state.selector_presentation.formatted_value}</dd>
+          </div>
         </dl>
         <p>It will change:</p>
         <dl className="builder-confirmation-fields">
@@ -250,8 +248,8 @@ export function BuilderResultPanel({
           ))}
         </dl>
         <p className="builder-safety-note">
-          Confirming changes ordinary business data immediately. It changes this
-          one Record only.
+          Confirming changes this one existing {state.object_label} Record. It
+          will not appear in configuration history.
         </p>
         <form action={action} className="builder-request-panel">
           <input

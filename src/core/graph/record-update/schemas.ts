@@ -15,24 +15,6 @@ import {
 
 export const RECORD_UPDATE_SCHEMA_VERSION = 1 as const;
 
-const selectorTextValueSchema = z
-  .string()
-  .min(1)
-  .max(500)
-  .refine(
-    (value) => value.normalize("NFKC").trim().length > 0,
-    "Selector text must not be blank.",
-  );
-
-const selectorPhoneValueSchema = z
-  .string()
-  .min(1)
-  .max(120)
-  .refine(
-    (value) => value === value.trim(),
-    "Selector phone cannot be padded.",
-  );
-
 const selectorNumberValueSchema = z
   .number()
   .finite()
@@ -60,113 +42,89 @@ const selectorDatetimeValueSchema = z
   )
   .refine((value) => !Number.isNaN(Date.parse(value)), "Datetime is invalid.");
 
-const selectorOptionValueSchema = z.string().min(1).max(500);
+const selectorTextValueSchema = z.string().min(1).max(500);
+const selectorPhoneValueSchema = z.string().min(1).max(120);
+const selectorOptionValueSchema = z.string().trim().min(1).max(500);
 
-export const recordUpdateSelectorClauseSchema = z.discriminatedUnion(
-  "field_type",
-  [
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("short_text"),
-        string_value: selectorTextValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("email"),
-        string_value: recordCreationEmailValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("phone"),
-        string_value: selectorPhoneValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("url"),
-        string_value: recordCreationUrlValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("number"),
-        number_value: selectorNumberValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("currency"),
-        number_value: selectorNumberValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("boolean"),
-        boolean_value: z.boolean(),
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("date"),
-        date_value: selectorDateValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("datetime"),
-        datetime_value: selectorDatetimeValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("select"),
-        option_value: selectorOptionValueSchema,
-      })
-      .strict(),
-    z
-      .object({
-        field_key: graphKeySchema,
-        field_type: z.literal("status"),
-        option_value: selectorOptionValueSchema,
-      })
-      .strict(),
-  ],
-);
-
-export const recordUpdateSelectorClausesSchema = z
-  .array(recordUpdateSelectorClauseSchema)
-  .min(1)
-  .max(3)
-  .superRefine((clauses, context) => {
-    if (
-      new Set(clauses.map((clause) => clause.field_key)).size !== clauses.length
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Selector Field keys must be unique.",
-      });
-    }
-  });
-
-export const recordUpdateCanonicalSelectorSchema = z
-  .object({
-    schema_version: z.literal(RECORD_UPDATE_SCHEMA_VERSION),
-    object_definition_id: z.uuid(),
-    clauses: recordUpdateSelectorClausesSchema,
-  })
-  .strict();
+export const recordUpdateSelectorSchema = z.discriminatedUnion("field_type", [
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("short_text"),
+      string_value: selectorTextValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("email"),
+      string_value: recordCreationEmailValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("phone"),
+      string_value: selectorPhoneValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("url"),
+      string_value: recordCreationUrlValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("number"),
+      number_value: selectorNumberValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("currency"),
+      number_value: selectorNumberValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("boolean"),
+      boolean_value: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("date"),
+      date_value: selectorDateValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("datetime"),
+      datetime_value: selectorDatetimeValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("select"),
+      option_value: selectorOptionValueSchema,
+    })
+    .strict(),
+  z
+    .object({
+      field_key: graphKeySchema,
+      field_type: z.literal("status"),
+      option_value: selectorOptionValueSchema,
+    })
+    .strict(),
+]);
 
 export const recordUpdateFieldSchema = z
   .object({
@@ -180,15 +138,7 @@ export const recordUpdateFieldSchema = z
   })
   .strict();
 
-export const recordUpdateCurrentValueSchema = z
-  .object({
-    field_key: graphKeySchema,
-    field_type: graphFieldTypeSchema,
-    value: jsonValueSchema,
-  })
-  .strict();
-
-export const recordUpdateSelectorCurrentValueSchema = z
+export const recordUpdateSelectorValueSchema = z
   .object({
     field_key: graphKeySchema,
     field_type: graphFieldTypeSchema,
@@ -198,12 +148,11 @@ export const recordUpdateSelectorCurrentValueSchema = z
   })
   .strict();
 
-export const recordUpdateViewSchema = z
+export const recordUpdateCurrentValueSchema = z
   .object({
-    key: graphKeySchema,
-    name: z.string().trim().min(1).max(120),
-    view_type: z.enum(["table", "list", "cards"]),
-    object_key: graphKeySchema,
+    field_key: graphKeySchema,
+    field_type: graphFieldTypeSchema,
+    value: jsonValueSchema,
   })
   .strict();
 
@@ -256,17 +205,15 @@ const recordUpdateReadyStateSchema = z
     object_definition_id: z.uuid(),
     object_key: graphKeySchema,
     singular_label: z.string().trim().min(1).max(120),
-    object_schema_digest: z.string().regex(/^[a-f0-9]{64}$/),
-    canonical_selector: recordUpdateCanonicalSelectorSchema,
-    selector_digest: z.string().regex(/^[a-f0-9]{64}$/),
     target_record_id: z.uuid(),
-    target_record_digest: z.string().regex(/^[a-f0-9]{64}$/),
-    selector_current_values: z
-      .array(recordUpdateSelectorCurrentValueSchema)
+    expected_updated_at: z.string().min(1),
+    selector: recordUpdateSelectorValueSchema,
+    update_fields: z.array(recordUpdateFieldSchema).min(1).max(3),
+    current_update_values: z
+      .array(recordUpdateCurrentValueSchema)
+      .min(1)
       .max(3),
-    update_fields: z.array(recordUpdateFieldSchema).min(1).max(5),
-    current_update_values: z.array(recordUpdateCurrentValueSchema).max(5),
-    internal_views: z.array(recordUpdateViewSchema).max(100),
+    destination_view_key: graphKeySchema.nullable(),
   })
   .strict();
 
@@ -279,18 +226,13 @@ export const recordUpdateTargetStateSchema = z.discriminatedUnion("state", [
 
 export const recordUpdateFieldValueSchema = recordCreationFieldValueSchema;
 
-export type RecordUpdateSelectorClause = z.infer<
-  typeof recordUpdateSelectorClauseSchema
->;
-export type RecordUpdateCanonicalSelector = z.infer<
-  typeof recordUpdateCanonicalSelectorSchema
->;
+export type RecordUpdateSelector = z.infer<typeof recordUpdateSelectorSchema>;
 export type RecordUpdateField = z.infer<typeof recordUpdateFieldSchema>;
 export type RecordUpdateCurrentValue = z.infer<
   typeof recordUpdateCurrentValueSchema
 >;
-export type RecordUpdateSelectorCurrentValue = z.infer<
-  typeof recordUpdateSelectorCurrentValueSchema
+export type RecordUpdateSelectorValue = z.infer<
+  typeof recordUpdateSelectorValueSchema
 >;
 export type RecordUpdateTargetState = z.infer<
   typeof recordUpdateTargetStateSchema
