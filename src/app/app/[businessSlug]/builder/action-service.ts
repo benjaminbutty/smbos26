@@ -15,6 +15,7 @@ import {
   type AiBuilderErrorCode,
 } from "../../../../ai/builder/errors";
 import {
+  BUILDER_RECORD_UPDATE_MESSAGES,
   builderOrchestrationResultSchema,
   type NeedsClarificationPlanningOutput,
   type BuilderOrchestrationResult,
@@ -314,7 +315,10 @@ export function mapBuilderOrchestrationResult(
         destinationViewKey: result.destination_view_key,
       }),
       object_label: result.object_label,
-      selector_presentation: result.selector_presentation,
+      selector_presentation: {
+        label: result.selector_presentation.label,
+        formatted_value: result.selector_presentation.formatted_value,
+      },
       change_rows: result.change_rows.map(
         ({ label, formatted_before, formatted_after }) => ({
           label,
@@ -558,8 +562,7 @@ export function mapBuilderActionError(
           state: freezeBuilderUiState({
             state: "record_update_ambiguous",
             object_label: "Record",
-            message:
-              "More than one Record matched those details. Add another exact current detail and submit again.",
+            message: BUILDER_RECORD_UPDATE_MESSAGES.ambiguous,
           }),
         };
       case "record_update_no_change":
@@ -1040,7 +1043,7 @@ export function createBuilderAction(
       }
       return mapBuilderOrchestrationResult(
         result,
-        tokenService || recordTokenService
+        tokenService || recordTokenService || recordUpdateTokenService
           ? {
               businessId: tenant.business.id,
               actorId: tenant.user.id,

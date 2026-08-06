@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { BUILDER_RECORD_UPDATE_MESSAGES } from "../ai/builder/contracts";
+
 export const BUILDER_UI_INPUT_INVALID_MESSAGE =
   "Describe what you would like SMBOS to build in 4,000 characters or fewer.";
 export const BUILDER_UI_CONTEXT_REQUIRED_MESSAGE =
@@ -30,7 +32,7 @@ export const BUILDER_UI_RECORD_UPDATED_NO_VIEW_MESSAGE =
 export const BUILDER_UI_RECORD_UPDATE_NOT_FOUND_MESSAGE =
   "No active Record matched those exact current details. Check the current value and submit the request again.";
 export const BUILDER_UI_RECORD_UPDATE_AMBIGUOUS_MESSAGE =
-  "More than one Record matched those details. Add another exact current detail and submit again.";
+  BUILDER_RECORD_UPDATE_MESSAGES.ambiguous;
 export const BUILDER_UI_RECORD_UPDATE_INELIGIBLE_MESSAGE =
   "This type of Record cannot be changed through Builder safely. Use its existing operating screen.";
 export const BUILDER_UI_RECORD_UPDATE_NO_CHANGE_MESSAGE =

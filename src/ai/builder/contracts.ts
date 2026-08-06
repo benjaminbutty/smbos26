@@ -163,7 +163,7 @@ export const BUILDER_RECORD_UPDATE_MESSAGES = Object.freeze({
   not_found:
     "No active Record matched those exact current details. Check the current value and submit the request again.",
   ambiguous:
-    "More than one Record matched those details. Add another exact current detail and submit again.",
+    "More than one active Record matched that value. Use the existing operating screen to choose the correct Record.",
   ineligible:
     "This type of Record cannot be changed through Builder safely. Use its existing operating screen.",
   no_change: "This Record already has those values.",

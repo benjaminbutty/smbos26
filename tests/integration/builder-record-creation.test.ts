@@ -48,6 +48,13 @@ import {
   createBuilderAction,
   initialBuilderUiState,
 } from "../../src/app/app/[businessSlug]/builder/action-service";
+import { BUILDER_RECORD_UPDATE_MESSAGES } from "../../src/ai/builder/contracts";
+import { createRecordUpdateConfirmationTokenService } from "../../src/ai/builder/record-update-confirmation-token";
+import { RecordUpdateServiceError } from "../../src/core/graph/record-update/service";
+import {
+  recordUpdateTargetStateSchema,
+  type RecordUpdateReadyState,
+} from "../../src/core/graph/record-update/schemas";
 import { BuilderResultPanel } from "../../src/components/builder-ui";
 import { createExperienceService } from "../../src/core/experience/service";
 import { createConfigurationFixtures } from "./support/configuration-fixtures";
@@ -125,6 +132,76 @@ async function currentState() {
     throw error ?? new Error("Could not read the Product creation state.");
   }
   return data[0];
+}
+
+async function currentUpdateState(
+  selectorValue: string,
+): Promise<RecordUpdateReadyState> {
+  const result = await owner.rpc("get_confirmed_graph_record_update_state", {
+    expected_business_id: business.id,
+    expected_actor_id: ownerUser.id,
+    target_object_key: "product",
+    requested_selector: {
+      field_key: "name",
+      field_type: "short_text",
+      string_value: selectorValue,
+    },
+    requested_update_field_keys: ["price"],
+  });
+  if (result.error || result.data === null) {
+    throw result.error ?? new Error("Could not read the Product update state.");
+  }
+  const state = recordUpdateTargetStateSchema.parse(result.data);
+  if (state.state !== "ready") {
+    throw new Error(`Expected ready update state, received ${state.state}.`);
+  }
+  return state;
+}
+
+async function createProductRecord(
+  name: string,
+  price: number,
+): Promise<Tables<"records">> {
+  return requireData(
+    await owner.rpc("create_graph_record", {
+      expected_business_id: business.id,
+      target_object_definition_id: product.id,
+      requested_data: { name, price, status: "Active" },
+      requested_record_status: "active",
+    }),
+    "Could not create the Product update fixture.",
+  );
+}
+
+function recordUpdateConfirmationResult(state: RecordUpdateReadyState) {
+  return {
+    schema_version: 1 as const,
+    state: "record_update_confirmation" as const,
+    object_label: state.singular_label,
+    selector_presentation: {
+      field_key: state.selector.field_key,
+      label: state.selector.label,
+      formatted_value: String(state.selector.value),
+    },
+    change_rows: [
+      {
+        field_key: "price",
+        label: "Price",
+        field_type: "currency" as const,
+        formatted_before: "£30.00",
+        formatted_after: "£35.00",
+        new_value: 35 as Json,
+      },
+    ],
+    base_version_id: state.base_version_id,
+    head_revision: state.head_revision,
+    object_definition_id: state.object_definition_id,
+    object_key: state.object_key,
+    target_record_id: state.target_record_id,
+    expected_updated_at: state.expected_updated_at,
+    data_patch: { price: 35 },
+    destination_view_key: state.destination_view_key,
+  };
 }
 
 function recordConfirmationResult(
@@ -417,5 +494,115 @@ describe("Builder generic Record creation end-to-end boundary", () => {
     });
     expect(orchestrationRun).toHaveBeenCalledTimes(1);
     expect(await recordRows()).toHaveLength(1);
+  });
+
+  it("passes the Record-update token through the real action boundary without mutating during preparation", async () => {
+    const target = await createProductRecord("Builder Update Target", 30);
+    const updateState = await currentUpdateState("Builder Update Target");
+    const orchestrationRun = vi.fn(async () =>
+      recordUpdateConfirmationResult(updateState),
+    );
+    const tokenService = createRecordUpdateConfirmationTokenService({
+      secret: confirmationSecret,
+      now: () => 1_000,
+    });
+    const action = createBuilderAction({
+      orchestrationService: { run: orchestrationRun },
+      createRecordUpdateConfirmationTokenService: () => tokenService,
+    });
+    const before = await recordRows();
+
+    queueActionClient(owner);
+    const prepared = await action(
+      business.slug,
+      initialBuilderUiState(),
+      requestForm("Change the Builder Update Target price to £35."),
+    );
+
+    expect(prepared.state).toBe("record_update_confirmation");
+    if (prepared.state !== "record_update_confirmation") {
+      throw new Error("Expected Record-update confirmation state.");
+    }
+    expect(orchestrationRun).toHaveBeenCalledTimes(1);
+    expect(prepared.confirmation_token).toBeTruthy();
+    const payload = tokenService.verify(prepared.confirmation_token, {
+      businessId: business.id,
+      actorId: ownerUser.id,
+    });
+    expect(payload).toMatchObject({
+      object_key: "product",
+      target_record_id: target.id,
+      expected_record_currentness: {
+        updated_at: updateState.expected_updated_at,
+      },
+      data_patch: { price: 35 },
+    });
+    expect(await recordRows()).toEqual(before);
+
+    const html = renderToStaticMarkup(
+      createElement(BuilderResultPanel, {
+        businessSlug: business.slug,
+        state: prepared,
+      }),
+    );
+    expect(html).toContain("Confirm and update");
+    expect(html).toContain("£30.00");
+    expect(html).toContain("£35.00");
+  });
+
+  it("uses one-selector ambiguity guidance for orchestration and service errors", async () => {
+    const before = await recordRows();
+    const ambiguousResult = {
+      schema_version: 1 as const,
+      state: "record_update_ambiguous" as const,
+      object_label: "Product",
+      message: BUILDER_RECORD_UPDATE_MESSAGES.ambiguous,
+    };
+    const orchestrationAction = createBuilderAction({
+      orchestrationService: {
+        run: vi.fn(async () => ambiguousResult),
+      },
+    });
+
+    queueActionClient(owner);
+    const orchestrationState = await orchestrationAction(
+      business.slug,
+      initialBuilderUiState(),
+      requestForm("Change the Product price."),
+    );
+    expect(orchestrationState).toMatchObject({
+      state: "record_update_ambiguous",
+      object_label: "Product",
+      message: BUILDER_RECORD_UPDATE_MESSAGES.ambiguous,
+    });
+    expect(JSON.stringify(orchestrationState)).not.toMatch(
+      /another (exact )?(current )?(detail|selector|clause)/i,
+    );
+    expect(orchestrationState).not.toHaveProperty("candidate_records");
+
+    const fallbackAction = createBuilderAction({
+      orchestrationService: {
+        run: vi
+          .fn()
+          .mockRejectedValue(
+            new RecordUpdateServiceError("record_update_selector_ambiguous"),
+          ),
+      },
+    });
+    queueActionClient(owner);
+    const fallbackState = await fallbackAction(
+      business.slug,
+      initialBuilderUiState(),
+      requestForm("Change the Product price."),
+    );
+    expect(fallbackState).toMatchObject({
+      state: "record_update_ambiguous",
+      object_label: "Record",
+      message: BUILDER_RECORD_UPDATE_MESSAGES.ambiguous,
+    });
+    expect(JSON.stringify(fallbackState)).not.toMatch(
+      /another (exact )?(current )?(detail|selector|clause)/i,
+    );
+    expect(await recordRows()).toEqual(before);
   });
 });
