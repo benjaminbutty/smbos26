@@ -52,3 +52,14 @@ confirmed RPC locks the Business head for share, the Object definition for
 update, and relies on the existing graph trigger for Field/default/status and
 `created_by` invariants. Application code must not bypass it with direct
 Record inserts for the Builder flow.
+
+The Phase 12B migration adds only the narrow authenticated
+`get_confirmed_graph_record_update_state` and
+`update_confirmed_graph_record` RPCs plus private eligibility, schema,
+selector and target-digest helpers. The final lock order is head share,
+bounded selector read, target Record update, Object update, selector rerun and
+the existing `update_graph_record` call. It adds no domain table, index,
+history, queue, receipt or configuration-version path. Generated type
+definitions include the two JSON/Record RPC contracts; a fresh CLI generation
+attempt remains required after the installed CLI/config parser mismatch is
+resolved.

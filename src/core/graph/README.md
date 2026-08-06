@@ -56,3 +56,14 @@ the Business head and Object definition; stale and replayed confirmations do
 not create a second Record. The existing deterministic runtime then opens the
 server-selected internal View. Record update/delete, relationships, files and
 configuration versioning are outside this boundary.
+
+## Phase 12B confirmed generic Record update
+
+`src/core/graph/record-update/` is the separate provider-neutral update
+boundary. It accepts one exact active target resolved by PostgreSQL, composes
+one minimal typed patch and formats a bounded before/after diff. The confirmed
+RPC checks head, schema, selector and target currentness, locks the target
+Record before the Object, reruns the selector under the Object lock and calls
+the unchanged `update_graph_record` RPC so the existing complete-Record
+trigger remains authoritative. No broad query, candidate list, domain path,
+configuration version or operational history is added.

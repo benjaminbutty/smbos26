@@ -46,6 +46,7 @@ import {
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
   openAiBuilderRecordCreationIntentPolicy,
+  disabledExecutionPolicies,
 } from "../src/ai/policies";
 import {
   builderPlanOutputSchema,
@@ -55,6 +56,7 @@ import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-draftin
 import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
+import { builderRecordUpdateIntentTaskV1 } from "../src/ai/record-update-intent/task";
 import { builderRecordCreationIntentOutputSchema } from "../src/ai/record-creation-intent/schemas";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
@@ -1294,6 +1296,7 @@ describe("private qualified Builder runtime", () => {
       "builder_preorder_amendment_v1",
       "builder_location_creation_intent_v1",
       "builder_record_creation_intent_v1",
+      "builder_record_update_intent_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -1343,6 +1346,12 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_record_creation_intent_v1!.outputSchema).toBe(
       builderRecordCreationIntentTaskV1.outputSchema,
     );
+    expect(runtime.tasks.builder_record_update_intent_v1).toBe(
+      builderRecordUpdateIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_record_update_intent_v1!.policyKey).toBe(
+      "builder_record_update_intent_disabled_v1",
+    );
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
@@ -1358,6 +1367,9 @@ describe("private qualified Builder runtime", () => {
     expect(
       runtime.policies.builder_record_creation_intent_terra_medium_v1,
     ).toBe(openAiBuilderRecordCreationIntentPolicy);
+    expect(runtime.policies.builder_record_update_intent_disabled_v1).toBe(
+      disabledExecutionPolicies.builder_record_update_intent_disabled_v1,
+    );
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
 
@@ -1368,6 +1380,7 @@ describe("private qualified Builder runtime", () => {
       "builder_preorder_amendment_v1",
       "builder_location_creation_intent_v1",
       "builder_record_creation_intent_v1",
+      "builder_record_update_intent_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,

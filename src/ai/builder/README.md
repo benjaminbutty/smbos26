@@ -107,7 +107,8 @@ policy, runtime mapping and qualification evidence are unchanged.
 
 ## Phase 10A Location creation
 
-The Builder runtime contains exactly five private tasks: planning, generic
+At Phase 10A the Builder runtime contained exactly five private tasks:
+planning, generic
 configuration drafting, preorder amendment,
 `builder_location_creation_intent_v1` and
 `builder_record_creation_intent_v1`. The Location and Record tasks remain
@@ -174,9 +175,31 @@ each (24 attempts, 51,795 input tokens, 2,831 output tokens, 171,960
 microusd, exit code 0). No failure, error, validation or provider reason codes
 were reported. A live rerun is not required unless the frozen subject changes.
 
-The private Builder registry still contains exactly five tasks and five
+At Phase 12A, the private Builder registry contained exactly five tasks and five
 policies. Planning precedes intent generation, and only a ready one-step
 `create_initial_record` plan reaches this task; unsupported or mixed plans do
 not. Final confirmation is deterministic and AI-free, with no provider call,
 task/accounting reservation, planning, configuration mutation or provider
 version change.
+
+## Phase 12B generic Record update
+
+The current private Builder runtime extends that frozen five-task baseline with
+the disabled `builder_record_update_intent_v1` task and its separate disabled
+policy. Only a private authenticated OpenAI clone may later map it to the
+Terra-medium policy after its independent compatibility, qualification and
+reliability gates pass.
+
+The update route accepts exactly one operational `update_record` plan. The
+intent task sees only the unchanged AI-safe configuration context and returns
+one-to-three exact AND-only selector clauses plus one-to-five explicit absolute
+Field values. It sees no Records, current values or identifiers. The server
+resolves at most two exact active matches, discloses no candidates, composes a
+generic before/after diff and requires Owner/Admin confirmation.
+
+The final `recordUpdateConfirmationToken` action performs no AI or accounting
+work and calls the confirmed generic graph update boundary once. PostgreSQL
+checks the head, schema, selector and target digests, locks the target Record
+before the Object, reruns the selector under the Object lock and delegates
+complete Record validation to the existing graph trigger. The write is
+operational only: it creates no configuration Version, Change or undo state.

@@ -681,14 +681,16 @@ reliability: 24/24 executions passed; 8/8 scenarios; 3 repetitions each;
   cost_microusd: 171960; exit_code: 0
 ```
 
-No failure, error, validation or provider reason codes were reported. Only the
-private authenticated Builder OpenAI runtime is enabled:
+No failure, error, validation or provider reason codes were reported. At the
+Phase 12A enablement point, only the private authenticated Builder OpenAI runtime
+was enabled:
 `builder_record_creation_intent_v1` resolves through the private frozen clone
 to `builder_record_creation_intent_terra_medium_v1` and
 `openAiBuilderRecordCreationIntentPolicy`. The global/default production
 runtime, including OpenAI mode, remains disabled for Record intent and does
 not register the Terra policy; disabled Builder mode remains disabled. The
-private registry remains exactly five tasks and five policies.
+Phase 12A private registry contained exactly five tasks and five policies;
+Phase 12B adds a sixth update task that remains disabled pending its own gates.
 
 The qualification/reliability reports are not a claim that the frozen subject
 changed. A new live rerun is required only if the frozen subject changes.
@@ -698,5 +700,33 @@ plans do not. Final confirmation remains deterministic and AI-free: no
 provider call, task/accounting reservation, planning, configuration mutation,
 or provider-version change occurs after confirmation.
 
-PR #17 remains open, draft and unmerged. Phase 12A is not claimed as merged
-until review and merge.
+PR #17 merged the Phase 12A implementation. Phase 12B remains independently
+reviewable on its feature branch.
+
+## Phase 12B Record-update evaluation
+
+The independent Record-update subject is
+`builder_record_update_intent_v1`, with the disabled production policy and a
+private Terra-medium evaluation policy. Its eight frozen configuration-only
+scenarios are `product_rename`, `product_absolute_currency`,
+`equipment_multi_field`, `catering_date_budget`, `multi_clause_selector`,
+`status_option`, `relative_value_clarification` and
+`missing_target_clarification`.
+
+The compatibility command is opt-in only:
+
+```bash
+RUN_LIVE_OPENAI_RECORD_UPDATE_SCHEMA_COMPATIBILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-update-schema-compatibility-live
+```
+
+It starts with the exact registered schema, uses a fixed synthetic request,
+permits at most 32 sequential probes and reserves 1,341,440 microusd under a
+1,350,000-microusd ceiling. Qualification reserves 4,183,040 microusd under
+4,300,000; reliability reserves 12,549,120 under 12,700,000. They require
+separate explicit flags and are not run by CI, build, seed or application
+startup. Reports are metadata-only and never include owner requests, context,
+values, model output, provider bodies or credentials. Phase 12B remains
+unmerged until deterministic, database, UI and independent live evidence are
+reviewed.

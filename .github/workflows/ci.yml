@@ -133,6 +133,24 @@ jobs:
       - name: Run Builder generic Record orchestration tests
         run: npm run test:builder-record-creation
 
+      - name: Run generic Record-update intent and boundary tests
+        run: npm run test:record-update-intent
+
+      - name: Run generic Record-update deterministic evaluation tests
+        run: npm run test:record-update-evaluation
+
+      - name: Reset for generic Record-update service tests
+        run: npm run supabase:reset
+
+      - name: Wait for local Auth after Record-update reset
+        run: npm run supabase:auth:ready:ci
+
+      - name: Run generic Record-update service integration tests
+        run: npm run test:record-update-service
+
+      - name: Run Builder generic Record-update orchestration tests
+        run: npm run test:builder-record-update
+
       - name: Reset for minimal Builder UI tests
         run: npm run supabase:reset
 

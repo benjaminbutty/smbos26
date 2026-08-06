@@ -22,6 +22,7 @@ import {
   graphKeySchema,
   jsonValueSchema,
 } from "../../core/graph/schemas";
+import { recordUpdateCanonicalSelectorSchema } from "../../core/graph/record-update/schemas";
 
 export const BUILDER_ORCHESTRATION_SCHEMA_VERSION = 1 as const;
 export const BUILDER_ORCHESTRATION_MAX_OWNER_REQUEST_BYTES = 16 * 1024;
@@ -159,6 +160,101 @@ export const builderRecordConfirmationResultSchema = z
   })
   .strict();
 
+export const BUILDER_RECORD_UPDATE_MESSAGES = Object.freeze({
+  not_found:
+    "No active Record matched those exact current details. Check the current value and submit the request again.",
+  ambiguous:
+    "More than one Record matched those details. Add another exact current detail and submit again.",
+  ineligible:
+    "This type of Record cannot be changed through Builder safely. Use its existing operating screen.",
+  no_change: "This Record already has those values.",
+  updated: "The Record was updated.",
+} as const);
+
+const recordUpdateSelectorPresentationSchema = z
+  .object({
+    field_key: graphKeySchema,
+    label: z.string().trim().min(1).max(120),
+    formatted_value: z.string().trim().min(1).max(5_000),
+  })
+  .strict();
+
+const recordUpdateChangeRowSchema = z
+  .object({
+    field_key: graphKeySchema,
+    label: z.string().trim().min(1).max(120),
+    field_type: graphFieldTypeSchema,
+    formatted_before: z.string().trim().min(1).max(5_000),
+    formatted_after: z.string().trim().min(1).max(5_000),
+    new_value: jsonValueSchema,
+  })
+  .strict();
+
+export const builderRecordUpdateConfirmationResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("record_update_confirmation"),
+    object_label: z.string().trim().min(1).max(120),
+    selector_presentation: z
+      .array(recordUpdateSelectorPresentationSchema)
+      .min(1)
+      .max(3),
+    change_rows: z.array(recordUpdateChangeRowSchema).min(1).max(5),
+    base_version_id: z.uuid(),
+    head_revision: z.number().int().positive(),
+    object_definition_id: z.uuid(),
+    object_key: graphKeySchema,
+    object_schema_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    canonical_selector: recordUpdateCanonicalSelectorSchema,
+    selector_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    target_record_id: z.uuid(),
+    target_record_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    data_patch: z.record(z.string(), jsonValueSchema),
+    destination_view_key: graphKeySchema.nullable(),
+  })
+  .strict();
+
+const builderRecordUpdateTerminalResult = <
+  State extends
+    | "record_update_not_found"
+    | "record_update_ambiguous"
+    | "record_update_ineligible"
+    | "record_update_no_change",
+  Message extends string,
+>(
+  state: State,
+  message: Message,
+) =>
+  z
+    .object({
+      schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+      state: z.literal(state),
+      object_label: z.string().trim().min(1).max(120),
+      message: z.literal(message),
+    })
+    .strict();
+
+export const builderRecordUpdateNotFoundResultSchema =
+  builderRecordUpdateTerminalResult(
+    "record_update_not_found",
+    BUILDER_RECORD_UPDATE_MESSAGES.not_found,
+  );
+export const builderRecordUpdateAmbiguousResultSchema =
+  builderRecordUpdateTerminalResult(
+    "record_update_ambiguous",
+    BUILDER_RECORD_UPDATE_MESSAGES.ambiguous,
+  );
+export const builderRecordUpdateIneligibleResultSchema =
+  builderRecordUpdateTerminalResult(
+    "record_update_ineligible",
+    BUILDER_RECORD_UPDATE_MESSAGES.ineligible,
+  );
+export const builderRecordUpdateNoChangeResultSchema =
+  builderRecordUpdateTerminalResult(
+    "record_update_no_change",
+    BUILDER_RECORD_UPDATE_MESSAGES.no_change,
+  );
+
 export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderClarificationResultSchema,
   builderUnsupportedResultSchema,
@@ -166,6 +262,11 @@ export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderLocationConfirmationResultSchema,
   builderLocationConflictResultSchema,
   builderRecordConfirmationResultSchema,
+  builderRecordUpdateConfirmationResultSchema,
+  builderRecordUpdateNotFoundResultSchema,
+  builderRecordUpdateAmbiguousResultSchema,
+  builderRecordUpdateIneligibleResultSchema,
+  builderRecordUpdateNoChangeResultSchema,
 ]);
 
 export type BuilderOrchestrationResult = z.infer<

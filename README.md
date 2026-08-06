@@ -31,6 +31,15 @@ The product and architecture sources of truth are:
 - [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
 - [`AGENTS.md`](AGENTS.md)
 
+Milestone 12 Phase 12B is implemented on the current feature branch but is
+not merged. It adds a generic authenticated Builder path for one existing
+Record update: exact AND-only owner-supplied selectors, one-to-five explicit
+absolute values, server-owned target resolution, exact before/after
+confirmation and an AI-free atomic graph update. Operational Records remain
+outside model context; the model supplies no Record ID. The update creates no
+configuration Version or Change, and Product is only an acceptance fixture.
+Phase 12A generic Record creation is complete and merged through PR #17.
+
 ## Current scope
 
 Included:
@@ -202,8 +211,8 @@ Product v0 remains in progress.
 
 ## Milestone 12 Phase 12A - Builder-assisted generic Record creation
 
-Phase 12A is implemented on this feature branch and is not claimed as merged.
-It adds one bounded generic `create_record` path for any eligible metadata
+Phase 12A is complete and merged through PR #17. It adds one bounded generic
+`create_record` path for any eligible metadata
 Object, including concepts such as Equipment and Catering Enquiry. The path
 uses the existing Object/Field/Record primitives and runtime: strict typed
 intent, deterministic validation, explicit Owner/Admin confirmation, and one
@@ -218,8 +227,9 @@ currentness outside the model boundary, signs a 15-minute Business/actor-bound
 confirmation, rechecks a PII-free state digest, and calls the narrow
 confirmed-create RPC once. The final action performs no AI, accounting,
 provider or configuration work and opens the existing internal View selected
-by the server. The task, Terra policy and evaluation gates are
-production-disabled; live evaluation is never run implicitly.
+by the server. The global/default task remains disabled; the private
+authenticated Builder runtime uses the accepted Terra evidence. Live
+evaluation is never run implicitly.
 
 An Object is eligible only when it exists and is active, has at least one
 active non-file writable Field, has no active required incoming Relationship

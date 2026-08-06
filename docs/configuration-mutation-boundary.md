@@ -412,3 +412,19 @@ relationship creation, file upload, public forms and configuration mutation
 remain outside the phase. The
 `builder_record_creation_intent_v1` task and Terra evaluation harness are
 production-disabled and separately gated.
+
+## Milestone 12 Phase 12B - operational generic Record update boundary
+
+Record updates remain outside configuration mutation. Builder may prepare one
+`update_record` operation for one active eligible Object and one uniquely
+matched active Record using one-to-three exact AND-only selectors and one-to-
+five explicit absolute Field values. No configuration Change, Version,
+proposal, candidate, rollback target or operational undo is created.
+
+The model receives no Records or current Record data and supplies no Record
+identifier. PostgreSQL owns the bounded target lookup, schema/selector/target
+digests, selector revalidation and atomic call through the existing generic
+graph update trigger. The final action is AI-free and requires explicit
+Owner/Admin confirmation. Product, Equipment and Catering Enquiry are generic
+Object fixtures; Customer/Order/Order Item exclusions derive from trusted
+preorder configuration. Phase 12C is separate.

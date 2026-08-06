@@ -46,6 +46,14 @@ export const BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY =
   "builder_record_creation_intent_terra_medium_v1" as const;
 export const BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY =
   "builder_record_creation_intent_disabled_v1" as const;
+export const OPENAI_BUILDER_RECORD_UPDATE_INTENT_MODEL_KEY =
+  "gpt-5.6-terra" as const;
+export const OPENAI_BUILDER_RECORD_UPDATE_INTENT_REASONING_EFFORT =
+  "medium" as const;
+export const BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY =
+  "builder_record_update_intent_terra_medium_v1" as const;
+export const BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY =
+  "builder_record_update_intent_disabled_v1" as const;
 
 export const disabledExecutionPolicies = Object.freeze({
   bounded_structured_v1: Object.freeze({
@@ -150,6 +158,23 @@ export const disabledExecutionPolicies = Object.freeze({
     inputMicrousdPerMillion: 0,
     outputMicrousdPerMillion: 0,
   }),
+  [BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY]: Object.freeze({
+    key: BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
+    providerKey: "disabled",
+    modelKey: "unconfigured",
+    maxInputBytes: 256 * 1024,
+    maxBillableInputTokens: 80_000,
+    maxOutputTokens: 4_096,
+    timeoutMs: 30_000,
+    maxAttempts: 2,
+    retryDelayMs: 250,
+    retryableFailureKinds: Object.freeze([
+      "rate_limited",
+      "transient",
+    ] as const),
+    inputMicrousdPerMillion: 0,
+    outputMicrousdPerMillion: 0,
+  }),
 }) satisfies AiExecutionPolicyRegistry;
 
 export const openAiBuilderPlanningPolicy = Object.freeze({
@@ -211,6 +236,21 @@ export const openAiBuilderRecordCreationIntentPolicy = Object.freeze({
   key: BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   providerKey: "openai",
   modelKey: OPENAI_BUILDER_RECORD_CREATION_INTENT_MODEL_KEY,
+  inputMicrousdPerMillion: 2_500_000,
+  outputMicrousdPerMillion: 15_000_000,
+});
+
+/**
+ * Qualified for the private authenticated Builder runtime only. It remains
+ * outside the global/default production policy registry.
+ */
+export const openAiBuilderRecordUpdateIntentPolicy = Object.freeze({
+  ...disabledExecutionPolicies[
+    BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY
+  ],
+  key: BUILDER_RECORD_UPDATE_INTENT_TERRA_MEDIUM_POLICY_KEY,
+  providerKey: "openai",
+  modelKey: OPENAI_BUILDER_RECORD_UPDATE_INTENT_MODEL_KEY,
   inputMicrousdPerMillion: 2_500_000,
   outputMicrousdPerMillion: 15_000_000,
 });

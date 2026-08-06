@@ -26,3 +26,11 @@ Location is a first-class platform concept. Builder can create only one new
 Location after explicit confirmation; updates, deactivation and reactivation
 remain manual-only. The operation is outside M5 Changes/versioning and has no
 operational undo.
+
+## Phase 12B generic Record update
+
+`src/core/graph/record-update/` is the provider-neutral boundary for one
+existing active Record update. It canonicalises exact selectors, validates
+typed absolute values, composes a minimal patch and owner-safe diff, parses
+bounded target state and calls the confirmed RPC. It has no broad Record query,
+model, Product-specific path, configuration lifecycle or operational history.

@@ -2487,8 +2487,8 @@ enabled in the private runtime, but remains unmerged pending final review.
 
 ## ADR-032 — Builder-assisted generic Record creation uses typed intent and explicit confirmation
 
-Milestone 12 Phase 12A is a feature-branch implementation and is not claimed
-as merged. It adds one bounded Builder path for creating one generic graph
+Milestone 12 Phase 12A is complete and merged through PR #17. It adds one
+bounded Builder path for creating one generic graph
 Record while preserving the existing Product, Customer, Order and Order Item
 data model and runtime. Business-created concepts such as Equipment and
 Catering Enquiry remain metadata-defined Objects with Fields and Records; no
@@ -2517,10 +2517,32 @@ head for share, the Object definition for update, and inserts through the
 existing graph validation trigger. PII-free schema/state digests and the
 immutable expected state make stale and replayed confirmations fail closed.
 
-The default and production runtime mappings remain disabled. The Terra policy,
-exact reservation envelope, frozen two-context/eight-scenario evaluation
-harness, deterministic contract tests and live gates are separate engineering
-artifacts; no live provider run or production enablement is implied by this
-feature branch. Record update/delete, relationship creation, file upload,
+The default runtime mapping remains disabled. The private runtime enablement
+uses the accepted Terra evidence; the exact reservation envelope, frozen
+two-context/eight-scenario evaluation harness and deterministic contract tests
+remain separate engineering artifacts. Record update/delete, relationship creation, file upload,
 public form changes, arbitrary operational dispatch and configuration
 versioning remain outside this phase.
+
+## ADR-033 — Builder-assisted generic Record updates
+
+Phase 12B is implemented on its feature branch and is not merged. It adds one
+generic operational `update_record` path: one active eligible Object, one
+active Record, one-to-three exact AND-only selector clauses and one-to-five
+explicit absolute Field values. Product is only an acceptance fixture;
+Equipment and Catering Enquiry use the same primitives and production path.
+
+The unchanged AI-safe model context contains no operational Records or current
+Record values. The model supplies no Record ID. The server canonicalises and
+resolves the selector with a two-row cap and discloses no candidates. A signed
+before/after confirmation is required before one AI-free action calls the
+existing generic `update_graph_record` RPC. The final RPC checks the
+configuration head, Object schema digest, selector digest and target Record
+digest, locks the Record before the Object, reruns the selector under the
+Object lock and preserves the existing graph trigger as final authority.
+
+Customer, Order and Order Item exclusions derive from active trusted preorder
+capability mappings; Product remains eligible. No configuration Version,
+Change, proposal, history, undo record, domain table, queue or new primitive is
+introduced. Fuzzy matching, substring matching, bulk updates, null/File
+clearing, lifecycle changes and Phase 12C remain unsupported.

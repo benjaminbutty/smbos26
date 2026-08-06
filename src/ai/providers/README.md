@@ -93,3 +93,13 @@ This clears the planning gate for the frozen provider profile as bounded
 engineering evidence, not universal model perfection. Operation generation and
 mutation authority remain unimplemented; future profile or frozen-subject
 changes invalidate the evidence and require both gates to be rerun.
+
+## Phase 12B Record-update provider boundary
+
+The Record-update task uses this same strict OpenAI Responses adapter with
+`gpt-5.6-terra`, medium reasoning, `store: false`, no tools and no conversation
+state. Its exact-schema compatibility gate is separately activated, sequential
+and redacted; it reserves 41,920 microusd per probe, at most 32 probes and a
+1,350,000-microusd hard ceiling. It receives a fixed synthetic probe only, not
+owner requests or business data. The global/default update task remains
+disabled until independent evidence is reviewed.

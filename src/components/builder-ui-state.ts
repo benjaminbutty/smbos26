@@ -24,6 +24,17 @@ export const BUILDER_UI_LOCATION_INACTIVE_DUPLICATE_MESSAGE =
   "That Location already exists but is inactive. Review Locations; Builder will not reactivate or rename it.";
 export const BUILDER_UI_LOCATION_CREATED_MESSAGE =
   "The Location was added to your Business.";
+export const BUILDER_UI_RECORD_UPDATED_MESSAGE = "The Record was updated.";
+export const BUILDER_UI_RECORD_UPDATED_NO_VIEW_MESSAGE =
+  "The Record was updated. No generated screen is currently configured for this information type.";
+export const BUILDER_UI_RECORD_UPDATE_NOT_FOUND_MESSAGE =
+  "No active Record matched those exact current details. Check the current value and submit the request again.";
+export const BUILDER_UI_RECORD_UPDATE_AMBIGUOUS_MESSAGE =
+  "More than one Record matched those details. Add another exact current detail and submit again.";
+export const BUILDER_UI_RECORD_UPDATE_INELIGIBLE_MESSAGE =
+  "This type of Record cannot be changed through Builder safely. Use its existing operating screen.";
+export const BUILDER_UI_RECORD_UPDATE_NO_CHANGE_MESSAGE =
+  "This Record already has those values.";
 
 export type BuilderUnavailableReason =
   keyof typeof BUILDER_UI_UNAVAILABLE_MESSAGES;
@@ -186,6 +197,40 @@ const builderUiStateSchemas = [
     .strict(),
   z
     .object({
+      state: z.literal("record_update_confirmation"),
+      confirmation_token: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024),
+      object_label: boundedText.max(120),
+      selector_presentation: z
+        .array(
+          z
+            .object({
+              label: boundedText.max(120),
+              formatted_value: boundedText,
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(3),
+      change_rows: z
+        .array(
+          z
+            .object({
+              label: boundedText.max(120),
+              formatted_before: boundedText,
+              formatted_after: boundedText,
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(5),
+    })
+    .strict(),
+  z
+    .object({
       state: z.literal("location_conflict"),
       location_name: boundedText.max(120),
       duplicate_kind: z.enum(["active", "inactive"]),
@@ -228,6 +273,64 @@ const builderUiStateSchemas = [
         .max(2_048)
         .regex(/^\/app\/[a-z0-9-]+\/workspace\//)
         .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("record_updated"),
+      object_label: boundedText.max(120),
+      message: z.union([
+        z.literal(BUILDER_UI_RECORD_UPDATED_MESSAGE),
+        z.literal(BUILDER_UI_RECORD_UPDATED_NO_VIEW_MESSAGE),
+      ]),
+      destination_path: z
+        .string()
+        .trim()
+        .min(1)
+        .max(2_048)
+        .regex(/^\/app\/[a-z0-9-]+\/workspace\//)
+        .optional(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (
+        value.destination_path &&
+        value.message !== BUILDER_UI_RECORD_UPDATED_MESSAGE
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["message"],
+          message:
+            "A generated destination requires the standard update message.",
+        });
+      }
+    }),
+  z
+    .object({
+      state: z.literal("record_update_not_found"),
+      object_label: boundedText.max(120),
+      message: z.literal(BUILDER_UI_RECORD_UPDATE_NOT_FOUND_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("record_update_ambiguous"),
+      object_label: boundedText.max(120),
+      message: z.literal(BUILDER_UI_RECORD_UPDATE_AMBIGUOUS_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("record_update_ineligible"),
+      object_label: boundedText.max(120),
+      message: z.literal(BUILDER_UI_RECORD_UPDATE_INELIGIBLE_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("record_update_no_change"),
+      object_label: boundedText.max(120),
+      message: z.literal(BUILDER_UI_RECORD_UPDATE_NO_CHANGE_MESSAGE),
     })
     .strict(),
 ] as const;
