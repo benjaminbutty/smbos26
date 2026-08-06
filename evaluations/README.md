@@ -777,3 +777,56 @@ provider failure occurred. Reliability was not run. The correction removes a
 scenario inconsistent with the approved one-selector boundary and replaces it
 with a missing-replacement clarification scenario. No hidden model output was
 inspected or retained.
+
+#### Second failed Phase 12B qualification evidence and bounded correction
+
+The second Phase 12B qualification run was executed once against exact SHA
+`e232686eacc3ef47e3f0a66f015eac081dfebb83`. It stopped immediately on the core
+Product rename scenario because the task returned clarification instead of the
+expected ready intent:
+
+```text
+Exact SHA:
+e232686eacc3ef47e3f0a66f015eac081dfebb83
+
+Passed:
+0
+
+Failed:
+1
+
+Failure scenario:
+product_rename
+
+Expected state:
+ready
+
+Actual state:
+needs_clarification
+
+Failure class:
+scenario_expectation
+
+Failed gate:
+expected_state
+
+Attempts:
+1
+
+Input tokens:
+3408
+
+Output tokens:
+121
+
+Estimated cost:
+10335 microusd
+
+Exit:
+1
+```
+
+No output-contract failure occurred. No semantic-validator failure occurred.
+No provider failure occurred. Usage was complete. Reliability was not run. No
+hidden model output was inspected or retained. The correction clarifies a
+common explicit rename instruction without expanding the Phase 12B scope.

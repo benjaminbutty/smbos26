@@ -193,7 +193,67 @@ function input(ownerRequest: string) {
   });
 }
 
+function clarificationOutput(question: string) {
+  return {
+    schema_version: 1 as const,
+    state: "needs_clarification" as const,
+    understanding: "The rename request is missing a required explicit detail.",
+    question,
+    reason: "Builder needs one exact current name and an explicit replacement.",
+    source_step_reference: "step_1",
+  };
+}
+
 describe("generic Record update intent", () => {
+  it("maps an explicit generic rename to one configured name selector and update", () => {
+    expect(BUILDER_RECORD_UPDATE_INTENT_INSTRUCTION).toContain(
+      'For an explicit rename request such as “Rename X to Y”, when the target Object has an active Field with the configured key "name", use that exact Field with X as the one current selector and Y as the one update value for that Field',
+    );
+    expect(BUILDER_RECORD_UPDATE_INTENT_INSTRUCTION).not.toMatch(
+      /Celebration Box|Product|service|rule/i,
+    );
+
+    const taskInput = input("Rename Celebration Box to Celebration Platter.");
+    const output = {
+      schema_version: 1 as const,
+      state: "ready" as const,
+      summary: "Rename one Record.",
+      source_step_reference: "step_1",
+      object_key: "product",
+      selector: {
+        field_key: "name",
+        field_type: "short_text" as const,
+        string_value: "Celebration Box",
+      },
+      field_updates: [
+        {
+          field_key: "name",
+          field_type: "short_text" as const,
+          string_value: "Celebration Platter",
+        },
+      ],
+    };
+
+    const validated = validateBuilderRecordUpdateIntentOutput(
+      taskInput,
+      output,
+    );
+    expect(validated).toEqual(output);
+    expect(validated.state).toBe("ready");
+    if (validated.state !== "ready") {
+      throw new Error("Expected a ready rename intent.");
+    }
+    expect(validated.selector).toMatchObject({
+      field_key: "name",
+      string_value: "Celebration Box",
+    });
+    expect(validated.field_updates).toHaveLength(1);
+    expect(validated.field_updates[0]).toMatchObject({
+      field_key: "name",
+      string_value: "Celebration Platter",
+    });
+  });
+
   it("requires an exact selector and supports a selector Field update", () => {
     const taskInput = input(
       "Rename Celebration Box to Celebration Platter and set available to false.",
@@ -347,6 +407,36 @@ describe("generic Record update intent", () => {
     expect(
       validateBuilderRecordUpdateIntentOutput(taskInput, clarification),
     ).toEqual(clarification);
+  });
+
+  it("keeps incomplete rename requests in needs_clarification", () => {
+    expect(BUILDER_RECORD_UPDATE_INTENT_INSTRUCTION).toContain(
+      "If the owner did not supply both one exact current selector and explicit absolute new values, return one bounded owner-readable needs_clarification question.",
+    );
+
+    const missingCurrent = input("Rename it to Celebration Platter.");
+    expect(
+      validateBuilderRecordUpdateIntentOutput(
+        missingCurrent,
+        clarificationOutput("What is the current name to rename?"),
+      ),
+    ).toMatchObject({
+      state: "needs_clarification",
+      source_step_reference: "step_1",
+    });
+
+    const missingReplacement = input("Rename Celebration Box.");
+    expect(
+      validateBuilderRecordUpdateIntentOutput(
+        missingReplacement,
+        clarificationOutput(
+          "What is the explicit new name for Celebration Box?",
+        ),
+      ),
+    ).toMatchObject({
+      state: "needs_clarification",
+      source_step_reference: "step_1",
+    });
   });
 
   it("keeps the task instruction explicit about the no-Record model boundary", () => {
