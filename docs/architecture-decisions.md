@@ -2484,3 +2484,43 @@ and disabled runtime remain on
 only that private runtime binding, its assertions, and evidence documentation;
 it is not itself live-qualified. Phase 10A is implemented, qualified and
 enabled in the private runtime, but remains unmerged pending final review.
+
+## ADR-032 — Builder-assisted generic Record creation uses typed intent and explicit confirmation
+
+Milestone 12 Phase 12A is a feature-branch implementation and is not claimed
+as merged. It adds one bounded Builder path for creating one generic graph
+Record while preserving the existing Product, Customer, Order and Order Item
+data model and runtime. Business-created concepts such as Equipment and
+Catering Enquiry remain metadata-defined Objects with Fields and Records; no
+concept-specific service or table is introduced.
+
+The exact one-step `create_record` path runs through the unchanged planning
+boundary, a separate strict `builder_record_creation_intent_v1` task, pure
+semantic validation, explicit Owner/Admin confirmation, and one atomic
+`create_confirmed_graph_record` RPC. The model sees only the unchanged AI-safe
+Business context and ready plan. It may return only exact existing Object and
+Field keys present in the supplied configuration context. It may not invent new
+keys, UUIDs, IDs, defaults, Records, relationships or mutation authority.
+Defaults are read authoritatively by the server only after the intent is
+validated; omitted optional fields remain omitted from the requested data.
+
+Eligibility requires an existing active target Object with at least one active
+non-file writable Field, no active required incoming Relationship that makes
+standalone creation incomplete, no active preorder Order or Order Item Object
+mapping, and no required File Field without a usable default.
+
+The server signs a neutral, 15-minute HMAC confirmation envelope bound to the
+authenticated Business and actor. The final action rechecks the Object,
+schema/state digest and eligibility, then calls the RPC once without AI,
+accounting, provider or configuration mutation. PostgreSQL locks the Business
+head for share, the Object definition for update, and inserts through the
+existing graph validation trigger. PII-free schema/state digests and the
+immutable expected state make stale and replayed confirmations fail closed.
+
+The default and production runtime mappings remain disabled. The Terra policy,
+exact reservation envelope, frozen two-context/eight-scenario evaluation
+harness, deterministic contract tests and live gates are separate engineering
+artifacts; no live provider run or production enablement is implied by this
+feature branch. Record update/delete, relationship creation, file upload,
+public form changes, arbitrary operational dispatch and configuration
+versioning remain outside this phase.

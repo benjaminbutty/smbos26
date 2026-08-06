@@ -373,3 +373,330 @@ and disabled runtime remain mapped to
 only this private runtime binding, assertions and documentation; it is not
 itself live-qualified. Phase 10A is implemented, qualified and enabled in the
 private authenticated runtime, while PR #16 remains open, draft and unmerged.
+
+## Milestone 12 Phase 12A generic Record-intent gates
+
+Phase 12A uses two frozen strict AI-safe contexts and exactly eight ordered
+deterministic scenarios, each repeated once for qualification and three times
+for reliability. Context A contains generic Product and Menu-item metadata;
+Context B contains Equipment, Catering Enquiry and Lead/contact metadata. They
+contain no Records, Record values, PII or owner data. The scenario fixture is
+owned by `src/ai/evaluation/record-creation-intent/scenarios.ts` and the
+deterministic evaluator compares output state, exact Field set, types, values,
+omitted optionals and bounded failure codes without a model judge.
+
+The exact Terra profile is `gpt-5.6-terra` with `medium` reasoning. It uses the
+independent `builder_record_creation_intent_v1` task, the disabled production
+policy's limits and the exact maximum reservation of 522,880 microusd per
+execution. Qualification is capped at 8 executions / 4,300,000 microusd;
+reliability is capped at 24 executions / 12,700,000 microusd. Actual reported
+usage is aggregated, and setup, contract, semantic, scenario and provider
+failures are emitted only as finite redacted metadata. Reports contain no
+Object labels or keys, Field labels or keys, values, requests, context, model
+prose, provider IDs/bodies, credentials or raw errors.
+
+The live commands are opt-in only:
+
+```bash
+RUN_LIVE_OPENAI_RECORD_CREATION_TERRA_QUALIFICATION=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-creation-terra-qualification-live
+
+RUN_LIVE_OPENAI_RECORD_CREATION_TERRA_RELIABILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-creation-terra-reliability-live
+```
+
+### Failed Phase 12A qualification evidence and bounded correction
+
+The first Phase 12A qualification run was executed against exact SHA
+`7c03b743480016f24c5d6922ec6e4933103dce35` and stopped on its first scenario.
+No model output was returned, so no scenario quality or deterministic semantic
+gate was evaluated:
+
+```text
+scenario_id: product_text_currency_default
+repetition: 1
+passed: false
+output_state: null
+field_value_count: 0
+failure_class: provider_execution
+failed_gate_codes:
+  - provider_execution
+attempts: 1
+usage_complete: false
+input_tokens: 0
+output_tokens: 0
+estimated_microusd: 0
+elapsed_ms: 1061
+error_code: ai_execution_failed
+validation_reason_code: null
+```
+
+The aggregate was:
+
+```text
+gate: qualification
+total_scenarios: 8
+passed_scenarios: 0
+failed_scenarios: 1
+total_attempts: 1
+total_input_tokens: 0
+total_output_tokens: 0
+total_estimated_cost_microusd: 0
+total_elapsed_ms: 1061
+exit_code: 1
+```
+
+The existing OpenAI boundary mapped both local `OpenAiSchemaAdaptationError`
+and provider HTTP 400/422 failures to the same public
+`StructuredAiProviderError(kind: invalid_request)`, while the redacted
+engineering report had no safe stage diagnostic. The exact provider cause was
+not inferred. The bounded correction adds the finite internal taxonomy
+`local_schema_adaptation`, `provider_schema_rejected`,
+`provider_response_format_rejected`, `provider_model_rejected`,
+`provider_parameter_rejected` and `provider_invalid_request_unknown`, carries
+only that code through a depth- and cycle-bounded cause traversal, and exposes
+it only as `provider_reason_code` in the engineering evaluation report.
+Provider messages, bodies, headers, arbitrary parameters, requests, schema
+JSON, model output and Field values remain excluded. The exact Record output
+schema was then deterministically converted through draft-7 generation,
+OpenAI adaptation and an injected Responses client request; local adaptation
+succeeded and the injected client received one valid request.
+
+Reliability was not run, qualification was not rerun, production remains
+disabled, and no additional live provider spend occurred. This failure remains
+historical evidence only and does not claim schema rejection as the cause.
+
+#### Current-head transport diagnosis
+
+The operator subsequently ran qualification against exact head
+`a6054b63477664cc9e422e4c2cb6e8179dcddd84`. It stopped on the same first
+scenario, `product_text_currency_default`, repetition 1, with the following
+bounded report:
+
+```text
+passed: false
+output_state: null
+field_value_count: 0
+failure_class: provider_execution
+failed_gate_codes:
+  - provider_execution
+attempts: 1
+usage_complete: false
+input_tokens: 0
+output_tokens: 0
+estimated_microusd: 0
+elapsed_ms: 715
+error_code: ai_execution_failed
+validation_reason_code: null
+provider_reason_code: provider_schema_rejected
+```
+
+The aggregate was 8 total scenarios, 0 passed, 1 failed, 1 attempt, zero
+input/output tokens, zero estimated microusd, 715 ms and exit code 1. No model
+output was produced or evaluated, and reliability was not run.
+
+The exact unsupported transport was identified: the Record URL variant used
+`z.string().url()`, which emitted `format: "uri"` in draft-7 JSON Schema, while
+the documented OpenAI Structured Outputs subset supports only
+`date-time`, `time`, `date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`
+and `uuid`. The correction therefore keeps URL Fields and deterministic
+HTTP(S) URL validation, but emits a bounded structural string with
+`minLength: 1`, `maxLength: 2048` and an HTTP(S) prefix pattern. Unsupported
+formats now fail locally as `local_schema_adaptation`; no unsupported format
+is silently forwarded. At that historical point production remained disabled
+and no further live spend had occurred; the final correction still required
+fresh compatibility and qualification evidence, which is recorded below.
+
+#### Third failed qualification and compatibility isolation boundary
+
+The operator ran qualification against exact SHA
+`c6e4cf6e72d0a59231eb729489319de2c6a62b0b`. It again stopped on
+`product_text_currency_default`, repetition 1, before model output:
+
+```text
+passed: false
+output_state: null
+field_value_count: 0
+failure_class: provider_execution
+failed_gate_codes:
+  - provider_execution
+attempts: 1
+usage_complete: false
+input_tokens: 0
+output_tokens: 0
+estimated_microusd: 0
+elapsed_ms: 3507
+error_code: ai_execution_failed
+validation_reason_code: null
+provider_reason_code: provider_schema_rejected
+```
+
+The aggregate was 8 total scenarios, 0 passed, 1 failed, 1 attempt, zero
+input/output tokens, zero estimated microusd, 3507 ms and exit code 1. No model
+output or scenario quality was evaluated. The URL correction did not resolve
+the complete schema rejection, and no further root cause is claimed. At that
+historical point qualification was paused pending the bounded compatibility
+gate; reliability had not run and production remained disabled. The accepted
+evidence below subsequently cleared that gate without changing the frozen
+subject.
+
+The operator then ran the bounded compatibility diagnostic against exact SHA
+`356b5fd237a7f821cda4744a7b51a7a0fb45e4b7`. It completed normally with:
+
+```text
+stop_reason: completed
+probes_executed: 27
+accepted_probes: 17
+rejected_probes: 10
+exact_schema_accepted: false
+first_structural_failure_probe_id: d_email
+family: text_like
+conclusion: individual_branch_rejected
+
+d_email: rejected
+keyword_without_patterns: accepted
+keyword_without_formats: rejected
+```
+
+The email branch was the first individual failure. Removing its generated
+email regex pattern made that probe provider-compatible, while removing its
+email format and retaining the pattern did not. Every non-email individual
+Field branch passed, and both primitive and option cumulative families passed.
+The complete Field union and exact Record schema failed because they contained
+the email branch. No model output or business-quality evaluation occurred.
+
+The subsequent Record-local correction uses one shared server-owned email
+value schema in the AI intent and trusted creation/confirmation boundaries.
+Its provider-facing JSON Schema is a bounded string with `minLength: 1`,
+`maxLength: 320`, no email format and no email pattern; strict deterministic
+runtime validation still delegates to Zod's email parser and preserves valid
+owner-supplied strings exactly. At the time of this historical correction
+record, the compatibility diagnostic and ordinary qualification had not yet
+been rerun. The accepted final evidence below supersedes that interim status;
+the failed runs remain retained historical evidence.
+
+The engineering-only command is:
+
+```bash
+RUN_LIVE_OPENAI_RECORD_CREATION_SCHEMA_COMPATIBILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:builder-record-creation-schema-compatibility-live
+```
+
+All three activation values are mandatory; a key alone grants no permission.
+The command uses only the fixed synthetic input `Return the smallest valid
+result.` with the existing OpenAI Responses provider, `gpt-5.6-terra`, medium
+reasoning, strict `text.format`, `store: false`, one attempt and 128 maximum
+output tokens. It receives no owner request, Business context, Object/Field
+values, operational Record, tenant/actor ID or real PII.
+
+The 20 frozen base probes are ordered as follows:
+
+```text
+a_transport_baseline
+b_state_union
+c_short_text
+d_long_text
+d_email
+d_phone
+d_url
+d_text_like_cumulative
+e_number
+e_currency
+e_boolean
+e_date
+e_datetime
+e_primitive_cumulative
+f_select
+f_status
+f_multi_select
+f_option_cumulative
+g_complete_field_union
+h_exact_full_record_schema
+```
+
+Schema rejections continue through the matrix. Authentication failure,
+provider outage, rate limiting, timeout and unexpected non-schema failures
+stop immediately. A failed complete union triggers no more than five ordered
+branch-count/rotated-combination probes. A complete-ready pass followed by an
+exact-schema failure triggers no more than four clarification, source-step,
+annotation and rebuilt-composition probes. The first structural failure then
+receives seven remove-one-keyword-family diagnostics for string bounds,
+patterns, formats, numeric bounds, array bounds, annotations and safely
+inlineable `$defs`/`$ref` reuse. Diagnostic variants never replace the exact
+Record contract.
+
+The maximum is 32 probes. Each reserves 16,000 input tokens and 128 output
+tokens, or exactly 41,920 microusd; the aggregate reservation is 1,341,440
+microusd under a 1,350,000-microusd hard ceiling. Each probe emits only:
+
+```text
+schema_version
+probe_id
+schema_digest
+accepted
+result_class
+provider_reason_code
+safe_schema_context
+attempts
+usage_complete
+input_tokens
+output_tokens
+estimated_microusd
+elapsed_ms
+schema_metrics
+```
+
+`safe_schema_context` is either `unknown` or an allow-listed JSON Schema
+keyword plus a bounded path containing only code-owned structural tokens and
+numeric union/array indexes. Any unrecognised token collapses the entire
+context to `unknown`. Reports exclude schema JSON, inputs, prompts, model
+output, provider messages/parameters, headers, bodies and credentials.
+
+The installed OpenAI SDK comparison uses `zodTextFormat` with the strict root
+`{ result: builderRecordCreationIntentOutputSchema }`. It reports only helper
+generation success, canonical digests, deterministic metrics and finite
+keyword/path difference categories. It does not print either schema or alter
+the production provider. This diagnostic implementation has not been run
+live, so it incurred no additional provider spend.
+
+Normal tests and CI never activate these flags. The accepted final evidence
+for the frozen subject is recorded below; these engineering-only commands are
+not part of ordinary runtime startup.
+
+#### Accepted Phase 12A qualification and private enablement
+
+Compatibility, qualification and reliability were accepted against exact head
+SHA `99988cc7950bb009f290f9f23f84f61dbbef4d0e`:
+
+```text
+compatibility: completed; 20/20 probes accepted; 0 rejected;
+  exact_schema_accepted: true; exit_code: 0; cost_microusd: 29976
+qualification: 8/8 scenarios passed; 0 failed; 8 attempts;
+  input_tokens: 17265; output_tokens: 937; cost_microusd: 57220; exit_code: 0
+reliability: 24/24 executions passed; 8/8 scenarios; 3 repetitions each;
+  attempts: 24; input_tokens: 51795; output_tokens: 2831;
+  cost_microusd: 171960; exit_code: 0
+```
+
+No failure, error, validation or provider reason codes were reported. Only the
+private authenticated Builder OpenAI runtime is enabled:
+`builder_record_creation_intent_v1` resolves through the private frozen clone
+to `builder_record_creation_intent_terra_medium_v1` and
+`openAiBuilderRecordCreationIntentPolicy`. The global/default production
+runtime, including OpenAI mode, remains disabled for Record intent and does
+not register the Terra policy; disabled Builder mode remains disabled. The
+private registry remains exactly five tasks and five policies.
+
+The qualification/reliability reports are not a claim that the frozen subject
+changed. A new live rerun is required only if the frozen subject changes.
+Planning still precedes intent generation, and only a ready one-step
+`create_initial_record` route reaches the intent task. Unsupported or mixed
+plans do not. Final confirmation remains deterministic and AI-free: no
+provider call, task/accounting reservation, planning, configuration mutation,
+or provider-version change occurs after confirmation.
+
+PR #17 remains open, draft and unmerged. Phase 12A is not claimed as merged
+until review and merge.

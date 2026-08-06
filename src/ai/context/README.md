@@ -54,3 +54,12 @@ confirmation secret. The server-only Location service separately reads the
 authoritative Business timezone and complete operational Location-state digest
 before and after intent generation. Location creation therefore remains a
 deterministic operational boundary rather than a model-authorised mutation.
+
+## Phase 12A Record context boundary
+
+Generic Record creation uses the same unchanged model-facing context and a
+validated ready plan. It does not add Records, relationships, PII, Field keys,
+Object UUIDs, defaults, currentness digests, actor/business identity or
+confirmation data to `modelContext`. The server reads the authoritative Object
+schema, eligibility and defaults only outside the model boundary, then performs
+the final Record write through the graph RPC after explicit confirmation.

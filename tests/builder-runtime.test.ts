@@ -2,12 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { createBuilderAiRuntime } from "../src/ai/builder/runtime";
+import {
+  createBuilderAiRuntime,
+  createBuilderExecutionCore,
+} from "../src/ai/builder/runtime";
+import { createBusinessAiExecutionOrchestrator } from "../src/ai/business-execution";
 import { AiBuilderError } from "../src/ai/builder/errors";
 import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
 import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import { builderPlanTaskV1 } from "../src/ai/planning/task";
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
+import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
+import { builderRecordCreationEvaluationScenarios } from "../src/ai/evaluation/record-creation-intent/scenarios";
 import type { StructuredAiProvider } from "../src/ai/contracts";
 import * as aiRegistry from "../src/ai/registry";
 import {
@@ -18,11 +24,14 @@ import {
   BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
   BUILDER_PREORDER_AMENDMENT_TERRA_MEDIUM_POLICY_KEY,
+  BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
+  BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
   disabledExecutionPolicies,
   openAiBuilderLocationCreationPolicy,
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
+  openAiBuilderRecordCreationIntentPolicy,
 } from "../src/ai/policies";
 
 function openAiProvider(): StructuredAiProvider {
@@ -98,6 +107,12 @@ describe("private Builder runtime qualification boundary", () => {
     );
     expect(runtime.tasks.builder_location_creation_intent_v1).toBe(
       builderLocationCreationIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1).toBe(
+      builderRecordCreationIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1?.policyKey).toBe(
+      BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
     );
     expect(
       runtime.policies[BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY],
@@ -199,6 +214,153 @@ describe("private Builder runtime qualification boundary", () => {
     expect(runtime.tasks.builder_preorder_amendment_v1).not.toBe(
       runtime.tasks.builder_configuration_draft_v1,
     );
+  });
+
+  it("maps the private OpenAI Record task to the qualified Terra policy", () => {
+    const provider = openAiProvider();
+    const runtime = createBuilderAiRuntime(
+      { AI_PROVIDER: "openai", OPENAI_API_KEY: "synthetic-runtime-key" },
+      { createOpenAiProvider: () => provider },
+    );
+    const recordTask = runtime.tasks.builder_record_creation_intent_v1!;
+
+    expect(recordTask).not.toBe(builderRecordCreationIntentTaskV1);
+    expect(recordTask.policyKey).toBe(
+      BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(recordTask.key).toBe(builderRecordCreationIntentTaskV1.key);
+    expect(recordTask.version).toBe(builderRecordCreationIntentTaskV1.version);
+    expect(recordTask.purposeLabel).toBe(
+      builderRecordCreationIntentTaskV1.purposeLabel,
+    );
+    expect(recordTask.inputSchema).toBe(
+      builderRecordCreationIntentTaskV1.inputSchema,
+    );
+    expect(recordTask.outputSchema).toBe(
+      builderRecordCreationIntentTaskV1.outputSchema,
+    );
+    expect(recordTask.buildInstruction).toBe(
+      builderRecordCreationIntentTaskV1.buildInstruction,
+    );
+    expect(recordTask.validateOutput).toBe(
+      builderRecordCreationIntentTaskV1.validateOutput,
+    );
+    expect(
+      runtime.policies[BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY],
+    ).toBe(openAiBuilderRecordCreationIntentPolicy);
+    expect(runtime.policies).not.toHaveProperty(
+      BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
+    );
+    expect(runtime.providers.openai).toBe(provider);
+  });
+
+  it("keeps the global Record registration disabled in OpenAI mode", () => {
+    expect(aiRegistry.registeredAiTasks.builder_record_creation_intent_v1).toBe(
+      builderRecordCreationIntentTaskV1,
+    );
+    expect(
+      aiRegistry.registeredAiTasks.builder_record_creation_intent_v1.policyKey,
+    ).toBe(BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY);
+    expect(aiRegistry.aiExecutionPolicies).not.toHaveProperty(
+      BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+
+    const runtime = aiRegistry.createProductionAiRuntime(
+      { AI_PROVIDER: "openai", OPENAI_API_KEY: "synthetic-runtime-key" },
+      { createOpenAiProvider: () => openAiProvider() },
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1).toBe(
+      builderRecordCreationIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1.policyKey).toBe(
+      BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
+    );
+    expect(
+      runtime.policies[BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY],
+    ).toBe(
+      disabledExecutionPolicies[
+        BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
+      ],
+    );
+    expect(runtime.policies).not.toHaveProperty(
+      BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+  });
+
+  it("executes a private Record intent once and accounts it under Terra", async () => {
+    const scenario = builderRecordCreationEvaluationScenarios[0]!;
+    const provider = openAiProvider();
+    provider.generateStructured = vi.fn(async () => ({
+      output: scenario.expected_output,
+      usage: { inputTokens: 23, outputTokens: 17 },
+    }));
+    const runtime = createBuilderAiRuntime(
+      { AI_PROVIDER: "openai", OPENAI_API_KEY: "synthetic-runtime-key" },
+      { createOpenAiProvider: () => provider },
+    );
+    const execution = createBuilderExecutionCore(runtime);
+    const prepared = execution.prepare(
+      "builder_record_creation_intent_v1",
+      scenario.input,
+    );
+    expect(prepared.descriptor.policy).toMatchObject(
+      openAiBuilderRecordCreationIntentPolicy,
+    );
+    expect(prepared.descriptor.policy.key).toBe(
+      BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+    );
+    expect(prepared.descriptor.policy.providerKey).toBe("openai");
+
+    const accounting = {
+      readSettings: vi.fn(async () => ({ is_enabled: true }) as never),
+      reserve: vi.fn(async () => ({}) as never),
+      settle: vi.fn(async () => ({}) as never),
+    };
+    const orchestrator = createBusinessAiExecutionOrchestrator({
+      accounting,
+      execution,
+      generateExecutionId: () => "90000000-0000-4000-8000-000000000001",
+    });
+    const result = await orchestrator.execute(
+      "builder_record_creation_intent_v1",
+      scenario.input,
+    );
+
+    expect(result.output).toEqual(scenario.expected_output);
+    expect(provider.generateStructured).toHaveBeenCalledOnce();
+    expect(accounting.reserve).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskKey: "builder_record_creation_intent_v1",
+        policyKey: BUILDER_RECORD_CREATION_INTENT_TERRA_MEDIUM_POLICY_KEY,
+        providerKey: "openai",
+      }),
+    );
+    expect(accounting.settle).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the disabled private Record task off OpenAI", async () => {
+    const createOpenAiProvider = vi.fn();
+    const runtime = createBuilderAiRuntime(
+      { AI_PROVIDER: "disabled" },
+      { createOpenAiProvider },
+    );
+    const execution = createBuilderExecutionCore(runtime);
+    const scenario = builderRecordCreationEvaluationScenarios[0]!;
+    const prepared = execution.prepare(
+      "builder_record_creation_intent_v1",
+      scenario.input,
+    );
+
+    expect(prepared.descriptor.policy).toMatchObject(
+      disabledExecutionPolicies[
+        BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY
+      ],
+    );
+    expect(prepared.descriptor.policy.providerKey).toBe("disabled");
+    await expect(execution.executePrepared(prepared)).rejects.toMatchObject({
+      code: "ai_disabled",
+    });
+    expect(createOpenAiProvider).not.toHaveBeenCalled();
   });
 
   it("fails closed for missing or mismatched private runtime prerequisites", () => {

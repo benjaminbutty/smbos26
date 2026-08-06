@@ -1,8 +1,12 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
+import {
+  createOperationalConfirmationEnvelopeService,
+  OPERATIONAL_CONFIRMATION_TTL_SECONDS,
+  OperationalConfirmationEnvelopeError,
+} from "./operational-confirmation-envelope";
 import {
   isValidIanaTimezone,
   locationNameSchema,
@@ -11,7 +15,8 @@ import {
 
 export const BUILDER_LOCATION_CONFIRMATION_SCHEMA_VERSION = 1 as const;
 export const BUILDER_LOCATION_CONFIRMATION_ACTION = "create_location" as const;
-export const BUILDER_LOCATION_CONFIRMATION_TTL_SECONDS = 15 * 60;
+export const BUILDER_LOCATION_CONFIRMATION_TTL_SECONDS =
+  OPERATIONAL_CONFIRMATION_TTL_SECONDS;
 
 const confirmationPayloadSchema = z
   .object({
@@ -92,59 +97,6 @@ const signingInputSchema = z
   })
   .strict();
 
-const encodedTokenSchema = z.string().trim().min(1).max(20_000);
-
-function secretFromEnvironment(): string {
-  const secret = process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET;
-  if (!secret || Buffer.byteLength(secret, "utf8") < 32) {
-    throw new LocationConfirmationTokenError(
-      "location_confirmation_secret_unavailable",
-    );
-  }
-  return secret;
-}
-
-function parseSecret(secret: string): string {
-  if (Buffer.byteLength(secret, "utf8") < 32) {
-    throw new LocationConfirmationTokenError(
-      "location_confirmation_secret_unavailable",
-    );
-  }
-  return secret;
-}
-
-function encode(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64url");
-}
-
-function decode(value: string): string {
-  return Buffer.from(value, "base64url").toString("utf8");
-}
-
-function signingMessage(
-  encodedPayload: string,
-  businessId: string,
-  actorId: string,
-): string {
-  return [
-    "smbos-location-confirmation-v1",
-    businessId,
-    actorId,
-    encodedPayload,
-  ].join("|");
-}
-
-function signature(
-  encodedPayload: string,
-  businessId: string,
-  actorId: string,
-  secret: string,
-): string {
-  return createHmac("sha256", secret)
-    .update(signingMessage(encodedPayload, businessId, actorId), "utf8")
-    .digest("base64url");
-}
-
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1_000);
 }
@@ -171,76 +123,88 @@ export function createLocationConfirmationTokenService(
     now?: () => number;
   } = {},
 ): LocationConfirmationTokenService {
-  const secret = parseSecret(overrides.secret ?? secretFromEnvironment());
+  let envelope: ReturnType<typeof createOperationalConfirmationEnvelopeService>;
+  try {
+    envelope = createOperationalConfirmationEnvelopeService(overrides);
+  } catch (cause) {
+    if (cause instanceof OperationalConfirmationEnvelopeError) {
+      throw new LocationConfirmationTokenError(
+        "location_confirmation_secret_unavailable",
+        cause,
+      );
+    }
+    throw cause;
+  }
   const now = overrides.now ?? nowSeconds;
 
   const service: LocationConfirmationTokenService = {
     sign(input) {
-      const issuedAt = now();
-      const parsed = signingInputSchema.parse({
-        businessId: input.businessId,
-        actorId: input.actorId,
-        payload: {
-          schema_version: BUILDER_LOCATION_CONFIRMATION_SCHEMA_VERSION,
-          action: BUILDER_LOCATION_CONFIRMATION_ACTION,
-          location_name: input.locationName,
-          timezone: input.timezone,
-          timezone_source: input.timezoneSource,
-          business_timezone: input.businessTimezone,
-          location_state_digest: input.locationStateDigest,
-          issued_at: issuedAt,
-          expires_at: issuedAt + BUILDER_LOCATION_CONFIRMATION_TTL_SECONDS,
-        },
-      });
-      const encodedPayload = encode(JSON.stringify(parsed.payload));
-      return `${encodedPayload}.${signature(
-        encodedPayload,
-        parsed.businessId,
-        parsed.actorId,
-        secret,
-      )}`;
-    },
-
-    verify(token, identity) {
-      let encodedPayload: string;
-      let encodedSignature: string;
       try {
-        const trustedIdentity = identitySchema.parse(identity);
-        const parsedToken = encodedTokenSchema.parse(token);
-        const parts = parsedToken.split(".");
-        if (parts.length !== 2) {
-          throw new Error("Malformed token.");
-        }
-        const [payloadPart, signaturePart] = parts;
-        if (!payloadPart || !signaturePart) {
-          throw new Error("Malformed token.");
-        }
-        encodedPayload = payloadPart;
-        encodedSignature = signaturePart;
-        const expectedSignature = signature(
-          encodedPayload,
-          trustedIdentity.businessId,
-          trustedIdentity.actorId,
-          secret,
-        );
-        const expectedBytes = Buffer.from(expectedSignature, "utf8");
-        const actualBytes = Buffer.from(encodedSignature, "utf8");
-        if (
-          expectedBytes.length !== actualBytes.length ||
-          !timingSafeEqual(expectedBytes, actualBytes)
-        ) {
-          throw new Error("Invalid token signature.");
-        }
-        const payload = confirmationPayloadSchema.parse(
-          JSON.parse(decode(encodedPayload)),
-        );
-        if (now() >= payload.expires_at) {
-          throw new Error("Expired token.");
-        }
-        return payload;
+        const issuedAt = now();
+        const parsed = signingInputSchema.parse({
+          businessId: input.businessId,
+          actorId: input.actorId,
+          payload: {
+            schema_version: BUILDER_LOCATION_CONFIRMATION_SCHEMA_VERSION,
+            action: BUILDER_LOCATION_CONFIRMATION_ACTION,
+            location_name: input.locationName,
+            timezone: input.timezone,
+            timezone_source: input.timezoneSource,
+            business_timezone: input.businessTimezone,
+            location_state_digest: input.locationStateDigest,
+            issued_at: issuedAt,
+            expires_at: issuedAt + BUILDER_LOCATION_CONFIRMATION_TTL_SECONDS,
+          },
+        });
+        return envelope.sign({
+          businessId: parsed.businessId,
+          actorId: parsed.actorId,
+          action: BUILDER_LOCATION_CONFIRMATION_ACTION,
+          signingNamespace: "smbos-location-confirmation-v1",
+          includeActionInMessage: false,
+          payload: parsed.payload,
+        });
       } catch (cause) {
         if (cause instanceof LocationConfirmationTokenError) {
           throw cause;
+        }
+        if (
+          cause instanceof OperationalConfirmationEnvelopeError &&
+          cause.code === "confirmation_secret_unavailable"
+        ) {
+          throw new LocationConfirmationTokenError(
+            "location_confirmation_secret_unavailable",
+            cause,
+          );
+        }
+        throw new LocationConfirmationTokenError(
+          "location_confirmation_token_invalid",
+          cause,
+        );
+      }
+    },
+
+    verify(token, identity) {
+      try {
+        const trustedIdentity = identitySchema.parse(identity);
+        const payload = envelope.verify(token, trustedIdentity, {
+          action: BUILDER_LOCATION_CONFIRMATION_ACTION,
+          signingNamespace: "smbos-location-confirmation-v1",
+          includeActionInMessage: false,
+        });
+        return confirmationPayloadSchema.parse(payload);
+      } catch (cause) {
+        if (cause instanceof LocationConfirmationTokenError) {
+          throw cause;
+        }
+        if (
+          cause instanceof OperationalConfirmationEnvelopeError &&
+          cause.code === "confirmation_secret_unavailable"
+        ) {
+          throw new LocationConfirmationTokenError(
+            "location_confirmation_secret_unavailable",
+            cause,
+          );
         }
         throw new LocationConfirmationTokenError(
           "location_confirmation_token_invalid",

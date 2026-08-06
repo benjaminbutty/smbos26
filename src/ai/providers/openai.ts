@@ -17,6 +17,23 @@ import {
   adaptRegisteredSchemaForOpenAi,
   OpenAiSchemaAdaptationError,
 } from "./openai-schema";
+import {
+  OpenAiAuthenticationDiagnostic,
+  OpenAiInvalidRequestDiagnostic,
+  parseOpenAiSafeSchemaContext,
+  type OpenAiInvalidRequestReasonCode,
+} from "./openai-diagnostics";
+
+export {
+  OpenAiAuthenticationDiagnostic,
+  OpenAiInvalidRequestDiagnostic,
+  openAiInvalidRequestReasonCodes,
+  parseOpenAiSafeSchemaContext,
+} from "./openai-diagnostics";
+export type {
+  OpenAiInvalidRequestReasonCode,
+  OpenAiSafeSchemaContext,
+} from "./openai-diagnostics";
 
 export const OPENAI_PROVIDER_KEY = "openai";
 export const OPENAI_MODEL_KEY = OPENAI_BUILDER_PLANNING_MODEL_KEY;
@@ -121,6 +138,72 @@ function usageFromResponse(
   return { inputTokens, outputTokens };
 }
 
+const OPENAI_SCHEMA_ERROR_CODES = new Set([
+  "invalid_json_schema",
+  "invalid_schema",
+  "schema_invalid",
+  "response_format_schema_invalid",
+  "invalid_response_format_schema",
+]);
+
+const OPENAI_RESPONSE_FORMAT_ERROR_CODES = new Set([
+  "invalid_response_format",
+  "response_format_invalid",
+]);
+
+const OPENAI_REQUEST_PARAMETER_NAMES = new Set([
+  "input",
+  "instructions",
+  "max_output_tokens",
+  "prompt_cache_options",
+  "reasoning",
+  "reasoning.effort",
+  "store",
+  "text.format.name",
+  "text.format.strict",
+  "response_format.name",
+  "response_format.strict",
+]);
+
+function safeSdkString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length <= 120 ? value : undefined;
+}
+
+function invalidRequestReasonCode(
+  cause: Record<string, unknown>,
+): OpenAiInvalidRequestReasonCode {
+  const code = safeSdkString(cause.code);
+  if (code && OPENAI_SCHEMA_ERROR_CODES.has(code)) {
+    return "provider_schema_rejected";
+  }
+  if (code && OPENAI_RESPONSE_FORMAT_ERROR_CODES.has(code)) {
+    return "provider_response_format_rejected";
+  }
+
+  const parameter = safeSdkString(cause.param);
+  if (
+    parameter === "text.format.schema" ||
+    parameter === "response_format.schema"
+  ) {
+    return "provider_schema_rejected";
+  }
+  if (
+    parameter === "text.format" ||
+    parameter?.startsWith("text.format.") ||
+    parameter === "response_format" ||
+    parameter?.startsWith("response_format.")
+  ) {
+    return "provider_response_format_rejected";
+  }
+  if (parameter === "model" || parameter?.startsWith("model.")) {
+    return "provider_model_rejected";
+  }
+  if (parameter && OPENAI_REQUEST_PARAMETER_NAMES.has(parameter)) {
+    return "provider_parameter_rejected";
+  }
+  return "provider_invalid_request_unknown";
+}
+
 function providerError(
   kind:
     | "unavailable"
@@ -132,11 +215,14 @@ function providerError(
     | "incomplete"
     | "content_filtered",
   usage?: StructuredAiUsage,
+  cause?: unknown,
 ): StructuredAiProviderError {
   return new StructuredAiProviderError(
     kind,
     "The OpenAI structured request did not complete safely.",
-    usage ? { usage } : undefined,
+    usage || cause
+      ? { ...(usage ? { usage } : {}), ...(cause ? { cause } : {}) }
+      : undefined,
   );
 }
 
@@ -145,7 +231,11 @@ function mapSdkFailure(cause: unknown): StructuredAiProviderError {
     return cause;
   }
   if (cause instanceof OpenAiSchemaAdaptationError) {
-    return providerError("invalid_request");
+    return providerError(
+      "invalid_request",
+      undefined,
+      new OpenAiInvalidRequestDiagnostic("local_schema_adaptation"),
+    );
   }
   if (!isRecord(cause)) {
     return providerError("unavailable");
@@ -159,10 +249,24 @@ function mapSdkFailure(cause: unknown): StructuredAiProviderError {
     return providerError("transient");
   }
   if (status === 400 || status === 422) {
-    return providerError("invalid_request");
+    const reasonCode = invalidRequestReasonCode(cause);
+    return providerError(
+      "invalid_request",
+      undefined,
+      new OpenAiInvalidRequestDiagnostic(
+        reasonCode,
+        reasonCode === "provider_schema_rejected"
+          ? parseOpenAiSafeSchemaContext(cause)
+          : "unknown",
+      ),
+    );
   }
   if (status === 401 || status === 403) {
-    return providerError("unavailable");
+    return providerError(
+      "unavailable",
+      undefined,
+      new OpenAiAuthenticationDiagnostic(),
+    );
   }
 
   const name = cause.name;
@@ -299,4 +403,10 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
       throw mapSdkFailure(cause);
     }
   }
+}
+
+export function createOpenAiResponsesStructuredProvider(
+  apiKey: string,
+): OpenAiResponsesStructuredProvider {
+  return new OpenAiResponsesStructuredProvider({ apiKey });
 }

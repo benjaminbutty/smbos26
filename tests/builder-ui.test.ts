@@ -20,6 +20,7 @@ import {
   builderPreorderAmendmentProposalErrorCodes,
   BuilderPreorderAmendmentProposalError,
 } from "../src/ai/preorder-amendment/errors";
+import { createRecordConfirmationTokenService } from "../src/ai/builder/record-confirmation-token";
 import {
   aiBusinessContextErrorCodes,
   AiBusinessContextError,
@@ -237,6 +238,91 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(
       builderOrchestrationResultSchema.safeParse(proposedResult()).success,
     ).toBe(true);
+  });
+
+  it("maps generic Record confirmation to a signed token and owner-readable fields", () => {
+    const state = mapBuilderOrchestrationResult(
+      {
+        schema_version: 1,
+        state: "record_confirmation",
+        intent_schema_version: 1,
+        object_key: "product",
+        object_label: "Product",
+        explicit_fields: [
+          {
+            field_key: "name",
+            label: "Name",
+            field_type: "short_text",
+            value: "Afternoon Tea Box",
+            formatted_value: "Afternoon Tea Box",
+            source: "explicit",
+          },
+          {
+            field_key: "price",
+            label: "Price",
+            field_type: "currency",
+            value: 30,
+            formatted_value: "£30.00",
+            source: "explicit",
+          },
+        ],
+        default_fields: [
+          {
+            field_key: "status",
+            label: "Status",
+            field_type: "status",
+            value: "Active",
+            formatted_value: "Active",
+            source: "default",
+          },
+        ],
+        field_values: [
+          {
+            field_key: "name",
+            field_type: "short_text",
+            string_value: "Afternoon Tea Box",
+          },
+          { field_key: "price", field_type: "currency", number_value: 30 },
+        ],
+        base_version_id: baseVersionId,
+        head_revision: 4,
+        object_schema_digest: "a".repeat(64),
+        record_state_digest: "b".repeat(64),
+      },
+      {
+        businessId: "10000000-0000-4000-8000-000000000003",
+        actorId: "10000000-0000-4000-8000-000000000004",
+        recordTokenService: createRecordConfirmationTokenService({
+          secret: "record-confirmation-test-secret-0123456789",
+          now: () => 1_000,
+        }),
+      },
+    );
+    expect(state).toMatchObject({
+      state: "record_confirmation",
+      object_label: "Product",
+      explicit_fields: [
+        { label: "Name", formatted_value: "Afternoon Tea Box" },
+        { label: "Price", formatted_value: "£30.00" },
+      ],
+      default_fields: [{ label: "Status", formatted_value: "Active" }],
+    });
+    expect(JSON.stringify(state)).not.toContain("field_key");
+    expect(JSON.stringify(state)).not.toContain("base_version");
+    expect(JSON.stringify(state)).not.toContain("10000000-0000-4000");
+    const html = renderToStaticMarkup(
+      createElement(BuilderResultPanel, {
+        businessSlug: "bedford-bakery-demo",
+        state,
+      }),
+    );
+    expect(html).toContain("Add Product");
+    expect(html).toContain("Afternoon Tea Box");
+    expect(html).toContain("£30.00");
+    expect(html).toContain("Active");
+    expect(html).toContain("Confirm and create");
+    expect(html).toContain('name="confirmationKind" value="create_record"');
+    expect(html).not.toContain("field_key");
   });
 
   it("keeps free-text questions optionless and freezes every returned state", () => {

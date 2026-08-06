@@ -23,3 +23,9 @@ installing the `private.normalize_location_name(name)` index (NFKC, trim,
 locale-neutral lower case) and fails clearly rather than rewriting conflicts.
 The authenticated state-read and strict expected-state
 `create_location` RPCs are the only normal application creation boundary.
+
+Phase 12A adds the authenticated generic Record state and confirmed-create
+RPCs. They are intentionally narrow and disabled from anonymous/public use;
+they lock the Business/Object in a fixed order, compare a PII-free expected
+state, and insert through the existing graph trigger. The migration adds no
+Record-specific table, receipt table, queue or configuration-version path.

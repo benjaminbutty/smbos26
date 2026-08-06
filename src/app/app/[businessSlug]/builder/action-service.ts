@@ -37,9 +37,20 @@ import {
   type LocationConfirmationTokenService,
 } from "../../../../ai/builder/location-confirmation-token";
 import {
+  createRecordConfirmationTokenService,
+  RecordConfirmationTokenError,
+  type RecordConfirmationTokenService,
+} from "../../../../ai/builder/record-confirmation-token";
+import {
   createLocationService,
   LocationServiceError,
 } from "../../../../core/locations/service";
+import { composeConfirmedGraphRecordData } from "../../../../core/graph/record-creation/composer";
+import {
+  createConfirmedRecordCreationService,
+  RecordCreationServiceError,
+} from "../../../../core/graph/record-creation/service";
+import { experienceKeyToPath } from "../../../../runtime/routing";
 import { BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS } from "../../../../ai/planning/schemas";
 import {
   BUILDER_INITIAL_STATE,
@@ -198,7 +209,8 @@ export function mapBuilderOrchestrationResult(
   confirmation?: {
     businessId: string;
     actorId: string;
-    tokenService: LocationConfirmationTokenService;
+    tokenService?: LocationConfirmationTokenService;
+    recordTokenService?: RecordConfirmationTokenService;
   },
 ): BuilderResultUiState {
   const result = builderOrchestrationResultSchema.parse(input);
@@ -219,7 +231,7 @@ export function mapBuilderOrchestrationResult(
     });
   }
   if (result.state === "location_confirmation") {
-    if (!confirmation) {
+    if (!confirmation?.tokenService) {
       return unavailableState("temporarily_unavailable");
     }
     return freezeBuilderUiState({
@@ -236,6 +248,39 @@ export function mapBuilderOrchestrationResult(
       location_name: result.location_name,
       timezone: result.timezone,
       timezone_source: result.timezone_source,
+    });
+  }
+  if (result.state === "record_confirmation") {
+    if (!confirmation?.recordTokenService) {
+      return unavailableState("temporarily_unavailable");
+    }
+    return freezeBuilderUiState({
+      state: "record_confirmation",
+      confirmation_token: confirmation.recordTokenService.sign({
+        businessId: confirmation.businessId,
+        actorId: confirmation.actorId,
+        baseVersionId: result.base_version_id,
+        headRevision: result.head_revision,
+        objectKey: result.object_key,
+        objectSchemaDigest: result.object_schema_digest,
+        recordStateDigest: result.record_state_digest,
+        fieldValues: result.field_values,
+      }),
+      object_label: result.object_label,
+      explicit_fields: result.explicit_fields.map(
+        ({ label, formatted_value }) => ({
+          label,
+          formatted_value,
+          source: "explicit" as const,
+        }),
+      ),
+      default_fields: result.default_fields.map(
+        ({ label, formatted_value }) => ({
+          label,
+          formatted_value,
+          source: "default" as const,
+        }),
+      ),
     });
   }
   if (result.state === "location_conflict") {
@@ -374,6 +419,41 @@ export function mapBuilderActionError(
     };
   }
 
+  if (error instanceof RecordConfirmationTokenError) {
+    return {
+      kind: "state",
+      state: unavailableState(
+        error.code === "record_confirmation_secret_unavailable"
+          ? "temporarily_unavailable"
+          : "stale",
+      ),
+    };
+  }
+
+  if (error instanceof RecordCreationServiceError) {
+    switch (error.code) {
+      case "record_creation_authentication_required":
+      case "record_creation_actor_context_mismatch":
+      case "record_creation_owner_or_admin_required":
+      case "record_creation_business_not_found":
+      case "record_creation_object_not_found":
+        return { kind: "not_found" };
+      case "record_creation_configuration_changed":
+      case "record_creation_schema_changed":
+      case "record_creation_state_changed":
+      case "record_creation_object_ineligible":
+        return { kind: "state", state: unavailableState("stale") };
+      case "record_creation_data_invalid":
+        return { kind: "state", state: unavailableState("could_not_prepare") };
+      case "record_creation_failed":
+      case "record_creation_response_invalid":
+        return {
+          kind: "state",
+          state: unavailableState("temporarily_unavailable"),
+        };
+    }
+  }
+
   if (error instanceof LocationServiceError) {
     switch (error.code) {
       case "location_creation_state_changed":
@@ -456,6 +536,8 @@ export type BuilderActionDependencies = {
   resolveTenant: typeof resolveTenant;
   createLocationService: typeof createLocationService;
   createLocationConfirmationTokenService: typeof createLocationConfirmationTokenService;
+  createRecordConfirmationTokenService: typeof createRecordConfirmationTokenService;
+  createConfirmedRecordCreationService: typeof createConfirmedRecordCreationService;
 };
 
 const productionBuilderActionDependencies: BuilderActionDependencies = {
@@ -466,6 +548,8 @@ const productionBuilderActionDependencies: BuilderActionDependencies = {
   resolveTenant,
   createLocationService,
   createLocationConfirmationTokenService,
+  createRecordConfirmationTokenService,
+  createConfirmedRecordCreationService,
 };
 
 function confirmationTokenFormValue(formData: FormData): string | null {
@@ -474,6 +558,13 @@ function confirmationTokenFormValue(formData: FormData): string | null {
   }
   const value = formData.get("confirmationToken");
   return typeof value === "string" && value.trim() ? value : "";
+}
+
+function confirmationKindFormValue(
+  formData: FormData,
+): "create_location" | "create_record" {
+  const value = formData.get("confirmationKind");
+  return value === "create_record" ? "create_record" : "create_location";
 }
 
 async function executeLocationConfirmation(
@@ -539,6 +630,101 @@ async function executeLocationConfirmation(
   }
 }
 
+async function executeRecordConfirmation(
+  dependencies: BuilderActionDependencies,
+  businessSlug: string,
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  formData: FormData,
+): Promise<BuilderUiState> {
+  const token = confirmationTokenFormValue(formData);
+  if (!token) {
+    return unavailableState("stale");
+  }
+  const tenant = await resolveBuilderTenant(businessSlug, supabase, {
+    notFound: dependencies.notFound,
+    resolveTenant: dependencies.resolveTenant,
+  });
+  if (
+    !dependencies.hasCapability(tenant.membership.role, "manage_configuration")
+  ) {
+    dependencies.notFound();
+  }
+
+  try {
+    const tokenService = dependencies.createRecordConfirmationTokenService();
+    const payload = tokenService.verify(token, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    });
+    const recordService = dependencies.createConfirmedRecordCreationService(
+      supabase,
+      { businessId: tenant.business.id, actorId: tenant.user.id },
+    );
+    const state = await recordService.readState(payload.object_key);
+    if (
+      state.business_id !== tenant.business.id ||
+      state.actor_id !== tenant.user.id ||
+      state.base_version_id !== payload.base_version_id ||
+      state.head_revision !== payload.head_revision ||
+      state.object_key !== payload.object_key ||
+      state.object_schema_digest !== payload.object_schema_digest ||
+      state.record_state_digest !== payload.record_state_digest ||
+      !state.is_active ||
+      !state.eligibility.eligible
+    ) {
+      throw new RecordCreationServiceError("record_creation_state_changed");
+    }
+    const composed = composeConfirmedGraphRecordData(
+      state,
+      payload.field_values,
+    );
+    const record = await recordService.createConfirmed({
+      baseVersionId: payload.base_version_id,
+      headRevision: payload.head_revision,
+      objectKey: payload.object_key,
+      objectSchemaDigest: payload.object_schema_digest,
+      recordStateDigest: payload.record_state_digest,
+      requestedData: composed.requestedData,
+      expectedObjectDefinitionId: state.object_definition_id,
+    });
+    if (
+      record.business_id !== tenant.business.id ||
+      record.object_definition_id !== state.object_definition_id ||
+      record.record_status !== "active" ||
+      record.created_by !== tenant.user.id
+    ) {
+      throw new RecordCreationServiceError("record_creation_response_invalid");
+    }
+
+    const destinationView = state.internal_views[0];
+    const destinationPath = destinationView
+      ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(destinationView.key)}/${encodeURIComponent(record.id)}`
+      : undefined;
+    revalidatePath(`/app/${encodeURIComponent(businessSlug)}`);
+    if (destinationPath) {
+      revalidatePath(destinationPath);
+    }
+    return freezeBuilderUiState({
+      state: "record_created",
+      object_label: state.singular_label,
+      message: destinationPath
+        ? `${state.singular_label} was added.`
+        : `${state.singular_label} was added. No generated screen is currently configured for this information type.`,
+      ...(destinationPath ? { destination_path: destinationPath } : {}),
+    });
+  } catch (error) {
+    const mapped = mapBuilderActionError(error);
+    if (mapped.kind === "not_found") {
+      dependencies.notFound();
+      return invalidBuilderInputState();
+    }
+    if (mapped.kind === "unexpected") {
+      throw mapped.error;
+    }
+    return mapped.state;
+  }
+}
+
 export function createBuilderAction(
   overrides: Partial<BuilderActionDependencies> = {},
 ) {
@@ -562,6 +748,14 @@ export function createBuilderAction(
     const confirmationToken = confirmationTokenFormValue(formData);
     if (confirmationToken !== null) {
       const supabase = await dependencies.createServerClient();
+      if (confirmationKindFormValue(formData) === "create_record") {
+        return executeRecordConfirmation(
+          dependencies,
+          businessSlug,
+          supabase,
+          formData,
+        );
+      }
       return executeLocationConfirmation(
         dependencies,
         businessSlug,
@@ -599,16 +793,22 @@ export function createBuilderAction(
         ownerRequest: parsedRequest.ownerRequest,
       });
       let tokenService: LocationConfirmationTokenService | undefined;
+      let recordTokenService: RecordConfirmationTokenService | undefined;
       if (result.state === "location_confirmation") {
         tokenService = dependencies.createLocationConfirmationTokenService();
       }
+      if (result.state === "record_confirmation") {
+        recordTokenService =
+          dependencies.createRecordConfirmationTokenService();
+      }
       return mapBuilderOrchestrationResult(
         result,
-        tokenService
+        tokenService || recordTokenService
           ? {
               businessId: tenant.business.id,
               actorId: tenant.user.id,
-              tokenService,
+              ...(tokenService ? { tokenService } : {}),
+              ...(recordTokenService ? { recordTokenService } : {}),
             }
           : undefined,
       );

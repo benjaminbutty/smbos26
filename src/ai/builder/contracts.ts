@@ -13,6 +13,15 @@ import {
   BUILDER_LOCATION_CREATION_INTENT_SCHEMA_VERSION,
   builderLocationCreationIntentReadySchema,
 } from "../location-creation-intent/schemas";
+import {
+  BUILDER_RECORD_CREATION_INTENT_SCHEMA_VERSION,
+  builderRecordCreationFieldValueSchema,
+} from "../record-creation-intent/schemas";
+import {
+  graphFieldTypeSchema,
+  graphKeySchema,
+  jsonValueSchema,
+} from "../../core/graph/schemas";
 
 export const BUILDER_ORCHESTRATION_SCHEMA_VERSION = 1 as const;
 export const BUILDER_ORCHESTRATION_MAX_OWNER_REQUEST_BYTES = 16 * 1024;
@@ -120,12 +129,43 @@ export const builderLocationConflictResultSchema = z
   })
   .strict();
 
+const recordConfirmationFieldSchema = z
+  .object({
+    field_key: graphKeySchema,
+    label: z.string().trim().min(1).max(120),
+    field_type: graphFieldTypeSchema,
+    value: jsonValueSchema,
+    formatted_value: z.string().trim().min(1).max(5_000),
+    source: z.enum(["explicit", "default"]),
+  })
+  .strict();
+
+export const builderRecordConfirmationResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("record_confirmation"),
+    intent_schema_version: z.literal(
+      BUILDER_RECORD_CREATION_INTENT_SCHEMA_VERSION,
+    ),
+    object_key: graphKeySchema,
+    object_label: z.string().trim().min(1).max(120),
+    explicit_fields: z.array(recordConfirmationFieldSchema).min(1).max(50),
+    default_fields: z.array(recordConfirmationFieldSchema).max(100),
+    field_values: z.array(builderRecordCreationFieldValueSchema).min(1).max(50),
+    base_version_id: z.uuid(),
+    head_revision: z.number().int().positive(),
+    object_schema_digest: z.string().regex(/^[a-f0-9]{64}$/),
+    record_state_digest: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+
 export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderClarificationResultSchema,
   builderUnsupportedResultSchema,
   builderProposedResultSchema,
   builderLocationConfirmationResultSchema,
   builderLocationConflictResultSchema,
+  builderRecordConfirmationResultSchema,
 ]);
 
 export type BuilderOrchestrationResult = z.infer<

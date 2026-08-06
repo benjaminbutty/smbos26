@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,10 +14,17 @@ import {
   type StructuredAiProviderRequest,
 } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
+import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
+import { builderRecordCreationEvaluationScenarios } from "../src/ai/evaluation/record-creation-intent/scenarios";
 import { builderPlanTaskV1 } from "../src/ai/planning/task";
+import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
+import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
+import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import {
   createOpenAiResponsesClient,
   OPENAI_MODEL_KEY,
+  OpenAiAuthenticationDiagnostic,
+  OpenAiInvalidRequestDiagnostic,
   OpenAiResponsesStructuredProvider,
   serializeOpenAiStructuredInput,
   type OpenAiResponsesClient,
@@ -25,6 +33,7 @@ import {
 } from "../src/ai/providers/openai";
 import {
   adaptRegisteredSchemaForOpenAi,
+  OPENAI_SUPPORTED_SCHEMA_FORMATS,
   OpenAiSchemaAdaptationError,
 } from "../src/ai/providers/openai-schema";
 import {
@@ -117,19 +126,104 @@ function clientReturning(value: unknown): {
   };
 }
 
-function collectObjectSchemas(value: unknown): Record<string, unknown>[] {
+function collectSchemaNodes(
+  value: unknown,
+  seen = new Set<object>(),
+): Record<string, unknown>[] {
   if (Array.isArray(value)) {
-    return value.flatMap(collectObjectSchemas);
+    return value.flatMap((item) => collectSchemaNodes(item, seen));
   }
   if (typeof value !== "object" || value === null) {
     return [];
   }
   const record = value as Record<string, unknown>;
+  if (seen.has(record)) return [];
+  seen.add(record);
   return [
-    ...(record.type === "object" || "properties" in record ? [record] : []),
-    ...Object.values(record).flatMap(collectObjectSchemas),
+    record,
+    ...Object.values(record).flatMap((item) => collectSchemaNodes(item, seen)),
   ];
 }
+
+function collectObjectSchemas(value: unknown): Record<string, unknown>[] {
+  return collectSchemaNodes(value).filter(
+    (record) => record.type === "object" || "properties" in record,
+  );
+}
+
+function fieldTypeForSchemaBranch(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const properties = (value as Record<string, unknown>).properties;
+  if (
+    typeof properties !== "object" ||
+    properties === null ||
+    Array.isArray(properties)
+  ) {
+    return null;
+  }
+  const fieldType = (properties as Record<string, unknown>).field_type;
+  if (
+    typeof fieldType !== "object" ||
+    fieldType === null ||
+    Array.isArray(fieldType)
+  ) {
+    return null;
+  }
+  const literal = (fieldType as Record<string, unknown>).const;
+  return typeof literal === "string" ? literal : null;
+}
+
+const RECORD_FIELD_TYPES = [
+  "short_text",
+  "long_text",
+  "email",
+  "phone",
+  "url",
+  "number",
+  "currency",
+  "boolean",
+  "date",
+  "datetime",
+  "select",
+  "status",
+  "multi_select",
+] as const;
+
+function canonicalSchemaValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalSchemaValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalSchemaValue(item)]),
+    );
+  }
+  return value;
+}
+
+function adaptedTaskSchemaDigest(task: { outputSchema: z.ZodType }): string {
+  const registered = z.toJSONSchema(task.outputSchema, {
+    target: "draft-7",
+    unrepresentable: "throw",
+  });
+  const adapted = adaptRegisteredSchemaForOpenAi(registered);
+  return createHash("sha256")
+    .update(JSON.stringify(canonicalSchemaValue(adapted)))
+    .digest("hex");
+}
+
+const PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS = {
+  builder_plan_v1:
+    "2ecc17b6136d7058def5c37c7459230ec8c36338e6d4f7af5cde89ef40bc189f",
+  builder_configuration_draft_v1:
+    "7116b5ce046caebb1e3d8603c25d766bbb5141470d36485d684c012a341d83b1",
+  builder_preorder_amendment_v1:
+    "c452e5ef07da361d9b9c938727d325c67b9db346dddbf043f4744e9da5c310e5",
+  builder_location_creation_intent_v1:
+    "57869c426420b08f12de94d947db3cc53e3fc5e896af746fb9e7d9e58a1a6d3a",
+} as const;
 
 describe("OpenAI strict schema adaptation", () => {
   it("adapts the actual builder plan contract into one strict object root", () => {
@@ -158,7 +252,7 @@ describe("OpenAI strict schema adaptation", () => {
     }
   });
 
-  it("converts oneOf explicitly, removes the dialect, and preserves formats", () => {
+  it("converts oneOf explicitly, removes the dialect, and preserves supported formats", () => {
     expect(
       adaptRegisteredSchemaForOpenAi({
         $schema: "http://json-schema.org/draft-07/schema#",
@@ -206,6 +300,158 @@ describe("OpenAI strict schema adaptation", () => {
         if: { type: "object" },
       }),
     ).toThrow(OpenAiSchemaAdaptationError);
+  });
+
+  it("converts the exact Record schema through the Responses request boundary", async () => {
+    const scenario = builderRecordCreationEvaluationScenarios.find(
+      ({ id }) => id === "contact_field_types",
+    )!;
+    const registered = z.toJSONSchema(
+      builderRecordCreationIntentTaskV1.outputSchema,
+      { target: "draft-7", unrepresentable: "throw" },
+    ) as Record<string, unknown>;
+    const adapted = adaptRegisteredSchemaForOpenAi(registered);
+    const { client, create } = clientReturning(
+      completedResponse(scenario.expected_output, { input: 0, output: 0 }),
+    );
+    const provider = new OpenAiResponsesStructuredProvider({ client });
+    const loggerSpies = [
+      vi.spyOn(console, "debug").mockImplementation(() => {}),
+      vi.spyOn(console, "info").mockImplementation(() => {}),
+      vi.spyOn(console, "warn").mockImplementation(() => {}),
+      vi.spyOn(console, "error").mockImplementation(() => {}),
+    ];
+
+    const response = await provider.generateStructured({
+      providerKey: "openai",
+      modelKey: OPENAI_MODEL_KEY,
+      instruction: builderRecordCreationIntentTaskV1.buildInstruction(),
+      input: scenario.input,
+      outputContract: {
+        name: builderRecordCreationIntentTaskV1.key,
+        version: builderRecordCreationIntentTaskV1.version,
+        jsonSchema: registered,
+      },
+      maxOutputTokens: 4_096,
+      signal: new AbortController().signal,
+    });
+    expect(
+      builderRecordCreationIntentTaskV1.outputSchema.parse(response.output),
+    ).toEqual(scenario.expected_output);
+
+    expect(adapted).toMatchObject({
+      type: "object",
+      properties: { result: expect.anything() },
+      required: ["result"],
+      additionalProperties: false,
+    });
+    const [body] = create.mock.calls[0]!;
+    const bodyRecord = body as Record<string, unknown>;
+    const format = (bodyRecord.text as Record<string, unknown>)
+      .format as Record<string, unknown>;
+    const schema = format.schema as Record<string, unknown>;
+    expect(create).toHaveBeenCalledOnce();
+    expect(format.name).toEqual("builder_record_creation_intent_v1_v1");
+    expect(format.name).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect((format.name as string).length).toBeLessThanOrEqual(64);
+    expect(JSON.stringify(schema)).not.toContain('"oneOf"');
+    expect(JSON.stringify(schema)).toContain('"anyOf"');
+    const schemaNodes = collectSchemaNodes(schema);
+    const rejectedEmailPatternSchema = z.toJSONSchema(z.string().email(), {
+      target: "draft-7",
+      unrepresentable: "throw",
+    }) as Record<string, unknown>;
+    expect(rejectedEmailPatternSchema.pattern).toEqual(expect.any(String));
+    expect(
+      schemaNodes.some(
+        (node) => node.pattern === rejectedEmailPatternSchema.pattern,
+      ),
+    ).toBe(false);
+    const emailBranches = schemaNodes.filter(
+      (node) => fieldTypeForSchemaBranch(node) === "email",
+    );
+    expect(emailBranches).not.toHaveLength(0);
+    for (const emailBranch of emailBranches) {
+      const properties = emailBranch.properties as Record<string, unknown>;
+      expect(properties.string_value).toEqual({
+        type: "string",
+        minLength: 1,
+        maxLength: 320,
+      });
+    }
+    const completeFieldUnions = schemaNodes.filter((node) => {
+      if (!Array.isArray(node.anyOf) || node.anyOf.length !== 13) return false;
+      return new Set(node.anyOf.map(fieldTypeForSchemaBranch)).size === 13;
+    });
+    expect(completeFieldUnions).toHaveLength(1);
+    expect(
+      new Set(
+        (completeFieldUnions[0]!.anyOf as unknown[]).map(
+          fieldTypeForSchemaBranch,
+        ),
+      ),
+    ).toEqual(new Set(RECORD_FIELD_TYPES));
+    expect(JSON.stringify(schema)).toContain('"needs_clarification"');
+    expect(JSON.stringify(schema)).toContain('"ready"');
+    const formats = schemaNodes
+      .filter((node) => "format" in node)
+      .map((node) => node.format);
+    expect(formats).not.toContain("uri");
+    expect(
+      formats.every(
+        (format) =>
+          typeof format === "string" &&
+          OPENAI_SUPPORTED_SCHEMA_FORMATS.includes(
+            format as (typeof OPENAI_SUPPORTED_SCHEMA_FORMATS)[number],
+          ),
+      ),
+    ).toBe(true);
+    const urlSchemas = schemaNodes.filter(
+      (node) =>
+        node.type === "string" &&
+        typeof node.pattern === "string" &&
+        node.pattern.includes("https?"),
+    );
+    expect(urlSchemas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "string",
+          minLength: 1,
+          maxLength: 2_048,
+          pattern: "^https?:\\/\\/",
+        }),
+      ]),
+    );
+    for (const objectSchema of collectObjectSchemas(schema)) {
+      expect(objectSchema.additionalProperties).toBe(false);
+      expect(new Set(objectSchema.required as string[])).toEqual(
+        new Set(Object.keys(objectSchema.properties as object)),
+      );
+    }
+    for (const loggerSpy of loggerSpies) {
+      expect(loggerSpy).not.toHaveBeenCalled();
+      expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
+        scenario.owner_request,
+      );
+      expect(JSON.stringify(loggerSpy.mock.calls)).not.toContain(
+        "events@example.test",
+      );
+    }
+  });
+
+  it("preserves the adapted schemas for previously qualified task families", () => {
+    expect(adaptedTaskSchemaDigest(builderPlanTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_plan_v1,
+    );
+    expect(adaptedTaskSchemaDigest(builderConfigurationDraftTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_configuration_draft_v1,
+    );
+    expect(adaptedTaskSchemaDigest(builderPreorderAmendmentTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_preorder_amendment_v1,
+    );
+    expect(adaptedTaskSchemaDigest(builderLocationCreationIntentTaskV1)).toBe(
+      PRIOR_QUALIFIED_ADAPTED_SCHEMA_DIGESTS.builder_location_creation_intent_v1,
+    );
   });
 });
 
@@ -354,6 +600,21 @@ describe("OpenAI Responses structured provider", () => {
     );
   });
 
+  it("allows only the finite OpenAI format subset and rejects unsupported formats", () => {
+    for (const format of OPENAI_SUPPORTED_SCHEMA_FORMATS) {
+      expect(
+        adaptRegisteredSchemaForOpenAi({ type: "string", format }),
+      ).toMatchObject({
+        properties: { result: { type: "string", format } },
+      });
+    }
+    for (const format of ["uri", "uri-reference", "binary", "unknown"]) {
+      expect(() =>
+        adaptRegisteredSchemaForOpenAi({ type: "string", format }),
+      ).toThrow(OpenAiSchemaAdaptationError);
+    }
+  });
+
   it("adapts before invocation and unwraps without changing the task result", async () => {
     const { client, create } = clientReturning(completedResponse({ ok: true }));
     const provider = new OpenAiResponsesStructuredProvider({ client });
@@ -365,9 +626,53 @@ describe("OpenAI Responses structured provider", () => {
       },
     });
 
-    await expect(provider.generateStructured(unsafe)).rejects.toMatchObject({
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(unsafe);
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+    expect(caught).toMatchObject({
       kind: "invalid_request",
+      cause: expect.any(OpenAiInvalidRequestDiagnostic),
     });
+    expect((caught?.cause as OpenAiInvalidRequestDiagnostic).reasonCode).toBe(
+      "local_schema_adaptation",
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("maps an unsupported format to local schema adaptation before invocation", async () => {
+    const { client, create } = clientReturning(completedResponse({ ok: true }));
+    const provider = new OpenAiResponsesStructuredProvider({ client });
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(
+        request({
+          outputContract: {
+            name: "url_contract",
+            version: 1,
+            jsonSchema: {
+              type: "object",
+              properties: {
+                website: { type: "string", format: "uri" },
+              },
+              required: ["website"],
+              additionalProperties: false,
+            },
+          },
+        }),
+      );
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+    expect(caught).toMatchObject({
+      kind: "invalid_request",
+      cause: expect.any(OpenAiInvalidRequestDiagnostic),
+    });
+    expect((caught?.cause as OpenAiInvalidRequestDiagnostic).reasonCode).toBe(
+      "local_schema_adaptation",
+    );
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -487,8 +792,142 @@ describe("OpenAI Responses structured provider", () => {
         cause: caught,
       });
       expect(JSON.stringify(publicError)).not.toContain(secret);
+      expect(JSON.stringify(publicError)).toBe(
+        JSON.stringify({
+          code: "ai_execution_failed",
+          message: "The AI request could not be completed safely.",
+        }),
+      );
     },
   );
+
+  it.each([
+    [
+      "schema code",
+      { status: 400, code: "invalid_json_schema" },
+      "provider_schema_rejected",
+    ],
+    [
+      "schema parameter",
+      { status: 422, param: "text.format.schema" },
+      "provider_schema_rejected",
+    ],
+    [
+      "response-format parameter",
+      { status: 400, param: "text.format" },
+      "provider_response_format_rejected",
+    ],
+    [
+      "model parameter",
+      { status: 422, param: "model" },
+      "provider_model_rejected",
+    ],
+    [
+      "other allow-listed parameter",
+      { status: 400, param: "max_output_tokens" },
+      "provider_parameter_rejected",
+    ],
+    [
+      "unknown request",
+      {
+        status: 400,
+        code: "unrecognised_provider_code",
+        param: "secret.parameter.value",
+        message: "raw-provider-message-marker",
+        body: "raw-provider-body-marker",
+      },
+      "provider_invalid_request_unknown",
+    ],
+  ])(
+    "classifies %s with a finite reason and no raw provider material",
+    async (_label, sdkFailure, expectedReason) => {
+      const create = vi.fn().mockRejectedValue(sdkFailure);
+      const provider = new OpenAiResponsesStructuredProvider({
+        client: { responses: { create } },
+      });
+      let caught: StructuredAiProviderError | undefined;
+      try {
+        await provider.generateStructured(request());
+      } catch (cause) {
+        caught = cause as StructuredAiProviderError;
+      }
+
+      expect(caught).toMatchObject({
+        kind: "invalid_request",
+        cause: expect.any(OpenAiInvalidRequestDiagnostic),
+      });
+      expect((caught?.cause as OpenAiInvalidRequestDiagnostic).reasonCode).toBe(
+        expectedReason,
+      );
+      const serialized = JSON.stringify(caught);
+      expect(serialized).not.toContain("raw-provider-message-marker");
+      expect(serialized).not.toContain("raw-provider-body-marker");
+      expect(serialized).not.toContain("secret.parameter.value");
+      expect(create).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("extracts only allow-listed schema context from an SDK rejection", async () => {
+    const create = vi.fn().mockRejectedValue({
+      status: 400,
+      code: "invalid_json_schema",
+      message:
+        "Invalid schema in context=('properties','result','anyOf',0,'properties','field_values','items'): 'anyOf' is not permitted. raw-provider-marker",
+    });
+    const provider = new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } },
+    });
+
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(request());
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+
+    expect(caught?.cause).toBeInstanceOf(OpenAiInvalidRequestDiagnostic);
+    expect(
+      (caught?.cause as OpenAiInvalidRequestDiagnostic).safeSchemaContext,
+    ).toEqual({
+      keyword: "anyOf",
+      path: [
+        "properties",
+        "result",
+        "anyOf",
+        0,
+        "properties",
+        "field_values",
+        "items",
+      ],
+    });
+    expect(JSON.stringify(caught)).not.toContain("raw-provider-marker");
+  });
+
+  it("distinguishes authentication failure without retaining provider material", async () => {
+    const create = vi.fn().mockRejectedValue({
+      status: 401,
+      message: "raw-authentication-provider-marker",
+      headers: { authorization: "raw-credential-marker" },
+    });
+    const provider = new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } },
+    });
+
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(request());
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+
+    expect(caught).toMatchObject({
+      kind: "unavailable",
+      cause: expect.any(OpenAiAuthenticationDiagnostic),
+    });
+    expect(JSON.stringify(caught)).not.toMatch(
+      /raw-authentication-provider-marker|raw-credential-marker/,
+    );
+  });
 });
 
 describe("server-owned OpenAI runtime and pricing", () => {

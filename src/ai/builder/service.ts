@@ -49,6 +49,14 @@ import {
   builderLocationCreationIntentOutputSchema,
   builderLocationCreationIntentTaskInputSchema,
 } from "../location-creation-intent/schemas";
+import {
+  builderRecordCreationIntentOutputSchema,
+  builderRecordCreationIntentTaskInputSchema,
+} from "../record-creation-intent/schemas";
+import { builderRecordCreationIntentTaskV1 } from "../record-creation-intent/task";
+import { composeRecordCreationPresentation } from "../../core/graph/record-creation/composer";
+import { type RecordCreationState } from "../../core/graph/record-creation/schemas";
+import { createConfirmedRecordCreationService } from "../../core/graph/record-creation/service";
 import { createLocationService } from "../../core/locations/service";
 import {
   normalizeLocationName,
@@ -108,6 +116,11 @@ interface BuilderOrchestrationDependencies {
     client: SessionClient,
     context: { businessId: string; actorId: string },
   ): Promise<LocationCreationState>;
+  readRecordCreationState(
+    client: SessionClient,
+    context: { businessId: string; actorId: string },
+    objectKey: string,
+  ): Promise<RecordCreationState>;
   generateExecutionId(): string;
 }
 
@@ -241,6 +254,55 @@ function locationStateMatches(
   );
 }
 
+function recordCreationStateMatches(
+  first: RecordCreationState,
+  second: RecordCreationState,
+): boolean {
+  return (
+    first.schema_version === second.schema_version &&
+    first.business_id === second.business_id &&
+    first.actor_id === second.actor_id &&
+    first.base_version_id === second.base_version_id &&
+    first.head_revision === second.head_revision &&
+    first.object_definition_id === second.object_definition_id &&
+    first.object_key === second.object_key &&
+    first.is_active === second.is_active &&
+    first.eligibility.eligible === second.eligibility.eligible &&
+    first.eligibility.reason_codes.join(",") ===
+      second.eligibility.reason_codes.join(",") &&
+    first.object_schema_digest === second.object_schema_digest &&
+    first.record_state_digest === second.record_state_digest
+  );
+}
+
+function recordIntentClarification(
+  output: Extract<
+    z.infer<typeof builderRecordCreationIntentOutputSchema>,
+    { state: "needs_clarification" }
+  >,
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "needs_clarification",
+    clarification: builderPlanOutputSchema.parse({
+      schema_version: 1,
+      state: "needs_clarification",
+      understanding: output.understanding,
+      known_requirements: [],
+      assumptions: [],
+      questions: [
+        {
+          reference: "question_1",
+          question: output.question,
+          reason: output.reason,
+          response_style: "free_text",
+        },
+      ],
+      unsupported_requirements: [],
+    }),
+  });
+}
+
 function locationIntentClarification(
   output: Extract<
     z.infer<typeof builderLocationCreationIntentOutputSchema>,
@@ -289,6 +351,7 @@ function classifyReadyPlan(
   | "configuration_draft"
   | { kind: "preorder_amendment"; scope: PreorderTargetScope }
   | { kind: "location_creation" }
+  | { kind: "record_creation"; objectKey: string }
   | BuilderOrchestrationResult {
   const steps = plan.plan.steps;
   const hasOperational = steps.some((step) => step.lane === "operational");
@@ -298,6 +361,33 @@ function classifyReadyPlan(
   }
   if (hasOperational) {
     const [step] = steps;
+    const existingConcept =
+      plan.plan.concepts.length === 1 &&
+      plan.plan.concepts[0]?.disposition === "existing"
+        ? plan.plan.concepts[0]
+        : undefined;
+    if (
+      steps.length === 1 &&
+      step?.lane === "operational" &&
+      step.category === "create_initial_record" &&
+      existingConcept !== undefined &&
+      step.dependencies.length === 0 &&
+      step.affected_concepts.length === 1 &&
+      step.affected_concepts[0] === existingConcept.reference &&
+      step.existing_object_keys.length === 1 &&
+      step.existing_object_keys[0] === existingConcept.existing_object_key &&
+      step.location_references.length === 0 &&
+      step.requires_owner_confirmation &&
+      plan.unsupported_requirements.length === 0 &&
+      context.objects.some(
+        (object) => object.key === existingConcept.existing_object_key,
+      )
+    ) {
+      return {
+        kind: "record_creation",
+        objectKey: existingConcept.existing_object_key,
+      };
+    }
     if (
       step &&
       steps.length === 1 &&
@@ -382,6 +472,12 @@ export function createBuilderOrchestrationService(
       overrides.readLocationCreationState ??
       ((client, context) =>
         createLocationService(client, context).readCreationState()),
+    readRecordCreationState:
+      overrides.readRecordCreationState ??
+      ((client, context, objectKey) =>
+        createConfirmedRecordCreationService(client, context).readState(
+          objectKey,
+        )),
     generateExecutionId:
       overrides.generateExecutionId ?? (() => crypto.randomUUID()),
   };
@@ -524,6 +620,86 @@ export function createBuilderOrchestrationService(
                   : "business_timezone",
               business_timezone: secondLocationState.business_timezone,
               location_state_digest: secondLocationState.location_state_digest,
+            }),
+          );
+        }
+        if ("kind" in route && route.kind === "record_creation") {
+          const firstRecordState = await dependencies.readRecordCreationState(
+            client,
+            initial.executionContext,
+            route.objectKey,
+          );
+          if (
+            firstRecordState.business_id !== request.businessId ||
+            firstRecordState.actor_id !== initial.executionContext.actorId ||
+            firstRecordState.base_version_id !==
+              afterPlanning.currentness.baseVersionId ||
+            firstRecordState.head_revision !==
+              afterPlanning.currentness.headRevision ||
+            firstRecordState.object_key !== route.objectKey
+          ) {
+            builderContextStale();
+          }
+          if (
+            !firstRecordState.is_active ||
+            !firstRecordState.eligibility.eligible
+          ) {
+            return deepFreeze(
+              unsupportedResult("operational_plan_unavailable"),
+            );
+          }
+
+          const intentInput = builderRecordCreationIntentTaskInputSchema.parse({
+            schema_version: 1,
+            owner_request: request.ownerRequest,
+            business_context: afterPlanningProjection.modelContext,
+            ready_plan: plan,
+          });
+          const intentExecution = await orchestrator.execute(
+            "builder_record_creation_intent_v1",
+            intentInput,
+          );
+          const parsedIntent = builderRecordCreationIntentOutputSchema.parse(
+            intentExecution.output,
+          );
+          const intent = builderRecordCreationIntentTaskV1.validateOutput
+            ? builderRecordCreationIntentTaskV1.validateOutput(
+                intentInput,
+                parsedIntent,
+              )
+            : parsedIntent;
+          if (intent.state === "needs_clarification") {
+            return deepFreeze(recordIntentClarification(intent));
+          }
+
+          const secondRecordState = await dependencies.readRecordCreationState(
+            client,
+            initial.executionContext,
+            route.objectKey,
+          );
+          if (
+            !recordCreationStateMatches(firstRecordState, secondRecordState)
+          ) {
+            builderContextStale();
+          }
+          const composition = composeRecordCreationPresentation(
+            secondRecordState,
+            intent.field_values,
+          );
+          return deepFreeze(
+            builderOrchestrationResultSchema.parse({
+              schema_version: 1,
+              state: "record_confirmation",
+              intent_schema_version: 1,
+              object_key: composition.object_key,
+              object_label: composition.object_label,
+              explicit_fields: composition.explicit_fields,
+              default_fields: composition.default_fields,
+              field_values: composition.field_values,
+              base_version_id: secondRecordState.base_version_id,
+              head_revision: secondRecordState.head_revision,
+              object_schema_digest: secondRecordState.object_schema_digest,
+              record_state_digest: secondRecordState.record_state_digest,
             }),
           );
         }

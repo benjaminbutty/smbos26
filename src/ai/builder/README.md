@@ -107,9 +107,11 @@ policy, runtime mapping and qualification evidence are unchanged.
 
 ## Phase 10A Location creation
 
-The Builder runtime contains exactly four private tasks: planning, generic
-configuration drafting, preorder amendment and
-`builder_location_creation_intent_v1`. The fourth task remains globally and
+The Builder runtime contains exactly five private tasks: planning, generic
+configuration drafting, preorder amendment,
+`builder_location_creation_intent_v1` and
+`builder_record_creation_intent_v1`. The Location and Record tasks remain
+globally and
 default-disabled, while the private authenticated OpenAI runtime maps its
 frozen clone to `builder_location_creation_intent_terra_medium_v1` after the
 independent Terra qualification and reliability evidence passed. It is not a
@@ -133,3 +135,48 @@ inactive rows; the intent validator checks exact interpreted names after the
 task runs, not owner-request substring matches. Exact IANA timezone text may be
 copied from the request, otherwise Business timezone is the default unless
 generic local/different-timezone wording requires clarification.
+
+## Phase 12A generic Record creation
+
+The fifth task is the frozen `builder_record_creation_intent_v1` task. The
+production and default OpenAI runtimes deliberately keep the registered task
+disabled; the private authenticated OpenAI Builder runtime uses a frozen clone
+whose only changed property is the qualified policy key
+`builder_record_creation_intent_terra_medium_v1`. The Terra policy and
+evaluation harness remain engineering-only artifacts outside the global
+registry.
+The task receives the unchanged AI-safe Business context and one validated
+ready `create_record` plan. Its strict output is a typed, transient set of
+owner-supplied Field values and may return only exact existing Object and Field
+keys present in the supplied configuration context. It may not invent new
+keys, UUIDs, IDs, defaults, Records, relationships or mutation authority.
+
+The authenticated service allows only one eligible generic Object. It must
+exist and be active, have at least one active non-file writable Field, have no
+active required incoming Relationship that makes standalone creation
+incomplete, not be an active preorder Order or Order Item Object, and have no
+required File Field without a usable default. It reads defaults only after
+intent validation, returns an explicit Owner/Admin confirmation, and signs a
+Business/actor-bound 15-minute token. The final action rechecks the PII-free
+schema/state digests and calls the narrow confirmed-create RPC once; the
+existing graph trigger applies normal Record validation. The result opens the
+existing internal View selected by the server. The final confirmation performs
+no AI, accounting, configuration mutation, file upload, relationship creation
+or Record update/delete.
+
+The accepted compatibility, qualification and reliability evidence is against
+exact head SHA `99988cc7950bb009f290f9f23f84f61dbbef4d0e`: compatibility
+completed with 20/20 probes accepted and the exact schema accepted (0 rejected,
+exit code 0, 29,976 microusd); qualification passed 8/8 scenarios (8 attempts,
+17,265 input tokens, 937 output tokens, 57,220 microusd, exit code 0); and
+reliability passed 24/24 executions across 8/8 scenarios with three repetitions
+each (24 attempts, 51,795 input tokens, 2,831 output tokens, 171,960
+microusd, exit code 0). No failure, error, validation or provider reason codes
+were reported. A live rerun is not required unless the frozen subject changes.
+
+The private Builder registry still contains exactly five tasks and five
+policies. Planning precedes intent generation, and only a ready one-step
+`create_initial_record` plan reaches this task; unsupported or mixed plans do
+not. Final confirmation is deterministic and AI-free, with no provider call,
+task/accounting reservation, planning, configuration mutation or provider
+version change.

@@ -45,6 +45,7 @@ import {
   openAiBuilderConfigurationDraftingPolicy,
   openAiBuilderPreorderAmendmentPolicy,
   openAiBuilderPlanningPolicy,
+  openAiBuilderRecordCreationIntentPolicy,
 } from "../src/ai/policies";
 import {
   builderPlanOutputSchema,
@@ -53,12 +54,15 @@ import {
 import { builderConfigurationDraftTaskV1 } from "../src/ai/configuration-drafting/task";
 import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation-intent/task";
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
+import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
+import { builderRecordCreationIntentOutputSchema } from "../src/ai/record-creation-intent/schemas";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
 import {
   normalizeLocationName,
   type LocationCreationState,
 } from "../src/core/locations/schemas";
+import type { RecordCreationState } from "../src/core/graph/record-creation/schemas";
 import type { Database } from "../src/db/supabase/database.types";
 
 type Client = SupabaseClient<Database>;
@@ -178,16 +182,162 @@ function locationIntentOutput(name: string) {
   });
 }
 
+function recordCreationState(
+  overrides: Partial<RecordCreationState> = {},
+): RecordCreationState {
+  return {
+    schema_version: 1,
+    business_id: ids.business,
+    actor_id: ids.actor,
+    base_version_id: ids.version,
+    head_revision: 1,
+    object_definition_id: "90000000-0000-4000-8000-000000000011",
+    object_key: "product",
+    singular_label: "Product",
+    plural_label: "Products",
+    is_active: true,
+    eligibility: { eligible: true, reason_codes: [] },
+    object_schema_digest: "a".repeat(64),
+    record_state_digest: "b".repeat(64),
+    fields: [
+      {
+        key: "name",
+        label: "Name",
+        field_type: "short_text",
+        required: true,
+        default_value: null,
+        settings_json: {},
+        position: 1,
+        is_active: true,
+      },
+      {
+        key: "price",
+        label: "Price",
+        field_type: "currency",
+        required: true,
+        default_value: null,
+        settings_json: { currency: "GBP" },
+        position: 2,
+        is_active: true,
+      },
+      {
+        key: "status",
+        label: "Status",
+        field_type: "status",
+        required: true,
+        default_value: "Active",
+        settings_json: { options: ["Active", "Paused"] },
+        position: 3,
+        is_active: true,
+      },
+    ],
+    internal_views: [
+      {
+        key: "products",
+        name: "Products",
+        view_type: "table",
+        object_key: "product",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function recordIntentOutput() {
+  return builderRecordCreationIntentOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    summary: "Add Afternoon Tea Box at £30.",
+    source_step_references: ["step_1"],
+    object_key: "product",
+    field_values: [
+      {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "Afternoon Tea Box",
+      },
+      { field_key: "price", field_type: "currency", number_value: 30 },
+    ],
+  });
+}
+
+function recordContext(): AuthoritativeAiBusinessContext {
+  return authoritative({
+    contextSource: source({
+      snapshot: {
+        ...emptySnapshot(),
+        object_definitions: [
+          {
+            id: "90000000-0000-4000-8000-000000000011",
+            key: "product",
+            singular_label: "Product",
+            plural_label: "Products",
+            description: "Products",
+            kind: "template",
+            semantic_type: "product",
+            icon: null,
+            is_active: true,
+          },
+        ],
+        field_definitions: [
+          {
+            id: "90000000-0000-4000-8000-000000000012",
+            object_definition_id: "90000000-0000-4000-8000-000000000011",
+            object_key: "product",
+            key: "name",
+            label: "Name",
+            field_type: "short_text",
+            required: true,
+            default_value: null,
+            settings_json: {},
+            position: 1,
+            is_active: true,
+          },
+          {
+            id: "90000000-0000-4000-8000-000000000013",
+            object_definition_id: "90000000-0000-4000-8000-000000000011",
+            object_key: "product",
+            key: "price",
+            label: "Price",
+            field_type: "currency",
+            required: true,
+            default_value: null,
+            settings_json: { currency: "GBP" },
+            position: 2,
+            is_active: true,
+          },
+          {
+            id: "90000000-0000-4000-8000-000000000014",
+            object_definition_id: "90000000-0000-4000-8000-000000000011",
+            object_key: "product",
+            key: "status",
+            label: "Status",
+            field_type: "status",
+            required: true,
+            default_value: "Active",
+            settings_json: { options: ["Active", "Paused"] },
+            position: 3,
+            is_active: true,
+          },
+        ],
+      },
+    }),
+  });
+}
+
 function readyPlan(
   category:
     | "define_object"
     | "configure_preorder"
     | "create_location"
     | "update_location"
+    | "create_initial_record"
     | "configure_view" = "define_object",
 ): Extract<BuilderPlanOutput, { state: "ready" }> {
   const configuration =
-    category === "create_location" || category === "update_location"
+    category === "create_location" ||
+    category === "update_location" ||
+    category === "create_initial_record"
       ? "operational"
       : "configuration";
   const parsed = builderPlanOutputSchema.parse({
@@ -207,7 +357,17 @@ function readyPlan(
                 purpose: "Capture a catering enquiry.",
               },
             ]
-          : [],
+          : category === "create_initial_record"
+            ? [
+                {
+                  reference: "concept_1",
+                  label: "Product",
+                  disposition: "existing",
+                  existing_object_key: "product",
+                  purpose: "The Product to add.",
+                },
+              ]
+            : [],
       user_journeys: [],
       steps: [
         {
@@ -215,8 +375,12 @@ function readyPlan(
           sequence: 1,
           summary: "Prepare the bounded owner-reviewed change.",
           dependencies: [],
-          affected_concepts: category === "define_object" ? ["concept_1"] : [],
-          existing_object_keys: [],
+          affected_concepts:
+            category === "define_object" || category === "create_initial_record"
+              ? ["concept_1"]
+              : [],
+          existing_object_keys:
+            category === "create_initial_record" ? ["product"] : [],
           location_references: category === "create_location" ? [] : [],
           materiality: "low",
           requires_owner_confirmation: true,
@@ -325,6 +489,7 @@ const enabledSettings = {
 interface HarnessOptions {
   planningOutput?: BuilderPlanOutput;
   draftOutput?: BuilderConfigurationDraftOutput;
+  recordIntentOutput?: unknown;
   firstContext?: AuthoritativeAiBusinessContext;
   secondContext?: AuthoritativeAiBusinessContext;
   planningFailure?: unknown;
@@ -333,6 +498,8 @@ interface HarnessOptions {
   locationIntentFailure?: unknown;
   firstLocationState?: LocationCreationState;
   secondLocationState?: LocationCreationState;
+  firstRecordState?: RecordCreationState;
+  secondRecordState?: RecordCreationState;
   settings?: BusinessAiSettings;
   reserveFailure?: { taskKey: string; error: unknown };
   proposalError?: unknown;
@@ -343,6 +510,7 @@ function harness(options: HarnessOptions = {}) {
   const planningInputs: unknown[] = [];
   const draftingInputs: unknown[] = [];
   const locationIntentInputs: unknown[] = [];
+  const recordIntentInputs: unknown[] = [];
   const contexts = [
     options.firstContext ?? authoritative(),
     options.secondContext ?? options.firstContext ?? authoritative(),
@@ -366,6 +534,20 @@ function harness(options: HarnessOptions = {}) {
     const state = locationStates.shift();
     if (!state) {
       throw new Error("Unexpected Location state load.");
+    }
+    return state;
+  });
+  const recordStates = [
+    options.firstRecordState ?? recordCreationState(),
+    options.secondRecordState ??
+      options.firstRecordState ??
+      recordCreationState(),
+  ];
+  const readRecordCreationState = vi.fn(async () => {
+    events.push("record-state");
+    const state = recordStates.shift();
+    if (!state) {
+      throw new Error("Unexpected Record state load.");
     }
     return state;
   });
@@ -393,17 +575,22 @@ function harness(options: HarnessOptions = {}) {
       const isPlanning = taskKey === "builder_plan_v1";
       const isLocationIntent =
         taskKey === "builder_location_creation_intent_v1";
+      const isRecordIntent = taskKey === "builder_record_creation_intent_v1";
       events.push(
         isPlanning
           ? "planning"
           : isLocationIntent
             ? "location-intent"
-            : "drafting",
+            : isRecordIntent
+              ? "record-intent"
+              : "drafting",
       );
       if (taskKey === "builder_plan_v1") {
         planningInputs.push(input);
       } else if (isLocationIntent) {
         locationIntentInputs.push(input);
+      } else if (isRecordIntent) {
+        recordIntentInputs.push(input);
       } else {
         draftingInputs.push(input);
       }
@@ -416,13 +603,17 @@ function harness(options: HarnessOptions = {}) {
               ? "Plan a bounded Business request"
               : isLocationIntent
                 ? "Draft one bounded Location creation intent"
-                : "Draft bounded additive configuration intent",
+                : isRecordIntent
+                  ? "Draft one bounded generic Record creation intent"
+                  : "Draft bounded additive configuration intent",
           policy:
             taskKey === "builder_plan_v1"
               ? openAiBuilderPlanningPolicy
               : isLocationIntent
                 ? openAiBuilderLocationCreationPolicy
-                : openAiBuilderConfigurationDraftingPolicy,
+                : isRecordIntent
+                  ? openAiBuilderRecordCreationIntentPolicy
+                  : openAiBuilderConfigurationDraftingPolicy,
         },
       };
       preparedOutputs.set(prepared, {
@@ -440,13 +631,17 @@ function harness(options: HarnessOptions = {}) {
                   timezone_intent: { kind: "use_business_timezone" },
                   source_step_references: ["step_1"],
                 }))
-              : (options.draftOutput ?? draft()),
+              : isRecordIntent
+                ? (options.recordIntentOutput ?? recordIntentOutput())
+                : (options.draftOutput ?? draft()),
         failure:
           taskKey === "builder_plan_v1"
             ? options.planningFailure
             : isLocationIntent
               ? options.locationIntentFailure
-              : options.draftingFailure,
+              : isRecordIntent
+                ? undefined
+                : options.draftingFailure,
       });
       return prepared;
     }),
@@ -499,6 +694,7 @@ function harness(options: HarnessOptions = {}) {
     createAccounting: vi.fn(() => accounting),
     proposalService,
     readLocationCreationState,
+    readRecordCreationState,
     generateExecutionId: vi
       .fn()
       .mockReturnValueOnce("90000000-0000-4000-8000-000000000009")
@@ -511,11 +707,13 @@ function harness(options: HarnessOptions = {}) {
     planningInputs,
     draftingInputs,
     locationIntentInputs,
+    recordIntentInputs,
     loadContext,
     accounting,
     execution,
     proposalService,
     readLocationCreationState,
+    readRecordCreationState,
   };
 }
 
@@ -680,6 +878,93 @@ describe("authenticated Builder orchestration contract", () => {
     );
     expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
     expect(test.proposalService.propose).not.toHaveBeenCalled();
+  });
+
+  it("routes one generic create_initial_record step through typed intent and Record currentness", async () => {
+    const test = harness({
+      planningOutput: readyPlan("create_initial_record"),
+      firstContext: recordContext(),
+    });
+    const result = await test.service.run(test.client, {
+      businessId: ids.business,
+      ownerRequest:
+        "Add an active Product called Afternoon Tea Box priced at £30.",
+    });
+
+    expect(result).toMatchObject({
+      schema_version: 1,
+      state: "record_confirmation",
+      intent_schema_version: 1,
+      object_key: "product",
+      object_label: "Product",
+      explicit_fields: expect.arrayContaining([
+        expect.objectContaining({
+          label: "Name",
+          formatted_value: "Afternoon Tea Box",
+          source: "explicit",
+        }),
+        expect.objectContaining({
+          label: "Price",
+          formatted_value: "£30.00",
+          source: "explicit",
+        }),
+      ]),
+      default_fields: [
+        expect.objectContaining({
+          label: "Status",
+          formatted_value: "Active",
+          source: "default",
+        }),
+      ],
+      base_version_id: ids.version,
+      head_revision: 1,
+      object_schema_digest: "a".repeat(64),
+      record_state_digest: "b".repeat(64),
+    });
+    expect(test.events).toEqual([
+      "context",
+      "planning",
+      "reserve:builder_plan_v1",
+      "settle:90000000-0000-4000-8000-000000000009",
+      "context",
+      "record-state",
+      "record-intent",
+      "reserve:builder_record_creation_intent_v1",
+      "settle:90000000-0000-4000-8000-000000000010",
+      "record-state",
+    ]);
+    expect(test.recordIntentInputs).toHaveLength(1);
+    expect(test.recordIntentInputs[0]).toEqual(
+      expect.objectContaining({
+        owner_request:
+          "Add an active Product called Afternoon Tea Box priced at £30.",
+        ready_plan: readyPlan("create_initial_record"),
+      }),
+    );
+    expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
+    expect(test.proposalService.propose).not.toHaveBeenCalled();
+  });
+
+  it("discards the Record confirmation when Object Record state changes during intent generation", async () => {
+    const test = harness({
+      planningOutput: readyPlan("create_initial_record"),
+      firstContext: recordContext(),
+      firstRecordState: recordCreationState(),
+      secondRecordState: recordCreationState({
+        record_state_digest: "c".repeat(64),
+      }),
+    });
+
+    await expect(
+      test.service.run(test.client, {
+        businessId: ids.business,
+        ownerRequest: "Add a Product called Afternoon Tea Box priced at £30.",
+      }),
+    ).rejects.toMatchObject({ code: "ai_builder_context_stale" });
+    expect(test.recordIntentInputs).toHaveLength(1);
+    expect(test.proposalService.propose).not.toHaveBeenCalled();
+    expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
+    expect(test.readRecordCreationState).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -1008,6 +1293,7 @@ describe("private qualified Builder runtime", () => {
       "builder_configuration_draft_v1",
       "builder_preorder_amendment_v1",
       "builder_location_creation_intent_v1",
+      "builder_record_creation_intent_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -1045,6 +1331,18 @@ describe("private qualified Builder runtime", () => {
     expect(
       runtime.tasks.builder_location_creation_intent_v1!.outputSchema,
     ).toBe(builderLocationCreationIntentTaskV1.outputSchema);
+    expect(runtime.tasks.builder_record_creation_intent_v1!.policyKey).toBe(
+      "builder_record_creation_intent_terra_medium_v1",
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1).not.toBe(
+      builderRecordCreationIntentTaskV1,
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1!.inputSchema).toBe(
+      builderRecordCreationIntentTaskV1.inputSchema,
+    );
+    expect(runtime.tasks.builder_record_creation_intent_v1!.outputSchema).toBe(
+      builderRecordCreationIntentTaskV1.outputSchema,
+    );
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
@@ -1057,6 +1355,9 @@ describe("private qualified Builder runtime", () => {
     expect(
       runtime.policies[BUILDER_LOCATION_CREATION_TERRA_MEDIUM_POLICY_KEY],
     ).toBe(openAiBuilderLocationCreationPolicy);
+    expect(
+      runtime.policies.builder_record_creation_intent_terra_medium_v1,
+    ).toBe(openAiBuilderRecordCreationIntentPolicy);
     expect(runtime.providers.openai).toBe(provider);
     expect(runtime.providers.disabled?.key).toBe("disabled");
 
@@ -1066,6 +1367,7 @@ describe("private qualified Builder runtime", () => {
       "builder_configuration_draft_v1",
       "builder_preorder_amendment_v1",
       "builder_location_creation_intent_v1",
+      "builder_record_creation_intent_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,

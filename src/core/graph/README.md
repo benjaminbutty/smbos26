@@ -31,3 +31,28 @@ Owner/Admin changes must use `ConfigurationChangeService`; direct table DML is
 unavailable to authenticated and service-role clients. Integration tests that
 exercise lower-level graph constraints use the test-only database-owner helper
 under `tests/integration/support`, never production code.
+
+## Phase 12A confirmed generic Record creation
+
+`src/core/graph/record-creation/` is a server-only, provider-neutral
+composition boundary for one confirmed generic Record. It reads a bounded
+Object/Field eligibility state, composes only typed owner-supplied values and
+authoritative defaults, and calls the narrow Supabase RPC through the resolved
+tenant client. The model may return only exact existing Object and Field keys
+present in the supplied configuration context; it may not invent new keys,
+UUIDs, IDs, defaults, Records, relationships or mutation authority. The
+boundary accepts no browser-supplied Business ID, actor, UUID, relationship,
+file or arbitrary data shape.
+
+Eligibility requires an existing active target Object with at least one active
+non-file writable Field, no active required incoming Relationship that makes
+standalone creation incomplete, no active preorder Order or Order Item Object
+mapping, and no required File Field without a usable default.
+
+PostgreSQL is authoritative for the tenant, Object lock, schema/state digest,
+Field validation, default application, `created_by` and atomic insert. The
+confirmed-create RPC takes the expected state and rechecks it while locking
+the Business head and Object definition; stale and replayed confirmations do
+not create a second Record. The existing deterministic runtime then opens the
+server-selected internal View. Record update/delete, relationships, files and
+configuration versioning are outside this boundary.
