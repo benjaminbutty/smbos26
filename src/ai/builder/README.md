@@ -184,10 +184,18 @@ version change.
 
 ## Phase 12B generic Record update
 
-The Builder registry keeps `builder_record_update_intent_v1` and its policy
-global, default and private-disabled. No live qualification or reliability
-gate has enabled this task. Phase 12A's frozen task, policy and evidence are
-unchanged.
+The global/default registry and disabled private Builder keep
+`builder_record_update_intent_v1` mapped to
+`builder_record_update_intent_disabled_v1`. The authenticated private OpenAI
+Builder uses a frozen task clone mapped to
+`builder_record_update_intent_terra_medium_v1`, backed by
+`openAiBuilderRecordUpdateIntentPolicy`, model `gpt-5.6-terra` and medium
+reasoning. The qualified subject is exact SHA
+`30dbab41d4f63a160370287a2411f8fbd254e95a`.
+
+Compatibility, qualification and reliability evidence is recorded in
+`evaluations/README.md`. This private enablement does not make the task
+globally available or alter Phase 12A's frozen task, policy or evidence.
 
 The update route accepts exactly one operational `update_record` plan. The
 intent task sees only the unchanged AI-safe configuration context and returns

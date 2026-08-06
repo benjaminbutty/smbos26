@@ -2526,12 +2526,14 @@ versioning remain outside this phase.
 
 ## ADR-033 — Builder-assisted generic Record updates
 
-Phase 12B is implemented on its feature branch and remains draft, disabled,
-unqualified and unmerged. It adds one generic operational `update_record`
-path: one active eligible Object, one exact selector over a supported scalar
-Field, and one to three explicit absolute Field values. Product is only an
-acceptance fixture; Equipment and Catering Enquiry use the same primitives and
-path.
+Phase 12B is implemented on its feature branch, qualified against one frozen
+profile and privately enabled only in the authenticated OpenAI Builder. It
+remains draft and unmerged pending final independent review. The global/default
+registry and disabled private Builder remain disabled. It adds one generic
+operational `update_record` path: one active eligible Object, one exact
+selector over a supported scalar Field, and one to three explicit absolute
+Field values. Product is only an acceptance fixture; Equipment and Catering
+Enquiry use the same primitives and path.
 
 The unchanged AI-safe model context contains no operational Records, current
 values or identifiers. The model supplies one Object key, one selector and the
@@ -2556,6 +2558,21 @@ capability mappings; Product remains eligible. The write is ordinary
 operational data: it creates no configuration Version, Change, history entry,
 undo record, domain table, queue or new primitive. Fuzzy, substring, bulk,
 relative, null/File, lifecycle, relationship, location and Phase 12C work
-remain unsupported. The task remains global/default/private disabled and no
-live qualification or reliability evidence is claimed. Phase 12A's frozen
-subject and evidence are untouched.
+remain unsupported. The model remains configuration-only, the deterministic
+PostgreSQL boundary is unchanged, and final mutation remains AI-free. The
+qualified intent task is enabled only in the authenticated private OpenAI
+Builder runtime; the global/default registry and disabled private runtime map
+to `builder_record_update_intent_disabled_v1`. Phase 12A's frozen subject and
+evidence are untouched.
+
+The accepted frozen profile uses
+`builder_record_update_intent_terra_medium_v1`, `gpt-5.6-terra` and medium
+reasoning. Exact schema compatibility was accepted; qualification passed 8/8
+and reliability passed 24/24 with every scenario 3/3. The accepted subject is
+exact SHA `30dbab41d4f63a160370287a2411f8fbd254e95a`; the evidence and the two
+earlier failed attempts remain recorded in `evaluations/README.md`. This
+evidence applies only to that frozen profile and is invalidated by changes to
+the model alias, policy, reasoning effort, provider transport, task
+instruction, schemas, semantic validator, material context, scenario set or
+evaluator. The private-runtime mapping-only closeout does not alter the
+qualified subject. PR #18 remains unmerged pending final independent review.
