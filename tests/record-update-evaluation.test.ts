@@ -91,6 +91,20 @@ describe("Builder generic Record-update evaluation harness", () => {
     expect(builderRecordUpdateEvaluationScenarios.map(({ id }) => id)).toEqual(
       BUILDER_RECORD_UPDATE_EVALUATION_SCENARIO_IDS,
     );
+    expect(BUILDER_RECORD_UPDATE_EVALUATION_SCENARIO_IDS).not.toContain(
+      "single_selector_update",
+    );
+    const missingReplacement = builderRecordUpdateEvaluationScenarios.find(
+      ({ id }) => id === "missing_replacement_clarification",
+    );
+    expect(missingReplacement).toMatchObject({
+      owner_request: "Change Celebration Box price.",
+      expected_output: {
+        state: "needs_clarification",
+        source_step_reference: "step_1",
+        question: "What should the Celebration Box's absolute new price be?",
+      },
+    });
     for (const scenario of builderRecordUpdateEvaluationScenarios) {
       const report = evaluateBuilderRecordUpdateIntent(
         scenario,

@@ -367,33 +367,6 @@ const definitions = [
     ),
   },
   {
-    id: "single_selector_update",
-    owner_request:
-      "Rename the Projector with hire price £50 to Conference Projector.",
-    input: taskInput(
-      "Rename the Projector with hire price £50 to Conference Projector.",
-      servicesContext,
-      "equipment",
-      "Equipment",
-    ),
-    expected_output: readyOutput(
-      "equipment",
-      {
-        field_key: "name",
-        field_type: "short_text",
-        string_value: "Projector",
-      },
-      [
-        {
-          field_key: "name",
-          field_type: "short_text",
-          string_value: "Conference Projector",
-        },
-      ],
-      "Rename the uniquely selected Projector.",
-    ),
-  },
-  {
     id: "status_option",
     owner_request: "Change Supplier Quote SQ-104 status to Approved.",
     input: taskInput(
@@ -414,19 +387,6 @@ const definitions = [
     ),
   },
   {
-    id: "relative_value_clarification",
-    owner_request: "Increase the Projector hire price by 10%.",
-    input: taskInput(
-      "Increase the Projector hire price by 10%.",
-      servicesContext,
-      "equipment",
-      "Equipment",
-    ),
-    expected_output: clarification(
-      "What should the Projector's absolute new hire price be?",
-    ),
-  },
-  {
     id: "missing_target_clarification",
     owner_request: "Change the Product price to £30.",
     input: taskInput(
@@ -439,6 +399,32 @@ const definitions = [
       "Which Product's current name should Builder use to identify it?",
     ),
   },
+  {
+    id: "missing_replacement_clarification",
+    owner_request: "Change Celebration Box price.",
+    input: taskInput(
+      "Change Celebration Box price.",
+      productContext,
+      "product",
+      "Product",
+    ),
+    expected_output: clarification(
+      "What should the Celebration Box's absolute new price be?",
+    ),
+  },
+  {
+    id: "relative_value_clarification",
+    owner_request: "Increase the Projector hire price by 10%.",
+    input: taskInput(
+      "Increase the Projector hire price by 10%.",
+      servicesContext,
+      "equipment",
+      "Equipment",
+    ),
+    expected_output: clarification(
+      "What should the Projector's absolute new hire price be?",
+    ),
+  },
 ] as const;
 
 export const BUILDER_RECORD_UPDATE_EVALUATION_SCENARIO_IDS = [
@@ -446,10 +432,10 @@ export const BUILDER_RECORD_UPDATE_EVALUATION_SCENARIO_IDS = [
   "product_absolute_currency",
   "equipment_multi_field",
   "catering_date_budget",
-  "single_selector_update",
   "status_option",
-  "relative_value_clarification",
   "missing_target_clarification",
+  "missing_replacement_clarification",
+  "relative_value_clarification",
 ] as const satisfies readonly BuilderRecordUpdateEvaluationScenarioId[];
 
 export const builderRecordUpdateEvaluationScenarios = Object.freeze(

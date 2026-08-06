@@ -17,10 +17,10 @@ export const builderRecordUpdateEvaluationScenarioIdSchema = z.enum([
   "product_absolute_currency",
   "equipment_multi_field",
   "catering_date_budget",
-  "single_selector_update",
   "status_option",
-  "relative_value_clarification",
   "missing_target_clarification",
+  "missing_replacement_clarification",
+  "relative_value_clarification",
 ]);
 
 export const builderRecordUpdateEvaluationFailureClassSchema = z.enum([

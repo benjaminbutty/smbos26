@@ -723,8 +723,57 @@ npm run eval:builder-record-update-schema-compatibility-live
 
 It remains opt-in engineering scaffolding only: compatibility, qualification
 and reliability require separate explicit flags and are not run by CI, build,
-seed or application startup. No live Phase 12B command has been run or used to
-qualify or enable the task. Reports are metadata-only and never include owner
-requests, context, values, model output, provider bodies or credentials.
-Phase 12B remains unmerged and private-disabled pending any separately
-authorized evidence review.
+seed or application startup. A first live Phase 12B qualification command was
+run once against the exact SHA recorded below and failed its scenario gate; it
+was not used to qualify or enable the task. Reliability was not run. Reports
+are metadata-only and never include owner requests, context, values, model
+output, provider bodies or credentials. Phase 12B remains unmerged and
+private-disabled pending any separately authorized evidence review.
+
+#### Failed Phase 12B qualification evidence and bounded correction
+
+The first Phase 12B qualification run was executed once against exact SHA
+`aab28f6fa0d9036f84579f4261e32641ab033146`. The run stopped correctly at the
+fifth scenario because the scenario expectation did not match the approved
+one-selector boundary:
+
+```text
+Exact SHA:
+aab28f6fa0d9036f84579f4261e32641ab033146
+
+Passed:
+4
+
+Failed:
+1
+
+Failure scenario:
+single_selector_update
+
+Failure class:
+scenario_expectation
+
+Failed gate:
+expected_update_set
+
+Attempts:
+5
+
+Input tokens:
+14370
+
+Output tokens:
+622
+
+Estimated cost:
+45256 microusd
+
+Exit:
+1
+```
+
+No structural failure occurred. No semantic-validator failure occurred. No
+provider failure occurred. Reliability was not run. The correction removes a
+scenario inconsistent with the approved one-selector boundary and replaces it
+with a missing-replacement clarification scenario. No hidden model output was
+inspected or retained.
