@@ -27,6 +27,11 @@ import {
   prepareInitialPreorderProposal,
 } from "../../../../core/configuration/initial-preorder/service";
 import { initialPreorderSetupFormSchema } from "../../../../core/configuration/initial-preorder/schemas";
+import {
+  preparePublicPreorderPublicationProposal,
+  PublicPreorderPublicationError,
+} from "../../../../core/configuration/publication/service";
+import { publicPreorderPublicationFormSchema } from "../../../../core/configuration/publication/schemas";
 import { graphKeySchema } from "../../../../core/graph/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
 
@@ -70,6 +75,15 @@ function redirectWithInitialPreorderNotice(
     | "location_unavailable"
     | "already_installed"
     | "business_not_clean",
+): never {
+  const query = new URLSearchParams({ notice });
+  redirect(`${path}?${query.toString()}`);
+}
+
+function redirectWithPublicationNotice(
+  path: string,
+  notice:
+    "input_invalid" | "stale" | "publication_unavailable" | "already_published",
 ): never {
   const query = new URLSearchParams({ notice });
   redirect(`${path}?${query.toString()}`);
@@ -125,6 +139,25 @@ async function createInitialPreorderActionContext(businessSlugInput: string) {
     }),
     supabase,
     tenant,
+  };
+}
+
+async function createPublicationActionContext(businessSlugInput: string) {
+  const businessSlug = routeSlugSchema.safeParse(businessSlugInput);
+  if (!businessSlug.success) {
+    notFound();
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug.data, supabase);
+  if (!hasCapability(tenant.membership.role, "manage_configuration")) {
+    notFound();
+  }
+  return {
+    businessSlug: businessSlug.data,
+    configuration: new ConfigurationChangeService(supabase, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    }),
   };
 }
 
@@ -184,6 +217,49 @@ export async function prepareInitialPreorderProposalAction(
       error.code === "configuration_proposal_stale"
     ) {
       redirectWithInitialPreorderNotice(setupPath, "stale");
+    }
+    throw error;
+  }
+}
+
+export async function preparePublicPreorderPublicationAction(
+  businessSlugInput: string,
+  formData: FormData,
+): Promise<never> {
+  const { businessSlug, configuration } =
+    await createPublicationActionContext(businessSlugInput);
+  const setupPath = `/app/${encodeURIComponent(businessSlug)}/setup`;
+  const parsed = publicPreorderPublicationFormSchema.safeParse({
+    expectedBaseVersionId: stringValue(formData, "expectedBaseVersionId"),
+    expectedHeadRevision: integerValue(formData, "expectedHeadRevision"),
+  });
+  if (!parsed.success) {
+    redirectWithPublicationNotice(setupPath, "input_invalid");
+  }
+
+  try {
+    const proposal = await preparePublicPreorderPublicationProposal(
+      configuration,
+      parsed.data,
+    );
+    redirect(
+      `/app/${encodeURIComponent(businessSlug)}/changes/${encodeURIComponent(proposal.id)}`,
+    );
+  } catch (error) {
+    if (error instanceof PublicPreorderPublicationError) {
+      const notice =
+        error.code === "public_preorder_stale"
+          ? "stale"
+          : error.code === "public_preorder_already_published"
+            ? "already_published"
+            : "publication_unavailable";
+      redirectWithPublicationNotice(setupPath, notice);
+    }
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      redirectWithPublicationNotice(setupPath, "stale");
     }
     throw error;
   }

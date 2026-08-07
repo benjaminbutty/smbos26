@@ -12,6 +12,10 @@ import {
 } from "../../../../core/configuration/manual-amendments/service";
 import { getInitialPreorderStarterState } from "../../../../core/configuration/initial-preorder/service";
 import {
+  getPublicPreorderPublicationState,
+  type PublicPreorderPublicationState,
+} from "../../../../core/configuration/publication/service";
+import {
   ConfigurationChangeService,
   isControlledConfigurationReadError,
 } from "../../../../core/configuration/service";
@@ -20,7 +24,10 @@ import {
   readSearchParam,
   type SearchParams,
 } from "../../../../lib/search-params";
-import { prepareInitialPreorderProposalAction } from "./actions";
+import {
+  prepareInitialPreorderProposalAction,
+  preparePublicPreorderPublicationAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -84,7 +91,91 @@ function StarterNotice({ notice }: Readonly<{ notice: string | undefined }>) {
       </Notice>
     );
   }
+  if (notice === "publication_unavailable") {
+    return (
+      <Notice kind="error">
+        The public preorder page could not be identified safely. No publication
+        was prepared.
+      </Notice>
+    );
+  }
+  if (notice === "already_published") {
+    return (
+      <Notice kind="message">
+        The preorder page is already available to customers.
+      </Notice>
+    );
+  }
   return null;
+}
+
+function publicPreorderPath(businessSlug: string, pageSlug: string): string {
+  return `/p/${encodeURIComponent(businessSlug)}/${encodeURIComponent(pageSlug)}`;
+}
+
+function PreorderPublicationControl({
+  businessSlug,
+  currentness,
+  state,
+}: Readonly<{
+  businessSlug: string;
+  currentness: { baseVersionId: string; headRevision: number };
+  state: PublicPreorderPublicationState;
+}>): ReactNode {
+  if (state.kind === "unavailable") {
+    return (
+      <div className="panel compact-panel">
+        <h3>Publication is not available</h3>
+        <p className="muted">
+          SMBOS could not identify one active public preorder page to make
+          available. No changes were made.
+        </p>
+      </div>
+    );
+  }
+
+  const path = publicPreorderPath(businessSlug, state.pageSlug);
+  if (state.kind === "published") {
+    return (
+      <div className="panel compact-panel">
+        <h3>Preorder page is available</h3>
+        <p className="muted">
+          Customers can use the existing public page at{" "}
+          <a href={path}>{path}</a>.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="panel compact-panel stack-form">
+      <h3>Publish preorder</h3>
+      <p className="muted">Your preorder page is currently private.</p>
+      <p className="muted">
+        Publishing will make it available to customers at{" "}
+        <a href={path}>{path}</a>.
+      </p>
+      <p className="muted">
+        Nothing becomes public until you review, Validate and Apply the
+        publication proposal.
+      </p>
+      <form
+        action={preparePublicPreorderPublicationAction.bind(null, businessSlug)}
+      >
+        <input
+          name="expectedBaseVersionId"
+          type="hidden"
+          value={currentness.baseVersionId}
+        />
+        <input
+          name="expectedHeadRevision"
+          type="hidden"
+          value={currentness.headRevision}
+        />
+        <button type="submit">Prepare publication</button>
+      </form>
+    </div>
+  );
 }
 
 function InitialPreorderStarter({
@@ -235,6 +326,7 @@ export default async function SetupPage({
   let setups;
   let questionSetups;
   let active;
+  let publicationState: PublicPreorderPublicationState;
   const locationsResult = await supabase
     .from("locations")
     .select("id,name,timezone,is_active")
@@ -255,6 +347,7 @@ export default async function SetupPage({
         setup,
       ]),
     );
+    publicationState = getPublicPreorderPublicationState(active.snapshot);
   } catch (error) {
     if (
       error instanceof ManualAmendmentError ||
@@ -299,34 +392,41 @@ export default async function SetupPage({
             )}
           />
         ) : (
-          <div className="change-card-grid">
-            {setups.map((setup) => (
-              <article className="change-card" key={setup.key}>
-                <h3>{setup.label}</h3>
-                <p className="muted">
-                  {setup.schedule.days_of_week.length} collection{" "}
-                  {setup.schedule.days_of_week.length === 1 ? "day" : "days"} ·{" "}
-                  {setup.schedule.start_time}–{setup.schedule.end_time} ·{" "}
-                  {questionSetups.get(setup.key)?.questions.length ?? 0}{" "}
-                  questions
-                </p>
-                <div className="configuration-action-links">
-                  <Link
-                    className="button button-secondary"
-                    href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}`}
-                  >
-                    Collection settings
-                  </Link>
-                  <Link
-                    className="button button-secondary"
-                    href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}/questions`}
-                  >
-                    Questions customers answer
-                  </Link>
-                </div>
-              </article>
-            ))}
-          </div>
+          <>
+            <PreorderPublicationControl
+              businessSlug={businessSlug}
+              currentness={active}
+              state={publicationState}
+            />
+            <div className="change-card-grid">
+              {setups.map((setup) => (
+                <article className="change-card" key={setup.key}>
+                  <h3>{setup.label}</h3>
+                  <p className="muted">
+                    {setup.schedule.days_of_week.length} collection{" "}
+                    {setup.schedule.days_of_week.length === 1 ? "day" : "days"}{" "}
+                    · {setup.schedule.start_time}–{setup.schedule.end_time} ·{" "}
+                    {questionSetups.get(setup.key)?.questions.length ?? 0}{" "}
+                    questions
+                  </p>
+                  <div className="configuration-action-links">
+                    <Link
+                      className="button button-secondary"
+                      href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}`}
+                    >
+                      Collection settings
+                    </Link>
+                    <Link
+                      className="button button-secondary"
+                      href={`/app/${encodeURIComponent(businessSlug)}/setup/preorder/${encodeURIComponent(setup.key)}/questions`}
+                    >
+                      Questions customers answer
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </section>
     </section>

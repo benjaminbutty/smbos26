@@ -2630,5 +2630,26 @@ only to the qualified Terra policy. The first live qualification attempt at
 `c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
 6 passed, 1 failed and 1 not executed (`inactive_location` /
 `location_reference_invalid`). Milestone 12 is complete on the current Phase
-13A implementation branch; no Milestone 13B or 13C work is claimed. Phase 12A
-and Phase 12B subjects and evidence remain unchanged.
+13B implementation branch. Phase 12A and Phase 12B subjects and evidence
+remain unchanged.
+
+## Milestone 13 Phase 13B - deliberate public preorder publication
+
+Phase 13B deliberately reuses the existing configuration architecture. The
+Owner/Admin Edit setup control reloads the active immutable configuration
+snapshot and resolves one active public Page containing the installed preorder
+experience. An eligible draft Page is composed as one complete existing
+`set_page` operation that preserves its key, title, slug, audience, layout and
+active state while changing only its status to published.
+
+The action passes the exact active Version ID and head revision used for that
+composition to `ConfigurationChangeService.proposeChangeSet()`. The result is
+an ordinary `change` / `proposed` proposal; existing Preview, Validate, Apply,
+immutable Version and public resolver boundaries remain authoritative. The
+public URL remains unavailable until deliberate Apply. Missing, ambiguous,
+inactive, internal and already-published Pages fail closed without a proposal.
+
+No new durable architecture was required: there is no migration, table,
+primitive, Page lifecycle, public runtime, AI subject, background process or
+operational-data mutation. Milestone 13 remains open pending the next hands-on
+checkpoint.

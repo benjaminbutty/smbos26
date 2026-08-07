@@ -31,7 +31,7 @@ The product and architecture sources of truth are:
 - [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
 - [`AGENTS.md`](AGENTS.md)
 
-Milestone 12 is complete on the current Phase 13A feature branch. Phase 12A
+Milestone 12 is complete on the current Phase 13B feature branch. Phase 12A
 generic Record creation is merged through PR #17. Phase 12B adds one bounded
 generic Builder path for an exact-selector Record update, and Phase 12C adds
 one deterministic manual and bounded Builder path for linking or unlinking an
@@ -51,6 +51,15 @@ experience and a draft public Page. It creates no Product Records or
 availability links; after Apply, the owner can add the first Product through
 the normal generic Record-create surface. Product availability and publication
 remain separate, and Product v0 remains in progress.
+
+Milestone 13 Phase 13A is complete. Phase 13B adds the deliberate Owner/Admin
+publication handoff to the same Edit setup surface. SMBOS reloads the current
+public preorder Page, composes one complete `set_page` operation that changes
+only its availability, and prepares one ordinary M5 proposed Change titled
+`Publish preorder`. The existing Preview, Validate and Apply lifecycle remains
+authoritative: the existing public URL stays unavailable until Apply. No AI is
+involved and publication changes no Product, availability, Customer, Order,
+submission or other operational data.
 
 ## Current scope
 
@@ -94,6 +103,8 @@ Included:
 - clean-Business Owner/Admin initial preorder starter that prepares one ordinary
   proposed Change with generic Product and Order surfaces and a draft public
   Page
+- deliberate Owner/Admin publication preparation for the existing public
+  preorder Page through one ordinary M5 proposed Change
 - bounded preorder-question controls for editing public wording, help and
   requiredness or adding one short/long-answer generic Order Field
 - exact active-version and head-revision proposal currentness enforced
@@ -261,7 +272,7 @@ Not included:
 - provider-backed AI proposal/operation generation outside the bounded Phase
   9A preorder-amendment Builder boundary
 - automatic proposal lifecycle orchestration, validation/application
-  automation and publication
+  automation, or automatic publication
 - billing, subscriptions, customer invoicing, tax, or currency conversion
 - arbitrary public Record queries or generic public Form submissions
 - relationship Form controls
