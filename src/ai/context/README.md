@@ -72,3 +72,13 @@ Relationships, Locations, digests, tokens or provider data. The model returns
 only an exact Object key, one selector over a supported scalar Field and one to
 three explicit absolute Field values; PostgreSQL-owned targeting and the
 AI-free final write happen outside `modelContext`.
+
+## Phase 12C Record-to-Location context boundary
+
+The Record-to-Location intent also uses the unchanged configuration-only
+context. It may reference an existing Location from the context and return one
+exact Location reference, but it receives no operational Records, current
+Record values, Record IDs, candidate Records, link rows or mutation authority.
+PostgreSQL resolves the selector, active Record, eligible Object, Location and
+current pair state after the intent is validated. The final availability change
+is deterministic and AI-free.

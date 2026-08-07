@@ -17,6 +17,11 @@ import {
   BUILDER_RECORD_CREATION_INTENT_SCHEMA_VERSION,
   builderRecordCreationFieldValueSchema,
 } from "../record-creation-intent/schemas";
+import { BUILDER_RECORD_LOCATION_LINK_INTENT_SCHEMA_VERSION } from "../record-location-link-intent/schemas";
+import {
+  recordLocationLinkActionSchema,
+  recordLocationLinkPairStateSchema,
+} from "../../core/graph/record-location-availability/schemas";
 import {
   graphFieldTypeSchema,
   graphKeySchema,
@@ -248,6 +253,84 @@ export const builderRecordUpdateNoChangeResultSchema =
     BUILDER_RECORD_UPDATE_MESSAGES.no_change,
   );
 
+const recordLocationSelectorPresentationSchema = z
+  .object({
+    label: z.string().trim().min(1).max(120),
+    formatted_value: z.string().trim().min(1).max(5_000),
+  })
+  .strict();
+
+export const builderRecordLocationConfirmationResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("record_location_confirmation"),
+    intent_schema_version: z.literal(
+      BUILDER_RECORD_LOCATION_LINK_INTENT_SCHEMA_VERSION,
+    ),
+    action: recordLocationLinkActionSchema,
+    object_label: z.string().trim().min(1).max(120),
+    location_name: z.string().trim().min(1).max(120),
+    selector_presentation: recordLocationSelectorPresentationSchema,
+    object_definition_id: z.uuid(),
+    object_key: graphKeySchema,
+    target_record_id: z.uuid(),
+    target_location_id: z.uuid(),
+    expected_pair_state: recordLocationLinkPairStateSchema,
+    destination_view_key: graphKeySchema.nullable(),
+  })
+  .strict();
+
+export const BUILDER_RECORD_LOCATION_REASON_CODES = [
+  "record_not_found",
+  "record_ambiguous",
+  "record_ineligible",
+  "location_not_found",
+  "location_inactive",
+  "already_linked",
+  "already_unlinked",
+] as const;
+
+export type BuilderRecordLocationReasonCode =
+  (typeof BUILDER_RECORD_LOCATION_REASON_CODES)[number];
+
+export const BUILDER_RECORD_LOCATION_MESSAGES = Object.freeze({
+  record_not_found:
+    "No active Record matched those exact current details. Check the current value and submit the request again.",
+  record_ambiguous:
+    "More than one active Record matched that value. Use the existing operating screen to choose the correct Record.",
+  record_ineligible:
+    "This type of Record cannot have its Location availability changed through Builder safely.",
+  location_not_found: "That Location is no longer available in this Business.",
+  location_inactive:
+    "That Location is inactive. Activate it in Locations before making this Record available there.",
+  already_linked: "That Record is already available at this Location.",
+  already_unlinked: "That Record is already unavailable at this Location.",
+} as const);
+
+export const BUILDER_RECORD_LOCATION_SUCCESS_MESSAGES = Object.freeze({
+  link: "The Record is now available at this Location.",
+  unlink: "The Record is no longer available at this Location.",
+} as const);
+
+export const builderRecordLocationUnavailableResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("record_location_unavailable"),
+    object_label: z.string().trim().min(1).max(120),
+    reason_code: z.enum(BUILDER_RECORD_LOCATION_REASON_CODES),
+    message: z.string().trim().min(1).max(240),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.message !== BUILDER_RECORD_LOCATION_MESSAGES[value.reason_code]) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["message"],
+        message: "The Record Location unavailable message is not fixed.",
+      });
+    }
+  });
+
 export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderClarificationResultSchema,
   builderUnsupportedResultSchema,
@@ -260,6 +343,8 @@ export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderRecordUpdateAmbiguousResultSchema,
   builderRecordUpdateIneligibleResultSchema,
   builderRecordUpdateNoChangeResultSchema,
+  builderRecordLocationConfirmationResultSchema,
+  builderRecordLocationUnavailableResultSchema,
 ]);
 
 export type BuilderOrchestrationResult = z.infer<

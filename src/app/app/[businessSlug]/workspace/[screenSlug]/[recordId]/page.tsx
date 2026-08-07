@@ -18,6 +18,8 @@ import {
   ViewRenderer,
   viewFieldKeys,
 } from "../../../../../../runtime/views/view-renderer";
+import { hasCapability } from "../../../../../../auth/authorization";
+import { RecordLocationAvailability } from "./record-location-availability";
 
 interface RecordDetailPageProps {
   params: Promise<{
@@ -112,6 +114,15 @@ export default async function RecordDetailPage({
         navigationViewKey={source.definition.key}
         record={record}
       />
+      {hasCapability(tenant.membership.role, "manage_locations") ? (
+        <RecordLocationAvailability
+          businessId={tenant.business.id}
+          businessSlug={businessSlug}
+          objectDefinitionId={detail.object.id}
+          recordId={record.id}
+          screenSlug={screenSlug}
+        />
+      ) : null}
     </section>
   );
 }

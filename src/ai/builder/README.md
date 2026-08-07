@@ -214,3 +214,32 @@ locks the target Record once, and relies on the existing graph validation and
 timestamp triggers. The write is operational only: it creates no
 configuration Version, Change, history entry or undo state. The server selects
 the existing internal View after success.
+
+## Phase 12C generic Record-to-Location availability
+
+Phase 12C adds a bounded operational `link_record_to_location` route for one
+active eligible generic Record and one existing Location. The model receives
+the same configuration-only Business context as earlier phases and returns
+only one exact Object key, one existing Location reference, one exact Record
+selector and a link/unlink action. It receives no Record rows, current values,
+candidate Records, Record IDs or link rows. PostgreSQL remains the sole
+selector and pair-state authority.
+
+The generated Record detail route offers the same deterministic pair service
+to Owner/Admin users. Active Locations can be newly linked; inactive existing
+links remain visible and are not silently removed. The Builder confirmation is
+bound to the authenticated Business and actor and carries only the
+server-selected Object/Record/Location identity, expected pair state, safe
+destination and timestamps. It signs neither the display name nor a link-row
+ID. Final confirmation is AI-free: it revalidates the pair, derives the
+current link row for unlink, calls one existing trusted pair operation and
+reloads the authoritative Location name. Its result contract has one finite
+unavailable reason enum and one success state; it creates no proposal,
+configuration Version, Change, history or operational undo.
+
+The new intent task and policy are registered globally/default and in the
+private Builder as disabled for this implementation pass. No live Phase 12C
+qualification or reliability evidence is claimed. Bulk work, fuzzy matching,
+candidate selection, multiple Records or Locations, Record Relationships,
+Location lifecycle changes, mixed sequencing, publication, clean-Business
+bootstrap, operational undo and Milestone 13 remain out of scope.

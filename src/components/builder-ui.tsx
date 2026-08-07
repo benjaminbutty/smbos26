@@ -272,6 +272,67 @@ export function BuilderResultPanel({
     );
   }
 
+  if (state.state === "record_location_confirmation") {
+    const actionLabel =
+      state.action === "link" ? "Make available" : "Remove availability";
+    const actionDescription =
+      state.action === "link"
+        ? `${state.object_label} will be available at ${state.location_name}.`
+        : `${state.object_label} will no longer be available at ${state.location_name}.`;
+
+    return (
+      <section
+        aria-labelledby="builder-record-location-confirmation-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <p className="eyebrow">Ready for confirmation</p>
+        <h2 id="builder-record-location-confirmation-heading">
+          {actionLabel} {state.object_label} at {state.location_name}?
+        </h2>
+        <p>{actionDescription}</p>
+        <dl className="builder-confirmation-fields">
+          <div>
+            <dt>{state.selector_presentation.label}</dt>
+            <dd>{state.selector_presentation.formatted_value}</dd>
+          </div>
+          <div>
+            <dt>Location</dt>
+            <dd>{state.location_name}</dd>
+          </div>
+        </dl>
+        <p className="builder-safety-note">
+          Confirming changes live availability for this one existing Record. It
+          is ordinary business data and does not create a configuration version
+          or change history entry.
+        </p>
+        <form action={action} className="builder-request-panel">
+          <input
+            name="recordLocationConfirmationToken"
+            type="hidden"
+            value={state.confirmation_token}
+          />
+          <PendingSubmitButton
+            label={
+              state.action === "link"
+                ? "Confirm and make available"
+                : "Confirm and remove"
+            }
+            pendingLabel={
+              state.action === "link" ? "Making available…" : "Removing…"
+            }
+          />
+          <Link
+            className="button button-secondary"
+            href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+          >
+            Cancel
+          </Link>
+        </form>
+      </section>
+    );
+  }
+
   if (
     state.state === "record_update_not_found" ||
     state.state === "record_update_ambiguous" ||
@@ -285,6 +346,19 @@ export function BuilderResultPanel({
         role="status"
       >
         <h2 id="builder-record-update-result-heading">{state.object_label}</h2>
+        <p>{state.message}</p>
+      </section>
+    );
+  }
+
+  if (state.state === "record_location_unavailable") {
+    return (
+      <section
+        aria-labelledby="builder-record-location-result-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <h2 id="builder-record-location-result-heading">Availability update</h2>
         <p>{state.message}</p>
       </section>
     );
@@ -342,6 +416,32 @@ export function BuilderResultPanel({
       >
         <p className="eyebrow">Record updated</p>
         <h2 id="builder-record-updated-heading">{state.object_label}</h2>
+        <p>{state.message}</p>
+        <Link
+          className="button"
+          href={
+            state.destination_path ?? `/app/${encodeURIComponent(businessSlug)}`
+          }
+        >
+          {state.destination_path
+            ? `Open ${state.object_label}`
+            : "Open workspace"}
+        </Link>
+      </section>
+    );
+  }
+
+  if (state.state === "record_location_updated") {
+    return (
+      <section
+        aria-labelledby="builder-record-location-complete-heading"
+        className="builder-result builder-result-success"
+        role="status"
+      >
+        <p className="eyebrow">Availability updated</p>
+        <h2 id="builder-record-location-complete-heading">
+          {state.object_label} at {state.location_name}
+        </h2>
         <p>{state.message}</p>
         <Link
           className="button"

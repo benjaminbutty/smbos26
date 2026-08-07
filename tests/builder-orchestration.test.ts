@@ -60,7 +60,9 @@ import { builderLocationCreationIntentTaskV1 } from "../src/ai/location-creation
 import { builderPreorderAmendmentTaskV1 } from "../src/ai/preorder-amendment/task";
 import { builderRecordCreationIntentTaskV1 } from "../src/ai/record-creation-intent/task";
 import { builderRecordUpdateIntentTaskV1 } from "../src/ai/record-update-intent/task";
+import { builderRecordLocationLinkIntentTaskV1 } from "../src/ai/record-location-link-intent/task";
 import { builderRecordCreationIntentOutputSchema } from "../src/ai/record-creation-intent/schemas";
+import { builderRecordLocationLinkIntentOutputSchema } from "../src/ai/record-location-link-intent/schemas";
 import type { AuthoritativeAiBusinessContext } from "../src/core/configuration/builder-context-source";
 import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
 import {
@@ -68,6 +70,10 @@ import {
   type LocationCreationState,
 } from "../src/core/locations/schemas";
 import type { RecordCreationState } from "../src/core/graph/record-creation/schemas";
+import {
+  recordLocationLinkTargetStateSchema,
+  type RecordLocationLinkTargetState,
+} from "../src/core/graph/record-location-availability/schemas";
 import type { Database } from "../src/db/supabase/database.types";
 
 type Client = SupabaseClient<Database>;
@@ -330,6 +336,78 @@ function recordContext(): AuthoritativeAiBusinessContext {
   });
 }
 
+function recordLocationPlan(): Extract<BuilderPlanOutput, { state: "ready" }> {
+  const parsed = builderPlanOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    understanding: "The owner wants to change one Product's availability.",
+    assumptions: [],
+    unsupported_requirements: [],
+    plan: {
+      outcome:
+        "One Product's Location availability changes after confirmation.",
+      concepts: [
+        {
+          reference: "concept_1",
+          label: "Product",
+          disposition: "existing",
+          existing_object_key: "product",
+          purpose: "The existing Product Record.",
+        },
+      ],
+      user_journeys: [],
+      steps: [
+        {
+          reference: "step_1",
+          sequence: 1,
+          summary: "Change one Product's Location availability.",
+          dependencies: [],
+          affected_concepts: ["concept_1"],
+          existing_object_keys: ["product"],
+          location_references: [ids.location],
+          materiality: "medium",
+          requires_owner_confirmation: true,
+          lane: "operational",
+          category: "link_record_to_location",
+        },
+      ],
+    },
+  });
+  if (parsed.state !== "ready") {
+    throw new Error("Expected a ready Record-to-Location plan.");
+  }
+  return parsed;
+}
+
+function recordLocationState(
+  overrides: Partial<
+    Extract<RecordLocationLinkTargetState, { state: "ready" }>
+  > = {},
+): RecordLocationLinkTargetState {
+  return recordLocationLinkTargetStateSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    business_id: ids.business,
+    actor_id: ids.actor,
+    object_definition_id: "90000000-0000-4000-8000-000000000011",
+    object_key: "product",
+    singular_label: "Product",
+    target_record_id: "90000000-0000-4000-8000-000000000021",
+    target_location_id: ids.location,
+    location_name: "Bedford",
+    location_is_active: true,
+    action: "link",
+    expected_pair_state: "unlinked",
+    selector: {
+      field_key: "name",
+      field_type: "short_text",
+      string_value: "Kids Afternoon Tea",
+    },
+    destination_view_key: "products",
+    ...overrides,
+  });
+}
+
 function readyPlan(
   category:
     | "define_object"
@@ -495,16 +573,20 @@ interface HarnessOptions {
   planningOutput?: BuilderPlanOutput;
   draftOutput?: BuilderConfigurationDraftOutput;
   recordIntentOutput?: unknown;
+  recordLocationIntentOutput?: unknown;
   firstContext?: AuthoritativeAiBusinessContext;
   secondContext?: AuthoritativeAiBusinessContext;
   planningFailure?: unknown;
   draftingFailure?: unknown;
   locationIntentOutput?: unknown;
   locationIntentFailure?: unknown;
+  recordLocationIntentFailure?: unknown;
   firstLocationState?: LocationCreationState;
   secondLocationState?: LocationCreationState;
   firstRecordState?: RecordCreationState;
   secondRecordState?: RecordCreationState;
+  firstRecordLocationState?: RecordLocationLinkTargetState;
+  secondRecordLocationState?: RecordLocationLinkTargetState;
   settings?: BusinessAiSettings;
   reserveFailure?: { taskKey: string; error: unknown };
   proposalError?: unknown;
@@ -516,6 +598,7 @@ function harness(options: HarnessOptions = {}) {
   const draftingInputs: unknown[] = [];
   const locationIntentInputs: unknown[] = [];
   const recordIntentInputs: unknown[] = [];
+  const recordLocationIntentInputs: unknown[] = [];
   const contexts = [
     options.firstContext ?? authoritative(),
     options.secondContext ?? options.firstContext ?? authoritative(),
@@ -556,6 +639,20 @@ function harness(options: HarnessOptions = {}) {
     }
     return state;
   });
+  const recordLocationStates = [
+    options.firstRecordLocationState ?? recordLocationState(),
+    options.secondRecordLocationState ??
+      options.firstRecordLocationState ??
+      recordLocationState(),
+  ];
+  const readRecordLocationLinkState = vi.fn(async () => {
+    events.push("record-location-state");
+    const state = recordLocationStates.shift();
+    if (!state) {
+      throw new Error("Unexpected Record-to-Location state load.");
+    }
+    return state;
+  });
   const accounting: AiAccountingStore = {
     readSettings: vi.fn(async () => options.settings ?? enabledSettings),
     reserve: vi.fn(async (request) => {
@@ -581,6 +678,8 @@ function harness(options: HarnessOptions = {}) {
       const isLocationIntent =
         taskKey === "builder_location_creation_intent_v1";
       const isRecordIntent = taskKey === "builder_record_creation_intent_v1";
+      const isRecordLocationIntent =
+        taskKey === "builder_record_location_link_intent_v1";
       events.push(
         isPlanning
           ? "planning"
@@ -588,7 +687,9 @@ function harness(options: HarnessOptions = {}) {
             ? "location-intent"
             : isRecordIntent
               ? "record-intent"
-              : "drafting",
+              : isRecordLocationIntent
+                ? "record-location-intent"
+                : "drafting",
       );
       if (taskKey === "builder_plan_v1") {
         planningInputs.push(input);
@@ -596,6 +697,8 @@ function harness(options: HarnessOptions = {}) {
         locationIntentInputs.push(input);
       } else if (isRecordIntent) {
         recordIntentInputs.push(input);
+      } else if (isRecordLocationIntent) {
+        recordLocationIntentInputs.push(input);
       } else {
         draftingInputs.push(input);
       }
@@ -610,7 +713,9 @@ function harness(options: HarnessOptions = {}) {
                 ? "Draft one bounded Location creation intent"
                 : isRecordIntent
                   ? "Draft one bounded generic Record creation intent"
-                  : "Draft bounded additive configuration intent",
+                  : isRecordLocationIntent
+                    ? "Draft one bounded generic Record-to-Location availability intent"
+                    : "Draft bounded additive configuration intent",
           policy:
             taskKey === "builder_plan_v1"
               ? openAiBuilderPlanningPolicy
@@ -618,7 +723,11 @@ function harness(options: HarnessOptions = {}) {
                 ? openAiBuilderLocationCreationPolicy
                 : isRecordIntent
                   ? openAiBuilderRecordCreationIntentPolicy
-                  : openAiBuilderConfigurationDraftingPolicy,
+                  : isRecordLocationIntent
+                    ? disabledExecutionPolicies[
+                        "builder_record_location_link_intent_disabled_v1"
+                      ]
+                    : openAiBuilderConfigurationDraftingPolicy,
         },
       };
       preparedOutputs.set(prepared, {
@@ -638,7 +747,23 @@ function harness(options: HarnessOptions = {}) {
                 }))
               : isRecordIntent
                 ? (options.recordIntentOutput ?? recordIntentOutput())
-                : (options.draftOutput ?? draft()),
+                : isRecordLocationIntent
+                  ? (options.recordLocationIntentOutput ??
+                    builderRecordLocationLinkIntentOutputSchema.parse({
+                      schema_version: 1,
+                      state: "ready",
+                      summary: "Make one Product available at one Location.",
+                      source_step_reference: "step_1",
+                      action: "link",
+                      object_key: "product",
+                      selector: {
+                        field_key: "name",
+                        field_type: "short_text",
+                        string_value: "Kids Afternoon Tea",
+                      },
+                      location_reference: ids.location,
+                    }))
+                  : (options.draftOutput ?? draft()),
         failure:
           taskKey === "builder_plan_v1"
             ? options.planningFailure
@@ -646,7 +771,9 @@ function harness(options: HarnessOptions = {}) {
               ? options.locationIntentFailure
               : isRecordIntent
                 ? undefined
-                : options.draftingFailure,
+                : isRecordLocationIntent
+                  ? options.recordLocationIntentFailure
+                  : options.draftingFailure,
       });
       return prepared;
     }),
@@ -700,6 +827,7 @@ function harness(options: HarnessOptions = {}) {
     proposalService,
     readLocationCreationState,
     readRecordCreationState,
+    readRecordLocationLinkState,
     generateExecutionId: vi
       .fn()
       .mockReturnValueOnce("90000000-0000-4000-8000-000000000009")
@@ -713,12 +841,14 @@ function harness(options: HarnessOptions = {}) {
     draftingInputs,
     locationIntentInputs,
     recordIntentInputs,
+    recordLocationIntentInputs,
     loadContext,
     accounting,
     execution,
     proposalService,
     readLocationCreationState,
     readRecordCreationState,
+    readRecordLocationLinkState,
   };
 }
 
@@ -946,6 +1076,61 @@ describe("authenticated Builder orchestration contract", () => {
         ready_plan: readyPlan("create_initial_record"),
       }),
     );
+    expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
+    expect(test.proposalService.propose).not.toHaveBeenCalled();
+  });
+
+  it("routes one generic Record-to-Location action through typed intent without configuration currentness", async () => {
+    const test = harness({
+      planningOutput: recordLocationPlan(),
+      firstContext: recordContext(),
+      firstRecordLocationState: recordLocationState(),
+      secondRecordLocationState: recordLocationState(),
+    });
+    const result = await test.service.run(test.client, {
+      businessId: ids.business,
+      ownerRequest: "Make the Kids Afternoon Tea available at Bedford.",
+    });
+
+    expect(result).toMatchObject({
+      schema_version: 1,
+      state: "record_location_confirmation",
+      intent_schema_version: 1,
+      action: "link",
+      object_label: "Product",
+      location_name: "Bedford",
+      selector_presentation: {
+        label: "Name",
+        formatted_value: "Kids Afternoon Tea",
+      },
+      object_definition_id: "90000000-0000-4000-8000-000000000011",
+      object_key: "product",
+      target_record_id: "90000000-0000-4000-8000-000000000021",
+      target_location_id: ids.location,
+      expected_pair_state: "unlinked",
+      destination_view_key: "products",
+    });
+    expect(result).not.toHaveProperty("base_version_id");
+    expect(result).not.toHaveProperty("head_revision");
+    expect(test.events).toEqual([
+      "context",
+      "planning",
+      "reserve:builder_plan_v1",
+      "settle:90000000-0000-4000-8000-000000000009",
+      "context",
+      "record-location-intent",
+      "reserve:builder_record_location_link_intent_v1",
+      "settle:90000000-0000-4000-8000-000000000010",
+      "record-location-state",
+    ]);
+    expect(test.recordLocationIntentInputs).toHaveLength(1);
+    expect(test.recordLocationIntentInputs[0]).toEqual(
+      expect.objectContaining({
+        owner_request: "Make the Kids Afternoon Tea available at Bedford.",
+        ready_plan: recordLocationPlan(),
+      }),
+    );
+    expect(test.readRecordLocationLinkState).toHaveBeenCalledTimes(1);
     expect(test.accounting.reserve).toHaveBeenCalledTimes(2);
     expect(test.proposalService.propose).not.toHaveBeenCalled();
   });
@@ -1294,8 +1479,8 @@ describe("private qualified Builder runtime", () => {
       { createOpenAiProvider: () => provider },
     );
     expect(runtime.mode).toBe("openai");
-    expect(Object.keys(runtime.tasks)).toHaveLength(6);
-    expect(Object.keys(runtime.policies)).toHaveLength(6);
+    expect(Object.keys(runtime.tasks)).toHaveLength(7);
+    expect(Object.keys(runtime.policies)).toHaveLength(7);
     expect(Object.keys(runtime.tasks)).toEqual([
       "builder_plan_v1",
       "builder_configuration_draft_v1",
@@ -1303,6 +1488,7 @@ describe("private qualified Builder runtime", () => {
       "builder_location_creation_intent_v1",
       "builder_record_creation_intent_v1",
       "builder_record_update_intent_v1",
+      "builder_record_location_link_intent_v1",
     ]);
     expect(runtime.tasks.builder_configuration_draft_v1!).not.toBe(
       builderConfigurationDraftTaskV1,
@@ -1379,6 +1565,12 @@ describe("private qualified Builder runtime", () => {
     expect(runtime.tasks.builder_record_update_intent_v1!.validateOutput).toBe(
       builderRecordUpdateIntentTaskV1.validateOutput,
     );
+    expect(runtime.tasks.builder_record_location_link_intent_v1).toBe(
+      builderRecordLocationLinkIntentTaskV1,
+    );
+    expect(
+      runtime.tasks.builder_record_location_link_intent_v1!.policyKey,
+    ).toBe("builder_record_location_link_intent_disabled_v1");
     expect(runtime.policies.builder_planning_terra_medium_v1).toBe(
       openAiBuilderPlanningPolicy,
     );
@@ -1412,12 +1604,16 @@ describe("private qualified Builder runtime", () => {
       "builder_location_creation_intent_v1",
       "builder_record_creation_intent_v1",
       "builder_record_update_intent_v1",
+      "builder_record_location_link_intent_v1",
     ]);
     expect(disabled.tasks.builder_configuration_draft_v1!).toBe(
       builderConfigurationDraftTaskV1,
     );
     expect(disabled.tasks.builder_record_update_intent_v1).toBe(
       builderRecordUpdateIntentTaskV1,
+    );
+    expect(disabled.tasks.builder_record_location_link_intent_v1).toBe(
+      builderRecordLocationLinkIntentTaskV1,
     );
     expect(disabled.tasks.builder_record_update_intent_v1!.policyKey).toBe(
       BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,

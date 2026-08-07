@@ -432,3 +432,25 @@ Product, Equipment and Catering Enquiry are generic Object fixtures;
 Customer/Order/Order Item exclusions derive from trusted preorder configuration.
 The task remains global/default/private disabled, no live gate is claimed, and
 Phase 12C is separate.
+
+## Milestone 12 Phase 12C - operational Record-to-Location availability
+
+Phase 12C remains outside configuration mutation. It links or unlinks one
+active eligible generic Record and one existing first-class Location through
+the existing tenant-safe `record_location_links` boundary. The generated
+Record detail control and the disabled Builder path use the same deterministic
+service; Product and Equipment are generic acceptance fixtures, not separate
+production paths.
+
+Builder receives no operational Record or link rows. It supplies one exact
+selector, one Location reference and link/unlink intent; PostgreSQL resolves
+the active target and current pair state. The signed confirmation carries no
+configuration Version/head snapshot, complete Record, display name or link-row
+ID. Final confirmation reloads tenant/capability, Record eligibility, Location
+status and pair state, derives the current link row only for unlink, then
+invokes one existing trusted create/remove operation and verifies the result.
+Duplicate concurrent mutations and sequential replays are bounded by the
+unique pair boundary and fixed result reasons. No proposal, Version, Change,
+history, operational undo, bulk action, fuzzy matching or mixed sequencing is
+introduced. Active preorder Order and Order Item Objects remain protected on
+both link and unlink; Product remains eligible.

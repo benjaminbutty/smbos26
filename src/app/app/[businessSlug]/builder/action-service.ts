@@ -15,8 +15,11 @@ import {
   type AiBuilderErrorCode,
 } from "../../../../ai/builder/errors";
 import {
+  BUILDER_RECORD_LOCATION_MESSAGES,
+  BUILDER_RECORD_LOCATION_SUCCESS_MESSAGES,
   BUILDER_RECORD_UPDATE_MESSAGES,
   builderOrchestrationResultSchema,
+  type BuilderRecordLocationReasonCode,
   type NeedsClarificationPlanningOutput,
   type BuilderOrchestrationResult,
 } from "../../../../ai/builder/contracts";
@@ -48,6 +51,11 @@ import {
   type RecordUpdateConfirmationTokenService,
 } from "../../../../ai/builder/record-update-confirmation-token";
 import {
+  createRecordLocationConfirmationTokenService,
+  RecordLocationConfirmationTokenError,
+  type RecordLocationConfirmationTokenService,
+} from "../../../../ai/builder/record-location-confirmation-token";
+import {
   createLocationService,
   LocationServiceError,
 } from "../../../../core/locations/service";
@@ -60,6 +68,10 @@ import {
   createConfirmedRecordUpdateService,
   RecordUpdateServiceError,
 } from "../../../../core/graph/record-update/service";
+import {
+  createRecordLocationLinkService,
+  RecordLocationLinkError,
+} from "../../../../core/graph/location-links";
 import { experienceKeyToPath } from "../../../../runtime/routing";
 import { BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS } from "../../../../ai/planning/schemas";
 import {
@@ -183,6 +195,18 @@ function unavailableState(
   });
 }
 
+function recordLocationUnavailableState(
+  reasonCode: BuilderRecordLocationReasonCode,
+  objectLabel = "Record",
+): BuilderResultUiState {
+  return freezeBuilderUiState({
+    state: "record_location_unavailable",
+    object_label: objectLabel,
+    reason_code: reasonCode,
+    message: BUILDER_RECORD_LOCATION_MESSAGES[reasonCode],
+  });
+}
+
 function mapClarification(
   result: Extract<
     BuilderOrchestrationResult,
@@ -222,6 +246,7 @@ export function mapBuilderOrchestrationResult(
     tokenService?: LocationConfirmationTokenService;
     recordTokenService?: RecordConfirmationTokenService;
     recordUpdateTokenService?: RecordUpdateConfirmationTokenService;
+    recordLocationTokenService?: RecordLocationConfirmationTokenService;
   },
 ): BuilderResultUiState {
   const result = builderOrchestrationResultSchema.parse(input);
@@ -328,6 +353,29 @@ export function mapBuilderOrchestrationResult(
       ),
     });
   }
+  if (result.state === "record_location_confirmation") {
+    if (!confirmation?.recordLocationTokenService) {
+      return unavailableState("temporarily_unavailable");
+    }
+    return freezeBuilderUiState({
+      state: "record_location_confirmation",
+      confirmation_token: confirmation.recordLocationTokenService.sign({
+        businessId: confirmation.businessId,
+        actorId: confirmation.actorId,
+        objectDefinitionId: result.object_definition_id,
+        objectKey: result.object_key,
+        targetRecordId: result.target_record_id,
+        targetLocationId: result.target_location_id,
+        action: result.action,
+        expectedPairState: result.expected_pair_state,
+        destinationViewKey: result.destination_view_key,
+      }),
+      action: result.action,
+      object_label: result.object_label,
+      location_name: result.location_name,
+      selector_presentation: result.selector_presentation,
+    });
+  }
   if (result.state === "record_update_not_found") {
     return freezeBuilderUiState({
       state: "record_update_not_found",
@@ -355,6 +403,12 @@ export function mapBuilderOrchestrationResult(
       object_label: result.object_label,
       message: result.message,
     });
+  }
+  if (result.state === "record_location_unavailable") {
+    return recordLocationUnavailableState(
+      result.reason_code,
+      result.object_label,
+    );
   }
   if (result.state === "location_conflict") {
     return freezeBuilderUiState({
@@ -514,6 +568,17 @@ export function mapBuilderActionError(
     };
   }
 
+  if (error instanceof RecordLocationConfirmationTokenError) {
+    return {
+      kind: "state",
+      state: unavailableState(
+        error.code === "record_location_confirmation_secret_unavailable"
+          ? "temporarily_unavailable"
+          : "stale",
+      ),
+    };
+  }
+
   if (error instanceof RecordCreationServiceError) {
     switch (error.code) {
       case "record_creation_authentication_required":
@@ -630,6 +695,56 @@ export function mapBuilderActionError(
     }
   }
 
+  if (error instanceof RecordLocationLinkError) {
+    switch (error.code) {
+      case "record_location_link_authentication_required":
+      case "record_location_link_actor_context_mismatch":
+      case "record_location_link_owner_or_admin_required":
+      case "record_location_link_object_not_found":
+        return { kind: "not_found" };
+      case "record_location_link_location_not_found":
+        return {
+          kind: "state",
+          state: recordLocationUnavailableState("location_not_found"),
+        };
+      case "record_location_link_selector_not_found":
+        return {
+          kind: "state",
+          state: recordLocationUnavailableState("record_not_found"),
+        };
+      case "record_location_link_selector_ambiguous":
+        return {
+          kind: "state",
+          state: recordLocationUnavailableState("record_ambiguous"),
+        };
+      case "record_location_link_object_ineligible":
+        return {
+          kind: "state",
+          state: recordLocationUnavailableState("record_ineligible"),
+        };
+      case "record_location_link_location_inactive":
+        return {
+          kind: "state",
+          state: recordLocationUnavailableState("location_inactive"),
+        };
+      case "record_location_link_state_changed":
+      case "record_location_link_configuration_changed":
+      case "record_location_link_target_changed":
+        return { kind: "state", state: unavailableState("stale") };
+      case "record_location_link_action_invalid":
+      case "record_location_link_selector_invalid":
+      case "record_location_link_response_invalid":
+        return { kind: "state", state: unavailableState("could_not_prepare") };
+      case "record_location_link_pair_exists":
+      case "record_location_link_not_found":
+      case "record_location_link_failed":
+        return {
+          kind: "state",
+          state: unavailableState("temporarily_unavailable"),
+        };
+    }
+  }
+
   if (error instanceof AiBusinessContextError) {
     switch (error.code) {
       case "ai_context_unauthorized":
@@ -676,8 +791,10 @@ export type BuilderActionDependencies = {
   createLocationConfirmationTokenService: typeof createLocationConfirmationTokenService;
   createRecordConfirmationTokenService: typeof createRecordConfirmationTokenService;
   createRecordUpdateConfirmationTokenService: typeof createRecordUpdateConfirmationTokenService;
+  createRecordLocationConfirmationTokenService: typeof createRecordLocationConfirmationTokenService;
   createConfirmedRecordCreationService: typeof createConfirmedRecordCreationService;
   createConfirmedRecordUpdateService: typeof createConfirmedRecordUpdateService;
+  createRecordLocationLinkService: typeof createRecordLocationLinkService;
 };
 
 const productionBuilderActionDependencies: BuilderActionDependencies = {
@@ -690,8 +807,10 @@ const productionBuilderActionDependencies: BuilderActionDependencies = {
   createLocationConfirmationTokenService,
   createRecordConfirmationTokenService,
   createRecordUpdateConfirmationTokenService,
+  createRecordLocationConfirmationTokenService,
   createConfirmedRecordCreationService,
   createConfirmedRecordUpdateService,
+  createRecordLocationLinkService,
 };
 
 function confirmationTokenFormValue(formData: FormData): string | null {
@@ -712,11 +831,137 @@ function recordUpdateConfirmationTokenFormValue(
   return typeof value === "string" && value.trim() ? value : "";
 }
 
+function recordLocationConfirmationTokenFormValue(
+  formData: FormData,
+): string | null {
+  if (!formData.has("recordLocationConfirmationToken")) {
+    return null;
+  }
+  const value = formData.get("recordLocationConfirmationToken");
+  return typeof value === "string" && value.trim() ? value : "";
+}
+
 function confirmationKindFormValue(
   formData: FormData,
 ): "create_location" | "create_record" {
   const value = formData.get("confirmationKind");
   return value === "create_record" ? "create_record" : "create_location";
+}
+
+async function executeRecordLocationConfirmation(
+  dependencies: BuilderActionDependencies,
+  businessSlug: string,
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  formData: FormData,
+): Promise<BuilderUiState> {
+  const token = recordLocationConfirmationTokenFormValue(formData);
+  if (!token) return unavailableState("stale");
+  const tenant = await resolveBuilderTenant(businessSlug, supabase, {
+    notFound: dependencies.notFound,
+    resolveTenant: dependencies.resolveTenant,
+  });
+  if (!dependencies.hasCapability(tenant.membership.role, "manage_locations")) {
+    dependencies.notFound();
+  }
+
+  try {
+    const payload = dependencies
+      .createRecordLocationConfirmationTokenService()
+      .verify(token, {
+        businessId: tenant.business.id,
+        actorId: tenant.user.id,
+      });
+    const service = dependencies.createRecordLocationLinkService(supabase, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    });
+    const before = await service.readCurrentPairState({
+      objectKey: payload.object_key,
+      expectedObjectDefinitionId: payload.object_definition_id,
+      targetRecordId: payload.target_record_id,
+      targetLocationId: payload.target_location_id,
+      action: payload.action,
+    });
+    const desiredPairState = payload.action === "link" ? "linked" : "unlinked";
+    if (before.pairState !== payload.expected_pair_state) {
+      return recordLocationUnavailableState(
+        payload.action === "link" ? "already_linked" : "already_unlinked",
+        before.objectLabel,
+      );
+    }
+
+    try {
+      if (payload.action === "link") {
+        await service.create(
+          payload.target_record_id,
+          payload.target_location_id,
+        );
+      } else {
+        if (!before.linkId) {
+          return recordLocationUnavailableState(
+            "already_unlinked",
+            before.objectLabel,
+          );
+        }
+        await service.remove(before.linkId);
+      }
+    } catch (mutationError) {
+      if (
+        mutationError instanceof RecordLocationLinkError &&
+        (mutationError.code === "record_location_link_pair_exists" ||
+          mutationError.code === "record_location_link_not_found")
+      ) {
+        const concurrent = await service.readCurrentPairState({
+          objectKey: payload.object_key,
+          expectedObjectDefinitionId: payload.object_definition_id,
+          targetRecordId: payload.target_record_id,
+          targetLocationId: payload.target_location_id,
+          action: payload.action,
+        });
+        if (concurrent.pairState !== desiredPairState) {
+          throw mutationError;
+        }
+      } else {
+        throw mutationError;
+      }
+    }
+
+    const after = await service.readCurrentPairState({
+      objectKey: payload.object_key,
+      expectedObjectDefinitionId: payload.object_definition_id,
+      targetRecordId: payload.target_record_id,
+      targetLocationId: payload.target_location_id,
+      action: payload.action,
+    });
+    if (after.pairState !== desiredPairState) {
+      throw new RecordLocationLinkError(
+        "The Location availability changed before it could be verified.",
+        { code: "record_location_link_state_changed" } as never,
+      );
+    }
+
+    const destinationPath = payload.destination_view_key
+      ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(payload.destination_view_key)}/${encodeURIComponent(payload.target_record_id)}`
+      : undefined;
+    revalidatePath(`/app/${encodeURIComponent(businessSlug)}`);
+    if (destinationPath) revalidatePath(destinationPath);
+    return freezeBuilderUiState({
+      state: "record_location_updated",
+      action: payload.action,
+      object_label: after.objectLabel,
+      location_name: after.locationName,
+      message: BUILDER_RECORD_LOCATION_SUCCESS_MESSAGES[payload.action],
+      ...(destinationPath ? { destination_path: destinationPath } : {}),
+    });
+  } catch (error) {
+    const mapped = mapBuilderActionError(error);
+    if (mapped.kind === "not_found") {
+      dependencies.notFound();
+      return invalidBuilderInputState();
+    }
+    if (mapped.kind === "unexpected") throw mapped.error;
+    return mapped.state;
+  }
 }
 
 async function executeLocationConfirmation(
@@ -971,6 +1216,17 @@ export function createBuilderAction(
 
     const confirmationToken = confirmationTokenFormValue(formData);
     const recordUpdateToken = recordUpdateConfirmationTokenFormValue(formData);
+    const recordLocationToken =
+      recordLocationConfirmationTokenFormValue(formData);
+    if (recordLocationToken !== null) {
+      const supabase = await dependencies.createServerClient();
+      return executeRecordLocationConfirmation(
+        dependencies,
+        businessSlug,
+        supabase,
+        formData,
+      );
+    }
     if (recordUpdateToken !== null) {
       const supabase = await dependencies.createServerClient();
       return executeRecordUpdateConfirmation(
@@ -1030,6 +1286,8 @@ export function createBuilderAction(
       let recordTokenService: RecordConfirmationTokenService | undefined;
       let recordUpdateTokenService:
         RecordUpdateConfirmationTokenService | undefined;
+      let recordLocationTokenService:
+        RecordLocationConfirmationTokenService | undefined;
       if (result.state === "location_confirmation") {
         tokenService = dependencies.createLocationConfirmationTokenService();
       }
@@ -1041,15 +1299,25 @@ export function createBuilderAction(
         recordUpdateTokenService =
           dependencies.createRecordUpdateConfirmationTokenService();
       }
+      if (result.state === "record_location_confirmation") {
+        recordLocationTokenService =
+          dependencies.createRecordLocationConfirmationTokenService();
+      }
       return mapBuilderOrchestrationResult(
         result,
-        tokenService || recordTokenService || recordUpdateTokenService
+        tokenService ||
+          recordTokenService ||
+          recordUpdateTokenService ||
+          recordLocationTokenService
           ? {
               businessId: tenant.business.id,
               actorId: tenant.user.id,
               ...(tokenService ? { tokenService } : {}),
               ...(recordTokenService ? { recordTokenService } : {}),
               ...(recordUpdateTokenService ? { recordUpdateTokenService } : {}),
+              ...(recordLocationTokenService
+                ? { recordLocationTokenService }
+                : {}),
             }
           : undefined,
       );
