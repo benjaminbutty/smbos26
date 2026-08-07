@@ -69,6 +69,7 @@ in the `private` schema.
 | `src/core/configuration/rendered-preview.ts` | Server-only composition of a verified snapshot with existing experience/preorder reads; no mutation methods |
 | `src/app/app/[businessSlug]/changes/actions.ts` | Sole UI lifecycle action boundary; session-derived Business/actor context, identifier/status rechecks, calls only `ConfigurationChangeService`, bounded notices and POST/redirect/GET |
 | `src/core/configuration/manual-amendments/` | Server-only bounded owner-intent parsing and complete strict operation composition from an immutable active snapshot; no direct DML, lifecycle progression, AI or operational mutation |
+| `src/core/configuration/initial-preorder/` | Server-only clean-Business starter eligibility, neutral strict M5 operation composition and exact-currentness proposal preparation; no direct DML, lifecycle progression, AI or operational Record mutation |
 | `src/app/app/[businessSlug]/setup` | Dynamic no-store Owner/Admin schedule and preorder-question setup reads with narrowly named proposal-preparation Server Actions; proposed-only and no mutation on GET |
 | `src/components/configuration-history-ui.tsx`, `src/components/configuration-action-ui.tsx` | Owner-readable proposal, diff/validation, confirmation and immutable version presentation; links/forms only and no lifecycle service call |
 | Confirmation routes under `src/app/app/[businessSlug]/changes` | Dynamic no-store Owner/Admin GETs that re-read authoritative proposal/version/head state and bind narrowly named Server Actions; rendering performs no mutation |
@@ -455,3 +456,31 @@ unique pair boundary and fixed result reasons. No proposal, Version, Change,
 history, operational undo, bulk action, fuzzy matching or mixed sequencing is
 introduced. Active preorder Order and Order Item Objects remain protected on
 both link and unlink; Product remains eligible.
+
+## Milestone 13 Phase 13A - owner-triggered initial preorder configuration
+
+Phase 13A adds one deterministic Owner/Admin starter to the existing Edit setup
+surface. It is available only when the current Business has at least one active
+Location, no installed preorder, and no conflicting or partial configuration.
+The form accepts only active collection Locations and the existing preorder
+schedule values. The server re-reads currentness and active Locations through
+the authenticated tenant boundary; submitted Location IDs are never trusted
+without that check.
+
+The production composer is neutral and deterministic. It emits only existing
+strict `set_object`, `set_field`, `set_relationship`, `set_form`, `set_view`,
+`set_page` and `set_preorder_experience` operations for generic Customer,
+Product, Order and Order Item configuration, useful internal Product/Order
+surfaces, the trusted preorder runtime and a draft public Page. It does not
+depend on `scripts/demo-seed.mjs`, Bedford identifiers, business names or
+seeded operational data.
+
+Preparation calls `ConfigurationChangeService.proposeChangeSet()` once with
+the exact active Version/head used for composition. The result is an ordinary
+proposed `change`; Validate, Apply and publication remain existing deliberate
+Changes actions. The starter creates no Product, Customer, Order or Order Item
+Records, Record relationships or Record-to-Location links. Product setup,
+availability and publication remain separate operational or publication
+boundaries; after Apply, the owner can add the first Product through the normal
+generic Record-create surface. No new primitive, table, lifecycle or AI
+subject was added.
