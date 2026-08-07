@@ -281,8 +281,8 @@ export const openAiBuilderRecordUpdateIntentPolicy = Object.freeze({
 });
 
 /**
- * Engineering-only evaluation policy. It is intentionally not in either the
- * global/default or private Builder production policy registry.
+ * Qualified for the private authenticated Builder runtime only. It remains
+ * outside the global/default production policy registry.
  */
 export const openAiBuilderRecordLocationLinkIntentPolicy = Object.freeze({
   ...disabledExecutionPolicies[

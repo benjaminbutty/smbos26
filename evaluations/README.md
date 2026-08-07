@@ -943,3 +943,33 @@ adds that general rule, requires `needs_clarification` for an inactive planned
 Location and prohibits substitution or invention. The scenario, synthetic
 context, validator, evaluator, model, policy and provider transport remain
 unchanged. Qualification has not been rerun and reliability has not been run.
+
+### Accepted corrected Phase 12C evidence and private enablement
+
+The corrected frozen subject at exact SHA
+`8d8ebe7adc64521d435c6ec6c84f6613344341ff` passed the required live gates:
+
+```text
+qualification: 8/8
+reliability: 24/24
+failed executions: 0
+```
+
+Every scenario passed 3/3:
+
+```text
+product_link
+product_unlink
+equipment_link
+equipment_unlink
+alternate_availability_wording
+missing_record_selector
+inactive_location
+multiple_record_request
+```
+
+Following that accepted evidence, the private authenticated OpenAI Builder
+maps `builder_record_location_link_intent_v1` to
+`builder_record_location_link_intent_terra_medium_v1` using GPT-5.6 Terra with
+medium reasoning. The global/default registry remains disabled, and the
+historical failed qualification above remains preserved.

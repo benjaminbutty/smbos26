@@ -48,12 +48,13 @@ linking or unlinking one active eligible generic Record at one existing
 Location. PostgreSQL resolves the exact selector and pair state; the model
 receives no Record or link rows, and final confirmation is Owner/Admin-only,
 deterministic and AI-free. Availability remains operational data with no
-configuration Version, Change, history or undo. The new intent task remains
-disabled. The first live Phase 12C qualification attempt at
+configuration Version, Change, history or undo. The global/default intent task
+remains disabled. The corrected subject passed qualification 8/8 and
+reliability 24/24, so the private authenticated OpenAI Builder maps it only to
+the qualified Terra policy. The first live Phase 12C qualification attempt at
 `c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
 6 passed, 1 failed and 1 not executed (`inactive_location` /
-`location_reference_invalid`). No accepted qualification or reliability
-evidence is claimed.
+`location_reference_invalid`).
 
 ## Current scope
 

@@ -438,9 +438,10 @@ Phase 12C is separate.
 Phase 12C remains outside configuration mutation. It links or unlinks one
 active eligible generic Record and one existing first-class Location through
 the existing tenant-safe `record_location_links` boundary. The generated
-Record detail control and the disabled Builder path use the same deterministic
-service; Product and Equipment are generic acceptance fixtures, not separate
-production paths.
+Record detail control and the private-only Builder path use the same
+deterministic service; the global/default Builder task remains disabled.
+Product and Equipment are generic acceptance fixtures, not separate production
+paths.
 
 Builder receives no operational Record or link rows. It supplies one exact
 selector, one Location reference and link/unlink intent; PostgreSQL resolves

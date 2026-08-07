@@ -2623,11 +2623,12 @@ helper and the symmetric protected unlink boundary because the existing
 create/remove boundary had no server-owned exact selector/Location resolver.
 The application revalidation is a direct authenticated read rather than a
 second final-state RPC or a row lock; the existing unique pair and mutation
-boundaries remain authoritative. It adds no persistence. The intent task is
-globally and privately disabled during this implementation pass. The first
-live qualification attempt at
+boundaries remain authoritative. It adds no persistence. The global/default
+intent task remains disabled. The corrected subject passed qualification 8/8
+and reliability 24/24, so the private authenticated OpenAI Builder maps it
+only to the qualified Terra policy. The first live qualification attempt at
 `c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
 6 passed, 1 failed and 1 not executed (`inactive_location` /
-`location_reference_invalid`). No accepted Phase 12C qualification or
-reliability run, private enablement, merge or Milestone 13 work is claimed.
-Phase 12A and Phase 12B subjects and evidence remain unchanged.
+`location_reference_invalid`). No global enablement, merge or Milestone 13
+work is claimed. Phase 12A and Phase 12B subjects and evidence remain
+unchanged.
