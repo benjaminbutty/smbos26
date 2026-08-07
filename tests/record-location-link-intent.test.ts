@@ -213,6 +213,18 @@ function input(
 }
 
 describe("generic Record-to-Location availability intent", () => {
+  it("instructs inactive Location clarification without substitution", () => {
+    expect(BUILDER_RECORD_LOCATION_LINK_INTENT_INSTRUCTION).toContain(
+      "A Location may be used in a ready intent only when it exists in the supplied Business context and is active.",
+    );
+    expect(BUILDER_RECORD_LOCATION_LINK_INTENT_INSTRUCTION).toContain(
+      "If the exact Location referenced by the ready plan is inactive, return needs_clarification and ask the owner to choose an active Location.",
+    );
+    expect(BUILDER_RECORD_LOCATION_LINK_INTENT_INSTRUCTION).toContain(
+      "Never substitute or invent another Location.",
+    );
+  });
+
   it("accepts the Product unlink request without Product-specific semantics", () => {
     expect(BUILDER_RECORD_LOCATION_LINK_INTENT_INSTRUCTION).not.toMatch(
       /Kids Afternoon Tea|Product|Equipment|Bedford|Cambridge/i,

@@ -238,7 +238,10 @@ unavailable reason enum and one success state; it creates no proposal,
 configuration Version, Change, history or operational undo.
 
 The new intent task and policy are registered globally/default and in the
-private Builder as disabled for this implementation pass. No live Phase 12C
+private Builder as disabled for this implementation pass. The first live Phase
+12C qualification attempt at `c4efae2db76a30794ae6c77e2793bea47f55e648`
+remains failed historical evidence: 6 passed, 1 failed and 1 not executed
+(`inactive_location` / `location_reference_invalid`). No accepted
 qualification or reliability evidence is claimed. Bulk work, fuzzy matching,
 candidate selection, multiple Records or Locations, Record Relationships,
 Location lifecycle changes, mixed sequencing, publication, clean-Business
