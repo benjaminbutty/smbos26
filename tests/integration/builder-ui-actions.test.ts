@@ -58,8 +58,12 @@ import { runBuilderAction } from "../../src/app/app/[businessSlug]/builder/actio
 import { prepareBuilderUndoAction } from "../../src/app/app/[businessSlug]/builder/undo-actions";
 import BuilderPage from "../../src/app/app/[businessSlug]/builder/page";
 import ConfigurationChangeRoute from "../../src/app/app/[businessSlug]/changes/[changeSetId]/page";
-import { BUILDER_UNSUPPORTED_MESSAGES } from "../../src/ai/builder/contracts";
+import {
+  BUILDER_UNSUPPORTED_MESSAGES,
+  builderOrchestrationResultSchema,
+} from "../../src/ai/builder/contracts";
 import { createLocationConfirmationTokenService } from "../../src/ai/builder/location-confirmation-token";
+import { createRecordLocationConfirmationTokenService } from "../../src/ai/builder/record-location-confirmation-token";
 import { AiExecutionError } from "../../src/ai/errors";
 import { BUILDER_INITIAL_STATE } from "../../src/components/builder-ui-state";
 import { ConfigurationChangeService } from "../../src/core/configuration/service";
@@ -764,6 +768,148 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
         }),
       ]),
     );
+  });
+
+  it("executes the Phase 12C confirmation through the real action boundary", async () => {
+    const productObject = requireData(
+      await owner.client
+        .from("object_definitions")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("key", "product")
+        .single(),
+      "Could not load the Product Object.",
+    );
+    const productRecords = requireData(
+      await owner.client
+        .from("records")
+        .select("*")
+        .eq("business_id", business.id)
+        .eq("object_definition_id", productObject.id),
+      "Could not load Product Records.",
+    );
+    const productRecord = productRecords.find(
+      (record) =>
+        typeof record.data_json === "object" &&
+        record.data_json !== null &&
+        !Array.isArray(record.data_json) &&
+        (record.data_json as { name?: unknown }).name === "Kids Afternoon Tea",
+    );
+    const bedford = requireData(
+      await owner.client
+        .from("locations")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("name", "Bedford")
+        .single(),
+      "Could not load the Bedford Location.",
+    );
+    if (!productRecord)
+      throw new Error("The seeded Product Record is missing.");
+
+    const orchestrationResult = builderOrchestrationResultSchema.parse({
+      schema_version: 1,
+      state: "record_location_confirmation",
+      intent_schema_version: 1,
+      action: "unlink",
+      object_label: "Product",
+      location_name: "Bedford",
+      selector_presentation: {
+        label: "Name",
+        formatted_value: "Kids Afternoon Tea",
+      },
+      object_definition_id: productObject.id,
+      object_key: "product",
+      target_record_id: productRecord.id,
+      target_location_id: bedford.id,
+      expected_pair_state: "linked",
+      destination_view_key: "products",
+    });
+    const orchestrationService = {
+      run: vi.fn(async () => orchestrationResult),
+    };
+    const tokenService = createRecordLocationConfirmationTokenService({
+      secret: "record-location-confirmation-test-secret-0123456789",
+      now: () => 1_000,
+    });
+    const action = createBuilderAction({
+      orchestrationService,
+      createRecordLocationConfirmationTokenService: () => tokenService,
+    });
+
+    queueActionClient(owner.client);
+    const prepared = await action(
+      business.slug,
+      BUILDER_INITIAL_STATE,
+      formWithRequest("Update the selected Product availability.", true),
+    );
+    expect(prepared).toMatchObject({
+      state: "record_location_confirmation",
+      action: "unlink",
+      object_label: "Product",
+      location_name: "Bedford",
+    });
+    const token = (prepared as { confirmation_token: string })
+      .confirmation_token;
+    const payload = tokenService.verify(token, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    expect(payload).not.toHaveProperty("location_name");
+    expect(payload).not.toHaveProperty("target_link_id");
+    expect(orchestrationService.run).toHaveBeenCalledTimes(1);
+    expect(await executionRows()).toHaveLength(0);
+
+    const tamperedForm = new FormData();
+    tamperedForm.set(
+      "recordLocationConfirmationToken",
+      `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`,
+    );
+    tamperedForm.set("targetRecordId", "forged-record");
+    queueActionClient(owner.client);
+    expect(await action(business.slug, prepared, tamperedForm)).toMatchObject({
+      state: "unavailable",
+      reason: "stale",
+    });
+    expect(await executionRows()).toHaveLength(0);
+
+    const confirmation = new FormData();
+    confirmation.set("recordLocationConfirmationToken", token);
+    confirmation.set("targetRecordId", "forged-record");
+    confirmation.set("targetLocationId", "forged-location");
+    queueActionClient(owner.client);
+    const completed = await action(business.slug, prepared, confirmation);
+    expect(completed).toMatchObject({
+      state: "record_location_updated",
+      action: "unlink",
+      object_label: "Product",
+      location_name: "Bedford",
+      message: "The Record is no longer available at this Location.",
+    });
+    expect(orchestrationService.run).toHaveBeenCalledTimes(1);
+    expect(await executionRows()).toHaveLength(0);
+    expect(
+      await owner.client
+        .from("record_location_links")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("record_id", productRecord.id)
+        .eq("location_id", bedford.id),
+    ).toMatchObject({ data: [], error: null });
+
+    queueActionClient(owner.client);
+    const replay = await action(business.slug, prepared, confirmation);
+    expect(replay).toMatchObject({
+      state: "record_location_unavailable",
+      reason_code: "already_unlinked",
+    });
+    expect(await executionRows()).toHaveLength(0);
+    const restored = await owner.client.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: productRecord.id,
+      target_location_id: bedford.id,
+    });
+    expect(restored.error).toBeNull();
   });
 
   it("runs planning and drafting once for a small additive generic object proposal", async () => {

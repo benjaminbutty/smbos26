@@ -59,6 +59,11 @@ import {
   builderRecordUpdateIntentTaskInputSchema,
 } from "../record-update-intent/schemas";
 import { builderRecordUpdateIntentTaskV1 } from "../record-update-intent/task";
+import {
+  builderRecordLocationLinkIntentOutputSchema,
+  builderRecordLocationLinkIntentTaskInputSchema,
+} from "../record-location-link-intent/schemas";
+import { builderRecordLocationLinkIntentTaskV1 } from "../record-location-link-intent/task";
 import { composeRecordCreationPresentation } from "../../core/graph/record-creation/composer";
 import { type RecordCreationState } from "../../core/graph/record-creation/schemas";
 import { createConfirmedRecordCreationService } from "../../core/graph/record-creation/service";
@@ -73,6 +78,11 @@ import {
 } from "../../core/graph/record-update/schemas";
 import { createConfirmedRecordUpdateService } from "../../core/graph/record-update/service";
 import { createLocationService } from "../../core/locations/service";
+import { createRecordLocationLinkService } from "../../core/graph/location-links";
+import type {
+  RecordLocationLinkReadyState,
+  RecordLocationLinkTargetState,
+} from "../../core/graph/record-location-availability/schemas";
 import {
   normalizeLocationName,
   type LocationCreationState,
@@ -81,6 +91,7 @@ import { AiBusinessContextError } from "../context/errors";
 import type { Database } from "../../db/supabase/database.types";
 import {
   BUILDER_ORCHESTRATION_MAX_OWNER_REQUEST_BYTES,
+  BUILDER_RECORD_LOCATION_MESSAGES,
   BUILDER_RECORD_UPDATE_MESSAGES,
   BUILDER_UNSUPPORTED_MESSAGES,
   builderOrchestrationRequestSchema,
@@ -146,6 +157,16 @@ interface BuilderOrchestrationDependencies {
       updateFieldKeys: readonly string[];
     },
   ): Promise<RecordUpdateTargetState>;
+  readRecordLocationLinkState(
+    client: SessionClient,
+    context: { businessId: string; actorId: string },
+    input: {
+      objectKey: string;
+      selector: RecordUpdateSelector;
+      locationId: string;
+      action: "link" | "unlink";
+    },
+  ): Promise<RecordLocationLinkTargetState>;
   generateExecutionId(): string;
 }
 
@@ -433,6 +454,85 @@ function recordUpdateTerminalResult(
   });
 }
 
+function recordLocationLinkIntentClarification(
+  output: Extract<
+    z.infer<typeof builderRecordLocationLinkIntentOutputSchema>,
+    { state: "needs_clarification" }
+  >,
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "needs_clarification",
+    clarification: builderPlanOutputSchema.parse({
+      schema_version: 1,
+      state: "needs_clarification",
+      understanding: output.understanding,
+      known_requirements: [],
+      assumptions: [],
+      questions: [
+        {
+          reference: "question_1",
+          question: output.question,
+          reason: output.reason,
+          response_style: "free_text",
+        },
+      ],
+      unsupported_requirements: [],
+    }),
+  });
+}
+
+function recordLocationLinkTerminalResult(
+  reasonCode:
+    | "record_not_found"
+    | "record_ambiguous"
+    | "record_ineligible"
+    | "location_not_found"
+    | "location_inactive"
+    | "already_linked"
+    | "already_unlinked",
+  objectLabel: string,
+): BuilderOrchestrationResult {
+  return builderOrchestrationResultSchema.parse({
+    schema_version: 1,
+    state: "record_location_unavailable",
+    object_label: objectLabel,
+    reason_code: reasonCode,
+    message: BUILDER_RECORD_LOCATION_MESSAGES[reasonCode],
+  });
+}
+
+function recordLocationSelectorPresentation(
+  context: ReturnType<typeof projectContext>["modelContext"],
+  objectKey: string,
+  selector: RecordUpdateSelector,
+): { label: string; formatted_value: string } {
+  const object = context.objects.find(
+    (candidate) => candidate.key === objectKey,
+  );
+  const field = object?.fields.find(
+    (candidate) => candidate.key === selector.field_key,
+  );
+  const formattedValue =
+    "string_value" in selector
+      ? selector.string_value
+      : "option_value" in selector
+        ? selector.option_value
+        : "number_value" in selector
+          ? String(selector.number_value)
+          : "boolean_value" in selector
+            ? selector.boolean_value
+              ? "Yes"
+              : "No"
+            : "date_value" in selector
+              ? selector.date_value
+              : selector.datetime_value;
+  return {
+    label: field?.label ?? selector.field_key,
+    formatted_value: formattedValue,
+  };
+}
+
 function contextRecordUpdateEligibility(
   context: ReturnType<typeof projectContext>["modelContext"],
   objectKey: string,
@@ -475,6 +575,26 @@ function contextRecordUpdateEligibility(
   };
 }
 
+function contextRecordLocationEligibility(
+  context: ReturnType<typeof projectContext>["modelContext"],
+  objectKey: string,
+): { eligible: boolean; objectLabel: string } {
+  const object = context.objects.find(
+    (candidate) => candidate.key === objectKey,
+  );
+  if (!object) return { eligible: false, objectLabel: "Record" };
+  const protectedByPreorder = context.preorder_experiences.some(
+    (preorder) =>
+      preorder.is_active &&
+      (preorder.order_object_key === objectKey ||
+        preorder.order_item_object_key === objectKey),
+  );
+  return {
+    eligible: object.is_active && !protectedByPreorder,
+    objectLabel: object.singular_label,
+  };
+}
+
 function classifyReadyPlan(
   plan: BuilderReadyPlanningOutput,
   context: ReturnType<typeof projectContext>["modelContext"],
@@ -486,6 +606,16 @@ function classifyReadyPlan(
   | { kind: "record_creation"; objectKey: string }
   | { kind: "record_update"; objectKey: string }
   | { kind: "record_update_ineligible"; objectKey: string; objectLabel: string }
+  | {
+      kind: "record_location_link";
+      objectKey: string;
+      locationId: string;
+    }
+  | {
+      kind: "record_location_link_ineligible";
+      objectKey: string;
+      objectLabel: string;
+    }
   | BuilderOrchestrationResult {
   const steps = plan.plan.steps;
   const hasOperational = steps.some((step) => step.lane === "operational");
@@ -521,6 +651,42 @@ function classifyReadyPlan(
         kind: "record_creation",
         objectKey: existingConcept.existing_object_key,
       };
+    }
+    if (
+      steps.length === 1 &&
+      step?.lane === "operational" &&
+      step.category === "link_record_to_location" &&
+      existingConcept !== undefined &&
+      step.dependencies.length === 0 &&
+      step.affected_concepts.length === 1 &&
+      step.affected_concepts[0] === existingConcept.reference &&
+      step.existing_object_keys.length === 1 &&
+      step.existing_object_keys[0] === existingConcept.existing_object_key &&
+      step.location_references.length === 1 &&
+      step.requires_owner_confirmation &&
+      plan.unsupported_requirements.length === 0 &&
+      context.locations.some(
+        (location) => location.reference === step.location_references[0],
+      ) &&
+      context.objects.some(
+        (object) => object.key === existingConcept.existing_object_key,
+      )
+    ) {
+      const eligibility = contextRecordLocationEligibility(
+        context,
+        existingConcept.existing_object_key,
+      );
+      return eligibility.eligible
+        ? {
+            kind: "record_location_link",
+            objectKey: existingConcept.existing_object_key,
+            locationId: step.location_references[0]!,
+          }
+        : {
+            kind: "record_location_link_ineligible",
+            objectKey: existingConcept.existing_object_key,
+            objectLabel: eligibility.objectLabel,
+          };
     }
     if (
       steps.length === 1 &&
@@ -651,6 +817,15 @@ export function createBuilderOrchestrationService(
           objectKey: input.objectKey,
           selector: input.selector,
           updateFieldKeys: input.updateFieldKeys,
+        })),
+    readRecordLocationLinkState:
+      overrides.readRecordLocationLinkState ??
+      ((client, context, input) =>
+        createRecordLocationLinkService(client, context).readBuilderState({
+          objectKey: input.objectKey,
+          selector: input.selector,
+          locationId: input.locationId,
+          action: input.action,
         })),
     generateExecutionId:
       overrides.generateExecutionId ?? (() => crypto.randomUUID()),
@@ -988,6 +1163,142 @@ export function createBuilderOrchestrationService(
               expected_updated_at: targetState.expected_updated_at,
               data_patch: composition.data_patch,
               destination_view_key: composition.destination_view_key,
+            }),
+          );
+        }
+        if (
+          "kind" in route &&
+          route.kind === "record_location_link_ineligible"
+        ) {
+          return deepFreeze(
+            recordLocationLinkTerminalResult(
+              "record_ineligible",
+              route.objectLabel,
+            ),
+          );
+        }
+        if ("kind" in route && route.kind === "record_location_link") {
+          const intentInput =
+            builderRecordLocationLinkIntentTaskInputSchema.parse({
+              schema_version: 1,
+              owner_request: request.ownerRequest,
+              business_context: afterPlanningProjection.modelContext,
+              ready_plan: plan,
+            });
+          const intentExecution = await orchestrator.execute(
+            "builder_record_location_link_intent_v1",
+            intentInput,
+          );
+          const parsedIntent =
+            builderRecordLocationLinkIntentOutputSchema.parse(
+              intentExecution.output,
+            );
+          const intent = builderRecordLocationLinkIntentTaskV1.validateOutput
+            ? builderRecordLocationLinkIntentTaskV1.validateOutput(
+                intentInput,
+                parsedIntent,
+              )
+            : parsedIntent;
+          if (intent.state === "needs_clarification") {
+            return deepFreeze(recordLocationLinkIntentClarification(intent));
+          }
+
+          const targetState = await dependencies.readRecordLocationLinkState(
+            client,
+            initial.executionContext,
+            {
+              objectKey: route.objectKey,
+              selector: intent.selector,
+              locationId: intent.location_reference,
+              action: intent.action,
+            },
+          );
+          if (targetState.state === "not_found") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "record_not_found",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "ambiguous") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "record_ambiguous",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "ineligible") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "record_ineligible",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "location_not_found") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "location_not_found",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "location_inactive") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "location_inactive",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "already_linked") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "already_linked",
+                targetState.singular_label,
+              ),
+            );
+          }
+          if (targetState.state === "already_unlinked") {
+            return deepFreeze(
+              recordLocationLinkTerminalResult(
+                "already_unlinked",
+                targetState.singular_label,
+              ),
+            );
+          }
+          const readyState = targetState as RecordLocationLinkReadyState;
+          if (
+            readyState.business_id !==
+              afterPlanning.executionContext.businessId ||
+            readyState.actor_id !== afterPlanning.executionContext.actorId ||
+            readyState.object_key !== route.objectKey ||
+            readyState.target_location_id !== route.locationId ||
+            readyState.action !== intent.action
+          ) {
+            builderContextStale();
+          }
+          return deepFreeze(
+            builderOrchestrationResultSchema.parse({
+              schema_version: 1,
+              state: "record_location_confirmation",
+              intent_schema_version: 1,
+              action: readyState.action,
+              object_label: readyState.singular_label,
+              location_name: readyState.location_name,
+              selector_presentation: recordLocationSelectorPresentation(
+                afterPlanningProjection.modelContext,
+                readyState.object_key,
+                readyState.selector,
+              ),
+              object_definition_id: readyState.object_definition_id,
+              object_key: readyState.object_key,
+              target_record_id: readyState.target_record_id,
+              target_location_id: readyState.target_location_id,
+              expected_pair_state: readyState.expected_pair_state,
+              destination_view_key: readyState.destination_view_key,
             }),
           );
         }

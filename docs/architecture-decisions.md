@@ -2576,3 +2576,59 @@ the model alias, policy, reasoning effort, provider transport, task
 instruction, schemas, semantic validator, material context, scenario set or
 evaluator. The private-runtime mapping-only closeout does not alter the
 qualified subject. PR #18 remains unmerged pending final independent review.
+
+## ADR-034 — Generic Record-to-Location availability is one bounded operational pair action
+
+Milestone 12 Phase 12C adds one reusable operational capability over the
+existing generic Record and first-class Location primitives. It does not add a
+Product or Equipment path, a new primitive, a per-concept table, a generic
+action registry or availability history. The existing tenant-safe
+`record_location_links` table, uniqueness constraint, trigger and trusted
+create/remove RPCs remain authoritative.
+
+The generated generic Record detail experience exposes a deterministic
+Owner/Admin control. It lists active same-Business Locations that can be newly
+linked, allows one link or unlink at a time, and keeps an existing link to an
+inactive Location visible so it is not silently removed. Manual and Builder
+actions use the same server-only pair service; route-derived Business and
+Record identity is never trusted from the browser.
+
+Builder supports exactly one active eligible generic Record, one existing
+Location and one `link_record_to_location` operational step. The model-facing
+context remains configuration-only: it contains no Record rows, current
+values, Record IDs, candidate Records or link rows. One exact selector and
+the exact Location reference are validated, then PostgreSQL resolves zero,
+one or multiple active Records and the current pair state. Product and
+Equipment therefore use the same path. Active preorder Order and Order Item
+Objects remain protected because their Location meaning belongs to the
+trusted preorder capability; Customer is not excluded without equivalent
+repository evidence.
+
+The signed 15-minute operational confirmation binds only the action,
+server-selected Object/Record/Location, expected pair state, safe destination
+and token timestamps. It contains no display name, link-row ID, configuration
+Version or head snapshot, complete Record, unrelated Fields or Location
+collection. Final confirmation derives Business and actor, requires
+Owner/Admin, reloads the active eligible Record, Location and pair, requires
+an active Location when linking, derives the current link row only for unlink,
+calls one existing trusted create/remove operation and reloads the desired
+final state and authoritative Location name. It performs no planning, provider
+call, AI accounting, proposal, configuration Version, history row or
+operational undo. Duplicate concurrent mutations are reduced to one bounded
+success and one bounded pair-exists/not-found outcome; sequential replay is a
+fixed already-linked/already-unlinked result.
+
+The new migration is limited to bounded preparation, one reusable eligibility
+helper and the symmetric protected unlink boundary because the existing
+create/remove boundary had no server-owned exact selector/Location resolver.
+The application revalidation is a direct authenticated read rather than a
+second final-state RPC or a row lock; the existing unique pair and mutation
+boundaries remain authoritative. It adds no persistence. The global/default
+intent task remains disabled. The corrected subject passed qualification 8/8
+and reliability 24/24, so the private authenticated OpenAI Builder maps it
+only to the qualified Terra policy. The first live qualification attempt at
+`c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
+6 passed, 1 failed and 1 not executed (`inactive_location` /
+`location_reference_invalid`). No global enablement, merge or Milestone 13
+work is claimed. Phase 12A and Phase 12B subjects and evidence remain
+unchanged.

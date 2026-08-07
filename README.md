@@ -42,6 +42,20 @@ is only an acceptance fixture. The task remains global/default/private
 disabled; no live qualification or reliability gate has enabled it.
 Phase 12A generic Record creation is complete and merged through PR #17.
 
+Milestone 12 Phase 12C is implemented on the current feature branch but is
+not merged. It adds one deterministic manual and one bounded Builder path for
+linking or unlinking one active eligible generic Record at one existing
+Location. PostgreSQL resolves the exact selector and pair state; the model
+receives no Record or link rows, and final confirmation is Owner/Admin-only,
+deterministic and AI-free. Availability remains operational data with no
+configuration Version, Change, history or undo. The global/default intent task
+remains disabled. The corrected subject passed qualification 8/8 and
+reliability 24/24, so the private authenticated OpenAI Builder maps it only to
+the qualified Terra policy. The first live Phase 12C qualification attempt at
+`c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
+6 passed, 1 failed and 1 not executed (`inactive_location` /
+`location_reference_invalid`).
+
 ## Current scope
 
 Included:
@@ -57,6 +71,7 @@ Included:
 - configurable safe public Customer and Order Fields
 - authoritative, atomic Customer/Order/Order Item graph creation
 - tenant-safe generic Record-to-Location links
+- one-record/one-location availability controls in the generated Record UI
 - Location-timezone slot generation, cutoff and booking horizon enforcement
 - transactionally locked per-Location Order capacity
 - idempotent public references and database-backed abuse throttling

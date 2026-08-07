@@ -15,12 +15,17 @@ import type {
 } from "../../src/db/supabase/database.types";
 import { createGraphService } from "../../src/core/graph/service";
 import {
+  createRecordLocationLinkService,
+  RecordLocationLinkError,
+} from "../../src/core/graph/location-links";
+import {
   recordUpdateTargetStateSchema,
   type RecordUpdateReadyState,
 } from "../../src/core/graph/record-update/schemas";
 import { submitExperienceForm } from "../../src/runtime/forms/submission";
 import { getLocalSupabaseSettings } from "./support/local-supabase";
 import { createConfigurationFixtures } from "./support/configuration-fixtures";
+import { createLocationWithCurrentness } from "./support/location-rpc";
 
 type Client = SupabaseClient<Database>;
 const password = "Milestone-12-record-update-password!";
@@ -32,6 +37,10 @@ let outsiderUser: User;
 let business: Tables<"businesses">;
 let product: Tables<"object_definitions">;
 let equipment: Tables<"object_definitions">;
+let bedford: Tables<"locations">;
+let cambridge: Tables<"locations">;
+let kidsProduct: Tables<"records">;
+let projector: Tables<"records">;
 let sql: Sql;
 
 async function createSignedInIdentity(
@@ -164,6 +173,29 @@ describe("lean confirmed generic Record update boundary", () => {
     }
     business = createdBusiness.data;
 
+    const createdBedford = await createLocationWithCurrentness(
+      owner,
+      ownerUser.id,
+      business.id,
+      "Bedford",
+      "Europe/London",
+    );
+    if (createdBedford.error || !createdBedford.data) {
+      throw createdBedford.error ?? new Error("Could not create Bedford.");
+    }
+    bedford = createdBedford.data;
+    const createdCambridge = await createLocationWithCurrentness(
+      owner,
+      ownerUser.id,
+      business.id,
+      "Cambridge",
+      "Europe/London",
+    );
+    if (createdCambridge.error || !createdCambridge.data) {
+      throw createdCambridge.error ?? new Error("Could not create Cambridge.");
+    }
+    cambridge = createdCambridge.data;
+
     const outsiderIdentity = await createSignedInIdentity("outsider");
     outsider = outsiderIdentity.client;
     outsiderUser = outsiderIdentity.user;
@@ -240,6 +272,11 @@ describe("lean confirmed generic Record update boundary", () => {
       price: 25,
       available: true,
     });
+    kidsProduct = await createRecord(product.id, {
+      name: "Kids Afternoon Tea",
+      price: 15,
+      available: true,
+    });
 
     const [createdEquipment] = await fixtures.insert("object_definitions", {
       business_id: business.id,
@@ -289,11 +326,20 @@ describe("lean confirmed generic Record update boundary", () => {
         position: 3,
       },
     ]);
-    await createRecord(equipment.id, {
+    projector = await createRecord(equipment.id, {
       name: "Projector",
       hire_price: 50,
       available: true,
     });
+
+    const initialLink = await owner.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: kidsProduct.id,
+      target_location_id: bedford.id,
+    });
+    if (initialLink.error) {
+      throw initialLink.error;
+    }
   });
 
   afterAll(async () => {
@@ -584,5 +630,378 @@ describe("lean confirmed generic Record update boundary", () => {
     );
     expect(result.data).toBeNull();
     expect(result.error?.message).toMatch(/owner_or_admin_required/);
+  });
+
+  it("resolves and unlinks one generic Product pair without exposing candidates", async () => {
+    const identity = await owner.auth.getUser();
+    if (identity.error || !identity.data.user) {
+      throw identity.error ?? new Error("Could not resolve the Owner.");
+    }
+    const beforeHead = await admin
+      .from("business_configuration_heads")
+      .select("head_revision")
+      .eq("business_id", business.id)
+      .single();
+    if (beforeHead.error) throw beforeHead.error;
+
+    const prepared = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: identity.data.user.id,
+        target_object_key: "product",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Kids Afternoon Tea",
+        },
+        target_location_id: bedford.id,
+        requested_action: "unlink",
+      },
+    );
+    expect(prepared.error).toBeNull();
+    expect(prepared.data).toMatchObject({
+      schema_version: 1,
+      state: "ready",
+      object_key: "product",
+      target_record_id: kidsProduct.id,
+      target_location_id: bedford.id,
+      action: "unlink",
+      expected_pair_state: "linked",
+    });
+    expect(prepared.data).not.toHaveProperty("candidate_records");
+    expect(prepared.data).not.toHaveProperty("data_json");
+    expect(prepared.data).not.toHaveProperty("base_version_id");
+    expect(prepared.data).not.toHaveProperty("head_revision");
+
+    const service = createRecordLocationLinkService(owner, {
+      businessId: business.id,
+      actorId: identity.data.user.id,
+    });
+    const current = await service.readCurrentPairState({
+      objectKey: "product",
+      expectedObjectDefinitionId: product.id,
+      targetRecordId: kidsProduct.id,
+      targetLocationId: bedford.id,
+      action: "unlink",
+    });
+    expect(current).toMatchObject({
+      objectDefinitionId: product.id,
+      objectKey: "product",
+      targetRecordId: kidsProduct.id,
+      targetLocationId: bedford.id,
+      pairState: "linked",
+    });
+    expect(current.linkId).toEqual(expect.any(String));
+    await service.remove(current.linkId!);
+    expect(
+      await owner
+        .from("record_location_links")
+        .select("id")
+        .eq("business_id", business.id)
+        .eq("record_id", kidsProduct.id)
+        .eq("location_id", bedford.id),
+    ).toMatchObject({ data: [], error: null });
+
+    const afterHead = await admin
+      .from("business_configuration_heads")
+      .select("head_revision")
+      .eq("business_id", business.id)
+      .single();
+    expect(afterHead.data?.head_revision).toBe(beforeHead.data.head_revision);
+
+    const repeated = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: identity.data.user.id,
+        target_object_key: "product",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Kids Afternoon Tea",
+        },
+        target_location_id: bedford.id,
+        requested_action: "unlink",
+      },
+    );
+    expect(repeated.error).toBeNull();
+    expect(repeated.data).toMatchObject({
+      state: "already_unlinked",
+      object_key: "product",
+    });
+
+    const restored = await owner.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: kidsProduct.id,
+      target_location_id: bedford.id,
+    });
+    expect(restored.error).toBeNull();
+  });
+
+  it("uses the same bounded path for a generic Equipment link", async () => {
+    const identity = await owner.auth.getUser();
+    if (identity.error || !identity.data.user) {
+      throw identity.error ?? new Error("Could not resolve the Owner.");
+    }
+    const prepared = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: identity.data.user.id,
+        target_object_key: "equipment",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Projector",
+        },
+        target_location_id: cambridge.id,
+        requested_action: "link",
+      },
+    );
+    expect(prepared.error).toBeNull();
+    expect(prepared.data).toMatchObject({
+      state: "ready",
+      object_key: "equipment",
+      target_record_id: projector.id,
+      target_location_id: cambridge.id,
+      action: "link",
+      expected_pair_state: "unlinked",
+    });
+
+    const state = prepared.data as {
+      target_record_id: string;
+      target_location_id: string;
+    };
+    const linked = await owner.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: state.target_record_id,
+      target_location_id: state.target_location_id,
+    });
+    expect(linked.error).toBeNull();
+
+    const noOp = await owner.rpc("get_confirmed_record_location_link_state", {
+      expected_business_id: business.id,
+      expected_actor_id: identity.data.user.id,
+      target_object_key: "equipment",
+      requested_selector: {
+        field_key: "name",
+        field_type: "short_text",
+        string_value: "Projector",
+      },
+      target_location_id: cambridge.id,
+      requested_action: "link",
+    });
+    expect(noOp.error).toBeNull();
+    expect(noOp.data).toMatchObject({ state: "already_linked" });
+
+    const pair = await owner
+      .from("record_location_links")
+      .select("id")
+      .eq("business_id", business.id)
+      .eq("record_id", projector.id)
+      .eq("location_id", cambridge.id)
+      .single();
+    if (pair.error || !pair.data)
+      throw pair.error ?? new Error("Missing pair.");
+    const removed = await owner.rpc("remove_record_location_link", {
+      expected_business_id: business.id,
+      target_record_location_link_id: pair.data.id,
+    });
+    expect(removed.error).toBeNull();
+  });
+
+  it("keeps concurrent generic link and unlink mutations bounded", async () => {
+    const first = createRecordLocationLinkService(owner, {
+      businessId: business.id,
+      actorId: ownerUser.id,
+    });
+    const second = createRecordLocationLinkService(owner, {
+      businessId: business.id,
+      actorId: ownerUser.id,
+    });
+
+    const linkResults = await Promise.allSettled([
+      first.create(projector.id, cambridge.id),
+      second.create(projector.id, cambridge.id),
+    ]);
+    expect(
+      linkResults.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const linkErrors = linkResults
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      )
+      .map((result) => result.reason);
+    expect(linkErrors).toHaveLength(1);
+    expect(linkErrors[0]).toBeInstanceOf(RecordLocationLinkError);
+    expect((linkErrors[0] as RecordLocationLinkError).code).toBe(
+      "record_location_link_pair_exists",
+    );
+    const linked = await first.readPair(projector.id, cambridge.id);
+    expect(linked?.id).toEqual(expect.any(String));
+
+    const linkId = linked?.id;
+    if (!linkId) throw new Error("The concurrent link did not create a pair.");
+    const unlinkResults = await Promise.allSettled([
+      first.remove(linkId),
+      second.remove(linkId),
+    ]);
+    expect(
+      unlinkResults.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const unlinkErrors = unlinkResults
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      )
+      .map((result) => result.reason);
+    expect(unlinkErrors).toHaveLength(1);
+    expect(unlinkErrors[0]).toBeInstanceOf(RecordLocationLinkError);
+    expect((unlinkErrors[0] as RecordLocationLinkError).code).toBe(
+      "record_location_link_not_found",
+    );
+    expect(await first.readPair(projector.id, cambridge.id)).toBeNull();
+  });
+
+  it("serves the manual availability control through the shared pair service", async () => {
+    const service = createRecordLocationLinkService(owner, {
+      businessId: business.id,
+    });
+    const initial = await service.readManualAvailability({
+      recordId: kidsProduct.id,
+      objectDefinitionId: product.id,
+    });
+    expect(initial.eligible).toBe(true);
+    expect(initial.locations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: bedford.id,
+          isActive: true,
+          linkId: expect.any(String),
+        }),
+        expect.objectContaining({
+          id: cambridge.id,
+          isActive: true,
+          linkId: null,
+        }),
+      ]),
+    );
+
+    const created = await service.create(kidsProduct.id, cambridge.id);
+    const linked = await service.readManualAvailability({
+      recordId: kidsProduct.id,
+      objectDefinitionId: product.id,
+    });
+    expect(
+      linked.locations.find((location) => location.id === cambridge.id),
+    ).toMatchObject({ linkId: created.id, isActive: true });
+
+    const deactivated = await admin
+      .from("locations")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", cambridge.id);
+    expect(deactivated.error).toBeNull();
+    const inactive = await service.readManualAvailability({
+      recordId: kidsProduct.id,
+      objectDefinitionId: product.id,
+    });
+    expect(
+      inactive.locations.find((location) => location.id === cambridge.id),
+    ).toMatchObject({ linkId: created.id, isActive: false });
+
+    await service.remove(created.id);
+    const restoredLocation = await admin
+      .from("locations")
+      .update({ is_active: true })
+      .eq("business_id", business.id)
+      .eq("id", cambridge.id);
+    expect(restoredLocation.error).toBeNull();
+  });
+
+  it("returns bounded no-match, ambiguity and inactive-location states", async () => {
+    const identity = await owner.auth.getUser();
+    if (identity.error || !identity.data.user) {
+      throw identity.error ?? new Error("Could not resolve the Owner.");
+    }
+    const missing = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: identity.data.user.id,
+        target_object_key: "equipment",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "No Such Equipment",
+        },
+        target_location_id: cambridge.id,
+        requested_action: "link",
+      },
+    );
+    expect(missing.error).toBeNull();
+    expect(missing.data).toMatchObject({ state: "not_found" });
+    expect(missing.data).not.toHaveProperty("candidate_records");
+
+    await createRecord(equipment.id, {
+      name: "Duplicate Projector",
+      hire_price: 50,
+      available: true,
+    });
+    await createRecord(equipment.id, {
+      name: "Duplicate Projector",
+      hire_price: 55,
+      available: true,
+    });
+    const ambiguous = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: identity.data.user.id,
+        target_object_key: "equipment",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Duplicate Projector",
+        },
+        target_location_id: cambridge.id,
+        requested_action: "link",
+      },
+    );
+    expect(ambiguous.error).toBeNull();
+    expect(ambiguous.data).toMatchObject({
+      state: "ambiguous",
+      match_count_class: "2_or_more",
+    });
+    expect(ambiguous.data).not.toHaveProperty("candidate_records");
+
+    const deactivated = await admin
+      .from("locations")
+      .update({ is_active: false })
+      .eq("business_id", business.id)
+      .eq("id", cambridge.id);
+    expect(deactivated.error).toBeNull();
+    const inactive = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: identity.data.user.id,
+        target_object_key: "equipment",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Projector",
+        },
+        target_location_id: cambridge.id,
+        requested_action: "link",
+      },
+    );
+    expect(inactive.error).toBeNull();
+    expect(inactive.data).toMatchObject({
+      state: "location_inactive",
+      location_id: cambridge.id,
+    });
   });
 });

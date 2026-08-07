@@ -1605,6 +1605,73 @@ describe("Milestone 4 preorder", () => {
     if (!miltonKeynes || !kidsProduct) {
       throw new Error("Seeded product availability is incomplete.");
     }
+    const ownerIdentity = await owner.auth.getUser();
+    if (ownerIdentity.error || !ownerIdentity.data.user) {
+      throw ownerIdentity.error ?? new Error("Could not resolve the Owner.");
+    }
+
+    const preparedUnlink = await owner.rpc(
+      "get_confirmed_record_location_link_state",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: ownerIdentity.data.user.id,
+        target_object_key: "product",
+        requested_selector: {
+          field_key: "name",
+          field_type: "short_text",
+          string_value: "Kids Afternoon Tea",
+        },
+        target_location_id: locations.Bedford?.id ?? "",
+        requested_action: "unlink",
+      },
+    );
+    expect(preparedUnlink.error).toBeNull();
+    expect(preparedUnlink.data).toMatchObject({
+      state: "ready",
+      target_record_id: kidsProduct.id,
+      target_location_id: locations.Bedford?.id,
+      expected_pair_state: "linked",
+    });
+    const preparedUnlinkPair = await owner
+      .from("record_location_links")
+      .select("id")
+      .eq("business_id", business.id)
+      .eq("record_id", kidsProduct.id)
+      .eq("location_id", locations.Bedford?.id ?? "")
+      .single();
+    if (preparedUnlinkPair.error || !preparedUnlinkPair.data) {
+      throw (
+        preparedUnlinkPair.error ??
+        new Error("Missing Product Location connection.")
+      );
+    }
+    const removed = await owner.rpc("remove_record_location_link", {
+      expected_business_id: business.id,
+      target_record_location_link_id: preparedUnlinkPair.data.id,
+    });
+    expect(removed.error).toBeNull();
+    const withoutKids = await resolveCatalogue();
+    expect(
+      withoutKids.preorder.products.some(
+        ({ name }) => name === "Kids Afternoon Tea",
+      ),
+    ).toBe(false);
+    expect(
+      withoutKids.preorder.products.find(
+        ({ name }) => name === "Afternoon Tea Box",
+      )?.location_ids,
+    ).toEqual(
+      catalogue.preorder.products.find(
+        ({ name }) => name === "Afternoon Tea Box",
+      )?.location_ids,
+    );
+    const restoredKids = await owner.rpc("create_record_location_link", {
+      expected_business_id: business.id,
+      target_record_id: kidsProduct.id,
+      target_location_id: locations.Bedford?.id ?? "",
+    });
+    expect(restoredKids.error).toBeNull();
+
     const unavailable = await submitRaw(
       baseSubmission(1, {
         locationId: miltonKeynes.id,
@@ -1937,6 +2004,46 @@ describe("Milestone 4 preorder", () => {
       total: 60,
       status: "New",
     });
+
+    if (!order || !locations.Bedford) {
+      throw new Error("The submitted Order or Bedford Location is missing.");
+    }
+    const genericAvailabilityAttempt = await owner.rpc(
+      "create_record_location_link",
+      {
+        expected_business_id: business.id,
+        target_record_id: order.id,
+        target_location_id: locations.Bedford.id,
+      },
+    );
+    expect(genericAvailabilityAttempt.data).toBeNull();
+    expect(genericAvailabilityAttempt.error?.message).toMatch(
+      /record_location_link_object_ineligible/,
+    );
+    const orderLink = await owner
+      .from("record_location_links")
+      .select("id")
+      .eq("business_id", business.id)
+      .eq("record_id", order.id)
+      .eq("location_id", locations.Bedford.id)
+      .single();
+    if (orderLink.error || !orderLink.data) {
+      throw (
+        orderLink.error ??
+        new Error("The submitted Order connection is missing.")
+      );
+    }
+    const genericUnlinkAttempt = await owner.rpc(
+      "remove_record_location_link",
+      {
+        expected_business_id: business.id,
+        target_record_location_link_id: orderLink.data.id,
+      },
+    );
+    expect(genericUnlinkAttempt.data).toBeNull();
+    expect(genericUnlinkAttempt.error?.message).toMatch(
+      /record_location_link_object_ineligible/,
+    );
 
     const product = products["Afternoon Tea Box"];
     if (!product) {

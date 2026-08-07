@@ -68,3 +68,25 @@ RPC checks the Business head, Object eligibility, target identity and
 merged update; the final path does not re-query the selector or take a second
 target/Object lock. No broad query, candidate list, domain path,
 configuration version or operational history is added.
+
+## Phase 12C Record-to-Location availability
+
+The existing `record_location_links` boundary remains the only persistence and
+mutation authority for availability. Phase 12C adds bounded server-side
+preparation and final pair revalidation so manual Record detail controls and
+the disabled Builder intent path can share exact selector matching, active
+Record/Location checks, preorder Order and Order Item protection, and
+already-linked/already-unlinked outcomes. Product and other eligible generic
+Objects use the same service; no Product- or Equipment-specific code is
+introduced.
+
+Only one Record and one Location are supported. New links require an active
+Location; an existing inactive link remains visible for explicit removal.
+The final action reloads tenant-owned Record, Location and pair state directly
+through the authenticated service boundary, compares the signed expected pair
+state, derives the current link row only for unlink, then calls one existing
+trusted create or remove RPC and reloads the authoritative Location name and
+pair state. The unique pair boundary makes duplicate concurrent mutations
+bounded; replays do not perform a second transition. Availability is
+operational data: it creates no configuration Version, Change, history,
+receipt or undo state.

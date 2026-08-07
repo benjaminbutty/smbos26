@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { BUILDER_RECORD_UPDATE_MESSAGES } from "../ai/builder/contracts";
+import {
+  BUILDER_RECORD_LOCATION_MESSAGES,
+  BUILDER_RECORD_LOCATION_REASON_CODES,
+  BUILDER_RECORD_LOCATION_SUCCESS_MESSAGES,
+  BUILDER_RECORD_UPDATE_MESSAGES,
+} from "../ai/builder/contracts";
 
 export const BUILDER_UI_INPUT_INVALID_MESSAGE =
   "Describe what you would like SMBOS to build in 4,000 characters or fewer.";
@@ -37,7 +42,6 @@ export const BUILDER_UI_RECORD_UPDATE_INELIGIBLE_MESSAGE =
   "This type of Record cannot be changed through Builder safely. Use its existing operating screen.";
 export const BUILDER_UI_RECORD_UPDATE_NO_CHANGE_MESSAGE =
   "This Record already has those values.";
-
 export type BuilderUnavailableReason =
   keyof typeof BUILDER_UI_UNAVAILABLE_MESSAGES;
 
@@ -228,6 +232,25 @@ const builderUiStateSchemas = [
     .strict(),
   z
     .object({
+      state: z.literal("record_location_confirmation"),
+      confirmation_token: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024),
+      action: z.enum(["link", "unlink"]),
+      object_label: boundedText.max(120),
+      location_name: boundedText.max(120),
+      selector_presentation: z
+        .object({
+          label: boundedText.max(120),
+          formatted_value: boundedText,
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
       state: z.literal("location_conflict"),
       location_name: boundedText.max(120),
       duplicate_kind: z.enum(["active", "inactive"]),
@@ -330,6 +353,52 @@ const builderUiStateSchemas = [
       message: z.literal(BUILDER_UI_RECORD_UPDATE_NO_CHANGE_MESSAGE),
     })
     .strict(),
+  z
+    .object({
+      state: z.literal("record_location_unavailable"),
+      object_label: boundedText.max(120),
+      reason_code: z.enum(BUILDER_RECORD_LOCATION_REASON_CODES),
+      message: boundedText.max(240),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (
+        value.message !== BUILDER_RECORD_LOCATION_MESSAGES[value.reason_code]
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["message"],
+          message: "The Record Location unavailable message is not fixed.",
+        });
+      }
+    }),
+  z
+    .object({
+      state: z.literal("record_location_updated"),
+      action: z.enum(["link", "unlink"]),
+      object_label: boundedText.max(120),
+      location_name: boundedText.max(120),
+      message: boundedText.max(240),
+      destination_path: z
+        .string()
+        .trim()
+        .min(1)
+        .max(2_048)
+        .regex(/^\/app\/[a-z0-9-]+\/workspace\//)
+        .optional(),
+    })
+    .strict()
+    .superRefine((value, context) => {
+      if (
+        value.message !== BUILDER_RECORD_LOCATION_SUCCESS_MESSAGES[value.action]
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["message"],
+          message: "The Record Location success message is not fixed.",
+        });
+      }
+    }),
 ] as const;
 
 export const builderUiStateSchema = z.discriminatedUnion(

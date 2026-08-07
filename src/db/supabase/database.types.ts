@@ -1720,6 +1720,17 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      get_confirmed_record_location_link_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_action: string;
+          requested_selector: Json;
+          target_location_id: string;
+          target_object_key: string;
+        };
+        Returns: Json;
+      };
       get_business_ai_settings: {
         Args: { expected_actor_id: string; expected_business_id: string };
         Returns: {
