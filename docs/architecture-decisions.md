@@ -2629,6 +2629,6 @@ and reliability 24/24, so the private authenticated OpenAI Builder maps it
 only to the qualified Terra policy. The first live qualification attempt at
 `c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
 6 passed, 1 failed and 1 not executed (`inactive_location` /
-`location_reference_invalid`). No global enablement, merge or Milestone 13
-work is claimed. Phase 12A and Phase 12B subjects and evidence remain
-unchanged.
+`location_reference_invalid`). Milestone 12 is complete on the current Phase
+13A implementation branch; no Milestone 13B or 13C work is claimed. Phase 12A
+and Phase 12B subjects and evidence remain unchanged.

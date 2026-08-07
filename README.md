@@ -31,30 +31,26 @@ The product and architecture sources of truth are:
 - [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
 - [`AGENTS.md`](AGENTS.md)
 
-Milestone 12 Phase 12B is implemented on the current feature branch but is
-not merged. It adds a generic authenticated Builder path for one existing
-Record update: one exact owner-supplied selector, one-to-three explicit
-absolute values, PostgreSQL-owned zero/one/multiple target resolution, bounded
-before/after confirmation and an AI-free atomic graph update. Operational
-Records remain outside model context; the model supplies no Record ID. The
-update creates no configuration Version, Change or history entry, and Product
-is only an acceptance fixture. The task remains global/default/private
-disabled; no live qualification or reliability gate has enabled it.
-Phase 12A generic Record creation is complete and merged through PR #17.
+Milestone 12 is complete on the current Phase 13A feature branch. Phase 12A
+generic Record creation is merged through PR #17. Phase 12B adds one bounded
+generic Builder path for an exact-selector Record update, and Phase 12C adds
+one deterministic manual and bounded Builder path for linking or unlinking an
+eligible generic Record at an existing Location. Both preserve the operational
+boundary: PostgreSQL resolves targets, the final writes are AI-free, and no
+configuration Version, Change, history or undo is created. Their qualified
+private Builder mappings remain isolated from the global/default task registry;
+the earlier failed Phase 12C qualification remains historical evidence.
 
-Milestone 12 Phase 12C is implemented on the current feature branch but is
-not merged. It adds one deterministic manual and one bounded Builder path for
-linking or unlinking one active eligible generic Record at one existing
-Location. PostgreSQL resolves the exact selector and pair state; the model
-receives no Record or link rows, and final confirmation is Owner/Admin-only,
-deterministic and AI-free. Availability remains operational data with no
-configuration Version, Change, history or undo. The global/default intent task
-remains disabled. The corrected subject passed qualification 8/8 and
-reliability 24/24, so the private authenticated OpenAI Builder maps it only to
-the qualified Terra policy. The first live Phase 12C qualification attempt at
-`c4efae2db76a30794ae6c77e2793bea47f55e648` remains failed historical evidence:
-6 passed, 1 failed and 1 not executed (`inactive_location` /
-`location_reference_invalid`).
+Milestone 13 Phase 13A adds an Owner/Admin-triggered initial preorder starter
+to the existing Edit setup surface. A clean Business with active Locations
+can supply only collection Locations and schedule values, review one ordinary
+M5 proposed Change, then deliberately Validate and Apply it. The deterministic
+production composer creates neutral Customer, Product, Order and Order Item
+configuration, useful Product and Order surfaces, the trusted preorder
+experience and a draft public Page. It creates no Product Records or
+availability links; after Apply, the owner can add the first Product through
+the normal generic Record-create surface. Product availability and publication
+remain separate, and Product v0 remains in progress.
 
 ## Current scope
 
@@ -95,6 +91,9 @@ Included:
   routes for validate, apply, abandon and rollback preparation
 - authenticated Owner/Admin Edit setup routes for deterministic preorder
   collection schedule proposals
+- clean-Business Owner/Admin initial preorder starter that prepares one ordinary
+  proposed Change with generic Product and Order surfaces and a draft public
+  Page
 - bounded preorder-question controls for editing public wording, help and
   requiredness or adding one short/long-answer generic Order Field
 - exact active-version and head-revision proposal currentness enforced

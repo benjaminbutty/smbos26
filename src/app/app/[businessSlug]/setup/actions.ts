@@ -22,6 +22,11 @@ import {
   ConfigurationChangeServiceError,
   isControlledConfigurationReadError,
 } from "../../../../core/configuration/service";
+import {
+  InitialPreorderSetupError,
+  prepareInitialPreorderProposal,
+} from "../../../../core/configuration/initial-preorder/service";
+import { initialPreorderSetupFormSchema } from "../../../../core/configuration/initial-preorder/schemas";
 import { graphKeySchema } from "../../../../core/graph/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
 
@@ -51,6 +56,20 @@ function questionEditorPath(
 function redirectWithNotice(
   path: string,
   notice: "duplicate_question" | "input_invalid" | "nothing_changed" | "stale",
+): never {
+  const query = new URLSearchParams({ notice });
+  redirect(`${path}?${query.toString()}`);
+}
+
+function redirectWithInitialPreorderNotice(
+  path: string,
+  notice:
+    | "input_invalid"
+    | "stale"
+    | "no_active_locations"
+    | "location_unavailable"
+    | "already_installed"
+    | "business_not_clean",
 ): never {
   const query = new URLSearchParams({ notice });
   redirect(`${path}?${query.toString()}`);
@@ -86,6 +105,88 @@ async function createManualAmendmentActionContext(businessSlugInput: string) {
     businessSlug: businessSlug.data,
     configuration,
   };
+}
+
+async function createInitialPreorderActionContext(businessSlugInput: string) {
+  const businessSlug = routeSlugSchema.safeParse(businessSlugInput);
+  if (!businessSlug.success) {
+    notFound();
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug.data, supabase);
+  if (!hasCapability(tenant.membership.role, "manage_configuration")) {
+    notFound();
+  }
+  return {
+    businessSlug: businessSlug.data,
+    configuration: new ConfigurationChangeService(supabase, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    }),
+    supabase,
+    tenant,
+  };
+}
+
+export async function prepareInitialPreorderProposalAction(
+  businessSlugInput: string,
+  formData: FormData,
+): Promise<never> {
+  const setupPath = `/app/${encodeURIComponent(businessSlugInput)}/setup`;
+  const { businessSlug, configuration, supabase } =
+    await createInitialPreorderActionContext(businessSlugInput);
+  const parsed = initialPreorderSetupFormSchema.safeParse({
+    expectedBaseVersionId: stringValue(formData, "expectedBaseVersionId"),
+    expectedHeadRevision: integerValue(formData, "expectedHeadRevision"),
+    locationIds: formData
+      .getAll("locationIds")
+      .filter((value): value is string => typeof value === "string"),
+    daysOfWeek: formData
+      .getAll("daysOfWeek")
+      .map((value) =>
+        typeof value === "string" && /^\d+$/.test(value)
+          ? Number.parseInt(value, 10)
+          : Number.NaN,
+      ),
+    startTime: stringValue(formData, "startTime"),
+    endTime: stringValue(formData, "endTime"),
+    slotIntervalMinutes: integerValue(formData, "slotIntervalMinutes"),
+    slotCapacity: integerValue(formData, "slotCapacity"),
+    cutoffHours: integerValue(formData, "cutoffHours"),
+    bookingHorizonDays: integerValue(formData, "bookingHorizonDays"),
+  });
+  if (!parsed.success) {
+    redirectWithInitialPreorderNotice(setupPath, "input_invalid");
+  }
+
+  try {
+    const proposal = await prepareInitialPreorderProposal(
+      supabase,
+      configuration,
+      parsed.data,
+    );
+    redirect(
+      `/app/${encodeURIComponent(businessSlug)}/changes/${encodeURIComponent(proposal.id)}`,
+    );
+  } catch (error) {
+    if (error instanceof InitialPreorderSetupError) {
+      const noticeByCode = {
+        initial_preorder_no_active_locations: "no_active_locations",
+        initial_preorder_location_unavailable: "location_unavailable",
+        initial_preorder_already_installed: "already_installed",
+        initial_preorder_business_not_clean: "business_not_clean",
+        initial_preorder_stale: "stale",
+      } as const;
+      redirectWithInitialPreorderNotice(setupPath, noticeByCode[error.code]);
+    }
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      redirectWithInitialPreorderNotice(setupPath, "stale");
+    }
+    throw error;
+  }
 }
 
 async function loadActiveSnapshot(configuration: ConfigurationChangeService) {
