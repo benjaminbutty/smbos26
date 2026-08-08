@@ -2,7 +2,11 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { hasCapability } from "../../../../auth/authorization";
-import { BuilderUndoUi, BuilderUi } from "../../../../components/builder-ui";
+import {
+  BuilderDisabledUi,
+  BuilderUndoUi,
+  BuilderUi,
+} from "../../../../components/builder-ui";
 import {
   BuilderUndoError,
   loadBuilderUndoContext,
@@ -10,9 +14,14 @@ import {
 } from "../../../../core/configuration/builder-undo/service";
 import { isControlledConfigurationReadError } from "../../../../core/configuration/service";
 import { createServerClient } from "../../../../db/supabase/server";
-import { runBuilderAction } from "./actions";
+import {
+  disableBuilderAction,
+  enableBuilderAction,
+  runBuilderAction,
+} from "./actions";
 import { parseBuilderRouteSlug, resolveBuilderTenant } from "./action-service";
 import { prepareBuilderUndoAction } from "./undo-actions";
+import { SupabaseAiAccountingService } from "../../../../ai/accounting/service";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -77,10 +86,24 @@ export default async function BuilderPage({
     );
   }
 
+  const aiSettings = await new SupabaseAiAccountingService(supabase, {
+    businessId: tenant.business.id,
+    actorId: tenant.user.id,
+  }).readSettings();
+
+  if (!aiSettings.is_enabled) {
+    return (
+      <BuilderDisabledUi
+        enableAction={enableBuilderAction.bind(null, businessSlug)}
+      />
+    );
+  }
+
   return (
     <BuilderUi
       action={runBuilderAction.bind(null, businessSlug)}
       businessSlug={businessSlug}
+      disableAction={disableBuilderAction.bind(null, businessSlug)}
     />
   );
 }
