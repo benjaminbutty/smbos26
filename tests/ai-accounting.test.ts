@@ -25,6 +25,7 @@ import {
 } from "../src/ai/contracts";
 import { AiExecutionError, type AiExecutionAccounting } from "../src/ai/errors";
 import { createAiExecutionService } from "../src/ai/execution";
+import { DisabledStructuredAiProvider } from "../src/ai/providers/disabled";
 import {
   aiExecutionPolicies,
   registeredAiTasks,
@@ -49,7 +50,7 @@ function settings(overrides: Partial<BusinessAiSettings> = {}) {
     business_id: businessId,
     is_enabled: true,
     daily_request_limit: 25,
-    daily_input_token_limit: 250_000,
+    daily_input_token_limit: 320_000,
     daily_output_token_limit: 100_000,
     daily_cost_limit_microusd: 5_000_000,
     created_at: now,
@@ -271,6 +272,35 @@ describe("Business-aware AI execution accounting", () => {
     ).rejects.toMatchObject({ code: "ai_budget_exceeded" });
     expect(provider.generateStructured).not.toHaveBeenCalled();
     expect(store.settle).not.toHaveBeenCalled();
+  });
+
+  it("settles the known disabled provider as zero usage", async () => {
+    const store = accountingStore();
+    const execution = createAiExecutionService({
+      tasks: registeredAiTasks,
+      policies: { bounded_structured_v1: policy() },
+      providers: { disabled: new DisabledStructuredAiProvider() },
+      sleep: async () => {},
+    });
+    const service = createBusinessAiExecutionOrchestrator({
+      accounting: store,
+      execution,
+      generateExecutionId: () => executionId,
+    });
+
+    await expect(
+      service.execute("contract_probe_v1", { subject: "Ready" }),
+    ).rejects.toMatchObject({ code: "ai_disabled" });
+    expect(store.settle).toHaveBeenCalledWith({
+      executionId,
+      status: "failed",
+      outcomeCode: "ai_disabled",
+      actualInputTokens: 0,
+      actualOutputTokens: 0,
+      providerAttemptCount: 1,
+      providerInvocationStarted: true,
+      usageComplete: true,
+    });
   });
 
   it("settles successful aggregate actual usage", async () => {

@@ -244,7 +244,7 @@ describe("Milestone 6 Phase 1B durable AI accounting", () => {
       set
         is_enabled = false,
         daily_request_limit = 25,
-        daily_input_token_limit = 250000,
+        daily_input_token_limit = 320000,
         daily_output_token_limit = 100000,
         daily_cost_limit_microusd = 5000000,
         updated_by = null
@@ -299,7 +299,7 @@ describe("Milestone 6 Phase 1B durable AI accounting", () => {
       expect.objectContaining({
         is_enabled: false,
         daily_request_limit: 25,
-        daily_input_token_limit: 250_000,
+        daily_input_token_limit: 320_000,
         daily_output_token_limit: 100_000,
         daily_cost_limit_microusd: 5_000_000,
       }),

@@ -303,8 +303,9 @@ Phase 1B wraps the Phase 1A structured execution core in a separate
 Business-aware accounting service. Each Business starts disabled with finite
 limits. PostgreSQL locks that Business's settings row and reserves the trusted
 worst-case envelope before an attempt; known usage settles to aggregate actuals
-and incomplete usage retains at least the reservation. Limits reset by the UTC
-date captured from database statement time. Money is integer micro-US-dollars
+and the network-free disabled provider reports zero usage. Genuine incomplete
+or unknown usage retains at least the reservation. Limits reset by the UTC date
+captured from database statement time. Money is integer micro-US-dollars
 (`1 USD = 1,000,000 microusd`).
 
 The execution audit stores only bounded identity, policy, status, token/cost,

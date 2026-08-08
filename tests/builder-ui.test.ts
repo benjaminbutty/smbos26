@@ -525,6 +525,16 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(initialHtml).toContain("0 / 4,000 characters");
     expect(initialHtml).toContain("Prepare request");
     expect(initialHtml).toContain("Ideas to get started");
+    const builderUiSource = readFileSync(
+      join(process.cwd(), "src/components/builder-ui.tsx"),
+      "utf8",
+    );
+    const resultPosition = builderUiSource.indexOf("<BuilderResultPanel");
+    const examplesPosition = builderUiSource.indexOf(
+      'aria-labelledby="builder-examples-heading"',
+    );
+    expect(resultPosition).toBeGreaterThanOrEqual(0);
+    expect(resultPosition).toBeLessThan(examplesPosition);
 
     const clarificationHtml = renderToStaticMarkup(
       createElement(BuilderResultPanel, {

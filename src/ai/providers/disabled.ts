@@ -12,6 +12,7 @@ export class DisabledStructuredAiProvider implements StructuredAiProvider {
     throw new StructuredAiProviderError(
       "disabled",
       "No structured AI provider is configured.",
+      { usage: { inputTokens: 0, outputTokens: 0 } },
     );
   }
 }

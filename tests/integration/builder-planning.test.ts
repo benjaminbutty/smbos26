@@ -995,8 +995,14 @@ describe("Milestone 6 Phase 3B authenticated builder planning", () => {
       status: "failed",
       outcome_code: "ai_disabled",
       provider_key: "disabled",
-      actual_input_tokens: null,
-      actual_output_tokens: null,
+      actual_input_tokens: "0",
+      actual_output_tokens: "0",
+      charged_input_tokens: "0",
+      charged_output_tokens: "0",
+      charged_cost_microusd: "0",
+      provider_attempt_count: 1,
+      provider_invocation_started: true,
+      usage_complete: true,
     });
   });
 });

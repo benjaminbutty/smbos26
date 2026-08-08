@@ -660,6 +660,12 @@ export function BuilderUi({
         />
       </form>
 
+      <BuilderResultPanel
+        action={formAction}
+        businessSlug={businessSlug}
+        state={state}
+      />
+
       <section
         aria-labelledby="builder-examples-heading"
         className="builder-examples"
@@ -695,12 +701,6 @@ export function BuilderUi({
           </form>
         </section>
       ) : null}
-
-      <BuilderResultPanel
-        action={formAction}
-        businessSlug={businessSlug}
-        state={state}
-      />
     </section>
   );
 }

@@ -896,7 +896,7 @@ describe("builder planning task execution and service", () => {
         business_id: ids.business,
         is_enabled: true,
         daily_request_limit: 25,
-        daily_input_token_limit: 250_000,
+        daily_input_token_limit: 320_000,
         daily_output_token_limit: 100_000,
         daily_cost_limit_microusd: 5_000_000,
         created_at: "2026-07-30T00:00:00Z",
