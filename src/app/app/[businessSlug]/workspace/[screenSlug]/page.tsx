@@ -10,6 +10,7 @@ import {
   type SearchParams,
 } from "../../../../../lib/search-params";
 import { experiencePathToKey } from "../../../../../runtime/routing";
+import { updateInlineRecordCell } from "../../../../../runtime/views/actions";
 import { ViewRenderer } from "../../../../../runtime/views/view-renderer";
 
 interface WorkspaceScreenPageProps {
@@ -43,7 +44,11 @@ export default async function WorkspaceScreenPage({
     <section className="tenant-content">
       {error ? <Notice kind="error">{error}</Notice> : null}
       {message ? <Notice kind="message">{message}</Notice> : null}
-      <ViewRenderer bundle={bundle} businessSlug={businessSlug} />
+      <ViewRenderer
+        bundle={bundle}
+        businessSlug={businessSlug}
+        inlineEditAction={updateInlineRecordCell.bind(null, businessSlug)}
+      />
     </section>
   );
 }

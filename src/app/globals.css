@@ -1010,6 +1010,69 @@ textarea {
   text-decoration: none;
 }
 
+.inline-cell-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.inline-edit-trigger {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0.25rem 0.45rem;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+  font-size: 0.72rem;
+}
+
+.inline-edit-trigger:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(34, 101, 74, 0.15);
+}
+
+.inline-cell-form {
+  display: grid;
+  min-width: 10rem;
+  gap: 0.55rem;
+}
+
+.inline-cell-form input,
+.inline-cell-form select {
+  min-width: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: #fff;
+}
+
+.inline-cell-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.inline-cell-actions button {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.inline-cell-error {
+  color: #8b2e2e;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.inline-edit-message {
+  margin: 0 0 0.75rem;
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .record-status,
 .choice-value,
 .boolean-value,

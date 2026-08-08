@@ -15,6 +15,7 @@ import {
 } from "../../../../../lib/search-params";
 import { saveExperienceForm } from "../../../../../runtime/forms/actions";
 import { PageRenderer } from "../../../../../runtime/pages/page-renderer";
+import { updateInlineRecordCell } from "../../../../../runtime/views/actions";
 
 interface InternalPageProps {
   params: Promise<{ businessSlug: string; pageSlug: string }>;
@@ -117,6 +118,7 @@ export default async function InternalPage({
       <PageRenderer
         businessSlug={businessSlug}
         forms={forms}
+        inlineEditAction={updateInlineRecordCell.bind(null, businessSlug)}
         layout={page.layout}
         views={views}
       />

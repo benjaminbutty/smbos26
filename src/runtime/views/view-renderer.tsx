@@ -9,12 +9,15 @@ import type {
 } from "../../core/experience/schemas";
 import type { Json, Tables } from "../../db/supabase/database.types";
 import { FieldValue, getSafeFileUrl } from "../fields/field-renderer";
+import type { InlineEditAction } from "./inline-edit-contract";
+import { InlineTable } from "./inline-table";
 
 interface ViewRendererProps {
   bundle: ExperienceViewBundle;
   businessSlug: string;
   record?: Tables<"records">;
   navigationViewKey?: string;
+  inlineEditAction?: InlineEditAction;
   preview?: boolean;
   showHeading?: boolean;
 }
@@ -61,6 +64,7 @@ function EmptyView({
 export function TableView({
   bundle,
   fieldsByKey,
+  inlineEditAction,
   recordBasePath,
   preview = false,
 }: Readonly<ViewComponentProps>): ReactNode {
@@ -69,6 +73,19 @@ export function TableView({
 
   if (bundle.records.length === 0) {
     return <EmptyView singularLabel={bundle.object.singular_label} />;
+  }
+
+  if (!preview && bundle.inlineEdit && inlineEditAction) {
+    return (
+      <InlineTable
+        action={inlineEditAction}
+        editableFieldKeys={bundle.inlineEdit.fieldKeys}
+        fields={fields}
+        recordBasePath={recordBasePath}
+        records={bundle.records}
+        viewKey={bundle.definition.key}
+      />
+    );
   }
 
   return (
@@ -344,6 +361,7 @@ export function ViewRenderer({
   businessSlug,
   record,
   navigationViewKey,
+  inlineEditAction,
   preview = false,
   showHeading = true,
 }: Readonly<ViewRendererProps>): ReactNode {
@@ -385,6 +403,7 @@ export function ViewRenderer({
           fieldsByKey={fieldsByKey}
           preview={preview}
           recordBasePath={recordBasePath}
+          {...(inlineEditAction ? { inlineEditAction } : {})}
         />
       ) : null}
       {bundle.definition.view_type === "list" ? (

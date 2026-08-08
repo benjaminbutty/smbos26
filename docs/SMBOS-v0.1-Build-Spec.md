@@ -2879,3 +2879,21 @@ mutation, fuzzy/substring matching, null/File clearing, Record lifecycle,
 Relationships, Locations, public Form changes and Phase 12C remain out of
 scope. Product and Equipment are generic acceptance fixtures, not special
 production paths.
+
+## Milestone 14 Phase 14A - Inline generic Record editing in Table Views
+
+Live internal generic Table Views may expose a small inline edit control only
+when the Table has its own valid internal edit Form. The server rechecks the
+current Business, Table, edit Form, Object, Record and Field before parsing
+one supported Field value and calling the existing `GraphService.updateRecord`
+boundary. Supported Field types are `short_text`, `number`, `currency`,
+`boolean`, `select` and `status`; option controls use only the currently
+configured options.
+
+Inline edits are ordinary operational Record changes. They do not create or
+advance configuration history, candidates, Versions, AI accounting or other
+configuration-lane state, and they do not require an AI provider. Unsupported
+Fields retain the existing full-Form journey. Candidate preview remains
+read-only. Relationships, Record-to-Location editing, structural Field/View
+editing, bulk or spreadsheet behaviour, and operational undo/history remain
+outside Phase 14A.

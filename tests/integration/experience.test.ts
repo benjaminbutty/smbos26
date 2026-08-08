@@ -24,6 +24,7 @@ import type {
 } from "../../src/db/supabase/database.types";
 import { FormRenderer } from "../../src/runtime/forms/form-renderer";
 import { submitExperienceForm } from "../../src/runtime/forms/submission";
+import { applyInlineRecordCellEdit } from "../../src/runtime/views/inline-edit-service";
 import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
@@ -83,6 +84,7 @@ let createForm: ExperienceForm;
 let editForm: ExperienceForm;
 let tableView: ExperienceView;
 let businessBView: ExperienceView;
+let businessBEditForm: ExperienceForm;
 
 async function createIdentity(
   label: string,
@@ -330,6 +332,29 @@ describe("Milestone 3 experience runtime", () => {
       throw new Error("Could not create Business B View");
     }
     businessBView = createdBusinessBView;
+    businessBEditForm = requireFixture(
+      await configurationFixtures.insert("forms", {
+        business_id: businessB.id,
+        key: "private_item_edit",
+        name: "Edit private item",
+        object_definition_id: businessBObject.id,
+        mode: "edit",
+        config_json: { fields: [{ field: "name" }] },
+        audience: "internal",
+      }),
+      "Could not create Business B edit Form",
+    );
+    businessBView = await configurationFixtures.updateById(
+      "views",
+      businessBView.id,
+      {
+        config_json: {
+          fields: ["name"],
+          edit_form_key: businessBEditForm.key,
+          include_archived: false,
+        },
+      },
+    );
   });
 
   afterAll(async () => {
@@ -703,6 +728,177 @@ describe("Milestone 3 experience runtime", () => {
       status: "Contacted",
     });
     expect(updated.created_by).toBe(ownerA.user.id);
+  });
+
+  it("edits one authoritative Table Field across unrelated generic Objects", async () => {
+    const { data: cateringRecord, error: cateringRecordError } =
+      await ownerA.client
+        .from("records")
+        .insert({
+          business_id: businessA.id,
+          object_definition_id: cateringObject.id,
+          data_json: {
+            company_name: "Beth",
+            event_date: "2026-11-21",
+            guest_count: 2,
+            budget: 100,
+            status: "New",
+          },
+        })
+        .select("*")
+        .single();
+    const { data: privateItem, error: privateItemError } = await ownerB.client
+      .from("records")
+      .insert({
+        business_id: businessB.id,
+        object_definition_id: businessBObject.id,
+        data_json: { name: "Projector" },
+      })
+      .select("*")
+      .single();
+    if (
+      cateringRecordError ||
+      privateItemError ||
+      !cateringRecord ||
+      !privateItem
+    ) {
+      throw new Error("Could not create inline editing Records");
+    }
+
+    const beforeHead = await ownerA.client
+      .from("business_configuration_heads")
+      .select("active_version_id, head_revision")
+      .eq("business_id", businessA.id)
+      .single();
+    expect(beforeHead.error).toBeNull();
+
+    const cateringEdit = new FormData();
+    cateringEdit.set("company_name", "Elizabeth");
+    cateringEdit.set("unrelated", "must not be persisted");
+    const savedCatering = await applyInlineRecordCellEdit(
+      ownerA.client,
+      { businessId: businessA.id },
+      {
+        viewKey: tableView.key,
+        recordId: cateringRecord.id,
+        fieldKey: "company_name",
+        formData: cateringEdit,
+      },
+    );
+    expect(savedCatering.data_json).toMatchObject({
+      company_name: "Elizabeth",
+      guest_count: 2,
+      budget: 100,
+      status: "New",
+    });
+    expect(savedCatering.data_json).not.toHaveProperty("unrelated");
+
+    const equipmentEdit = new FormData();
+    equipmentEdit.set("name", "Hired projector");
+    const savedPrivateItem = await applyInlineRecordCellEdit(
+      ownerB.client,
+      { businessId: businessB.id },
+      {
+        viewKey: businessBView.key,
+        recordId: privateItem.id,
+        fieldKey: "name",
+        formData: equipmentEdit,
+      },
+    );
+    expect(savedPrivateItem.data_json).toEqual({ name: "Hired projector" });
+
+    const refreshedCatering = await ownerA.client
+      .from("records")
+      .select("*")
+      .eq("id", cateringRecord.id)
+      .single();
+    expect(refreshedCatering.error).toBeNull();
+    expect(refreshedCatering.data?.data_json).toMatchObject({
+      company_name: "Elizabeth",
+      guest_count: 2,
+    });
+
+    const loadedTable = await createExperienceService(ownerA.client, {
+      businessId: businessA.id,
+    }).loadView(tableView.key);
+    expect(loadedTable.inlineEdit).toEqual({
+      formKey: editForm.key,
+      fieldKeys: ["company_name", "guest_count", "budget", "status"],
+    });
+    expect(
+      loadedTable.records.find((record) => record.id === cateringRecord.id)
+        ?.data_json,
+    ).toMatchObject({ company_name: "Elizabeth" });
+
+    const afterHead = await ownerA.client
+      .from("business_configuration_heads")
+      .select("active_version_id, head_revision")
+      .eq("business_id", businessA.id)
+      .single();
+    expect(afterHead.error).toBeNull();
+    expect(afterHead.data).toEqual(beforeHead.data);
+  });
+
+  it("fails closed for forged Table, Record and Field identity", async () => {
+    const { data: record, error: recordError } = await ownerA.client
+      .from("records")
+      .insert({
+        business_id: businessA.id,
+        object_definition_id: cateringObject.id,
+        data_json: {
+          company_name: "Trust boundary test",
+          event_date: "2026-11-21",
+          guest_count: 2,
+          status: "New",
+        },
+      })
+      .select("*")
+      .single();
+    if (recordError || !record) {
+      throw new Error("Could not create trust-boundary Record");
+    }
+
+    const formData = new FormData();
+    formData.set("company_name", "Changed");
+
+    await expect(
+      applyInlineRecordCellEdit(
+        ownerA.client,
+        { businessId: businessA.id },
+        {
+          viewKey: businessBView.key,
+          recordId: record.id,
+          fieldKey: "company_name",
+          formData,
+        },
+      ),
+    ).rejects.toThrow("screen");
+
+    await expect(
+      applyInlineRecordCellEdit(
+        ownerA.client,
+        { businessId: businessA.id },
+        {
+          viewKey: tableView.key,
+          recordId: crypto.randomUUID(),
+          fieldKey: "company_name",
+          formData,
+        },
+      ),
+    ).rejects.toThrow("item");
+
+    await expect(
+      applyInlineRecordCellEdit(
+        ownerA.client,
+        { businessId: businessA.id },
+        {
+          viewKey: tableView.key,
+          recordId: record.id,
+          fieldKey: "notes",
+          formData,
+        },
+      ),
+    ).rejects.toThrow("screen");
   });
 
   it("preserves an object-backed File on unrelated edits and accepts a URL replacement", async () => {

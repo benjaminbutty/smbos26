@@ -10,6 +10,7 @@ interface FieldValueProps {
 interface FieldInputControlProps {
   field: Tables<"field_definitions">;
   value: Json | undefined;
+  ariaLabel?: string;
   isEdit?: boolean;
 }
 
@@ -197,6 +198,7 @@ function valueIsPresent(value: Json | undefined): boolean {
 }
 
 export function FieldInputControl({
+  ariaLabel,
   field,
   value,
   isEdit = false,
@@ -206,17 +208,24 @@ export function FieldInputControl({
     name: field.key,
     required: field.required,
   };
+  const accessibleName = ariaLabel ? { "aria-label": ariaLabel } : {};
 
   switch (field.field_type) {
     case "long_text":
       return (
-        <textarea {...common} defaultValue={scalarDefault(value)} rows={5} />
+        <textarea
+          {...common}
+          {...accessibleName}
+          defaultValue={scalarDefault(value)}
+          rows={5}
+        />
       );
     case "number":
     case "currency":
       return (
         <input
           {...common}
+          {...accessibleName}
           defaultValue={scalarDefault(value)}
           inputMode="decimal"
           step={field.field_type === "currency" ? "0.01" : "any"}
@@ -229,6 +238,7 @@ export function FieldInputControl({
           <input
             id={common.id}
             name={common.name}
+            {...accessibleName}
             defaultChecked={value === true}
             type="checkbox"
           />
@@ -237,12 +247,18 @@ export function FieldInputControl({
       );
     case "date":
       return (
-        <input {...common} defaultValue={scalarDefault(value)} type="date" />
+        <input
+          {...common}
+          {...accessibleName}
+          defaultValue={scalarDefault(value)}
+          type="date"
+        />
       );
     case "datetime":
       return (
         <input
           {...common}
+          {...accessibleName}
           defaultValue={
             typeof value === "string" ? value.slice(0, 16) : undefined
           }
@@ -253,6 +269,7 @@ export function FieldInputControl({
       return (
         <input
           {...common}
+          {...accessibleName}
           autoComplete="email"
           defaultValue={scalarDefault(value)}
           type="email"
@@ -262,6 +279,7 @@ export function FieldInputControl({
       return (
         <input
           {...common}
+          {...accessibleName}
           autoComplete="tel"
           defaultValue={scalarDefault(value)}
           type="tel"
@@ -271,6 +289,7 @@ export function FieldInputControl({
       return (
         <input
           {...common}
+          {...accessibleName}
           defaultValue={scalarDefault(value)}
           placeholder="https://"
           type="url"
@@ -289,6 +308,7 @@ export function FieldInputControl({
           ) : null}
           <input
             {...common}
+            {...accessibleName}
             defaultValue={isEdit ? "" : scalarDefault(value)}
             placeholder={
               hasExistingValue ? "Paste a replacement URL" : "https://"
@@ -307,7 +327,11 @@ export function FieldInputControl({
     case "select":
     case "status":
       return (
-        <select {...common} defaultValue={scalarDefault(value) ?? ""}>
+        <select
+          {...common}
+          {...accessibleName}
+          defaultValue={scalarDefault(value) ?? ""}
+        >
           <option value="">Choose…</option>
           {fieldOptions(field).map((option) => (
             <option key={option} value={option}>
@@ -320,6 +344,7 @@ export function FieldInputControl({
       return (
         <select
           {...common}
+          {...accessibleName}
           defaultValue={
             Array.isArray(value)
               ? value.filter((item): item is string => typeof item === "string")
@@ -337,7 +362,12 @@ export function FieldInputControl({
       );
     case "short_text":
       return (
-        <input {...common} defaultValue={scalarDefault(value)} type="text" />
+        <input
+          {...common}
+          {...accessibleName}
+          defaultValue={scalarDefault(value)}
+          type="text"
+        />
       );
   }
 }
