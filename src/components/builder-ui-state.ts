@@ -13,7 +13,8 @@ export const BUILDER_UI_CONTEXT_REQUIRED_MESSAGE =
   'To undo the latest setup change, open its applied Change or active Version and choose "Undo this change in Builder."';
 
 export const BUILDER_UI_UNAVAILABLE_MESSAGES = Object.freeze({
-  ai_disabled: "Builder is not enabled for this Business.",
+  ai_disabled:
+    "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
   budget_reached: "This Business has reached its AI usage limit for today.",
   temporarily_unavailable:
     "Builder is enabled for this Business but is currently unavailable. Your live Business setup has not changed.",

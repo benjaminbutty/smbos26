@@ -26,7 +26,11 @@ import {
   AiBusinessContextError,
 } from "../src/ai/context/errors";
 import { aiExecutionErrorCodes, AiExecutionError } from "../src/ai/errors";
-import { BuilderResultPanel, BuilderUi } from "../src/components/builder-ui";
+import {
+  BuilderDisabledUi,
+  BuilderResultPanel,
+  BuilderUi,
+} from "../src/components/builder-ui";
 import {
   BUILDER_INITIAL_STATE,
   BUILDER_UI_INPUT_INVALID_MESSAGE,
@@ -479,8 +483,36 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
       ),
     ).not.toContain("secret provider body");
     expect(BUILDER_UI_UNAVAILABLE_MESSAGES.ai_disabled).toBe(
-      "Builder is not enabled for this Business.",
+      "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
     );
+  });
+
+  it("keeps Business enablement distinct from server AI availability", () => {
+    const disabledBusinessHtml = renderToStaticMarkup(
+      createElement(BuilderDisabledUi, {
+        enableAction: async () => {},
+      }),
+    );
+    const serverAiUnavailable = mapBuilderActionError(
+      new AiExecutionError("ai_disabled"),
+    );
+
+    expect(disabledBusinessHtml).toContain(
+      "Builder is currently off for this Business.",
+    );
+    expect(disabledBusinessHtml).toContain("Enable Builder");
+    expect(disabledBusinessHtml).not.toContain(
+      "AI is currently unavailable in this environment.",
+    );
+    expect(serverAiUnavailable).toEqual({
+      kind: "state",
+      state: {
+        state: "unavailable",
+        reason: "ai_disabled",
+        message:
+          "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
+      },
+    });
   });
 
   it("parses only the route slug and owner request boundary", () => {

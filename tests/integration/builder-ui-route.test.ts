@@ -370,6 +370,9 @@ describe("authenticated Builder GET route integration", () => {
       expect(html).toContain("Builder uses AI to help plan systems");
       expect(html).not.toContain('name="ownerRequest"');
       expect(html).toContain("Enable Builder");
+      expect(html).not.toContain(
+        "AI is currently unavailable in this environment.",
+      );
       expect(html).not.toContain("Prepare request");
     }
 
