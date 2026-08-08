@@ -1310,7 +1310,7 @@ defaults and PostgreSQL hard maximums are:
 | Limit | Default | Hard maximum |
 | --- | ---: | ---: |
 | Requests per UTC day | 25 | 1,000 |
-| Input tokens per UTC day | 250,000 | 100,000,000 |
+| Input tokens per UTC day | 320,000 | 100,000,000 |
 | Output tokens per UTC day | 100,000 | 50,000,000 |
 | Cost per UTC day | 5,000,000 microusd | 1,000,000,000 microusd |
 
@@ -1320,13 +1320,21 @@ when reservation occurs. A settings-row lock serializes reservation for one
 Business without holding a transaction open during provider execution or
 contending with another Business.
 
+The 320,000 input-token default is the exact sum of the current qualified
+Builder planning reservation (128,000) and configuration-drafting reservation
+(192,000). Those executions are reserved sequentially, so a complete supported
+Builder configuration request can finish within the default without widening
+either policy envelope.
+
 The reservation covers maximum billable input tokens and maximum output tokens
 for every allowed attempt. Integer cost is the sum of the separately rounded-up
 input and output components at trusted microusd-per-million rates. Settled,
 complete usage charges aggregate actual usage. Unsettled or incomplete usage
 conservatively consumes at least its reservation for the captured UTC day;
-actual overrun is recorded and charged without clamping. A pre-provider failure
-cancels and releases the reservation. Settlement is idempotent and an
+actual overrun is recorded and charged without clamping. The known network-free
+disabled provider reports zero usage and releases its reservation; this does not
+weaken conservative treatment of genuine unknown provider usage. A pre-provider
+failure cancels and releases the reservation. Settlement is idempotent and an
 unrecordable settlement prevents model output from being returned as success.
 
 The execution row is a metadata-only reservation and audit record. It contains

@@ -1078,10 +1078,13 @@ and give rollback misleading spend semantics.
   code and message.
 - Complete usage settles to aggregate actuals. Incomplete or unknown usage
   charges at least the reservation; actual overrun is stored and charged
-  without clamping. Pre-provider failure cancels and releases the reservation.
-  Identical reserve/settle retries are idempotent and conflicting replays fail
-  closed. Settlement is retried once; persistent failure retains the
-  conservative reservation and prevents output from being returned as success.
+  without clamping. The known network-free disabled provider reports zero
+  usage and releases its reservation; genuine provider failures without usage
+  remain conservative. Pre-provider failure cancels and releases the
+  reservation. Identical reserve/settle retries are idempotent and conflicting
+  replays fail closed. Settlement is retried once; persistent failure retains
+  the conservative reservation and prevents output from being returned as
+  success.
 - Unsettled reservations consume their captured UTC day's worst-case allowance.
   They naturally stop affecting a later UTC day; Phase 1B adds no expiry worker,
   queue, cron or early-reclamation mechanism.
@@ -2098,6 +2101,11 @@ the independent accounting model.
   planning failures do not start drafting; drafting failures do not retry the
   full workflow. Existing timeout, bounded provider-attempt retry and
   conservative incomplete-usage behavior remain unchanged.
+- Set the fresh-Business daily input-token default to 320,000: exactly the
+  128,000-token planning reservation plus the 192,000-token drafting
+  reservation. Keep the request, output-token and cost defaults unchanged;
+  this permits one complete supported configuration path without changing any
+  qualified policy envelope.
 - Call `builderConfigurationProposalService.propose()` exactly once for an
   eligible draft. That existing service remains responsible for its two
   authoritative reads, exact supplied-context/currentness checks, one pure

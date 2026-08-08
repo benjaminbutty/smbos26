@@ -12,6 +12,7 @@ import type {
   BusinessAiSettings,
 } from "../src/ai/accounting/service";
 import { AiAccountingServiceError } from "../src/ai/accounting/service";
+import { deriveAiReservationEnvelope } from "../src/ai/accounting/cost";
 import {
   builderConfigurationDraftOutputSchema,
   type BuilderConfigurationDraftOutput,
@@ -1468,6 +1469,29 @@ describe("authenticated Builder orchestration contract", () => {
 });
 
 describe("private qualified Builder runtime", () => {
+  it("fits one complete configuration path inside the fresh-Business budget", () => {
+    const planning = deriveAiReservationEnvelope(openAiBuilderPlanningPolicy);
+    const drafting = deriveAiReservationEnvelope(
+      openAiBuilderConfigurationDraftingPolicy,
+    );
+
+    expect({
+      reservedRequestCount:
+        planning.reservedRequestCount + drafting.reservedRequestCount,
+      reservedInputTokens:
+        planning.reservedInputTokens + drafting.reservedInputTokens,
+      reservedOutputTokens:
+        planning.reservedOutputTokens + drafting.reservedOutputTokens,
+      reservedCostMicrousd:
+        planning.reservedCostMicrousd + drafting.reservedCostMicrousd,
+    }).toEqual({
+      reservedRequestCount: 2,
+      reservedInputTokens: 320_000,
+      reservedOutputTokens: 24_576,
+      reservedCostMicrousd: 1_168_640,
+    });
+  });
+
   it("keeps global drafting disabled and qualifies only the private clone", () => {
     expect(builderConfigurationDraftTaskV1.policyKey).toBe(
       "builder_configuration_drafting_disabled_v1",
