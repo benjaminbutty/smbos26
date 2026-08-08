@@ -17,8 +17,13 @@ import {
   type ExperienceAudience,
   type FormConfig,
   type PageLayout,
+  type TableViewConfig,
   type ViewConfig,
 } from "./schemas";
+import {
+  inlineEditableFieldKeys,
+  type InlineEditEligibility,
+} from "./inline-edit";
 
 export class ExperienceServiceError extends Error {
   readonly code: string | null;
@@ -93,6 +98,7 @@ export interface ExperienceViewBundle {
   fields: Tables<"field_definitions">[];
   records: Tables<"records">[];
   config: ViewConfig;
+  inlineEdit?: InlineEditEligibility;
   warnings?: string[];
 }
 
@@ -111,6 +117,60 @@ export interface ExperiencePageBundle {
 export interface ExperienceNavigation {
   pages: Tables<"pages">[];
   views: Tables<"views">[];
+}
+
+export async function resolveInlineEditEligibility(
+  source: ConfigurationDefinitionSource,
+  definition: SourcedViewDefinition,
+  config: ViewConfig,
+  fields: Tables<"field_definitions">[],
+): Promise<InlineEditEligibility | undefined> {
+  if (
+    source.kind !== "live" ||
+    definition.audience !== "internal" ||
+    !definition.is_active ||
+    definition.view_type !== "table"
+  ) {
+    return undefined;
+  }
+
+  const tableConfig = config as TableViewConfig;
+  const formKey = tableConfig.edit_form_key;
+  if (!formKey) {
+    return undefined;
+  }
+
+  const form = await source.getFormByKey(formKey);
+  if (
+    !form ||
+    !form.is_active ||
+    form.audience !== "internal" ||
+    form.mode !== "edit" ||
+    form.business_id !== definition.business_id ||
+    form.object_definition_id !== definition.object_definition_id
+  ) {
+    return undefined;
+  }
+
+  const parsedFormConfig = formConfigSchema.safeParse(form.config_json);
+  if (!parsedFormConfig.success) {
+    return undefined;
+  }
+
+  const tableFields = fields.filter(
+    (field) =>
+      field.business_id === definition.business_id &&
+      field.object_definition_id === definition.object_definition_id,
+  );
+
+  return {
+    formKey,
+    fieldKeys: inlineEditableFieldKeys(
+      tableConfig.fields,
+      tableFields,
+      parsedFormConfig.data,
+    ),
+  };
 }
 
 export interface PublicPageBundle {
@@ -203,8 +263,22 @@ export function createExperienceService(
             "Some existing information does not match this proposed configuration and is shown without changing it.",
           ]
         : [];
+    const inlineEdit = await resolveInlineEditEligibility(
+      source,
+      sourcedDefinition,
+      config,
+      fields,
+    );
 
-    return { definition, object, fields, records, config, warnings };
+    return {
+      definition,
+      object,
+      fields,
+      records,
+      config,
+      ...(inlineEdit ? { inlineEdit } : {}),
+      warnings,
+    };
   }
 
   return {

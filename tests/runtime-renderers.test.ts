@@ -10,6 +10,7 @@ import type { FormConfig, ViewConfig } from "../src/core/experience/schemas";
 import type { Tables } from "../src/db/supabase/database.types";
 import { FormRenderer } from "../src/runtime/forms/form-renderer";
 import { PageRenderer } from "../src/runtime/pages/page-renderer";
+import type { InlineEditAction } from "../src/runtime/views/inline-edit-contract";
 import { ViewRenderer } from "../src/runtime/views/view-renderer";
 
 const businessId = crypto.randomUUID();
@@ -165,6 +166,51 @@ describe("generic experience renderers", () => {
     expect(html).toContain("10 Nov 2026");
     expect(html).toContain("£4,000.00");
     expect(html).toContain("+ New catering enquiry");
+  });
+
+  it("renders inline edit affordances only for server-derived eligible Table Fields", () => {
+    const action: InlineEditAction = async (state) => state;
+    const html = renderToStaticMarkup(
+      createElement(ViewRenderer, {
+        bundle: {
+          ...tableBundle,
+          inlineEdit: {
+            formKey: "catering_edit",
+            fieldKeys: ["company_name", "guest_count", "budget", "status"],
+          },
+        },
+        businessSlug: "bedford-bakery",
+        inlineEditAction: action,
+      }),
+    );
+
+    expect(html).toContain('aria-label="Edit Company"');
+    expect(html).toContain('aria-label="Edit Guests"');
+    expect(html).toContain('aria-label="Edit Budget"');
+    expect(html).toContain('aria-label="Edit Status"');
+    expect(html).not.toContain('aria-label="Edit Event date"');
+  });
+
+  it("keeps inline editing and navigation controls out of preview", () => {
+    const action: InlineEditAction = async (state) => state;
+    const html = renderToStaticMarkup(
+      createElement(ViewRenderer, {
+        bundle: {
+          ...tableBundle,
+          inlineEdit: {
+            formKey: "catering_edit",
+            fieldKeys: ["company_name", "guest_count", "budget", "status"],
+          },
+        },
+        businessSlug: "bedford-bakery",
+        inlineEditAction: action,
+        preview: true,
+      }),
+    );
+
+    expect(html).not.toContain('aria-label="Edit Company"');
+    expect(html).not.toContain("Save");
+    expect(html).not.toContain("/workspace/catering-table");
   });
 
   it("renders a List generically", () => {

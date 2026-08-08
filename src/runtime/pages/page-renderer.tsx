@@ -8,6 +8,7 @@ import type { PageLayout } from "../../core/experience/schemas";
 import type { PublicPreorderCatalogue } from "../../core/preorder/schemas";
 import { FormRenderer, type FormAction } from "../forms/form-renderer";
 import { PreorderExperience } from "../preorder/preorder-experience";
+import type { InlineEditAction } from "../views/inline-edit-contract";
 import { ViewRenderer } from "../views/view-renderer";
 
 interface ResolvedFormBlock {
@@ -25,6 +26,7 @@ interface PageRendererProps {
   businessSlug?: string;
   views?: Readonly<Record<string, ExperienceViewBundle>>;
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
+  inlineEditAction?: InlineEditAction;
   preorders?: Readonly<Record<string, ResolvedPreorderBlock>>;
   previewMode?: boolean;
   publicMode?: boolean;
@@ -43,6 +45,7 @@ export function PageRenderer({
   businessSlug,
   views = {},
   forms = {},
+  inlineEditAction,
   preorders = {},
   previewMode = false,
   publicMode = false,
@@ -124,6 +127,9 @@ export function PageRenderer({
                 key={key}
                 preview={previewMode}
                 showHeading={false}
+                {...(!previewMode && inlineEditAction
+                  ? { inlineEditAction }
+                  : {})}
               />
             ) : (
               <MissingBlock

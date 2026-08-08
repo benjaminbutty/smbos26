@@ -116,7 +116,7 @@ function coerceString(
   return value;
 }
 
-function coerceConfiguredValue(
+export function parseConfiguredFieldValue(
   field: Tables<"field_definitions">,
   config: FormFieldConfig,
   formData: FormData,
@@ -191,7 +191,7 @@ export function buildConfiguredSubmission(
       throw new ExperienceSubmissionError("This form is no longer available.");
     }
 
-    let value = coerceConfiguredValue(field, configuredField, formData);
+    let value = parseConfiguredFieldValue(field, configuredField, formData);
     if (
       value === undefined &&
       mode === "create" &&
@@ -223,6 +223,22 @@ export function buildConfiguredSubmission(
   }
 
   return submission;
+}
+
+export function buildConfiguredFieldPatch(
+  field: Tables<"field_definitions">,
+  config: FormFieldConfig,
+  formData: FormData,
+): Record<string, Json> {
+  const value = parseConfiguredFieldValue(field, config, formData);
+
+  if (field.required && !valueIsPresent(value)) {
+    throw new ExperienceSubmissionError(
+      `${fieldLabel(field, config)} is required.`,
+    );
+  }
+
+  return { [field.key]: value ?? null };
 }
 
 export interface SubmitExperienceFormInput {
