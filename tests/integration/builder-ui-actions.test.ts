@@ -54,7 +54,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { createBuilderAction } from "../../src/app/app/[businessSlug]/builder/action-service";
-import { runBuilderAction } from "../../src/app/app/[businessSlug]/builder/actions";
+import {
+  disableBuilderAction,
+  enableBuilderAction,
+  runBuilderAction,
+} from "../../src/app/app/[businessSlug]/builder/actions";
 import { prepareBuilderUndoAction } from "../../src/app/app/[businessSlug]/builder/undo-actions";
 import BuilderPage from "../../src/app/app/[businessSlug]/builder/page";
 import ConfigurationChangeRoute from "../../src/app/app/[businessSlug]/changes/[changeSetId]/page";
@@ -209,6 +213,13 @@ async function expectNotFound(action: Promise<unknown>): Promise<void> {
   await expect(action).rejects.toMatchObject({ name: "ActionNotFound" });
 }
 
+async function expectRedirect(action: Promise<unknown>): Promise<void> {
+  await expect(action).rejects.toMatchObject({
+    name: "ActionRedirect",
+    message: `/app/${encodeURIComponent(business.slug)}/builder`,
+  });
+}
+
 async function renderContextualBuilder(
   identity: Identity | Client,
   sourceVersionId: string,
@@ -239,6 +250,21 @@ async function enableAi(
   if (updated.error) {
     throw updated.error;
   }
+}
+
+async function readAiSettings(identity: Identity = owner) {
+  const rows = requireData(
+    await identity.client.rpc("get_business_ai_settings", {
+      expected_business_id: business.id,
+      expected_actor_id: identity.user.id,
+    }),
+    "Could not read Business AI settings.",
+  );
+  const settings = rows[0];
+  if (!settings) {
+    throw new Error("Business AI settings response was empty.");
+  }
+  return settings;
 }
 
 async function executionRows(): Promise<Record<string, unknown>[]> {
@@ -512,12 +538,26 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = settings.apiUrl;
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = settings.publishableKey;
     process.env.SUPABASE_SERVICE_ROLE_KEY = settings.serviceRoleKey;
-    execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    });
+    try {
+      execFileSync(process.execPath, ["scripts/demo-seed.mjs"], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      });
+    } catch (error) {
+      const details =
+        error instanceof Error
+          ? `${error.message}\n${String((error as { stderr?: unknown }).stderr ?? "")}`
+          : String(error);
+      if (
+        !details.includes(
+          "Bedford already has configuration history beyond the expected Version 2.",
+        )
+      ) {
+        throw error;
+      }
+    }
     serviceRole = createClient<Database>(
       settings.apiUrl,
       settings.serviceRoleKey,
@@ -1125,7 +1165,7 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       state: "unavailable",
       reason: "temporarily_unavailable",
       message:
-        "Builder is temporarily unavailable. Your live Business setup has not changed.",
+        "Builder is enabled for this Business but is currently unavailable. Your live Business setup has not changed.",
     });
     expect(deterministic.calls).toHaveLength(1);
     const rows = await executionRows();
@@ -1190,6 +1230,65 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       ),
     );
     expect(orchestrationService.run).toHaveBeenCalledTimes(2);
+  });
+
+  it("enables and disables Builder through existing settings without resetting limits or writing runtime state", async () => {
+    const beforeSettings = await readAiSettings();
+    const beforeExecutions = await executionRows();
+    const beforeProposals = await proposalRows();
+    const beforeLiveState = await liveState();
+
+    queueActionClient(owner.client);
+    await expectRedirect(enableBuilderAction(business.slug, new FormData()));
+    expect(await readAiSettings()).toMatchObject({
+      is_enabled: true,
+      daily_request_limit: beforeSettings.daily_request_limit,
+      daily_input_token_limit: beforeSettings.daily_input_token_limit,
+      daily_output_token_limit: beforeSettings.daily_output_token_limit,
+      daily_cost_limit_microusd: beforeSettings.daily_cost_limit_microusd,
+    });
+
+    queueActionClient(administrator.client);
+    await expectRedirect(enableBuilderAction(business.slug, new FormData()));
+
+    queueActionClient(owner.client);
+    await expectRedirect(disableBuilderAction(business.slug, new FormData()));
+    queueActionClient(administrator.client);
+    await expectRedirect(disableBuilderAction(business.slug, new FormData()));
+
+    const disabledSettings = await readAiSettings();
+    expect(disabledSettings).toMatchObject({
+      is_enabled: false,
+      daily_request_limit: beforeSettings.daily_request_limit,
+      daily_input_token_limit: beforeSettings.daily_input_token_limit,
+      daily_output_token_limit: beforeSettings.daily_output_token_limit,
+      daily_cost_limit_microusd: beforeSettings.daily_cost_limit_microusd,
+    });
+    for (const identity of [staff, outsider]) {
+      queueActionClient(identity.client);
+      await expectNotFound(enableBuilderAction(business.slug, new FormData()));
+    }
+    queueActionClient(anonymous);
+    await expectNotFound(enableBuilderAction(business.slug, new FormData()));
+    queueActionClient(owner.client);
+    await expectNotFound(
+      enableBuilderAction(outsiderBusiness.slug, new FormData()),
+    );
+
+    const deterministic = createDeterministicBuilder(
+      smallClarificationOutput(),
+    );
+    const blocked = await runRealAction(deterministic.service);
+    expect(blocked).toEqual({
+      state: "unavailable",
+      reason: "ai_disabled",
+      message: "Builder is not enabled for this Business.",
+    });
+    expect(deterministic.calls).toHaveLength(0);
+    expect(await readAiSettings()).toMatchObject({ is_enabled: false });
+    expect(await executionRows()).toEqual(beforeExecutions);
+    expect(await proposalRows()).toEqual(beforeProposals);
+    expect(await liveState()).toEqual(beforeLiveState);
   });
 
   it("rejects invalid input and route slugs before the server boundary", async () => {

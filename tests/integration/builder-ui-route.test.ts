@@ -200,6 +200,37 @@ async function renderBuilder(identity: { client: Client }): Promise<string> {
   return renderToStaticMarkup(page);
 }
 
+async function readAiSettings(identity: Identity = owner) {
+  const rows = requireData(
+    await identity.client.rpc("get_business_ai_settings", {
+      expected_business_id: business.id,
+      expected_actor_id: identity.user.id,
+    }),
+    "Could not read Business AI settings.",
+  );
+  const settings = rows[0];
+  if (!settings) {
+    throw new Error("Business AI settings response was empty.");
+  }
+  return settings;
+}
+
+async function setAiEnabled(isEnabled: boolean): Promise<void> {
+  const current = await readAiSettings();
+  const updated = await owner.client.rpc("update_business_ai_settings", {
+    expected_business_id: business.id,
+    expected_actor_id: owner.user.id,
+    requested_is_enabled: isEnabled,
+    requested_daily_request_limit: current.daily_request_limit,
+    requested_daily_input_token_limit: current.daily_input_token_limit,
+    requested_daily_output_token_limit: current.daily_output_token_limit,
+    requested_daily_cost_limit_microusd: current.daily_cost_limit_microusd,
+  });
+  if (updated.error) {
+    throw updated.error;
+  }
+}
+
 async function renderContextualBuilder(
   identity: { client: Client },
   sourceVersionId: string,
@@ -286,10 +317,16 @@ describe("authenticated Builder GET route integration", () => {
     if (membership.error) {
       throw membership.error;
     }
+    await setAiEnabled(true);
   }, 180_000);
 
   afterAll(async () => {
     if (database) {
+      await database`
+        update public.business_ai_settings
+        set is_enabled = false, updated_by = null
+        where business_id = ${business.id}::uuid
+      `;
       await database`
         delete from public.business_memberships
         where user_id in ${database(createdUserIds)}
@@ -320,6 +357,31 @@ describe("authenticated Builder GET route integration", () => {
     expect(html).toContain("Business Builder");
     expect(html).toContain("Prepare request");
     expect(await routeState()).toEqual(before);
+  });
+
+  it("shows Owner and Admin the disabled Builder state without side effects", async () => {
+    const before = await routeState();
+    const enabledSettings = await readAiSettings();
+    await setAiEnabled(false);
+
+    for (const identity of [owner, administrator]) {
+      const html = await renderBuilder(identity);
+      expect(html).toContain("Builder is currently off for this Business.");
+      expect(html).toContain("Builder uses AI to help plan systems");
+      expect(html).not.toContain('name="ownerRequest"');
+      expect(html).toContain("Enable Builder");
+      expect(html).not.toContain("Prepare request");
+    }
+
+    expect(await routeState()).toEqual(before);
+    expect(await readAiSettings()).toMatchObject({
+      is_enabled: false,
+      daily_request_limit: enabledSettings.daily_request_limit,
+      daily_input_token_limit: enabledSettings.daily_input_token_limit,
+      daily_output_token_limit: enabledSettings.daily_output_token_limit,
+      daily_cost_limit_microusd: enabledSettings.daily_cost_limit_microusd,
+    });
+    await setAiEnabled(true);
   });
 
   it("renders contextual undo for the active ordinary change without side effects", async () => {

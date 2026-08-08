@@ -16,7 +16,7 @@ export const BUILDER_UI_UNAVAILABLE_MESSAGES = Object.freeze({
   ai_disabled: "Builder is not enabled for this Business.",
   budget_reached: "This Business has reached its AI usage limit for today.",
   temporarily_unavailable:
-    "Builder is temporarily unavailable. Your live Business setup has not changed.",
+    "Builder is enabled for this Business but is currently unavailable. Your live Business setup has not changed.",
   stale:
     "Your Business changed while Builder was preparing this request. Review the current setup and submit the request again.",
   nothing_to_propose:

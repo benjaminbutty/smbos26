@@ -16,6 +16,41 @@ type BuilderFormAction = (formData: FormData) => void | Promise<void>;
 interface BuilderUiProps {
   action: BuilderAction;
   businessSlug: string;
+  disableAction?: BuilderFormAction;
+}
+
+interface BuilderDisabledUiProps {
+  enableAction: BuilderFormAction;
+}
+
+export function BuilderDisabledUi({
+  enableAction,
+}: Readonly<BuilderDisabledUiProps>) {
+  return (
+    <section className="tenant-content builder-page">
+      <p className="eyebrow">Business Builder</p>
+      <section
+        aria-labelledby="builder-disabled-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <h1 id="builder-disabled-heading">
+          Builder is currently off for this Business.
+        </h1>
+        <p>
+          Builder uses AI to help plan systems, prepare configuration changes
+          and prepare supported business actions.
+        </p>
+        <p>Your existing business system continues to work without it.</p>
+        <form action={enableAction} className="builder-request-panel">
+          <PendingSubmitButton
+            label="Enable Builder"
+            pendingLabel="Enabling Builder…"
+          />
+        </form>
+      </section>
+    </section>
+  );
 }
 
 function proposalPath(businessSlug: string, proposalId: string): string {
@@ -568,7 +603,11 @@ export function BuilderResultPanel({
   );
 }
 
-export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
+export function BuilderUi({
+  action,
+  businessSlug,
+  disableAction,
+}: Readonly<BuilderUiProps>) {
   const [state, formAction] = useActionState(action, BUILDER_INITIAL_STATE);
   const [ownerRequest, setOwnerRequest] = useState("");
 
@@ -635,6 +674,27 @@ export function BuilderUi({ action, businessSlug }: Readonly<BuilderUiProps>) {
           <li>Add marketing consent to Customer information.</li>
         </ul>
       </section>
+
+      {disableAction ? (
+        <section
+          aria-labelledby="builder-disable-heading"
+          className="builder-result"
+        >
+          <h2 id="builder-disable-heading">Builder settings</h2>
+          <p className="builder-safety-note">
+            Builder is enabled for this Business. Disabling it will stop new
+            Builder AI requests; your existing Business system will continue to
+            work.
+          </p>
+          <form action={disableAction} className="builder-request-panel">
+            <PendingSubmitButton
+              className="button button-secondary"
+              label="Disable Builder"
+              pendingLabel="Disabling Builder…"
+            />
+          </form>
+        </section>
+      ) : null}
 
       <BuilderResultPanel
         action={formAction}
