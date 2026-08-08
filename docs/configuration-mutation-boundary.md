@@ -484,3 +484,36 @@ availability and publication remain separate operational or publication
 boundaries; after Apply, the owner can add the first Product through the normal
 generic Record-create surface. No new primitive, table, lifecycle or AI
 subject was added.
+
+## Milestone 13 Phase 13B - deliberate public preorder publication
+
+The existing authenticated Edit setup route exposes a small Owner/Admin
+publication control once the active configuration contains the installed
+preorder experience. The control submits only expected active Version/head
+currentness. The Server Action derives Business, actor and capability from the
+trusted session/route context; it never accepts a Page key, Page definition,
+status, layout, slug, audience, proposal operation, candidate or lifecycle
+state from the browser.
+
+The publication boundary reloads the active immutable snapshot through the
+existing Edit setup reader and resolves exactly one Page containing an active
+preorder block. The Page must be same-Business through that trusted snapshot,
+active, public and draft. Missing, ambiguous, inactive, internal and already
+published targets fail closed with bounded owner-facing state and create no
+proposal. A stale rendered currentness fails before composition, while the
+existing M5 expected-head check remains the final concurrency protection.
+
+The server composes one complete existing `set_page` operation, preserving the
+Page key, title, slug, audience, layout and active state and changing only
+`draft` to `published`. It parses that operation with the existing operation
+schema and calls `ConfigurationChangeService.proposeChangeSet()` exactly once
+with the exact active Version/head used for composition. The proposal remains
+an ordinary `change` with `proposed` status and is handled by the existing
+Changes Preview, Validate and Apply actions.
+
+No direct configuration DML, new Page operation, migration, table, publication
+receipt, unpublish history, automatic lifecycle progression, AI execution,
+public resolver, deployment step, cache, queue or operational write is added.
+The public resolver remains unavailable before Apply and resolves the same Page
+slug after Apply; Product availability and all preorder operational state stay
+outside this configuration-only boundary.

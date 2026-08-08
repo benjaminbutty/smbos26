@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   createClient,
   type SupabaseClient,
@@ -42,14 +44,20 @@ vi.mock("next/navigation", () => ({
   },
 }));
 
-import { prepareInitialPreorderProposalAction } from "../../src/app/app/[businessSlug]/setup/actions";
+import {
+  prepareInitialPreorderProposalAction,
+  preparePublicPreorderPublicationAction,
+} from "../../src/app/app/[businessSlug]/setup/actions";
+import { processPreorderSubmission } from "../../src/app/api/preorder/[businessSlug]/[pageSlug]/route";
 import {
   composePreorderAmendmentBatch,
   composePreorderScheduleAmendment,
 } from "../../src/core/configuration/manual-amendments/service";
 import { ConfigurationChangeService } from "../../src/core/configuration/service";
 import { configurationSnapshotV1Schema } from "../../src/core/configuration/definition-source";
+import { configurationOperationsSchema } from "../../src/core/configuration/schemas";
 import { createExperienceService } from "../../src/core/experience/service";
+import { createRecordLocationLinkService } from "../../src/core/graph/location-links";
 import { loadRenderedConfigurationPreview } from "../../src/core/configuration/rendered-preview";
 import { resolvePublicPage } from "../../src/core/experience/service";
 import { resolvePublicPreorder } from "../../src/core/preorder/service";
@@ -73,9 +81,12 @@ let anonymous: Client;
 let owner: Identity;
 let administrator: Identity;
 let staff: Identity;
+let outsider: Identity;
 let business: Business;
+let otherBusiness: Business;
 let location: Location;
 let configuration: ConfigurationChangeService;
+let administratorConfiguration: ConfigurationChangeService;
 const createdUserIds: string[] = [];
 
 function requireData<T>(
@@ -155,7 +166,13 @@ async function liveSnapshot(): Promise<Json> {
   return rows[0].snapshot;
 }
 
-async function rowCount(table: "records" | "configuration_change_sets") {
+async function rowCount(
+  table:
+    | "records"
+    | "configuration_change_sets"
+    | "record_location_links"
+    | "preorder_submissions",
+) {
   const rows = await sql<{ count: number }[]>`
     select count(*)::integer as count
     from public.${sql(table)}
@@ -184,6 +201,16 @@ function starterForm(
   return form;
 }
 
+function publicationForm(
+  expectedBaseVersionId: string,
+  expectedHeadRevision: number,
+): FormData {
+  const form = new FormData();
+  form.set("expectedBaseVersionId", expectedBaseVersionId);
+  form.set("expectedHeadRevision", String(expectedHeadRevision));
+  return form;
+}
+
 async function actionRedirect(client: Client, form: FormData): Promise<string> {
   actionHarness.clients.push(client);
   try {
@@ -195,6 +222,25 @@ async function actionRedirect(client: Client, form: FormData): Promise<string> {
     throw error;
   }
   throw new Error("Expected the initial preorder action to redirect.");
+}
+
+async function publicationActionRedirect(
+  client: Client,
+  businessSlug: string,
+  form: FormData,
+): Promise<string> {
+  actionHarness.clients.push(client);
+  try {
+    await preparePublicPreorderPublicationAction(businessSlug, form);
+  } catch (error) {
+    if (error instanceof Error && error.name === "ActionRedirect") {
+      return error.message;
+    }
+    throw error;
+  }
+  throw new Error(
+    "Expected the public preorder publication action to redirect.",
+  );
 }
 
 async function productCreateActionRedirect(
@@ -246,10 +292,11 @@ describe("Milestone 13 Phase 13A owner-triggered initial preorder", () => {
       },
     );
 
-    [owner, administrator, staff] = await Promise.all([
+    [owner, administrator, staff, outsider] = await Promise.all([
       createIdentity("owner"),
       createIdentity("admin"),
       createIdentity("staff"),
+      createIdentity("outsider"),
     ]);
     business = requireData(
       await owner.client.rpc("create_business", {
@@ -258,6 +305,14 @@ describe("Milestone 13 Phase 13A owner-triggered initial preorder", () => {
         requested_timezone: "Europe/London",
       }),
       "Could not create the Phase 13A Business.",
+    );
+    otherBusiness = requireData(
+      await outsider.client.rpc("create_business", {
+        business_name: `Phase 13B other ${crypto.randomUUID()}`,
+        requested_business_type: "test",
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create the second Phase 13B Business.",
     );
     const memberships = await serviceRole.from("business_memberships").insert([
       {
@@ -275,9 +330,19 @@ describe("Milestone 13 Phase 13A owner-triggered initial preorder", () => {
       businessId: business.id,
       actorId: owner.user.id,
     });
+    administratorConfiguration = new ConfigurationChangeService(
+      administrator.client,
+      {
+        businessId: business.id,
+        actorId: administrator.user.id,
+      },
+    );
   }, 120_000);
 
   afterAll(async () => {
+    if (otherBusiness && serviceRole) {
+      await serviceRole.from("businesses").delete().eq("id", otherBusiness.id);
+    }
     if (business && serviceRole) {
       await serviceRole.from("businesses").delete().eq("id", business.id);
     }
@@ -291,7 +356,7 @@ describe("Milestone 13 Phase 13A owner-triggered initial preorder", () => {
     await sql?.end();
   });
 
-  it("runs the starter lifecycle, preserves the draft page, and lets the owner add a Product", async () => {
+  it("runs the starter lifecycle, adds availability, and deliberately publishes the same Page", async () => {
     const currentness = await configuration.getProposalCurrentness();
     const beforeProposal = await liveSnapshot();
     expect(
@@ -458,6 +523,294 @@ describe("Milestone 13 Phase 13A owner-triggered initial preorder", () => {
       status: "Active",
     });
     expect(await rowCount("records")).toBe(1);
+
+    const productId = createdProducts.data?.[0]?.id;
+    if (!productId) {
+      throw new Error("Created Product was missing its ID.");
+    }
+    await createRecordLocationLinkService(owner.client, {
+      businessId: business.id,
+    }).create(productId, location.id);
+    const operationalCountsBeforePublication = {
+      records: await rowCount("records"),
+      recordLocationLinks: await rowCount("record_location_links"),
+      preorderSubmissions: await rowCount("preorder_submissions"),
+    };
+    expect(operationalCountsBeforePublication).toEqual({
+      records: 1,
+      recordLocationLinks: 1,
+      preorderSubmissions: 0,
+    });
+
+    const publicationCurrentness = await configuration.getProposalCurrentness();
+    const ownerPublicationRedirect = await publicationActionRedirect(
+      owner.client,
+      business.slug,
+      publicationForm(
+        publicationCurrentness.expectedBaseVersionId,
+        publicationCurrentness.expectedHeadRevision,
+      ),
+    );
+    const ownerPublicationId = ownerPublicationRedirect.split("/").at(-1);
+    const ownerPublication = await configuration.getChangeSet(
+      ownerPublicationId!,
+    );
+    expect(ownerPublication).toMatchObject({
+      kind: "change",
+      status: "proposed",
+      title: "Publish preorder",
+      base_version_id: publicationCurrentness.expectedBaseVersionId,
+      base_head_revision: publicationCurrentness.expectedHeadRevision,
+    });
+    const ownerPublicationOperations = configurationOperationsSchema.parse(
+      ownerPublication.operations_json,
+    );
+    expect(ownerPublicationOperations).toHaveLength(1);
+    expect(ownerPublicationOperations[0]).toMatchObject({
+      op: "set_page",
+      key: "public_preorder",
+      title: "Preorder for collection",
+      slug: "preorder",
+      audience: "public",
+      status: "published",
+      is_active: true,
+    });
+    expect(
+      ownerPublicationOperations[0]?.op === "set_page"
+        ? ownerPublicationOperations[0].layout_json
+        : null,
+    ).toEqual(
+      installed.pages.find((page) => page.key === "public_preorder")
+        ?.layout_json,
+    );
+    await configuration.abandonChangeSet(ownerPublication.id);
+    expect(
+      await resolvePublicPage(anonymous, business.slug, "preorder"),
+    ).toBeNull();
+
+    actionHarness.clients.push(staff.client);
+    await expect(
+      preparePublicPreorderPublicationAction(
+        business.slug,
+        publicationForm(
+          publicationCurrentness.expectedBaseVersionId,
+          publicationCurrentness.expectedHeadRevision,
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "ActionNotFound" });
+
+    actionHarness.clients.push(anonymous);
+    await expect(
+      preparePublicPreorderPublicationAction(
+        business.slug,
+        publicationForm(
+          publicationCurrentness.expectedBaseVersionId,
+          publicationCurrentness.expectedHeadRevision,
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "ActionRedirect" });
+
+    actionHarness.clients.push(owner.client);
+    await expect(
+      preparePublicPreorderPublicationAction(
+        otherBusiness.slug,
+        publicationForm(
+          publicationCurrentness.expectedBaseVersionId,
+          publicationCurrentness.expectedHeadRevision,
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "ActionNotFound" });
+
+    const scheduleCurrentness = await configuration.getProposalCurrentness();
+    const scheduleChange = composePreorderScheduleAmendment(installed, {
+      intent: "update_preorder_schedule",
+      preorderKey: "preorder",
+      schedule: {
+        ...installed.preorder_experiences[0]!.config_json.schedule,
+        slot_capacity: 13,
+      },
+    });
+    const scheduleProposal = await configuration.proposeChangeSet({
+      expectedBaseVersionId: scheduleCurrentness.expectedBaseVersionId,
+      expectedHeadRevision: scheduleCurrentness.expectedHeadRevision,
+      title: scheduleChange.title,
+      description: scheduleChange.description,
+      operations: [scheduleChange.operation],
+    });
+    await configuration.validateChangeSet(scheduleProposal.id);
+    await configuration.applyChangeSet(scheduleProposal.id);
+    expect(
+      await publicationActionRedirect(
+        owner.client,
+        business.slug,
+        publicationForm(
+          scheduleCurrentness.expectedBaseVersionId,
+          scheduleCurrentness.expectedHeadRevision,
+        ),
+      ),
+    ).toBe(`/app/${business.slug}/setup?notice=stale`);
+
+    const adminCurrentness =
+      await administratorConfiguration.getProposalCurrentness();
+    const adminPublicationRedirect = await publicationActionRedirect(
+      administrator.client,
+      business.slug,
+      publicationForm(
+        adminCurrentness.expectedBaseVersionId,
+        adminCurrentness.expectedHeadRevision,
+      ),
+    );
+    const publicationId = adminPublicationRedirect.split("/").at(-1);
+    const publication = await administratorConfiguration.getChangeSet(
+      publicationId!,
+    );
+    expect(publication).toMatchObject({
+      kind: "change",
+      status: "proposed",
+      title: "Publish preorder",
+    });
+    const publicationPreview = await administratorConfiguration.loadPreview(
+      publication.id,
+    );
+    expect(
+      publicationPreview.pages.find((page) => page.key === "public_preorder")
+        ?.status,
+    ).toBe("published");
+    expect(
+      await resolvePublicPage(anonymous, business.slug, "preorder"),
+    ).toBeNull();
+
+    const publicationValidated =
+      await administratorConfiguration.validateChangeSet(publication.id);
+    expect(publicationValidated.status).toBe("validated");
+    expect(
+      await resolvePublicPage(anonymous, business.slug, "preorder"),
+    ).toBeNull();
+    expect(await rowCount("records")).toBe(
+      operationalCountsBeforePublication.records,
+    );
+    expect(await rowCount("record_location_links")).toBe(
+      operationalCountsBeforePublication.recordLocationLinks,
+    );
+    expect(await rowCount("preorder_submissions")).toBe(
+      operationalCountsBeforePublication.preorderSubmissions,
+    );
+
+    const publicationApplied = await administratorConfiguration.applyChangeSet(
+      publication.id,
+    );
+    expect(publicationApplied.status).toBe("applied");
+    const versionsAfterPublication =
+      await administratorConfiguration.listVersions();
+    expect(versionsAfterPublication).toHaveLength(4);
+    expect(
+      versionsAfterPublication.find(
+        (version) => version.source_change_set_id === publication.id,
+      )?.version_number,
+    ).toBe(4);
+    const liveSnapshotAfterPublication = configurationSnapshotV1Schema.parse(
+      await liveSnapshot(),
+    );
+    const livePageAfterPublication = liveSnapshotAfterPublication.pages.find(
+      (page) => page.key === "public_preorder",
+    );
+    expect(livePageAfterPublication).toEqual({
+      ...installed.pages.find((page) => page.key === "public_preorder"),
+      status: "published",
+    });
+    const livePublicPage = await resolvePublicPage(
+      anonymous,
+      business.slug,
+      "preorder",
+    );
+    expect(livePublicPage).toMatchObject({
+      page: {
+        key: "public_preorder",
+        title: "Preorder for collection",
+        slug: "preorder",
+      },
+    });
+    const liveCatalogue = await resolvePublicPreorder(
+      anonymous,
+      business.slug,
+      "preorder",
+      "preorder",
+    );
+    expect(liveCatalogue?.preorder.products).toEqual([
+      expect.objectContaining({
+        name: "Test product",
+        location_ids: [location.id],
+      }),
+    ]);
+    expect(await rowCount("records")).toBe(
+      operationalCountsBeforePublication.records,
+    );
+    expect(await rowCount("record_location_links")).toBe(
+      operationalCountsBeforePublication.recordLocationLinks,
+    );
+    expect(await rowCount("preorder_submissions")).toBe(
+      operationalCountsBeforePublication.preorderSubmissions,
+    );
+
+    const availableSlot = liveCatalogue?.preorder.locations
+      .find(({ id }) => id === location.id)
+      ?.slots.find(({ available }) => available);
+    if (!availableSlot) {
+      throw new Error("The live public catalogue had no available slot.");
+    }
+    const publicSubmission = await processPreorderSubmission({
+      client: serviceRole,
+      businessSlug: business.slug,
+      pageSlug: "preorder",
+      preorderKey: "preorder",
+      body: {
+        idempotency_token: crypto.randomUUID(),
+        location_id: location.id,
+        collection_at: availableSlot.collection_at,
+        items: [{ product_id: productId, quantity: 1 }],
+        fields: {
+          customer: {
+            name: "Clean journey customer",
+            email: "clean-journey@example.test",
+          },
+          order: {},
+        },
+        website: "",
+      },
+      requestHash: createHash("sha256")
+        .update(crypto.randomUUID())
+        .digest("hex"),
+      emailAdapter: {
+        async sendConfirmation() {},
+      },
+    });
+    if (!publicSubmission.ok) {
+      throw new Error(
+        `Public submission failed: ${JSON.stringify(publicSubmission)}`,
+      );
+    }
+    expect(publicSubmission.email_status).toBe("delivered");
+    const ordersAfterSubmission = await experience.loadView("orders");
+    expect(ordersAfterSubmission.records).toHaveLength(1);
+    expect(ordersAfterSubmission.records[0]?.data_json).toMatchObject({
+      customer_name: "Clean journey customer",
+      status: "New",
+    });
+    expect(await rowCount("preorder_submissions")).toBe(1);
+
+    const finalCurrentness = await configuration.getProposalCurrentness();
+    const alreadyPublished = await publicationActionRedirect(
+      owner.client,
+      business.slug,
+      publicationForm(
+        finalCurrentness.expectedBaseVersionId,
+        finalCurrentness.expectedHeadRevision,
+      ),
+    );
+    expect(alreadyPublished).toBe(
+      `/app/${business.slug}/setup?notice=already_published`,
+    );
+    expect(await rowCount("configuration_change_sets")).toBe(4);
   });
 
   it("keeps Staff and anonymous preparation outside the configuration boundary and rejects a second starter", async () => {
@@ -492,6 +845,6 @@ describe("Milestone 13 Phase 13A owner-triggered initial preorder", () => {
     expect(secondAttempt).toBe(
       `/app/${business.slug}/setup?notice=already_installed`,
     );
-    expect(await rowCount("configuration_change_sets")).toBe(1);
+    expect(await rowCount("configuration_change_sets")).toBe(4);
   });
 });
