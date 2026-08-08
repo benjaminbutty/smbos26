@@ -1138,7 +1138,8 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     expect(result).toEqual({
       state: "unavailable",
       reason: "ai_disabled",
-      message: "Builder is not enabled for this Business.",
+      message:
+        "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
     });
     expect(deterministic.calls).toHaveLength(0);
     expect(await executionRows()).toHaveLength(0);
@@ -1282,7 +1283,8 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     expect(blocked).toEqual({
       state: "unavailable",
       reason: "ai_disabled",
-      message: "Builder is not enabled for this Business.",
+      message:
+        "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
     });
     expect(deterministic.calls).toHaveLength(0);
     expect(await readAiSettings()).toMatchObject({ is_enabled: false });
@@ -1329,7 +1331,8 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
     ).resolves.toEqual({
       state: "unavailable",
       reason: "ai_disabled",
-      message: "Builder is not enabled for this Business.",
+      message:
+        "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
     });
   });
 
