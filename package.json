@@ -108,6 +108,12 @@
   "dependencies": {
     "@supabase/ssr": "0.12.3",
     "@supabase/supabase-js": "2.110.9",
+    "@tiptap/core": "3.29.2",
+    "@tiptap/extension-drag-handle": "3.29.2",
+    "@tiptap/extension-drag-handle-react": "3.29.2",
+    "@tiptap/pm": "3.29.2",
+    "@tiptap/react": "3.29.2",
+    "@tiptap/starter-kit": "3.29.2",
     "next": "16.2.12",
     "openai": "7.2.0",
     "react": "19.2.8",

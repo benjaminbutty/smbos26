@@ -1489,6 +1489,23 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      apply_direct_page_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       archive_graph_record: {
         Args: { expected_business_id: string; target_record_id: string };
         Returns: {

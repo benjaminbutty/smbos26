@@ -157,11 +157,14 @@ const safeHrefSchema = z
     "Use a safe web, relative, email, or telephone link.",
   );
 
+const pageBlockIdSchema = z.uuid();
+
 const headingBlockSchema = z
   .object({
     type: z.literal("heading"),
     text: z.string().trim().min(1).max(200),
     level: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -169,6 +172,7 @@ const textBlockSchema = z
   .object({
     type: z.literal("text"),
     text: z.string().trim().min(1).max(5000),
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -178,6 +182,7 @@ const imageBlockSchema = z
     src: z.httpUrl().max(2048),
     alt: z.string().trim().min(1).max(300),
     caption: z.string().trim().min(1).max(500).optional(),
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -187,6 +192,7 @@ const buttonBlockSchema = z
     label: labelSchema,
     href: safeHrefSchema,
     style: z.enum(["primary", "secondary"]).default("primary"),
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -194,6 +200,8 @@ const viewBlockSchema = z
   .object({
     type: z.literal("view"),
     view_key: graphKeySchema,
+    read_only: z.boolean().optional(),
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -201,6 +209,7 @@ const formBlockSchema = z
   .object({
     type: z.literal("form"),
     form_key: graphKeySchema,
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -208,10 +217,22 @@ const preorderBlockSchema = z
   .object({
     type: z.literal("preorder"),
     preorder_key: graphKeySchema,
+    id: pageBlockIdSchema.optional(),
   })
   .strict();
 
-const dividerBlockSchema = z.object({ type: z.literal("divider") }).strict();
+const dividerBlockSchema = z
+  .object({ type: z.literal("divider"), id: pageBlockIdSchema.optional() })
+  .strict();
+
+const calloutBlockSchema = z
+  .object({
+    type: z.literal("callout"),
+    text: z.string().trim().min(1).max(1_000),
+    tone: z.enum(["neutral", "info", "success", "warning"]).default("info"),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict();
 
 export const pageBlockSchema = z.discriminatedUnion("type", [
   headingBlockSchema,
@@ -222,13 +243,26 @@ export const pageBlockSchema = z.discriminatedUnion("type", [
   formBlockSchema,
   preorderBlockSchema,
   dividerBlockSchema,
+  calloutBlockSchema,
 ]);
 
 export const pageLayoutSchema = z
   .object({
-    blocks: z.array(pageBlockSchema).min(1).max(100),
+    blocks: z.array(pageBlockSchema).max(100),
   })
-  .strict();
+  .strict()
+  .superRefine((layout, context) => {
+    const ids = layout.blocks.flatMap((block) =>
+      "id" in block && block.id ? [block.id] : [],
+    );
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Page blocks must use unique IDs.",
+        path: ["blocks"],
+      });
+    }
+  });
 
 export const createViewDefinitionSchema = z
   .object({
