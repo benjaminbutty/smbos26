@@ -12,7 +12,10 @@ import {
   undoDirectTableAction,
 } from "../../src/core/configuration/direct-tables/service";
 import { createDirectTableRow } from "../../src/runtime/views/direct-table-record-service";
-import { applyDirectTableRecordCellEdit } from "../../src/runtime/views/inline-edit-service";
+import {
+  applyDirectTableRecordCellEdit,
+  applyDirectTableRecordCellEditValue,
+} from "../../src/runtime/views/inline-edit-service";
 import type { Database, Tables } from "../../src/db/supabase/database.types";
 import {
   getLocalSupabaseSettings,
@@ -287,6 +290,171 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     expect(undoneView.config_json).not.toHaveProperty("column_widths");
   });
 
+  it("keeps structural Table changes separate from Record work", async () => {
+    const created = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: (await currentness(administrator)).currentness,
+        intent: {
+          action: "create_table",
+          title: `Kernel Structure ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const rowData = new FormData();
+    rowData.set("viewKey", viewKey);
+    rowData.set("name", "Beth");
+    const row = await createDirectTableRow(
+      staff.client,
+      { businessId: business.id },
+      { viewKey, formData: rowData },
+    );
+    const [recordBefore] = await sql<
+      { data_json: unknown; updated_at: string }[]
+    >`
+      select data_json, updated_at
+      from public.records
+      where id = ${row.id}
+    `;
+
+    const counts = async (): Promise<{
+      version_count: number;
+      head_revision: number;
+      change_count: number;
+    }> => {
+      const [result] = await sql<
+        { version_count: number; head_revision: number; change_count: number }[]
+      >`
+        select
+          (select count(*)::integer from public.configuration_versions
+           where business_id = ${business.id}) as version_count,
+          (select head_revision from public.business_configuration_heads
+           where business_id = ${business.id}) as head_revision,
+          (select count(*)::integer from public.configuration_change_sets
+           where business_id = ${business.id}) as change_count
+      `;
+      if (!result) throw new Error("Could not read configuration counts.");
+      return {
+        version_count: Number(result.version_count),
+        head_revision: Number(result.head_revision),
+        change_count: Number(result.change_count),
+      };
+    };
+
+    const beforeAdd = await counts();
+    const added = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "add_column",
+          viewKey,
+          label: "Phone",
+          columnType: "phone",
+        },
+      },
+    );
+    const phoneFieldKey = added.composed!.operations.find(
+      (operation) => operation.op === "set_field",
+    )!.key;
+    const afterAdd = await counts();
+    expect(afterAdd.version_count).toBe(beforeAdd.version_count + 1);
+    expect(afterAdd.head_revision).toBe(beforeAdd.head_revision + 1);
+    expect(afterAdd.change_count).toBe(beforeAdd.change_count + 1);
+    const [recordAfterAdd] = await sql<
+      { data_json: unknown; updated_at: string }[]
+    >`
+      select data_json, updated_at
+      from public.records
+      where id = ${row.id}
+    `;
+    expect(recordAfterAdd).toEqual(recordBefore);
+
+    const beforeRename = await counts();
+    const renamed = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: added.currentness,
+        intent: {
+          action: "rename_column",
+          viewKey,
+          fieldKey: "name",
+          label: "Customer name",
+        },
+      },
+    );
+    const afterRename = await counts();
+    expect(afterRename.version_count).toBe(beforeRename.version_count + 1);
+    expect(afterRename.head_revision).toBe(beforeRename.head_revision + 1);
+    expect(afterRename.change_count).toBe(beforeRename.change_count + 1);
+    const renamedState = await currentness(administrator);
+    const renamedView = renamedState.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    )!;
+    const renamedNameField = renamedState.snapshot.field_definitions.find(
+      (candidate) =>
+        candidate.key === "name" &&
+        candidate.object_definition_id === renamedView.object_definition_id,
+    )!;
+    expect(renamedNameField.label).toBe("Customer name");
+    expect(renamedView.config_json).toMatchObject({
+      fields: ["name", phoneFieldKey],
+      title_field: "name",
+    });
+    expect(renamed.currentness.expectedHeadRevision).toBe(
+      afterRename.head_revision,
+    );
+    const [recordAfterRename] = await sql<
+      { data_json: unknown; updated_at: string }[]
+    >`
+      select data_json, updated_at
+      from public.records
+      where id = ${row.id}
+    `;
+    expect(recordAfterRename).toEqual(recordBefore);
+
+    const beforeReorder = await counts();
+    const reordered = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: renamed.currentness,
+        intent: {
+          action: "reorder_columns",
+          viewKey,
+          fieldKeys: [phoneFieldKey, "name"],
+        },
+      },
+    );
+    const afterReorder = await counts();
+    expect(afterReorder.version_count).toBe(beforeReorder.version_count + 1);
+    expect(afterReorder.head_revision).toBe(beforeReorder.head_revision + 1);
+    expect(afterReorder.change_count).toBe(beforeReorder.change_count + 1);
+    const persisted = await currentness(administrator);
+    const persistedView = persisted.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    )!;
+    expect(persistedView.config_json).toMatchObject({
+      fields: [phoneFieldKey, "name"],
+      title_field: "name",
+    });
+    expect(reordered.currentness.expectedHeadRevision).toBe(
+      afterReorder.head_revision,
+    );
+    const [recordAfterReorder] = await sql<
+      { data_json: unknown; updated_at: string }[]
+    >`
+      select data_json, updated_at
+      from public.records
+      where id = ${row.id}
+    `;
+    expect(recordAfterReorder).toEqual(recordBefore);
+  });
+
   it("refuses Undo when a direct Table or column already carries Records", async () => {
     const created = await applyDirectTableAction(
       owner.client,
@@ -415,6 +583,185 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
       where business_id = ${business.id}
     `;
     expect(afterAiRuns).toEqual(beforeAiRuns);
+  });
+
+  it("uses the typed production boundary for validation and leaves configuration history untouched", async () => {
+    const created = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: (await currentness(administrator)).currentness,
+        intent: { action: "create_table", title: "Typed Workspace" },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+
+    let current = created.currentness;
+    const columns = [
+      { label: "Email", columnType: "email" as const },
+      { label: "Budget", columnType: "number" as const },
+      { label: "Due date", columnType: "date" as const },
+      { label: "Website", columnType: "url" as const },
+      {
+        label: "Status",
+        columnType: "status" as const,
+        options: ["New", "Booked"],
+      },
+    ];
+    const keys: Record<string, string> = {};
+    for (const column of columns) {
+      const result = await applyDirectTableAction(
+        administrator.client,
+        { businessId: business.id, actorId: administrator.user.id },
+        {
+          currentness: current,
+          intent: { action: "add_column", viewKey, ...column },
+        },
+      );
+      current = result.currentness;
+      keys[column.label] = result.composed!.operations.find(
+        (operation) => operation.op === "set_field",
+      )!.key;
+    }
+
+    const beforeOperationalWork = await sql<
+      { version_count: number; head_revision: number; change_count: number }[]
+    >`
+      select
+        (
+          select count(*)::integer from public.configuration_versions
+          where business_id = ${business.id}
+        ) as version_count,
+        (
+          select head_revision from public.business_configuration_heads
+          where business_id = ${business.id}
+        ) as head_revision,
+        (
+          select count(*)::integer from public.configuration_change_sets
+          where business_id = ${business.id}
+      ) as change_count
+    `;
+
+    const rowData = new FormData();
+    rowData.set("viewKey", viewKey);
+    rowData.set("name", "Typed record");
+    const row = await createDirectTableRow(
+      staff.client,
+      { businessId: business.id },
+      { viewKey, formData: rowData },
+    );
+
+    const email = await applyDirectTableRecordCellEditValue(
+      staff.client,
+      { businessId: business.id },
+      {
+        viewKey,
+        recordId: row.id,
+        fieldKey: keys.Email!,
+        value: "staff@example.test",
+      },
+    );
+    expect(email.data_json).toMatchObject({
+      [keys.Email!]: "staff@example.test",
+    });
+    const budget = await applyDirectTableRecordCellEditValue(
+      staff.client,
+      { businessId: business.id },
+      {
+        viewKey,
+        recordId: row.id,
+        fieldKey: keys.Budget!,
+        value: 42.5,
+      },
+    );
+    expect(budget.data_json).toMatchObject({ [keys.Budget!]: 42.5 });
+
+    await expect(
+      applyDirectTableRecordCellEditValue(
+        staff.client,
+        { businessId: business.id },
+        {
+          viewKey,
+          recordId: row.id,
+          fieldKey: keys.Budget!,
+          value: "not-a-number",
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      applyDirectTableRecordCellEditValue(
+        staff.client,
+        { businessId: business.id },
+        {
+          viewKey,
+          recordId: row.id,
+          fieldKey: keys["Due date"]!,
+          value: "2026-02-30",
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      applyDirectTableRecordCellEditValue(
+        staff.client,
+        { businessId: business.id },
+        {
+          viewKey,
+          recordId: row.id,
+          fieldKey: keys.Email!,
+          value: "staff@",
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      applyDirectTableRecordCellEditValue(
+        staff.client,
+        { businessId: business.id },
+        {
+          viewKey,
+          recordId: row.id,
+          fieldKey: keys.Website!,
+          value: "ftp://bad",
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      applyDirectTableRecordCellEditValue(
+        staff.client,
+        { businessId: business.id },
+        {
+          viewKey,
+          recordId: row.id,
+          fieldKey: keys.Status!,
+          value: "Unknown",
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      applyDirectTableRecordCellEditValue(
+        staff.client,
+        { businessId: business.id },
+        { viewKey, recordId: row.id, fieldKey: "name", value: null },
+      ),
+    ).rejects.toThrow(/required/i);
+
+    const afterOperationalWork = await sql<
+      { version_count: number; head_revision: number; change_count: number }[]
+    >`
+      select
+        (
+          select count(*)::integer from public.configuration_versions
+          where business_id = ${business.id}
+        ) as version_count,
+        (
+          select head_revision from public.business_configuration_heads
+          where business_id = ${business.id}
+        ) as head_revision,
+        (
+          select count(*)::integer from public.configuration_change_sets
+          where business_id = ${business.id}
+        ) as change_count
+    `;
+    expect(afterOperationalWork).toEqual(beforeOperationalWork);
   });
 
   it("denies a direct action for a Business where the caller is not a member", async () => {

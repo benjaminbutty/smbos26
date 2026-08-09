@@ -12,11 +12,13 @@ import {
   DataGrid,
   type CellKeyDownArgs,
   type CellKeyboardEvent,
+  type CellMouseArgs,
   type DataGridHandle,
   type RowsChangeData,
 } from "react-data-grid";
 
 import {
+  defaultEditorCapabilities,
   editorDraftRowId,
   editorInputValue,
   editorValueForColumn,
@@ -24,6 +26,7 @@ import {
   hasDraftName,
   reorderColumnKeys,
   type CreateColumnInput,
+  type EditorCapabilities,
   type EditorColumnKind,
   type EditorRow,
   type EditorTable,
@@ -35,8 +38,10 @@ import type { TableEditorAdapter } from "./contracts";
 
 export interface EditorKernelProps {
   adapter: TableEditorAdapter;
+  capabilities?: EditorCapabilities;
   footer?: ReactNode;
   marker?: ReactNode;
+  onStructureChanged?: () => void;
   title?: string;
 }
 
@@ -54,18 +59,131 @@ interface SaveRetry {
 type SaveState =
   | { status: "saved" }
   | { status: "saving" }
-  | { status: "error"; cellLabel: string };
+  | { status: "error"; cellLabel?: string; message?: string };
 
 const addableColumnKinds: ReadonlyArray<{
   kind: EditorColumnKind;
   label: string;
 }> = [
   { kind: "text", label: "Text" },
+  { kind: "long_text", label: "Longer text" },
   { kind: "number", label: "Number" },
   { kind: "boolean", label: "Yes / No" },
   { kind: "date", label: "Date" },
+  { kind: "email", label: "Email" },
+  { kind: "phone", label: "Phone" },
+  { kind: "url", label: "Website" },
+  { kind: "select", label: "Choice" },
   { kind: "status", label: "Status" },
 ];
+
+function saveErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Could not save";
+}
+
+function optionValues(value: string): string[] {
+  return value
+    .split("\n")
+    .map((option) => option.trim())
+    .filter(Boolean);
+}
+
+function optionsAreValid(options: readonly string[]): boolean {
+  const normalized = options.map((option) =>
+    option.normalize("NFKC").toLocaleLowerCase("en"),
+  );
+  return options.length >= 2 && new Set(normalized).size === normalized.length;
+}
+
+function TableTitleEditor({
+  displayTitle,
+  enabled,
+  name,
+  onCommit,
+}: Readonly<{
+  displayTitle: string;
+  enabled: boolean;
+  name: string;
+  onCommit: (title: string) => Promise<boolean>;
+}>): ReactNode {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const committingRef = useRef(false);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  if (!enabled) {
+    return <h1>{displayTitle}</h1>;
+  }
+
+  const cancel = (): void => {
+    setValue(name);
+    setEditing(false);
+  };
+
+  const commit = async (): Promise<void> => {
+    if (committingRef.current) {
+      return;
+    }
+    const next = value.trim();
+    if (!next || next === name) {
+      cancel();
+      return;
+    }
+    committingRef.current = true;
+    try {
+      if (await onCommit(next)) {
+        setEditing(false);
+      }
+    } finally {
+      committingRef.current = false;
+    }
+  };
+
+  return editing ? (
+    <input
+      ref={inputRef}
+      aria-label="Table title"
+      className="editor-title-input"
+      maxLength={120}
+      minLength={1}
+      onBlur={() => void commit()}
+      onChange={(event) => setValue(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancel();
+        }
+      }}
+      required
+      value={value}
+    />
+  ) : (
+    <button
+      aria-label={`Rename Table ${name}`}
+      className="editor-title-button"
+      onClick={() => {
+        setValue(name);
+        setEditing(true);
+      }}
+      type="button"
+    >
+      <span>{name}</span>
+      <span className="editor-title-hint">Change title</span>
+    </button>
+  );
+}
 
 function replaceCell(
   table: EditorTable,
@@ -110,6 +228,7 @@ function AddColumnPopover({
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<EditorColumnKind>("text");
   const [options, setOptions] = useState("Active\nInactive");
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   return (
@@ -121,12 +240,14 @@ function AddColumnPopover({
           return;
         }
         const input: CreateColumnInput = { label, kind };
-        if (kind === "status") {
-          input.options = options
-            .split("\n")
-            .map((option) => option.trim())
-            .filter(Boolean);
+        if (kind === "select" || kind === "status") {
+          input.options = optionValues(options);
+          if (!optionsAreValid(input.options)) {
+            setError("Choice and Status need two different options.");
+            return;
+          }
         }
+        setError(null);
         setSubmitting(true);
         void onCreate(input).finally(() => setSubmitting(false));
       }}
@@ -167,7 +288,7 @@ function AddColumnPopover({
           ))}
         </select>
       </label>
-      {kind === "status" ? (
+      {kind === "select" || kind === "status" ? (
         <label>
           Options
           <textarea
@@ -176,6 +297,11 @@ function AddColumnPopover({
             value={options}
           />
         </label>
+      ) : null}
+      {error ? (
+        <span className="editor-structural-error" role="alert">
+          {error}
+        </span>
       ) : null}
       <button
         className="editor-menu-submit"
@@ -190,8 +316,10 @@ function AddColumnPopover({
 
 export function EditorKernel({
   adapter,
+  capabilities = defaultEditorCapabilities,
   footer,
   marker,
+  onStructureChanged,
   title,
 }: Readonly<EditorKernelProps>): ReactNode {
   const [table, setTable] = useState<EditorTable>(() => adapter.getTable());
@@ -214,6 +342,12 @@ export function EditorKernel({
   const panelRow = panelRowId
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
     : null;
+  const recordColumns = table.recordColumns ?? table.columns;
+  const columnForKey = useCallback(
+    (columnKey: string) =>
+      recordColumns.find((column) => column.key === columnKey) ?? null,
+    [recordColumns],
+  );
 
   const closePanel = useCallback(() => {
     const origin = panelOrigin;
@@ -279,10 +413,8 @@ export function EditorKernel({
   const commitCell = useCallback(
     (rowId: string, columnKey: string, rawValue: unknown): void => {
       const row = table.rows.find((candidate) => candidate.id === rowId);
-      const column = table.columns.find(
-        (candidate) => candidate.key === columnKey,
-      );
-      if (!row || !column) {
+      const column = columnForKey(columnKey);
+      if (!row || !column || column.editable === false) {
         return;
       }
 
@@ -338,7 +470,28 @@ export function EditorKernel({
           setSaveState({ status: "error", cellLabel: column.label });
         });
     },
-    [adapter, table.columns, table.rows],
+    [adapter, columnForKey, table.rows],
+  );
+
+  const runStructural = useCallback(
+    async (operation: () => Promise<unknown>): Promise<boolean> => {
+      setSaveState({ status: "saving" });
+      setRetry(null);
+      try {
+        await operation();
+        setTable(adapter.getTable());
+        setSaveState({ status: "saved" });
+        onStructureChanged?.();
+        return true;
+      } catch (error) {
+        setSaveState({
+          status: "error",
+          message: saveErrorMessage(error),
+        });
+        return false;
+      }
+    },
+    [adapter, onStructureChanged],
   );
 
   type DraftCreateFocus = "new-draft" | { columnIdx: number };
@@ -353,6 +506,14 @@ export function EditorKernel({
       const primaryColumnIndex = table.columns.findIndex(
         (column) => column.key === table.primaryColumnKey,
       );
+      const primaryColumn = table.columns[primaryColumnIndex];
+      if (!primaryColumn || primaryColumn.editable === false) {
+        setSaveState({
+          status: "error",
+          cellLabel: primaryColumn?.label ?? "primary value",
+        });
+        return;
+      }
       setSaveState({ status: "saving" });
       setRetry(null);
 
@@ -415,52 +576,96 @@ export function EditorKernel({
 
   const openRecord = useCallback(
     (rowId: string, columnKey: string): void => {
-      void adapter.openRecord(rowId).then((row) => {
-        if (!row) {
-          return;
-        }
-        setPanelOrigin({ rowId, columnKey });
-        setPanelRowId(rowId);
-      });
+      void adapter
+        .openRecord(rowId)
+        .then((row) => {
+          if (!row) {
+            return;
+          }
+          setTable((current) => ({
+            ...current,
+            rows: current.rows.map((candidate) =>
+              candidate.id === row.id ? row : candidate,
+            ),
+          }));
+          setPanelOrigin({ rowId, columnKey });
+          setPanelRowId(rowId);
+        })
+        .catch(() => {
+          setSaveState({ status: "error", cellLabel: "Record" });
+        });
     },
     [adapter],
   );
 
   const handleCreateColumn = useCallback(
     async (input: CreateColumnInput): Promise<void> => {
-      await adapter.createColumn(input);
-      setTable(adapter.getTable());
-      setAddColumnOpen(false);
-      setColumnMenuKey(null);
+      if (!capabilities.canAddColumns) {
+        return;
+      }
+      if (await runStructural(() => adapter.createColumn(input))) {
+        setAddColumnOpen(false);
+        setColumnMenuKey(null);
+      }
     },
-    [adapter],
+    [adapter, capabilities.canAddColumns, runStructural],
   );
 
   const handleRenameColumn = useCallback(
-    async (columnKey: string, label: string): Promise<void> => {
-      await adapter.renameColumn(columnKey, label);
-      setTable(adapter.getTable());
-      setColumnMenuKey(null);
+    async (columnKey: string, label: string): Promise<boolean> => {
+      if (!capabilities.canRenameColumns) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.renameColumn(columnKey, label),
+      );
+      if (saved) {
+        setColumnMenuKey(null);
+      }
+      return saved;
     },
-    [adapter],
+    [adapter, capabilities.canRenameColumns, runStructural],
+  );
+
+  const handleUpdateColumnOptions = useCallback(
+    async (columnKey: string, options: readonly string[]): Promise<boolean> => {
+      if (!capabilities.canUpdateColumnOptions) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.updateColumnOptions(columnKey, options),
+      );
+      if (saved) {
+        setColumnMenuKey(null);
+      }
+      return saved;
+    },
+    [adapter, capabilities.canUpdateColumnOptions, runStructural],
   );
 
   const handleReorderColumns = useCallback(
     (sourceKey: string, targetKey: string): void => {
+      if (!capabilities.canReorderColumns) {
+        return;
+      }
+      if (sourceKey === targetKey) {
+        return;
+      }
       const nextKeys = reorderColumnKeys(
         table.columns.map((column) => column.key),
         sourceKey,
         targetKey,
       );
-      void adapter
-        .reorderColumns(nextKeys)
-        .then(() => setTable(adapter.getTable()));
+      void runStructural(() => adapter.reorderColumns(nextKeys));
     },
-    [adapter, table.columns],
+    [adapter, capabilities.canReorderColumns, runStructural, table.columns],
   );
 
   const handleResizeColumn = useCallback(
     (column: { key: string }, width: number): void => {
+      if (!capabilities.canResizeColumns) {
+        return;
+      }
       const nextWidth = Math.round(width);
       setTable((current) => ({
         ...current,
@@ -472,7 +677,17 @@ export function EditorKernel({
       }));
       void adapter.resizeColumn(column.key, nextWidth).catch(() => undefined);
     },
-    [adapter],
+    [adapter, capabilities.canResizeColumns],
+  );
+
+  const handleRenameTable = useCallback(
+    (nextTitle: string): Promise<boolean> => {
+      if (!capabilities.canRenameTable) {
+        return Promise.resolve(false);
+      }
+      return runStructural(() => adapter.renameTable(nextTitle));
+    },
+    [adapter, capabilities.canRenameTable, runStructural],
   );
 
   const handleCellKeyDown = useCallback(
@@ -506,6 +721,10 @@ export function EditorKernel({
         return;
       }
 
+      if (!args.row.isDraft && column.editable === false) {
+        return;
+      }
+
       if (args.row.isDraft) {
         if (!column.primary) {
           return;
@@ -536,9 +755,14 @@ export function EditorKernel({
         );
       } else if (
         isPrintableKey(event) &&
+        column.editable !== false &&
         (column.kind === "text" ||
+          column.kind === "long_text" ||
+          column.kind === "email" ||
+          column.kind === "url" ||
           column.kind === "phone" ||
-          column.kind === "number")
+          column.kind === "number" ||
+          column.kind === "currency")
       ) {
         setPendingEdit({
           rowId: args.row.id,
@@ -551,15 +775,22 @@ export function EditorKernel({
   );
 
   const handleDoubleClick = useCallback(
-    (
-      args: { selectCell: (enableEditor?: boolean) => void },
-      event: React.MouseEvent,
-    ): void => {
+    (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
+      const column = table.columns.find(
+        (candidate) => candidate.key === args.column.key,
+      );
+      if (
+        !column ||
+        column.editable === false ||
+        (args.row.isDraft && !column.primary)
+      ) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       args.selectCell(true);
     },
-    [],
+    [table.columns],
   );
 
   const draftRow = useMemo<EditorRow>(
@@ -572,8 +803,11 @@ export function EditorKernel({
   );
 
   const gridRows = useMemo(
-    () => [...table.rows, draftRow],
-    [draftRow, table.rows],
+    () =>
+      capabilities.rowCreation === "direct"
+        ? [...table.rows, draftRow]
+        : table.rows,
+    [capabilities.rowCreation, draftRow, table.rows],
   );
 
   const activateDraft = useCallback((rowIdx: number, columnIdx: number) => {
@@ -595,14 +829,24 @@ export function EditorKernel({
         },
         onOpenRecord: openRecord,
         onRenameColumn: handleRenameColumn,
+        onUpdateColumnOptions: handleUpdateColumnOptions,
+        canRenameColumns: capabilities.canRenameColumns,
+        canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
+        canReorderColumns: capabilities.canReorderColumns,
+        canResizeColumns: capabilities.canResizeColumns,
         pendingEdit,
       }),
     [
       activateDraft,
       columnMenuKey,
       handleRenameColumn,
+      handleUpdateColumnOptions,
       openRecord,
       pendingEdit,
+      capabilities.canRenameColumns,
+      capabilities.canUpdateColumnOptions,
+      capabilities.canReorderColumns,
+      capabilities.canResizeColumns,
       table.columns,
     ],
   );
@@ -623,14 +867,21 @@ export function EditorKernel({
       <header className="editor-lab-header">
         <div>
           {marker}
-          <h1>{title ?? table.name}</h1>
+          <TableTitleEditor
+            displayTitle={title ?? table.name}
+            enabled={capabilities.canRenameTable}
+            name={table.name}
+            onCommit={handleRenameTable}
+          />
         </div>
         <div
           className={`editor-save-state editor-save-${saveState.status}`}
           role="status"
         >
           <span className="editor-save-dot" aria-hidden="true" />
-          {statusLabel(saveState)}
+          {saveState.status === "error" && saveState.message
+            ? saveState.message
+            : statusLabel(saveState)}
           {saveState.status === "error" && retry ? (
             <button
               className="editor-retry-button"
@@ -662,15 +913,21 @@ export function EditorKernel({
         <div className="editor-grid-area">
           <div className="editor-grid-shell">
             <DataGrid
-              aria-label="Customers editor"
+              aria-label={`${table.name} editor`}
               className="editor-grid"
               columns={gridColumns}
               data-testid="editor-grid"
               headerRowHeight={36}
               onCellDoubleClick={handleDoubleClick}
               onCellKeyDown={handleCellKeyDown}
-              onColumnResize={handleResizeColumn}
-              onColumnsReorder={handleReorderColumns}
+              onColumnResize={
+                capabilities.canResizeColumns ? handleResizeColumn : undefined
+              }
+              onColumnsReorder={
+                capabilities.canReorderColumns
+                  ? handleReorderColumns
+                  : undefined
+              }
               onRowsChange={handleRowsChange}
               onSelectedCellChange={({ row, column }) => {
                 setPendingEdit(null);
@@ -684,31 +941,45 @@ export function EditorKernel({
               rowKeyGetter={(row) => row.id}
               rows={gridRows}
             />
-            <button
-              aria-expanded={addColumnOpen}
-              aria-label="Add column"
-              className="editor-add-column-button"
-              onClick={() => {
-                setColumnMenuKey(null);
-                setAddColumnOpen((current) => !current);
-              }}
-              type="button"
-            >
-              +
-            </button>
-            {addColumnOpen ? (
-              <AddColumnPopover
-                onClose={() => setAddColumnOpen(false)}
-                onCreate={handleCreateColumn}
-              />
+            {capabilities.canAddColumns ? (
+              <>
+                <button
+                  aria-expanded={addColumnOpen}
+                  aria-label="Add column"
+                  className="editor-add-column-button"
+                  onClick={() => {
+                    setColumnMenuKey(null);
+                    setAddColumnOpen((current) => !current);
+                  }}
+                  type="button"
+                >
+                  +
+                </button>
+                {addColumnOpen ? (
+                  <AddColumnPopover
+                    onClose={() => setAddColumnOpen(false)}
+                    onCreate={handleCreateColumn}
+                  />
+                ) : null}
+              </>
             ) : null}
           </div>
-          {footer ? <div className="editor-grid-footnote">{footer}</div> : null}
+          {footer || capabilities.rowCreation !== "direct" ? (
+            <div className="editor-grid-footnote">
+              {capabilities.rowCreation !== "direct" ? (
+                <span>
+                  {capabilities.rowCreationMessage ??
+                    "New records are not available in this Table preview."}
+                </span>
+              ) : null}
+              {footer}
+            </div>
+          ) : null}
         </div>
         {panelRow ? (
           <RecordPanel
             key={`${panelRow.id}:${JSON.stringify(panelRow.values)}`}
-            columns={table.columns}
+            columns={recordColumns}
             onClose={closePanel}
             onCommitCell={commitCell}
             row={panelRow}

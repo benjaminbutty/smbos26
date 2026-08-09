@@ -39,12 +39,21 @@ function defaultValue(column: EditorColumn): EditorValue {
     case "boolean":
       return false;
     case "number":
+    case "currency":
       return null;
     case "status":
+    case "select":
       return column.options?.[0] ?? "";
+    case "multi_select":
+      return [];
     case "text":
+    case "long_text":
+    case "email":
+    case "url":
     case "phone":
     case "date":
+    case "datetime":
+    case "file":
       return "";
   }
 }
@@ -272,7 +281,7 @@ function columnWithOptions(
     kind: input.kind,
     width,
   };
-  return input.kind === "status"
+  return input.kind === "status" || input.kind === "select"
     ? { ...base, options: normalizedOptions(input.options) }
     : base;
 }
@@ -412,6 +421,30 @@ export class MockTableAdapter implements TableEditorAdapter {
     return cloneColumn(nextColumn);
   }
 
+  async updateColumnOptions(
+    columnKey: string,
+    options: readonly string[],
+  ): Promise<EditorColumn> {
+    await this.wait();
+    const column = this.table.columns.find(
+      (candidate) => candidate.key === columnKey,
+    );
+    if (!column || (column.kind !== "select" && column.kind !== "status")) {
+      throw new Error("That mock column does not support options.");
+    }
+    const nextColumn = {
+      ...column,
+      options: normalizedOptions(options),
+    };
+    this.table = {
+      ...this.table,
+      columns: this.table.columns.map((candidate) =>
+        candidate.key === columnKey ? nextColumn : candidate,
+      ),
+    };
+    return cloneColumn(nextColumn);
+  }
+
   async reorderColumns(
     columnKeys: readonly string[],
   ): Promise<readonly EditorColumn[]> {
@@ -453,6 +486,16 @@ export class MockTableAdapter implements TableEditorAdapter {
       ),
     };
     return cloneColumn(nextColumn);
+  }
+
+  async renameTable(title: string): Promise<EditorTable> {
+    await this.wait();
+    const nextName = title.trim();
+    if (!nextName) {
+      throw new Error("A Table needs a name.");
+    }
+    this.table = { ...this.table, name: nextName };
+    return cloneTable(this.table);
   }
 
   async openRecord(rowId: string): Promise<EditorRow | null> {

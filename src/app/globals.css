@@ -389,6 +389,39 @@
   letter-spacing: -0.04em;
 }
 
+.editor-title-button {
+  align-items: flex-start;
+  min-height: 0;
+  gap: 0.1rem;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.editor-title-button:hover {
+  color: inherit;
+  filter: none;
+}
+
+.editor-title-hint {
+  color: #929b94;
+  font-size: 0.66rem;
+  font-weight: 600;
+}
+
+.editor-title-input {
+  width: min(100%, 24rem);
+  min-height: 2.25rem;
+  margin-top: 0.05rem;
+  padding: 0.3rem 0.45rem;
+  border-color: rgba(225, 109, 97, 0.66);
+  border-radius: 0.35rem;
+}
+
 .editor-lab-kicker,
 .editor-panel-eyebrow {
   margin: 0;
@@ -434,6 +467,12 @@
 
 .editor-save-error .editor-save-dot {
   background: #c85a4e;
+}
+
+.editor-structural-error {
+  color: #b04b42;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .editor-retry-button,
@@ -600,6 +639,7 @@
 }
 
 .editor-column-menu input,
+.editor-column-menu textarea,
 .editor-add-column-popover input,
 .editor-add-column-popover select,
 .editor-add-column-popover textarea {
@@ -614,6 +654,18 @@
 }
 
 .editor-add-column-popover textarea {
+  min-height: 4.1rem;
+  resize: vertical;
+}
+
+.editor-column-options-form {
+  display: grid;
+  gap: 0.45rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(39, 49, 44, 0.1);
+}
+
+.editor-column-options-form textarea {
   min-height: 4.1rem;
   resize: vertical;
 }
@@ -882,6 +934,14 @@
 .editor-property-value:hover {
   color: var(--editor-coral) !important;
   filter: none;
+}
+
+.editor-property-readonly {
+  display: block;
+  overflow: hidden;
+  color: #68746c;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-panel-inline-editor {

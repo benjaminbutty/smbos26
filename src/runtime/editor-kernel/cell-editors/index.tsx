@@ -80,6 +80,15 @@ function TextLikeEditor({
     row,
   });
 
+  const inputType =
+    columnDefinition.kind === "email"
+      ? "email"
+      : columnDefinition.kind === "url"
+        ? "url"
+        : columnDefinition.kind === "phone"
+          ? "tel"
+          : "text";
+
   return (
     <input
       ref={ref}
@@ -90,7 +99,7 @@ function TextLikeEditor({
         setValue(next);
         onRowChange(rowWithValue(row, columnDefinition.key, next));
       }}
-      type="text"
+      type={inputType}
       value={value}
     />
   );
@@ -233,7 +242,9 @@ function DateEditor({
 export function CellEditor(props: CellEditorProps): React.ReactNode {
   switch (props.columnDefinition.kind) {
     case "number":
+    case "currency":
       return <NumberEditor {...props} />;
+    case "select":
     case "status":
       return <StatusEditor {...props} />;
     case "boolean":
@@ -241,7 +252,13 @@ export function CellEditor(props: CellEditorProps): React.ReactNode {
     case "date":
       return <DateEditor {...props} />;
     case "text":
+    case "long_text":
+    case "email":
+    case "url":
     case "phone":
+    case "datetime":
+    case "multi_select":
+    case "file":
       return <TextLikeEditor {...props} />;
   }
 }

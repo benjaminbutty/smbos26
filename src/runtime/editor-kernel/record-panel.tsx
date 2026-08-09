@@ -16,12 +16,23 @@ interface RecordPanelProps {
   onCommitCell: (rowId: string, columnKey: string, value: EditorValue) => void;
 }
 
-function inputType(column: EditorColumn): "date" | "number" | "text" {
+function inputType(
+  column: EditorColumn,
+): "date" | "email" | "number" | "tel" | "text" | "url" {
   if (column.kind === "date") {
     return "date";
   }
-  if (column.kind === "number") {
+  if (column.kind === "number" || column.kind === "currency") {
     return "number";
+  }
+  if (column.kind === "email") {
+    return "email";
+  }
+  if (column.kind === "phone") {
+    return "tel";
+  }
+  if (column.kind === "url") {
+    return "url";
   }
   return "text";
 }
@@ -39,7 +50,28 @@ function InlinePropertyEditor({
   onChange: (value: EditorValue) => void;
   onCommit: (value?: EditorValue) => void;
 }>): React.ReactNode {
-  if (column.kind === "status") {
+  if (column.kind === "long_text") {
+    return (
+      <textarea
+        aria-label={`Edit ${column.label}`}
+        autoFocus
+        className="editor-panel-inline-editor"
+        onBlur={() => onCommit()}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onCancel();
+          }
+        }}
+        rows={4}
+        value={editorInputValue(value)}
+      />
+    );
+  }
+
+  if (column.kind === "status" || column.kind === "select") {
     return (
       <select
         aria-label={`Edit ${column.label}`}
@@ -86,7 +118,11 @@ function InlinePropertyEditor({
           onCancel();
         }
       }}
-      step={column.kind === "number" ? "any" : undefined}
+      step={
+        column.kind === "number" || column.kind === "currency"
+          ? "any"
+          : undefined
+      }
       type={inputType(column)}
       value={editorInputValue(value)}
     />
@@ -116,6 +152,10 @@ export function RecordPanel({
   };
 
   const commit = (column: EditorColumn, nextValue?: EditorValue): void => {
+    if (column.editable === false) {
+      setEditingKey(null);
+      return;
+    }
     onCommitCell(
       row.id,
       column.key,
@@ -153,7 +193,14 @@ export function RecordPanel({
                 {column.label}
               </span>
               <div className="editor-record-property-value">
-                {column.kind === "boolean" ? (
+                {column.editable === false ? (
+                  <span
+                    className="editor-property-readonly"
+                    title={column.readOnlyReason}
+                  >
+                    {displayEditorValue(column, value)}
+                  </span>
+                ) : column.kind === "boolean" ? (
                   <input
                     aria-label={`Edit ${column.label}`}
                     checked={value === true}
