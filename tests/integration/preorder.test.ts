@@ -34,6 +34,7 @@ import type {
   Tables,
 } from "../../src/db/supabase/database.types";
 import { submitExperienceForm } from "../../src/runtime/forms/submission";
+import { applyDirectTableRecordCellEdit } from "../../src/runtime/views/inline-edit-service";
 import { ViewRenderer } from "../../src/runtime/views/view-renderer";
 import {
   getLocalSupabaseSettings,
@@ -2418,6 +2419,35 @@ describe("Milestone 4 preorder", () => {
       },
     );
     expect(asObject(updated.data_json).status).toBe("Ready");
+
+    const directStatusData = new FormData();
+    directStatusData.set("status", "Collected");
+    const directStatus = await applyDirectTableRecordCellEdit(
+      staff,
+      { businessId: business.id },
+      {
+        viewKey: "orders",
+        recordId: record.id,
+        fieldKey: "status",
+        formData: directStatusData,
+      },
+    );
+    expect(asObject(directStatus.data_json).status).toBe("Collected");
+
+    const protectedTotalData = new FormData();
+    protectedTotalData.set("total", "999");
+    await expect(
+      applyDirectTableRecordCellEdit(
+        staff,
+        { businessId: business.id },
+        {
+          viewKey: "orders",
+          recordId: record.id,
+          fieldKey: "total",
+          formData: protectedTotalData,
+        },
+      ),
+    ).rejects.toThrow(/edit Form/i);
 
     const submittedOrder = orders.records.find(
       (candidate) =>

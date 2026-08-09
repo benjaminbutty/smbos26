@@ -56,6 +56,7 @@ const privateEngineFunctions = [
 const lifecycleFunctions = [
   "abandon_configuration_change_set",
   "apply_configuration_change",
+  "apply_direct_configuration_change",
   "get_configuration_change_set",
   "get_configuration_version",
   "list_configuration_change_sets",
@@ -64,6 +65,7 @@ const lifecycleFunctions = [
   "prepare_configuration_rollback",
   "propose_configuration_change",
   "resolve_configuration_preview_preorder",
+  "undo_direct_configuration_change",
   "validate_configuration_change",
 ] as const;
 

@@ -429,25 +429,6 @@ export default async function SetupPage({
           </>
         )}
       </section>
-
-      <section className="change-section" aria-labelledby="lists-heading">
-        <div className="section-heading">
-          <div>
-            <h2 id="lists-heading">Lists</h2>
-            <p className="muted">
-              Create a simple place to keep and manage business information.
-            </p>
-          </div>
-        </div>
-        <div className="panel compact-panel">
-          <Link
-            className="button button-secondary"
-            href={`/app/${encodeURIComponent(businessSlug)}/setup/lists/new`}
-          >
-            Create a list
-          </Link>
-        </div>
-      </section>
     </section>
   );
 }

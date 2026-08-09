@@ -31,9 +31,28 @@ export const tableViewConfigSchema = z
   .object({
     fields: fieldKeysSchema,
     title_field: graphKeySchema.optional(),
+    column_widths: z
+      .record(graphKeySchema, z.number().int().min(128).max(640))
+      .optional(),
     ...viewActionsSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((config, context) => {
+    if (!config.column_widths) {
+      return;
+    }
+
+    const visibleFields = new Set(config.fields);
+    for (const fieldKey of Object.keys(config.column_widths)) {
+      if (!visibleFields.has(fieldKey)) {
+        context.addIssue({
+          code: "custom",
+          message: "Column widths can only be set for visible Table columns.",
+          path: ["column_widths", fieldKey],
+        });
+      }
+    }
+  });
 
 export const listViewConfigSchema = z
   .object({

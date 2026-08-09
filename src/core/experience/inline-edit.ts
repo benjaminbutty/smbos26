@@ -49,3 +49,43 @@ export function inlineEditableFieldKeys(
     );
   });
 }
+
+export const directTableEditableFieldTypes = [
+  "short_text",
+  "long_text",
+  "number",
+  "currency",
+  "boolean",
+  "date",
+  "email",
+  "phone",
+  "url",
+  "select",
+  "status",
+] as const satisfies readonly Tables<"field_definitions">["field_type"][];
+
+export type DirectTableEditableFieldType =
+  (typeof directTableEditableFieldTypes)[number];
+
+export function isDirectTableEditableFieldType(
+  fieldType: Tables<"field_definitions">["field_type"],
+): fieldType is DirectTableEditableFieldType {
+  return (directTableEditableFieldTypes as readonly string[]).includes(
+    fieldType,
+  );
+}
+
+export function directTableEditableFieldKeys(
+  tableFieldKeys: readonly string[],
+  fields: readonly Tables<"field_definitions">[],
+): string[] {
+  const fieldsByKey = new Map(fields.map((field) => [field.key, field]));
+  return tableFieldKeys.filter((fieldKey) => {
+    const field = fieldsByKey.get(fieldKey);
+    return Boolean(
+      field &&
+      field.is_active &&
+      isDirectTableEditableFieldType(field.field_type),
+    );
+  });
+}

@@ -2931,3 +2931,51 @@ Table View; candidate preview remains read-only.
 This phase adds no migration, table, RPC, queue, cache, new primitive, AI task
 or Builder path. Structural editing of existing lists, relationships and
 additional Field types remain deferred.
+
+## Milestone 15 Phase 15A - direct Table Workspace foundation
+
+The primary owner-facing concept-creation surface is now the Tables section in
+the authenticated workspace sidebar. It lists each active internal Table View
+once and provides a compact create action. The retired generic Lists route is a
+compatibility redirect; it is no longer an Edit setup entry. Pages and
+non-table Views retain their existing navigation behavior.
+
+The direct structural action vocabulary is finite: create a Table, rename its
+title, add a supported column, rename a column, update Choice/Status options,
+reorder columns, and resize a column. A new Table composes only one custom
+Object, one required short-text `Name` Field and one internal Table View. It
+does not create a Form, Page, Relationship, workflow, queue or customer-
+specific database table. Column widths are an optional validated Table View
+`column_widths` map keyed by visible Fields and bounded to integer values from
+128 through 640.
+
+The browser submits only bounded owner intent plus expected active Version/head
+currentness. The server reloads the immutable `ConfigurationSnapshotV1`,
+allocates stable identities and emits ordinary existing configuration
+operations. The authenticated PostgreSQL direct RPC checks the finite action
+shape against the base and candidate snapshots and calls the existing M5
+propose, validate and apply functions atomically. Direct Undo derives the
+immediate parent of the active direct change and reuses rollback preparation,
+validation and application in the same transaction. A stale or incompatible
+request creates no partial proposal or projection write.
+
+Direct Undo is also operational-data-aware: undoing `create_table` is refused
+when any Record exists for the created Object, and undoing `add_column` is
+refused when any Record has a meaningful value for the added Field. Rename,
+reorder and resize continue through ordinary compatibility validation.
+
+The live Table Workspace keeps the generic runtime boundary: cells are edited
+directly without repeated Edit buttons, supported controls use the existing
+typed submission parser and GraphService, rows are created from a configured
+creation Form or a generic visible-Field/default state, and a selected Record
+opens in a query-parameter side panel. These are ordinary operational Record
+writes and do not advance configuration history. Legacy Tables with an
+`edit_form_key` retain their existing edit Form's non-hidden Field whitelist;
+formless Tables use metadata-derived supported Field types. The side panel
+shows the Table name and Record status and links to the full Record route for
+existing Location controls. Candidate preview remains read-only, the full
+Record route remains available as fallback, and AI, Builder planning and
+provider/accounting paths are unchanged.
+
+Broader Field settings, delete/archive, formulas, relations, permissions,
+bulk/spreadsheet behavior and operational undo/history remain deferred.

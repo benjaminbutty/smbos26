@@ -1472,6 +1472,23 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      apply_direct_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       archive_graph_record: {
         Args: { expected_business_id: string; target_record_id: string };
         Returns: {
@@ -2248,6 +2265,21 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      undo_direct_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_active_source_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+        };
+        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
           isOneToOne: true;
           isSetofReturn: false;
         };

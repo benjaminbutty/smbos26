@@ -31,7 +31,7 @@ Classification: **close direct mutation; runtime read only**.
 
 | Surface | Final classification |
 | --- | --- |
-| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Sole authenticated Owner/Admin configuration mutation lifecycle. Ordinary proposal creation and rollback preparation require exact expected active currentness under the Business-head lock. |
+| `propose_configuration_change`, `prepare_configuration_rollback`, `validate_configuration_change`, `apply_configuration_change`, `abandon_configuration_change_set` | Reviewed/authored Owner/Admin configuration lifecycle. Ordinary proposal creation and rollback preparation require exact expected active currentness under the Business-head lock. Routine direct Tables use only the separately allow-listed atomic facades documented below. |
 | `list_configuration_change_sets`, `get_configuration_change_set`, `list_configuration_versions`, `get_configuration_version` | Owner/Admin history reads |
 | `load_configuration_preview` | Authenticated Owner/Admin identifier-only read; replays and verifies an open candidate against the current head without lifecycle or projection writes |
 | `resolve_configuration_preview_preorder` | Authenticated Owner/Admin read of candidate configuration joined to current operational Product, price, Location-link and counter state |
@@ -542,3 +542,55 @@ is classified by shared `ExperienceService.listNavigation()` and omitted when
 its exact heading/View shape matches, leaving one direct View entry. No new
 migration, table, RPC, primitive, relationship, preorder/public operation, or
 AI path is added.
+
+## Milestone 15 Phase 15A - direct Table Workspace
+
+The Tables sidebar is the primary manual concept-creation and navigation
+surface. It lists active internal Table Views once and provides a `+` create
+action for Owner/Admin users. The old generic Lists route redirects here and is
+not an Edit setup entry. Pages and non-table Views retain their existing
+navigation behavior.
+
+Direct structural requests use only the finite action kinds `create_table`,
+`rename_table`, `add_column`, `rename_column`, `update_column_options`,
+`reorder_columns`, and `resize_column`. The server composes strict existing
+`set_object`, `set_field` and `set_view` operations from the active immutable
+snapshot. A new Table is exactly one custom Object, required short-text Name
+Field and internal Table View; it creates no Forms, Pages, Relationships,
+workflows or new domain table. The optional Table View `column_widths` map is
+validated as visible Field keys with integer values from 128 through 640.
+
+`apply_direct_configuration_change` is an authenticated Owner/Admin-only
+facade over the existing M5 propose, validate and apply functions. PostgreSQL
+checks the requested finite action against the base and candidate snapshots in
+the same transaction. `undo_direct_configuration_change` accepts only the
+active direct change, derives its immediate parent, verifies direct provenance,
+and reuses the existing rollback preparation, validation and application path.
+Before rollback it checks live operational Records: Undo of `create_table` is
+unavailable once the created Object has any Record, and Undo of `add_column` is
+unavailable once the added Field has a meaningful value in any Record. Rename,
+reorder and resize retain ordinary compatibility validation.
+No direct projection DML, second projector, arbitrary operation endpoint,
+queue, cache or AI path is introduced; all failure paths roll back the whole
+request.
+
+This is the explicitly approved second Owner/Admin application mode over the
+same configuration engine, not a generic bypass. These are the only
+authenticated direct facades; both derive tenant/actor context from the
+session, require exact active-head currentness, and independently verify the
+finite action shape or direct Undo provenance. AI, public, destructive,
+incompatible and reviewed configuration work remains on the ordinary Changes
+lifecycle.
+
+Direct cell and row actions are operational GraphService writes. They reload
+the route tenant, Table, Object, Field and Record, use the existing typed form
+parser, and create no configuration Change or Version. A legacy Table with an
+`edit_form_key` uses the existing edit Form's non-hidden Fields as its direct
+write whitelist; formless Tables use only metadata-derived supported Field
+types. The live direct Table route supports keyboard-oriented cell editing,
+generic row creation from a configured Form or visible Fields/defaults, and a
+`?record=<recordId>` side panel showing Table name and Record status. The panel
+links to the full Record route for existing Location controls. Preview remains
+read-only and the existing full Record route remains a fallback. Delete/archive,
+formulas, relationships, permissions, bulk editing, spreadsheet behavior and
+operational undo/history remain outside this phase.

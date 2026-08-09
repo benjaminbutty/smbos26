@@ -698,7 +698,7 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
 
     const builderIndex = layout.indexOf(">Builder</Link>");
     const setupIndex = layout.indexOf(">Edit setup</Link>");
-    const changesIndex = layout.indexOf(">Changes</Link>");
+    const changesIndex = layout.indexOf(">History</Link>");
     expect(builderIndex).toBeGreaterThan(-1);
     expect(builderIndex).toBeLessThan(setupIndex);
     expect(setupIndex).toBeLessThan(changesIndex);

@@ -12,6 +12,7 @@ interface FieldInputControlProps {
   value: Json | undefined;
   ariaLabel?: string;
   isEdit?: boolean;
+  autoFocus?: boolean;
 }
 
 function settingsObject(
@@ -198,12 +199,14 @@ function valueIsPresent(value: Json | undefined): boolean {
 }
 
 export function FieldInputControl({
+  autoFocus = false,
   ariaLabel,
   field,
   value,
   isEdit = false,
 }: Readonly<FieldInputControlProps>): ReactNode {
   const common = {
+    autoFocus,
     id: `field-${field.key}`,
     name: field.key,
     required: field.required,

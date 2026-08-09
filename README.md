@@ -18,8 +18,8 @@ through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
 Milestone 9 is complete and merged at the current repository head. Milestones
 10, 12 and 13, together with Milestone 14 Phase 14A, are also merged at the
-current repository head. Milestone 14 Phase 14B is the current unmerged feature
-work on this branch.
+current repository head. Milestone 15 Phase 15A is the current unmerged direct
+Table Workspace foundation work on this branch.
 The AI execution boundary is server-only and per-Business accounting is
 disabled by default. OpenAI Responses is the first external adapter, but it is
 also server-disabled by default; the Phase 8C route does not invoke providers
@@ -63,9 +63,9 @@ authoritative: the existing public URL stays unavailable until Apply. No AI is
 involved and publication changes no Product, availability, Customer, Order,
 submission or other operational data.
 
-Milestone 14 Phase 14B is the current unmerged manual internal list feature
-work on this branch. It adds a deterministic Owner/Admin “Lists” setup surface
-over the existing configuration primitives.
+Milestone 15 Phase 15A is the current unmerged direct Table Workspace feature
+work on this branch. It adds a deterministic Owner/Admin Tables sidebar and
+bounded structural Table actions over the existing configuration primitives.
 
 ## Current scope
 
@@ -92,7 +92,8 @@ Included:
 - immutable configuration versions and one active revisioned head per Business
 - structured Owner/Admin configuration proposals with deterministic semantic
   diffs, rollback-only compatibility validation, and atomic application
-- mandatory propose → validate → apply configuration mutation boundary
+- mandatory propose → validate → apply boundary for reviewed configuration
+  work, plus the separately allow-listed atomic direct Table facade
 - forward-only rollback proposals and rollback version provenance
 - deterministic Builder-assisted undo of the latest active ordinary change
 - Builder-assisted preparation and explicit confirmation for one ordinary
@@ -113,6 +114,10 @@ Included:
   preorder Page through one ordinary M5 proposed Change
 - bounded Owner/Admin manual internal list creation through one ordinary M5
   proposal, with generic Forms, a Table View, and a draft wrapper Page
+- direct Owner/Admin Table Workspace creation and finite structural actions
+  through atomic M5-backed RPC facades, including bounded column widths
+- generic direct Table cell/row editing and `?record=` side-panel navigation
+  without configuration-history writes
 - bounded preorder-question controls for editing public wording, help and
   requiredness or adding one short/long-answer generic Order Field
 - exact active-version and head-revision proposal currentness enforced
@@ -714,8 +719,8 @@ forward-only and affects configuration only; operational data is untouched.
 The normal Builder phrase without trusted context returns fixed guidance rather
 than searching history. Phase 9B is implemented and merged, so Milestone 9 is
 complete. Phase 10A is implemented and merged, and Product v0 remains in
-progress. The current unmerged work is Milestone 14 Phase 14B manual internal
-list creation.
+progress. Milestone 15 Phase 15A is the current unmerged direct Table
+Workspace foundation.
 
 ## Requirements
 
@@ -982,9 +987,11 @@ tests/
 - The eight versioned configuration tables are read-only to authenticated
   runtime clients and inaccessible to anonymous clients. Neither normal
   sessions nor the service role can mutate them directly.
-- Owner/Admin configuration changes use only the structured propose, validate,
-  apply, and abandon RPC lifecycle. Legacy configuration RPCs and private
-  engine helpers are not executable by application roles.
+- Reviewed Owner/Admin configuration changes use the structured propose,
+  validate, apply, and abandon RPC lifecycle; routine direct Table actions use
+  only the separately allow-listed atomic Table RPC facades. Legacy
+  configuration RPCs and private engine helpers are not executable by
+  application roles.
 - AI execution resolves only registered server tasks and trusted policies. It
   has no configuration or operational mutation dependency. A separate
   server-only accounting module verifies the authenticated Owner/Admin through

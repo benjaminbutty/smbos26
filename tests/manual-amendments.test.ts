@@ -380,11 +380,9 @@ describe("deterministic manual preorder schedule amendments", () => {
     expect(layout).toContain(
       "<Link href={`/app/${businessSlug}/setup`}>Edit setup</Link>",
     );
+    expect(layout).toContain("const canManageConfiguration = hasCapability(");
     expect(layout).toContain(
-      'hasCapability(tenant.membership.role, "manage_configuration")',
-    );
-    expect(layout).toContain(
-      "<Link href={`/app/${businessSlug}/changes`}>Changes</Link>",
+      "<Link href={`/app/${businessSlug}/changes`}>History</Link>",
     );
   });
 });

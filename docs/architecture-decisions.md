@@ -2699,3 +2699,38 @@ operation, AI task or AI dependency. Structural editing of existing lists,
 relationships, additional field types and broader builder configuration remain
 deferred. The Builder and AI surfaces are unchanged and remain frozen for this
 phase.
+
+## ADR-036 — Direct Table Workspace is a bounded owner-facing configuration facade
+
+Milestone 15 Phase 15A adds a direct Table Workspace over the existing Object,
+Field, View, Record and Milestone 5 configuration-version primitives. The
+Tables sidebar is the primary creation/navigation surface; active internal
+Table Views appear there once, while Pages and non-table Views retain their
+existing behavior. The old generic Lists route is compatibility-only.
+
+The finite structural vocabulary is create Table, rename title, add/rename
+column, update Choice/Status options, reorder columns and resize columns. A
+new Table emits only a custom Object, required short-text `Name` Field and
+internal Table View. The browser submits bounded intent plus expected
+currentness; the server reloads the immutable snapshot and composes strict
+existing configuration operations. PostgreSQL checks the action shape against
+base/candidate snapshots and executes the existing M5 propose, validate and
+apply sequence atomically. Direct Undo derives the active direct Version's
+immediate parent and reuses the existing rollback engine in the same atomic
+fashion.
+
+Direct Undo is operational-data-aware: it refuses to undo a newly created
+Table once any Record exists for its Object, or an added column once any
+Record has a meaningful value for that Field. Legacy Tables that already name
+an edit Form retain that Form's non-hidden Field whitelist for direct writes;
+formless Tables use only the supported metadata-derived Field set. The Record
+panel presents Table name/status and links to the existing full Record route
+for Location controls.
+
+`column_widths` is an optional Table View config map keyed only by visible
+Fields, with integer values from 128 through 640. It is a reusable View layout
+setting, not a new primitive or table. Direct cell and row writes use the
+existing generic GraphService boundary and remain ordinary operational data;
+they do not create configuration history. AI, Builder, preview and the normal
+Changes lifecycle are unchanged. The direct lane is a bounded owner-facing
+facade, not a second configuration truth model.

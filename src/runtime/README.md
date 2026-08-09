@@ -24,3 +24,14 @@ The model and browser cannot choose that destination. If no suitable View
 exists, the update still succeeds and the owner receives the normal workspace
 fallback. The update is ordinary operational data and does not create a
 configuration-history entry.
+
+## Direct Table Workspace
+
+The live Table workspace is a generic grid over one configured internal Table
+View. Phase 15A removes the old repeated Edit-button workflow from that route:
+supported cells use the existing typed submission parser and GraphService,
+rows use configured Forms or visible Field/default creation, and `?record=`
+opens the selected Record in a side panel. Preview and non-direct routes keep
+their read-only/full-record behavior. Structural Table actions remain in
+`src/core/configuration/direct-tables/`; operational row/cell writes never
+create configuration history.

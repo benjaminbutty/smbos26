@@ -60,6 +60,16 @@ applied version identity. Rollback preparation accepts only its bounded title
 and optional description; the target version and render-time head identity are
 server-bound untrusted arguments that are parsed and rechecked.
 
+## Direct Table Workspace
+
+Milestone 15 Phase 15A adds `direct-tables/` as a bounded owner-facing facade
+over the existing M5 engine. It composes only finite Table actions and strict
+existing configuration operations from an immutable snapshot. Its two public
+RPCs are atomic wrappers around M5; they do not add a second projector,
+operation language or persistence model. Direct Undo is limited to the active
+direct change's immediate parent. `column_widths` is an optional validated
+Table View layout map, not a new primitive.
+
 ## Owner/Admin routes
 
 - `/app/[businessSlug]/changes`

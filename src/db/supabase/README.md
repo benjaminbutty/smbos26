@@ -65,3 +65,11 @@ history, queue, receipt or configuration-version path. Generated type
 definitions include the two JSON/Record RPC contracts; a fresh CLI generation
 attempt remains required after the installed CLI/config parser mismatch is
 resolved.
+
+The Milestone 15 Phase 15A migration adds the authenticated
+`apply_direct_configuration_change` and `undo_direct_configuration_change`
+RPCs. They are Owner/Admin-only atomic facades over the existing M5
+propose/validate/apply and rollback functions; PostgreSQL verifies the finite
+Table action shape and direct provenance. The checked-in type surface includes
+both configuration-change-set contracts. Direct cell and row writes continue
+to use the existing generic GraphService RPCs.
