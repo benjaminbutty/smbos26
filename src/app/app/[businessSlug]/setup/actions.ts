@@ -28,6 +28,11 @@ import {
 } from "../../../../core/configuration/initial-preorder/service";
 import { initialPreorderSetupFormSchema } from "../../../../core/configuration/initial-preorder/schemas";
 import {
+  ManualListError,
+  prepareManualListProposal,
+} from "../../../../core/configuration/manual-lists/service";
+import { manualListPreparationRequestSchema } from "../../../../core/configuration/manual-lists/schemas";
+import {
   preparePublicPreorderPublicationProposal,
   PublicPreorderPublicationError,
 } from "../../../../core/configuration/publication/service";
@@ -89,6 +94,14 @@ function redirectWithPublicationNotice(
   redirect(`${path}?${query.toString()}`);
 }
 
+function redirectWithManualListNotice(
+  path: string,
+  notice: "input_invalid" | "stale" | "label_conflict" | "identity_unavailable",
+): never {
+  const query = new URLSearchParams({ notice });
+  redirect(`${path}?${query.toString()}`);
+}
+
 function stringValue(formData: FormData, name: string): string | null {
   const value = formData.get(name);
   return typeof value === "string" ? value : null;
@@ -99,6 +112,22 @@ function integerValue(formData: FormData, name: string): number {
   return value !== null && /^-?\d+$/.test(value)
     ? Number.parseInt(value, 10)
     : Number.NaN;
+}
+
+function jsonValue(formData: FormData, name: string): unknown {
+  const value = stringValue(formData, name);
+  if (value === null) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function manualListPath(businessSlug: string): string {
+  return `/app/${encodeURIComponent(businessSlug)}/setup/lists/new`;
 }
 
 async function createManualAmendmentActionContext(businessSlugInput: string) {
@@ -260,6 +289,57 @@ export async function preparePublicPreorderPublicationAction(
       error.code === "configuration_proposal_stale"
     ) {
       redirectWithPublicationNotice(setupPath, "stale");
+    }
+    throw error;
+  }
+}
+
+export async function prepareManualListProposalAction(
+  businessSlugInput: string,
+  formData: FormData,
+): Promise<never> {
+  const { businessSlug, configuration } =
+    await createManualAmendmentActionContext(businessSlugInput);
+  const path = manualListPath(businessSlug);
+  const parsed = manualListPreparationRequestSchema.safeParse({
+    expectedBaseVersionId: stringValue(formData, "expectedBaseVersionId"),
+    expectedHeadRevision: integerValue(formData, "expectedHeadRevision"),
+    singularItemLabel: stringValue(formData, "singularItemLabel"),
+    pluralListLabel: stringValue(formData, "pluralListLabel"),
+    mainNameLabel: stringValue(formData, "mainNameLabel"),
+    information: jsonValue(formData, "information"),
+  });
+  if (!parsed.success) {
+    redirectWithManualListNotice(path, "input_invalid");
+  }
+
+  try {
+    const proposal = await prepareManualListProposal(
+      configuration,
+      parsed.data,
+    );
+    redirect(
+      `/app/${encodeURIComponent(businessSlug)}/changes/${encodeURIComponent(proposal.id)}`,
+    );
+  } catch (error) {
+    if (error instanceof ManualListError) {
+      const notice =
+        error.code === "manual_list_stale"
+          ? "stale"
+          : error.code === "manual_list_object_label_conflict" ||
+              error.code === "manual_list_field_label_conflict"
+            ? "label_conflict"
+            : error.code === "manual_list_key_unavailable" ||
+                error.code === "manual_list_slug_unavailable"
+              ? "identity_unavailable"
+              : "input_invalid";
+      redirectWithManualListNotice(path, notice);
+    }
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      redirectWithManualListNotice(path, "stale");
     }
     throw error;
   }

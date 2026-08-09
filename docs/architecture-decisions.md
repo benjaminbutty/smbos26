@@ -2661,3 +2661,41 @@ No new durable architecture was required: there is no migration, table,
 primitive, Page lifecycle, public runtime, AI subject, background process or
 operational-data mutation. Milestone 13 remains open pending the next hands-on
 checkpoint.
+
+## ADR-035 — Manual deterministic platform capability precedes AI assistance
+
+**Status:** Accepted for v0.1 (Milestone 14 Phase 14B)
+
+**Date:** 9 August 2026
+
+Milestone 14 Phase 14B is a hands-on proof that a non-technical Owner/Admin
+can create a useful internal concept without depending on AI. The generic
+system already had the reusable Object, Field, Form, View, Page, Record and
+configuration-version primitives, so a new customer-specific table or platform
+primitive would add architecture without solving a new class of problem.
+
+The Setup “Lists” surface uses owner language while composing those existing
+primitives. A bounded list intent contains singular/plural labels, one
+mandatory main-name Field, and zero to seven additional rows. Supported owner
+types map to existing scalar Field types; Choice and Status are distinct
+bounded types whose only setting is a validated two-to-100 option list. The
+composer consumes only an authoritative immutable `ConfigurationSnapshotV1`,
+allocates identities with the neutral allocator shared with the draft compiler,
+and emits exactly the Object, Fields, create/edit Forms, Table View and draft
+wrapper Page needed for the list. It emits no Relationships, preorder/public
+configuration, workflows or arbitrary configuration payload.
+
+Preparation is a normal M5 proposal handoff. The server derives Business and
+actor identity, reloads exact active-head currentness and the immutable
+snapshot, validates strict owner input, and calls
+`ConfigurationChangeService.proposeChangeSet()` once. Changes Preview,
+Validate and Apply remain mandatory deliberate lifecycle steps. Records and
+inline edits after Apply are operational data outside configuration history.
+The exact simple wrapper Page is classified in shared experience navigation so
+the direct View remains the sole workspace entry; preview remains read-only.
+
+This decision does not add a migration, table, RPC, queue, cache, lifecycle
+operation, AI task or AI dependency. Structural editing of existing lists,
+relationships, additional field types and broader builder configuration remain
+deferred. The Builder and AI surfaces are unchanged and remain frozen for this
+phase.

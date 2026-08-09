@@ -18,3 +18,9 @@ The public boundary exposes narrow resolvers for `public` + `published` Pages.
 Generic View and Form blocks remain forbidden publicly. Milestone 4 adds one
 trusted `preorder` block that resolves a same-tenant active preorder capability
 without exposing generic Records, graph configuration or generic Form writes.
+
+Simple internal list Pages use the existing constrained Page grammar: a
+level-1 heading followed by one internal non-detail View. Shared navigation
+classifies that exact wrapper as a presentation page and keeps the direct View
+entry, so an applied list appears once. Candidate previews use the same page
+key and remain read-only.

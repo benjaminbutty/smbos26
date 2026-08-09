@@ -16,9 +16,10 @@ multi-location bakery preorder capability over the tenant-safe graph and
 experience runtime whose configuration is installed, previewed and explained
 through immutable change sets and forward-only versions, with deliberate
 Owner/Admin validation, application, abandonment and rollback preparation.
-Milestone 9 is complete and merged at the current repository head. Milestone
-10 has begun; Phase 10A is an independently reviewable implementation on this
-branch and is not claimed as merged until reviewed.
+Milestone 9 is complete and merged at the current repository head. Milestones
+10, 12 and 13, together with Milestone 14 Phase 14A, are also merged at the
+current repository head. Milestone 14 Phase 14B is the current unmerged feature
+work on this branch.
 The AI execution boundary is server-only and per-Business accounting is
 disabled by default. OpenAI Responses is the first external adapter, but it is
 also server-disabled by default; the Phase 8C route does not invoke providers
@@ -31,7 +32,7 @@ The product and architecture sources of truth are:
 - [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
 - [`AGENTS.md`](AGENTS.md)
 
-Milestone 12 is complete on the current Phase 13B feature branch. Phase 12A
+Milestone 12 is complete and merged at the current repository head. Phase 12A
 generic Record creation is merged through PR #17. Phase 12B adds one bounded
 generic Builder path for an exact-selector Record update, and Phase 12C adds
 one deterministic manual and bounded Builder path for linking or unlinking an
@@ -41,7 +42,8 @@ configuration Version, Change, history or undo is created. Their qualified
 private Builder mappings remain isolated from the global/default task registry;
 the earlier failed Phase 12C qualification remains historical evidence.
 
-Milestone 13 Phase 13A adds an Owner/Admin-triggered initial preorder starter
+Milestone 13, including Phase 13B, is complete and merged. Phase 13A adds an
+Owner/Admin-triggered initial preorder starter
 to the existing Edit setup surface. A clean Business with active Locations
 can supply only collection Locations and schedule values, review one ordinary
 M5 proposed Change, then deliberately Validate and Apply it. The deterministic
@@ -52,7 +54,7 @@ availability links; after Apply, the owner can add the first Product through
 the normal generic Record-create surface. Product availability and publication
 remain separate, and Product v0 remains in progress.
 
-Milestone 13 Phase 13A is complete. Phase 13B adds the deliberate Owner/Admin
+Phase 13B adds the deliberate Owner/Admin
 publication handoff to the same Edit setup surface. SMBOS reloads the current
 public preorder Page, composes one complete `set_page` operation that changes
 only its availability, and prepares one ordinary M5 proposed Change titled
@@ -60,6 +62,10 @@ only its availability, and prepares one ordinary M5 proposed Change titled
 authoritative: the existing public URL stays unavailable until Apply. No AI is
 involved and publication changes no Product, availability, Customer, Order,
 submission or other operational data.
+
+Milestone 14 Phase 14B is the current unmerged manual internal list feature
+work on this branch. It adds a deterministic Owner/Admin “Lists” setup surface
+over the existing configuration primitives.
 
 ## Current scope
 
@@ -105,6 +111,8 @@ Included:
   Page
 - deliberate Owner/Admin publication preparation for the existing public
   preorder Page through one ordinary M5 proposed Change
+- bounded Owner/Admin manual internal list creation through one ordinary M5
+  proposal, with generic Forms, a Table View, and a draft wrapper Page
 - bounded preorder-question controls for editing public wording, help and
   requiredness or adding one short/long-answer generic Order Field
 - exact active-version and head-revision proposal currentness enforced
@@ -705,8 +713,9 @@ rollback, malformed and cross-Business contexts fail closed. The rollback is
 forward-only and affects configuration only; operational data is untouched.
 The normal Builder phrase without trusted context returns fixed guidance rather
 than searching history. Phase 9B is implemented and merged, so Milestone 9 is
-complete. Product v0 remains in progress; Phase 10A is the next independently
-reviewable operational Builder slice.
+complete. Phase 10A is implemented and merged, and Product v0 remains in
+progress. The current unmerged work is Milestone 14 Phase 14B manual internal
+list creation.
 
 ## Requirements
 
@@ -849,6 +858,8 @@ validating from a clean state.
 | `npm run test:ai-accounting`                  | Run durable AI usage-control/accounting tests       |
 | `npm run test:builder-planning`               | Run strict non-executing builder planning tests     |
 | `npm run test:builder-configuration-proposal` | Run authenticated proposal-only orchestration tests |
+| `npm run test:manual-lists`                   | Run manual list and shared navigation tests         |
+| `npm run test:manual-list-integration`        | Run the Phase 14B local Supabase acceptance test    |
 | `npm run test:builder-orchestration`          | Run authenticated Builder orchestration tests       |
 | `npm run test:builder-location-creation`      | Run the Builder Location creation boundary tests    |
 | `npm run test:location-service`               | Run transient Location confirmation boundary tests  |

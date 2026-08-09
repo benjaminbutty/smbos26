@@ -119,6 +119,58 @@ export interface ExperienceNavigation {
   views: Tables<"views">[];
 }
 
+type NavigationView = Pick<
+  Tables<"views">,
+  "key" | "name" | "view_type" | "audience" | "is_active"
+>;
+
+export function normalizeNavigationDisplayText(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .normalize("NFKC")
+    .toLocaleLowerCase("en");
+}
+
+export function isSimpleViewWrapperPage(
+  page: Tables<"pages">,
+  views: readonly NavigationView[],
+): string | null {
+  if (!page.is_active || page.audience !== "internal") {
+    return null;
+  }
+
+  const layout = pageLayoutSchema.safeParse(page.layout_json);
+  if (!layout.success || layout.data.blocks.length !== 2) {
+    return null;
+  }
+
+  const [heading, viewBlock] = layout.data.blocks;
+  if (
+    heading?.type !== "heading" ||
+    heading.level !== 1 ||
+    viewBlock?.type !== "view" ||
+    normalizeNavigationDisplayText(heading.text) !==
+      normalizeNavigationDisplayText(page.title)
+  ) {
+    return null;
+  }
+
+  const view = views.find((candidate) => candidate.key === viewBlock.view_key);
+  if (
+    !view ||
+    !view.is_active ||
+    view.audience !== "internal" ||
+    view.view_type === "detail" ||
+    normalizeNavigationDisplayText(page.title) !==
+      normalizeNavigationDisplayText(view.name)
+  ) {
+    return null;
+  }
+
+  return view.key;
+}
+
 export async function resolveInlineEditEligibility(
   source: ConfigurationDefinitionSource,
   definition: SourcedViewDefinition,
@@ -367,17 +419,25 @@ export function createExperienceService(
         source.listPages(),
       ]);
 
+      const views = sourcedViews.filter(
+        (view) => view.audience === "internal" && view.view_type !== "detail",
+      );
+      const wrapperPageKeys = new Set(
+        pages.flatMap((page) => {
+          const viewKey = isSimpleViewWrapperPage(page, views);
+          return viewKey ? [page.key] : [];
+        }),
+      );
+
       return {
-        views: sourcedViews
-          .filter(
-            (view) =>
-              view.audience === "internal" && view.view_type !== "detail",
-          )
-          .map(({ object_key: objectKey, ...view }) => {
-            void objectKey;
-            return view;
-          }),
-        pages: pages.filter((page) => page.audience === "internal"),
+        views: views.map(({ object_key: objectKey, ...view }) => {
+          void objectKey;
+          return view;
+        }),
+        pages: pages.filter(
+          (page) =>
+            page.audience === "internal" && !wrapperPageKeys.has(page.key),
+        ),
       };
     },
   };
