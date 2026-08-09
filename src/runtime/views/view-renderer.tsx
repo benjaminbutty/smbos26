@@ -19,6 +19,7 @@ interface ViewRendererProps {
   navigationViewKey?: string;
   inlineEditAction?: InlineEditAction;
   preview?: boolean;
+  readOnly?: boolean;
   showHeading?: boolean;
 }
 
@@ -67,15 +68,17 @@ export function TableView({
   inlineEditAction,
   recordBasePath,
   preview = false,
+  readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as TableViewConfig;
   const fields = configuredFields(config.fields, fieldsByKey);
+  const locked = preview || readOnly;
 
   if (bundle.records.length === 0) {
     return <EmptyView singularLabel={bundle.object.singular_label} />;
   }
 
-  if (!preview && bundle.inlineEdit && inlineEditAction) {
+  if (!locked && bundle.inlineEdit && inlineEditAction) {
     return (
       <InlineTable
         action={inlineEditAction}
@@ -98,7 +101,7 @@ export function TableView({
                 {field.label}
               </th>
             ))}
-            {!preview ? (
+            {!locked ? (
               <th className="row-action-heading" scope="col">
                 <span className="sr-only">Open</span>
               </th>
@@ -112,7 +115,7 @@ export function TableView({
               <tr key={record.id}>
                 {fields.map((field, index) => (
                   <td key={field.key}>
-                    {index === 0 && !preview ? (
+                    {index === 0 && !locked ? (
                       <a
                         className="primary-record-link"
                         href={`${recordBasePath}/${record.id}`}
@@ -124,7 +127,7 @@ export function TableView({
                     )}
                   </td>
                 ))}
-                {!preview ? (
+                {!locked ? (
                   <td className="row-action">
                     <a href={`${recordBasePath}/${record.id}`}>Open</a>
                   </td>
@@ -143,6 +146,7 @@ export function ListView({
   fieldsByKey,
   recordBasePath,
   preview = false,
+  readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as ListViewConfig;
   const primaryField = fieldsByKey.get(config.primary_field);
@@ -150,6 +154,7 @@ export function ListView({
     config.secondary_fields,
     fieldsByKey,
   );
+  const locked = preview || readOnly;
 
   if (!primaryField || bundle.records.length === 0) {
     return <EmptyView singularLabel={bundle.object.singular_label} />;
@@ -174,14 +179,14 @@ export function ListView({
                 ))}
               </span>
             ) : null}
-            {!preview ? (
+            {!locked ? (
               <span aria-hidden="true" className="open-chevron">
                 →
               </span>
             ) : null}
           </>
         );
-        return preview ? (
+        return locked ? (
           <div className="runtime-list-item" key={record.id}>
             {content}
           </div>
@@ -204,6 +209,7 @@ export function CardsView({
   fieldsByKey,
   recordBasePath,
   preview = false,
+  readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as CardsViewConfig;
   const titleField = fieldsByKey.get(config.title_field);
@@ -217,6 +223,7 @@ export function CardsView({
     config.supporting_fields,
     fieldsByKey,
   );
+  const locked = preview || readOnly;
 
   if (!titleField || bundle.records.length === 0) {
     return <EmptyView singularLabel={bundle.object.singular_label} />;
@@ -242,7 +249,7 @@ export function CardsView({
             ) : null}
             <div className="runtime-card-body">
               <h2>
-                {preview ? (
+                {locked ? (
                   <span>
                     <FieldValue
                       field={titleField}
@@ -294,10 +301,12 @@ export function DetailView({
   fieldsByKey,
   recordBasePath,
   preview = false,
+  readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
   const config = bundle.config as DetailViewConfig;
   const selectedRecord = record ?? bundle.records[0];
   const fields = configuredFields(config.fields, fieldsByKey);
+  const locked = preview || readOnly;
 
   if (!selectedRecord) {
     return <EmptyView singularLabel={bundle.object.singular_label} />;
@@ -321,7 +330,7 @@ export function DetailView({
             )}
           </h1>
         </div>
-        {config.edit_form_key && !preview ? (
+        {config.edit_form_key && !locked ? (
           <a
             className="button"
             href={`/app/${businessSlug}/workspace/${friendlyPathKey(
@@ -347,7 +356,7 @@ export function DetailView({
       {selectedRecord.record_status === "archived" ? (
         <p className="archived-note">This item is archived.</p>
       ) : null}
-      {!preview ? (
+      {!locked ? (
         <a className="back-link" href={recordBasePath}>
           ← Back to {bundle.object.plural_label}
         </a>
@@ -363,10 +372,12 @@ export function ViewRenderer({
   navigationViewKey,
   inlineEditAction,
   preview = false,
+  readOnly = false,
   showHeading = true,
 }: Readonly<ViewRendererProps>): ReactNode {
   const fieldsByKey = new Map(bundle.fields.map((field) => [field.key, field]));
   const routeViewKey = navigationViewKey ?? bundle.definition.key;
+  const locked = preview || readOnly;
   const recordBasePath = `/app/${businessSlug}/workspace/${friendlyPathKey(
     routeViewKey,
   )}`;
@@ -382,7 +393,7 @@ export function ViewRenderer({
             <p className="eyebrow">Workspace</p>
             <h1 className="runtime-title">{bundle.definition.name}</h1>
           </div>
-          {createFormKey && !preview ? (
+          {createFormKey && !locked ? (
             <a className="button" href={`${recordBasePath}/new`}>
               + New {bundle.object.singular_label.toLowerCase()}
             </a>
@@ -402,6 +413,7 @@ export function ViewRenderer({
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
           preview={preview}
+          readOnly={readOnly}
           recordBasePath={recordBasePath}
           {...(inlineEditAction ? { inlineEditAction } : {})}
         />
@@ -412,6 +424,7 @@ export function ViewRenderer({
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
           preview={preview}
+          readOnly={readOnly}
           recordBasePath={recordBasePath}
         />
       ) : null}
@@ -421,6 +434,7 @@ export function ViewRenderer({
           businessSlug={businessSlug}
           fieldsByKey={fieldsByKey}
           preview={preview}
+          readOnly={readOnly}
           recordBasePath={recordBasePath}
         />
       ) : null}
@@ -431,6 +445,7 @@ export function ViewRenderer({
           fieldsByKey={fieldsByKey}
           navigationViewKey={routeViewKey}
           preview={preview}
+          readOnly={readOnly}
           recordBasePath={recordBasePath}
           {...(record ? { record } : {})}
         />

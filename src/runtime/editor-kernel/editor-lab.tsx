@@ -43,6 +43,8 @@ export interface EditorKernelProps {
   marker?: ReactNode;
   onStructureChanged?: () => void;
   title?: string;
+  readOnly?: boolean;
+  variant?: "workspace" | "embedded";
 }
 
 interface ActiveCell {
@@ -201,6 +203,20 @@ function replaceCell(
   };
 }
 
+function readOnlyTable(table: EditorTable): EditorTable {
+  const lockColumn = (column: EditorTable["columns"][number]) => ({
+    ...column,
+    editable: false,
+    readOnlyReason: "This Table is read-only on this Page.",
+  });
+  const recordColumns = table.recordColumns?.map(lockColumn);
+  return {
+    ...table,
+    columns: table.columns.map(lockColumn),
+    ...(recordColumns ? { recordColumns } : {}),
+  };
+}
+
 function isPrintableKey(event: React.KeyboardEvent): boolean {
   return (
     event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey
@@ -320,9 +336,14 @@ export function EditorKernel({
   footer,
   marker,
   onStructureChanged,
+  readOnly = false,
   title,
+  variant = "workspace",
 }: Readonly<EditorKernelProps>): ReactNode {
-  const [table, setTable] = useState<EditorTable>(() => adapter.getTable());
+  const [table, setTable] = useState<EditorTable>(() => {
+    const initial = adapter.getTable();
+    return readOnly ? readOnlyTable(initial) : initial;
+  });
   const [activeCell, setActiveCell] = useState<ActiveCell | null>(null);
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [columnMenuKey, setColumnMenuKey] = useState<string | null>(null);
@@ -863,7 +884,9 @@ export function EditorKernel({
       : null;
 
   return (
-    <section className="editor-kernel-page">
+    <section
+      className={`editor-kernel-page ${variant === "embedded" ? "editor-kernel-embedded" : ""}`}
+    >
       <header className="editor-lab-header">
         <div>
           {marker}

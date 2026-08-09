@@ -17,6 +17,8 @@ export interface ProductionTableWorkspaceProps {
   actions: ProductionTableAdapterActions;
   currentness?: ProductionConfigurationCurrentness | undefined;
   creationFallbackHref?: string | undefined;
+  readOnly?: boolean;
+  surface?: "workspace" | "embedded";
 }
 
 export function ProductionTableWorkspace({
@@ -24,6 +26,8 @@ export function ProductionTableWorkspace({
   capabilities,
   creationFallbackHref,
   currentness,
+  readOnly = false,
+  surface = "workspace",
   table,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
   const router = useRouter();
@@ -34,8 +38,9 @@ export function ProductionTableWorkspace({
 
   const footer = (
     <span>
-      Live operational preview · cell, panel, and direct row edits write real
-      Records.
+      {readOnly
+        ? "Read-only Table · Records are shown without edit controls."
+        : "Live Table · cell, panel, and direct row edits write real Records."}
       {creationFallbackHref ? (
         <>
           {" "}
@@ -51,12 +56,9 @@ export function ProductionTableWorkspace({
       adapter={adapter}
       capabilities={capabilities}
       footer={footer}
-      marker={
-        <p className="editor-lab-kicker">
-          Kernel preview · live Table data · Record edits are operational
-        </p>
-      }
       onStructureChanged={() => router.refresh()}
+      readOnly={readOnly}
+      variant={surface}
     />
   );
 }
