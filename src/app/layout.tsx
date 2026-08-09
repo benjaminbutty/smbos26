@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 
 import { AppShell } from "../components/app-shell";
+import "react-data-grid/lib/styles.css";
 import "./globals.css";
 
 const pageTitle = "Run your business. Your way. · SMBOS";
