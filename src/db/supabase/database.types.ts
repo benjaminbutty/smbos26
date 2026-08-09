@@ -652,6 +652,27 @@ export type Database = {
           },
         ];
       };
+      marketing_waitlist_signups: {
+        Row: {
+          business_type: string | null;
+          created_at: string;
+          email: string;
+          id: string;
+        };
+        Insert: {
+          business_type?: string | null;
+          created_at?: string;
+          email: string;
+          id?: string;
+        };
+        Update: {
+          business_type?: string | null;
+          created_at?: string;
+          email?: string;
+          id?: string;
+        };
+        Relationships: [];
+      };
       object_definitions: {
         Row: {
           business_id: string;

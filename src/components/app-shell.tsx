@@ -19,6 +19,51 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
     return <div className="app-frame customer-frame">{children}</div>;
   }
 
+  if (pathname === "/") {
+    return (
+      <div className="app-frame marketing-frame">
+        <header className="site-header marketing-header">
+          <Link className="marketing-brand" href="/" aria-label="SMBOS home">
+            SMBOS
+          </Link>
+
+          <nav
+            className="marketing-nav marketing-nav-desktop"
+            aria-label="Primary"
+          >
+            <a href="#how-it-works">How it works</a>
+            <a href="#why-smbos">Why SMBOS</a>
+            <a href="#early-access">Early access</a>
+            <Link href="/sign-in">Sign in</Link>
+            <a className="marketing-header-action" href="#early-access">
+              Join early access
+            </a>
+          </nav>
+
+          <details className="marketing-nav-mobile">
+            <summary>Menu</summary>
+            <nav aria-label="Mobile primary">
+              <a href="#how-it-works">How it works</a>
+              <a href="#why-smbos">Why SMBOS</a>
+              <a href="#early-access">Early access</a>
+              <Link href="/sign-in">Sign in</Link>
+            </nav>
+          </details>
+        </header>
+
+        {children}
+
+        <footer className="site-footer marketing-footer">
+          <div>
+            <span className="marketing-brand">SMBOS</span>
+            <span>Run your business. Your way.</span>
+          </div>
+          <Link href="/sign-in">Sign in</Link>
+        </footer>
+      </div>
+    );
+  }
+
   return (
     <div className="app-frame">
       <header className="site-header">
