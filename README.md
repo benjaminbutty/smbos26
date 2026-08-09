@@ -27,6 +27,7 @@ unless the existing server-side gates allow the request.
 
 The product and architecture sources of truth are:
 
+- [`docs/PRODUCT-NORTH-STAR.md`](docs/PRODUCT-NORTH-STAR.md)
 - [`docs/SMBOS-v0.1-Build-Spec.md`](docs/SMBOS-v0.1-Build-Spec.md)
 - [`docs/architecture-decisions.md`](docs/architecture-decisions.md)
 - [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
@@ -118,6 +119,12 @@ Included:
   through atomic M5-backed RPC facades, including bounded column widths
 - generic direct Table cell/row editing and `?record=` side-panel navigation
   without configuration-history writes
+- a shared Tables + Pages workspace shell with Owner/Admin Page creation,
+  bounded Page rename/layout saves, stable block IDs, and typed direct Page
+  actions over the existing M5 engine
+- a small Tiptap authoring adapter whose canonical persisted format remains
+  the SMBOS Page grammar; legacy blocks are preserved as read-only atoms and
+  internal Table Views embed the live production Table kernel
 - bounded preorder-question controls for editing public wording, help and
   requiredness or adding one short/long-answer generic Order Field
 - exact active-version and head-revision proposal currentness enforced

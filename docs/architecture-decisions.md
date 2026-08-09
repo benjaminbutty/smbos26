@@ -2734,3 +2734,39 @@ existing generic GraphService boundary and remain ordinary operational data;
 they do not create configuration history. AI, Builder, preview and the normal
 Changes lifecycle are unchanged. The direct lane is a bounded owner-facing
 facade, not a second configuration truth model.
+
+## ADR-037 — Tables and Pages share one bounded workspace foundation
+
+**Status:** Accepted for v0.1 (workspace foundation)
+
+**Date:** 9 August 2026
+
+SMBOS needs an owner-facing place to create a useful internal concept and then
+shape the Page that explains or operates it. The reusable primitives already
+cover Objects, Fields, Views, Forms, Pages, Records, and configuration history.
+This milestone therefore composes Tables and Pages in one workspace shell; it
+does not add a customer-specific table, editor persistence model, Page
+primitive, or second configuration engine.
+
+The Page authoring surface uses one pinned Tiptap 3 dependency set, but Tiptap
+is an editing adapter rather than a source of truth. The persisted
+`pages.layout_json` value remains the strict SMBOS Page grammar. The adapter
+supports plain text, Heading 1/2/3, Divider, Callout, and internal Table View
+blocks; it preserves unsupported historical blocks as read-only atoms. Empty
+Pages are valid, block IDs are stable once persisted, and internal View blocks
+may be explicitly read-only. The normal Page renderer remains the runtime
+boundary for Staff and published/static Pages.
+
+Page creation, rename, and layout save are a finite direct facade over the
+existing M5 propose/validate/apply lifecycle. The server owns tenant identity,
+Page identity, snapshot composition, and currentness. PostgreSQL verifies the
+action shape and the exact one-Page mutation atomically. Embedded Tables reuse
+the production adapter and kernel but never expose structural controls. The
+editor autosaves through the typed Server Action boundary; it does not execute
+arbitrary code, SQL, HTML, or generic requests.
+
+This decision intentionally leaves collaboration, Yjs, comments, AI editing,
+uploads, rich text expansion, formulas, bulk editing, and arbitrary Page
+operations outside the workspace foundation. Those capabilities require a
+separate reusable boundary and evidence; they are not smuggled into the
+authoring adapter.

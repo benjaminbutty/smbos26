@@ -16,12 +16,17 @@ Future Table workspaces or interactive Table blocks can embed `EditorKernel`
 with their own adapter, title, marker, and footer without importing the lab
 wrapper or changing the editor contract.
 
-The production preview lives in `production/`. Its pure mapper translates one
-authenticated live Table bundle, its client adapter only calls typed server
+The production workspace lives in `production/`. Its pure mapper translates
+one authenticated live Table bundle, its client adapter only calls typed server
 actions, and the server actions reuse the existing direct configuration and
-Record boundaries. The preview is deliberately unlinked and is enabled only by
-`?editor=kernel` on an internal Table route. Owner/Admin users may add and
-rename supported columns, edit Choice/Status options, reorder columns, and
-rename the Table title; Staff sees the operational Record lane without those
-structural controls. Column resizing is local to the preview and is never
-persisted.
+Record boundaries. Ordinary internal Table routes use this kernel directly;
+the old repeated Edit-button workspace is retained only for focused legacy
+regressions. Owner/Admin users may add and rename supported columns, edit
+Choice/Status options, reorder columns, and rename the Table title; Staff sees
+the operational Record lane without those structural controls. Column
+resizing is local to the workspace and is never persisted.
+
+`EditorKernel` also supports an embedded read-only surface for Page View
+blocks. Embedded Tables always suppress structural controls and use the same
+adapter contract as the ordinary workspace. The Page editor owns the
+Tiptap-to-SMBOS translation; the kernel remains a deterministic Table runtime.

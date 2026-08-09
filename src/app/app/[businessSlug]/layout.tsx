@@ -7,7 +7,9 @@ import { ConfigurationChangeService } from "../../../core/configuration/service"
 import { createExperienceService } from "../../../core/experience/service";
 import { createServerClient } from "../../../db/supabase/server";
 import { experienceKeyToPath } from "../../../runtime/routing";
+import { PagesSidebar } from "../../../runtime/navigation/pages-sidebar";
 import { TablesSidebar } from "../../../runtime/navigation/tables-sidebar";
+import { createPageAction } from "../../../runtime/pages/direct-actions";
 import { createDirectTableAction } from "../../../runtime/views/direct-actions";
 
 interface TenantLayoutProps {
@@ -77,35 +79,63 @@ export default async function TenantLayout({
             currentness={canManageConfiguration ? currentness : null}
             tables={tables}
           />
-          {canManageConfiguration ? (
-            <>
-              <Link href={`/app/${businessSlug}/builder`}>Builder</Link>
-              <Link href={`/app/${businessSlug}/setup`}>Edit setup</Link>
-              <Link href={`/app/${businessSlug}/changes`}>History</Link>
-            </>
+          <PagesSidebar
+            action={
+              canManageConfiguration && currentness
+                ? createPageAction.bind(null, businessSlug, currentness)
+                : undefined
+            }
+            businessSlug={businessSlug}
+            currentness={canManageConfiguration ? currentness : null}
+            pages={navigation.pages.map((page) => ({
+              id: page.id,
+              slug: page.slug,
+              title: page.title,
+            }))}
+          />
+          {nonTableViews.length > 0 ? (
+            <section
+              aria-labelledby="views-navigation-heading"
+              className="sidebar-section sidebar-view-section"
+            >
+              <div className="sidebar-section-heading">
+                <h2 id="views-navigation-heading">Views</h2>
+              </div>
+              <nav aria-label="Views">
+                {nonTableViews.map((view) => (
+                  <Link
+                    href={`/app/${businessSlug}/workspace/${experienceKeyToPath(
+                      view.key,
+                    )}`}
+                    key={view.id}
+                  >
+                    {view.name}
+                  </Link>
+                ))}
+              </nav>
+            </section>
           ) : null}
-          {navigation.pages.map((page) => (
-            <Link
-              href={`/app/${businessSlug}/pages/${page.slug}`}
-              key={page.id}
-            >
-              {page.title}
-            </Link>
-          ))}
-          {nonTableViews.map((view) => (
-            <Link
-              href={`/app/${businessSlug}/workspace/${experienceKeyToPath(
-                view.key,
-              )}`}
-              key={view.id}
-            >
-              {view.name}
-            </Link>
-          ))}
+          <section
+            aria-labelledby="more-navigation-heading"
+            className="sidebar-section sidebar-secondary-section"
+          >
+            <div className="sidebar-section-heading">
+              <h2 id="more-navigation-heading">More</h2>
+            </div>
+            <nav aria-label="More workspace destinations">
+              {canManageConfiguration ? (
+                <>
+                  <Link href={`/app/${businessSlug}/builder`}>Builder</Link>
+                  <Link href={`/app/${businessSlug}/setup`}>Edit setup</Link>
+                  <Link href={`/app/${businessSlug}/changes`}>History</Link>
+                </>
+              ) : null}
+              <Link href={`/app/${businessSlug}/locations`}>Settings</Link>
+            </nav>
+          </section>
         </nav>
 
         <div className="workspace-sidebar-footer">
-          <Link href={`/app/${businessSlug}/locations`}>Settings</Link>
           <Link href="/onboarding">Switch business</Link>
           <form action={signOut}>
             <button className="button-link" type="submit">

@@ -594,3 +594,27 @@ links to the full Record route for existing Location controls. Preview remains
 read-only and the existing full Record route remains a fallback. Delete/archive,
 formulas, relationships, permissions, bulk editing, spreadsheet behavior and
 operational undo/history remain outside this phase.
+
+## Workspace foundation - bounded direct Page authoring
+
+The Tables + Pages workspace adds one bounded direct Page lane over the same
+M5 configuration engine. Owner/Admin actions are limited to `create_page`,
+`rename_page`, and `save_page_layout`. The server derives Business and actor
+identity, reloads the active immutable snapshot, validates the typed intent,
+and sends one complete `set_page` operation through the authenticated
+`apply_direct_page_configuration_change` facade. PostgreSQL locks the Business
+configuration head, checks the exact active Version/head currentness, rejects
+unknown or cross-Page changes, and verifies that rename changes only the title
+while layout save changes only the layout. A stale or unauthorized request
+creates no Change, Version, or head advance.
+
+The canonical persisted format remains the existing SMBOS Page grammar. It now
+allows an empty block list, optional stable UUIDs on supported and historical
+blocks, bounded Callout tones, and optional `read_only` on internal View blocks.
+The browser's Tiptap document is transient and is translated at the authoring
+boundary; raw Tiptap JSON is never accepted by the server or stored. Existing
+image, button, form, preorder, and other historical blocks remain read-only
+editor atoms until a bounded authoring contract exists. Internal Table View
+blocks reuse the production Table kernel with structural controls disabled and
+respect the Page block's read-only setting. Staff and public rendering remain
+deterministic `PageRenderer` paths.
