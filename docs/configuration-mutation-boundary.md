@@ -517,3 +517,28 @@ public resolver, deployment step, cache, queue or operational write is added.
 The public resolver remains unavailable before Apply and resolves the same Page
 slug after Apply; Product availability and all preorder operational state stay
 outside this configuration-only boundary.
+
+## Milestone 14 Phase 14B - manual internal list creation
+
+Owner/Admin Setup also exposes `/app/[businessSlug]/setup/lists/new`. The route
+accepts only a bounded owner intent: singular and plural labels, one mandatory
+main-name Field, and up to seven additional information rows. The server
+derives tenant and actor identity from the authenticated route context and
+reloads the active head plus immutable snapshot before composing.
+
+The pure composer emits exactly one existing M5 operation for the new Object,
+one per Field, two internal create/edit Forms, one internal Table View, and
+one internal draft wrapper Page. It uses the shared deterministic identity
+allocator and strict schemas; only Choice and Status carry bounded options.
+The browser cannot submit operations, candidate data, UUIDs, Business or actor
+identity, allocations, or lifecycle state. Preparation calls the ordinary
+proposal boundary once and never validates, applies, publishes, retries, or
+rebases automatically.
+
+The existing Changes Preview, Validate, and Apply flow remains authoritative.
+After Apply, generic Record create/edit and Phase 14A inline editing are
+ordinary operational writes outside configuration history. The wrapper Page
+is classified by shared `ExperienceService.listNavigation()` and omitted when
+its exact heading/View shape matches, leaving one direct View entry. No new
+migration, table, RPC, primitive, relationship, preorder/public operation, or
+AI path is added.

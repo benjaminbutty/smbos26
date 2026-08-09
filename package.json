@@ -30,6 +30,8 @@
     "test:builder-planning": "vitest run --config vitest.builder-planning.config.ts",
     "test:builder-configuration-drafting": "vitest run --config vitest.builder-configuration-drafting.config.ts",
     "test:configuration-draft-compiler": "vitest run --config vitest.configuration-draft-compiler.config.ts",
+    "test:manual-lists": "vitest run tests/manual-lists.test.ts tests/navigation.test.ts",
+    "test:manual-list-integration": "vitest run --config vitest.integration.config.ts tests/integration/manual-lists.test.ts",
     "test:builder-configuration-proposal": "vitest run --config vitest.builder-configuration-proposal.config.ts",
     "test:builder-orchestration": "vitest run --config vitest.builder-orchestration.config.ts",
     "test:location-service": "vitest run tests/location-confirmation-token.test.ts",

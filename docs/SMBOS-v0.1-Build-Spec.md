@@ -2897,3 +2897,37 @@ Fields retain the existing full-Form journey. Candidate preview remains
 read-only. Relationships, Record-to-Location editing, structural Field/View
 editing, bulk or spreadsheet behaviour, and operational undo/history remain
 outside Phase 14A.
+
+## Milestone 14 Phase 14B - manual internal list creation
+
+The Owner/Admin Setup surface provides a bounded “Lists” entry point at
+`/app/[businessSlug]/setup/lists/new`. The owner supplies a singular item
+label, plural list label, mandatory main-name label, and zero to seven
+additional information rows. The supported owner types are Text, Longer text,
+Number, Yes/No, Date, Email, Phone, Choice, and Status. Choice and Status
+accept only two to 100 bounded, normalized unique options. The total active
+Field count is therefore at most eight, including the mandatory main name.
+
+The server derives tenant and actor identity, reloads the active head and
+immutable `ConfigurationSnapshotV1`, checks the submitted expected Version ID
+and head revision, and composes one ordinary M5 proposal. The pure deterministic
+composer emits exactly `N + 5` strict operations: one Object, `N` Fields, two
+internal create/edit Forms, one internal Table View, and one internal draft
+wrapper Page. It uses existing Object, Field, Form, View, Page, Record and M5
+primitives; it does not emit Relationships, preorder/public configuration,
+workflows, arbitrary JSON, or customer-specific tables.
+
+The browser submits only the bounded owner intent and expected currentness.
+Business, actor, UUID, key, slug, operation, candidate, status, lifecycle and
+allocation values are server-derived or rejected. Proposal creation calls the
+existing `ConfigurationChangeService.proposeChangeSet()` boundary once and
+does not validate, apply, publish, retry, rebase or write Records. Existing
+Changes Preview, Validate and Apply remain deliberate. After Apply, the
+generic create/edit Form journey and Phase 14A inline Table editing operate on
+ordinary Records outside configuration history. Exact two-block list wrapper
+Pages are omitted from shared workspace navigation in favour of their direct
+Table View; candidate preview remains read-only.
+
+This phase adds no migration, table, RPC, queue, cache, new primitive, AI task
+or Builder path. Structural editing of existing lists, relationships and
+additional Field types remain deferred.

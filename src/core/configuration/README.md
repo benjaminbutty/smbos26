@@ -31,6 +31,22 @@ immutable engine outputs. A non-baseline version reuses its source proposal
 diff. Snapshot detail shows bounded collection counts and does not create
 another snapshot or diff algorithm.
 
+## Manual internal lists
+
+Owner/Admin Setup exposes `/app/[businessSlug]/setup/lists/new` as a bounded
+configuration entry point for a simple internal list. The server reloads the
+active immutable snapshot, composes only existing M5 operations, and creates
+one ordinary proposed Change. Preview, Validate, and Apply remain deliberate
+Changes actions; the form never writes projection tables or operational
+Records directly.
+
+The list composer is pure and independent of AI. It derives Object, Field,
+Form, View, and Page identities with the shared deterministic allocator, and
+emits no Relationships, preorder configuration, public Pages, or workflows.
+After application, generic experience Forms, Table Views, and inline Record
+editing provide the runtime surface. Those Record writes remain outside
+configuration history.
+
 Phase 5B adds one dedicated `actions.ts` module under the Changes route. Its
 four narrowly named Server Actions resolve the session user and Business slug,
 require `manage_configuration`, derive Business and actor UUIDs server-side,
