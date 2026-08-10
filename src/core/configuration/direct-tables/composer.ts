@@ -24,6 +24,7 @@ import {
   type DirectTableColumnType,
   type DirectTableIntent,
 } from "./schemas";
+import { directTableSettingsForTypeChange } from "./type-compatibility";
 
 type FieldOperation = Extract<ConfigurationOperation, { op: "set_field" }>;
 type ObjectOperation = Extract<ConfigurationOperation, { op: "set_object" }>;
@@ -41,6 +42,7 @@ export const directTableErrorCodes = [
   "direct_table_field_label_conflict",
   "direct_table_key_unavailable",
   "direct_table_options_invalid",
+  "direct_table_type_change_invalid",
   "direct_table_reorder_invalid",
   "direct_table_width_invalid",
   "direct_table_operations_invalid",
@@ -64,6 +66,8 @@ const directTableErrorMessages: Readonly<Record<DirectTableErrorCode, string>> =
       "That Table could not be prepared safely. Try a different name.",
     direct_table_options_invalid:
       "Choice and Status columns need at least two different options.",
+    direct_table_type_change_invalid:
+      "That property type could not be changed safely. Nothing was changed.",
     direct_table_reorder_invalid:
       "Columns could not be reordered because the Table changed. Reload and try again.",
     direct_table_width_invalid:
@@ -412,7 +416,12 @@ function composeTableMutation(
         field_type: directFieldType(intent.columnType),
         required: false,
         default_value: null,
-        settings_json: intent.options ? { options: intent.options } : {},
+        settings_json:
+          intent.columnType === "currency"
+            ? { ...(intent.currency ? { currency: intent.currency } : {}) }
+            : intent.options
+              ? { options: intent.options }
+              : {},
         position: nextPosition,
         is_active: true,
       });
@@ -422,6 +431,55 @@ function composeTableMutation(
       });
       operations = [field, tableViewOperation(table.view, config)];
       title = `Add ${intent.label}`;
+      break;
+    }
+    case "insert_column": {
+      if (fieldLabelConflict(fields, intent.label)) {
+        throw new DirectTableComposerError("direct_table_field_label_conflict");
+      }
+      const anchorIndex = table.config.fields.indexOf(intent.anchorFieldKey);
+      if (anchorIndex < 0) {
+        throw new DirectTableComposerError("direct_table_not_found");
+      }
+      const fieldKey = allocateKey(
+        snapshot.field_definitions
+          .filter((field) => field.object_key === table.object.key)
+          .map((field) => field.key),
+        intent.label,
+        "field",
+      );
+      const nextPosition =
+        snapshot.field_definitions
+          .filter((field) => field.object_key === table.object.key)
+          .reduce((highest, field) => Math.max(highest, field.position), -1) +
+        1;
+      const field = fieldOperation({
+        object_key: table.object.key,
+        key: fieldKey,
+        label: intent.label,
+        field_type: directFieldType(intent.columnType),
+        required: false,
+        default_value: null,
+        settings_json:
+          intent.columnType === "currency"
+            ? { ...(intent.currency ? { currency: intent.currency } : {}) }
+            : intent.options
+              ? { options: intent.options }
+              : {},
+        position: nextPosition,
+        is_active: true,
+      });
+      const insertAt = anchorIndex + (intent.position === "right" ? 1 : 0);
+      const fieldsNext = [...table.config.fields];
+      fieldsNext.splice(insertAt, 0, fieldKey);
+      operations = [
+        field,
+        tableViewOperation(
+          table.view,
+          tableViewConfigSchema.parse({ ...table.config, fields: fieldsNext }),
+        ),
+      ];
+      title = `Insert ${intent.label}`;
       break;
     }
     case "rename_column": {
@@ -443,6 +501,39 @@ function composeTableMutation(
         }),
       ];
       title = `Rename ${intent.label}`;
+      break;
+    }
+    case "change_column_type": {
+      const current = tableField(snapshot, table, intent.fieldKey);
+      if (
+        table.config.title_field === current.key &&
+        intent.columnType !== "short_text" &&
+        intent.columnType !== "long_text"
+      ) {
+        throw new DirectTableComposerError("direct_table_type_change_invalid");
+      }
+      if (current.field_type === directFieldType(intent.columnType)) {
+        throw new DirectTableComposerError("direct_table_type_change_invalid");
+      }
+      operations = [
+        fieldOperation({
+          object_key: current.object_key,
+          key: current.key,
+          label: current.label,
+          field_type: directFieldType(intent.columnType),
+          required: current.required,
+          default_value: current.default_value,
+          settings_json: directTableSettingsForTypeChange(
+            intent.columnType,
+            current.settings_json,
+            intent.options,
+            intent.currency,
+          ),
+          position: current.position,
+          is_active: current.is_active,
+        }),
+      ];
+      title = `Change ${current.label} type`;
       break;
     }
     case "update_column_options": {

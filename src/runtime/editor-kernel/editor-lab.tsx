@@ -32,9 +32,17 @@ import {
   type EditorTable,
   type EditorValue,
 } from "./contracts";
+import {
+  buildClipboardMatrix,
+  MAX_PASTE_CELLS,
+  MAX_PASTE_ROWS,
+  selectionBounds,
+  serializeClipboardMatrix,
+} from "./clipboard";
 import { createEditorColumns, type PendingEdit } from "./table-columns";
 import { RecordPanel } from "./record-panel";
 import type { TableEditorAdapter } from "./contracts";
+import { OptionManager, ShortcutSheet, TypePicker } from "./lenni-ui";
 
 export interface EditorKernelProps {
   adapter: TableEditorAdapter;
@@ -50,6 +58,11 @@ export interface EditorKernelProps {
 interface ActiveCell {
   rowId: string;
   columnKey: string;
+}
+
+interface GridPoint {
+  rowIndex: number;
+  columnIndex: number;
 }
 
 interface SaveRetry {
@@ -68,7 +81,7 @@ const addableColumnKinds: ReadonlyArray<{
   label: string;
 }> = [
   { kind: "text", label: "Text" },
-  { kind: "long_text", label: "Longer text" },
+  { kind: "long_text", label: "Long text" },
   { kind: "number", label: "Number" },
   { kind: "boolean", label: "Yes / No" },
   { kind: "date", label: "Date" },
@@ -83,13 +96,6 @@ function saveErrorMessage(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
     : "Could not save";
-}
-
-function optionValues(value: string): string[] {
-  return value
-    .split("\n")
-    .map((option) => option.trim())
-    .filter(Boolean);
 }
 
 function optionsAreValid(options: readonly string[]): boolean {
@@ -182,7 +188,6 @@ function TableTitleEditor({
       type="button"
     >
       <span>{name}</span>
-      <span className="editor-title-hint">Change title</span>
     </button>
   );
 }
@@ -243,7 +248,7 @@ function AddColumnPopover({
 }>): ReactNode {
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<EditorColumnKind>("text");
-  const [options, setOptions] = useState("Active\nInactive");
+  const [options, setOptions] = useState<string[]>(["Active", "Inactive"]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -257,7 +262,7 @@ function AddColumnPopover({
         }
         const input: CreateColumnInput = { label, kind };
         if (kind === "select" || kind === "status") {
-          input.options = optionValues(options);
+          input.options = options;
           if (!optionsAreValid(input.options)) {
             setError("Choice and Status need two different options.");
             return;
@@ -289,28 +294,18 @@ function AddColumnPopover({
           value={label}
         />
       </label>
-      <label>
-        Type
-        <select
-          onChange={(event) =>
-            setKind(event.currentTarget.value as EditorColumnKind)
-          }
-          value={kind}
-        >
-          {addableColumnKinds.map((option) => (
-            <option key={option.kind} value={option.kind}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <label>Type</label>
+      <TypePicker
+        allowedKinds={addableColumnKinds.map((option) => option.kind)}
+        onChange={setKind}
+        value={kind}
+      />
       {kind === "select" || kind === "status" ? (
         <label>
           Options
-          <textarea
-            onChange={(event) => setOptions(event.currentTarget.value)}
-            rows={3}
-            value={options}
+          <OptionManager
+            onChange={(next) => setOptions([...next])}
+            options={options}
           />
         </label>
       ) : null}
@@ -348,6 +343,11 @@ export function EditorKernel({
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [columnMenuKey, setColumnMenuKey] = useState<string | null>(null);
   const [addColumnOpen, setAddColumnOpen] = useState(false);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [selectionAnchor, setSelectionAnchor] = useState<GridPoint | null>(
+    null,
+  );
+  const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
   const [draftActivation, setDraftActivation] = useState<{
@@ -359,6 +359,7 @@ export function EditorKernel({
   const gridRef = useRef<DataGridHandle>(null);
   const operationVersions = useRef(new Map<string, number>());
   const pendingSaves = useRef(new Set<string>());
+  const rangeSelectionRef = useRef(false);
 
   const panelRow = panelRowId
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
@@ -416,6 +417,49 @@ export function EditorKernel({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [closePanel, panelRowId]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const typing = Boolean(
+        target?.closest("input, textarea, select, [contenteditable='true']"),
+      );
+      if (!typing && event.key === "?" && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        setShortcutOpen(true);
+      }
+      if (
+        capabilities.canAddColumns &&
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLocaleLowerCase("en") === "p"
+      ) {
+        event.preventDefault();
+        setColumnMenuKey(null);
+        setAddColumnOpen(true);
+      }
+      if (
+        !typing &&
+        ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu")
+      ) {
+        event.preventDefault();
+        const column = table.columns[selectionAnchor?.columnIndex ?? 0];
+        if (column) {
+          setAddColumnOpen(false);
+          setColumnMenuKey(column.key);
+        }
+      }
+      if (!typing && event.key === "Escape") {
+        const point = selectionAnchor ?? { rowIndex: 0, columnIndex: 0 };
+        setSelectionAnchor(point);
+        setSelectionEnd(point);
+        setColumnMenuKey(null);
+        setAddColumnOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [capabilities.canAddColumns, selectionAnchor, table.columns]);
 
   useEffect(() => {
     if (!draftActivation) {
@@ -664,6 +708,46 @@ export function EditorKernel({
     [adapter, capabilities.canUpdateColumnOptions, runStructural],
   );
 
+  const handleChangeColumnType = useCallback(
+    async (
+      columnKey: string,
+      kind: EditorColumnKind,
+      options?: readonly string[],
+    ): Promise<boolean> => {
+      if (!capabilities.canChangeColumnTypes || !adapter.changeColumnType) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.changeColumnType!(columnKey, kind, options),
+      );
+      if (saved) setColumnMenuKey(null);
+      return saved;
+    },
+    [adapter, capabilities.canChangeColumnTypes, runStructural],
+  );
+
+  const handleInsertColumn = useCallback(
+    async (
+      anchorColumnKey: string,
+      position: "left" | "right",
+      input: {
+        label: string;
+        kind: EditorColumnKind;
+        options?: readonly string[];
+      },
+    ): Promise<boolean> => {
+      if (!capabilities.canInsertColumns || !adapter.insertColumn) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.insertColumn!({ ...input, anchorColumnKey, position }),
+      );
+      if (saved) setColumnMenuKey(null);
+      return saved;
+    },
+    [adapter, capabilities.canInsertColumns, runStructural],
+  );
+
   const handleReorderColumns = useCallback(
     (sourceKey: string, targetKey: string): void => {
       if (!capabilities.canReorderColumns) {
@@ -678,6 +762,25 @@ export function EditorKernel({
         targetKey,
       );
       void runStructural(() => adapter.reorderColumns(nextKeys));
+    },
+    [adapter, capabilities.canReorderColumns, runStructural, table.columns],
+  );
+
+  const handleMoveColumn = useCallback(
+    (sourceKey: string, direction: "left" | "right"): void => {
+      if (!capabilities.canReorderColumns) return;
+      const keys = table.columns.map((column) => column.key);
+      const sourceIndex = keys.indexOf(sourceKey);
+      const targetIndex = sourceIndex + (direction === "left" ? -1 : 1);
+      if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= keys.length)
+        return;
+      const next = [...keys];
+      [next[sourceIndex]!, next[targetIndex]!] = [
+        next[targetIndex]!,
+        next[sourceIndex]!,
+      ];
+      void runStructural(() => adapter.reorderColumns(next));
+      setColumnMenuKey(null);
     },
     [adapter, capabilities.canReorderColumns, runStructural, table.columns],
   );
@@ -711,6 +814,122 @@ export function EditorKernel({
     [adapter, capabilities.canRenameTable, runStructural],
   );
 
+  const applyPasteMatrix = useCallback(
+    async (
+      startRowIndex: number,
+      startColumnIndex: number,
+      matrix: readonly (EditorValue | null)[][],
+    ): Promise<void> => {
+      if (readOnly || !adapter.applyPaste) {
+        setSaveState({ status: "error", message: "This Table is read-only." });
+        return;
+      }
+      const cellCount = matrix.reduce((count, row) => count + row.length, 0);
+      if (matrix.length > MAX_PASTE_ROWS || cellCount > MAX_PASTE_CELLS) {
+        setSaveState({
+          status: "error",
+          message: `Paste is limited to ${MAX_PASTE_CELLS} cells and ${MAX_PASTE_ROWS} records.`,
+        });
+        return;
+      }
+      setSaveState({ status: "saving" });
+      try {
+        const result = await adapter.applyPaste({
+          startRowIndex,
+          startColumnIndex,
+          matrix,
+        });
+        setTable((current) => {
+          const byId = new Map(current.rows.map((row) => [row.id, row]));
+          for (const row of result.rows) byId.set(row.id, row);
+          return { ...current, rows: [...byId.values()] };
+        });
+        if (result.failures.length > 0) {
+          setSaveState({
+            status: "error",
+            message: `${result.failures.length} row${result.failures.length === 1 ? "" : "s"} could not be saved.`,
+          });
+        } else {
+          setSaveState({ status: "saved" });
+        }
+      } catch (error) {
+        setSaveState({ status: "error", message: saveErrorMessage(error) });
+      }
+    },
+    [adapter, readOnly],
+  );
+
+  const activeGridPoint = useCallback((): GridPoint => {
+    const rowIndex = activeCell
+      ? table.rows.findIndex((row) => row.id === activeCell.rowId)
+      : 0;
+    const columnIndex = activeCell
+      ? table.columns.findIndex((column) => column.key === activeCell.columnKey)
+      : 0;
+    return {
+      rowIndex: Math.max(0, rowIndex),
+      columnIndex: Math.max(0, columnIndex),
+    };
+  }, [activeCell, table.columns, table.rows]);
+
+  const handleClipboardPaste = useCallback(
+    (text: string): void => {
+      const point = selectionAnchor ?? activeGridPoint();
+      const end = selectionEnd ?? point;
+      const bounds = selectionBounds(point, end);
+      try {
+        const columns = table.columns.slice(bounds.startColumn);
+        const parsed = buildClipboardMatrix(text, columns);
+        void applyPasteMatrix(
+          bounds.startRow,
+          bounds.startColumn,
+          parsed.matrix,
+        );
+      } catch (error) {
+        setSaveState({ status: "error", message: saveErrorMessage(error) });
+      }
+    },
+    [
+      activeGridPoint,
+      applyPasteMatrix,
+      selectionAnchor,
+      selectionEnd,
+      table.columns,
+    ],
+  );
+
+  const handleCopyCapture = useCallback(
+    (event: React.ClipboardEvent): void => {
+      const point = selectionAnchor ?? activeGridPoint();
+      const end = selectionEnd ?? point;
+      const bounds = selectionBounds(point, end);
+      const matrix = table.rows
+        .slice(bounds.startRow, bounds.endRow + 1)
+        .map((row) =>
+          table.columns
+            .slice(bounds.startColumn, bounds.endColumn + 1)
+            .map((column) => row.values[column.key] ?? null),
+        );
+      if (matrix.length === 0) return;
+      event.preventDefault();
+      event.clipboardData.setData(
+        "text/plain",
+        serializeClipboardMatrix(matrix),
+      );
+    },
+    [activeGridPoint, selectionAnchor, selectionEnd, table.columns, table.rows],
+  );
+
+  const handlePasteCapture = useCallback(
+    (event: React.ClipboardEvent): void => {
+      const text = event.clipboardData.getData("text/plain");
+      if (!text) return;
+      event.preventDefault();
+      handleClipboardPaste(text);
+    },
+    [handleClipboardPaste],
+  );
+
   const handleCellKeyDown = useCallback(
     (args: CellKeyDownArgs<EditorRow>, event: CellKeyboardEvent): void => {
       const column = table.columns.find(
@@ -718,6 +937,68 @@ export function EditorKernel({
       );
       if (!column) {
         return;
+      }
+
+      if (args.mode === "SELECT") {
+        const arrowDelta: Record<string, { row: number; column: number }> = {
+          ArrowUp: { row: -1, column: 0 },
+          ArrowDown: { row: 1, column: 0 },
+          ArrowLeft: { row: 0, column: -1 },
+          ArrowRight: { row: 0, column: 1 },
+        };
+        const delta = arrowDelta[event.key];
+        if (event.shiftKey && delta) {
+          event.preventGridDefault();
+          const anchor = selectionAnchor ?? {
+            rowIndex: args.rowIdx,
+            columnIndex: args.column.idx,
+          };
+          const rowCount =
+            table.rows.length + (capabilities.rowCreation === "direct" ? 1 : 0);
+          const next = {
+            rowIndex: Math.max(
+              0,
+              Math.min(rowCount - 1, args.rowIdx + delta.row),
+            ),
+            columnIndex: Math.max(
+              0,
+              Math.min(
+                table.columns.length - 1,
+                args.column.idx + delta.column,
+              ),
+            ),
+          };
+          rangeSelectionRef.current = true;
+          setSelectionAnchor(anchor);
+          setSelectionEnd(next);
+          args.selectCell(
+            { idx: next.columnIndex, rowIdx: next.rowIndex },
+            { shouldFocusCell: true },
+          );
+          return;
+        }
+        if (
+          (event.key === "Backspace" || event.key === "Delete") &&
+          !readOnly
+        ) {
+          event.preventGridDefault();
+          const point = selectionAnchor ?? {
+            rowIndex: args.rowIdx,
+            columnIndex: args.column.idx,
+          };
+          const end = selectionEnd ?? point;
+          const bounds = selectionBounds(point, end);
+          const matrix = Array.from(
+            { length: bounds.endRow - bounds.startRow + 1 },
+            () =>
+              Array.from(
+                { length: bounds.endColumn - bounds.startColumn + 1 },
+                () => null,
+              ),
+          );
+          void applyPasteMatrix(bounds.startRow, bounds.startColumn, matrix);
+          return;
+        }
       }
 
       if (args.mode === "EDIT") {
@@ -792,7 +1073,16 @@ export function EditorKernel({
         });
       }
     },
-    [createDraftRecord, table.columns],
+    [
+      applyPasteMatrix,
+      capabilities.rowCreation,
+      createDraftRecord,
+      readOnly,
+      selectionAnchor,
+      selectionEnd,
+      table.columns,
+      table.rows.length,
+    ],
   );
 
   const handleDoubleClick = useCallback(
@@ -812,6 +1102,22 @@ export function EditorKernel({
       args.selectCell(true);
     },
     [table.columns],
+  );
+
+  const handleCellMouseDown = useCallback(
+    (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
+      const point = { rowIndex: args.rowIdx, columnIndex: args.column.idx };
+      if (event.shiftKey && selectionAnchor) {
+        event.preventDefault();
+        rangeSelectionRef.current = true;
+        setSelectionEnd(point);
+        args.selectCell(true);
+      } else {
+        setSelectionAnchor(point);
+        setSelectionEnd(point);
+      }
+    },
+    [selectionAnchor],
   );
 
   const draftRow = useMemo<EditorRow>(
@@ -848,11 +1154,17 @@ export function EditorKernel({
             current === columnKey ? null : columnKey,
           );
         },
+        onCloseColumnMenu: () => setColumnMenuKey(null),
         onOpenRecord: openRecord,
         onRenameColumn: handleRenameColumn,
         onUpdateColumnOptions: handleUpdateColumnOptions,
+        onChangeColumnType: handleChangeColumnType,
+        onInsertColumn: handleInsertColumn,
+        onMoveColumn: handleMoveColumn,
         canRenameColumns: capabilities.canRenameColumns,
         canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
+        canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
+        canInsertColumns: Boolean(capabilities.canInsertColumns),
         canReorderColumns: capabilities.canReorderColumns,
         canResizeColumns: capabilities.canResizeColumns,
         pendingEdit,
@@ -862,10 +1174,16 @@ export function EditorKernel({
       columnMenuKey,
       handleRenameColumn,
       handleUpdateColumnOptions,
+      handleChangeColumnType,
+      handleInsertColumn,
+      handleMoveColumn,
+      setColumnMenuKey,
       openRecord,
       pendingEdit,
       capabilities.canRenameColumns,
       capabilities.canUpdateColumnOptions,
+      capabilities.canChangeColumnTypes,
+      capabilities.canInsertColumns,
       capabilities.canReorderColumns,
       capabilities.canResizeColumns,
       table.columns,
@@ -934,13 +1252,18 @@ export function EditorKernel({
 
       <div className="editor-lab-workspace">
         <div className="editor-grid-area">
-          <div className="editor-grid-shell">
+          <div
+            className="editor-grid-shell"
+            onCopyCapture={handleCopyCapture}
+            onPasteCapture={handlePasteCapture}
+          >
             <DataGrid
               aria-label={`${table.name} editor`}
               className="editor-grid"
               columns={gridColumns}
               data-testid="editor-grid"
               headerRowHeight={36}
+              onCellMouseDown={handleCellMouseDown}
               onCellDoubleClick={handleDoubleClick}
               onCellKeyDown={handleCellKeyDown}
               onColumnResize={
@@ -956,6 +1279,23 @@ export function EditorKernel({
                 setPendingEdit(null);
                 if (row) {
                   setActiveCell({ rowId: row.id, columnKey: column.key });
+                }
+                const point = {
+                  rowIndex: row
+                    ? row.isDraft
+                      ? table.rows.length
+                      : table.rows.findIndex(
+                          (candidate) => candidate.id === row.id,
+                        )
+                    : 0,
+                  columnIndex: column.idx,
+                };
+                if (rangeSelectionRef.current) {
+                  rangeSelectionRef.current = false;
+                  setSelectionEnd(point);
+                } else {
+                  setSelectionAnchor(point);
+                  setSelectionEnd(point);
                 }
               }}
               ref={gridRef}
@@ -1010,6 +1350,9 @@ export function EditorKernel({
           />
         ) : null}
       </div>
+      {shortcutOpen ? (
+        <ShortcutSheet onClose={() => setShortcutOpen(false)} />
+      ) : null}
     </section>
   );
 }

@@ -2770,3 +2770,40 @@ uploads, rich text expansion, formulas, bulk editing, and arbitrary Page
 operations outside the workspace foundation. Those capabilities require a
 separate reusable boundary and evidence; they are not smuggled into the
 authoring adapter.
+
+## ADR-038 — Lenni Table interaction remains a bounded manual engine
+
+**Status:** Accepted for v0.1 closeout
+
+**Date:** 10 August 2026
+
+The Lenni Table interaction engine completes the current production Table
+surface without introducing a new primitive, domain table, editor persistence
+model, permissions system, or AI path. It reuses the existing Object, Field,
+View, Form, Record, adapter and Milestone 5 configuration primitives.
+
+The finite Owner/Admin structural lane adds `insert_column` and
+`change_column_type` to the existing direct configuration boundary. A
+successful structural action creates exactly one immutable configuration
+Version. Column insertion preserves existing Field keys, values and routing;
+type changes preserve the Field key and identity, inspect active and archived
+Records, and succeed only when all meaningful values are already compatible.
+There is no data-conversion engine and no Record mutation during a type
+change. The primary property remains short or long text. Requiredness is
+existing Field metadata enforced at the write boundary; this closeout adds no
+requiredness-editing UI. Staff may edit permitted operational values but
+cannot use structural controls.
+
+Clipboard paste and rectangular clearing remain operational Record writes.
+The narrow authenticated batch RPC derives Business from membership, binds
+to one live internal Table View, re-resolves Objects, Fields, editability and
+Records server-side, limits input to 100 rows and 500 cells, validates typed
+and required values, and keeps each Record update atomic. It creates no
+Change, Version, History entry, generic bulk command or operational undo.
+
+Embedded Tables reuse the production kernel for permitted cell, row and
+Record-panel behavior but suppress all structural controls and retain an
+`Open table` path for structural editing. Relationships, saved Views, filters,
+sorting, grouping, formulas, workflows, public surfaces, AI and Builder Table
+actions remain explicitly deferred. The interaction engine is implemented;
+final unified Lenni visual refinement remains planned.

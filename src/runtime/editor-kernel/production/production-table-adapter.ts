@@ -2,6 +2,8 @@ import type {
   CreateColumnInput,
   EditorColumn,
   EditorColumnKind,
+  EditorPasteRequest,
+  EditorPasteResult,
   EditorRow,
   EditorTable,
   EditorValue,
@@ -9,8 +11,11 @@ import type {
 } from "../contracts";
 import type {
   ProductionAddColumnAction,
+  ProductionChangeColumnTypeAction,
   ProductionConfigurationCurrentness,
   ProductionCellEditAction,
+  ProductionInsertColumnAction,
+  ProductionPasteAction,
   ProductionRecordReadAction,
   ProductionRenameColumnAction,
   ProductionRenameTableAction,
@@ -25,10 +30,13 @@ export interface ProductionTableAdapterActions {
   createRow: ProductionRowCreateAction;
   openRecord: ProductionRecordReadAction;
   addColumn: ProductionAddColumnAction;
+  insertColumn?: ProductionInsertColumnAction;
   renameColumn: ProductionRenameColumnAction;
+  changeColumnType?: ProductionChangeColumnTypeAction;
   updateColumnOptions: ProductionUpdateColumnOptionsAction;
   reorderColumns: ProductionReorderColumnsAction;
   renameTable: ProductionRenameTableAction;
+  paste?: ProductionPasteAction;
 }
 
 function cloneValue(value: EditorValue): EditorValue {
@@ -94,6 +102,8 @@ function directColumnType(kind: EditorColumnKind): ProductionColumnType {
       return "long_text";
     case "number":
       return "number";
+    case "currency":
+      return "currency";
     case "boolean":
       return "boolean";
     case "date":
@@ -192,6 +202,7 @@ export class ProductionTableAdapter implements TableEditorAdapter {
       label: input.label,
       columnType: directColumnType(input.kind),
       ...(input.options ? { options: [...input.options] } : {}),
+      ...(input.currency ? { currency: input.currency } : {}),
     });
     const table = this.applyStructure(result);
     const column = table.columns.find(
@@ -203,11 +214,62 @@ export class ProductionTableAdapter implements TableEditorAdapter {
     return cloneColumn(column);
   }
 
+  async insertColumn(
+    input: import("../contracts").InsertColumnInput,
+  ): Promise<EditorColumn> {
+    if (!this.actions.insertColumn) {
+      return unavailable();
+    }
+    const result = await this.actions.insertColumn({
+      currentness: this.requireCurrentness(),
+      anchorFieldKey: input.anchorColumnKey,
+      position: input.position,
+      label: input.label,
+      columnType: directColumnType(input.kind),
+      ...(input.options ? { options: [...input.options] } : {}),
+      ...(input.currency ? { currency: input.currency } : {}),
+    });
+    const table = this.applyStructure(result);
+    const column = table.columns.find(
+      (candidate) => candidate.label === input.label.trim(),
+    );
+    if (!column) {
+      throw new Error("The inserted column could not be found after saving.");
+    }
+    return cloneColumn(column);
+  }
+
   async renameColumn(columnKey: string, label: string): Promise<EditorColumn> {
     const result = await this.actions.renameColumn({
       currentness: this.requireCurrentness(),
       fieldKey: columnKey,
       label,
+    });
+    const table = this.applyStructure(result);
+    const column = table.columns.find(
+      (candidate) => candidate.key === columnKey,
+    );
+    if (!column) {
+      throw new Error("That column is no longer available.");
+    }
+    return cloneColumn(column);
+  }
+
+  async changeColumnType(
+    columnKey: string,
+    kind: EditorColumnKind,
+    options?: readonly string[],
+    currency?: string,
+  ): Promise<EditorColumn> {
+    if (!this.actions.changeColumnType) {
+      return unavailable();
+    }
+    const result = await this.actions.changeColumnType({
+      currentness: this.requireCurrentness(),
+      fieldKey: columnKey,
+      columnType: directColumnType(kind),
+      ...(options ? { options: [...options] } : {}),
+      ...(currency ? { currency } : {}),
     });
     const table = this.applyStructure(result);
     const column = table.columns.find(
@@ -281,6 +343,43 @@ export class ProductionTableAdapter implements TableEditorAdapter {
       title,
     });
     return this.applyStructure(result);
+  }
+
+  async applyPaste(request: EditorPasteRequest): Promise<EditorPasteResult> {
+    const columns = this.table.columns.slice(request.startColumnIndex);
+    const rows = request.matrix.map((matrixRow, rowOffset) => {
+      const existing = this.table.rows[request.startRowIndex + rowOffset];
+      const values: Record<string, EditorValue> = {};
+      matrixRow.slice(0, columns.length).forEach((value, columnOffset) => {
+        const column = columns[columnOffset];
+        if (column && column.editable !== false) {
+          values[column.key] = value;
+        }
+      });
+      return {
+        ...(existing ? { recordId: existing.id } : {}),
+        values,
+      };
+    });
+    if (!this.actions.paste) {
+      return unavailable();
+    }
+    const result = await this.actions.paste({ rows });
+    if (result.status === "error") {
+      throw new Error(result.message);
+    }
+    const rowById = new Map(this.table.rows.map((row) => [row.id, row]));
+    for (const row of result.value.rows) {
+      rowById.set(row.id, cloneRow(row));
+    }
+    this.table = {
+      ...this.table,
+      rows: [...rowById.values()],
+    };
+    return {
+      rows: result.value.rows.map(cloneRow),
+      failures: result.value.failures,
+    };
   }
 
   private requireCurrentness(): ProductionConfigurationCurrentness {

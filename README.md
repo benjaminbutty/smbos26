@@ -19,7 +19,9 @@ Owner/Admin validation, application, abandonment and rollback preparation.
 Milestone 9 is complete and merged at the current repository head. Milestones
 10, 12 and 13, together with Milestone 14 Phase 14A, are also merged at the
 current repository head. Milestone 15 Phase 15A is the current unmerged direct
-Table Workspace foundation work on this branch.
+Table Workspace foundation work on this branch. The bounded Lenni Table
+interaction engine is implemented on top of that foundation; final unified
+Lenni UI refinement remains planned.
 The AI execution boundary is server-only and per-Business accounting is
 disabled by default. OpenAI Responses is the first external adapter, but it is
 also server-disabled by default; the Phase 8C route does not invoke providers
@@ -117,6 +119,9 @@ Included:
   proposal, with generic Forms, a Table View, and a draft wrapper Page
 - direct Owner/Admin Table Workspace creation and finite structural actions
   through atomic M5-backed RPC facades, including bounded column widths
+- the bounded Lenni Table interaction engine over production Tables: keyboard
+  editing, Record-panel navigation, column insertion and type changes,
+  Choice/Status controls, rectangular selection, and bounded clipboard paste
 - generic direct Table cell/row editing and `?record=` side-panel navigation
   without configuration-history writes
 - a shared Tables + Pages workspace shell with Owner/Admin Page creation,
@@ -727,7 +732,40 @@ The normal Builder phrase without trusted context returns fixed guidance rather
 than searching history. Phase 9B is implemented and merged, so Milestone 9 is
 complete. Phase 10A is implemented and merged, and Product v0 remains in
 progress. Milestone 15 Phase 15A is the current unmerged direct Table
-Workspace foundation.
+Workspace foundation, with the bounded Lenni Table interaction engine
+implemented on top. Final unified Lenni UI refinement remains planned.
+
+## Lenni Table interaction engine
+
+The current production Table surface supports a bounded manual interaction
+engine for non-technical operators. It includes keyboard-continuous Record
+creation, inline typed editing, a Record property panel, compact column menus,
+column insertion and reorder, Choice/Status option controls, rectangular
+selection, copy/paste, and optional-value clearing. The Table kernel remains
+adapter-driven and embedded Tables reuse it without structural controls.
+
+Structural actions are finite and Owner/Admin-only. `insert_column` and
+`change_column_type` preserve Field identity and View routing, create exactly
+one immutable configuration Version on success, and never convert or mutate
+Record values. Type changes inspect active and archived Records and are
+accepted only when every meaningful value is already compatible; the primary
+property remains short or long text. Requiredness is read from existing Field
+configuration and enforced at the write boundary; this phase adds no
+requiredness-editing UI.
+
+Clipboard paste and rectangular clearing are operational Record writes, not
+configuration changes. The authenticated batch boundary is limited to one
+live internal Table View, 100 rows and 500 cells, re-resolves the tenant,
+Object, Fields, editability and Records server-side, validates required and
+typed values, and saves each Record atomically. These actions create no
+Change, Version or History entry. Staff can use permitted operational editing
+but cannot access structural Table controls; embedded Tables keep an `Open
+table` path for structural work.
+
+Relationships, saved Views, filters, sorting, grouping, formulas, workflows,
+public websites, and AI/Builder Table actions remain outside this closeout.
+The Lenni interaction engine is implemented; final visual polish is deferred
+to a later unified Lenni UI overhaul.
 
 ## Requirements
 

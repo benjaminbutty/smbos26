@@ -23,7 +23,10 @@ import {
 import { ProductionTableWorkspace } from "../../../../../runtime/editor-kernel/production/production-table-workspace";
 import {
   addProductionTableColumnAction,
+  changeProductionTableColumnTypeAction,
   createProductionTableRowAction,
+  insertProductionTableColumnAction,
+  pasteProductionTableAction,
   readProductionTableRecordAction,
   renameProductionTableAction,
   renameProductionTableColumnAction,
@@ -142,12 +145,27 @@ export default async function WorkspaceScreenPage({
             businessSlug,
             bundle.definition.key,
           ),
+          insertColumn: insertProductionTableColumnAction.bind(
+            null,
+            businessSlug,
+            bundle.definition.key,
+          ),
+          changeColumnType: changeProductionTableColumnTypeAction.bind(
+            null,
+            businessSlug,
+            bundle.definition.key,
+          ),
           createRow: createProductionTableRowAction.bind(
             null,
             businessSlug,
             bundle.definition.key,
           ),
           openRecord: readProductionTableRecordAction.bind(
+            null,
+            businessSlug,
+            bundle.definition.key,
+          ),
+          paste: pasteProductionTableAction.bind(
             null,
             businessSlug,
             bundle.definition.key,
@@ -181,7 +199,9 @@ export default async function WorkspaceScreenPage({
         capabilities={{
           ...rowCreation,
           canAddColumns: Boolean(currentness),
+          canInsertColumns: Boolean(currentness),
           canRenameColumns: Boolean(currentness),
+          canChangeColumnTypes: Boolean(currentness),
           canUpdateColumnOptions: Boolean(currentness),
           canReorderColumns: Boolean(currentness),
           canResizeColumns: Boolean(currentness),

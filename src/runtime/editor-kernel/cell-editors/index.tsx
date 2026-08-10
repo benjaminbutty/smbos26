@@ -145,34 +145,151 @@ function NumberEditor({
   );
 }
 
+export function ChoiceStatusPicker({
+  column,
+  onCancel,
+  onCommit,
+  value,
+}: Readonly<{
+  column: EditorColumn;
+  onCancel?: () => void;
+  onCommit: (value: EditorValue) => void;
+  value: EditorValue;
+}>): React.ReactNode {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const options = (column.options ?? []).filter((option) =>
+    option.toLocaleLowerCase("en").includes(query.toLocaleLowerCase("en")),
+  );
+  useEffect(() => buttonRef.current?.focus(), []);
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
+  const commitOption = (option: string): void => {
+    onCommit(option);
+    setOpen(false);
+  };
+  return (
+    <div className="editor-choice-picker">
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Edit ${column.label}`}
+        className="editor-choice-trigger"
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            if (onCancel) {
+              onCancel();
+            } else {
+              setOpen(false);
+            }
+          } else if (event.key === "ArrowDown" || event.key === "Enter") {
+            event.preventDefault();
+            setOpen(true);
+          } else if (event.key === "Backspace" || event.key === "Delete") {
+            event.preventDefault();
+            onCommit(null);
+          }
+        }}
+        ref={buttonRef}
+        type="button"
+      >
+        {editorInputValue(value) || "Choose…"}
+      </button>
+      {open ? (
+        <div className="editor-choice-popover" role="listbox">
+          <input
+            aria-label={`Search ${column.label}`}
+            className="editor-choice-search"
+            ref={searchRef}
+            onChange={(event) => {
+              setQuery(event.currentTarget.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                if (onCancel) {
+                  onCancel();
+                } else {
+                  setOpen(false);
+                }
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setActiveIndex((current) =>
+                  options.length === 0
+                    ? 0
+                    : Math.min(current + 1, options.length - 1),
+                );
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setActiveIndex((current) => Math.max(current - 1, 0));
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                const option = options[activeIndex];
+                if (option) commitOption(option);
+              } else if (
+                (event.key === "Backspace" || event.key === "Delete") &&
+                !query
+              ) {
+                event.preventDefault();
+                onCommit(null);
+                setOpen(false);
+              }
+            }}
+            placeholder="Search"
+            value={query}
+          />
+          {options.map((option, index) => (
+            <button
+              aria-current={option === value ? "true" : undefined}
+              aria-selected={index === activeIndex}
+              className={`editor-choice-option${index === activeIndex ? " is-active" : ""}`}
+              id={`editor-choice-${column.key}-${index}`}
+              key={option}
+              onClick={() => commitOption(option)}
+              onMouseEnter={() => setActiveIndex(index)}
+              role="option"
+              type="button"
+            >
+              <span className="editor-status-pill">{option}</span>
+            </button>
+          ))}
+          <button
+            className="editor-choice-clear"
+            onClick={() => {
+              onCommit(null);
+              setOpen(false);
+            }}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StatusEditor({
   columnDefinition,
   onRowChange,
   row,
 }: CellEditorProps): React.ReactNode {
-  const ref = useRef<HTMLSelectElement>(null);
   const value = editorInputValue(row.values[columnDefinition.key] ?? null);
-  useFocusAndSelect(ref);
-
   return (
-    <select
-      ref={ref}
-      aria-label={`Edit ${columnDefinition.label}`}
-      className="editor-cell-editor"
-      onChange={(event) => {
-        onRowChange(
-          rowWithValue(row, columnDefinition.key, event.currentTarget.value),
-          true,
-        );
-      }}
+    <ChoiceStatusPicker
+      column={columnDefinition}
+      onCommit={(next) =>
+        onRowChange(rowWithValue(row, columnDefinition.key, next), true)
+      }
       value={value}
-    >
-      {(columnDefinition.options ?? []).map((option) => (
-        <option key={option} value={option}>
-          {option}
-        </option>
-      ))}
-    </select>
+    />
   );
 }
 
@@ -224,18 +341,39 @@ function DateEditor({
   useFocusAndSelect(ref);
 
   return (
-    <input
-      ref={ref}
-      aria-label={`Edit ${columnDefinition.label}`}
-      className="editor-cell-editor"
-      onChange={(event) => {
-        const next = event.currentTarget.value;
-        setValue(next);
-        onRowChange(rowWithValue(row, columnDefinition.key, next));
-      }}
-      type="date"
-      value={value}
-    />
+    <div className="editor-date-editor">
+      <input
+        ref={ref}
+        aria-label={`Edit ${columnDefinition.label}`}
+        className="editor-cell-editor"
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setValue(next);
+          onRowChange(rowWithValue(row, columnDefinition.key, next));
+        }}
+        type="date"
+        value={value}
+      />
+      <button
+        onClick={() => {
+          const today = new Date().toISOString().slice(0, 10);
+          setValue(today);
+          onRowChange(rowWithValue(row, columnDefinition.key, today), true);
+        }}
+        type="button"
+      >
+        Today
+      </button>
+      <button
+        onClick={() => {
+          setValue("");
+          onRowChange(rowWithValue(row, columnDefinition.key, null), true);
+        }}
+        type="button"
+      >
+        Clear
+      </button>
+    </div>
   );
 }
 

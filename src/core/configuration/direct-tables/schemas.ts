@@ -8,6 +8,7 @@ export const directTableColumnTypeSchema = z.enum([
   "short_text",
   "long_text",
   "number",
+  "currency",
   "boolean",
   "date",
   "email",
@@ -21,7 +22,9 @@ export const directTableActionKindSchema = z.enum([
   "create_table",
   "rename_table",
   "add_column",
+  "insert_column",
   "rename_column",
+  "change_column_type",
   "update_column_options",
   "reorder_columns",
   "resize_column",
@@ -65,6 +68,10 @@ const addColumnIntentSchema = z
     label: directTableLabelSchema,
     columnType: directTableColumnTypeSchema,
     options: directTableOptionsSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
   })
   .strict()
   .superRefine((input, context) => {
@@ -89,6 +96,63 @@ const addColumnIntentSchema = z
         path: ["options"],
       });
     }
+    if (input.columnType === "currency" && input.currency === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency columns need a currency code.",
+        path: ["currency"],
+      });
+    }
+    if (input.columnType !== "currency" && input.currency !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency metadata is only valid for Currency columns.",
+        path: ["currency"],
+      });
+    }
+  });
+
+const insertColumnIntentSchema = z
+  .object({
+    action: z.literal("insert_column"),
+    viewKey: graphKeySchema,
+    anchorFieldKey: graphKeySchema,
+    position: z.enum(["left", "right"]),
+    label: directTableLabelSchema,
+    columnType: directTableColumnTypeSchema,
+    options: directTableOptionsSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const optionColumn =
+      input.columnType === "select" || input.columnType === "status";
+    if (optionColumn !== Boolean(input.options)) {
+      context.addIssue({
+        code: "custom",
+        message: optionColumn
+          ? "Choice and Status columns need options."
+          : "Only Choice and Status columns can have options.",
+        path: ["options"],
+      });
+    }
+    if (input.columnType !== "currency" && input.currency !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency metadata is only valid for Currency columns.",
+        path: ["currency"],
+      });
+    }
+    if (input.columnType === "currency" && input.currency === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency columns need a currency code.",
+        path: ["currency"],
+      });
+    }
   });
 
 const renameColumnIntentSchema = z
@@ -99,6 +163,47 @@ const renameColumnIntentSchema = z
     label: directTableLabelSchema,
   })
   .strict();
+
+const changeColumnTypeIntentSchema = z
+  .object({
+    action: z.literal("change_column_type"),
+    viewKey: graphKeySchema,
+    fieldKey: graphKeySchema,
+    columnType: directTableColumnTypeSchema,
+    options: directTableOptionsSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const optionColumn =
+      input.columnType === "select" || input.columnType === "status";
+    if (optionColumn !== Boolean(input.options)) {
+      context.addIssue({
+        code: "custom",
+        message: optionColumn
+          ? "Choice and Status columns need options."
+          : "Only Choice and Status columns can have options.",
+        path: ["options"],
+      });
+    }
+    if (input.columnType !== "currency" && input.currency !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency metadata is only valid for Currency columns.",
+        path: ["currency"],
+      });
+    }
+    if (input.columnType === "currency" && input.currency === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency columns need a currency code.",
+        path: ["currency"],
+      });
+    }
+  });
 
 const updateColumnOptionsIntentSchema = z
   .object({
@@ -130,7 +235,9 @@ export const directTableIntentSchema = z.discriminatedUnion("action", [
   createTableIntentSchema,
   renameTableIntentSchema,
   addColumnIntentSchema,
+  insertColumnIntentSchema,
   renameColumnIntentSchema,
+  changeColumnTypeIntentSchema,
   updateColumnOptionsIntentSchema,
   reorderColumnsIntentSchema,
   resizeColumnIntentSchema,

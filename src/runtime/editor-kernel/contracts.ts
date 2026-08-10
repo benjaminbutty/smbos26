@@ -41,6 +41,7 @@ export interface EditorColumn {
   kind: EditorColumnKind;
   primary?: boolean;
   editable?: boolean;
+  required?: boolean;
   options?: readonly string[];
   currency?: string;
   readOnlyReason?: string;
@@ -66,7 +67,9 @@ export interface EditorCapabilities {
   rowCreation: "direct" | "configured_form" | "unavailable";
   rowCreationMessage?: string;
   canAddColumns: boolean;
+  canInsertColumns?: boolean;
   canRenameColumns: boolean;
+  canChangeColumnTypes?: boolean;
   canUpdateColumnOptions: boolean;
   canReorderColumns: boolean;
   canResizeColumns: boolean;
@@ -76,7 +79,9 @@ export interface EditorCapabilities {
 export const defaultEditorCapabilities: EditorCapabilities = {
   rowCreation: "direct",
   canAddColumns: true,
+  canInsertColumns: true,
   canRenameColumns: true,
+  canChangeColumnTypes: true,
   canUpdateColumnOptions: true,
   canReorderColumns: true,
   canResizeColumns: true,
@@ -87,6 +92,29 @@ export interface CreateColumnInput {
   label: string;
   kind: EditorColumnKind;
   options?: readonly string[];
+  currency?: string;
+}
+
+export interface InsertColumnInput extends CreateColumnInput {
+  anchorColumnKey: string;
+  position: "left" | "right";
+}
+
+export interface EditorPasteRequest {
+  startRowIndex: number;
+  startColumnIndex: number;
+  matrix: readonly (EditorValue | null)[][];
+}
+
+export interface EditorPasteFailure {
+  rowIndex: number;
+  fieldKey?: string;
+  message: string;
+}
+
+export interface EditorPasteResult {
+  rows: readonly EditorRow[];
+  failures: readonly EditorPasteFailure[];
 }
 
 export interface TableEditorAdapter {
@@ -100,7 +128,15 @@ export interface TableEditorAdapter {
     initialValues: Readonly<Record<string, EditorValue>>,
   ): Promise<EditorRow>;
   createColumn(input: CreateColumnInput): Promise<EditorColumn>;
+  insertColumn?(input: InsertColumnInput): Promise<EditorColumn>;
   renameColumn(columnKey: string, label: string): Promise<EditorColumn>;
+  changeColumnType?(
+    columnKey: string,
+    kind: EditorColumnKind,
+    options?: readonly string[],
+    currency?: string,
+  ): Promise<EditorColumn>;
+  applyPaste?(request: EditorPasteRequest): Promise<EditorPasteResult>;
   updateColumnOptions(
     columnKey: string,
     options: readonly string[],

@@ -70,6 +70,21 @@ operation language or persistence model. Direct Undo is limited to the active
 direct change's immediate parent. `column_widths` is an optional validated
 Table View layout map, not a new primitive.
 
+The Lenni interaction engine adds the finite structural actions
+`insert_column` and `change_column_type` through a separate authenticated
+`apply_lenni_direct_configuration_change` facade. Owner/Admin success creates
+one immutable configuration Version; Staff cannot use the structural lane.
+Insertion and type changes preserve Field identity and do not mutate Record
+values. Type changes inspect active and archived Records and succeed only when
+all meaningful values are already compatible; there is no conversion engine or
+requiredness-editing UI.
+
+Rectangular paste and clearing are operational Record actions. The typed
+editor adapter delegates them to a narrow batch boundary limited to one live
+internal Table View, 100 rows and 500 cells. The server re-resolves the tenant,
+Object, Fields, editability, requiredness and Record IDs, validates each row
+through the existing graph rules, and creates no configuration history.
+
 ## Direct Page Workspace
 
 `direct-pages/` is the matching bounded facade for the workspace Page authoring

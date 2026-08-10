@@ -363,14 +363,35 @@
 
 /* Reset milestone 1 editor lab */
 .editor-kernel-page {
-  --editor-coral: #e16d61;
-  --editor-coral-soft: #fff0ed;
+  --coral-50: #fff1ef;
+  --coral-100: #ffe4df;
+  --coral-500: #ff5a4d;
+  --coral-600: #e9483c;
+  --coral-700: #d83a2f;
+  --coral-800: #b92c24;
+  --surface-canvas: #faf8f5;
+  --surface-base: #fff;
+  --surface-subtle: #f5f2ee;
+  --surface-strong: #ece7e1;
+  --border-subtle: #e5ded7;
+  --text-primary: #171a1d;
+  --text-secondary: #5d646b;
+  --text-tertiary: #6a7178;
+  --text-disabled: #a5aab0;
+  --editor-coral: #ff5a4d;
+  --editor-coral-soft: #fff1ef;
+  --lenni-coral-600: var(--coral-600);
+  --lenni-coral-700: var(--coral-700);
+  --lenni-surface: #faf8f5;
+  --lenni-border: #e5ded7;
+  --lenni-text: #171a1d;
+  --lenni-muted: #5d646b;
   display: grid;
   min-height: 100vh;
   gap: 0.4rem;
   padding: 0.8rem clamp(1rem, 2.8vw, 2.6rem) 1rem;
-  color: #27312c;
-  background: #f8f7f3;
+  color: var(--lenni-text);
+  background: var(--lenni-surface);
 }
 
 .editor-kernel-embedded {
@@ -1004,6 +1025,344 @@
 .editor-open-record-button:hover {
   color: var(--editor-coral);
   filter: none;
+}
+
+/* Lenni operational table surface */
+.editor-kernel-page,
+.editor-kernel-page button,
+.editor-kernel-page input,
+.editor-kernel-page textarea {
+  font-family:
+    Satoshi,
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+.editor-grid {
+  --rdg-background-color: #fff;
+  --rdg-border-color: var(--lenni-border);
+  --rdg-color: var(--lenni-text);
+  --rdg-header-background-color: #f5f2ee;
+  --rdg-row-hover-background-color: #fff8f5;
+  --rdg-selection-color: var(--editor-coral);
+  --rdg-selection-width: 2px;
+  border-color: var(--lenni-border);
+  font-size: 0.81rem;
+}
+
+.editor-grid [role="columnheader"] {
+  color: var(--lenni-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.editor-grid [role="gridcell"] {
+  border-color: rgba(229, 222, 215, 0.72);
+}
+
+.editor-grid [role="gridcell"][aria-selected="true"] {
+  background: #fffaf8;
+}
+
+.editor-header-menu-button {
+  color: #8b9298;
+}
+
+.editor-column-menu,
+.editor-add-column-popover,
+.lenni-popover {
+  background: #fff;
+  border-color: var(--lenni-border);
+  border-radius: 0.35rem;
+  box-shadow: 0 0.65rem 1.5rem rgba(23, 26, 29, 0.12);
+}
+
+.editor-column-menu {
+  padding: 0.35rem;
+}
+
+.lenni-menu {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.lenni-menu button,
+.editor-menu-back,
+.editor-column-menu-form button:not(.editor-menu-submit),
+.lenni-option-row button,
+.lenni-option-add button,
+.editor-choice-option,
+.editor-choice-clear,
+.editor-choice-trigger,
+.editor-date-editor button {
+  min-height: 1.8rem;
+  padding: 0.3rem 0.5rem;
+  color: var(--lenni-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 0.74rem;
+  text-align: left;
+}
+
+.lenni-menu button:hover,
+.editor-menu-back:hover,
+.lenni-option-row button:hover,
+.lenni-option-add button:hover,
+.editor-choice-option:hover,
+.editor-choice-clear:hover,
+.editor-date-editor button:hover {
+  color: var(--lenni-coral-600);
+  background: var(--coral-50, #fff1ef);
+}
+
+.editor-column-menu-title {
+  padding: 0.45rem 0.5rem;
+  color: var(--lenni-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.editor-column-menu-form {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 14rem;
+  padding: 0.45rem;
+  border-top: 1px solid var(--lenni-border);
+}
+
+.editor-property-type-note {
+  margin: 0;
+  color: var(--lenni-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.editor-column-menu-form > label,
+.editor-add-column-popover > label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--lenni-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.editor-column-menu-form input,
+.editor-add-column-popover input,
+.lenni-picker-search,
+.lenni-option-row input,
+.lenni-option-add input,
+.editor-choice-search {
+  min-height: 1.85rem;
+  padding: 0.3rem 0.45rem;
+  color: var(--lenni-text);
+  background: #fff;
+  border: 1px solid var(--lenni-border);
+  border-radius: 0.25rem;
+  font-size: 0.76rem;
+}
+
+.editor-column-menu-form input:focus,
+.editor-add-column-popover input:focus,
+.lenni-picker-search:focus,
+.lenni-option-row input:focus,
+.lenni-option-add input:focus,
+.editor-choice-search:focus {
+  border-color: var(--editor-coral);
+  outline: 2px solid rgba(255, 90, 77, 0.14);
+}
+
+.editor-menu-back {
+  color: var(--lenni-muted);
+  margin: 0.25rem 0.45rem;
+}
+
+.lenni-type-picker,
+.lenni-option-manager {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.lenni-picker-options {
+  display: grid;
+  max-height: 13rem;
+  overflow: auto;
+}
+
+.lenni-type-option {
+  display: grid;
+  gap: 0.08rem;
+  padding: 0.38rem 0.45rem;
+  color: var(--lenni-text);
+  background: transparent;
+  border: 0;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lenni-type-option:hover,
+.lenni-type-option[aria-current="true"] {
+  background: #fff1ef;
+}
+
+.lenni-type-option small {
+  color: var(--lenni-muted);
+  font-size: 0.65rem;
+  font-weight: 400;
+}
+
+.lenni-option-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.lenni-option-row,
+.lenni-option-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 0.15rem;
+  align-items: center;
+}
+
+.lenni-option-add {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-top: 0.25rem;
+}
+
+.lenni-option-row button,
+.lenni-option-add button {
+  min-width: 1.7rem;
+  padding-inline: 0.3rem;
+  text-align: center;
+}
+
+.editor-choice-picker,
+.editor-date-editor {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-width: 100%;
+}
+
+.editor-choice-trigger {
+  min-width: 6rem;
+  overflow: hidden;
+  color: var(--lenni-text);
+  background: transparent;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-choice-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  display: grid;
+  min-width: 10rem;
+  max-width: 15rem;
+  gap: 0.2rem;
+  padding: 0.35rem;
+  background: #fff;
+  border: 1px solid var(--lenni-border);
+  border-radius: 0.35rem;
+  box-shadow: 0 0.65rem 1.5rem rgba(23, 26, 29, 0.12);
+}
+
+.editor-choice-option {
+  width: 100%;
+}
+
+.editor-choice-option.is-active,
+.editor-choice-option[aria-current="true"] {
+  color: var(--lenni-coral-700);
+  background: var(--coral-50, #fff1ef);
+}
+
+.editor-choice-clear {
+  border-top: 1px solid var(--lenni-border);
+  color: var(--lenni-muted);
+}
+
+.editor-date-editor .editor-cell-editor {
+  width: 8.3rem;
+}
+
+.editor-record-panel {
+  min-width: 22rem;
+  padding-left: 1rem;
+  border-left-color: var(--lenni-border);
+}
+
+.editor-record-panel h2 {
+  color: var(--lenni-text);
+  font-size: 1.1rem;
+}
+
+.editor-record-property {
+  min-height: 2.25rem;
+  border-bottom-color: var(--lenni-border);
+}
+
+.editor-property-value {
+  color: var(--lenni-text) !important;
+}
+
+.editor-status-pill {
+  color: #75443e;
+  background: #ffe4df;
+}
+
+.editor-choice-picker .editor-status-pill {
+  display: inline-flex;
+}
+
+.editor-shortcut-sheet,
+.lenni-shortcut-sheet {
+  position: fixed;
+  z-index: 60;
+  right: 1.5rem;
+  bottom: 1.5rem;
+  min-width: 18rem;
+  padding: 0.75rem;
+}
+
+.lenni-popover {
+  position: relative;
+  padding: 0.5rem;
+}
+
+.lenni-shortcut-sheet dl {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.65rem 0 0;
+}
+
+.lenni-shortcut-sheet dl div {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.5rem;
+}
+
+.lenni-shortcut-sheet dt {
+  color: var(--lenni-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.lenni-shortcut-sheet dd {
+  margin: 0;
+  color: var(--lenni-muted);
+  font-size: 0.72rem;
 }
 
 @media (max-width: 900px) {

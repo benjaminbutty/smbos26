@@ -3,6 +3,10 @@ import {
   editorValueForColumn,
   type CreateColumnInput,
   type EditorColumn,
+  type EditorColumnKind,
+  type EditorPasteRequest,
+  type EditorPasteResult,
+  type EditorPasteFailure,
   type EditorRow,
   type EditorTable,
   type EditorValue,
@@ -399,6 +403,41 @@ export class MockTableAdapter implements TableEditorAdapter {
     return cloneColumn(column);
   }
 
+  async insertColumn(
+    input: import("./contracts").InsertColumnInput,
+  ): Promise<EditorColumn> {
+    await this.wait();
+    const label = input.label.trim();
+    if (!label) throw new Error("A column needs a name.");
+    let key = columnKeyFromLabel(label);
+    let suffix = 2;
+    while (this.table.columns.some((column) => column.key === key)) {
+      key = `${columnKeyFromLabel(label)}_${suffix}`;
+      suffix += 1;
+    }
+    const column = columnWithOptions(input, key);
+    const anchorIndex = this.table.columns.findIndex(
+      (candidate) => candidate.key === input.anchorColumnKey,
+    );
+    if (anchorIndex < 0)
+      throw new Error("That mock column is no longer available.");
+    const columns = [...this.table.columns];
+    columns.splice(
+      anchorIndex + (input.position === "right" ? 1 : 0),
+      0,
+      column,
+    );
+    this.table = {
+      ...this.table,
+      columns,
+      rows: this.table.rows.map((row) => ({
+        ...row,
+        values: { ...row.values, [key]: defaultValue(column) },
+      })),
+    };
+    return cloneColumn(column);
+  }
+
   async renameColumn(columnKey: string, label: string): Promise<EditorColumn> {
     await this.wait();
     const nextLabel = label.trim();
@@ -412,6 +451,32 @@ export class MockTableAdapter implements TableEditorAdapter {
       throw new Error("That mock column is no longer available.");
     }
     const nextColumn = { ...column, label: nextLabel };
+    this.table = {
+      ...this.table,
+      columns: this.table.columns.map((candidate) =>
+        candidate.key === columnKey ? nextColumn : candidate,
+      ),
+    };
+    return cloneColumn(nextColumn);
+  }
+
+  async changeColumnType(
+    columnKey: string,
+    kind: EditorColumnKind,
+    options?: readonly string[],
+    currency?: string,
+  ): Promise<EditorColumn> {
+    await this.wait();
+    const column = this.table.columns.find(
+      (candidate) => candidate.key === columnKey,
+    );
+    if (!column) throw new Error("That mock column is no longer available.");
+    const nextColumn: EditorColumn = {
+      ...column,
+      kind,
+      ...(options ? { options: normalizedOptions(options) } : {}),
+      ...(currency ? { currency } : {}),
+    };
     this.table = {
       ...this.table,
       columns: this.table.columns.map((candidate) =>
@@ -496,6 +561,57 @@ export class MockTableAdapter implements TableEditorAdapter {
     }
     this.table = { ...this.table, name: nextName };
     return cloneTable(this.table);
+  }
+
+  async applyPaste(request: EditorPasteRequest): Promise<EditorPasteResult> {
+    await this.wait();
+    const saved: EditorRow[] = [];
+    const failures: EditorPasteFailure[] = [];
+    for (const [rowOffset, values] of request.matrix.entries()) {
+      const rowIndex = request.startRowIndex + rowOffset;
+      const existing = this.table.rows[rowIndex];
+      const nextValues: Record<string, EditorValue> = {};
+      for (const [columnOffset, raw] of values.entries()) {
+        const column =
+          this.table.columns[request.startColumnIndex + columnOffset];
+        if (!column || column.editable === false) continue;
+        try {
+          nextValues[column.key] = editorValueForColumn(column, raw);
+        } catch (error) {
+          failures.push({
+            rowIndex: rowOffset,
+            fieldKey: column.key,
+            message: error instanceof Error ? error.message : "Invalid value.",
+          });
+        }
+      }
+      if (failures.some((failure) => failure.rowIndex === rowOffset)) continue;
+      if (existing) {
+        const nextRow = {
+          ...existing,
+          values: { ...existing.values, ...nextValues },
+        };
+        this.table = {
+          ...this.table,
+          rows: this.table.rows.map((row) =>
+            row.id === existing.id ? nextRow : row,
+          ),
+        };
+        saved.push(cloneRow(nextRow));
+      } else {
+        const primary = nextValues[this.table.primaryColumnKey];
+        if (typeof primary !== "string" || !primary.trim()) {
+          failures.push({
+            rowIndex: rowOffset,
+            message: "A new Record needs a primary value.",
+          });
+          continue;
+        }
+        const row = await this.createRow(nextValues);
+        saved.push(row);
+      }
+    }
+    return { rows: saved, failures };
   }
 
   async openRecord(rowId: string): Promise<EditorRow | null> {

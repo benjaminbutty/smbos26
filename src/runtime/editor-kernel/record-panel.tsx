@@ -7,6 +7,7 @@ import {
   type EditorRow,
   type EditorValue,
 } from "./contracts";
+import { ChoiceStatusPicker } from "./cell-editors";
 
 interface RecordPanelProps {
   columns: readonly EditorColumn[];
@@ -73,30 +74,15 @@ function InlinePropertyEditor({
 
   if (column.kind === "status" || column.kind === "select") {
     return (
-      <select
-        aria-label={`Edit ${column.label}`}
-        autoFocus
-        className="editor-panel-inline-editor editor-panel-status-editor"
-        onChange={(event) => {
-          const next = event.currentTarget.value;
+      <ChoiceStatusPicker
+        column={column}
+        onCancel={onCancel}
+        onCommit={(next) => {
           onChange(next);
           onCommit(next);
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            event.stopPropagation();
-            onCancel();
-          }
-        }}
-        value={editorInputValue(value)}
-      >
-        {(column.options ?? []).map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+        value={value}
+      />
     );
   }
 

@@ -16,6 +16,11 @@ import {
   directTableColumnTypeSchema,
   directTableCurrentnessSchema,
 } from "../../../core/configuration/direct-tables/schemas";
+import {
+  assessDirectTableTypeCompatibility,
+  directTableSettingsForTypeChange,
+  directTableTypeLabel,
+} from "../../../core/configuration/direct-tables/type-compatibility";
 import { createExperienceService } from "../../../core/experience/service";
 import type { TableViewConfig } from "../../../core/experience/schemas";
 import { createServerClient } from "../../../db/supabase/server";
@@ -34,8 +39,12 @@ import type { EditorRow } from "../contracts";
 import type {
   ProductionActionResult,
   ProductionAddColumnInput,
+  ProductionChangeColumnTypeInput,
   ProductionCellEditInput,
   ProductionConfigurationCurrentness,
+  ProductionInsertColumnInput,
+  ProductionPasteInput,
+  ProductionPasteResult,
   ProductionRecordReadInput,
   ProductionRenameColumnInput,
   ProductionRenameTableInput,
@@ -102,6 +111,10 @@ const addColumnInputSchema = z
     label: z.string().trim().min(1).max(120),
     columnType: directTableColumnTypeSchema,
     options: optionsSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
   })
   .strict()
   .superRefine((input, context) => {
@@ -116,6 +129,61 @@ const addColumnInputSchema = z
         path: ["options"],
       });
     }
+    if (input.columnType !== "currency" && input.currency !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency metadata is only valid for Currency columns.",
+        path: ["currency"],
+      });
+    }
+    if (input.columnType === "currency" && input.currency === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency columns need a currency code.",
+        path: ["currency"],
+      });
+    }
+  });
+const insertColumnInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    anchorFieldKey: viewKeySchema,
+    position: z.enum(["left", "right"]),
+    label: z.string().trim().min(1).max(120),
+    columnType: directTableColumnTypeSchema,
+    options: optionsSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const optionColumn =
+      input.columnType === "select" || input.columnType === "status";
+    if (optionColumn !== Boolean(input.options)) {
+      context.addIssue({
+        code: "custom",
+        message: optionColumn
+          ? "Choice and Status columns need options."
+          : "Only Choice and Status columns can have options.",
+        path: ["options"],
+      });
+    }
+    if (input.columnType !== "currency" && input.currency !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency metadata is only valid for Currency columns.",
+        path: ["currency"],
+      });
+    }
+    if (input.columnType === "currency" && input.currency === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency columns need a currency code.",
+        path: ["currency"],
+      });
+    }
   });
 const renameColumnInputSchema = z
   .object({
@@ -124,6 +192,45 @@ const renameColumnInputSchema = z
     label: z.string().trim().min(1).max(120),
   })
   .strict();
+const changeColumnTypeInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    fieldKey: viewKeySchema,
+    columnType: directTableColumnTypeSchema,
+    options: optionsSchema.optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const optionColumn =
+      input.columnType === "select" || input.columnType === "status";
+    if (optionColumn !== Boolean(input.options)) {
+      context.addIssue({
+        code: "custom",
+        message: optionColumn
+          ? "Choice and Status columns need options."
+          : "Only Choice and Status columns can have options.",
+        path: ["options"],
+      });
+    }
+    if (input.columnType !== "currency" && input.currency !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency metadata is only valid for Currency columns.",
+        path: ["currency"],
+      });
+    }
+    if (input.columnType === "currency" && input.currency === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Currency columns need a currency code.",
+        path: ["currency"],
+      });
+    }
+  });
 const updateColumnOptionsInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
@@ -141,6 +248,48 @@ const renameTableInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
     title: z.string().trim().min(1).max(120),
+  })
+  .strict();
+const pasteInputSchema = z
+  .object({
+    rows: z
+      .array(
+        z
+          .object({
+            recordId: z.uuid().optional(),
+            values: z.record(viewKeySchema, editorValueSchema),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const cellCount = input.rows.reduce(
+      (count, row) => count + Object.keys(row.values).length,
+      0,
+    );
+    if (cellCount > 500) {
+      context.addIssue({
+        code: "custom",
+        message: "Paste is limited to 500 cells.",
+        path: ["rows"],
+      });
+    }
+  });
+const pasteResponseSchema = z
+  .object({
+    recordIds: z.array(z.uuid()).max(100),
+    failures: z.array(
+      z
+        .object({
+          rowIndex: z.number().int().nonnegative(),
+          fieldKey: viewKeySchema.optional(),
+          message: z.string().min(1).max(500),
+        })
+        .strict(),
+    ),
   })
   .strict();
 
@@ -340,6 +489,34 @@ export async function addProductionTableColumnAction(
       label: parsed.data.label,
       columnType: parsed.data.columnType,
       ...(parsed.data.options ? { options: parsed.data.options } : {}),
+      ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+    },
+  );
+}
+
+export async function insertProductionTableColumnAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionInsertColumnInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = insertColumnInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That Table change could not be completed safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "insert_column",
+      viewKey: context.viewKey,
+      anchorFieldKey: parsed.data.anchorFieldKey,
+      position: parsed.data.position,
+      label: parsed.data.label,
+      columnType: parsed.data.columnType,
+      ...(parsed.data.options ? { options: parsed.data.options } : {}),
+      ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
     },
   );
 }
@@ -364,6 +541,98 @@ export async function renameProductionTableColumnAction(
       fieldKey: parsed.data.fieldKey,
       label: parsed.data.label,
     },
+  );
+}
+
+async function assertColumnTypeCompatible(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+  viewKey: string,
+  fieldKey: string,
+  targetType: ProductionChangeColumnTypeInput["columnType"],
+  options: readonly string[] | undefined,
+  currency: string | undefined,
+): Promise<void> {
+  const experience = createExperienceService(supabase, { businessId });
+  const view = await experience.loadView(viewKey, "internal");
+  const field = view.fields.find(
+    (candidate) =>
+      candidate.key === fieldKey &&
+      candidate.business_id === businessId &&
+      candidate.object_definition_id === view.definition.object_definition_id &&
+      candidate.is_active,
+  );
+  if (!field) {
+    throw new ExperienceSubmissionError(
+      "That property is no longer available. Reload and try again.",
+    );
+  }
+
+  const targetSettings = directTableSettingsForTypeChange(
+    targetType,
+    field.settings_json,
+    options,
+    currency,
+  );
+  const { data: records, error } = await supabase
+    .from("records")
+    .select("data_json")
+    .eq("business_id", businessId)
+    .eq("object_definition_id", view.definition.object_definition_id);
+  if (error || !records) {
+    throw new ExperienceSubmissionError(
+      "Could not check existing Record values safely.",
+    );
+  }
+  const result = assessDirectTableTypeCompatibility({
+    from: field.field_type,
+    to: targetType,
+    settings: targetSettings,
+    values: [
+      field.default_value,
+      ...records.map((record) => recordValue(record.data_json, fieldKey)),
+    ],
+  });
+  if (!result.compatible) {
+    const count = result.incompatibleCount;
+    throw new ExperienceSubmissionError(
+      `That property contains ${count} value${count === 1 ? "" : "s"} that do not fit ${directTableTypeLabel(targetType)}. Nothing was changed.`,
+    );
+  }
+}
+
+export async function changeProductionTableColumnTypeAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionChangeColumnTypeInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = changeColumnTypeInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That Table change could not be completed safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "change_column_type",
+      viewKey: context.viewKey,
+      fieldKey: parsed.data.fieldKey,
+      columnType: parsed.data.columnType,
+      ...(parsed.data.options ? { options: parsed.data.options } : {}),
+      ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+    },
+    (supabase, businessId) =>
+      assertColumnTypeCompatible(
+        supabase,
+        businessId,
+        context.viewKey,
+        parsed.data.fieldKey,
+        parsed.data.columnType,
+        parsed.data.options,
+        parsed.data.currency,
+      ),
   );
 }
 
@@ -470,6 +739,69 @@ export async function updateProductionTableCellAction(
     return {
       status: "success",
       value: mapProductionRecordToEditorRow(mapped.table, record),
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function pasteProductionTableAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionPasteInput,
+): Promise<ProductionActionResult<ProductionPasteResult>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = pasteInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return resultError("Paste is limited to 500 cells and 100 records.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+
+  try {
+    const mapped = await loadMappedTable(supabase, tenant.business.id, viewKey);
+    const { data, error } = await supabase.rpc(
+      "apply_direct_table_record_batch",
+      {
+        expected_business_id: tenant.business.id,
+        requested_view_key: viewKey,
+        requested_rows: parsed.data.rows,
+      },
+    );
+    if (error || data === null) {
+      throw new ExperienceSubmissionError(
+        "That paste could not be applied safely. Nothing was changed.",
+      );
+    }
+    const response = pasteResponseSchema.parse(data);
+    const { data: records, error: recordsError } = await supabase
+      .from("records")
+      .select("*")
+      .eq("business_id", tenant.business.id)
+      .in("id", response.recordIds);
+    if (recordsError || !records) {
+      throw new ExperienceSubmissionError(
+        "Paste was saved, but the updated Records could not be reloaded.",
+      );
+    }
+    revalidatePath(routePath(businessSlug, viewKey), "page");
+    return {
+      status: "success",
+      value: {
+        rows: records.map((record) =>
+          mapProductionRecordToEditorRow(mapped.table, record),
+        ),
+        failures: response.failures.map((failure) =>
+          failure.fieldKey
+            ? {
+                rowIndex: failure.rowIndex,
+                fieldKey: failure.fieldKey,
+                message: failure.message,
+              }
+            : { rowIndex: failure.rowIndex, message: failure.message },
+        ),
+      },
     };
   } catch (error) {
     return resultError(safeError(error));

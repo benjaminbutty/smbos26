@@ -144,6 +144,7 @@ function mapField(
     label: field.label,
     kind,
     editable,
+    required: field.required,
     ...(options.length > 0 ? { options } : {}),
     ...(kind === "currency" ? { currency: fieldCurrency(field) ?? "GBP" } : {}),
     ...(reason ? { readOnlyReason: reason } : {}),

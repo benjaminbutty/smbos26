@@ -63,10 +63,10 @@ export default async function TenantLayout({
       <aside className="workspace-sidebar">
         <Link className="workspace-brand" href={`/app/${businessSlug}`}>
           <span className="brand-mark" aria-hidden="true">
-            S
+            L
           </span>
           <span>
-            <small>SMBOS</small>
+            <small>Lenni</small>
             {tenant.business.name}
           </span>
         </Link>

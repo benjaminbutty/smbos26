@@ -23,7 +23,10 @@ import {
 } from "../../../../../runtime/editor-kernel/production/table-mapper";
 import {
   addProductionTableColumnAction,
+  changeProductionTableColumnTypeAction,
   createProductionTableRowAction,
+  insertProductionTableColumnAction,
+  pasteProductionTableAction,
   readProductionTableRecordAction,
   renameProductionTableAction,
   renameProductionTableColumnAction,
@@ -233,7 +236,9 @@ export default async function InternalPage({
       const capabilities: EditorCapabilities = {
         ...rowCreationCapabilities(availability, primary?.editable !== false),
         canAddColumns: false,
+        canInsertColumns: false,
         canRenameColumns: false,
+        canChangeColumnTypes: false,
         canUpdateColumnOptions: false,
         canReorderColumns: false,
         canResizeColumns: false,
@@ -250,6 +255,16 @@ export default async function InternalPage({
               businessSlug,
               key,
             ),
+            insertColumn: insertProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              key,
+            ),
+            changeColumnType: changeProductionTableColumnTypeAction.bind(
+              null,
+              businessSlug,
+              key,
+            ),
             createRow: createProductionTableRowAction.bind(
               null,
               businessSlug,
@@ -260,6 +275,7 @@ export default async function InternalPage({
               businessSlug,
               key,
             ),
+            paste: pasteProductionTableAction.bind(null, businessSlug, key),
             renameColumn: renameProductionTableColumnAction.bind(
               null,
               businessSlug,
