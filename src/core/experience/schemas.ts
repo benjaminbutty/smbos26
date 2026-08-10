@@ -45,6 +45,54 @@ export const tableViewColumnSchema = z.discriminatedUnion("kind", [
   tableViewConnectionColumnSchema,
 ]);
 
+const tableViewPropertyKeyPattern =
+  /^(?:field:[a-z][a-z0-9_]{0,79}|connection:[a-z][a-z0-9_]{0,79}:(?:source|target))$/;
+
+export const tableViewPropertyKeySchema = z
+  .string()
+  .regex(tableViewPropertyKeyPattern);
+
+export type TableViewPropertyKey = z.infer<typeof tableViewPropertyKeySchema>;
+
+export type ParsedTableViewPropertyKey =
+  | { kind: "field"; fieldKey: string }
+  | {
+      kind: "connection";
+      relationshipKey: string;
+      direction: "source" | "target";
+    };
+
+export function tableViewFieldPropertyKey(fieldKey: string): string {
+  return `field:${graphKeySchema.parse(fieldKey)}`;
+}
+
+export function tableViewConnectionPropertyKey(
+  relationshipKey: string,
+  direction: "source" | "target",
+): string {
+  return `connection:${graphKeySchema.parse(relationshipKey)}:${direction}`;
+}
+
+export function parseTableViewPropertyKey(
+  propertyKey: string,
+): ParsedTableViewPropertyKey | null {
+  if (!tableViewPropertyKeySchema.safeParse(propertyKey).success) {
+    return null;
+  }
+  const [kind, key, direction] = propertyKey.split(":");
+  if (kind === "field" && key) {
+    return { kind, fieldKey: key };
+  }
+  if (
+    kind === "connection" &&
+    key &&
+    (direction === "source" || direction === "target")
+  ) {
+    return { kind, relationshipKey: key, direction };
+  }
+  return null;
+}
+
 export const tableViewFilterOperatorSchema = z.enum([
   "is",
   "is_not",
@@ -80,8 +128,7 @@ const tableViewFilterValueSchema = z.union([
 
 export const tableViewFilterSchema = z
   .object({
-    property: graphKeySchema,
-    property_kind: z.enum(["field", "connection"]).optional(),
+    property: tableViewPropertyKeySchema,
     operator: tableViewFilterOperatorSchema,
     value: tableViewFilterValueSchema.optional(),
     values: z.array(tableViewFilterValueSchema).max(100).optional(),
@@ -139,7 +186,7 @@ export const tableViewFilterSchema = z
 
 export const tableViewSortSchema = z
   .object({
-    property: graphKeySchema,
+    property: tableViewPropertyKeySchema,
     direction: z.enum(["ascending", "descending"]),
   })
   .strict();
@@ -149,7 +196,7 @@ export const tableViewQuerySchema = z
     filters: z.array(tableViewFilterSchema).max(20).default([]),
     filter_match: z.enum(["all", "any"]).default("all"),
     sorts: z.array(tableViewSortSchema).max(5).default([]),
-    group: graphKeySchema.nullable().default(null),
+    group: tableViewPropertyKeySchema.nullable().default(null),
   })
   .strict();
 
@@ -207,6 +254,7 @@ export const tableViewConfigSchema = z.union([
 ]);
 
 export type TableViewColumn = z.infer<typeof tableViewColumnSchema>;
+export type TableViewRole = z.infer<typeof tableViewRoleSchema>;
 export type TableViewFilter = z.infer<typeof tableViewFilterSchema>;
 export type TableViewSort = z.infer<typeof tableViewSortSchema>;
 export type TableViewQuery = z.infer<typeof tableViewQuerySchema>;
@@ -223,7 +271,10 @@ function fieldColumnKeys(columns: readonly TableViewColumn[]): string[] {
   );
 }
 
-export function normalizeTableViewConfig(input: unknown): TableViewConfigV2 {
+export function normalizeTableViewConfig(
+  input: unknown,
+  legacyRole: TableViewRole = "primary",
+): TableViewConfigV2 {
   const parsed = tableViewConfigSchema.parse(input);
   if (!("schema_version" in parsed)) {
     const columns = parsed.fields.map((field_key) => ({
@@ -232,7 +283,7 @@ export function normalizeTableViewConfig(input: unknown): TableViewConfigV2 {
     }));
     return {
       schema_version: 2,
-      role: "primary",
+      role: legacyRole,
       columns,
       fields: parsed.fields,
       title_field: parsed.title_field ?? parsed.fields[0]!,
@@ -283,6 +334,56 @@ export function normalizeTableViewConfig(input: unknown): TableViewConfigV2 {
     ]);
   }
   return { ...parsed, fields };
+}
+
+export interface TableViewRoleCandidate {
+  key: string;
+  config_json: unknown;
+}
+
+export function deterministicTableViewRoles(
+  candidates: readonly TableViewRoleCandidate[],
+): Map<string, TableViewRole> {
+  const ordered = [...candidates].toSorted((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+  const parsed = ordered.map((view) => ({
+    view,
+    config: tableViewConfigSchema.parse(view.config_json),
+  }));
+  const canonicalPrimaries = parsed.filter(
+    ({ config }) => "schema_version" in config && config.role === "primary",
+  );
+  if (canonicalPrimaries.length > 1) {
+    throw new z.ZodError([
+      {
+        code: "custom",
+        message: "An Object can have only one active primary Table View.",
+        path: ["views"],
+      },
+    ]);
+  }
+
+  const legacyViews = parsed.filter(
+    ({ config }) => !("schema_version" in config),
+  );
+  const primary = canonicalPrimaries[0] ?? legacyViews[0];
+  if (parsed.length > 0 && !primary) {
+    throw new z.ZodError([
+      {
+        code: "custom",
+        message: "An Object must have one active primary Table View.",
+        path: ["views"],
+      },
+    ]);
+  }
+
+  return new Map(
+    parsed.map(({ view }) => [
+      view.key,
+      view.key === primary?.view.key ? "primary" : "saved",
+    ]),
+  );
 }
 
 export interface TableViewQueryFieldContext {
@@ -353,44 +454,68 @@ export function validateTableViewQuery(
   );
   const columns = context.columns ?? [];
   const errors: Array<{ path: (string | number)[]; message: string }> = [];
-  const connectionColumnKeys = new Set(
-    columns
-      .filter((column) => column.kind === "connection")
-      .map((column) => column.relationship_key),
-  );
 
-  for (const [index, filter] of query.filters.entries()) {
-    const field = fields.get(filter.property);
-    const relationship = relationships.get(filter.property);
-    const propertyKind = filter.property_kind;
-    if (propertyKind === "field" && !field) {
+  type ResolvedField = {
+    reference: Extract<ParsedTableViewPropertyKey, { kind: "field" }>;
+    field: (typeof context.fields)[number];
+  };
+  type ResolvedConnection = {
+    reference: Extract<ParsedTableViewPropertyKey, { kind: "connection" }>;
+    relationship: (typeof context.relationships)[number];
+    connectionColumn: Extract<TableViewColumn, { kind: "connection" }>;
+  };
+
+  const resolveProperty = (
+    propertyKey: string,
+    path: (string | number)[],
+  ): ResolvedField | ResolvedConnection | null => {
+    const reference = parseTableViewPropertyKey(propertyKey);
+    if (!reference) {
       errors.push({
-        path: ["filters", index, "property"],
-        message: "Unknown field.",
+        path,
+        message: "Invalid query property reference.",
       });
-      continue;
+      return null;
     }
-    if (propertyKind === "connection" && !relationship) {
-      errors.push({
-        path: ["filters", index, "property"],
-        message: "Unknown connection.",
-      });
-      continue;
+    if (reference.kind === "field") {
+      const field = fields.get(reference.fieldKey);
+      if (!field) {
+        errors.push({ path, message: "Unknown field." });
+        return null;
+      }
+      return { reference, field };
     }
-    if (!field && !relationship) {
-      errors.push({
-        path: ["filters", index, "property"],
-        message: "Unknown query property.",
-      });
-      continue;
+    const relationship = relationships.get(reference.relationshipKey);
+    if (!relationship) {
+      errors.push({ path, message: "Unknown connection." });
+      return null;
     }
-    if (relationship && !field && !connectionColumnKeys.has(filter.property)) {
+    const connectionColumn = columns.find(
+      (column): column is Extract<TableViewColumn, { kind: "connection" }> =>
+        column.kind === "connection" &&
+        column.relationship_key === reference.relationshipKey &&
+        column.direction === reference.direction,
+    );
+    if (!connectionColumn) {
       errors.push({
-        path: ["filters", index, "property"],
+        path,
         message: "The connection must be a visible Table column.",
       });
+      return null;
     }
-    if (field) {
+    return { reference, relationship, connectionColumn };
+  };
+
+  for (const [index, filter] of query.filters.entries()) {
+    const resolved = resolveProperty(filter.property, [
+      "filters",
+      index,
+      "property",
+    ]);
+    if (!resolved) continue;
+
+    if ("field" in resolved) {
+      const field = resolved.field;
       const operator = filter.operator;
       const valid = textTypes.has(field.field_type)
         ? new Set([
@@ -466,7 +591,6 @@ export function validateTableViewQuery(
         }
       }
     } else if (
-      relationship &&
       ![
         "is",
         "is_not",
@@ -486,68 +610,60 @@ export function validateTableViewQuery(
   }
 
   for (const [index, sort] of query.sorts.entries()) {
-    const field = fields.get(sort.property);
-    const relationship = relationships.get(sort.property);
-    const connectionColumn = columns.find(
-      (column) =>
-        column.kind === "connection" &&
-        column.relationship_key === sort.property,
-    );
-    if (field && !sortableFieldTypes.has(field.field_type)) {
+    const resolved = resolveProperty(sort.property, [
+      "sorts",
+      index,
+      "property",
+    ]);
+    if (!resolved) continue;
+    if (
+      "field" in resolved &&
+      !sortableFieldTypes.has(resolved.field.field_type)
+    ) {
       errors.push({
         path: ["sorts", index, "property"],
         message: "That property cannot be sorted.",
       });
-    } else if (relationship && !field) {
+    } else if (!("field" in resolved)) {
       const singleValue =
-        relationship.cardinality === "one_to_one" ||
-        (relationship.cardinality === "one_to_many" &&
-          connectionColumn?.kind === "connection" &&
-          connectionColumn.direction === "source");
-      if (!connectionColumn || !singleValue) {
+        resolved.relationship.cardinality === "one_to_one" ||
+        (resolved.relationship.cardinality === "one_to_many" &&
+          resolved.connectionColumn.direction === "source");
+      if (!singleValue) {
         errors.push({
           path: ["sorts", index, "property"],
           message: "Only single-value Connections can be sorted.",
         });
       }
-    } else if (!field) {
-      errors.push({
-        path: ["sorts", index, "property"],
-        message: "Unknown sort property.",
-      });
     }
   }
+
   if (query.group) {
-    const field = fields.get(query.group);
-    const relationship = relationships.get(query.group);
-    const connectionColumn = columns.find(
-      (column) =>
-        column.kind === "connection" && column.relationship_key === query.group,
-    );
-    if (field && !groupableFieldTypes.has(field.field_type)) {
-      errors.push({
-        path: ["group"],
-        message: "That property cannot be grouped.",
-      });
-    } else if (relationship && !field) {
-      const singleValue =
-        relationship.cardinality === "one_to_one" ||
-        (relationship.cardinality === "one_to_many" &&
-          connectionColumn?.kind === "connection" &&
-          connectionColumn.direction === "source");
-      if (!connectionColumn || !singleValue) {
+    const resolved = resolveProperty(query.group, ["group"]);
+    if (resolved) {
+      if (
+        "field" in resolved &&
+        !groupableFieldTypes.has(resolved.field.field_type)
+      ) {
         errors.push({
           path: ["group"],
-          message: "Only single-value Connections can be grouped.",
+          message: "That property cannot be grouped.",
         });
+      } else if (!("field" in resolved)) {
+        const singleValue =
+          resolved.relationship.cardinality === "one_to_one" ||
+          (resolved.relationship.cardinality === "one_to_many" &&
+            resolved.connectionColumn.direction === "source");
+        if (!singleValue) {
+          errors.push({
+            path: ["group"],
+            message: "Only single-value Connections can be grouped.",
+          });
+        }
       }
-    } else if (!field) {
-      errors.push({
-        path: ["group"],
-        message: "Unknown group property.",
-      });
     }
   }
+
   if (errors.length > 0) {
     throw new z.ZodError(
       errors.map((error) => ({ code: "custom" as const, ...error })),

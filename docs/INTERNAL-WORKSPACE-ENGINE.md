@@ -89,6 +89,11 @@ cardinality, active Records and the configured View column.
 
 Saved View queries are typed JSON validated by Zod, the M5 candidate trigger and
 the query RPC. They allow up to 20 filters, 5 sorts and one grouping.
+Every filter, sort and group uses the same canonical `property` identity:
+`field:<field_key>` for a Field or
+`connection:<relationship_key>:<source|target>` for a Connection. The direction
+is part of the identity, so Field/Connection key collisions and self-relationship
+source/target properties remain unambiguous at every boundary.
 Operators are chosen according to the Field type; Connection filters are
 membership-only. Single-value Connections may be sorted or grouped by their
 primary display value; multi-value Connections may not. Relative dates are

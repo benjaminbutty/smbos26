@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
-import { composeDirectTableAction } from "../src/core/configuration/direct-tables/composer";
 import {
+  createSnapshotConfigurationDefinitionSource,
+  type ConfigurationSnapshotV1,
+} from "../src/core/configuration/definition-source";
+import { composeDirectTableAction } from "../src/core/configuration/direct-tables/composer";
+import { createExperienceService } from "../src/core/experience/service";
+import {
+  deterministicTableViewRoles,
   normalizeTableViewConfig,
   validateTableViewQuery,
 } from "../src/core/experience/schemas";
@@ -236,6 +241,86 @@ describe("Internal Workspace Engine", () => {
     expect(JSON.stringify(canonical)).not.toContain("source_record_id");
   });
 
+  it("enforces one primary Table View while normalizing legacy roles deterministically", () => {
+    const legacyConfig = {
+      fields: ["name"],
+      title_field: "name",
+      include_archived: false,
+    };
+    const canonicalConfig = (role: "primary" | "saved") => ({
+      schema_version: 2 as const,
+      role,
+      columns: [{ kind: "field" as const, field_key: "name" }],
+      title_field: "name",
+      include_archived: false,
+      filters: [],
+      filter_match: "all" as const,
+      sorts: [],
+      group: null,
+    });
+
+    expect(() =>
+      deterministicTableViewRoles([
+        { key: "saved_only", config_json: canonicalConfig("saved") },
+      ]),
+    ).toThrow("one active primary");
+
+    expect(
+      deterministicTableViewRoles([
+        { key: "legacy_b", config_json: legacyConfig },
+        { key: "legacy_a", config_json: legacyConfig },
+      ]),
+    ).toEqual(
+      new Map([
+        ["legacy_a", "primary"],
+        ["legacy_b", "saved"],
+      ]),
+    );
+
+    expect(
+      deterministicTableViewRoles([
+        { key: "primary", config_json: canonicalConfig("primary") },
+        { key: "saved", config_json: canonicalConfig("saved") },
+      ]),
+    ).toEqual(
+      new Map([
+        ["primary", "primary"],
+        ["saved", "saved"],
+      ]),
+    );
+
+    expect(() =>
+      deterministicTableViewRoles([
+        { key: "primary_a", config_json: canonicalConfig("primary") },
+        { key: "primary_b", config_json: canonicalConfig("primary") },
+      ]),
+    ).toThrow("only one active primary");
+  });
+
+  it("passes normalized legacy roles to page and Table View consumers", async () => {
+    const source = createSnapshotConfigurationDefinitionSource(
+      snapshot as unknown as Json,
+      { businessId: milkObjectId },
+    );
+    const service = createExperienceService(
+      {} as never,
+      { businessId: milkObjectId },
+      source,
+    );
+    const views = await service.listTableViews();
+    expect(views).toHaveLength(3);
+    expect(
+      views.every(
+        (view) =>
+          typeof view.config_json === "object" &&
+          view.config_json !== null &&
+          !Array.isArray(view.config_json) &&
+          view.config_json.schema_version === 2 &&
+          view.config_json.role === "primary",
+      ),
+    ).toBe(true);
+  });
+
   it("creates a reusable Connection property and updates both endpoint Views atomically", () => {
     const result = composeDirectTableAction(snapshot, {
       action: "create_connection_property",
@@ -310,18 +395,18 @@ describe("Internal Workspace Engine", () => {
       action: "update_view_query",
       viewKey: "open_milk_rounds",
       query: {
-        filters: [{ property: "status", operator: "is", value: "Open" }],
+        filters: [{ property: "field:status", operator: "is", value: "Open" }],
         filter_match: "all",
-        sorts: [{ property: "delivery_date", direction: "ascending" }],
-        group: "status",
+        sorts: [{ property: "field:delivery_date", direction: "ascending" }],
+        group: "field:status",
       },
     });
     expect(updated.operations[0]).toMatchObject({
       op: "set_view",
       config_json: expect.objectContaining({
         role: "saved",
-        filters: [{ property: "status", operator: "is", value: "Open" }],
-        group: "status",
+        filters: [{ property: "field:status", operator: "is", value: "Open" }],
+        group: "field:status",
       }),
     });
 
@@ -330,8 +415,10 @@ describe("Internal Workspace Engine", () => {
         {
           filters: [],
           filter_match: "all",
-          sorts: [{ property: "dogs", direction: "ascending" }],
-          group: "dogs",
+          sorts: [
+            { property: "connection:dogs:source", direction: "ascending" },
+          ],
+          group: "connection:dogs:source",
         },
         {
           fields: [{ key: "name", field_type: "short_text" }],
@@ -346,8 +433,10 @@ describe("Internal Workspace Engine", () => {
         {
           filters: [],
           filter_match: "all",
-          sorts: [{ property: "dogs", direction: "ascending" }],
-          group: "dogs",
+          sorts: [
+            { property: "connection:dogs:source", direction: "ascending" },
+          ],
+          group: "connection:dogs:source",
         },
         {
           fields: [{ key: "name", field_type: "short_text" }],
@@ -362,8 +451,71 @@ describe("Internal Workspace Engine", () => {
         },
       ),
     ).toMatchObject({
-      sorts: [{ property: "dogs", direction: "ascending" }],
-      group: "dogs",
+      sorts: [{ property: "connection:dogs:source", direction: "ascending" }],
+      group: "connection:dogs:source",
+    });
+  });
+
+  it("keeps field collisions and self-relationship directions unambiguous", () => {
+    expect(() =>
+      validateTableViewQuery(
+        {
+          filters: [{ property: "status", operator: "is", value: "Open" }],
+          filter_match: "all",
+          sorts: [],
+          group: null,
+        },
+        {
+          fields: [{ key: "status", field_type: "status" }],
+          relationships: [{ key: "status", cardinality: "one_to_one" }],
+          columns: [],
+        },
+      ),
+    ).toThrow();
+
+    expect(
+      validateTableViewQuery(
+        {
+          filters: [
+            { property: "field:status", operator: "is", value: "Open" },
+            {
+              property: "connection:status:target",
+              operator: "is_empty",
+            },
+          ],
+          filter_match: "all",
+          sorts: [
+            {
+              property: "connection:status:source",
+              direction: "ascending",
+            },
+          ],
+          group: "connection:status:target",
+        },
+        {
+          fields: [{ key: "status", field_type: "status" }],
+          relationships: [{ key: "status", cardinality: "one_to_one" }],
+          columns: [
+            {
+              kind: "connection",
+              relationship_key: "status",
+              direction: "source",
+            },
+            {
+              kind: "connection",
+              relationship_key: "status",
+              direction: "target",
+            },
+          ],
+        },
+      ),
+    ).toMatchObject({
+      filters: [
+        { property: "field:status" },
+        { property: "connection:status:target" },
+      ],
+      sorts: [{ property: "connection:status:source" }],
+      group: "connection:status:target",
     });
   });
 });

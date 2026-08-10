@@ -102,6 +102,7 @@
     "supabase:auth:ready": "node scripts/wait-for-local-auth.mjs",
     "supabase:auth:ready:ci": "node scripts/wait-for-local-auth.mjs --recover",
     "supabase:lint": "supabase db lint --local --level warning",
+    "check:migration-immutability": "node scripts/check-migration-immutability.mjs",
     "demo:seed": "node scripts/demo-seed.mjs",
     "workspace:proof:seed": "node scripts/internal-workspace-proof-seed.mjs",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test"

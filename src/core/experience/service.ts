@@ -11,6 +11,7 @@ import {
 } from "../configuration/definition-source";
 import {
   experienceAudienceSchema,
+  deterministicTableViewRoles,
   formConfigSchema,
   normalizeTableViewConfig,
   pageLayoutSchema,
@@ -19,6 +20,7 @@ import {
   type FormConfig,
   type PageLayout,
   type TableViewConfig,
+  type TableViewConfigV2,
   type ViewConfig,
 } from "./schemas";
 import {
@@ -131,6 +133,22 @@ type NavigationView = Pick<
   Tables<"views">,
   "key" | "name" | "view_type" | "audience" | "is_active"
 >;
+
+function normalizedTableViewsForObject(
+  candidates: readonly SourcedViewDefinition[],
+): Array<{ view: SourcedViewDefinition; config: TableViewConfigV2 }> {
+  const ordered = [...candidates].toSorted((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+  const roles = deterministicTableViewRoles(ordered);
+  return ordered.map((view) => ({
+    view,
+    config: normalizeTableViewConfig(
+      view.config_json,
+      roles.get(view.key) ?? "saved",
+    ),
+  }));
+}
 
 export function normalizeNavigationDisplayText(value: string): string {
   return value
@@ -288,10 +306,28 @@ export function createExperienceService(
     sourcedDefinition: SourcedViewDefinition,
   ): Promise<ExperienceViewBundle> {
     const { object_key: objectKey, ...definition } = sourcedDefinition;
-    const config = parseViewConfig(
+    const parsedConfig = parseViewConfig(
       definition.view_type,
       definition.config_json,
     );
+    let config: ViewConfig = parsedConfig;
+    if (
+      definition.view_type === "table" &&
+      !("schema_version" in parsedConfig)
+    ) {
+      const candidates = (await source.listViews()).filter(
+        (candidate) =>
+          candidate.object_definition_id === definition.object_definition_id &&
+          candidate.view_type === "table" &&
+          candidate.audience === "internal" &&
+          candidate.is_active,
+      );
+      const roles = deterministicTableViewRoles(candidates);
+      config = normalizeTableViewConfig(
+        definition.config_json,
+        roles.get(definition.key) ?? "saved",
+      );
+    }
     const includeArchived = config.include_archived;
     let recordsQuery = client
       .from("records")
@@ -473,40 +509,11 @@ export function createExperienceService(
       }
       const primaryTableKeys = new Set<string>();
       for (const candidates of tableViewsByObject.values()) {
-        const normalized = candidates
-          .map((view) => {
-            try {
-              return {
-                view,
-                config: parseViewConfig(
-                  "table",
-                  view.config_json,
-                ) as TableViewConfig,
-              };
-            } catch {
-              return null;
-            }
-          })
-          .filter(
-            (
-              candidate,
-            ): candidate is {
-              view: SourcedViewDefinition;
-              config: TableViewConfig;
-            } => candidate !== null,
-          )
-          .sort((left, right) => {
-            const leftRole =
-              "role" in left.config && left.config.role === "primary" ? 0 : 1;
-            const rightRole =
-              "role" in right.config && right.config.role === "primary" ? 0 : 1;
-            return (
-              leftRole - rightRole ||
-              left.view.key.localeCompare(right.view.key)
-            );
-          });
-        const primary = normalized[0]?.view;
-        if (primary) primaryTableKeys.add(primary.key);
+        const normalized = normalizedTableViewsForObject(candidates);
+        const primaryView = normalized.find(
+          (candidate) => candidate.config.role === "primary",
+        )?.view;
+        if (primaryView) primaryTableKeys.add(primaryView.key);
       }
       const views = internalViews.filter(
         (view) => view.view_type !== "table" || primaryTableKeys.has(view.key),
@@ -544,35 +551,26 @@ export function createExperienceService(
         current.push(view);
         byObject.set(view.object_definition_id, current);
       }
-      const selected: SourcedViewDefinition[] = [];
+      const selected: Array<{
+        view: SourcedViewDefinition;
+        config: TableViewConfigV2;
+      }> = [];
       for (const candidates of byObject.values()) {
-        const ordered = candidates.toSorted((left, right) => {
-          const leftConfig = normalizeTableViewConfig(left.config_json);
-          const rightConfig = normalizeTableViewConfig(right.config_json);
-          const leftRole = leftConfig.role === "primary" ? 0 : 1;
-          const rightRole = rightConfig.role === "primary" ? 0 : 1;
-          return (
-            leftRole - rightRole ||
-            ("schema_version" in rightConfig ? 0 : 1) -
-              ("schema_version" in leftConfig ? 0 : 1) ||
-            left.key.localeCompare(right.key)
-          );
-        });
-        const primary = ordered.find(
-          (view) =>
-            normalizeTableViewConfig(view.config_json).role === "primary",
+        const normalized = normalizedTableViewsForObject(candidates);
+        const primary = normalized.find(
+          (candidate) => candidate.config.role === "primary",
         );
         if (primary) selected.push(primary);
         selected.push(
-          ...ordered.filter(
-            (view) =>
-              normalizeTableViewConfig(view.config_json).role === "saved",
+          ...normalized.filter(
+            (candidate) => candidate.config.role === "saved",
           ),
         );
       }
-      return selected.map(({ object_key: objectKey, ...view }) => {
+      return selected.map(({ view, config }) => {
+        const { object_key: objectKey, ...definition } = view;
         void objectKey;
-        return view;
+        return { ...definition, config_json: config as Json };
       });
     },
   };

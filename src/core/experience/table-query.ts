@@ -3,6 +3,10 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import {
+  tableViewConnectionPropertyKey,
+  tableViewPropertyKeySchema,
+} from "./schemas";
 import type { Database, Json, Tables } from "../../db/supabase/database.types";
 
 const connectionValueSchema = z
@@ -76,7 +80,7 @@ export function connectionColumnStorageKey(
   relationshipKey: string,
   direction: "source" | "target",
 ): string {
-  return `connection:${relationshipKey}:${direction}`;
+  return tableViewConnectionPropertyKey(relationshipKey, direction);
 }
 
 export async function queryTableViewRecords(
@@ -100,10 +104,7 @@ export async function queryTableViewRecords(
     const record = parsedRecord(item.record);
     connectionValues[record.id] = Object.fromEntries(
       Object.entries(item.connections).map(([key, values]) => [
-        connectionColumnStorageKey(
-          key.split(":")[0] ?? key,
-          (key.split(":")[1] as "source" | "target" | undefined) ?? "source",
-        ),
+        tableViewPropertyKeySchema.parse(key),
         values,
       ]),
     );

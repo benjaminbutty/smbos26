@@ -8,6 +8,10 @@ import type {
   TableViewFilter,
   TableViewQuery,
 } from "../../core/experience/schemas";
+import {
+  tableViewConnectionPropertyKey,
+  tableViewFieldPropertyKey,
+} from "../../core/experience/schemas";
 import type { Tables } from "../../db/supabase/database.types";
 import type { ProductionConfigurationCurrentness } from "../editor-kernel/production/action-types";
 import {
@@ -49,7 +53,7 @@ function connectionOptionKey(
   relationshipKey: string,
   direction: "source" | "target",
 ): string {
-  return `connection:${relationshipKey}:${direction}`;
+  return tableViewConnectionPropertyKey(relationshipKey, direction);
 }
 
 function fieldOperators(fieldType: string): OperatorOption[] {
@@ -144,7 +148,7 @@ function propertyOptions(
     kind: "field",
     key: field.key,
     label: field.label,
-    optionKey: `field:${field.key}`,
+    optionKey: tableViewFieldPropertyKey(field.key),
     fieldType: field.field_type,
   }));
   for (const column of config.columns) {
@@ -187,16 +191,11 @@ function singleValueConnection(
 
 function optionForQueryProperty(
   property: string | null | undefined,
-  propertyKind: "field" | "connection" | undefined,
   options: readonly QueryProperty[],
 ): string {
   if (!property) return "";
   return (
-    options.find(
-      (option) =>
-        option.key === property &&
-        (propertyKind === undefined || option.kind === propertyKind),
-    )?.optionKey ?? ""
+    options.find((option) => option.optionKey === property)?.optionKey ?? ""
   );
 }
 
@@ -230,12 +229,11 @@ export function TableViewControls({
     [config, fields, relationships],
   );
   const initialFilter = config.filters[0];
+  const initialFilterProperty = options.find(
+    (option) => option.optionKey === initialFilter?.property,
+  );
   const [propertyOption, setPropertyOption] = useState(() =>
-    optionForQueryProperty(
-      initialFilter?.property,
-      initialFilter?.property_kind,
-      options,
-    ),
+    optionForQueryProperty(initialFilter?.property, options),
   );
   const selectedProperty = options.find(
     (option) => option.optionKey === propertyOption,
@@ -258,18 +256,18 @@ export function TableViewControls({
   >([]);
   const [connectionValue, setConnectionValue] = useState(
     typeof initialFilter?.value === "string" &&
-      initialFilter.property_kind === "connection"
+      initialFilterProperty?.kind === "connection"
       ? initialFilter.value
       : "",
   );
   const [sortOption, setSortOption] = useState(() =>
-    optionForQueryProperty(config.sorts[0]?.property, undefined, options),
+    optionForQueryProperty(config.sorts[0]?.property, options),
   );
   const [sortDirection, setSortDirection] = useState<
     "ascending" | "descending"
   >(config.sorts[0]?.direction ?? "ascending");
   const [groupOption, setGroupOption] = useState(() =>
-    optionForQueryProperty(config.group, undefined, options),
+    optionForQueryProperty(config.group, options),
   );
 
   useEffect(() => {
@@ -331,10 +329,7 @@ export function TableViewControls({
       selectedProperty?.kind === "connection" ? connectionValue : value;
     const filterBase = selectedProperty
       ? {
-          property: selectedProperty.key,
-          ...(selectedProperty.kind === "connection"
-            ? { property_kind: "connection" as const }
-            : {}),
+          property: selectedProperty.optionKey,
           operator,
         }
       : null;
@@ -362,9 +357,9 @@ export function TableViewControls({
       filters,
       filter_match: "all",
       sorts: sortProperty
-        ? [{ property: sortProperty.key, direction: sortDirection }]
+        ? [{ property: sortProperty.optionKey, direction: sortDirection }]
         : [],
-      group: groupProperty?.key ?? null,
+      group: groupProperty?.optionKey ?? null,
     };
     if (!currentness) return;
     startTransition(() => {

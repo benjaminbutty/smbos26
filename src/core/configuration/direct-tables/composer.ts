@@ -16,10 +16,12 @@ import {
 } from "../schemas";
 import {
   normalizeTableViewConfig,
+  deterministicTableViewRoles,
   validateTableViewQuery,
   type TableViewColumn,
   type TableViewConfigV1,
   type TableViewConfigV2,
+  type TableViewRole,
 } from "../../experience/schemas";
 import type { Json } from "../../../db/supabase/database.types";
 import {
@@ -161,6 +163,23 @@ function allocateKey(
   }
 }
 
+function deterministicTableRole(
+  snapshot: ConfigurationSnapshotV1,
+  targetViewKey: string,
+  objectDefinitionId: string,
+): TableViewRole {
+  const candidates = snapshot.views
+    .filter(
+      (candidate) =>
+        candidate.object_definition_id === objectDefinitionId &&
+        candidate.view_type === "table" &&
+        candidate.audience === "internal" &&
+        candidate.is_active,
+    )
+    .toSorted((left, right) => left.key.localeCompare(right.key));
+  return deterministicTableViewRoles(candidates).get(targetViewKey) ?? "saved";
+}
+
 function activeTable(
   snapshot: ConfigurationSnapshotV1,
   viewKey: string,
@@ -191,10 +210,15 @@ function activeTable(
   }
 
   try {
+    const legacyRole = deterministicTableRole(
+      snapshot,
+      view.key,
+      view.object_definition_id,
+    );
     return {
       view,
       object,
-      config: normalizeTableViewConfig(view.config_json),
+      config: normalizeTableViewConfig(view.config_json, legacyRole),
     };
   } catch (error) {
     throw new DirectTableComposerError("direct_table_snapshot_invalid", error);

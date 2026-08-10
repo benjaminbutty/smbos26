@@ -5,6 +5,21 @@
 -- The configuration projector remains authoritative; operational Record and
 -- Connection writes use the narrow RPCs at the end of this migration.
 
+create or replace function private.experience_table_property_key_is_valid(
+  property_key text
+)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    property_key ~ '^field:[a-z][a-z0-9_]{0,79}$'
+      or property_key ~ '^connection:[a-z][a-z0-9_]{0,79}:(source|target)$',
+    false
+  );
+$$;
+
 create or replace function private.assert_table_view_query_shape_v1(
   config jsonb
 )
@@ -26,7 +41,7 @@ begin
     or config ->> 'filter_match' not in ('all', 'any')
     or (
       config -> 'group' <> 'null'::jsonb
-      and not private.experience_key_is_valid(config ->> 'group')
+      and not private.experience_table_property_key_is_valid(config ->> 'group')
     )
   then
     raise exception 'Invalid Table View query'
@@ -39,12 +54,10 @@ begin
   loop
     if not private.experience_json_has_only_keys(
       filter_value,
-      array['property', 'property_kind', 'operator', 'value', 'values']
+      array['property', 'operator', 'value', 'values']
     )
-      or not private.experience_key_is_valid(filter_value ->> 'property')
-      or (
-        filter_value ? 'property_kind'
-        and filter_value ->> 'property_kind' not in ('field', 'connection')
+      or not private.experience_table_property_key_is_valid(
+        filter_value ->> 'property'
       )
       or filter_value ->> 'operator' not in (
         'is',
@@ -119,7 +132,9 @@ begin
       sort_value,
       array['property', 'direction']
     )
-      or not private.experience_key_is_valid(sort_value ->> 'property')
+      or not private.experience_table_property_key_is_valid(
+        sort_value ->> 'property'
+      )
       or sort_value ->> 'direction' not in ('ascending', 'descending')
     then
       raise exception 'Invalid Table View sort'
@@ -393,6 +408,923 @@ begin
 end;
 $$;
 
+create or replace function private.direct_table_columns_preserve_order_with_insert_v2(
+  base_columns jsonb,
+  candidate_columns jsonb,
+  inserted_key text
+)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_array_length(candidate_columns) =
+      jsonb_array_length(base_columns) + 1
+    and (
+      select count(*)
+      from jsonb_array_elements(candidate_columns) as item
+      where item ->> 'kind' = 'field'
+        and item ->> 'field_key' = inserted_key
+    ) = 1
+    and (
+      select jsonb_agg(item order by ordinal)
+      from jsonb_array_elements(candidate_columns)
+        with ordinality as next_columns(item, ordinal)
+      where not (
+        item ->> 'kind' = 'field'
+        and item ->> 'field_key' = inserted_key
+      )
+    ) = base_columns;
+$$;
+
+create or replace function private.assert_direct_table_action_shape_v1(
+  action_kind text,
+  base_snapshot jsonb,
+  candidate_snapshot jsonb,
+  operations jsonb
+)
+returns void
+language plpgsql
+stable
+set search_path = ''
+as $$
+declare
+  operation jsonb;
+  object_operation jsonb;
+  field_operation jsonb;
+  view_operation jsonb;
+  base_object jsonb;
+  candidate_object jsonb;
+  base_field jsonb;
+  candidate_field jsonb;
+  base_view jsonb;
+  candidate_view jsonb;
+  operation_config jsonb;
+  base_config jsonb;
+  candidate_config jsonb;
+  target_key text;
+  base_column jsonb;
+  candidate_column jsonb;
+  column_index integer;
+begin
+  if action_kind not in (
+    'create_table',
+    'rename_table',
+    'add_column',
+    'rename_column',
+    'update_column_options',
+    'reorder_columns',
+    'resize_column'
+  ) then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  perform private.assert_configuration_operations_v1(operations);
+
+  if action_kind = 'create_table' then
+    if jsonb_array_length(operations) <> 3
+      or not exists (
+        select 1 from jsonb_array_elements(operations) as item
+        where item ->> 'op' = 'set_object'
+      )
+      or not exists (
+        select 1 from jsonb_array_elements(operations) as item
+        where item ->> 'op' = 'set_field'
+      )
+      or not exists (
+        select 1 from jsonb_array_elements(operations) as item
+        where item ->> 'op' = 'set_view'
+      )
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+
+    select value into operation
+    from jsonb_array_elements(operations)
+    where value ->> 'op' = 'set_object';
+    select value into field_operation
+    from jsonb_array_elements(operations)
+    where value ->> 'op' = 'set_field';
+    select value into view_operation
+    from jsonb_array_elements(operations)
+    where value ->> 'op' = 'set_view';
+
+    if operation ->> 'key' is null
+      or field_operation ->> 'object_key' <> operation ->> 'key'
+      or view_operation ->> 'object_key' <> operation ->> 'key'
+      or view_operation ->> 'view_type' <> 'table'
+      or view_operation ->> 'audience' <> 'internal'
+      or not (view_operation ->> 'is_active')::boolean
+      or not (operation ->> 'is_active')::boolean
+      or not (field_operation ->> 'is_active')::boolean
+      or operation ->> 'description' <>
+        ('A Table of '::text || (operation ->> 'singular_label') || '.'::text)
+      or operation -> 'icon' is distinct from 'null'::jsonb
+      or field_operation -> 'default_value' <> 'null'::jsonb
+      or field_operation ->> 'position' <> '0'
+      or field_operation -> 'settings_json' <> '{}'::jsonb
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+
+    select value into candidate_object
+    from jsonb_array_elements(candidate_snapshot -> 'object_definitions') as value
+    where value ->> 'key' = operation ->> 'key';
+    select value into candidate_field
+    from jsonb_array_elements(candidate_snapshot -> 'field_definitions') as value
+    where value ->> 'object_key' = operation ->> 'key'
+      and value ->> 'key' = field_operation ->> 'key';
+    select value into candidate_view
+    from jsonb_array_elements(candidate_snapshot -> 'views') as value
+    where value ->> 'key' = view_operation ->> 'key';
+
+    if candidate_object is null or candidate_field is null or candidate_view is null
+      or candidate_object ->> 'singular_label' <> operation ->> 'singular_label'
+      or candidate_object ->> 'plural_label' <> operation ->> 'plural_label'
+      or candidate_field ->> 'label' <> field_operation ->> 'label'
+      or candidate_field ->> 'field_type' <> 'short_text'
+      or not (candidate_field ->> 'required')::boolean
+      or candidate_field ->> 'position' <> '0'
+      or candidate_field -> 'default_value' <> 'null'::jsonb
+      or candidate_field -> 'settings_json' <> '{}'::jsonb
+      or candidate_view -> 'config_json' <> view_operation -> 'config_json'
+      or (candidate_view -> 'config_json' -> 'fields') <>
+        jsonb_build_array(field_operation ->> 'key')
+      or candidate_view -> 'config_json' ->> 'title_field' is distinct from field_operation ->> 'key'
+      or candidate_view -> 'config_json' ->> 'include_archived' is distinct from 'false'
+      or (candidate_view -> 'config_json') ? 'create_form_key'
+      or (candidate_view -> 'config_json') ? 'edit_form_key'
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+    return;
+  end if;
+
+  if jsonb_array_length(operations) not in (1, 2) then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  select value into view_operation
+  from jsonb_array_elements(operations) as value
+  where value ->> 'op' = 'set_view';
+  select value into field_operation
+  from jsonb_array_elements(operations) as value
+  where value ->> 'op' = 'set_field';
+  select value into object_operation
+  from jsonb_array_elements(operations) as value
+  where value ->> 'op' = 'set_object';
+
+  if action_kind in ('rename_table', 'reorder_columns', 'resize_column')
+    and view_operation is null
+  then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+  if action_kind in ('rename_column', 'update_column_options')
+    and field_operation is null
+  then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+  if action_kind = 'add_column'
+    and (field_operation is null or view_operation is null)
+  then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  if action_kind = 'rename_table' and object_operation is null then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+  if action_kind <> 'rename_table' and object_operation is not null then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  if view_operation is not null then
+    target_key := view_operation ->> 'key';
+    select value into base_view
+    from jsonb_array_elements(base_snapshot -> 'views') as value
+    where value ->> 'key' = target_key;
+    select value into candidate_view
+    from jsonb_array_elements(candidate_snapshot -> 'views') as value
+    where value ->> 'key' = target_key;
+    if base_view is null or candidate_view is null
+      or base_view ->> 'view_type' <> 'table'
+      or base_view ->> 'audience' <> 'internal'
+      or not (base_view ->> 'is_active')::boolean
+      or candidate_view ->> 'object_key' <> base_view ->> 'object_key'
+      or candidate_view ->> 'view_type' <> 'table'
+      or candidate_view ->> 'audience' <> 'internal'
+      or not (candidate_view ->> 'is_active')::boolean
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+    base_config := base_view -> 'config_json';
+    candidate_config := candidate_view -> 'config_json';
+    operation_config := view_operation -> 'config_json';
+    if candidate_config <> operation_config then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  if object_operation is not null then
+    select value into base_object
+    from jsonb_array_elements(base_snapshot -> 'object_definitions') as value
+    where value ->> 'key' = object_operation ->> 'key';
+    select value into candidate_object
+    from jsonb_array_elements(candidate_snapshot -> 'object_definitions') as value
+    where value ->> 'key' = object_operation ->> 'key';
+  end if;
+
+  if field_operation is not null then
+    target_key := (field_operation ->> 'object_key') || chr(31) ||
+      (field_operation ->> 'key');
+    select value into base_field
+    from jsonb_array_elements(base_snapshot -> 'field_definitions') as value
+    where (value ->> 'object_key') || chr(31) || (value ->> 'key') = target_key;
+    select value into candidate_field
+    from jsonb_array_elements(candidate_snapshot -> 'field_definitions') as value
+    where (value ->> 'object_key') || chr(31) || (value ->> 'key') = target_key;
+
+    if action_kind in ('rename_column', 'update_column_options')
+      and not exists (
+        select 1
+        from jsonb_array_elements(base_snapshot -> 'views') as table_view
+        where table_view ->> 'view_type' = 'table'
+          and table_view ->> 'audience' = 'internal'
+          and (table_view ->> 'is_active')::boolean
+          and table_view ->> 'object_key' = field_operation ->> 'object_key'
+          and exists (
+            select 1
+            from jsonb_array_elements_text(table_view -> 'config_json' -> 'fields') as visible_field
+            where visible_field = field_operation ->> 'key'
+          )
+      )
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+
+    if action_kind = 'add_column'
+      and field_operation ->> 'object_key' <> view_operation ->> 'object_key'
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  end if;
+
+  if base_config ->> 'schema_version' = '2' then
+    if candidate_config ->> 'schema_version' <> '2'
+      or operation_config ->> 'schema_version' <> '2'
+      or candidate_config <> operation_config
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+
+    if action_kind = 'rename_table' then
+      if jsonb_array_length(operations) <> 2
+        or object_operation ->> 'key' <> view_operation ->> 'object_key'
+        or base_object is null
+        or candidate_object is null
+        or not (base_object ->> 'is_active')::boolean
+        or not (candidate_object ->> 'is_active')::boolean
+        or candidate_object ->> 'singular_label' <>
+          object_operation ->> 'singular_label'
+        or candidate_object ->> 'plural_label' <>
+          object_operation ->> 'plural_label'
+        or (candidate_object - 'singular_label'::text - 'plural_label'::text) <>
+          (base_object - 'singular_label'::text - 'plural_label'::text)
+        or candidate_view ->> 'name' <> view_operation ->> 'name'
+        or (candidate_view - 'name'::text) <> (base_view - 'name'::text)
+        or candidate_config <> base_config
+        or not private.direct_table_snapshot_collections_unchanged_v1(
+          base_snapshot,
+          candidate_snapshot
+        )
+        or base_snapshot -> 'object_definitions' =
+          candidate_snapshot -> 'object_definitions'
+        or base_snapshot -> 'field_definitions' <>
+          candidate_snapshot -> 'field_definitions'
+        or base_snapshot -> 'views' = candidate_snapshot -> 'views'
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+    elsif action_kind = 'add_column' then
+      if jsonb_array_length(operations) <> 2
+        or base_field is not null
+        or candidate_field is null
+        or candidate_field ->> 'label' <> field_operation ->> 'label'
+        or candidate_field ->> 'object_key' <> field_operation ->> 'object_key'
+        or candidate_field ->> 'field_type' <> field_operation ->> 'field_type'
+        or field_operation ->> 'required' <> 'false'
+        or field_operation -> 'default_value' <> 'null'::jsonb
+        or not (field_operation ->> 'is_active')::boolean
+        or candidate_field ->> 'position' <> field_operation ->> 'position'
+        or candidate_field -> 'default_value' <> 'null'::jsonb
+        or candidate_field ->> 'required' <> 'false'
+        or candidate_field -> 'settings_json' <> field_operation -> 'settings_json'
+        or (
+          field_operation ->> 'field_type' not in ('select', 'status')
+          and field_operation -> 'settings_json' <> '{}'::jsonb
+        )
+        or (
+          field_operation ->> 'field_type' in ('select', 'status')
+          and not private.direct_table_options_are_valid_v1(
+            field_operation -> 'settings_json'
+          )
+        )
+        or candidate_config - 'columns'::text - 'fields'::text <>
+          base_config - 'columns'::text - 'fields'::text
+        or candidate_config -> 'fields' <> (
+          base_config -> 'fields' || jsonb_build_array(field_operation ->> 'key')
+        )
+        or candidate_config -> 'columns' <> (
+          base_config -> 'columns' || jsonb_build_array(
+            jsonb_build_object('kind', 'field', 'field_key', field_operation ->> 'key')
+          )
+        )
+        or not private.direct_table_snapshot_collections_unchanged_v1(
+          base_snapshot,
+          candidate_snapshot
+        )
+        or base_snapshot -> 'object_definitions' <>
+          candidate_snapshot -> 'object_definitions'
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+    elsif action_kind = 'reorder_columns' then
+      if jsonb_array_length(operations) <> 1
+        or candidate_config - 'fields'::text - 'columns'::text <>
+          base_config - 'fields'::text - 'columns'::text
+        or candidate_config -> 'fields' <> operation_config -> 'fields'
+        or jsonb_array_length(candidate_config -> 'fields') < 1
+        or jsonb_array_length(candidate_config -> 'columns') < 1
+        or jsonb_array_length(candidate_config -> 'columns') <>
+          jsonb_array_length(base_config -> 'columns')
+        or exists (
+          select 1
+          from jsonb_array_elements(candidate_config -> 'fields') as item
+          group by item
+          having count(*) > 1
+        )
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+
+      for candidate_column, column_index in
+        select value, ordinality::integer
+        from jsonb_array_elements(candidate_config -> 'columns')
+          with ordinality as column_value(value, ordinality)
+      loop
+        base_column := (base_config -> 'columns') -> (column_index - 1);
+        if candidate_column ->> 'kind' <> 'field'
+          and candidate_column <> base_column
+        then
+          raise exception 'direct_table_action_shape_invalid'
+            using errcode = '22023';
+        end if;
+        if candidate_column ->> 'kind' = 'field'
+          and not exists (
+            select 1
+            from jsonb_array_elements_text(candidate_config -> 'fields') as field_key
+            where field_key = candidate_column ->> 'field_key'
+          )
+        then
+          raise exception 'direct_table_action_shape_invalid'
+            using errcode = '22023';
+        end if;
+      end loop;
+      if base_snapshot -> 'object_definitions' <>
+          candidate_snapshot -> 'object_definitions'
+        or base_snapshot -> 'field_definitions' <>
+          candidate_snapshot -> 'field_definitions'
+        or not private.direct_table_snapshot_collections_unchanged_v1(
+          base_snapshot,
+          candidate_snapshot
+        )
+        or base_snapshot -> 'views' = candidate_snapshot -> 'views'
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+    elsif action_kind = 'resize_column' then
+      if jsonb_array_length(operations) <> 1
+        or not exists (
+          select 1
+          from jsonb_each(operation_config -> 'column_widths') as width
+          where (base_config -> 'column_widths' -> width.key) is distinct from
+            width.value
+        )
+        or exists (
+          select 1
+          from jsonb_object_keys(base_config -> 'column_widths') as old_width
+          where not (operation_config -> 'column_widths') ? old_width
+        )
+        or (
+          select count(*)
+          from jsonb_each(operation_config -> 'column_widths') as width
+          where (base_config -> 'column_widths' -> width.key) is distinct from
+            width.value
+        ) <> 1
+        or candidate_config - 'column_widths'::text <>
+          base_config - 'column_widths'::text
+        or candidate_config -> 'column_widths' <> operation_config -> 'column_widths'
+        or base_snapshot -> 'object_definitions' <>
+          candidate_snapshot -> 'object_definitions'
+        or base_snapshot -> 'field_definitions' <>
+          candidate_snapshot -> 'field_definitions'
+        or not private.direct_table_snapshot_collections_unchanged_v1(
+          base_snapshot,
+          candidate_snapshot
+        )
+        or base_snapshot -> 'views' = candidate_snapshot -> 'views'
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+    elsif action_kind in ('rename_column', 'change_column_type', 'update_column_options') then
+      if jsonb_array_length(operations) <> 1
+        or candidate_config <> base_config
+        or base_snapshot -> 'object_definitions' <>
+          candidate_snapshot -> 'object_definitions'
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+    end if;
+    return;
+  end if;
+
+  if action_kind = 'rename_table' then
+    if jsonb_array_length(operations) <> 2
+      or object_operation ->> 'key' <> view_operation ->> 'object_key'
+      or base_object is null
+      or candidate_object is null
+      or not (base_object ->> 'is_active')::boolean
+      or not (candidate_object ->> 'is_active')::boolean
+      or candidate_object ->> 'singular_label' <> object_operation ->> 'singular_label'
+      or candidate_object ->> 'plural_label' <> object_operation ->> 'plural_label'
+      or (candidate_object - 'singular_label'::text - 'plural_label'::text) <>
+        (base_object - 'singular_label'::text - 'plural_label'::text)
+      or candidate_view ->> 'name' <> view_operation ->> 'name'
+      or (candidate_view - 'name'::text) <> (base_view - 'name'::text)
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+      or base_snapshot -> 'object_definitions' =
+        candidate_snapshot -> 'object_definitions'
+      or base_snapshot -> 'field_definitions' <>
+        candidate_snapshot -> 'field_definitions'
+      or base_snapshot -> 'views' = candidate_snapshot -> 'views'
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  elsif action_kind = 'add_column' then
+    if jsonb_array_length(operations) <> 2
+      or base_field is not null
+      or candidate_field is null
+      or candidate_field ->> 'label' <> field_operation ->> 'label'
+      or candidate_field ->> 'object_key' <> field_operation ->> 'object_key'
+      or candidate_field ->> 'field_type' <> field_operation ->> 'field_type'
+      or field_operation ->> 'field_type' not in (
+        'short_text',
+        'long_text',
+        'number',
+        'boolean',
+        'date',
+        'email',
+        'phone',
+        'url',
+        'select',
+        'status'
+      )
+      or (field_operation ->> 'required')::boolean
+      or field_operation -> 'default_value' <> 'null'::jsonb
+      or not (field_operation ->> 'is_active')::boolean
+      or candidate_field ->> 'position' <> field_operation ->> 'position'
+      or candidate_field -> 'default_value' <> 'null'::jsonb
+      or candidate_field ->> 'required' <> 'false'
+      or candidate_field -> 'settings_json' <> field_operation -> 'settings_json'
+      or (
+        field_operation ->> 'field_type' not in ('select', 'status')
+        and field_operation -> 'settings_json' <> '{}'::jsonb
+      )
+      or (
+        field_operation ->> 'field_type' in ('select', 'status')
+        and not private.direct_table_options_are_valid_v1(
+          field_operation -> 'settings_json'
+        )
+      )
+      or candidate_config - 'fields'::text <> base_config - 'fields'::text
+      or candidate_config -> 'fields' <>
+        (base_config -> 'fields') ||
+        jsonb_build_array(field_operation ->> 'key')
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+      or base_snapshot -> 'object_definitions' <>
+        candidate_snapshot -> 'object_definitions'
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  elsif action_kind = 'rename_column' then
+    if jsonb_array_length(operations) <> 1
+      or base_field is null
+      or candidate_field is null
+      or candidate_field ->> 'label' <> field_operation ->> 'label'
+      or (candidate_field - 'label'::text) <> (base_field - 'label'::text)
+      or base_snapshot -> 'field_definitions' =
+        candidate_snapshot -> 'field_definitions'
+      or base_snapshot -> 'object_definitions' <>
+        candidate_snapshot -> 'object_definitions'
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  elsif action_kind = 'update_column_options' then
+    if jsonb_array_length(operations) <> 1
+      or base_field is null
+      or candidate_field is null
+      or base_field ->> 'field_type' not in ('select', 'status')
+      or candidate_field ->> 'field_type' <> base_field ->> 'field_type'
+      or candidate_field -> 'settings_json' -> 'options' <>
+        field_operation -> 'settings_json' -> 'options'
+      or (candidate_field - 'settings_json'::text) <>
+        (base_field - 'settings_json'::text)
+      or ((candidate_field -> 'settings_json') - 'options'::text) <>
+        ((base_field -> 'settings_json') - 'options'::text)
+      or base_snapshot -> 'field_definitions' =
+        candidate_snapshot -> 'field_definitions'
+      or base_snapshot -> 'object_definitions' <>
+        candidate_snapshot -> 'object_definitions'
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  elsif action_kind = 'reorder_columns' then
+    if jsonb_array_length(operations) <> 1
+      or candidate_config - 'fields'::text <> base_config - 'fields'::text
+      or candidate_config -> 'fields' <> operation_config -> 'fields'
+      or jsonb_array_length(candidate_config -> 'fields') < 1
+      or exists (
+        select 1
+        from jsonb_array_elements_text(candidate_config -> 'fields') as item
+        where not exists (
+          select 1
+          from jsonb_array_elements_text(base_config -> 'fields') as original
+          where original = item
+        )
+      )
+      or exists (
+        select 1
+        from jsonb_array_elements_text(candidate_config -> 'fields') as item
+        group by item
+        having count(*) > 1
+      )
+      or jsonb_array_length(base_config -> 'fields') <>
+        jsonb_array_length(candidate_config -> 'fields')
+      or base_snapshot -> 'object_definitions' <>
+        candidate_snapshot -> 'object_definitions'
+      or base_snapshot -> 'field_definitions' <>
+        candidate_snapshot -> 'field_definitions'
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+      or base_snapshot -> 'views' = candidate_snapshot -> 'views'
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  elsif action_kind = 'resize_column' then
+    if jsonb_array_length(operations) <> 1
+      or not exists (
+        select 1
+        from jsonb_each(operation_config -> 'column_widths') as width
+        where (base_config -> 'column_widths' -> width.key) is distinct from
+          width.value
+      )
+      or exists (
+        select 1
+        from jsonb_object_keys(base_config -> 'column_widths') as old_width
+        where not (operation_config -> 'column_widths') ? old_width
+      )
+      or (
+        select count(*)
+        from jsonb_each(operation_config -> 'column_widths') as width
+        where (base_config -> 'column_widths' -> width.key) is distinct from
+          width.value
+      ) <> 1
+      or exists (
+        select 1
+        from jsonb_object_keys(operation_config -> 'column_widths') as width
+        where not exists (
+          select 1
+          from jsonb_array_elements_text(base_config -> 'fields') as field_key
+          where field_key = width
+        )
+      )
+      or candidate_config - 'column_widths'::text <>
+        base_config - 'column_widths'::text
+      or candidate_config -> 'column_widths' <> operation_config -> 'column_widths'
+      or base_snapshot -> 'object_definitions' <>
+        candidate_snapshot -> 'object_definitions'
+      or base_snapshot -> 'field_definitions' <>
+        candidate_snapshot -> 'field_definitions'
+      or not private.direct_table_snapshot_collections_unchanged_v1(
+        base_snapshot,
+        candidate_snapshot
+      )
+      or base_snapshot -> 'views' = candidate_snapshot -> 'views'
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+  end if;
+end;
+$$;
+
+create or replace function private.assert_lenni_direct_table_action_shape_v1(
+  action_kind text,
+  base_snapshot jsonb,
+  candidate_snapshot jsonb,
+  operations jsonb
+)
+returns void
+language plpgsql
+stable
+set search_path = ''
+as $$
+declare
+  field_operation jsonb;
+  view_operation jsonb;
+  base_field jsonb;
+  candidate_field jsonb;
+  base_view jsonb;
+  candidate_view jsonb;
+  base_fields jsonb;
+  candidate_fields jsonb;
+  target_key text;
+begin
+  if action_kind not in ('insert_column', 'change_column_type') then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  perform private.assert_configuration_operations_v1(operations);
+
+  select value into field_operation
+  from jsonb_array_elements(operations) as value
+  where value ->> 'op' = 'set_field';
+
+  select value into view_operation
+  from jsonb_array_elements(operations) as value
+  where value ->> 'op' = 'set_view';
+
+  if field_operation is null then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  target_key := (field_operation ->> 'object_key') || chr(31) ||
+    (field_operation ->> 'key');
+  select value into base_field
+  from jsonb_array_elements(base_snapshot -> 'field_definitions') as value
+  where (value ->> 'object_key') || chr(31) || (value ->> 'key') = target_key;
+  select value into candidate_field
+  from jsonb_array_elements(candidate_snapshot -> 'field_definitions') as value
+  where (value ->> 'object_key') || chr(31) || (value ->> 'key') = target_key;
+
+  if action_kind = 'insert_column' then
+    if jsonb_array_length(operations) <> 2
+      or view_operation is null
+      or base_field is not null
+      or candidate_field is null
+      or (candidate_snapshot -> 'object_definitions') <>
+        (base_snapshot -> 'object_definitions')
+      or (candidate_snapshot -> 'views') = (base_snapshot -> 'views')
+      or (candidate_snapshot -> 'field_definitions') =
+        (base_snapshot -> 'field_definitions')
+      or field_operation ->> 'object_key' <> view_operation ->> 'object_key'
+      or field_operation ->> 'label' is null
+      or not (field_operation ->> 'is_active')::boolean
+      or (field_operation ->> 'required')::boolean
+      or field_operation -> 'default_value' <> 'null'::jsonb
+      or not private.direct_table_type_is_supported_v2(
+        field_operation ->> 'field_type'
+      )
+      or not private.direct_table_settings_are_valid_v2(
+        field_operation ->> 'field_type',
+        field_operation -> 'settings_json'
+      )
+      or candidate_field ->> 'object_key' <> field_operation ->> 'object_key'
+      or candidate_field ->> 'key' <> field_operation ->> 'key'
+      or candidate_field ->> 'label' <> field_operation ->> 'label'
+      or candidate_field ->> 'field_type' <> field_operation ->> 'field_type'
+      or candidate_field ->> 'required' <> 'false'
+      or candidate_field -> 'default_value' <> 'null'::jsonb
+      or candidate_field -> 'settings_json' <>
+        field_operation -> 'settings_json'
+      or candidate_field ->> 'position' <> field_operation ->> 'position'
+      or jsonb_array_length(candidate_snapshot -> 'field_definitions') <>
+        jsonb_array_length(base_snapshot -> 'field_definitions') + 1
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+
+    select value into base_view
+    from jsonb_array_elements(base_snapshot -> 'views') as value
+    where value ->> 'key' = view_operation ->> 'key';
+    select value into candidate_view
+    from jsonb_array_elements(candidate_snapshot -> 'views') as value
+    where value ->> 'key' = view_operation ->> 'key';
+    if base_view is null or candidate_view is null
+      or base_view ->> 'view_type' <> 'table'
+      or base_view ->> 'audience' <> 'internal'
+      or not (base_view ->> 'is_active')::boolean
+      or candidate_view - 'config_json'::text <>
+        base_view - 'config_json'::text
+      or candidate_view -> 'config_json' <>
+        view_operation -> 'config_json'
+      or (
+        base_view -> 'config_json' ->> 'schema_version' <> '2'
+        and (candidate_view -> 'config_json') - 'fields'::text <>
+          (base_view -> 'config_json') - 'fields'::text
+      )
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+
+    if base_view -> 'config_json' ->> 'schema_version' = '2' then
+      if candidate_view - 'config_json'::text <>
+          base_view - 'config_json'::text
+        or candidate_view -> 'config_json' <>
+          view_operation -> 'config_json'
+        or (candidate_view -> 'config_json') - 'fields'::text - 'columns'::text <>
+          (base_view -> 'config_json') - 'fields'::text - 'columns'::text
+        or not private.direct_table_fields_preserve_order_with_insert_v2(
+          base_view -> 'config_json' -> 'fields',
+          candidate_view -> 'config_json' -> 'fields',
+          field_operation ->> 'key'
+        )
+        or not private.direct_table_columns_preserve_order_with_insert_v2(
+          base_view -> 'config_json' -> 'columns',
+          candidate_view -> 'config_json' -> 'columns',
+          field_operation ->> 'key'
+        )
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+      return;
+    end if;
+
+    base_fields := base_view -> 'config_json' -> 'fields';
+    candidate_fields := candidate_view -> 'config_json' -> 'fields';
+    if jsonb_array_length(candidate_fields) <> jsonb_array_length(base_fields) + 1
+      or not exists (
+        select 1
+        from jsonb_array_elements_text(candidate_fields) as item
+        where item = field_operation ->> 'key'
+      )
+      or exists (
+        select 1
+        from jsonb_array_elements_text(base_fields) as item
+        where not exists (
+          select 1
+          from jsonb_array_elements_text(candidate_fields) as next_item
+          where next_item = item
+        )
+      )
+      or exists (
+        select 1
+        from jsonb_array_elements(base_snapshot -> 'field_definitions') as old_field
+        where not exists (
+          select 1
+          from jsonb_array_elements(candidate_snapshot -> 'field_definitions') as next_field
+          where next_field = old_field
+        )
+      )
+      or not private.direct_table_fields_preserve_order_with_insert_v2(
+        base_fields,
+        candidate_fields,
+        field_operation ->> 'key'
+      )
+    then
+      raise exception 'direct_table_action_shape_invalid'
+        using errcode = '22023';
+    end if;
+    return;
+  end if;
+
+  if jsonb_array_length(operations) <> 1
+    or view_operation is not null
+    or base_field is null
+    or candidate_field is null
+    or not private.direct_table_type_is_supported_v2(
+      field_operation ->> 'field_type'
+    )
+    or candidate_field -> 'field_type' <>
+      field_operation -> 'field_type'
+    or (candidate_field - 'field_type'::text - 'settings_json'::text) <>
+      (base_field - 'field_type'::text - 'settings_json'::text)
+    or not exists (
+      select 1
+      from jsonb_array_elements(base_snapshot -> 'views') as table_view
+      where table_view ->> 'view_type' = 'table'
+        and table_view ->> 'audience' = 'internal'
+        and (table_view ->> 'is_active')::boolean
+        and table_view ->> 'object_key' = field_operation ->> 'object_key'
+        and (table_view -> 'config_json' -> 'fields') @>
+          jsonb_build_array(field_operation ->> 'key')
+    )
+  then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  if not private.direct_table_settings_are_valid_v2(
+    field_operation ->> 'field_type',
+    field_operation -> 'settings_json'
+  )
+    or candidate_field -> 'settings_json' <>
+      field_operation -> 'settings_json'
+  then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(base_snapshot -> 'views') as table_view
+    where table_view ->> 'view_type' = 'table'
+      and table_view ->> 'audience' = 'internal'
+      and (table_view ->> 'is_active')::boolean
+      and table_view ->> 'object_key' = field_operation ->> 'object_key'
+      and table_view -> 'config_json' ->> 'title_field' = field_operation ->> 'key'
+      and field_operation ->> 'field_type' not in ('short_text', 'long_text')
+  ) then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+
+  if (candidate_snapshot -> 'object_definitions') <>
+       (base_snapshot -> 'object_definitions')
+    or (candidate_snapshot -> 'views') <>
+       (base_snapshot -> 'views')
+    or (candidate_snapshot -> 'field_definitions') =
+      (base_snapshot -> 'field_definitions')
+    or exists (
+      select 1
+      from jsonb_array_elements(base_snapshot -> 'field_definitions') as old_field
+      where not (
+        old_field ->> 'key' = field_operation ->> 'key'
+        and old_field ->> 'object_key' = field_operation ->> 'object_key'
+      )
+        and not exists (
+          select 1
+          from jsonb_array_elements(candidate_snapshot -> 'field_definitions') as next_field
+          where next_field = old_field
+        )
+    )
+  then
+    raise exception 'direct_table_action_shape_invalid'
+      using errcode = '22023';
+  end if;
+end;
+$$;
+
 create or replace function private.experience_view_field_keys(
   requested_view_type public.experience_view_type,
   config jsonb
@@ -454,12 +1386,47 @@ declare
   property_kind text;
   direction text;
   primary_count integer;
+  legacy_count integer;
+  object_definition_id text;
   field_type text;
   operator text;
   has_value boolean;
   has_values boolean;
   operand jsonb;
 begin
+  for object_definition_id in
+    select value ->> 'object_definition_id'
+    from jsonb_array_elements(candidate -> 'views') as value
+    where value ->> 'view_type' = 'table'
+      and value ->> 'audience' = 'internal'
+      and (value ->> 'is_active')::boolean
+    group by value ->> 'object_definition_id'
+  loop
+    select count(*) into primary_count
+    from jsonb_array_elements(candidate -> 'views') as candidate_view
+    where candidate_view ->> 'view_type' = 'table'
+      and candidate_view ->> 'audience' = 'internal'
+      and (candidate_view ->> 'is_active')::boolean
+      and candidate_view -> 'config_json' ->> 'schema_version' = '2'
+      and candidate_view -> 'config_json' ->> 'role' = 'primary'
+      and candidate_view ->> 'object_definition_id' = object_definition_id;
+    select count(*) into legacy_count
+    from jsonb_array_elements(candidate -> 'views') as candidate_view
+    where candidate_view ->> 'view_type' = 'table'
+      and candidate_view ->> 'audience' = 'internal'
+      and (candidate_view ->> 'is_active')::boolean
+      and not (candidate_view -> 'config_json' ? 'schema_version')
+      and candidate_view ->> 'object_definition_id' = object_definition_id;
+    if primary_count > 1 then
+      raise exception 'internal_workspace_primary_view_duplicate'
+        using errcode = '23514';
+    end if;
+    if primary_count = 0 and legacy_count = 0 then
+      raise exception 'internal_workspace_primary_view_missing'
+        using errcode = '23514';
+    end if;
+  end loop;
+
   for view_definition in
     select value
     from jsonb_array_elements(candidate -> 'views') as value
@@ -470,20 +1437,6 @@ begin
     configured_view := view_definition -> 'config_json';
     if configured_view ->> 'schema_version' <> '2' then
       continue;
-    end if;
-
-    select count(*) into primary_count
-    from jsonb_array_elements(candidate -> 'views') as candidate_view
-    where candidate_view ->> 'view_type' = 'table'
-      and candidate_view ->> 'audience' = 'internal'
-      and (candidate_view ->> 'is_active')::boolean
-      and (candidate_view -> 'config_json' ->> 'schema_version') = '2'
-      and candidate_view -> 'config_json' ->> 'role' = 'primary'
-      and candidate_view ->> 'object_definition_id' =
-        view_definition ->> 'object_definition_id';
-    if primary_count > 1 then
-      raise exception 'internal_workspace_primary_view_duplicate'
-        using errcode = '23514';
     end if;
 
     for column_value in
@@ -522,46 +1475,56 @@ begin
       select value
       from jsonb_array_elements(configured_view -> 'filters') as value
     loop
-      property_key := filter_value ->> 'property';
-      property_kind := filter_value ->> 'property_kind';
+      property_kind := split_part(filter_value ->> 'property', ':', 1);
+      property_key := split_part(filter_value ->> 'property', ':', 2);
+      direction := split_part(filter_value ->> 'property', ':', 3);
       operator := filter_value ->> 'operator';
       has_value := filter_value ? 'value';
       has_values := filter_value ? 'values';
       field_type := null;
       relationship_definition := null;
       column_value := null;
-      if exists (
-        select 1
-        from jsonb_array_elements(configured_view -> 'columns') as visible_column
-        where visible_column ->> 'kind' = 'connection'
-          and visible_column ->> 'relationship_key' = property_key
+      if not private.experience_table_property_key_is_valid(
+        filter_value ->> 'property'
       ) then
-        if property_kind = 'field' then
-          raise exception 'internal_workspace_filter_property_kind_invalid'
+        raise exception 'internal_workspace_filter_property_invalid'
+          using errcode = '23514';
+      elsif property_kind = 'connection' then
+        select value into column_value
+        from jsonb_array_elements(configured_view -> 'columns') as value
+        where value ->> 'kind' = 'connection'
+          and value ->> 'relationship_key' = property_key
+          and value ->> 'direction' = direction;
+        select value into relationship_definition
+        from jsonb_array_elements(candidate -> 'relationship_definitions') as value
+        where value ->> 'key' = property_key
+          and (value ->> 'is_active')::boolean;
+        if column_value is null or relationship_definition is null then
+          raise exception 'internal_workspace_filter_property_invalid'
             using errcode = '23514';
         end if;
-      elsif exists (
+      elsif property_kind = 'field' and not exists (
         select 1
         from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
         where field_definition ->> 'object_key' = view_definition ->> 'object_key'
           and field_definition ->> 'key' = property_key
           and (field_definition ->> 'is_active')::boolean
       ) then
-        if property_kind = 'connection' then
-          raise exception 'internal_workspace_filter_property_kind_invalid'
-            using errcode = '23514';
-        end if;
-      else
+        raise exception 'internal_workspace_filter_property_invalid'
+          using errcode = '23514';
+      elsif property_kind <> 'field' then
         raise exception 'internal_workspace_filter_property_invalid'
           using errcode = '23514';
       end if;
 
-      select field_definition ->> 'field_type'
-      into field_type
-      from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
-      where field_definition ->> 'object_key' = view_definition ->> 'object_key'
-        and field_definition ->> 'key' = property_key
-        and (field_definition ->> 'is_active')::boolean;
+      if property_kind = 'field' then
+        select field_definition ->> 'field_type'
+        into field_type
+        from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
+        where field_definition ->> 'object_key' = view_definition ->> 'object_key'
+          and field_definition ->> 'key' = property_key
+          and (field_definition ->> 'is_active')::boolean;
+      end if;
 
       if field_type is not null then
         if property_kind = 'connection'
@@ -691,24 +1654,35 @@ begin
       select value
       from jsonb_array_elements(configured_view -> 'sorts') as value
     loop
-      property_key := sort_value ->> 'property';
-      select field_definition ->> 'field_type'
-      into field_type
-      from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
-      where field_definition ->> 'object_key' = view_definition ->> 'object_key'
-        and field_definition ->> 'key' = property_key
-        and (field_definition ->> 'is_active')::boolean;
-      if field_type is not null then
+      property_kind := split_part(sort_value ->> 'property', ':', 1);
+      property_key := split_part(sort_value ->> 'property', ':', 2);
+      direction := split_part(sort_value ->> 'property', ':', 3);
+      if not private.experience_table_property_key_is_valid(
+        sort_value ->> 'property'
+      ) then
+        raise exception 'internal_workspace_sort_property_invalid'
+          using errcode = '23514';
+      elsif property_kind = 'field' then
+        select field_definition ->> 'field_type'
+        into field_type
+        from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
+        where field_definition ->> 'object_key' = view_definition ->> 'object_key'
+          and field_definition ->> 'key' = property_key
+          and (field_definition ->> 'is_active')::boolean;
+        if field_type is null then
+          raise exception 'internal_workspace_sort_property_invalid'
+            using errcode = '23514';
+        end if;
         if field_type in ('multi_select', 'file') then
           raise exception 'internal_workspace_sort_property_invalid'
             using errcode = '23514';
         end if;
-      else
+      elsif property_kind = 'connection' then
         select value into column_value
         from jsonb_array_elements(configured_view -> 'columns') as value
         where value ->> 'kind' = 'connection'
           and value ->> 'relationship_key' = property_key
-        limit 1;
+          and value ->> 'direction' = direction;
         select value into relationship_definition
         from jsonb_array_elements(candidate -> 'relationship_definitions') as value
         where value ->> 'key' = property_key
@@ -724,28 +1698,42 @@ begin
           raise exception 'internal_workspace_sort_property_invalid'
             using errcode = '23514';
         end if;
+      else
+        raise exception 'internal_workspace_sort_property_invalid'
+          using errcode = '23514';
       end if;
     end loop;
 
     if configured_view -> 'group' <> 'null'::jsonb then
-      property_key := configured_view ->> 'group';
-      select field_definition ->> 'field_type'
-      into field_type
-      from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
-      where field_definition ->> 'object_key' = view_definition ->> 'object_key'
-        and field_definition ->> 'key' = property_key
-        and (field_definition ->> 'is_active')::boolean;
-      if field_type is not null then
+      property_kind := split_part(configured_view ->> 'group', ':', 1);
+      property_key := split_part(configured_view ->> 'group', ':', 2);
+      direction := split_part(configured_view ->> 'group', ':', 3);
+      if not private.experience_table_property_key_is_valid(
+        configured_view ->> 'group'
+      ) then
+        raise exception 'internal_workspace_group_property_invalid'
+          using errcode = '23514';
+      elsif property_kind = 'field' then
+        select field_definition ->> 'field_type'
+        into field_type
+        from jsonb_array_elements(candidate -> 'field_definitions') as field_definition
+        where field_definition ->> 'object_key' = view_definition ->> 'object_key'
+          and field_definition ->> 'key' = property_key
+          and (field_definition ->> 'is_active')::boolean;
+        if field_type is null then
+          raise exception 'internal_workspace_group_property_invalid'
+            using errcode = '23514';
+        end if;
         if field_type not in ('select', 'status', 'boolean', 'date', 'datetime') then
           raise exception 'internal_workspace_group_property_invalid'
             using errcode = '23514';
         end if;
-      else
+      elsif property_kind = 'connection' then
         select value into column_value
         from jsonb_array_elements(configured_view -> 'columns') as value
         where value ->> 'kind' = 'connection'
           and value ->> 'relationship_key' = property_key
-        limit 1;
+          and value ->> 'direction' = direction;
         select value into relationship_definition
         from jsonb_array_elements(candidate -> 'relationship_definitions') as value
         where value ->> 'key' = property_key
@@ -761,6 +1749,9 @@ begin
           raise exception 'internal_workspace_group_property_invalid'
             using errcode = '23514';
         end if;
+      else
+        raise exception 'internal_workspace_group_property_invalid'
+          using errcode = '23514';
       end if;
     end if;
   end loop;
@@ -1045,8 +2036,7 @@ create or replace function private.workspace_record_property_value(
   target_business_id uuid,
   target_record public.records,
   config jsonb,
-  requested_property text,
-  requested_property_kind text
+  requested_property text
 )
 returns jsonb
 language plpgsql
@@ -1057,35 +2047,42 @@ declare
   relationship_column jsonb;
   relationship_definition public.relationship_definitions;
   relationship_values jsonb;
-  direction text;
+  property_kind text := split_part(requested_property, ':', 1);
+  property_key text := split_part(requested_property, ':', 2);
+  direction text := split_part(requested_property, ':', 3);
 begin
-  if requested_property_kind is distinct from 'connection'
-    and exists (
+  if property_kind = 'field' then
+    if not exists (
       select 1
       from public.field_definitions as field_definition
       where field_definition.business_id = target_business_id
         and field_definition.object_definition_id = target_record.object_definition_id
-        and field_definition.key = requested_property
+        and field_definition.key = property_key
         and field_definition.is_active
-    )
+    ) then
+      return null;
+    end if;
+    return target_record.data_json -> property_key;
+  end if;
+
+  if property_kind <> 'connection'
+    or direction not in ('source', 'target')
   then
-    return target_record.data_json -> requested_property;
+    return null;
   end if;
 
   select value into relationship_column
   from jsonb_array_elements(config -> 'columns') as value
   where value ->> 'kind' = 'connection'
-    and value ->> 'relationship_key' = requested_property
-  order by value ->> 'direction'
-  limit 1;
+    and value ->> 'relationship_key' = property_key
+    and value ->> 'direction' = direction;
   if relationship_column is null then
     return null;
   end if;
-  direction := relationship_column ->> 'direction';
   select definition.* into relationship_definition
   from public.relationship_definitions as definition
   where definition.business_id = target_business_id
-    and definition.key = requested_property
+    and definition.key = property_key
     and definition.is_active;
   if not found then
     return null;
@@ -1322,8 +2319,7 @@ begin
       target_business_id,
       target_record,
       config,
-      filter_value ->> 'property',
-      filter_value ->> 'property_kind'
+      filter_value ->> 'property'
     );
     filter_result := private.workspace_filter_matches(
       raw_value,
@@ -1413,7 +2409,8 @@ begin
         select (value #>> '{}')::uuid
         from jsonb_array_elements(target_ids) as value
       );
-    connection_key := (column_value ->> 'relationship_key') || ':' ||
+    connection_key := 'connection:' ||
+      (column_value ->> 'relationship_key') || ':' ||
       (column_value ->> 'direction');
     result := result || jsonb_build_object(connection_key, values_json);
   end loop;
@@ -1487,6 +2484,8 @@ declare
   records_json jsonb;
   groups_json jsonb := '[]'::jsonb;
   sort_value jsonb;
+  property_kind text;
+  property_key text;
   field_type public.graph_field_type;
   sort_sql text := '';
   aggregate_sort_sql text;
@@ -1494,8 +2493,8 @@ declare
   connection_direction text;
   connection_cardinality text;
   is_field_sort boolean;
-  group_expression_sql text := 'selected_record.data_json -> ($3 ->> ''group'')';
-  group_record_expression_sql text := 'r.data_json -> ($3 ->> ''group'')';
+  group_expression_sql text := 'null';
+  group_record_expression_sql text := 'null';
 begin
   if not private.is_business_member(expected_business_id) then
     raise exception 'workspace_query_membership_required'
@@ -1532,27 +2531,35 @@ begin
     select value
     from jsonb_array_elements(coalesce(config -> 'sorts', '[]'::jsonb)) as value
   loop
-    select definition.field_type into field_type
-    from public.field_definitions as definition
-    where definition.business_id = expected_business_id
-      and definition.object_definition_id = object_id
-      and definition.key = sort_value ->> 'property'
-      and definition.is_active;
-    is_field_sort := found;
-    if not is_field_sort then
+    property_kind := split_part(sort_value ->> 'property', ':', 1);
+    property_key := split_part(sort_value ->> 'property', ':', 2);
+    if property_kind = 'field' then
+      select definition.field_type into field_type
+      from public.field_definitions as definition
+      where definition.business_id = expected_business_id
+        and definition.object_definition_id = object_id
+        and definition.key = property_key
+        and definition.is_active;
+      is_field_sort := found;
+      if not is_field_sort then
+        raise exception 'workspace_query_sort_invalid'
+          using errcode = '22023';
+      end if;
+    elsif property_kind = 'connection' then
+      is_field_sort := false;
       connection_direction := null;
       connection_cardinality := null;
       select column_value ->> 'direction'
       into connection_direction
       from jsonb_array_elements(config -> 'columns') as column_value
       where column_value ->> 'kind' = 'connection'
-        and column_value ->> 'relationship_key' = sort_value ->> 'property'
-      limit 1;
+        and column_value ->> 'relationship_key' = property_key
+        and column_value ->> 'direction' = split_part(sort_value ->> 'property', ':', 3);
       select relationship_definition.cardinality::text
       into connection_cardinality
       from public.relationship_definitions as relationship_definition
       where relationship_definition.business_id = expected_business_id
-        and relationship_definition.key = sort_value ->> 'property'
+        and relationship_definition.key = property_key
         and relationship_definition.is_active;
       if connection_direction is null
         or connection_cardinality is null
@@ -1565,6 +2572,9 @@ begin
         raise exception 'workspace_query_sort_invalid'
           using errcode = '22023';
       end if;
+    else
+      raise exception 'workspace_query_sort_invalid'
+        using errcode = '22023';
     end if;
     direction_sql := case
       when sort_value ->> 'direction' = 'descending' then 'desc'
@@ -1574,21 +2584,21 @@ begin
       sort_sql := sort_sql || case when sort_sql = '' then '' else ', ' end ||
         format(
           'nullif(r.data_json ->> %L, '''')::numeric %s nulls last',
-          sort_value ->> 'property',
+          property_key,
           direction_sql
         );
     elsif is_field_sort then
       sort_sql := sort_sql || case when sort_sql = '' then '' else ', ' end ||
         format(
           'r.data_json ->> %L %s nulls last',
-          sort_value ->> 'property',
+          property_key,
           direction_sql
         );
     else
       sort_sql := sort_sql || case when sort_sql = '' then '' else ', ' end ||
         format(
           'private.workspace_record_connection_sort_value($1, r, %L, %L) %s nulls last',
-          sort_value ->> 'property',
+          property_key,
           connection_direction,
           direction_sql
         );
@@ -1596,23 +2606,73 @@ begin
   end loop;
 
   if config -> 'group' <> 'null'::jsonb then
-    select column_value ->> 'direction'
-    into connection_direction
-    from jsonb_array_elements(config -> 'columns') as column_value
-    where column_value ->> 'kind' = 'connection'
-      and column_value ->> 'relationship_key' = config ->> 'group'
-    limit 1;
-    if connection_direction is not null then
+    property_kind := split_part(config ->> 'group', ':', 1);
+    property_key := split_part(config ->> 'group', ':', 2);
+    if property_kind = 'field' then
+      if not exists (
+        select 1
+        from public.field_definitions as definition
+        where definition.business_id = expected_business_id
+          and definition.object_definition_id = object_id
+          and definition.key = property_key
+          and definition.is_active
+          and definition.field_type in (
+            'select',
+            'status',
+            'boolean',
+            'date',
+            'datetime'
+          )
+      ) then
+        raise exception 'workspace_query_group_invalid'
+          using errcode = '22023';
+      end if;
+      group_expression_sql := format(
+        'selected_record.data_json -> %L',
+        property_key
+      );
+      group_record_expression_sql := format(
+        'r.data_json -> %L',
+        property_key
+      );
+    elsif property_kind = 'connection' then
+      connection_direction := split_part(config ->> 'group', ':', 3);
+      if not exists (
+        select 1
+        from jsonb_array_elements(config -> 'columns') as column_value
+        where column_value ->> 'kind' = 'connection'
+          and column_value ->> 'relationship_key' = property_key
+          and column_value ->> 'direction' = connection_direction
+      ) or not exists (
+        select 1
+        from public.relationship_definitions as definition
+        where definition.business_id = expected_business_id
+          and definition.key = property_key
+          and definition.is_active
+          and (
+            definition.cardinality = 'one_to_one'
+            or (
+              definition.cardinality = 'one_to_many'
+              and connection_direction = 'source'
+            )
+          )
+      ) then
+        raise exception 'workspace_query_group_invalid'
+          using errcode = '22023';
+      end if;
       group_expression_sql := format(
         'to_jsonb(private.workspace_record_connection_sort_value($1, selected_record, %L, %L))',
-        config ->> 'group',
+        property_key,
         connection_direction
       );
       group_record_expression_sql := format(
         'to_jsonb(private.workspace_record_connection_sort_value($1, r, %L, %L))',
-        config ->> 'group',
+        property_key,
         connection_direction
       );
+    else
+      raise exception 'workspace_query_group_invalid'
+        using errcode = '22023';
     end if;
   end if;
   if sort_sql = '' then

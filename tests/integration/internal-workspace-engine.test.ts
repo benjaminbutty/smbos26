@@ -15,7 +15,11 @@ import {
   createExperienceService,
   type ExperienceNavigation,
 } from "../../src/core/experience/service";
-import { normalizeTableViewConfig } from "../../src/core/experience/schemas";
+import {
+  normalizeTableViewConfig,
+  tableViewConnectionPropertyKey,
+  tableViewFieldPropertyKey,
+} from "../../src/core/experience/schemas";
 import {
   queryTableViewRecords,
   searchTableConnectionTargets,
@@ -369,11 +373,13 @@ function propertyKeyFor(
   label: string,
 ): string {
   const field = state.fieldKeys.get(tableMapKey(tableKey, label));
-  if (field) return field;
+  if (field) return tableViewFieldPropertyKey(field);
   const connection = state.connectionProperties.get(
     tableMapKey(tableKey, label),
   );
-  if (connection) return connection.key;
+  if (connection) {
+    return tableViewConnectionPropertyKey(connection.key, connection.direction);
+  }
   throw new Error(`Missing proof query property ${tableKey}/${label}.`);
 }
 
@@ -567,6 +573,11 @@ describe("Internal Workspace Engine three-business proof", () => {
           view.config_json.role === "primary",
       );
       expect(primaryTables).toHaveLength(fixture.tables.length);
+      const pageTableViews = await experience.listTableViews();
+      const pageTableViewKeys = new Set(pageTableViews.map((view) => view.key));
+      for (const savedViewKey of state.savedViews.values()) {
+        expect(pageTableViewKeys).toContain(savedViewKey);
+      }
 
       const afterConfiguration = await loadDirectTableConfiguration(
         owner.client,
@@ -625,5 +636,155 @@ describe("Internal Workspace Engine three-business proof", () => {
         targetRecordIds: [foreignTarget.id],
       }),
     ).rejects.toThrow();
+  }, 180_000);
+
+  it("enforces zero, one, and multiple primary Table View states in PostgreSQL", async () => {
+    const business = await createBusiness(
+      `Primary View Boundary ${crypto.randomUUID()}`,
+    );
+    let configuration = await loadDirectTableConfiguration(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: configuration.currentness,
+        intent: { action: "create_table", title: "Primary boundary" },
+      },
+    );
+    expect(created.changeSet.status).toBe("applied");
+
+    configuration = await loadDirectTableConfiguration(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const initialView = configuration.snapshot.views.find(
+      (candidate) => candidate.view_type === "table",
+    );
+    if (!initialView) throw new Error("Missing primary boundary Table View.");
+
+    const setViewOperation = (view: typeof initialView, configJson: Json) => ({
+      op: "set_view" as const,
+      key: view.key,
+      name: view.name,
+      view_type: view.view_type,
+      object_key: view.object_key,
+      config_json: configJson,
+      audience: view.audience,
+      is_active: view.is_active,
+    });
+    const savedOnlyConfig = {
+      ...normalizeTableViewConfig(initialView.config_json),
+      role: "saved" as const,
+    };
+    const zero = await owner.client.rpc("propose_configuration_change", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      expected_base_version_id: configuration.currentness.expectedBaseVersionId,
+      expected_head_revision: configuration.currentness.expectedHeadRevision,
+      requested_title: "Reject zero primary Views",
+      requested_description: "Database primary View invariant test.",
+      requested_operations: [
+        setViewOperation(initialView, savedOnlyConfig as Json),
+      ],
+    });
+    expect(zero.error?.code).toBe("23514");
+    expect(zero.error?.message).toContain(
+      "internal_workspace_primary_view_missing",
+    );
+
+    const canonicalPrimaryConfig = normalizeTableViewConfig(
+      initialView.config_json,
+      "primary",
+    );
+    const one = await owner.client.rpc("propose_configuration_change", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      expected_base_version_id: configuration.currentness.expectedBaseVersionId,
+      expected_head_revision: configuration.currentness.expectedHeadRevision,
+      requested_title: "Accept one primary View",
+      requested_description: "Database primary View invariant test.",
+      requested_operations: [
+        setViewOperation(initialView, canonicalPrimaryConfig as Json),
+      ],
+    });
+    if (one.error || !one.data) {
+      throw one.error ?? new Error("Could not propose one primary View.");
+    }
+    const validated = await owner.client.rpc("validate_configuration_change", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      requested_change_set_id: one.data.id,
+    });
+    if (validated.error || !validated.data) {
+      throw (
+        validated.error ?? new Error("Could not validate one primary View.")
+      );
+    }
+    const applied = await owner.client.rpc("apply_configuration_change", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      requested_change_set_id: one.data.id,
+    });
+    if (applied.error || !applied.data) {
+      throw applied.error ?? new Error("Could not apply one primary View.");
+    }
+    expect(applied.data.status).toBe("applied");
+
+    configuration = await loadDirectTableConfiguration(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const canonicalPrimaries = configuration.snapshot.views.filter(
+      (candidate) => {
+        if (candidate.view_type !== "table") return false;
+        const config = normalizeTableViewConfig(candidate.config_json);
+        return config.role === "primary";
+      },
+    );
+    expect(canonicalPrimaries).toHaveLength(1);
+
+    const saved = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: configuration.currentness,
+        intent: {
+          action: "create_saved_view",
+          sourceViewKey: initialView.key,
+          name: "Duplicate primary boundary",
+        },
+      },
+    );
+    expect(saved.changeSet.status).toBe("applied");
+    configuration = await loadDirectTableConfiguration(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const savedView = configuration.snapshot.views.find(
+      (candidate) => candidate.key === saved.composed?.viewKey,
+    );
+    if (!savedView) throw new Error("Missing saved boundary View.");
+    const duplicatePrimaryConfig = {
+      ...normalizeTableViewConfig(savedView.config_json),
+      role: "primary" as const,
+    };
+    const multiple = await owner.client.rpc("propose_configuration_change", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      expected_base_version_id: configuration.currentness.expectedBaseVersionId,
+      expected_head_revision: configuration.currentness.expectedHeadRevision,
+      requested_title: "Reject multiple primary Views",
+      requested_description: "Database primary View invariant test.",
+      requested_operations: [
+        setViewOperation(savedView, duplicatePrimaryConfig as Json),
+      ],
+    });
+    expect(multiple.error?.code).toBe("23514");
+    expect(multiple.error?.message).toContain(
+      "internal_workspace_primary_view_duplicate",
+    );
   }, 180_000);
 });
