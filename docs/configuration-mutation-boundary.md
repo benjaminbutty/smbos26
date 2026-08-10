@@ -35,6 +35,8 @@ Classification: **close direct mutation; runtime read only**.
 | `list_configuration_change_sets`, `get_configuration_change_set`, `list_configuration_versions`, `get_configuration_version` | Owner/Admin history reads |
 | `load_configuration_preview` | Authenticated Owner/Admin identifier-only read; replays and verifies an open candidate against the current head without lifecycle or projection writes |
 | `resolve_configuration_preview_preorder` | Authenticated Owner/Admin read of candidate configuration joined to current operational Product, price, Location-link and counter state |
+| `apply_lenni_direct_configuration_change` | Owner/Admin-only finite Lenni structural Table facade for `insert_column` and `change_column_type`; one atomic M5-backed configuration Version on success |
+| `apply_direct_table_record_batch` | Authenticated, tenant- and live-Table-bound operational Record batch for bounded paste and range clearing; no configuration Version or History |
 | `create_preorder_experience`, `set_preorder_experience_locations` | Retained only for historical migration compatibility; execution revoked from `public`, `anon`, `authenticated`, and `service_role` |
 | Candidate materialiser, rollback candidate derivation, replay dispatcher, semantic diff, projector, validation sandbox, preview assertion, preorder catalogue assembler, projection/head assertions, and change/version/head protection helpers in `private` | Engine internals; application-role execution revoked |
 | `resolve_public_page`, `resolve_public_preorder` | Narrow anonymous runtime reads; no table access |
@@ -594,3 +596,61 @@ links to the full Record route for existing Location controls. Preview remains
 read-only and the existing full Record route remains a fallback. Delete/archive,
 formulas, relationships, permissions, bulk editing, spreadsheet behavior and
 operational undo/history remain outside this phase.
+
+## Workspace foundation - bounded direct Page authoring
+
+The Tables + Pages workspace adds one bounded direct Page lane over the same
+M5 configuration engine. Owner/Admin actions are limited to `create_page`,
+`rename_page`, and `save_page_layout`. The server derives Business and actor
+identity, reloads the active immutable snapshot, validates the typed intent,
+and sends one complete `set_page` operation through the authenticated
+`apply_direct_page_configuration_change` facade. PostgreSQL locks the Business
+configuration head, checks the exact active Version/head currentness, rejects
+unknown or cross-Page changes, and verifies that rename changes only the title
+while layout save changes only the layout. A stale or unauthorized request
+creates no Change, Version, or head advance.
+
+The canonical persisted format remains the existing SMBOS Page grammar. It now
+allows an empty block list, optional stable UUIDs on supported and historical
+blocks, bounded Callout tones, and optional `read_only` on internal View blocks.
+The browser's Tiptap document is transient and is translated at the authoring
+boundary; raw Tiptap JSON is never accepted by the server or stored. Existing
+image, button, form, preorder, and other historical blocks remain read-only
+editor atoms until a bounded authoring contract exists. Internal Table View
+blocks reuse the production Table kernel with structural controls disabled and
+respect the Page block's read-only setting. Staff and public rendering remain
+deterministic `PageRenderer` paths.
+
+## Lenni Table interaction engine closeout
+
+The Lenni structural lane is a finite extension of the existing direct Table
+facade, not a generic configuration editor. `insert_column` composes one
+`set_field` plus one `set_view` operation; `change_column_type` composes one
+`set_field` operation. Both are accepted only for authenticated Owner/Admin
+actors through `apply_lenni_direct_configuration_change`, preserve Field keys
+and identity, and create one M5-backed immutable configuration Version on
+success. Staff, embedded Tables and stale or cross-Business requests cannot
+reach the structural lane.
+
+Type compatibility is checked twice: the TypeScript action boundary provides a
+bounded owner-facing preflight, while PostgreSQL remains authoritative. The
+database examines active and archived Records, treats null/absent values as
+compatible, rejects meaningful incompatible values atomically, and does not
+convert or mutate Record data. The primary Field can remain only short or long
+text. `required` is carried from existing Field metadata; no new owner-facing
+requiredness editor exists in this phase.
+
+Paste and rectangular clearing use `apply_direct_table_record_batch`, an
+authenticated security-invoker operational boundary. It derives the tenant
+from membership, binds to one active internal Table View, re-resolves the
+Object, Fields, edit Form visibility, requiredness and Record IDs server-side,
+limits requests to 100 rows and 500 cells, validates through the existing
+typed graph boundary, and commits each Record independently. It returns only
+bounded Record IDs and owner-safe row failures. It creates no proposal,
+configuration Version, Change, History entry or generic bulk command.
+
+Embedded Tables reuse the same operational adapter and Record panel where
+permitted, suppress structural controls, and retain an `Open table` path.
+Relationships, saved Views, filters, sorting, grouping, formulas, workflows,
+public websites, AI/Builder Table actions, generic undo and final visual
+refinement remain outside this closeout.

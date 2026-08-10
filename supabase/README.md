@@ -38,3 +38,23 @@ zero/one/multiple match result, returns no candidate rows, and the final call
 rechecks the Business head and target `updated_at` before writing through the
 existing graph validation trigger. The migration file is
 `20260806100000_milestone_12_phase_12b_record_update.sql`.
+
+The workspace-foundation migration
+`20260809110000_workspace_foundation_pages.sql` extends the existing Page
+grammar and adds one authenticated direct Page configuration facade. It uses
+the existing versioned configuration projections and M5 lifecycle; it adds no
+editor document table, custom business table, queue, cache, or raw operation
+endpoint. Empty Pages, stable block IDs, Callouts, and read-only embedded View
+metadata are validated in PostgreSQL as well as in TypeScript.
+
+The Lenni Table migration
+`20260810120000_lenni_table_experience.sql` extends the same boundary without
+adding a domain table or primitive. `apply_lenni_direct_configuration_change`
+handles only `insert_column` and `change_column_type` for Owner/Admin users,
+preserving Field identity and rejecting incompatible active or archived Record
+values without conversion. `apply_direct_table_record_batch` handles bounded
+operational paste and range clearing for one live internal Table View, with
+100-row and 500-cell limits, server-side tenant/Field/Record re-resolution,
+typed and required validation, and per-Record atomicity. Neither action adds
+operational data to configuration history; embedded Tables keep structural
+controls disabled.

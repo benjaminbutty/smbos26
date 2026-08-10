@@ -35,3 +35,19 @@ opens the selected Record in a side panel. Preview and non-direct routes keep
 their read-only/full-record behavior. Structural Table actions remain in
 `src/core/configuration/direct-tables/`; operational row/cell writes never
 create configuration history.
+
+## Tables + Pages workspace foundation
+
+Owner/Admin users share one workspace shell for Tables and Pages. Pages are
+created, renamed, and saved through the bounded direct Page facade in
+`src/core/configuration/direct-pages/`; each action reloads the active
+snapshot and applies one complete M5-backed configuration change with exact
+currentness. Page layout JSON is the canonical SMBOS Page grammar, not editor
+JSON.
+
+`src/runtime/page-editor/` is a small Tiptap adapter for the supported Page
+blocks: plain text, Heading 1/2/3, Divider, Callout, and internal Table Views.
+It translates at the persistence boundary, keeps unsupported historical
+blocks as read-only atoms, and embeds the production Table kernel with
+structural controls disabled. Staff and published/static renderers continue to
+use `PageRenderer`; the authoring surface is not a second runtime renderer.

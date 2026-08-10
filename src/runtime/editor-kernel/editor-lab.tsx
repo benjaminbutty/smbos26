@@ -12,11 +12,13 @@ import {
   DataGrid,
   type CellKeyDownArgs,
   type CellKeyboardEvent,
+  type CellMouseArgs,
   type DataGridHandle,
   type RowsChangeData,
 } from "react-data-grid";
 
 import {
+  defaultEditorCapabilities,
   editorDraftRowId,
   editorInputValue,
   editorValueForColumn,
@@ -24,25 +26,43 @@ import {
   hasDraftName,
   reorderColumnKeys,
   type CreateColumnInput,
+  type EditorCapabilities,
   type EditorColumnKind,
   type EditorRow,
   type EditorTable,
   type EditorValue,
 } from "./contracts";
+import {
+  buildClipboardMatrix,
+  MAX_PASTE_CELLS,
+  MAX_PASTE_ROWS,
+  selectionBounds,
+  serializeClipboardMatrix,
+} from "./clipboard";
 import { createEditorColumns, type PendingEdit } from "./table-columns";
 import { RecordPanel } from "./record-panel";
 import type { TableEditorAdapter } from "./contracts";
+import { OptionManager, ShortcutSheet, TypePicker } from "./lenni-ui";
 
 export interface EditorKernelProps {
   adapter: TableEditorAdapter;
+  capabilities?: EditorCapabilities;
   footer?: ReactNode;
   marker?: ReactNode;
+  onStructureChanged?: () => void;
   title?: string;
+  readOnly?: boolean;
+  variant?: "workspace" | "embedded";
 }
 
 interface ActiveCell {
   rowId: string;
   columnKey: string;
+}
+
+interface GridPoint {
+  rowIndex: number;
+  columnIndex: number;
 }
 
 interface SaveRetry {
@@ -54,18 +74,123 @@ interface SaveRetry {
 type SaveState =
   | { status: "saved" }
   | { status: "saving" }
-  | { status: "error"; cellLabel: string };
+  | { status: "error"; cellLabel?: string; message?: string };
 
 const addableColumnKinds: ReadonlyArray<{
   kind: EditorColumnKind;
   label: string;
 }> = [
   { kind: "text", label: "Text" },
+  { kind: "long_text", label: "Long text" },
   { kind: "number", label: "Number" },
   { kind: "boolean", label: "Yes / No" },
   { kind: "date", label: "Date" },
+  { kind: "email", label: "Email" },
+  { kind: "phone", label: "Phone" },
+  { kind: "url", label: "Website" },
+  { kind: "select", label: "Choice" },
   { kind: "status", label: "Status" },
 ];
+
+function saveErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Could not save";
+}
+
+function optionsAreValid(options: readonly string[]): boolean {
+  const normalized = options.map((option) =>
+    option.normalize("NFKC").toLocaleLowerCase("en"),
+  );
+  return options.length >= 2 && new Set(normalized).size === normalized.length;
+}
+
+function TableTitleEditor({
+  displayTitle,
+  enabled,
+  name,
+  onCommit,
+}: Readonly<{
+  displayTitle: string;
+  enabled: boolean;
+  name: string;
+  onCommit: (title: string) => Promise<boolean>;
+}>): ReactNode {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const committingRef = useRef(false);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  if (!enabled) {
+    return <h1>{displayTitle}</h1>;
+  }
+
+  const cancel = (): void => {
+    setValue(name);
+    setEditing(false);
+  };
+
+  const commit = async (): Promise<void> => {
+    if (committingRef.current) {
+      return;
+    }
+    const next = value.trim();
+    if (!next || next === name) {
+      cancel();
+      return;
+    }
+    committingRef.current = true;
+    try {
+      if (await onCommit(next)) {
+        setEditing(false);
+      }
+    } finally {
+      committingRef.current = false;
+    }
+  };
+
+  return editing ? (
+    <input
+      ref={inputRef}
+      aria-label="Table title"
+      className="editor-title-input"
+      maxLength={120}
+      minLength={1}
+      onBlur={() => void commit()}
+      onChange={(event) => setValue(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void commit();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          cancel();
+        }
+      }}
+      required
+      value={value}
+    />
+  ) : (
+    <button
+      aria-label={`Rename Table ${name}`}
+      className="editor-title-button"
+      onClick={() => {
+        setValue(name);
+        setEditing(true);
+      }}
+      type="button"
+    >
+      <span>{name}</span>
+    </button>
+  );
+}
 
 function replaceCell(
   table: EditorTable,
@@ -80,6 +205,20 @@ function replaceCell(
         ? { ...row, values: { ...row.values, [columnKey]: value } }
         : row,
     ),
+  };
+}
+
+function readOnlyTable(table: EditorTable): EditorTable {
+  const lockColumn = (column: EditorTable["columns"][number]) => ({
+    ...column,
+    editable: false,
+    readOnlyReason: "This Table is read-only on this Page.",
+  });
+  const recordColumns = table.recordColumns?.map(lockColumn);
+  return {
+    ...table,
+    columns: table.columns.map(lockColumn),
+    ...(recordColumns ? { recordColumns } : {}),
   };
 }
 
@@ -109,7 +248,8 @@ function AddColumnPopover({
 }>): ReactNode {
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<EditorColumnKind>("text");
-  const [options, setOptions] = useState("Active\nInactive");
+  const [options, setOptions] = useState<string[]>(["Active", "Inactive"]);
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   return (
@@ -121,12 +261,14 @@ function AddColumnPopover({
           return;
         }
         const input: CreateColumnInput = { label, kind };
-        if (kind === "status") {
-          input.options = options
-            .split("\n")
-            .map((option) => option.trim())
-            .filter(Boolean);
+        if (kind === "select" || kind === "status") {
+          input.options = options;
+          if (!optionsAreValid(input.options)) {
+            setError("Choice and Status need two different options.");
+            return;
+          }
         }
+        setError(null);
         setSubmitting(true);
         void onCreate(input).finally(() => setSubmitting(false));
       }}
@@ -152,30 +294,25 @@ function AddColumnPopover({
           value={label}
         />
       </label>
-      <label>
-        Type
-        <select
-          onChange={(event) =>
-            setKind(event.currentTarget.value as EditorColumnKind)
-          }
-          value={kind}
-        >
-          {addableColumnKinds.map((option) => (
-            <option key={option.kind} value={option.kind}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {kind === "status" ? (
+      <label>Type</label>
+      <TypePicker
+        allowedKinds={addableColumnKinds.map((option) => option.kind)}
+        onChange={setKind}
+        value={kind}
+      />
+      {kind === "select" || kind === "status" ? (
         <label>
           Options
-          <textarea
-            onChange={(event) => setOptions(event.currentTarget.value)}
-            rows={3}
-            value={options}
+          <OptionManager
+            onChange={(next) => setOptions([...next])}
+            options={options}
           />
         </label>
+      ) : null}
+      {error ? (
+        <span className="editor-structural-error" role="alert">
+          {error}
+        </span>
       ) : null}
       <button
         className="editor-menu-submit"
@@ -190,15 +327,27 @@ function AddColumnPopover({
 
 export function EditorKernel({
   adapter,
+  capabilities = defaultEditorCapabilities,
   footer,
   marker,
+  onStructureChanged,
+  readOnly = false,
   title,
+  variant = "workspace",
 }: Readonly<EditorKernelProps>): ReactNode {
-  const [table, setTable] = useState<EditorTable>(() => adapter.getTable());
+  const [table, setTable] = useState<EditorTable>(() => {
+    const initial = adapter.getTable();
+    return readOnly ? readOnlyTable(initial) : initial;
+  });
   const [activeCell, setActiveCell] = useState<ActiveCell | null>(null);
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [columnMenuKey, setColumnMenuKey] = useState<string | null>(null);
   const [addColumnOpen, setAddColumnOpen] = useState(false);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [selectionAnchor, setSelectionAnchor] = useState<GridPoint | null>(
+    null,
+  );
+  const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
   const [draftActivation, setDraftActivation] = useState<{
@@ -210,10 +359,17 @@ export function EditorKernel({
   const gridRef = useRef<DataGridHandle>(null);
   const operationVersions = useRef(new Map<string, number>());
   const pendingSaves = useRef(new Set<string>());
+  const rangeSelectionRef = useRef(false);
 
   const panelRow = panelRowId
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
     : null;
+  const recordColumns = table.recordColumns ?? table.columns;
+  const columnForKey = useCallback(
+    (columnKey: string) =>
+      recordColumns.find((column) => column.key === columnKey) ?? null,
+    [recordColumns],
+  );
 
   const closePanel = useCallback(() => {
     const origin = panelOrigin;
@@ -263,6 +419,49 @@ export function EditorKernel({
   }, [closePanel, panelRowId]);
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const typing = Boolean(
+        target?.closest("input, textarea, select, [contenteditable='true']"),
+      );
+      if (!typing && event.key === "?" && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        setShortcutOpen(true);
+      }
+      if (
+        capabilities.canAddColumns &&
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLocaleLowerCase("en") === "p"
+      ) {
+        event.preventDefault();
+        setColumnMenuKey(null);
+        setAddColumnOpen(true);
+      }
+      if (
+        !typing &&
+        ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu")
+      ) {
+        event.preventDefault();
+        const column = table.columns[selectionAnchor?.columnIndex ?? 0];
+        if (column) {
+          setAddColumnOpen(false);
+          setColumnMenuKey(column.key);
+        }
+      }
+      if (!typing && event.key === "Escape") {
+        const point = selectionAnchor ?? { rowIndex: 0, columnIndex: 0 };
+        setSelectionAnchor(point);
+        setSelectionEnd(point);
+        setColumnMenuKey(null);
+        setAddColumnOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [capabilities.canAddColumns, selectionAnchor, table.columns]);
+
+  useEffect(() => {
     if (!draftActivation) {
       return;
     }
@@ -279,10 +478,8 @@ export function EditorKernel({
   const commitCell = useCallback(
     (rowId: string, columnKey: string, rawValue: unknown): void => {
       const row = table.rows.find((candidate) => candidate.id === rowId);
-      const column = table.columns.find(
-        (candidate) => candidate.key === columnKey,
-      );
-      if (!row || !column) {
+      const column = columnForKey(columnKey);
+      if (!row || !column || column.editable === false) {
         return;
       }
 
@@ -338,7 +535,28 @@ export function EditorKernel({
           setSaveState({ status: "error", cellLabel: column.label });
         });
     },
-    [adapter, table.columns, table.rows],
+    [adapter, columnForKey, table.rows],
+  );
+
+  const runStructural = useCallback(
+    async (operation: () => Promise<unknown>): Promise<boolean> => {
+      setSaveState({ status: "saving" });
+      setRetry(null);
+      try {
+        await operation();
+        setTable(adapter.getTable());
+        setSaveState({ status: "saved" });
+        onStructureChanged?.();
+        return true;
+      } catch (error) {
+        setSaveState({
+          status: "error",
+          message: saveErrorMessage(error),
+        });
+        return false;
+      }
+    },
+    [adapter, onStructureChanged],
   );
 
   type DraftCreateFocus = "new-draft" | { columnIdx: number };
@@ -353,6 +571,14 @@ export function EditorKernel({
       const primaryColumnIndex = table.columns.findIndex(
         (column) => column.key === table.primaryColumnKey,
       );
+      const primaryColumn = table.columns[primaryColumnIndex];
+      if (!primaryColumn || primaryColumn.editable === false) {
+        setSaveState({
+          status: "error",
+          cellLabel: primaryColumn?.label ?? "primary value",
+        });
+        return;
+      }
       setSaveState({ status: "saving" });
       setRetry(null);
 
@@ -415,52 +641,155 @@ export function EditorKernel({
 
   const openRecord = useCallback(
     (rowId: string, columnKey: string): void => {
-      void adapter.openRecord(rowId).then((row) => {
-        if (!row) {
-          return;
-        }
-        setPanelOrigin({ rowId, columnKey });
-        setPanelRowId(rowId);
-      });
+      void adapter
+        .openRecord(rowId)
+        .then((row) => {
+          if (!row) {
+            return;
+          }
+          setTable((current) => ({
+            ...current,
+            rows: current.rows.map((candidate) =>
+              candidate.id === row.id ? row : candidate,
+            ),
+          }));
+          setPanelOrigin({ rowId, columnKey });
+          setPanelRowId(rowId);
+        })
+        .catch(() => {
+          setSaveState({ status: "error", cellLabel: "Record" });
+        });
     },
     [adapter],
   );
 
   const handleCreateColumn = useCallback(
     async (input: CreateColumnInput): Promise<void> => {
-      await adapter.createColumn(input);
-      setTable(adapter.getTable());
-      setAddColumnOpen(false);
-      setColumnMenuKey(null);
+      if (!capabilities.canAddColumns) {
+        return;
+      }
+      if (await runStructural(() => adapter.createColumn(input))) {
+        setAddColumnOpen(false);
+        setColumnMenuKey(null);
+      }
     },
-    [adapter],
+    [adapter, capabilities.canAddColumns, runStructural],
   );
 
   const handleRenameColumn = useCallback(
-    async (columnKey: string, label: string): Promise<void> => {
-      await adapter.renameColumn(columnKey, label);
-      setTable(adapter.getTable());
-      setColumnMenuKey(null);
+    async (columnKey: string, label: string): Promise<boolean> => {
+      if (!capabilities.canRenameColumns) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.renameColumn(columnKey, label),
+      );
+      if (saved) {
+        setColumnMenuKey(null);
+      }
+      return saved;
     },
-    [adapter],
+    [adapter, capabilities.canRenameColumns, runStructural],
+  );
+
+  const handleUpdateColumnOptions = useCallback(
+    async (columnKey: string, options: readonly string[]): Promise<boolean> => {
+      if (!capabilities.canUpdateColumnOptions) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.updateColumnOptions(columnKey, options),
+      );
+      if (saved) {
+        setColumnMenuKey(null);
+      }
+      return saved;
+    },
+    [adapter, capabilities.canUpdateColumnOptions, runStructural],
+  );
+
+  const handleChangeColumnType = useCallback(
+    async (
+      columnKey: string,
+      kind: EditorColumnKind,
+      options?: readonly string[],
+    ): Promise<boolean> => {
+      if (!capabilities.canChangeColumnTypes || !adapter.changeColumnType) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.changeColumnType!(columnKey, kind, options),
+      );
+      if (saved) setColumnMenuKey(null);
+      return saved;
+    },
+    [adapter, capabilities.canChangeColumnTypes, runStructural],
+  );
+
+  const handleInsertColumn = useCallback(
+    async (
+      anchorColumnKey: string,
+      position: "left" | "right",
+      input: {
+        label: string;
+        kind: EditorColumnKind;
+        options?: readonly string[];
+      },
+    ): Promise<boolean> => {
+      if (!capabilities.canInsertColumns || !adapter.insertColumn) {
+        return false;
+      }
+      const saved = await runStructural(() =>
+        adapter.insertColumn!({ ...input, anchorColumnKey, position }),
+      );
+      if (saved) setColumnMenuKey(null);
+      return saved;
+    },
+    [adapter, capabilities.canInsertColumns, runStructural],
   );
 
   const handleReorderColumns = useCallback(
     (sourceKey: string, targetKey: string): void => {
+      if (!capabilities.canReorderColumns) {
+        return;
+      }
+      if (sourceKey === targetKey) {
+        return;
+      }
       const nextKeys = reorderColumnKeys(
         table.columns.map((column) => column.key),
         sourceKey,
         targetKey,
       );
-      void adapter
-        .reorderColumns(nextKeys)
-        .then(() => setTable(adapter.getTable()));
+      void runStructural(() => adapter.reorderColumns(nextKeys));
     },
-    [adapter, table.columns],
+    [adapter, capabilities.canReorderColumns, runStructural, table.columns],
+  );
+
+  const handleMoveColumn = useCallback(
+    (sourceKey: string, direction: "left" | "right"): void => {
+      if (!capabilities.canReorderColumns) return;
+      const keys = table.columns.map((column) => column.key);
+      const sourceIndex = keys.indexOf(sourceKey);
+      const targetIndex = sourceIndex + (direction === "left" ? -1 : 1);
+      if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= keys.length)
+        return;
+      const next = [...keys];
+      [next[sourceIndex]!, next[targetIndex]!] = [
+        next[targetIndex]!,
+        next[sourceIndex]!,
+      ];
+      void runStructural(() => adapter.reorderColumns(next));
+      setColumnMenuKey(null);
+    },
+    [adapter, capabilities.canReorderColumns, runStructural, table.columns],
   );
 
   const handleResizeColumn = useCallback(
     (column: { key: string }, width: number): void => {
+      if (!capabilities.canResizeColumns) {
+        return;
+      }
       const nextWidth = Math.round(width);
       setTable((current) => ({
         ...current,
@@ -472,7 +801,133 @@ export function EditorKernel({
       }));
       void adapter.resizeColumn(column.key, nextWidth).catch(() => undefined);
     },
-    [adapter],
+    [adapter, capabilities.canResizeColumns],
+  );
+
+  const handleRenameTable = useCallback(
+    (nextTitle: string): Promise<boolean> => {
+      if (!capabilities.canRenameTable) {
+        return Promise.resolve(false);
+      }
+      return runStructural(() => adapter.renameTable(nextTitle));
+    },
+    [adapter, capabilities.canRenameTable, runStructural],
+  );
+
+  const applyPasteMatrix = useCallback(
+    async (
+      startRowIndex: number,
+      startColumnIndex: number,
+      matrix: readonly (EditorValue | null)[][],
+    ): Promise<void> => {
+      if (readOnly || !adapter.applyPaste) {
+        setSaveState({ status: "error", message: "This Table is read-only." });
+        return;
+      }
+      const cellCount = matrix.reduce((count, row) => count + row.length, 0);
+      if (matrix.length > MAX_PASTE_ROWS || cellCount > MAX_PASTE_CELLS) {
+        setSaveState({
+          status: "error",
+          message: `Paste is limited to ${MAX_PASTE_CELLS} cells and ${MAX_PASTE_ROWS} records.`,
+        });
+        return;
+      }
+      setSaveState({ status: "saving" });
+      try {
+        const result = await adapter.applyPaste({
+          startRowIndex,
+          startColumnIndex,
+          matrix,
+        });
+        setTable((current) => {
+          const byId = new Map(current.rows.map((row) => [row.id, row]));
+          for (const row of result.rows) byId.set(row.id, row);
+          return { ...current, rows: [...byId.values()] };
+        });
+        if (result.failures.length > 0) {
+          setSaveState({
+            status: "error",
+            message: `${result.failures.length} row${result.failures.length === 1 ? "" : "s"} could not be saved.`,
+          });
+        } else {
+          setSaveState({ status: "saved" });
+        }
+      } catch (error) {
+        setSaveState({ status: "error", message: saveErrorMessage(error) });
+      }
+    },
+    [adapter, readOnly],
+  );
+
+  const activeGridPoint = useCallback((): GridPoint => {
+    const rowIndex = activeCell
+      ? table.rows.findIndex((row) => row.id === activeCell.rowId)
+      : 0;
+    const columnIndex = activeCell
+      ? table.columns.findIndex((column) => column.key === activeCell.columnKey)
+      : 0;
+    return {
+      rowIndex: Math.max(0, rowIndex),
+      columnIndex: Math.max(0, columnIndex),
+    };
+  }, [activeCell, table.columns, table.rows]);
+
+  const handleClipboardPaste = useCallback(
+    (text: string): void => {
+      const point = selectionAnchor ?? activeGridPoint();
+      const end = selectionEnd ?? point;
+      const bounds = selectionBounds(point, end);
+      try {
+        const columns = table.columns.slice(bounds.startColumn);
+        const parsed = buildClipboardMatrix(text, columns);
+        void applyPasteMatrix(
+          bounds.startRow,
+          bounds.startColumn,
+          parsed.matrix,
+        );
+      } catch (error) {
+        setSaveState({ status: "error", message: saveErrorMessage(error) });
+      }
+    },
+    [
+      activeGridPoint,
+      applyPasteMatrix,
+      selectionAnchor,
+      selectionEnd,
+      table.columns,
+    ],
+  );
+
+  const handleCopyCapture = useCallback(
+    (event: React.ClipboardEvent): void => {
+      const point = selectionAnchor ?? activeGridPoint();
+      const end = selectionEnd ?? point;
+      const bounds = selectionBounds(point, end);
+      const matrix = table.rows
+        .slice(bounds.startRow, bounds.endRow + 1)
+        .map((row) =>
+          table.columns
+            .slice(bounds.startColumn, bounds.endColumn + 1)
+            .map((column) => row.values[column.key] ?? null),
+        );
+      if (matrix.length === 0) return;
+      event.preventDefault();
+      event.clipboardData.setData(
+        "text/plain",
+        serializeClipboardMatrix(matrix),
+      );
+    },
+    [activeGridPoint, selectionAnchor, selectionEnd, table.columns, table.rows],
+  );
+
+  const handlePasteCapture = useCallback(
+    (event: React.ClipboardEvent): void => {
+      const text = event.clipboardData.getData("text/plain");
+      if (!text) return;
+      event.preventDefault();
+      handleClipboardPaste(text);
+    },
+    [handleClipboardPaste],
   );
 
   const handleCellKeyDown = useCallback(
@@ -482,6 +937,68 @@ export function EditorKernel({
       );
       if (!column) {
         return;
+      }
+
+      if (args.mode === "SELECT") {
+        const arrowDelta: Record<string, { row: number; column: number }> = {
+          ArrowUp: { row: -1, column: 0 },
+          ArrowDown: { row: 1, column: 0 },
+          ArrowLeft: { row: 0, column: -1 },
+          ArrowRight: { row: 0, column: 1 },
+        };
+        const delta = arrowDelta[event.key];
+        if (event.shiftKey && delta) {
+          event.preventGridDefault();
+          const anchor = selectionAnchor ?? {
+            rowIndex: args.rowIdx,
+            columnIndex: args.column.idx,
+          };
+          const rowCount =
+            table.rows.length + (capabilities.rowCreation === "direct" ? 1 : 0);
+          const next = {
+            rowIndex: Math.max(
+              0,
+              Math.min(rowCount - 1, args.rowIdx + delta.row),
+            ),
+            columnIndex: Math.max(
+              0,
+              Math.min(
+                table.columns.length - 1,
+                args.column.idx + delta.column,
+              ),
+            ),
+          };
+          rangeSelectionRef.current = true;
+          setSelectionAnchor(anchor);
+          setSelectionEnd(next);
+          args.selectCell(
+            { idx: next.columnIndex, rowIdx: next.rowIndex },
+            { shouldFocusCell: true },
+          );
+          return;
+        }
+        if (
+          (event.key === "Backspace" || event.key === "Delete") &&
+          !readOnly
+        ) {
+          event.preventGridDefault();
+          const point = selectionAnchor ?? {
+            rowIndex: args.rowIdx,
+            columnIndex: args.column.idx,
+          };
+          const end = selectionEnd ?? point;
+          const bounds = selectionBounds(point, end);
+          const matrix = Array.from(
+            { length: bounds.endRow - bounds.startRow + 1 },
+            () =>
+              Array.from(
+                { length: bounds.endColumn - bounds.startColumn + 1 },
+                () => null,
+              ),
+          );
+          void applyPasteMatrix(bounds.startRow, bounds.startColumn, matrix);
+          return;
+        }
       }
 
       if (args.mode === "EDIT") {
@@ -503,6 +1020,10 @@ export function EditorKernel({
             createDraftRecord(args.row.values[column.key]);
           }
         }
+        return;
+      }
+
+      if (!args.row.isDraft && column.editable === false) {
         return;
       }
 
@@ -536,9 +1057,14 @@ export function EditorKernel({
         );
       } else if (
         isPrintableKey(event) &&
+        column.editable !== false &&
         (column.kind === "text" ||
+          column.kind === "long_text" ||
+          column.kind === "email" ||
+          column.kind === "url" ||
           column.kind === "phone" ||
-          column.kind === "number")
+          column.kind === "number" ||
+          column.kind === "currency")
       ) {
         setPendingEdit({
           rowId: args.row.id,
@@ -547,19 +1073,51 @@ export function EditorKernel({
         });
       }
     },
-    [createDraftRecord, table.columns],
+    [
+      applyPasteMatrix,
+      capabilities.rowCreation,
+      createDraftRecord,
+      readOnly,
+      selectionAnchor,
+      selectionEnd,
+      table.columns,
+      table.rows.length,
+    ],
   );
 
   const handleDoubleClick = useCallback(
-    (
-      args: { selectCell: (enableEditor?: boolean) => void },
-      event: React.MouseEvent,
-    ): void => {
+    (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
+      const column = table.columns.find(
+        (candidate) => candidate.key === args.column.key,
+      );
+      if (
+        !column ||
+        column.editable === false ||
+        (args.row.isDraft && !column.primary)
+      ) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       args.selectCell(true);
     },
-    [],
+    [table.columns],
+  );
+
+  const handleCellMouseDown = useCallback(
+    (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
+      const point = { rowIndex: args.rowIdx, columnIndex: args.column.idx };
+      if (event.shiftKey && selectionAnchor) {
+        event.preventDefault();
+        rangeSelectionRef.current = true;
+        setSelectionEnd(point);
+        args.selectCell(true);
+      } else {
+        setSelectionAnchor(point);
+        setSelectionEnd(point);
+      }
+    },
+    [selectionAnchor],
   );
 
   const draftRow = useMemo<EditorRow>(
@@ -572,8 +1130,11 @@ export function EditorKernel({
   );
 
   const gridRows = useMemo(
-    () => [...table.rows, draftRow],
-    [draftRow, table.rows],
+    () =>
+      capabilities.rowCreation === "direct"
+        ? [...table.rows, draftRow]
+        : table.rows,
+    [capabilities.rowCreation, draftRow, table.rows],
   );
 
   const activateDraft = useCallback((rowIdx: number, columnIdx: number) => {
@@ -593,16 +1154,38 @@ export function EditorKernel({
             current === columnKey ? null : columnKey,
           );
         },
+        onCloseColumnMenu: () => setColumnMenuKey(null),
         onOpenRecord: openRecord,
         onRenameColumn: handleRenameColumn,
+        onUpdateColumnOptions: handleUpdateColumnOptions,
+        onChangeColumnType: handleChangeColumnType,
+        onInsertColumn: handleInsertColumn,
+        onMoveColumn: handleMoveColumn,
+        canRenameColumns: capabilities.canRenameColumns,
+        canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
+        canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
+        canInsertColumns: Boolean(capabilities.canInsertColumns),
+        canReorderColumns: capabilities.canReorderColumns,
+        canResizeColumns: capabilities.canResizeColumns,
         pendingEdit,
       }),
     [
       activateDraft,
       columnMenuKey,
       handleRenameColumn,
+      handleUpdateColumnOptions,
+      handleChangeColumnType,
+      handleInsertColumn,
+      handleMoveColumn,
+      setColumnMenuKey,
       openRecord,
       pendingEdit,
+      capabilities.canRenameColumns,
+      capabilities.canUpdateColumnOptions,
+      capabilities.canChangeColumnTypes,
+      capabilities.canInsertColumns,
+      capabilities.canReorderColumns,
+      capabilities.canResizeColumns,
       table.columns,
     ],
   );
@@ -619,18 +1202,27 @@ export function EditorKernel({
       : null;
 
   return (
-    <section className="editor-kernel-page">
+    <section
+      className={`editor-kernel-page ${variant === "embedded" ? "editor-kernel-embedded" : ""}`}
+    >
       <header className="editor-lab-header">
         <div>
           {marker}
-          <h1>{title ?? table.name}</h1>
+          <TableTitleEditor
+            displayTitle={title ?? table.name}
+            enabled={capabilities.canRenameTable}
+            name={table.name}
+            onCommit={handleRenameTable}
+          />
         </div>
         <div
           className={`editor-save-state editor-save-${saveState.status}`}
           role="status"
         >
           <span className="editor-save-dot" aria-hidden="true" />
-          {statusLabel(saveState)}
+          {saveState.status === "error" && saveState.message
+            ? saveState.message
+            : statusLabel(saveState)}
           {saveState.status === "error" && retry ? (
             <button
               className="editor-retry-button"
@@ -660,22 +1252,50 @@ export function EditorKernel({
 
       <div className="editor-lab-workspace">
         <div className="editor-grid-area">
-          <div className="editor-grid-shell">
+          <div
+            className="editor-grid-shell"
+            onCopyCapture={handleCopyCapture}
+            onPasteCapture={handlePasteCapture}
+          >
             <DataGrid
-              aria-label="Customers editor"
+              aria-label={`${table.name} editor`}
               className="editor-grid"
               columns={gridColumns}
               data-testid="editor-grid"
               headerRowHeight={36}
+              onCellMouseDown={handleCellMouseDown}
               onCellDoubleClick={handleDoubleClick}
               onCellKeyDown={handleCellKeyDown}
-              onColumnResize={handleResizeColumn}
-              onColumnsReorder={handleReorderColumns}
+              onColumnResize={
+                capabilities.canResizeColumns ? handleResizeColumn : undefined
+              }
+              onColumnsReorder={
+                capabilities.canReorderColumns
+                  ? handleReorderColumns
+                  : undefined
+              }
               onRowsChange={handleRowsChange}
               onSelectedCellChange={({ row, column }) => {
                 setPendingEdit(null);
                 if (row) {
                   setActiveCell({ rowId: row.id, columnKey: column.key });
+                }
+                const point = {
+                  rowIndex: row
+                    ? row.isDraft
+                      ? table.rows.length
+                      : table.rows.findIndex(
+                          (candidate) => candidate.id === row.id,
+                        )
+                    : 0,
+                  columnIndex: column.idx,
+                };
+                if (rangeSelectionRef.current) {
+                  rangeSelectionRef.current = false;
+                  setSelectionEnd(point);
+                } else {
+                  setSelectionAnchor(point);
+                  setSelectionEnd(point);
                 }
               }}
               ref={gridRef}
@@ -684,31 +1304,45 @@ export function EditorKernel({
               rowKeyGetter={(row) => row.id}
               rows={gridRows}
             />
-            <button
-              aria-expanded={addColumnOpen}
-              aria-label="Add column"
-              className="editor-add-column-button"
-              onClick={() => {
-                setColumnMenuKey(null);
-                setAddColumnOpen((current) => !current);
-              }}
-              type="button"
-            >
-              +
-            </button>
-            {addColumnOpen ? (
-              <AddColumnPopover
-                onClose={() => setAddColumnOpen(false)}
-                onCreate={handleCreateColumn}
-              />
+            {capabilities.canAddColumns ? (
+              <>
+                <button
+                  aria-expanded={addColumnOpen}
+                  aria-label="Add column"
+                  className="editor-add-column-button"
+                  onClick={() => {
+                    setColumnMenuKey(null);
+                    setAddColumnOpen((current) => !current);
+                  }}
+                  type="button"
+                >
+                  +
+                </button>
+                {addColumnOpen ? (
+                  <AddColumnPopover
+                    onClose={() => setAddColumnOpen(false)}
+                    onCreate={handleCreateColumn}
+                  />
+                ) : null}
+              </>
             ) : null}
           </div>
-          {footer ? <div className="editor-grid-footnote">{footer}</div> : null}
+          {footer || capabilities.rowCreation !== "direct" ? (
+            <div className="editor-grid-footnote">
+              {capabilities.rowCreation !== "direct" ? (
+                <span>
+                  {capabilities.rowCreationMessage ??
+                    "New records are not available in this Table preview."}
+                </span>
+              ) : null}
+              {footer}
+            </div>
+          ) : null}
         </div>
         {panelRow ? (
           <RecordPanel
             key={`${panelRow.id}:${JSON.stringify(panelRow.values)}`}
-            columns={table.columns}
+            columns={recordColumns}
             onClose={closePanel}
             onCommitCell={commitCell}
             row={panelRow}
@@ -716,6 +1350,9 @@ export function EditorKernel({
           />
         ) : null}
       </div>
+      {shortcutOpen ? (
+        <ShortcutSheet onClose={() => setShortcutOpen(false)} />
+      ) : null}
     </section>
   );
 }

@@ -57,6 +57,8 @@ const lifecycleFunctions = [
   "abandon_configuration_change_set",
   "apply_configuration_change",
   "apply_direct_configuration_change",
+  "apply_direct_page_configuration_change",
+  "apply_lenni_direct_configuration_change",
   "get_configuration_change_set",
   "get_configuration_version",
   "list_configuration_change_sets",

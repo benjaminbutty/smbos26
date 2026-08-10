@@ -2734,3 +2734,76 @@ existing generic GraphService boundary and remain ordinary operational data;
 they do not create configuration history. AI, Builder, preview and the normal
 Changes lifecycle are unchanged. The direct lane is a bounded owner-facing
 facade, not a second configuration truth model.
+
+## ADR-037 — Tables and Pages share one bounded workspace foundation
+
+**Status:** Accepted for v0.1 (workspace foundation)
+
+**Date:** 9 August 2026
+
+SMBOS needs an owner-facing place to create a useful internal concept and then
+shape the Page that explains or operates it. The reusable primitives already
+cover Objects, Fields, Views, Forms, Pages, Records, and configuration history.
+This milestone therefore composes Tables and Pages in one workspace shell; it
+does not add a customer-specific table, editor persistence model, Page
+primitive, or second configuration engine.
+
+The Page authoring surface uses one pinned Tiptap 3 dependency set, but Tiptap
+is an editing adapter rather than a source of truth. The persisted
+`pages.layout_json` value remains the strict SMBOS Page grammar. The adapter
+supports plain text, Heading 1/2/3, Divider, Callout, and internal Table View
+blocks; it preserves unsupported historical blocks as read-only atoms. Empty
+Pages are valid, block IDs are stable once persisted, and internal View blocks
+may be explicitly read-only. The normal Page renderer remains the runtime
+boundary for Staff and published/static Pages.
+
+Page creation, rename, and layout save are a finite direct facade over the
+existing M5 propose/validate/apply lifecycle. The server owns tenant identity,
+Page identity, snapshot composition, and currentness. PostgreSQL verifies the
+action shape and the exact one-Page mutation atomically. Embedded Tables reuse
+the production adapter and kernel but never expose structural controls. The
+editor autosaves through the typed Server Action boundary; it does not execute
+arbitrary code, SQL, HTML, or generic requests.
+
+This decision intentionally leaves collaboration, Yjs, comments, AI editing,
+uploads, rich text expansion, formulas, bulk editing, and arbitrary Page
+operations outside the workspace foundation. Those capabilities require a
+separate reusable boundary and evidence; they are not smuggled into the
+authoring adapter.
+
+## ADR-038 — Lenni Table interaction remains a bounded manual engine
+
+**Status:** Accepted for v0.1 closeout
+
+**Date:** 10 August 2026
+
+The Lenni Table interaction engine completes the current production Table
+surface without introducing a new primitive, domain table, editor persistence
+model, permissions system, or AI path. It reuses the existing Object, Field,
+View, Form, Record, adapter and Milestone 5 configuration primitives.
+
+The finite Owner/Admin structural lane adds `insert_column` and
+`change_column_type` to the existing direct configuration boundary. A
+successful structural action creates exactly one immutable configuration
+Version. Column insertion preserves existing Field keys, values and routing;
+type changes preserve the Field key and identity, inspect active and archived
+Records, and succeed only when all meaningful values are already compatible.
+There is no data-conversion engine and no Record mutation during a type
+change. The primary property remains short or long text. Requiredness is
+existing Field metadata enforced at the write boundary; this closeout adds no
+requiredness-editing UI. Staff may edit permitted operational values but
+cannot use structural controls.
+
+Clipboard paste and rectangular clearing remain operational Record writes.
+The narrow authenticated batch RPC derives Business from membership, binds
+to one live internal Table View, re-resolves Objects, Fields, editability and
+Records server-side, limits input to 100 rows and 500 cells, validates typed
+and required values, and keeps each Record update atomic. It creates no
+Change, Version, History entry, generic bulk command or operational undo.
+
+Embedded Tables reuse the production kernel for permitted cell, row and
+Record-panel behavior but suppress all structural controls and retain an
+`Open table` path for structural editing. Relationships, saved Views, filters,
+sorting, grouping, formulas, workflows, public surfaces, AI and Builder Table
+actions remain explicitly deferred. The interaction engine is implemented;
+final unified Lenni visual refinement remains planned.

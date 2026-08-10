@@ -70,6 +70,39 @@ operation language or persistence model. Direct Undo is limited to the active
 direct change's immediate parent. `column_widths` is an optional validated
 Table View layout map, not a new primitive.
 
+The Lenni interaction engine adds the finite structural actions
+`insert_column` and `change_column_type` through a separate authenticated
+`apply_lenni_direct_configuration_change` facade. Owner/Admin success creates
+one immutable configuration Version; Staff cannot use the structural lane.
+Insertion and type changes preserve Field identity and do not mutate Record
+values. Type changes inspect active and archived Records and succeed only when
+all meaningful values are already compatible; there is no conversion engine or
+requiredness-editing UI.
+
+Rectangular paste and clearing are operational Record actions. The typed
+editor adapter delegates them to a narrow batch boundary limited to one live
+internal Table View, 100 rows and 500 cells. The server re-resolves the tenant,
+Object, Fields, editability, requiredness and Record IDs, validates each row
+through the existing graph rules, and creates no configuration history.
+
+## Direct Page Workspace
+
+`direct-pages/` is the matching bounded facade for the workspace Page authoring
+lane. Its finite actions are `create_page`, `rename_page`, and
+`save_page_layout`. The composer reloads one immutable active snapshot,
+preserves the Page key/slug on rename and layout save, assigns stable block IDs
+when a layout is first persisted, and accepts only the existing strict Page
+grammar. The service calls the single authenticated
+`apply_direct_page_configuration_change` RPC, which reuses the M5
+propose/validate/apply engine atomically.
+
+Page editor state is transient Tiptap JSON. It is translated to and from the
+canonical `pages.layout_json` grammar at the client boundary; raw editor JSON
+never becomes a second configuration truth model. Unsupported historical blocks
+round-trip as bounded read-only atoms, and internal Table Views embed the
+production Table kernel without structural Table controls. AI, public Page
+publication, and reviewed Changes work remain on their existing boundaries.
+
 ## Owner/Admin routes
 
 - `/app/[businessSlug]/changes`

@@ -106,7 +106,8 @@ describe("editor kernel contracts", () => {
       onActivateDraft: () => undefined,
       onOpenColumnMenu: () => undefined,
       onOpenRecord: () => undefined,
-      onRenameColumn: async () => undefined,
+      onRenameColumn: async () => true,
+      onUpdateColumnOptions: async () => true,
       pendingEdit: null,
     });
     const primary = columns.find((column) => column.key === "name");

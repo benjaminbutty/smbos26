@@ -7,6 +7,7 @@ import {
   type EditorRow,
   type EditorValue,
 } from "./contracts";
+import { ChoiceStatusPicker } from "./cell-editors";
 
 interface RecordPanelProps {
   columns: readonly EditorColumn[];
@@ -16,12 +17,23 @@ interface RecordPanelProps {
   onCommitCell: (rowId: string, columnKey: string, value: EditorValue) => void;
 }
 
-function inputType(column: EditorColumn): "date" | "number" | "text" {
+function inputType(
+  column: EditorColumn,
+): "date" | "email" | "number" | "tel" | "text" | "url" {
   if (column.kind === "date") {
     return "date";
   }
-  if (column.kind === "number") {
+  if (column.kind === "number" || column.kind === "currency") {
     return "number";
+  }
+  if (column.kind === "email") {
+    return "email";
+  }
+  if (column.kind === "phone") {
+    return "tel";
+  }
+  if (column.kind === "url") {
+    return "url";
   }
   return "text";
 }
@@ -39,17 +51,14 @@ function InlinePropertyEditor({
   onChange: (value: EditorValue) => void;
   onCommit: (value?: EditorValue) => void;
 }>): React.ReactNode {
-  if (column.kind === "status") {
+  if (column.kind === "long_text") {
     return (
-      <select
+      <textarea
         aria-label={`Edit ${column.label}`}
         autoFocus
-        className="editor-panel-inline-editor editor-panel-status-editor"
-        onChange={(event) => {
-          const next = event.currentTarget.value;
-          onChange(next);
-          onCommit(next);
-        }}
+        className="editor-panel-inline-editor"
+        onBlur={() => onCommit()}
+        onChange={(event) => onChange(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -57,14 +66,23 @@ function InlinePropertyEditor({
             onCancel();
           }
         }}
+        rows={4}
         value={editorInputValue(value)}
-      >
-        {(column.options ?? []).map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+      />
+    );
+  }
+
+  if (column.kind === "status" || column.kind === "select") {
+    return (
+      <ChoiceStatusPicker
+        column={column}
+        onCancel={onCancel}
+        onCommit={(next) => {
+          onChange(next);
+          onCommit(next);
+        }}
+        value={value}
+      />
     );
   }
 
@@ -86,7 +104,11 @@ function InlinePropertyEditor({
           onCancel();
         }
       }}
-      step={column.kind === "number" ? "any" : undefined}
+      step={
+        column.kind === "number" || column.kind === "currency"
+          ? "any"
+          : undefined
+      }
       type={inputType(column)}
       value={editorInputValue(value)}
     />
@@ -116,6 +138,10 @@ export function RecordPanel({
   };
 
   const commit = (column: EditorColumn, nextValue?: EditorValue): void => {
+    if (column.editable === false) {
+      setEditingKey(null);
+      return;
+    }
     onCommitCell(
       row.id,
       column.key,
@@ -153,7 +179,14 @@ export function RecordPanel({
                 {column.label}
               </span>
               <div className="editor-record-property-value">
-                {column.kind === "boolean" ? (
+                {column.editable === false ? (
+                  <span
+                    className="editor-property-readonly"
+                    title={column.readOnlyReason}
+                  >
+                    {displayEditorValue(column, value)}
+                  </span>
+                ) : column.kind === "boolean" ? (
                   <input
                     aria-label={`Edit ${column.label}`}
                     checked={value === true}

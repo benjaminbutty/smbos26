@@ -53,7 +53,7 @@ export function PageRenderer({
   return (
     <div className="runtime-page-blocks">
       {layout.blocks.map((block, index) => {
-        const key = `${index}-${block.type}`;
+        const key = block.id ?? `${index}-${block.type}`;
 
         switch (block.type) {
           case "heading":
@@ -110,6 +110,16 @@ export function PageRenderer({
             );
           case "divider":
             return <hr className="page-divider" key={key} />;
+          case "callout":
+            return (
+              <aside
+                className={`page-callout page-callout-${block.tone}`}
+                key={key}
+                role="note"
+              >
+                {block.text}
+              </aside>
+            );
           case "view": {
             if (publicMode && !previewMode) {
               return (
@@ -126,6 +136,7 @@ export function PageRenderer({
                 businessSlug={businessSlug}
                 key={key}
                 preview={previewMode}
+                readOnly={block.read_only ?? false}
                 showHeading={false}
                 {...(!previewMode && inlineEditAction
                   ? { inlineEditAction }

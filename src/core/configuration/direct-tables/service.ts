@@ -188,17 +188,19 @@ export async function applyDirectTableAction(
       error,
     );
   }
-  const { data, error } = await client.rpc(
-    "apply_direct_configuration_change",
-    {
-      expected_business_id: parsedContext.businessId,
-      expected_actor_id: parsedContext.actorId,
-      expected_base_version_id: expected.expectedBaseVersionId,
-      expected_head_revision: expected.expectedHeadRevision,
-      requested_action_kind: composed.actionKind,
-      requested_operations: composed.operations,
-    },
-  );
+  const args = {
+    expected_business_id: parsedContext.businessId,
+    expected_actor_id: parsedContext.actorId,
+    expected_base_version_id: expected.expectedBaseVersionId,
+    expected_head_revision: expected.expectedHeadRevision,
+    requested_action_kind: composed.actionKind,
+    requested_operations: composed.operations,
+  };
+  const { data, error } =
+    composed.actionKind === "insert_column" ||
+    composed.actionKind === "change_column_type"
+      ? await client.rpc("apply_lenni_direct_configuration_change", args)
+      : await client.rpc("apply_direct_configuration_change", args);
   if (error || !data) {
     return rpcError("Could not apply the Table change.", error);
   }

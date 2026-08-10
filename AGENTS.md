@@ -4,9 +4,10 @@
 
 Before implementing any feature, read:
 
-1. `docs/SMBOS-v0.1-Build-Spec.md`
-2. `docs/architecture-decisions.md`
-3. relevant existing tests
+1. `docs/PRODUCT-NORTH-STAR.md`
+2. `docs/SMBOS-v0.1-Build-Spec.md`
+3. `docs/architecture-decisions.md`
+4. relevant existing tests
 
 Do not silently diverge from these decisions. When implementation evidence conflicts with the spec, explain the conflict and propose the smallest architecture change before coding around it.
 

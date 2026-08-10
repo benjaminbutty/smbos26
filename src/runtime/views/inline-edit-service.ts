@@ -141,10 +141,112 @@ export interface DirectTableRecordCellEditInput {
   formData: FormData;
 }
 
+const editorValueSchema = z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+  z.array(z.string()),
+  z.null(),
+]);
+
+export interface DirectTableRecordTypedCellEditInput {
+  viewKey: string;
+  recordId: string;
+  fieldKey: string;
+  value: string | number | boolean | readonly string[] | null;
+}
+
+export async function applyDirectTableRecordCellEditValue(
+  client: SupabaseClient<Database>,
+  tenant: { businessId: string },
+  input: DirectTableRecordTypedCellEditInput,
+): Promise<Tables<"records">> {
+  const value = z
+    .object({
+      viewKey: graphKeySchema,
+      recordId: z.uuid(),
+      fieldKey: graphKeySchema,
+      value: editorValueSchema,
+    })
+    .parse(input);
+  const formData = new FormData();
+  if (Array.isArray(value.value)) {
+    for (const item of value.value) {
+      formData.append(value.fieldKey, item);
+    }
+  } else if (value.value === null) {
+    formData.set(value.fieldKey, "");
+  } else if (typeof value.value === "boolean") {
+    formData.set(value.fieldKey, value.value ? "true" : "false");
+  } else {
+    formData.set(value.fieldKey, String(value.value));
+  }
+
+  return applyDirectTableRecordCellEditWithScope(
+    client,
+    tenant,
+    {
+      viewKey: value.viewKey,
+      recordId: value.recordId,
+      fieldKey: value.fieldKey,
+      formData,
+    },
+    false,
+  );
+}
+
 export async function applyDirectTableRecordCellEdit(
   client: SupabaseClient<Database>,
   tenant: { businessId: string },
   input: DirectTableRecordCellEditInput,
+): Promise<Tables<"records">> {
+  return applyDirectTableRecordCellEditWithScope(client, tenant, input, false);
+}
+
+export async function applyProductionTableRecordCellEditValue(
+  client: SupabaseClient<Database>,
+  tenant: { businessId: string },
+  input: DirectTableRecordTypedCellEditInput,
+): Promise<Tables<"records">> {
+  const value = z
+    .object({
+      viewKey: graphKeySchema,
+      recordId: z.uuid(),
+      fieldKey: graphKeySchema,
+      value: editorValueSchema,
+    })
+    .parse(input);
+  const formData = new FormData();
+  if (Array.isArray(value.value)) {
+    for (const item of value.value) {
+      formData.append(value.fieldKey, item);
+    }
+  } else if (value.value === null) {
+    formData.set(value.fieldKey, "");
+  } else if (typeof value.value === "boolean") {
+    formData.set(value.fieldKey, value.value ? "true" : "false");
+  } else {
+    formData.set(value.fieldKey, String(value.value));
+  }
+
+  return applyDirectTableRecordCellEditWithScope(
+    client,
+    tenant,
+    {
+      viewKey: value.viewKey,
+      recordId: value.recordId,
+      fieldKey: value.fieldKey,
+      formData,
+    },
+    true,
+  );
+}
+
+async function applyDirectTableRecordCellEditWithScope(
+  client: SupabaseClient<Database>,
+  tenant: { businessId: string },
+  input: DirectTableRecordCellEditInput,
+  allowAdditionalTableFields: boolean,
 ): Promise<Tables<"records">> {
   const value = inlineRecordCellEditInputSchema.parse(input);
   const experience = createExperienceService(client, tenant);
@@ -157,7 +259,10 @@ export async function applyDirectTableRecordCellEdit(
   }
 
   const tableConfig = view.config as TableViewConfig;
-  if (!tableConfig.fields.includes(value.fieldKey)) {
+  if (
+    !allowAdditionalTableFields &&
+    !tableConfig.fields.includes(value.fieldKey)
+  ) {
     throw new ExperienceSubmissionError(
       "That value is not part of this screen.",
     );

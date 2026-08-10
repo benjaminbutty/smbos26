@@ -73,3 +73,27 @@ propose/validate/apply and rollback functions; PostgreSQL verifies the finite
 Table action shape and direct provenance. The checked-in type surface includes
 both configuration-change-set contracts. Direct cell and row writes continue
 to use the existing generic GraphService RPCs.
+
+The workspace-foundation migration adds the authenticated
+`apply_direct_page_configuration_change` RPC. It validates the finite Page
+action shape, exact Page grammar, stable block-ID uniqueness, and the invariant
+that create/rename/layout-save actions change only the intended Page. It then
+executes the existing M5 proposal, validation, and application sequence in one
+transaction. The migration adds no Page-specific table, editor persistence,
+queue, or bypass; Tiptap JSON remains transient client state and the canonical
+Page grammar remains in `pages.layout_json`.
+
+The Lenni Table migration
+`20260810120000_lenni_table_experience.sql` adds the authenticated
+`apply_lenni_direct_configuration_change` facade for the finite structural
+actions `insert_column` and `change_column_type`, plus the narrow
+`apply_direct_table_record_batch` operational boundary for bounded paste and
+range clearing. The structural facade reuses the M5 proposal/validation/
+application lifecycle and creates one immutable Version on success. PostgreSQL
+preserves Field identity, checks active and archived Record compatibility, and
+never converts Record values. The batch RPC derives tenant membership, binds
+to one live internal Table View, re-resolves editability and typed validation,
+limits input to 100 rows and 500 cells, and creates no configuration history.
+Both functions are denied to anonymous, public and service-role callers; the
+structural function is Owner/Admin-only while operational Record editing uses
+the existing authenticated graph permissions.

@@ -1489,6 +1489,54 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      apply_direct_table_record_batch: {
+        Args: {
+          expected_business_id: string;
+          requested_rows: Json;
+          requested_view_key: string;
+        };
+        Returns: Json;
+        SetofOptions: {
+          from: "*";
+          to: "Json";
+          isOneToOne: false;
+          isSetofReturn: false;
+        };
+      };
+      apply_lenni_direct_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      apply_direct_page_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       archive_graph_record: {
         Args: { expected_business_id: string; target_record_id: string };
         Returns: {
