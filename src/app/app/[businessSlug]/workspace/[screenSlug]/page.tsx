@@ -161,22 +161,9 @@ export default async function WorkspaceScreenPage({
             };
 
     return (
-      <>
-        <TableViewTabs
-          businessSlug={businessSlug}
-          currentViewKey={bundle.definition.key}
-          views={tableViews}
-        />
-        <TableViewControls
-          businessSlug={businessSlug}
-          config={normalizeTableViewConfig(bundle.config)}
-          currentness={currentness}
-          fields={bundle.fields}
-          {...(bundle.relationships
-            ? { relationships: bundle.relationships }
-            : {})}
-          viewKey={bundle.definition.key}
-        />
+      <section className="workspace-table-page">
+        {error ? <Notice kind="error">{error}</Notice> : null}
+        {message ? <Notice kind="message">{message}</Notice> : null}
         <ProductionTableWorkspace
           actions={{
             addColumn: addProductionTableColumnAction.bind(
@@ -269,9 +256,30 @@ export default async function WorkspaceScreenPage({
               : undefined
           }
           currentness={currentness}
+          headerContent={
+            <>
+              <TableViewTabs
+                businessSlug={businessSlug}
+                currentViewKey={bundle.definition.key}
+                views={tableViews}
+              />
+              <TableViewControls
+                businessSlug={businessSlug}
+                config={normalizeTableViewConfig(bundle.config)}
+                currentness={currentness}
+                fields={bundle.fields}
+                {...(bundle.relationships
+                  ? { relationships: bundle.relationships }
+                  : {})}
+                viewKey={bundle.definition.key}
+              />
+            </>
+          }
+          newRecordLabel={`New ${bundle.object.singular_label.toLocaleLowerCase("en")}`}
+          recordCountLabel={`${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`}
           table={mapped.table}
         />
-      </>
+      </section>
     );
   }
 

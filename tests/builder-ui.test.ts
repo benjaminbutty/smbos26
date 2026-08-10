@@ -656,6 +656,10 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
       join(process.cwd(), "src/app/app/[businessSlug]/layout.tsx"),
       "utf8",
     );
+    const topbar = readFileSync(
+      join(process.cwd(), "src/components/workspace-topbar.tsx"),
+      "utf8",
+    );
 
     expect(route).toContain('dynamic = "force-dynamic"');
     expect(route).toContain('fetchCache = "force-no-store"');
@@ -696,12 +700,12 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(source).not.toContain("ConfigurationChangeService");
     expect(source).not.toContain("proposeChangeSet");
 
-    const builderIndex = layout.indexOf(">Builder</Link>");
-    const setupIndex = layout.indexOf(">Edit setup</Link>");
-    const changesIndex = layout.indexOf(">History</Link>");
-    expect(builderIndex).toBeGreaterThan(-1);
-    expect(builderIndex).toBeLessThan(setupIndex);
-    expect(setupIndex).toBeLessThan(changesIndex);
+    expect(topbar).toContain(
+      "href={`/app/${encodeURIComponent(businessSlug)}/builder`}",
+    );
+    expect(topbar).toContain('aria-label="Tell Lenni what you need"');
+    expect(layout).toContain("href={`/app/${businessSlug}/setup`}");
+    expect(layout).toContain("href={`/app/${businessSlug}/changes`}");
 
     expect(
       configurationActionNoticeSchema.safeParse("builder_prepared").success,

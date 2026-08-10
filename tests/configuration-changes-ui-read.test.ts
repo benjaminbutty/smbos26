@@ -437,7 +437,7 @@ describe("read-only configuration Changes interface", () => {
       "utf8",
     );
     expect(layout).toContain('"manage_configuration"');
-    expect(layout).toContain(">History</Link>");
+    expect(layout).toContain("Changes");
 
     const routeRoot = join(process.cwd(), "src/app/app/[businessSlug]/changes");
     for (const route of filesRecursively(routeRoot).filter(

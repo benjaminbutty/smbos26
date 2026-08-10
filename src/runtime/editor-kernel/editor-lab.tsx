@@ -48,8 +48,11 @@ export interface EditorKernelProps {
   adapter: TableEditorAdapter;
   capabilities?: EditorCapabilities;
   footer?: ReactNode;
+  headerContent?: ReactNode;
   marker?: ReactNode;
+  newRecordLabel?: string;
   onStructureChanged?: () => void;
+  recordCountLabel?: string;
   title?: string;
   readOnly?: boolean;
   variant?: "workspace" | "embedded";
@@ -329,8 +332,11 @@ export function EditorKernel({
   adapter,
   capabilities = defaultEditorCapabilities,
   footer,
+  headerContent,
   marker,
+  newRecordLabel = "New record",
   onStructureChanged,
+  recordCountLabel,
   readOnly = false,
   title,
   variant = "workspace",
@@ -1153,6 +1159,7 @@ export function EditorKernel({
       createEditorColumns({
         columnMenuKey,
         columns: table.columns,
+        newRecordLabel,
         onActivateDraft: activateDraft,
         onOpenColumnMenu: (columnKey) => {
           setAddColumnOpen(false);
@@ -1204,6 +1211,7 @@ export function EditorKernel({
       capabilities.canResizeColumns,
       table.columns,
       adapter,
+      newRecordLabel,
     ],
   );
 
@@ -1232,30 +1240,62 @@ export function EditorKernel({
             onCommit={handleRenameTable}
           />
         </div>
-        <div
-          className={`editor-save-state editor-save-${saveState.status}`}
-          role="status"
-        >
-          <span className="editor-save-dot" aria-hidden="true" />
-          {saveState.status === "error" && saveState.message
-            ? saveState.message
-            : statusLabel(saveState)}
-          {saveState.status === "error" && retry ? (
-            <button
-              className="editor-retry-button"
-              onClick={() =>
-                commitCell(retry.rowId, retry.columnKey, retry.value)
-              }
-              type="button"
-            >
-              Retry
-            </button>
+        <div className="editor-lab-header-actions">
+          {variant === "workspace" ? (
+            <details className="editor-table-menu">
+              <summary>Table menu</summary>
+              <div className="editor-table-menu-body" role="menu">
+                {capabilities.canAddColumns ? (
+                  <button
+                    onClick={() => {
+                      setColumnMenuKey(null);
+                      setAddColumnOpen(true);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Add property
+                  </button>
+                ) : null}
+                <button
+                  onClick={() => setShortcutOpen(true)}
+                  role="menuitem"
+                  type="button"
+                >
+                  Keyboard shortcuts
+                </button>
+              </div>
+            </details>
           ) : null}
+          <div
+            className={`editor-save-state editor-save-${saveState.status}`}
+            role="status"
+          >
+            <span className="editor-save-dot" aria-hidden="true" />
+            {saveState.status === "error" && saveState.message
+              ? saveState.message
+              : statusLabel(saveState)}
+            {saveState.status === "error" && retry ? (
+              <button
+                className="editor-retry-button"
+                onClick={() =>
+                  commitCell(retry.rowId, retry.columnKey, retry.value)
+                }
+                type="button"
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
+      {headerContent ? (
+        <div className="editor-header-content">{headerContent}</div>
+      ) : null}
+
       <div className="editor-lab-meta">
-        <span>{table.rows.length} records</span>
+        <span>{recordCountLabel ?? `${table.rows.length} records`}</span>
         <span aria-hidden="true">·</span>
         <span>
           {activeCellLabel && activeValue

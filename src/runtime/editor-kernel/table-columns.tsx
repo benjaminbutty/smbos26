@@ -31,6 +31,7 @@ export interface PendingEdit {
 interface CreateEditorColumnsOptions {
   columns: readonly EditorColumn[];
   columnMenuKey: string | null;
+  newRecordLabel?: string;
   onOpenColumnMenu: (columnKey: string) => void;
   onCloseColumnMenu?: () => void;
   onRenameColumn: (columnKey: string, label: string) => Promise<boolean>;
@@ -81,6 +82,41 @@ function connectionDisplay(row: EditorRow, column: EditorColumn): string {
   return labels.length > 0
     ? labels.map((value) => value.label).join(", ")
     : "—";
+}
+
+function statusChipTone(
+  value: EditorValue,
+): "success" | "accent" | "muted" | "neutral" {
+  const normalized = editorInputValue(value)
+    .trim()
+    .toLocaleLowerCase("en")
+    .replaceAll("_", " ");
+  if (
+    [
+      "active",
+      "available",
+      "booked",
+      "complete",
+      "completed",
+      "confirmed",
+      "collected",
+      "ready",
+      "yes",
+    ].includes(normalized)
+  ) {
+    return "success";
+  }
+  if (["lead", "new", "pending", "in progress", "open"].includes(normalized)) {
+    return "accent";
+  }
+  if (
+    ["archived", "cancelled", "canceled", "closed", "inactive", "no"].includes(
+      normalized,
+    )
+  ) {
+    return "muted";
+  }
+  return "neutral";
 }
 
 function HeaderCell({
@@ -487,10 +523,12 @@ function InsertColumnForm({
 
 function NewRecordCell({
   columnIdx,
+  label,
   onActivate,
   rowIdx,
 }: Readonly<{
   columnIdx: number;
+  label: string;
   onActivate: (rowIdx: number, columnIdx: number) => void;
   rowIdx: number;
 }>): React.ReactNode {
@@ -506,18 +544,20 @@ function NewRecordCell({
       <span aria-hidden="true" className="editor-new-record-plus">
         +
       </span>
-      <span>New record</span>
+      <span>{label}</span>
     </button>
   );
 }
 
 export function EditorCell({
   column,
+  newRecordLabel = "New record",
   onOpenRecord,
   onActivateDraft,
   props,
 }: Readonly<{
   column: EditorColumn;
+  newRecordLabel?: string;
   onOpenRecord: (rowId: string, columnKey: string) => void;
   onActivateDraft: (rowIdx: number, columnIdx: number) => void;
   onSearchConnectionTargets?: (
@@ -531,6 +571,7 @@ export function EditorCell({
     return column.primary && column.editable !== false ? (
       <NewRecordCell
         columnIdx={props.column.idx}
+        label={newRecordLabel}
         onActivate={onActivateDraft}
         rowIdx={rowIdx}
       />
@@ -571,7 +612,7 @@ export function EditorCell({
     <span
       className={
         column.kind === "status" || column.kind === "select"
-          ? "editor-status-pill"
+          ? `editor-status-pill editor-status-pill-${statusChipTone(value)}`
           : undefined
       }
     >
@@ -619,6 +660,7 @@ export function EditorCell({
 export function createEditorColumns({
   columns,
   columnMenuKey,
+  newRecordLabel = "New record",
   onOpenColumnMenu,
   onCloseColumnMenu,
   onRenameColumn,
@@ -683,6 +725,7 @@ export function createEditorColumns({
     renderCell: (props: RenderCellProps<EditorRow>) => (
       <EditorCell
         column={column}
+        newRecordLabel={newRecordLabel}
         onActivateDraft={onActivateDraft}
         onOpenRecord={onOpenRecord}
         props={props}

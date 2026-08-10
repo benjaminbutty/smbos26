@@ -6,6 +6,8 @@ import { hasCapability, resolveTenant } from "../../../auth/authorization";
 import { ConfigurationChangeService } from "../../../core/configuration/service";
 import { createExperienceService } from "../../../core/experience/service";
 import { createServerClient } from "../../../db/supabase/server";
+import { WorkspaceNavLink } from "../../../components/workspace-nav-link";
+import { WorkspaceTopbar } from "../../../components/workspace-topbar";
 import { experienceKeyToPath } from "../../../runtime/routing";
 import { PagesSidebar } from "../../../runtime/navigation/pages-sidebar";
 import { TablesSidebar } from "../../../runtime/navigation/tables-sidebar";
@@ -61,18 +63,41 @@ export default async function TenantLayout({
   return (
     <div className="workspace-shell">
       <aside className="workspace-sidebar">
-        <Link className="workspace-brand" href={`/app/${businessSlug}`}>
-          <span className="brand-mark" aria-hidden="true">
-            L
-          </span>
-          <span>
-            <small>Lenni</small>
-            {tenant.business.name}
-          </span>
-        </Link>
+        <div className="workspace-sidebar-header">
+          <Link className="workspace-brand" href={`/app/${businessSlug}`}>
+            Lenni
+          </Link>
+          <Link
+            aria-label={`Switch business from ${tenant.business.name}`}
+            className="workspace-business-switcher"
+            href="/onboarding"
+          >
+            <span className="workspace-business-avatar" aria-hidden="true">
+              {tenant.business.name.slice(0, 2).toUpperCase()}
+            </span>
+            <span className="workspace-business-copy">
+              <strong>{tenant.business.name}</strong>
+              <small>
+                {tenant.business.business_type.trim() || "New workspace"}
+              </small>
+            </span>
+            <span aria-hidden="true" className="workspace-business-chevron">
+              ⌄
+            </span>
+          </Link>
+        </div>
 
         <nav className="workspace-navigation" aria-label="Business workspace">
-          <Link href={`/app/${businessSlug}`}>Home</Link>
+          <WorkspaceNavLink
+            className="workspace-home-link"
+            exact
+            href={`/app/${businessSlug}`}
+          >
+            <span aria-hidden="true" className="workspace-nav-icon">
+              ⌂
+            </span>
+            Home
+          </WorkspaceNavLink>
           <TablesSidebar
             action={createDirectTableAction.bind(null, businessSlug)}
             businessSlug={businessSlug}
@@ -104,54 +129,80 @@ export default async function TenantLayout({
               <nav aria-label="Views">
                 {nonTableViews.map((view) => (
                   <Link
+                    className="workspace-secondary-destination"
                     href={`/app/${businessSlug}/workspace/${experienceKeyToPath(
                       view.key,
                     )}`}
                     key={view.id}
                   >
+                    <span aria-hidden="true" className="workspace-nav-icon">
+                      ◌
+                    </span>
                     {view.name}
                   </Link>
                 ))}
               </nav>
             </section>
           ) : null}
-          <section
-            aria-labelledby="more-navigation-heading"
-            className="sidebar-section sidebar-secondary-section"
-          >
-            <div className="sidebar-section-heading">
-              <h2 id="more-navigation-heading">More</h2>
-            </div>
-            <nav aria-label="More workspace destinations">
-              {canManageConfiguration ? (
-                <>
-                  <Link href={`/app/${businessSlug}/builder`}>Builder</Link>
-                  <Link href={`/app/${businessSlug}/setup`}>Edit setup</Link>
-                  <Link href={`/app/${businessSlug}/changes`}>History</Link>
-                </>
-              ) : null}
-              <Link href={`/app/${businessSlug}/locations`}>Settings</Link>
-            </nav>
-          </section>
         </nav>
 
         <div className="workspace-sidebar-footer">
-          <Link href="/onboarding">Switch business</Link>
-          <form action={signOut}>
+          <nav
+            aria-label="Workspace utilities"
+            className="workspace-utility-nav"
+          >
+            {canManageConfiguration ? (
+              <>
+                <Link href={`/app/${businessSlug}/changes`}>
+                  <span aria-hidden="true" className="workspace-nav-icon">
+                    ≋
+                  </span>
+                  Changes
+                </Link>
+                <Link href={`/app/${businessSlug}/setup`}>
+                  <span aria-hidden="true" className="workspace-nav-icon">
+                    ◉
+                  </span>
+                  Setup
+                </Link>
+              </>
+            ) : null}
+            <Link href={`/app/${businessSlug}/locations`}>
+              <span aria-hidden="true" className="workspace-nav-icon">
+                ◎
+              </span>
+              Settings
+            </Link>
+          </nav>
+          <div className="workspace-user-card">
+            <span className="workspace-user-avatar" aria-hidden="true">
+              {(tenant.user.email?.slice(0, 2) ?? "AC").toUpperCase()}
+            </span>
+            <span>
+              <strong>{tenant.user.email?.split("@")[0] ?? "Account"}</strong>
+              <small>{tenant.membership.role}</small>
+            </span>
+          </div>
+          <form action={signOut} className="workspace-sign-out-form">
             <button className="button-link" type="submit">
               Sign out
             </button>
           </form>
-          <span className="role-badge">{tenant.membership.role}</span>
         </div>
       </aside>
 
       <main className="workspace-main">
-        <header className="workspace-mobile-header">
-          <Link className="tenant-name" href={`/app/${businessSlug}`}>
-            {tenant.business.name}
-          </Link>
-        </header>
+        <WorkspaceTopbar
+          businessName={tenant.business.name}
+          businessSlug={businessSlug}
+          canManageConfiguration={canManageConfiguration}
+          pages={navigation.pages.map((page) => ({
+            slug: page.slug,
+            title: page.title,
+          }))}
+          tables={tables}
+          userInitials={(tenant.user.email?.slice(0, 2) ?? "AC").toUpperCase()}
+        />
         {children}
       </main>
     </div>
