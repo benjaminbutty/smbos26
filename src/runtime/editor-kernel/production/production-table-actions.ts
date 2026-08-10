@@ -53,6 +53,7 @@ import type {
   ProductionInsertColumnInput,
   ProductionPasteInput,
   ProductionPasteResult,
+  ProductionRecordPanelContext,
   ProductionRecordReadInput,
   ProductionRenameColumnInput,
   ProductionRenameTableInput,
@@ -1096,6 +1097,44 @@ export async function readProductionTableRecordAction(
       return { status: "success", value: null };
     }
     return { status: "success", value: record };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function readProductionRecordPanelContextAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionRecordReadInput,
+): Promise<ProductionActionResult<ProductionRecordPanelContext | null>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = recordInputSchema.parse(input);
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+
+  try {
+    const experience = createExperienceService(supabase, {
+      businessId: tenant.business.id,
+    });
+    const bundle = await experience.loadView(viewKey, "internal");
+    const mapped = await loadMappedTable(supabase, tenant.business.id, viewKey);
+    const row = mapped.table.rows.find(
+      (candidate) => candidate.id === parsed.recordId,
+    );
+    if (!row) {
+      return { status: "success", value: null };
+    }
+    return {
+      status: "success",
+      value: {
+        columns: mapped.table.recordColumns ?? mapped.table.columns,
+        fullRecordPath: routePath(businessSlug, viewKey),
+        recordTypeLabel: bundle.object.singular_label,
+        row,
+        tableName: mapped.table.name,
+      },
+    };
   } catch (error) {
     return resultError(safeError(error));
   }

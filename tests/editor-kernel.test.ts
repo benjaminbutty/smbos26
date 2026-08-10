@@ -178,4 +178,42 @@ describe("editor kernel contracts", () => {
     expect(markup).not.toContain("<small");
     expect(markup).not.toMatch(/Save|Cancel/);
   });
+
+  it("keeps arbitrary Status values in a neutral chip", () => {
+    const table = createMockTableAdapter({ delayMs: 0 }).getTable();
+    const columns = createEditorColumns({
+      columnMenuKey: null,
+      columns: table.columns,
+      onActivateDraft: () => undefined,
+      onOpenColumnMenu: () => undefined,
+      onOpenRecord: () => undefined,
+      onRenameColumn: async () => true,
+      onUpdateColumnOptions: async () => true,
+      pendingEdit: null,
+    });
+    const status = columns.find((column) => column.key === "status");
+    const row = table.rows[0];
+    if (!status || !row) {
+      throw new Error("Expected a seeded status Record.");
+    }
+
+    const markup = renderToStaticMarkup(
+      status.renderCell?.({
+        column: {
+          idx: table.columns.findIndex((column) => column.key === status.key),
+          key: status.key,
+        },
+        isCellEditable: true,
+        onRowChange: () => undefined,
+        row,
+        rowIdx: 0,
+        tabIndex: 0,
+      } as never) ?? null,
+    );
+
+    expect(markup).toContain("editor-status-pill-neutral");
+    expect(markup).not.toContain("editor-status-pill-success");
+    expect(markup).not.toContain("editor-status-pill-accent");
+    expect(markup).not.toContain("editor-status-pill-muted");
+  });
 });

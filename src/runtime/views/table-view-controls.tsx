@@ -223,8 +223,6 @@ export function TableViewControls({
 }>): React.ReactNode {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [search, setSearch] = useState("");
   const [saving, startTransition] = useTransition();
   const options = useMemo(
     () => propertyOptions(fields, config, relationships),
@@ -308,6 +306,10 @@ export function TableViewControls({
       singleValueConnection(option, relationships),
   );
 
+  if (config.role !== "saved") {
+    return null;
+  }
+
   const changeProperty = (nextOptionKey: string): void => {
     const nextProperty = options.find(
       (option) => option.optionKey === nextOptionKey,
@@ -379,58 +381,6 @@ export function TableViewControls({
 
   return (
     <section aria-label="Saved view controls" className="table-view-controls">
-      <div className="table-view-toolbar" aria-label="View controls">
-        <button
-          aria-expanded={searchOpen}
-          className="table-view-toolbar-button"
-          onClick={() => setSearchOpen((current) => !current)}
-          type="button"
-        >
-          <span aria-hidden="true">⌕</span>
-          Search
-        </button>
-        <button
-          aria-expanded={open}
-          className="table-view-toolbar-button"
-          onClick={() => setOpen((current) => !current)}
-          type="button"
-        >
-          <span aria-hidden="true">▽</span>
-          Filter{config.filters.length > 0 ? ` ${config.filters.length}` : ""}
-        </button>
-        <button
-          aria-expanded={open}
-          className="table-view-toolbar-button"
-          onClick={() => setOpen((current) => !current)}
-          type="button"
-        >
-          <span aria-hidden="true">↕</span>
-          Sort{config.sorts.length > 0 ? ` ${config.sorts.length}` : ""}
-        </button>
-        <button className="table-view-toolbar-button" type="button">
-          <span aria-hidden="true">◉</span>
-          Visible fields
-        </button>
-      </div>
-      {searchOpen ? (
-        <div className="table-view-search-row">
-          <input
-            aria-label="Search records"
-            onChange={(event) => setSearch(event.currentTarget.value)}
-            placeholder="Search records"
-            value={search}
-          />
-          {search ? (
-            <button
-              aria-label="Clear record search"
-              onClick={() => setSearch("")}
-              type="button"
-            >
-              ×
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       <div className="table-view-query-summary">
         {currentness ? (
           <button

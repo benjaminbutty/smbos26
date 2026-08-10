@@ -99,41 +99,6 @@ function connectionContent(
   );
 }
 
-function statusChipTone(
-  value: EditorValue,
-): "success" | "accent" | "muted" | "neutral" {
-  const normalized = editorInputValue(value)
-    .trim()
-    .toLocaleLowerCase("en")
-    .replaceAll("_", " ");
-  if (
-    [
-      "active",
-      "available",
-      "booked",
-      "complete",
-      "completed",
-      "confirmed",
-      "collected",
-      "ready",
-      "yes",
-    ].includes(normalized)
-  ) {
-    return "success";
-  }
-  if (["lead", "new", "pending", "in progress", "open"].includes(normalized)) {
-    return "accent";
-  }
-  if (
-    ["archived", "cancelled", "canceled", "closed", "inactive", "no"].includes(
-      normalized,
-    )
-  ) {
-    return "muted";
-  }
-  return "neutral";
-}
-
 function HeaderCell({
   column,
   canRename,
@@ -624,7 +589,7 @@ export function EditorCell({
     <span
       className={
         column.kind === "status" || column.kind === "select"
-          ? `editor-status-pill editor-status-pill-${statusChipTone(value)}`
+          ? "editor-status-pill editor-status-pill-neutral"
           : undefined
       }
     >

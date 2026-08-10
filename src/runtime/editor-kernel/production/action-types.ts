@@ -1,4 +1,9 @@
-import type { EditorRow, EditorTable, EditorValue } from "../contracts";
+import type {
+  EditorColumn,
+  EditorRow,
+  EditorTable,
+  EditorValue,
+} from "../contracts";
 import type { TableViewQuery } from "../../../core/experience/schemas";
 
 export interface ProductionCellEditInput {
@@ -30,6 +35,14 @@ export interface ProductionRowCreateInput {
 
 export interface ProductionRecordReadInput {
   recordId: string;
+}
+
+export interface ProductionRecordPanelContext {
+  columns: readonly EditorColumn[];
+  fullRecordPath: string;
+  recordTypeLabel: string;
+  row: EditorRow;
+  tableName: string;
 }
 
 export interface ProductionPasteRowInput {
@@ -154,6 +167,31 @@ export type ProductionRowCreateAction = (
 export type ProductionRecordReadAction = (
   input: ProductionRecordReadInput,
 ) => Promise<ProductionActionResult<EditorRow | null>>;
+
+export type ProductionRecordPanelContextAction = (
+  viewKey: string,
+  input: ProductionRecordReadInput,
+) => Promise<ProductionActionResult<ProductionRecordPanelContext | null>>;
+
+export type ProductionScopedCellEditAction = (
+  viewKey: string,
+  input: ProductionCellEditInput,
+) => Promise<ProductionActionResult<EditorRow>>;
+
+export type ProductionScopedConnectionEditAction = (
+  viewKey: string,
+  input: ProductionConnectionEditInput,
+) => Promise<ProductionActionResult<EditorRow>>;
+
+export type ProductionScopedConnectionSearchAction = (
+  viewKey: string,
+  input: ProductionConnectionSearchInput,
+) => Promise<ProductionActionResult<readonly { id: string; label: string }[]>>;
+
+export type ProductionScopedConnectionCreateAction = (
+  viewKey: string,
+  input: ProductionConnectionCreateInput,
+) => Promise<ProductionActionResult<{ id: string; label: string }>>;
 
 export type ProductionPasteAction = (
   input: ProductionPasteInput,

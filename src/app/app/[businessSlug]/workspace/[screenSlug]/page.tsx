@@ -31,6 +31,7 @@ import {
   insertProductionTableColumnAction,
   pasteProductionTableAction,
   readProductionTableRecordAction,
+  readProductionRecordPanelContextAction,
   renameProductionTableAction,
   renameProductionTableColumnAction,
   reorderProductionTableColumnsAction,
@@ -299,6 +300,26 @@ export default async function WorkspaceScreenPage({
           recordTypeLabel={bundle.object.singular_label}
           recordCountLabel={`${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`}
           fullRecordPath={`/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}`}
+          readConnectedRecord={readProductionRecordPanelContextAction.bind(
+            null,
+            businessSlug,
+          )}
+          updateConnectedRecordCell={updateProductionTableCellAction.bind(
+            null,
+            businessSlug,
+          )}
+          updateConnectedRecordConnection={updateProductionTableConnectionAction.bind(
+            null,
+            businessSlug,
+          )}
+          searchConnectedRecordTargets={searchProductionTableConnectionTargetsAction.bind(
+            null,
+            businessSlug,
+          )}
+          createConnectedRecordTarget={createProductionTableConnectionTargetAction.bind(
+            null,
+            businessSlug,
+          )}
           table={mapped.table}
         />
       </section>

@@ -19,7 +19,6 @@ import {
 
 import {
   defaultEditorCapabilities,
-  displayEditorValue,
   editorDraftRowId,
   editorInputValue,
   editorValueForColumn,
@@ -44,8 +43,17 @@ import {
 import { createEditorColumns, type PendingEdit } from "./table-columns";
 import { RecordPanel } from "./record-panel";
 import type { TableEditorAdapter } from "./contracts";
-import { ConnectionPicker } from "./cell-editors";
 import { OptionManager, ShortcutSheet, TypePicker } from "./lenni-ui";
+
+export interface EditorRecordContext {
+  columns: readonly EditorColumn[];
+  fullRecordPath?: string;
+  isSource?: boolean;
+  recordTypeLabel?: string;
+  row: EditorRow;
+  tableName: string;
+  viewKey: string;
+}
 
 export interface EditorKernelProps {
   adapter: TableEditorAdapter;
@@ -59,197 +67,36 @@ export interface EditorKernelProps {
   recordCountLabel?: string;
   recordTypeLabel?: string;
   fullRecordPath?: string;
+  loadConnectedRecord?:
+    | ((
+        targetViewKey: string,
+        recordId: string,
+      ) => Promise<EditorRecordContext | null>)
+    | undefined;
+  updateConnectedRecord?:
+    | ((
+        context: EditorRecordContext,
+        column: EditorColumn,
+        value: EditorValue,
+      ) => Promise<EditorRow>)
+    | undefined;
+  searchConnectedRecordTargets?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+        search: string,
+      ) => Promise<readonly { id: string; label: string }[]>)
+    | undefined;
+  createConnectedRecordTarget?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+        primaryValue: string,
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
   title?: string;
   readOnly?: boolean;
   variant?: "workspace" | "embedded";
-}
-
-function responsiveStatusTone(
-  value: EditorValue,
-): "success" | "accent" | "muted" | "neutral" {
-  const normalized = editorInputValue(value)
-    .trim()
-    .toLocaleLowerCase("en")
-    .replaceAll("_", " ");
-  if (
-    [
-      "active",
-      "available",
-      "booked",
-      "complete",
-      "completed",
-      "confirmed",
-      "collected",
-      "ready",
-      "yes",
-    ].includes(normalized)
-  ) {
-    return "success";
-  }
-  if (["lead", "new", "pending", "in progress", "open"].includes(normalized)) {
-    return "accent";
-  }
-  if (
-    ["archived", "cancelled", "canceled", "closed", "inactive", "no"].includes(
-      normalized,
-    )
-  ) {
-    return "muted";
-  }
-  return "neutral";
-}
-
-function responsiveValue(row: EditorRow, column: EditorColumn): ReactNode {
-  const value = row.values[column.key] ?? null;
-  if (column.kind === "connection") {
-    const labels = row.connectionValues?.[column.key] ?? [];
-    return labels.length > 0 ? (
-      <span className="editor-responsive-pills">
-        {labels.map((item) => (
-          <span className="editor-connection-pill" key={item.id}>
-            <span>{item.label}</span>
-            <span aria-hidden="true" className="editor-connection-pill-link">
-              ↗
-            </span>
-          </span>
-        ))}
-      </span>
-    ) : (
-      <span className="editor-responsive-empty">—</span>
-    );
-  }
-  if (column.kind === "status" || column.kind === "select") {
-    return (
-      <span
-        className={`editor-status-pill editor-status-pill-${responsiveStatusTone(value)}`}
-      >
-        {editorInputValue(value) || "—"}
-      </span>
-    );
-  }
-  return <span>{displayEditorValue(column, value)}</span>;
-}
-
-function ResponsiveRecordCards({
-  activeRowId,
-  columns,
-  onCommitCell,
-  onCreateConnectionTarget,
-  onOpenRecord,
-  onSearchConnectionTargets,
-  primaryColumnKey,
-  rows,
-}: Readonly<{
-  activeRowId: string | null;
-  columns: readonly EditorColumn[];
-  onCommitCell: (rowId: string, columnKey: string, value: unknown) => void;
-  onCreateConnectionTarget?: (
-    columnKey: string,
-    primaryValue: string,
-  ) => Promise<{ id: string; label: string }>;
-  onOpenRecord: (rowId: string, columnKey: string) => void;
-  onSearchConnectionTargets?: (
-    columnKey: string,
-    search: string,
-  ) => Promise<readonly { id: string; label: string }[]>;
-  primaryColumnKey: string;
-  rows: readonly EditorRow[];
-}>): ReactNode {
-  const primaryColumn =
-    columns.find((column) => column.key === primaryColumnKey) ?? columns[0];
-  const detailColumns = columns.filter(
-    (column) => column.key !== primaryColumn?.key,
-  );
-
-  if (!primaryColumn) {
-    return null;
-  }
-
-  return (
-    <div className="editor-responsive-records" aria-label="Records">
-      {rows
-        .filter((row) => !row.isDraft)
-        .map((row) => {
-          const primaryValue = row.values[primaryColumn.key] ?? null;
-          return (
-            <article
-              className={`editor-responsive-record-card${
-                row.id === activeRowId ? " is-active" : ""
-              }`}
-              key={row.id}
-            >
-              <div className="editor-responsive-card-heading">
-                <button
-                  className="editor-responsive-record-title"
-                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
-                  type="button"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="editor-responsive-record-icon"
-                  >
-                    ◌
-                  </span>
-                  <strong>
-                    {displayEditorValue(primaryColumn, primaryValue)}
-                  </strong>
-                </button>
-                <button
-                  aria-label={`Open record ${editorInputValue(primaryValue)}`}
-                  className="editor-responsive-record-chevron"
-                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
-                  type="button"
-                >
-                  ›
-                </button>
-              </div>
-              <div className="editor-responsive-card-fields">
-                {detailColumns.map((column) => {
-                  const value = row.values[column.key] ?? null;
-                  const labels = row.connectionValues?.[column.key] ?? [];
-                  return (
-                    <div className="editor-responsive-field" key={column.key}>
-                      <span className="editor-responsive-field-label">
-                        {column.label}
-                      </span>
-                      <div className="editor-responsive-field-value">
-                        {column.kind === "connection" &&
-                        column.editable !== false ? (
-                          <ConnectionPicker
-                            column={column}
-                            labels={labels}
-                            onCommit={(next) =>
-                              onCommitCell(row.id, column.key, next)
-                            }
-                            onSearch={(search) =>
-                              onSearchConnectionTargets
-                                ? onSearchConnectionTargets(column.key, search)
-                                : Promise.resolve(labels)
-                            }
-                            {...(onCreateConnectionTarget
-                              ? {
-                                  onCreate: (primaryValue: string) =>
-                                    onCreateConnectionTarget(
-                                      column.key,
-                                      primaryValue,
-                                    ),
-                                }
-                              : {})}
-                            value={value}
-                          />
-                        ) : (
-                          responsiveValue(row, column)
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </article>
-          );
-        })}
-    </div>
-  );
 }
 
 interface ActiveCell {
@@ -534,6 +381,10 @@ export function EditorKernel({
   recordCountLabel,
   recordTypeLabel,
   fullRecordPath,
+  loadConnectedRecord,
+  updateConnectedRecord,
+  searchConnectedRecordTargets,
+  createConnectedRecordTarget,
   readOnly = false,
   title,
   variant = "workspace",
@@ -553,6 +404,9 @@ export function EditorKernel({
   const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
+  const [connectedPanel, setConnectedPanel] =
+    useState<EditorRecordContext | null>(null);
+  const [panelHistory, setPanelHistory] = useState<EditorRecordContext[]>([]);
   const [draftActivation, setDraftActivation] = useState<{
     rowIdx: number;
     columnIdx: number;
@@ -568,6 +422,18 @@ export function EditorKernel({
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
     : null;
   const recordColumns = table.recordColumns ?? table.columns;
+  const sourcePanel = panelRow
+    ? {
+        columns: recordColumns,
+        ...(fullRecordPath !== undefined ? { fullRecordPath } : {}),
+        isSource: true,
+        ...(recordTypeLabel !== undefined ? { recordTypeLabel } : {}),
+        row: panelRow,
+        tableName: table.name,
+        viewKey: table.key,
+      }
+    : null;
+  const activePanel = connectedPanel ?? sourcePanel;
   const columnForKey = useCallback(
     (columnKey: string) =>
       recordColumns.find((column) => column.key === columnKey) ?? null,
@@ -578,6 +444,8 @@ export function EditorKernel({
     const origin = panelOrigin;
     setPanelRowId(null);
     setPanelOrigin(null);
+    setConnectedPanel(null);
+    setPanelHistory([]);
     if (!origin) {
       return;
     }
@@ -864,12 +732,132 @@ export function EditorKernel({
           }));
           setPanelOrigin({ rowId, columnKey });
           setPanelRowId(rowId);
+          setConnectedPanel(null);
+          setPanelHistory([]);
         })
         .catch(() => {
           setSaveState({ status: "error", cellLabel: "Record" });
         });
     },
     [adapter],
+  );
+
+  const followConnectedRecord = useCallback(
+    (targetViewKey: string, recordId: string): void => {
+      if (!loadConnectedRecord || !activePanel) {
+        return;
+      }
+      void loadConnectedRecord(targetViewKey, recordId)
+        .then((next) => {
+          if (!next) {
+            setSaveState({ status: "error", cellLabel: "Record" });
+            return;
+          }
+          setPanelHistory((current) => [...current, activePanel]);
+          setConnectedPanel({ ...next, isSource: false });
+        })
+        .catch(() => {
+          setSaveState({ status: "error", cellLabel: "Record" });
+        });
+    },
+    [activePanel, loadConnectedRecord],
+  );
+
+  const backConnectedRecord = useCallback((): void => {
+    const previous = panelHistory[panelHistory.length - 1];
+    if (!previous) {
+      return;
+    }
+    setPanelHistory((current) => current.slice(0, -1));
+    if (previous.isSource) {
+      setConnectedPanel(null);
+    } else {
+      setConnectedPanel(previous);
+    }
+  }, [panelHistory]);
+
+  const commitConnectedCell = useCallback(
+    (rowId: string, columnKey: string, rawValue: unknown): void => {
+      if (!connectedPanel || !updateConnectedRecord) {
+        return;
+      }
+      const column = connectedPanel.columns.find(
+        (candidate) => candidate.key === columnKey,
+      );
+      if (!column || column.editable === false) {
+        return;
+      }
+      let value: EditorValue;
+      try {
+        value = editorValueForColumn(column, rawValue);
+      } catch {
+        setSaveState({ status: "error", cellLabel: column.label });
+        return;
+      }
+      const previousRow = connectedPanel.row;
+      setConnectedPanel((current) =>
+        current
+          ? {
+              ...current,
+              row: {
+                ...current.row,
+                values: { ...current.row.values, [columnKey]: value },
+              },
+            }
+          : current,
+      );
+      void updateConnectedRecord(connectedPanel, column, value)
+        .then((savedRow) => {
+          setConnectedPanel((current) =>
+            current
+              ? {
+                  ...current,
+                  row: {
+                    ...current.row,
+                    values: { ...current.row.values, ...savedRow.values },
+                    ...(savedRow.connectionValues
+                      ? { connectionValues: savedRow.connectionValues }
+                      : {}),
+                  },
+                }
+              : current,
+          );
+          setSaveState({ status: "saved" });
+        })
+        .catch(() => {
+          setConnectedPanel((current) =>
+            current ? { ...current, row: previousRow } : current,
+          );
+          setSaveState({ status: "error", cellLabel: column.label });
+        });
+    },
+    [connectedPanel, updateConnectedRecord],
+  );
+
+  const searchPanelConnectionTargets = useCallback(
+    (columnKey: string, search: string) => {
+      if (!connectedPanel || !searchConnectedRecordTargets) {
+        return Promise.resolve([] as readonly { id: string; label: string }[]);
+      }
+      return searchConnectedRecordTargets(connectedPanel, columnKey, search);
+    },
+    [connectedPanel, searchConnectedRecordTargets],
+  );
+
+  const createPanelConnectionTarget = useCallback(
+    (columnKey: string, primaryValue: string) => {
+      if (!connectedPanel || !createConnectedRecordTarget) {
+        return Promise.reject(
+          new Error("Creating a connected Record is not available."),
+        );
+      }
+      return createConnectedRecordTarget(
+        connectedPanel,
+        columnKey,
+        primaryValue,
+      );
+    },
+    [connectedPanel, createConnectedRecordTarget],
   );
 
   const handleCreateColumn = useCallback(
@@ -1511,31 +1499,6 @@ export function EditorKernel({
             onCopyCapture={handleCopyCapture}
             onPasteCapture={handlePasteCapture}
           >
-            <ResponsiveRecordCards
-              activeRowId={panelRowId}
-              columns={table.columns}
-              onCommitCell={commitCell}
-              {...(adapter.createConnectionTarget
-                ? {
-                    onCreateConnectionTarget: (
-                      columnKey: string,
-                      primaryValue: string,
-                    ) =>
-                      adapter.createConnectionTarget!(columnKey, primaryValue),
-                  }
-                : {})}
-              onOpenRecord={openRecord}
-              {...(adapter.searchConnectionTargets
-                ? {
-                    onSearchConnectionTargets: (
-                      columnKey: string,
-                      search: string,
-                    ) => adapter.searchConnectionTargets!(columnKey, search),
-                  }
-                : {})}
-              primaryColumnKey={table.primaryColumnKey}
-              rows={table.rows}
-            />
             <DataGrid
               aria-label={`${table.name} editor`}
               className="editor-grid"
@@ -1618,29 +1581,47 @@ export function EditorKernel({
             </div>
           ) : null}
         </div>
-        {panelRow ? (
+        {activePanel ? (
           <RecordPanel
-            key={`${panelRow.id}:${JSON.stringify(panelRow.values)}`}
+            key={`${activePanel.viewKey}:${activePanel.row.id}:${JSON.stringify(activePanel.row.values)}`}
             {...(businessSlug !== undefined ? { businessSlug } : {})}
-            columns={recordColumns}
-            {...(fullRecordPath !== undefined ? { fullRecordPath } : {})}
+            columns={activePanel.columns}
+            {...(activePanel.fullRecordPath !== undefined
+              ? { fullRecordPath: activePanel.fullRecordPath }
+              : {})}
+            {...(panelHistory.length > 0
+              ? { onBack: backConnectedRecord }
+              : {})}
             onClose={closePanel}
-            onCommitCell={commitCell}
-            onSearchConnectionTargets={(columnKey, search) =>
-              adapter.searchConnectionTargets
-                ? adapter.searchConnectionTargets(columnKey, search)
-                : Promise.resolve([])
+            onCommitCell={connectedPanel ? commitConnectedCell : commitCell}
+            onFollowConnectedRecord={
+              loadConnectedRecord ? followConnectedRecord : undefined
             }
-            onCreateConnectionTarget={(columnKey, primaryValue) =>
-              adapter.createConnectionTarget
-                ? adapter.createConnectionTarget(columnKey, primaryValue)
-                : Promise.reject(
-                    new Error("Creating a connected Record is not available."),
-                  )
+            onSearchConnectionTargets={
+              connectedPanel
+                ? searchPanelConnectionTargets
+                : (columnKey, search) =>
+                    adapter.searchConnectionTargets
+                      ? adapter.searchConnectionTargets(columnKey, search)
+                      : Promise.resolve([])
             }
-            row={panelRow}
-            {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
-            tableName={table.name}
+            onCreateConnectionTarget={
+              connectedPanel
+                ? createPanelConnectionTarget
+                : (columnKey, primaryValue) =>
+                    adapter.createConnectionTarget
+                      ? adapter.createConnectionTarget(columnKey, primaryValue)
+                      : Promise.reject(
+                          new Error(
+                            "Creating a connected Record is not available.",
+                          ),
+                        )
+            }
+            row={activePanel.row}
+            {...(activePanel.recordTypeLabel !== undefined
+              ? { recordTypeLabel: activePanel.recordTypeLabel }
+              : {})}
+            tableName={activePanel.tableName}
           />
         ) : null}
       </div>

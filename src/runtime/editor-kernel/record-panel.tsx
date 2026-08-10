@@ -17,8 +17,11 @@ interface RecordPanelProps {
   recordTypeLabel?: string;
   row: EditorRow;
   tableName: string;
+  onBack?: (() => void) | undefined;
   onClose: () => void;
   onCommitCell: (rowId: string, columnKey: string, value: EditorValue) => void;
+  onFollowConnectedRecord?:
+    ((targetViewKey: string, recordId: string) => void) | undefined;
   onSearchConnectionTargets?:
     | ((
         columnKey: string,
@@ -208,8 +211,10 @@ export function RecordPanel({
   recordTypeLabel,
   row,
   tableName,
+  onBack,
   onClose,
   onCommitCell,
+  onFollowConnectedRecord,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
 }: Readonly<RecordPanelProps>): React.ReactNode {
@@ -258,6 +263,15 @@ export function RecordPanel({
     <aside aria-label={`${tableName} record`} className="editor-record-panel">
       <div className="editor-record-panel-header">
         <div>
+          {onBack ? (
+            <button
+              className="editor-record-panel-back"
+              onClick={onBack}
+              type="button"
+            >
+              ← Back
+            </button>
+          ) : null}
           <h2>{recordTitle}</h2>
           <p className="editor-panel-table-name">
             {recordTypeLabel ?? tableName} record
@@ -350,14 +364,29 @@ export function RecordPanel({
                     {labels.length > 0 ? (
                       <div className="editor-record-connection-values">
                         {labels.map((item, index) => {
+                          const targetViewKey =
+                            column.connection?.targetViewKey;
                           const href = connectedRecordHref(
                             businessSlug,
-                            column.connection?.targetViewKey,
+                            targetViewKey,
                             item.id,
                           );
                           return (
                             <span key={item.id}>
-                              {href ? (
+                              {targetViewKey && onFollowConnectedRecord ? (
+                                <button
+                                  className="editor-record-connection-link"
+                                  onClick={() =>
+                                    onFollowConnectedRecord(
+                                      targetViewKey,
+                                      item.id,
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {item.label}
+                                </button>
+                              ) : href ? (
                                 <a
                                   className="editor-record-connection-link"
                                   href={href}
@@ -372,7 +401,8 @@ export function RecordPanel({
                           );
                         })}
                       </div>
-                    ) : column.editable !== false ? (
+                    ) : null}
+                    {column.editable !== false ? (
                       <ConnectionPicker
                         column={column}
                         labels={labels}
@@ -395,9 +425,9 @@ export function RecordPanel({
                           : {})}
                         value={row.values[column.key] ?? []}
                       />
-                    ) : (
+                    ) : labels.length === 0 ? (
                       <span className="editor-record-connection-values">—</span>
-                    )}
+                    ) : null}
                   </div>
                   <span
                     aria-hidden="true"

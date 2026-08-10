@@ -135,7 +135,65 @@ describe("Lenni unified workspace presentation", () => {
 
     expect(html).toContain("Connected records");
     expect(html).toContain("Beth Smith");
+    expect(html).toContain('aria-label="Edit Customer"');
     expect(html).toContain("/app/bakery/workspace/customers/");
     expect(html).toContain("Open full record");
+  });
+
+  it("keeps connected-record navigation inside the drawer when supported", () => {
+    const html = renderToStaticMarkup(
+      createElement(RecordPanel, {
+        businessSlug: "bakery",
+        columns: [
+          {
+            key: "name",
+            label: "Name",
+            kind: "text",
+            primary: true,
+            editable: false,
+            width: 180,
+          },
+          {
+            key: "customer",
+            label: "Customer",
+            kind: "connection",
+            width: 180,
+            connection: {
+              relationshipKey: "customer",
+              direction: "source",
+              multiple: false,
+              targetObjectKey: "customer",
+              targetViewKey: "customers",
+            },
+          },
+        ],
+        fullRecordPath: "/app/bakery/workspace/appointments",
+        onBack: () => undefined,
+        onClose: () => undefined,
+        onCommitCell: () => undefined,
+        onFollowConnectedRecord: () => undefined,
+        recordTypeLabel: "Appointment",
+        row: {
+          id: "30000000-0000-4000-8000-000000000001",
+          values: {
+            name: "Milo",
+            customer: ["40000000-0000-4000-8000-000000000001"],
+          },
+          connectionValues: {
+            customer: [
+              {
+                id: "40000000-0000-4000-8000-000000000001",
+                label: "Beth Smith",
+              },
+            ],
+          },
+        },
+        tableName: "Appointments",
+      } as never),
+    );
+
+    expect(html).toContain("← Back");
+    expect(html).toContain(">Beth Smith</button>");
+    expect(html).not.toContain("/app/bakery/workspace/customers/");
   });
 });

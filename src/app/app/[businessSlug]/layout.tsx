@@ -188,10 +188,6 @@ export default async function TenantLayout({
               Sign out
             </button>
           </form>
-          <div aria-label="Workspace is live" className="workspace-live-badge">
-            <span aria-hidden="true" />
-            Live
-          </div>
         </div>
       </aside>
 
