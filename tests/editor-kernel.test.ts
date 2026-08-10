@@ -155,7 +155,7 @@ describe("editor kernel contracts", () => {
     expect(savedMarkup).not.toMatch(/Save|Cancel/);
   });
 
-  it("renders record properties as one static value per row", () => {
+  it("renders a titled record panel with static property values", () => {
     const table = createMockTableAdapter({ delayMs: 0 }).getTable();
     const row = table.rows[0];
     if (!row) {
@@ -172,7 +172,7 @@ describe("editor kernel contracts", () => {
       }),
     );
 
-    expect(markup.match(/Amelia Carter/g)).toHaveLength(1);
+    expect(markup.match(/Amelia Carter/g)).toHaveLength(2);
     expect(markup).toContain("editor-record-property-label");
     expect(markup).not.toContain("editor-panel-inline-editor");
     expect(markup).not.toContain("<small");

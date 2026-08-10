@@ -77,11 +77,26 @@ function valueForRow(row: EditorRow, column: EditorColumn): EditorValue {
   return row.values[column.key] ?? null;
 }
 
-function connectionDisplay(row: EditorRow, column: EditorColumn): string {
+function connectionContent(
+  row: EditorRow,
+  column: EditorColumn,
+): React.ReactNode {
   const labels = row.connectionValues?.[column.key] ?? [];
-  return labels.length > 0
-    ? labels.map((value) => value.label).join(", ")
-    : "—";
+  if (labels.length === 0) {
+    return <span className="editor-connection-empty">—</span>;
+  }
+  return (
+    <span className="editor-connection-pills">
+      {labels.map((item) => (
+        <span className="editor-connection-pill" key={item.id}>
+          <span>{item.label}</span>
+          <span aria-hidden="true" className="editor-connection-pill-link">
+            ↗
+          </span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function statusChipTone(
@@ -604,10 +619,7 @@ export function EditorCell({
     );
   }
 
-  const display =
-    column.kind === "connection"
-      ? connectionDisplay(row, column)
-      : displayEditorValue(column, value);
+  const display = displayEditorValue(column, value);
   const content = (
     <span
       className={
@@ -616,9 +628,11 @@ export function EditorCell({
           : undefined
       }
     >
-      {column.kind === "url" &&
-      typeof value === "string" &&
-      /^https?:\/\/\S+$/i.test(value) ? (
+      {column.kind === "connection" ? (
+        connectionContent(row, column)
+      ) : column.kind === "url" &&
+        typeof value === "string" &&
+        /^https?:\/\/\S+$/i.test(value) ? (
         <a href={value} rel="noreferrer" target="_blank">
           {display}
         </a>

@@ -71,10 +71,9 @@ export function ConnectionPicker({
       setOpen(false);
     }
   };
-  const display = (labels ?? [])
-    .filter((item) => selectedSet.has(item.id))
-    .map((item) => item.label)
-    .join(", ");
+  const selectedLabels = (labels ?? []).filter((item) =>
+    selectedSet.has(item.id),
+  );
   const create = async (): Promise<void> => {
     if (!onCreate || !query.trim() || creating) return;
     setCreating(true);
@@ -108,7 +107,26 @@ export function ConnectionPicker({
         ref={triggerRef}
         type="button"
       >
-        {display || "Connect…"}
+        {selectedLabels.length > 0 ? (
+          <span className="editor-connection-selected-pills">
+            {selectedLabels.map((item) => (
+              <span className="editor-connection-pill" key={item.id}>
+                <span>{item.label}</span>
+                <span
+                  aria-hidden="true"
+                  className="editor-connection-pill-link"
+                >
+                  ↗
+                </span>
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className="editor-connection-placeholder">Connect…</span>
+        )}
+        <span aria-hidden="true" className="editor-connection-trigger-chevron">
+          ⌄
+        </span>
       </button>
       {open ? (
         <div className="editor-connection-popover" role="listbox">
@@ -143,14 +161,16 @@ export function ConnectionPicker({
               </button>
             );
           })}
-          {onCreate && query.trim() ? (
+          {onCreate ? (
             <button
               className="editor-connection-create"
-              disabled={creating}
+              disabled={!query.trim() || creating}
               onClick={() => void create()}
               type="button"
             >
-              {creating ? "Creating…" : `Create “${query.trim()}”`}
+              {creating
+                ? "Creating…"
+                : `+ Create ${column.label.toLocaleLowerCase("en")}`}
             </button>
           ) : null}
           <button

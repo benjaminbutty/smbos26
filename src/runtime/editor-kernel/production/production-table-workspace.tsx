@@ -15,24 +15,30 @@ export interface ProductionTableWorkspaceProps {
   table: EditorTable;
   capabilities: EditorCapabilities;
   actions: ProductionTableAdapterActions;
+  businessSlug?: string;
   headerContent?: ReactNode;
   currentness?: ProductionConfigurationCurrentness | undefined;
   creationFallbackHref?: string | undefined;
   newRecordLabel?: string;
+  recordTypeLabel?: string;
   recordCountLabel?: string;
+  fullRecordPath?: string;
   readOnly?: boolean;
   surface?: "workspace" | "embedded";
 }
 
 export function ProductionTableWorkspace({
   actions,
+  businessSlug,
   capabilities,
   creationFallbackHref,
   currentness,
   headerContent,
   newRecordLabel,
+  recordTypeLabel,
   readOnly = false,
   recordCountLabel,
+  fullRecordPath,
   surface = "workspace",
   table,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
@@ -61,11 +67,14 @@ export function ProductionTableWorkspace({
     <EditorKernel
       adapter={adapter}
       capabilities={capabilities}
+      {...(businessSlug !== undefined ? { businessSlug } : {})}
       footer={footer}
       headerContent={headerContent}
       {...(newRecordLabel !== undefined ? { newRecordLabel } : {})}
       onStructureChanged={() => router.refresh()}
       {...(recordCountLabel !== undefined ? { recordCountLabel } : {})}
+      {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
+      {...(fullRecordPath !== undefined ? { fullRecordPath } : {})}
       readOnly={readOnly}
       variant={surface}
     />

@@ -29,6 +29,8 @@ export interface ProductionTableMappingInput {
   bundle: ExperienceViewBundle;
   /** Present for a configured edit Form; absent means metadata-derived rules. */
   editFormFieldKeys?: readonly string[] | undefined;
+  /** The primary internal Table screen for each connected object, when available. */
+  targetViewKeyByObjectId?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface ProductionTableMapping {
@@ -170,6 +172,7 @@ function relationshipLabel(
 function mapConnection(
   column: Extract<TableViewColumn, { kind: "connection" }>,
   bundle: ExperienceViewBundle,
+  targetViewKeyByObjectId?: Readonly<Record<string, string>>,
 ): EditorColumn {
   const relationship = (bundle.relationships ?? []).find(
     (candidate) =>
@@ -198,6 +201,9 @@ function mapConnection(
       direction: column.direction,
       multiple,
       targetObjectKey,
+      ...(targetViewKeyByObjectId?.[targetObjectKey]
+        ? { targetViewKey: targetViewKeyByObjectId[targetObjectKey] }
+        : {}),
     },
     width: 220,
   };
@@ -294,6 +300,7 @@ export function mapProductionRecordToEditorRow(
 export function mapExperienceViewBundleToEditorTable({
   bundle,
   editFormFieldKeys,
+  targetViewKeyByObjectId,
 }: ProductionTableMappingInput): ProductionTableMapping {
   if (
     bundle.definition.view_type !== "table" ||
@@ -344,7 +351,7 @@ export function mapExperienceViewBundleToEditorTable({
       (column): column is Extract<TableViewColumn, { kind: "connection" }> =>
         column.kind === "connection",
     )
-    .map((column) => mapConnection(column, bundle));
+    .map((column) => mapConnection(column, bundle, targetViewKeyByObjectId));
   const allColumns = [...fieldColumns, ...connectionColumns];
   const columns = config.columns.map((configuredColumn) => {
     const key =

@@ -74,7 +74,25 @@ export default async function WorkspaceScreenPage({
   }
 
   if (bundle.definition.view_type === "table") {
-    const tableViews = (await experience.listTableViews())
+    const allTableViews = await experience.listTableViews();
+    const targetViewKeyByObjectId = [...allTableViews]
+      .sort((left, right) => {
+        const leftConfig = normalizeTableViewConfig(left.config_json);
+        const rightConfig = normalizeTableViewConfig(right.config_json);
+        return (
+          (leftConfig.role === "primary" ? 0 : 1) -
+            (rightConfig.role === "primary" ? 0 : 1) ||
+          left.name.localeCompare(right.name) ||
+          left.key.localeCompare(right.key)
+        );
+      })
+      .reduce<Record<string, string>>((result, view) => {
+        if (!result[view.object_definition_id]) {
+          result[view.object_definition_id] = view.key;
+        }
+        return result;
+      }, {});
+    const tableViews = allTableViews
       .filter(
         (view) =>
           view.object_definition_id === bundle.definition.object_definition_id,
@@ -115,6 +133,7 @@ export default async function WorkspaceScreenPage({
         const mapped = mapExperienceViewBundleToEditorTable({
           bundle,
           editFormFieldKeys,
+          targetViewKeyByObjectId,
         });
         const availability = await getDirectTableRowCreationAvailability(
           supabase,
@@ -165,6 +184,7 @@ export default async function WorkspaceScreenPage({
         {error ? <Notice kind="error">{error}</Notice> : null}
         {message ? <Notice kind="message">{message}</Notice> : null}
         <ProductionTableWorkspace
+          businessSlug={businessSlug}
           actions={{
             addColumn: addProductionTableColumnAction.bind(
               null,
@@ -276,7 +296,9 @@ export default async function WorkspaceScreenPage({
             </>
           }
           newRecordLabel={`New ${bundle.object.singular_label.toLocaleLowerCase("en")}`}
+          recordTypeLabel={bundle.object.singular_label}
           recordCountLabel={`${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`}
+          fullRecordPath={`/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}`}
           table={mapped.table}
         />
       </section>

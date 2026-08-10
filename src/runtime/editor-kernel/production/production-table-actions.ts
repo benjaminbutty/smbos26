@@ -434,6 +434,23 @@ async function loadMappedTable(
 ) {
   const experience = createExperienceService(supabase, { businessId });
   const bundle = await experience.loadView(viewKey, "internal");
+  const targetViewKeyByObjectId = (await experience.listTableViews())
+    .sort((left, right) => {
+      const leftConfig = normalizeTableViewConfig(left.config_json);
+      const rightConfig = normalizeTableViewConfig(right.config_json);
+      return (
+        (leftConfig.role === "primary" ? 0 : 1) -
+          (rightConfig.role === "primary" ? 0 : 1) ||
+        left.name.localeCompare(right.name) ||
+        left.key.localeCompare(right.key)
+      );
+    })
+    .reduce<Record<string, string>>((result, view) => {
+      if (!result[view.object_definition_id]) {
+        result[view.object_definition_id] = view.key;
+      }
+      return result;
+    }, {});
   const config = normalizeTableViewConfig(bundle.config);
   let editFormFieldKeys: readonly string[] | undefined;
   if (config.edit_form_key) {
@@ -455,6 +472,7 @@ async function loadMappedTable(
   return mapExperienceViewBundleToEditorTable({
     bundle,
     editFormFieldKeys,
+    targetViewKeyByObjectId,
   });
 }
 

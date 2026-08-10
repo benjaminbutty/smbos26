@@ -51,6 +51,7 @@ export interface EditorColumn {
     direction: "source" | "target";
     multiple: boolean;
     targetObjectKey: string;
+    targetViewKey?: string;
   };
   width: number;
 }
