@@ -382,23 +382,20 @@ export function TableViewControls({
   return (
     <section aria-label="Saved view controls" className="table-view-controls">
       <div className="table-view-query-summary">
-        <span>
-          {config.filters.length > 0
-            ? `${config.filters.length} filter${config.filters.length === 1 ? "" : "s"}`
-            : "No filters"}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>{config.sorts.length > 0 ? "Sorted" : "Default order"}</span>
-        <span aria-hidden="true">·</span>
-        <span>{config.group ? "Grouped" : "No grouping"}</span>
         {currentness ? (
           <button
             aria-expanded={open}
+            aria-label="Open filter, sort and group controls"
             className="table-view-query-button"
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
-            Filter, sort, group
+            <span>Filter {config.filters.length}</span>
+            <span>Sort {config.sorts.length}</span>
+            <span>Group{config.group ? " 1" : ""}</span>
+            <span aria-hidden="true" className="table-view-controls-chevron">
+              ⌄
+            </span>
           </button>
         ) : null}
       </div>

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { useActionState } from "react";
 
 import type { DirectTableFormState } from "../views/direct-actions";
@@ -28,9 +28,18 @@ export function TablesSidebar({
   currentness,
   tables,
 }: Readonly<TablesSidebarProps>): ReactNode {
-  const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(action, initialState);
   const pathname = usePathname();
+  const requestedOpen = useSearchParams().get("new") === "table";
+  const [open, setOpen] = useState(requestedOpen);
+
+  useEffect(() => {
+    if (!requestedOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      setOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [requestedOpen]);
 
   return (
     <section
@@ -104,6 +113,9 @@ export function TablesSidebar({
                 href={href}
                 key={table.key}
               >
+                <span aria-hidden="true" className="workspace-nav-icon">
+                  ▦
+                </span>
                 {table.name}
               </Link>
             );

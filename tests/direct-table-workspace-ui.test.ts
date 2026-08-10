@@ -11,6 +11,7 @@ import { DirectTableWorkspace } from "../src/runtime/views/direct-table-workspac
 vi.mock("server-only", () => ({}));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/example/workspace/contacts",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const businessId = "10000000-0000-4000-8000-000000000001";

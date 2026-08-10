@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import type { DirectPageActionResult } from "../pages/direct-actions";
 
@@ -25,9 +25,18 @@ export function PagesSidebar({
 }: Readonly<PagesSidebarProps>): ReactNode {
   const pathname = usePathname();
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const requestedOpen = useSearchParams().get("new") === "page";
+  const [open, setOpen] = useState(requestedOpen);
+
+  useEffect(() => {
+    if (!requestedOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      setOpen(true);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [requestedOpen]);
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -103,6 +112,9 @@ export function PagesSidebar({
                 href={href}
                 key={page.id}
               >
+                <span aria-hidden="true" className="workspace-nav-icon">
+                  ▤
+                </span>
                 {page.title}
               </Link>
             );

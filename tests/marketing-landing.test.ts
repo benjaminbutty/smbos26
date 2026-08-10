@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import HomePage from "../src/app/page";
-import { marketingMetadata } from "../src/app/layout";
+import { marketingMetadata } from "../src/app/marketing-metadata";
 
 describe("public marketing landing page", () => {
   it("renders the brief-led hero, sections and early-access path", () => {
