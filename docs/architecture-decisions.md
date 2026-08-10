@@ -2807,3 +2807,11 @@ Record-panel behavior but suppress all structural controls and retain an
 sorting, grouping, formulas, workflows, public surfaces, AI and Builder Table
 actions remain explicitly deferred. The interaction engine is implemented;
 final unified Lenni visual refinement remains planned.
+
+### ADR-038 implementation note — superseded deferred items
+
+The later Internal Workspace Engine work supersedes only the ADR-038 deferment
+of Connections, saved Views, filtering, sorting and grouping. It does so through
+the existing generic primitives and typed M5/operational boundaries; formulas,
+workflows, public editing, collaboration and AI/Builder Table changes remain
+deferred. See ADR-039 and `docs/INTERNAL-WORKSPACE-ENGINE.md`.

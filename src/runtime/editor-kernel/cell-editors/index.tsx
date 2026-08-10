@@ -21,6 +21,151 @@ function rowWithValue(
   return { ...row, values: { ...row.values, [columnKey]: value } };
 }
 
+export function ConnectionPicker({
+  column,
+  labels,
+  onCancel,
+  onCommit,
+  onSearch,
+  onCreate,
+  value,
+}: Readonly<{
+  column: EditorColumn;
+  labels?: readonly { id: string; label: string }[] | undefined;
+  onCancel?: () => void;
+  onCommit: (value: readonly string[]) => void;
+  onSearch: (
+    search: string,
+  ) => Promise<readonly { id: string; label: string }[]>;
+  onCreate?: (primaryValue: string) => Promise<{ id: string; label: string }>;
+  value: EditorValue;
+}>): React.ReactNode {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [results, setResults] = useState<
+    readonly { id: string; label: string }[]
+  >(labels ?? []);
+  const selected = Array.isArray(value) ? value : [];
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const selectedSet = new Set(selected);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void onSearch(query)
+      .then((next) => {
+        if (!cancelled) setResults(next);
+      })
+      .catch(() => {
+        if (!cancelled) setResults([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onSearch, open, query]);
+
+  const commit = (next: readonly string[]): void => {
+    onCommit(next);
+    if (!column.connection?.multiple) {
+      setOpen(false);
+    }
+  };
+  const display = (labels ?? [])
+    .filter((item) => selectedSet.has(item.id))
+    .map((item) => item.label)
+    .join(", ");
+  const create = async (): Promise<void> => {
+    if (!onCreate || !query.trim() || creating) return;
+    setCreating(true);
+    try {
+      const created = await onCreate(query.trim());
+      commit(
+        column.connection?.multiple ? [...selected, created.id] : [created.id],
+      );
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="editor-connection-picker">
+      <button
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label={`Edit ${column.label}`}
+        className="editor-connection-trigger"
+        onClick={() => setOpen((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel?.();
+          } else if (event.key === "Backspace" || event.key === "Delete") {
+            event.preventDefault();
+            commit([]);
+          }
+        }}
+        ref={triggerRef}
+        type="button"
+      >
+        {display || "Connect…"}
+      </button>
+      {open ? (
+        <div className="editor-connection-popover" role="listbox">
+          <input
+            aria-label={`Search ${column.label}`}
+            autoFocus
+            className="editor-choice-search"
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            placeholder="Search records"
+            value={query}
+          />
+          {results.map((result) => {
+            const active = selectedSet.has(result.id);
+            return (
+              <button
+                aria-selected={active}
+                className={`editor-connection-option${active ? " is-selected" : ""}`}
+                key={result.id}
+                onClick={() => {
+                  const next = active
+                    ? selected.filter((id) => id !== result.id)
+                    : column.connection?.multiple
+                      ? [...selected, result.id]
+                      : [result.id];
+                  commit(next);
+                }}
+                role="option"
+                type="button"
+              >
+                <span>{result.label}</span>
+                {active ? <span aria-hidden="true">✓</span> : null}
+              </button>
+            );
+          })}
+          {onCreate && query.trim() ? (
+            <button
+              className="editor-connection-create"
+              disabled={creating}
+              onClick={() => void create()}
+              type="button"
+            >
+              {creating ? "Creating…" : `Create “${query.trim()}”`}
+            </button>
+          ) : null}
+          <button
+            className="editor-choice-clear"
+            onClick={() => commit([])}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function useFocusAndSelect(
   ref: RefObject<HTMLInputElement | HTMLSelectElement | null>,
   shouldSelect = true,
@@ -100,6 +245,51 @@ function TextLikeEditor({
         onRowChange(rowWithValue(row, columnDefinition.key, next));
       }}
       type={inputType}
+      value={value}
+    />
+  );
+}
+
+function ConnectionEditor({
+  columnDefinition,
+  onRowChange,
+  row,
+  onSearchConnectionTargets,
+  onCreateConnectionTarget,
+}: CellEditorProps & {
+  onSearchConnectionTargets?:
+    | ((
+        columnKey: string,
+        search: string,
+      ) => Promise<readonly { id: string; label: string }[]>)
+    | undefined;
+  onCreateConnectionTarget?:
+    | ((
+        columnKey: string,
+        primaryValue: string,
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
+}): React.ReactNode {
+  const value = row.values[columnDefinition.key] ?? [];
+  return (
+    <ConnectionPicker
+      column={columnDefinition}
+      labels={row.connectionValues?.[columnDefinition.key]}
+      onCancel={() => undefined}
+      onCommit={(next) =>
+        onRowChange(rowWithValue(row, columnDefinition.key, next), true)
+      }
+      onSearch={(search) =>
+        onSearchConnectionTargets
+          ? onSearchConnectionTargets(columnDefinition.key, search)
+          : Promise.resolve(row.connectionValues?.[columnDefinition.key] ?? [])
+      }
+      {...(onCreateConnectionTarget
+        ? {
+            onCreate: (primaryValue: string) =>
+              onCreateConnectionTarget(columnDefinition.key, primaryValue),
+          }
+        : {})}
       value={value}
     />
   );
@@ -377,8 +567,25 @@ function DateEditor({
   );
 }
 
-export function CellEditor(props: CellEditorProps): React.ReactNode {
+export function CellEditor(
+  props: CellEditorProps & {
+    onSearchConnectionTargets?:
+      | ((
+          columnKey: string,
+          search: string,
+        ) => Promise<readonly { id: string; label: string }[]>)
+      | undefined;
+    onCreateConnectionTarget?:
+      | ((
+          columnKey: string,
+          primaryValue: string,
+        ) => Promise<{ id: string; label: string }>)
+      | undefined;
+  },
+): React.ReactNode {
   switch (props.columnDefinition.kind) {
+    case "connection":
+      return <ConnectionEditor {...props} />;
     case "number":
     case "currency":
       return <NumberEditor {...props} />;

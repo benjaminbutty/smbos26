@@ -12,5 +12,8 @@ SMBOS v0 is a manual-first operating workspace for non-technical small-business 
 8. Public website publishing and public Record exposure are later capabilities with separate security boundaries; they are not implied by an internal Page.
 9. Location is optional and contextual, not a foundational object that every business must adopt.
 10. Preorder is a regression and proof slice for the platform, not the product category.
+11. The internal workspace is manual-first: direct owner actions and future AI
+    assistance use the same typed, bounded configuration intents and the same
+    deterministic runtime.
 
 The product direction is therefore small, composable, and evidence-led: make the manual workspace reliable first, then add bounded assistance without changing the runtime contract.

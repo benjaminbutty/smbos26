@@ -1245,12 +1245,24 @@
 }
 
 .editor-choice-picker,
-.editor-date-editor {
+.editor-date-editor,
+.editor-connection-picker {
   position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
   max-width: 100%;
+}
+
+.editor-connection-trigger {
+  min-width: 6rem;
+  max-width: 14rem;
+  overflow: hidden;
+  color: var(--lenni-text);
+  background: transparent;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-choice-trigger {
@@ -1276,6 +1288,41 @@
   border: 1px solid var(--lenni-border);
   border-radius: 0.35rem;
   box-shadow: 0 0.65rem 1.5rem rgba(23, 26, 29, 0.12);
+}
+
+.editor-connection-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  display: grid;
+  min-width: 13rem;
+  max-width: 19rem;
+  gap: 0.2rem;
+  padding: 0.35rem;
+  background: #fff;
+  border: 1px solid var(--lenni-border);
+  border-radius: 0.35rem;
+  box-shadow: 0 0.65rem 1.5rem rgba(23, 26, 29, 0.12);
+}
+
+.editor-connection-option {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+}
+
+.editor-connection-option.is-selected {
+  color: var(--lenni-coral-700);
+  background: var(--coral-50, #fff1ef);
+}
+
+.editor-connection-create {
+  border-top: 1px solid var(--lenni-border);
+  color: var(--lenni-coral-700);
+  text-align: left;
 }
 
 .editor-choice-option {
@@ -2442,6 +2489,105 @@ textarea {
   margin: 0 0 0.75rem;
   color: var(--accent);
   font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.table-view-tabs {
+  display: flex;
+  gap: 0.45rem;
+  margin: 0 0 0.75rem;
+  overflow-x: auto;
+}
+
+.table-view-tab {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.table-view-tab:hover,
+.table-view-tab.is-active {
+  color: var(--foreground);
+  background: var(--accent-soft);
+  border-color: rgba(34, 101, 74, 0.25);
+}
+
+.table-view-tab small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.table-view-controls {
+  margin: 0 0 0.9rem;
+}
+
+.table-view-query-summary {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.table-view-query-button {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.table-view-query-popover {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  box-shadow: 0 0.8rem 2rem rgb(0 0 0 / 0.12);
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+  max-width: 28rem;
+  padding: 0.8rem;
+}
+
+.table-view-query-popover label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.table-view-query-popover input,
+.table-view-query-popover select {
+  min-height: 2.35rem;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: #fff;
+}
+
+.table-view-connection-filter {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.table-view-connection-selected,
+.table-view-connection-result {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: #fff;
+  text-align: left;
+}
+
+.table-view-connection-selected {
+  color: var(--accent);
   font-weight: 700;
 }
 

@@ -24,6 +24,7 @@ import {
 import {
   addProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
+  createProductionTableConnectionTargetAction,
   createProductionTableRowAction,
   insertProductionTableColumnAction,
   pasteProductionTableAction,
@@ -31,7 +32,9 @@ import {
   renameProductionTableAction,
   renameProductionTableColumnAction,
   reorderProductionTableColumnsAction,
+  searchProductionTableConnectionTargetsAction,
   updateProductionTableCellAction,
+  updateProductionTableConnectionAction,
   updateProductionTableColumnOptionsAction,
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
@@ -46,7 +49,9 @@ import {
 import { PageRenderer } from "../../../../../runtime/pages/page-renderer";
 import { updateInlineRecordCell } from "../../../../../runtime/views/actions";
 import type { EditorCapabilities } from "../../../../../runtime/editor-kernel/contracts";
+import type { ProductionTableAdapterActions } from "../../../../../runtime/editor-kernel/production/production-table-adapter";
 import type { PageEditorViewEmbed } from "../../../../../runtime/page-editor/extensions";
+import type { PageRendererTableEmbed } from "../../../../../runtime/pages/page-renderer";
 
 interface InternalPageProps {
   params: Promise<{ businessSlug: string; pageSlug: string }>;
@@ -78,6 +83,68 @@ function rowCreationCapabilities(
   };
 }
 
+function productionTableActions(
+  businessSlug: string,
+  viewKey: string,
+): ProductionTableAdapterActions {
+  return {
+    addColumn: addProductionTableColumnAction.bind(null, businessSlug, viewKey),
+    insertColumn: insertProductionTableColumnAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    changeColumnType: changeProductionTableColumnTypeAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    createRow: createProductionTableRowAction.bind(null, businessSlug, viewKey),
+    openRecord: readProductionTableRecordAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    paste: pasteProductionTableAction.bind(null, businessSlug, viewKey),
+    renameColumn: renameProductionTableColumnAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    renameTable: renameProductionTableAction.bind(null, businessSlug, viewKey),
+    reorderColumns: reorderProductionTableColumnsAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    updateCell: updateProductionTableCellAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    updateConnection: updateProductionTableConnectionAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    searchConnectionTargets: searchProductionTableConnectionTargetsAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    createConnectionTarget: createProductionTableConnectionTargetAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    updateColumnOptions: updateProductionTableColumnOptionsAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+  };
+}
+
 export default async function InternalPage({
   params,
   searchParams,
@@ -94,21 +161,17 @@ export default async function InternalPage({
     readSearchParam(searchParams, "message"),
   ]);
 
-  const { page, views, forms, navigation } = await (async () => {
+  const { page, views, forms, tableViews } = await (async () => {
     try {
       const page = await experience.loadPage(pageSlug, "internal");
-      const navigation = await experience.listNavigation();
+      const tableViews = await experience.listTableViews();
       const referencedViewKeys = page.layout.blocks.flatMap((block) =>
         block.type === "view" ? [block.view_key] : [],
       );
       const viewKeys = [
         ...new Set([
           ...referencedViewKeys,
-          ...(canEdit
-            ? navigation.views
-                .filter((view) => view.view_type === "table")
-                .map((view) => view.key)
-            : []),
+          ...(canEdit ? tableViews.map((view) => view.key) : []),
         ]),
       ];
       const formKeys = [
@@ -159,13 +222,48 @@ export default async function InternalPage({
           };
         }
       }
-      return { forms, navigation, page, views };
+      return { forms, page, tableViews, views };
     } catch {
       notFound();
     }
   })();
 
   if (!canEdit) {
+    const tableEmbeds: Record<string, PageRendererTableEmbed> = {};
+    for (const [key, bundle] of Object.entries(views)) {
+      if (bundle.definition.view_type !== "table") continue;
+      try {
+        const mapped = mapExperienceViewBundleToEditorTable({ bundle });
+        const availability = await getDirectTableRowCreationAvailability(
+          supabase,
+          { businessId: tenant.business.id },
+          key,
+        );
+        const primary = mapped.table.columns.find(
+          (column) => column.key === mapped.table.primaryColumnKey,
+        );
+        tableEmbeds[key] = {
+          actions: productionTableActions(businessSlug, key),
+          capabilities: {
+            ...rowCreationCapabilities(
+              availability,
+              primary?.editable !== false,
+            ),
+            canAddColumns: false,
+            canInsertColumns: false,
+            canRenameColumns: false,
+            canChangeColumnTypes: false,
+            canUpdateColumnOptions: false,
+            canReorderColumns: false,
+            canResizeColumns: false,
+            canRenameTable: false,
+          },
+          table: mapped.table,
+        };
+      } catch {
+        // Keep the existing read-only ViewRenderer fallback for an invalid embed.
+      }
+    }
     return (
       <section className="tenant-content runtime-page">
         <header className="page-preview-header">
@@ -184,6 +282,7 @@ export default async function InternalPage({
           forms={forms}
           inlineEditAction={updateInlineRecordCell.bind(null, businessSlug)}
           layout={page.layout}
+          tableEmbeds={tableEmbeds}
           views={views}
         />
       </section>
@@ -296,6 +395,23 @@ export default async function InternalPage({
               businessSlug,
               key,
             ),
+            updateConnection: updateProductionTableConnectionAction.bind(
+              null,
+              businessSlug,
+              key,
+            ),
+            searchConnectionTargets:
+              searchProductionTableConnectionTargetsAction.bind(
+                null,
+                businessSlug,
+                key,
+              ),
+            createConnectionTarget:
+              createProductionTableConnectionTargetAction.bind(
+                null,
+                businessSlug,
+                key,
+              ),
             updateColumnOptions: updateProductionTableColumnOptionsAction.bind(
               null,
               businessSlug,
@@ -310,7 +426,7 @@ export default async function InternalPage({
   }
 
   const editorProps: PageEditorProps = {
-    availableViews: navigation.views.map((view) => ({
+    availableViews: tableViews.map((view) => ({
       key: view.key,
       name: view.name,
       viewType: view.view_type,

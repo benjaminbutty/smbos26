@@ -11,19 +11,23 @@ import {
 } from "../configuration/definition-source";
 import {
   experienceAudienceSchema,
+  deterministicTableViewRoles,
   formConfigSchema,
+  normalizeTableViewConfig,
   pageLayoutSchema,
   parseViewConfig,
   type ExperienceAudience,
   type FormConfig,
   type PageLayout,
   type TableViewConfig,
+  type TableViewConfigV2,
   type ViewConfig,
 } from "./schemas";
 import {
   inlineEditableFieldKeys,
   type InlineEditEligibility,
 } from "./inline-edit";
+import { queryTableViewRecords, type TableQueryResult } from "./table-query";
 
 export class ExperienceServiceError extends Error {
   readonly code: string | null;
@@ -97,6 +101,12 @@ export interface ExperienceViewBundle {
   object: Tables<"object_definitions">;
   fields: Tables<"field_definitions">[];
   records: Tables<"records">[];
+  relationships?: Tables<"relationship_definitions">[];
+  connectionValues?: TableQueryResult["connectionValues"];
+  query?: Pick<
+    TableQueryResult,
+    "totalCount" | "limit" | "offset" | "hasMore" | "group" | "groups"
+  >;
   config: ViewConfig;
   inlineEdit?: InlineEditEligibility;
   warnings?: string[];
@@ -123,6 +133,22 @@ type NavigationView = Pick<
   Tables<"views">,
   "key" | "name" | "view_type" | "audience" | "is_active"
 >;
+
+function normalizedTableViewsForObject(
+  candidates: readonly SourcedViewDefinition[],
+): Array<{ view: SourcedViewDefinition; config: TableViewConfigV2 }> {
+  const ordered = [...candidates].toSorted((left, right) =>
+    left.key.localeCompare(right.key),
+  );
+  const roles = deterministicTableViewRoles(ordered);
+  return ordered.map((view) => ({
+    view,
+    config: normalizeTableViewConfig(
+      view.config_json,
+      roles.get(view.key) ?? "saved",
+    ),
+  }));
+}
 
 export function normalizeNavigationDisplayText(value: string): string {
   return value
@@ -252,6 +278,7 @@ export interface ExperienceService {
     audience?: ExperienceAudience,
   ): Promise<ExperiencePageBundle>;
   listNavigation(): Promise<ExperienceNavigation>;
+  listTableViews(): Promise<Tables<"views">[]>;
 }
 
 export function createExperienceService(
@@ -279,10 +306,28 @@ export function createExperienceService(
     sourcedDefinition: SourcedViewDefinition,
   ): Promise<ExperienceViewBundle> {
     const { object_key: objectKey, ...definition } = sourcedDefinition;
-    const config = parseViewConfig(
+    const parsedConfig = parseViewConfig(
       definition.view_type,
       definition.config_json,
     );
+    let config: ViewConfig = parsedConfig;
+    if (
+      definition.view_type === "table" &&
+      !("schema_version" in parsedConfig)
+    ) {
+      const candidates = (await source.listViews()).filter(
+        (candidate) =>
+          candidate.object_definition_id === definition.object_definition_id &&
+          candidate.view_type === "table" &&
+          candidate.audience === "internal" &&
+          candidate.is_active,
+      );
+      const roles = deterministicTableViewRoles(candidates);
+      config = normalizeTableViewConfig(
+        definition.config_json,
+        roles.get(definition.key) ?? "saved",
+      );
+    }
     const includeArchived = config.include_archived;
     let recordsQuery = client
       .from("records")
@@ -295,19 +340,32 @@ export function createExperienceService(
       recordsQuery = recordsQuery.eq("record_status", "active");
     }
 
-    const [object, fields, recordsResult] = await Promise.all([
-      source.getObjectByKey(objectKey),
-      source.listFieldsForObject(objectKey),
-      recordsQuery,
-    ]);
+    const tableQuery =
+      source.kind === "live" &&
+      definition.audience === "internal" &&
+      definition.view_type === "table"
+        ? queryTableViewRecords(client, businessId, definition.key, {
+            limit: 250,
+          })
+        : null;
+    const [object, fields, relationships, recordsResult, queriedTable] =
+      await Promise.all([
+        source.getObjectByKey(objectKey),
+        source.listFieldsForObject(objectKey),
+        source.listRelationships(),
+        recordsQuery,
+        tableQuery,
+      ]);
     if (!object) {
       throw new ExperienceServiceError("This screen is not available.");
     }
-    const records = requireResult(
-      recordsResult.data,
-      recordsResult.error,
-      "Could not load business information.",
-    );
+    const records = queriedTable
+      ? queriedTable.records
+      : requireResult(
+          recordsResult.data,
+          recordsResult.error,
+          "Could not load business information.",
+        );
     const warnings =
       source.kind === "snapshot" &&
       records.some((record) => !recordMatchesDefinitions(record, fields))
@@ -327,6 +385,26 @@ export function createExperienceService(
       object,
       fields,
       records,
+      relationships: relationships.filter(
+        (relationship) =>
+          relationship.source_object_definition_id ===
+            definition.object_definition_id ||
+          relationship.target_object_definition_id ===
+            definition.object_definition_id,
+      ),
+      ...(queriedTable
+        ? {
+            connectionValues: queriedTable.connectionValues,
+            query: {
+              totalCount: queriedTable.totalCount,
+              limit: queriedTable.limit,
+              offset: queriedTable.offset,
+              hasMore: queriedTable.hasMore,
+              group: queriedTable.group,
+              groups: queriedTable.groups,
+            },
+          }
+        : {}),
       config,
       ...(inlineEdit ? { inlineEdit } : {}),
       warnings,
@@ -419,8 +497,26 @@ export function createExperienceService(
         source.listPages(),
       ]);
 
-      const views = sourcedViews.filter(
+      const internalViews = sourcedViews.filter(
         (view) => view.audience === "internal" && view.view_type !== "detail",
+      );
+      const tableViewsByObject = new Map<string, SourcedViewDefinition[]>();
+      for (const view of internalViews) {
+        if (view.view_type !== "table") continue;
+        const current = tableViewsByObject.get(view.object_definition_id) ?? [];
+        current.push(view);
+        tableViewsByObject.set(view.object_definition_id, current);
+      }
+      const primaryTableKeys = new Set<string>();
+      for (const candidates of tableViewsByObject.values()) {
+        const normalized = normalizedTableViewsForObject(candidates);
+        const primaryView = normalized.find(
+          (candidate) => candidate.config.role === "primary",
+        )?.view;
+        if (primaryView) primaryTableKeys.add(primaryView.key);
+      }
+      const views = internalViews.filter(
+        (view) => view.view_type !== "table" || primaryTableKeys.has(view.key),
       );
       const wrapperPageKeys = new Set(
         pages.flatMap((page) => {
@@ -439,6 +535,43 @@ export function createExperienceService(
             page.audience === "internal" && !wrapperPageKeys.has(page.key),
         ),
       };
+    },
+
+    async listTableViews() {
+      const sourcedViews = await source.listViews();
+      const activeViews = sourcedViews.filter(
+        (view) =>
+          view.audience === "internal" &&
+          view.view_type === "table" &&
+          view.is_active,
+      );
+      const byObject = new Map<string, SourcedViewDefinition[]>();
+      for (const view of activeViews) {
+        const current = byObject.get(view.object_definition_id) ?? [];
+        current.push(view);
+        byObject.set(view.object_definition_id, current);
+      }
+      const selected: Array<{
+        view: SourcedViewDefinition;
+        config: TableViewConfigV2;
+      }> = [];
+      for (const candidates of byObject.values()) {
+        const normalized = normalizedTableViewsForObject(candidates);
+        const primary = normalized.find(
+          (candidate) => candidate.config.role === "primary",
+        );
+        if (primary) selected.push(primary);
+        selected.push(
+          ...normalized.filter(
+            (candidate) => candidate.config.role === "saved",
+          ),
+        );
+      }
+      return selected.map(({ view, config }) => {
+        const { object_key: objectKey, ...definition } = view;
+        void objectKey;
+        return { ...definition, config_json: config as Json };
+      });
     },
   };
 }

@@ -1503,6 +1503,23 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      apply_internal_workspace_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       apply_lenni_direct_configuration_change: {
         Args: {
           expected_actor_id: string;
@@ -2194,6 +2211,27 @@ export type Database = {
         };
         Returns: Json;
       };
+      query_view_records: {
+        Args: {
+          expected_business_id: string;
+          requested_limit?: number;
+          requested_offset?: number;
+          requested_view_key: string;
+        };
+        Returns: Json;
+      };
+      search_view_connection_targets: {
+        Args: {
+          expected_business_id: string;
+          requested_direction: string;
+          requested_limit?: number;
+          requested_offset?: number;
+          requested_relationship_key: string;
+          requested_search?: string;
+          requested_view_key: string;
+        };
+        Returns: Json;
+      };
       set_preorder_experience_locations: {
         Args: {
           expected_business_id: string;
@@ -2201,6 +2239,17 @@ export type Database = {
           target_preorder_experience_id: string;
         };
         Returns: number;
+      };
+      set_record_connection_values: {
+        Args: {
+          expected_business_id: string;
+          requested_direction: string;
+          requested_record_id: string;
+          requested_relationship_key: string;
+          requested_target_record_ids: string[];
+          requested_view_key: string;
+        };
+        Returns: Json;
       };
       settle_business_ai_execution: {
         Args: {

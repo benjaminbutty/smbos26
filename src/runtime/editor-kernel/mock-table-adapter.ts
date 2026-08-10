@@ -49,6 +49,7 @@ function defaultValue(column: EditorColumn): EditorValue {
     case "select":
       return column.options?.[0] ?? "";
     case "multi_select":
+    case "connection":
       return [];
     case "text":
     case "long_text":

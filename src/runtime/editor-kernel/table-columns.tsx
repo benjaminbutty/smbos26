@@ -55,6 +55,14 @@ interface CreateEditorColumnsOptions {
   onMoveColumn?: (columnKey: string, direction: "left" | "right") => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
   onActivateDraft: (rowIdx: number, columnIdx: number) => void;
+  onSearchConnectionTargets?: (
+    columnKey: string,
+    search: string,
+  ) => Promise<readonly { id: string; label: string }[]>;
+  onCreateConnectionTarget?: (
+    columnKey: string,
+    primaryValue: string,
+  ) => Promise<{ id: string; label: string }>;
   canRenameColumns?: boolean;
   canUpdateColumnOptions?: boolean;
   canChangeColumnTypes?: boolean;
@@ -66,6 +74,13 @@ interface CreateEditorColumnsOptions {
 
 function valueForRow(row: EditorRow, column: EditorColumn): EditorValue {
   return row.values[column.key] ?? null;
+}
+
+function connectionDisplay(row: EditorRow, column: EditorColumn): string {
+  const labels = row.connectionValues?.[column.key] ?? [];
+  return labels.length > 0
+    ? labels.map((value) => value.label).join(", ")
+    : "—";
 }
 
 function HeaderCell({
@@ -505,6 +520,10 @@ export function EditorCell({
   column: EditorColumn;
   onOpenRecord: (rowId: string, columnKey: string) => void;
   onActivateDraft: (rowIdx: number, columnIdx: number) => void;
+  onSearchConnectionTargets?: (
+    columnKey: string,
+    search: string,
+  ) => Promise<readonly { id: string; label: string }[]>;
   props: RenderCellProps<EditorRow>;
 }>): React.ReactNode {
   const { row, rowIdx, tabIndex, onRowChange } = props;
@@ -544,7 +563,10 @@ export function EditorCell({
     );
   }
 
-  const display = displayEditorValue(column, value);
+  const display =
+    column.kind === "connection"
+      ? connectionDisplay(row, column)
+      : displayEditorValue(column, value);
   const content = (
     <span
       className={
@@ -606,6 +628,8 @@ export function createEditorColumns({
   onMoveColumn,
   onOpenRecord,
   onActivateDraft,
+  onSearchConnectionTargets,
+  onCreateConnectionTarget,
   canRenameColumns = true,
   canUpdateColumnOptions = true,
   canChangeColumnTypes = true,
@@ -668,6 +692,8 @@ export function createEditorColumns({
       <CellEditor
         {...props}
         columnDefinition={column}
+        onCreateConnectionTarget={onCreateConnectionTarget}
+        onSearchConnectionTargets={onSearchConnectionTargets}
         initialValue={
           pendingEdit?.rowId === props.row.id &&
           pendingEdit.columnKey === column.key

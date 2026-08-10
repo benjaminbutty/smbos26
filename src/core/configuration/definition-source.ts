@@ -25,6 +25,7 @@ type FieldDefinition = Tables<"field_definitions">;
 type PageDefinition = Tables<"pages">;
 type PreorderDefinition = Tables<"preorder_experiences">;
 type PreorderLocation = Tables<"preorder_experience_locations">;
+type RelationshipDefinition = Tables<"relationship_definitions">;
 
 export type SourcedViewDefinition = Tables<"views"> & {
   object_key: string;
@@ -37,6 +38,7 @@ export interface ConfigurationDefinitionSource {
   readonly kind: "live" | "snapshot";
   listPages(): Promise<PageDefinition[]>;
   listViews(): Promise<SourcedViewDefinition[]>;
+  listRelationships(): Promise<RelationshipDefinition[]>;
   getPageByKey(pageKey: string): Promise<PageDefinition | null>;
   getPageBySlug(pageSlug: string): Promise<PageDefinition | null>;
   getViewById(viewId: string): Promise<SourcedViewDefinition | null>;
@@ -353,6 +355,16 @@ export function createActiveConfigurationDefinitionSource(
       });
     },
 
+    async listRelationships() {
+      const { data, error } = await client
+        .from("relationship_definitions")
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("is_active", true)
+        .order("created_at");
+      return requireRows(data, error, "Could not load configured Connections.");
+    },
+
     async getPageByKey(pageKey) {
       const { data, error } = await client
         .from("pages")
@@ -639,6 +651,23 @@ export function createSnapshotConfigurationDefinitionSource(
         is_active: definition.is_active,
         created_at: snapshotTimestamp,
       }));
+  const relationships: RelationshipDefinition[] =
+    snapshot.relationship_definitions
+      .filter((definition) => definition.is_active)
+      .map((definition) => ({
+        id: definition.id,
+        business_id: businessId,
+        key: definition.key,
+        source_object_definition_id: definition.source_object_definition_id,
+        target_object_definition_id: definition.target_object_definition_id,
+        source_label: definition.source_label,
+        target_label: definition.target_label,
+        cardinality: definition.cardinality,
+        is_required: definition.is_required,
+        is_active: definition.is_active,
+        created_at: snapshotTimestamp,
+        updated_at: snapshotTimestamp,
+      }));
 
   return {
     kind: "snapshot",
@@ -648,6 +677,9 @@ export function createSnapshotConfigurationDefinitionSource(
     },
     async listViews() {
       return views;
+    },
+    async listRelationships() {
+      return relationships;
     },
     async getPageByKey(pageKey) {
       return pages.find((definition) => definition.key === pageKey) ?? null;

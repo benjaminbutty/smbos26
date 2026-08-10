@@ -7,7 +7,7 @@ import {
   type EditorRow,
   type EditorValue,
 } from "./contracts";
-import { ChoiceStatusPicker } from "./cell-editors";
+import { ChoiceStatusPicker, ConnectionPicker } from "./cell-editors";
 
 interface RecordPanelProps {
   columns: readonly EditorColumn[];
@@ -15,6 +15,33 @@ interface RecordPanelProps {
   tableName: string;
   onClose: () => void;
   onCommitCell: (rowId: string, columnKey: string, value: EditorValue) => void;
+  onSearchConnectionTargets?:
+    | ((
+        columnKey: string,
+        search: string,
+      ) => Promise<readonly { id: string; label: string }[]>)
+    | undefined;
+  onCreateConnectionTarget?:
+    | ((
+        columnKey: string,
+        primaryValue: string,
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
+}
+
+function panelDisplayValue(
+  row: EditorRow,
+  column: EditorColumn,
+  value: EditorValue,
+): string {
+  if (column.kind === "connection") {
+    return (
+      (row.connectionValues?.[column.key] ?? [])
+        .map((item) => item.label)
+        .join(", ") || "—"
+    );
+  }
+  return displayEditorValue(column, value);
 }
 
 function inputType(
@@ -44,12 +71,28 @@ function InlinePropertyEditor({
   onCancel,
   onChange,
   onCommit,
+  onSearchConnectionTargets,
+  onCreateConnectionTarget,
+  labels,
 }: Readonly<{
   column: EditorColumn;
   value: EditorValue;
   onCancel: () => void;
   onChange: (value: EditorValue) => void;
   onCommit: (value?: EditorValue) => void;
+  onSearchConnectionTargets?:
+    | ((
+        columnKey: string,
+        search: string,
+      ) => Promise<readonly { id: string; label: string }[]>)
+    | undefined;
+  onCreateConnectionTarget?:
+    | ((
+        columnKey: string,
+        primaryValue: string,
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
+  labels?: readonly { id: string; label: string }[] | undefined;
 }>): React.ReactNode {
   if (column.kind === "long_text") {
     return (
@@ -68,6 +111,32 @@ function InlinePropertyEditor({
         }}
         rows={4}
         value={editorInputValue(value)}
+      />
+    );
+  }
+
+  if (column.kind === "connection") {
+    return (
+      <ConnectionPicker
+        column={column}
+        labels={labels}
+        onCancel={onCancel}
+        onCommit={(next) => {
+          onChange(next);
+          onCommit(next);
+        }}
+        onSearch={(search) =>
+          onSearchConnectionTargets
+            ? onSearchConnectionTargets(column.key, search)
+            : Promise.resolve(labels ?? [])
+        }
+        {...(onCreateConnectionTarget
+          ? {
+              onCreate: (primaryValue: string) =>
+                onCreateConnectionTarget(column.key, primaryValue),
+            }
+          : {})}
+        value={value}
       />
     );
   }
@@ -121,6 +190,8 @@ export function RecordPanel({
   tableName,
   onClose,
   onCommitCell,
+  onSearchConnectionTargets,
+  onCreateConnectionTarget,
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
   const [editingKey, setEditingKey] = useState<string | null>(null);
@@ -184,7 +255,7 @@ export function RecordPanel({
                     className="editor-property-readonly"
                     title={column.readOnlyReason}
                   >
-                    {displayEditorValue(column, value)}
+                    {panelDisplayValue(row, column, value)}
                   </span>
                 ) : column.kind === "boolean" ? (
                   <input
@@ -201,9 +272,12 @@ export function RecordPanel({
                 ) : isEditing ? (
                   <InlinePropertyEditor
                     column={column}
+                    labels={row.connectionValues?.[column.key]}
                     onCancel={() => cancel(column.key)}
                     onChange={(next) => updateDraft(column.key, next)}
                     onCommit={(next) => commit(column, next)}
+                    onSearchConnectionTargets={onSearchConnectionTargets}
+                    onCreateConnectionTarget={onCreateConnectionTarget}
                     value={value}
                   />
                 ) : (
@@ -213,7 +287,7 @@ export function RecordPanel({
                     onClick={() => setEditingKey(column.key)}
                     type="button"
                   >
-                    {displayEditorValue(column, value)}
+                    {panelDisplayValue(row, column, value)}
                   </button>
                 )}
               </div>

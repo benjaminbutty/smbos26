@@ -1,9 +1,27 @@
 import type { EditorRow, EditorTable, EditorValue } from "../contracts";
+import type { TableViewQuery } from "../../../core/experience/schemas";
 
 export interface ProductionCellEditInput {
   recordId: string;
   fieldKey: string;
   value: EditorValue;
+}
+
+export interface ProductionConnectionEditInput {
+  recordId: string;
+  relationshipKey: string;
+  direction: "source" | "target";
+  targetRecordIds: readonly string[];
+}
+
+export interface ProductionConnectionSearchInput {
+  columnKey: string;
+  search: string;
+}
+
+export interface ProductionConnectionCreateInput {
+  columnKey: string;
+  primaryValue: string;
 }
 
 export interface ProductionRowCreateInput {
@@ -105,12 +123,29 @@ export interface ProductionRenameTableInput {
   title: string;
 }
 
+export interface ProductionSavedViewQueryInput {
+  currentness: ProductionConfigurationCurrentness;
+  query: TableViewQuery;
+}
+
 export type ProductionActionResult<T> =
   { status: "success"; value: T } | { status: "error"; message: string };
 
 export type ProductionCellEditAction = (
   input: ProductionCellEditInput,
 ) => Promise<ProductionActionResult<EditorRow>>;
+
+export type ProductionConnectionEditAction = (
+  input: ProductionConnectionEditInput,
+) => Promise<ProductionActionResult<EditorRow>>;
+
+export type ProductionConnectionSearchAction = (
+  input: ProductionConnectionSearchInput,
+) => Promise<ProductionActionResult<readonly { id: string; label: string }[]>>;
+
+export type ProductionConnectionCreateAction = (
+  input: ProductionConnectionCreateInput,
+) => Promise<ProductionActionResult<{ id: string; label: string }>>;
 
 export type ProductionRowCreateAction = (
   input: ProductionRowCreateInput,

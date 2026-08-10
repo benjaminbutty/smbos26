@@ -7,6 +7,7 @@ import type {
   ListViewConfig,
   TableViewConfig,
 } from "../../core/experience/schemas";
+import { normalizeTableViewConfig } from "../../core/experience/schemas";
 import type { Json, Tables } from "../../db/supabase/database.types";
 import { FieldValue, getSafeFileUrl } from "../fields/field-renderer";
 import type { InlineEditAction } from "./inline-edit-contract";
@@ -26,6 +27,17 @@ interface ViewRendererProps {
 interface ViewComponentProps extends ViewRendererProps {
   fieldsByKey: Map<string, Tables<"field_definitions">>;
   recordBasePath: string;
+}
+
+type RuntimeTableColumn =
+  | { kind: "field"; field: Tables<"field_definitions"> }
+  | { kind: "connection"; key: string; label: string };
+
+function connectionColumnStorageKey(
+  relationshipKey: string,
+  direction: "source" | "target",
+): string {
+  return `connection:${relationshipKey}:${direction}`;
 }
 
 function dataObject(
@@ -70,15 +82,47 @@ export function TableView({
   preview = false,
   readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
-  const config = bundle.config as TableViewConfig;
+  const config = normalizeTableViewConfig(bundle.config as TableViewConfig);
   const fields = configuredFields(config.fields, fieldsByKey);
+  const visibleColumns: RuntimeTableColumn[] = [];
+  for (const column of config.columns) {
+    if (column.kind === "field") {
+      const field = fieldsByKey.get(column.field_key);
+      if (field) {
+        visibleColumns.push({ kind: "field", field });
+      }
+      continue;
+    }
+    const relationship = bundle.relationships?.find(
+      (candidate) => candidate.key === column.relationship_key,
+    );
+    if (relationship) {
+      visibleColumns.push({
+        kind: "connection",
+        key: connectionColumnStorageKey(
+          column.relationship_key,
+          column.direction,
+        ),
+        label:
+          column.label ??
+          (column.direction === "source"
+            ? relationship.source_label
+            : relationship.target_label),
+      });
+    }
+  }
   const locked = preview || readOnly;
 
   if (bundle.records.length === 0) {
     return <EmptyView singularLabel={bundle.object.singular_label} />;
   }
 
-  if (!locked && bundle.inlineEdit && inlineEditAction) {
+  if (
+    !locked &&
+    bundle.inlineEdit &&
+    inlineEditAction &&
+    !visibleColumns.some((column) => column.kind === "connection")
+  ) {
     return (
       <InlineTable
         action={inlineEditAction}
@@ -96,9 +140,12 @@ export function TableView({
       <table className="runtime-table">
         <thead>
           <tr>
-            {fields.map((field) => (
-              <th key={field.key} scope="col">
-                {field.label}
+            {visibleColumns.map((column) => (
+              <th
+                key={column.kind === "field" ? column.field.key : column.key}
+                scope="col"
+              >
+                {column.kind === "field" ? column.field.label : column.label}
               </th>
             ))}
             {!locked ? (
@@ -111,19 +158,39 @@ export function TableView({
         <tbody>
           {bundle.records.map((record) => {
             const data = dataObject(record);
+            const connections = bundle.connectionValues?.[record.id] ?? {};
             return (
               <tr key={record.id}>
-                {fields.map((field, index) => (
-                  <td key={field.key}>
-                    {index === 0 && !locked ? (
+                {visibleColumns.map((column, index) => (
+                  <td
+                    key={
+                      column.kind === "field" ? column.field.key : column.key
+                    }
+                  >
+                    {column.kind === "connection" ? (
+                      (connections[column.key] ?? []).map(
+                        (value, valueIndex) => (
+                          <span key={value.id}>
+                            {valueIndex > 0 ? ", " : ""}
+                            {value.label}
+                          </span>
+                        ),
+                      )
+                    ) : index === 0 && !locked ? (
                       <a
                         className="primary-record-link"
                         href={`${recordBasePath}/${record.id}`}
                       >
-                        <FieldValue field={field} value={data[field.key]} />
+                        <FieldValue
+                          field={column.field}
+                          value={data[column.field.key]}
+                        />
                       </a>
                     ) : (
-                      <FieldValue field={field} value={data[field.key]} />
+                      <FieldValue
+                        field={column.field}
+                        value={data[column.field.key]}
+                      />
                     )}
                   </td>
                 ))}

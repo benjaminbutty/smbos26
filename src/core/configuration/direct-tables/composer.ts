@@ -10,12 +10,18 @@ import {
   configurationOperationsSchema,
   setObjectOperationSchema,
   setFieldOperationSchema,
+  setRelationshipOperationSchema,
   setViewOperationSchema,
   type ConfigurationOperation,
 } from "../schemas";
 import {
-  tableViewConfigSchema,
-  type TableViewConfig,
+  normalizeTableViewConfig,
+  deterministicTableViewRoles,
+  validateTableViewQuery,
+  type TableViewColumn,
+  type TableViewConfigV1,
+  type TableViewConfigV2,
+  type TableViewRole,
 } from "../../experience/schemas";
 import type { Json } from "../../../db/supabase/database.types";
 import {
@@ -29,10 +35,12 @@ import { directTableSettingsForTypeChange } from "./type-compatibility";
 type FieldOperation = Extract<ConfigurationOperation, { op: "set_field" }>;
 type ObjectOperation = Extract<ConfigurationOperation, { op: "set_object" }>;
 type ViewOperation = Extract<ConfigurationOperation, { op: "set_view" }>;
+type RelationshipDefinition =
+  ConfigurationSnapshotV1["relationship_definitions"][number];
 type ViewSource = Pick<
   ViewOperation,
   "key" | "name" | "view_type" | "object_key" | "audience" | "is_active"
->;
+> & { config_json?: Json };
 
 export const directTableErrorCodes = [
   "direct_table_input_invalid",
@@ -45,6 +53,9 @@ export const directTableErrorCodes = [
   "direct_table_type_change_invalid",
   "direct_table_reorder_invalid",
   "direct_table_width_invalid",
+  "direct_table_connection_invalid",
+  "direct_table_saved_view_invalid",
+  "direct_table_query_invalid",
   "direct_table_operations_invalid",
 ] as const;
 
@@ -72,6 +83,12 @@ const directTableErrorMessages: Readonly<Record<DirectTableErrorCode, string>> =
       "Columns could not be reordered because the Table changed. Reload and try again.",
     direct_table_width_invalid:
       "Column widths must be between 128 and 640 pixels.",
+    direct_table_connection_invalid:
+      "That connection could not be added safely. Reload and try again.",
+    direct_table_saved_view_invalid:
+      "That saved view could not be changed safely. Reload and try again.",
+    direct_table_query_invalid:
+      "That filter, sort, or group is not valid for this Table.",
     direct_table_operations_invalid:
       "The Table change could not be prepared safely. Reload and try again.",
   };
@@ -146,13 +163,30 @@ function allocateKey(
   }
 }
 
+function deterministicTableRole(
+  snapshot: ConfigurationSnapshotV1,
+  targetViewKey: string,
+  objectDefinitionId: string,
+): TableViewRole {
+  const candidates = snapshot.views
+    .filter(
+      (candidate) =>
+        candidate.object_definition_id === objectDefinitionId &&
+        candidate.view_type === "table" &&
+        candidate.audience === "internal" &&
+        candidate.is_active,
+    )
+    .toSorted((left, right) => left.key.localeCompare(right.key));
+  return deterministicTableViewRoles(candidates).get(targetViewKey) ?? "saved";
+}
+
 function activeTable(
   snapshot: ConfigurationSnapshotV1,
   viewKey: string,
 ): {
   view: (typeof snapshot.views)[number];
   object: (typeof snapshot.object_definitions)[number];
-  config: TableViewConfig;
+  config: TableViewConfigV2;
 } {
   const view = snapshot.views.find(
     (candidate) =>
@@ -176,10 +210,15 @@ function activeTable(
   }
 
   try {
+    const legacyRole = deterministicTableRole(
+      snapshot,
+      view.key,
+      view.object_definition_id,
+    );
     return {
       view,
       object,
-      config: tableViewConfigSchema.parse(view.config_json),
+      config: normalizeTableViewConfig(view.config_json, legacyRole),
     };
   } catch (error) {
     throw new DirectTableComposerError("direct_table_snapshot_invalid", error);
@@ -219,6 +258,108 @@ function tableField(
     throw new DirectTableComposerError("direct_table_not_found");
   }
   return field;
+}
+
+function fieldKeysFromColumns(columns: readonly TableViewColumn[]): string[] {
+  return columns.flatMap((column) =>
+    column.kind === "field" ? [column.field_key] : [],
+  );
+}
+
+function configWithColumns(
+  config: TableViewConfigV2,
+  columns: readonly TableViewColumn[],
+): TableViewConfigV2 {
+  return normalizeTableViewConfig({
+    ...config,
+    columns,
+    fields: fieldKeysFromColumns(columns),
+  });
+}
+
+function configWithFieldKeys(
+  config: TableViewConfigV2,
+  fieldKeys: readonly string[],
+): TableViewConfigV2 {
+  let fieldIndex = 0;
+  const columns = config.columns.map((column) => {
+    if (column.kind !== "field") {
+      return column;
+    }
+    const fieldKey = fieldKeys[fieldIndex++];
+    return fieldKey ? { kind: "field" as const, field_key: fieldKey } : column;
+  });
+  return configWithColumns(config, columns);
+}
+
+function legacyTableConfig(config: TableViewConfigV2): TableViewConfigV1 {
+  return {
+    fields: config.fields,
+    title_field: config.title_field,
+    ...(config.column_widths ? { column_widths: config.column_widths } : {}),
+    ...(config.create_form_key
+      ? { create_form_key: config.create_form_key }
+      : {}),
+    ...(config.edit_form_key ? { edit_form_key: config.edit_form_key } : {}),
+    include_archived: config.include_archived,
+  };
+}
+
+function relationshipForKey(
+  snapshot: ConfigurationSnapshotV1,
+  relationshipKey: string,
+): (typeof snapshot.relationship_definitions)[number] {
+  const relationship = snapshot.relationship_definitions.find(
+    (candidate) => candidate.key === relationshipKey && candidate.is_active,
+  );
+  if (!relationship) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  return relationship;
+}
+
+function connectionDirection(
+  table: ReturnType<typeof activeTable>,
+  relationship: RelationshipDefinition,
+  requested: "source" | "target" | undefined,
+): "source" | "target" {
+  const matchesSource = table.object.key === relationship.source_object_key;
+  const matchesTarget = table.object.key === relationship.target_object_key;
+  if (requested) {
+    if (
+      (requested === "source" && !matchesSource) ||
+      (requested === "target" && !matchesTarget)
+    ) {
+      throw new DirectTableComposerError("direct_table_connection_invalid");
+    }
+    return requested;
+  }
+  if (matchesSource === matchesTarget) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  return matchesSource ? "source" : "target";
+}
+
+function connectionLabel(
+  relationship: RelationshipDefinition,
+  direction: "source" | "target",
+): string {
+  return direction === "source"
+    ? relationship.source_label
+    : relationship.target_label;
+}
+
+function hasConnectionColumn(
+  config: TableViewConfigV2,
+  relationshipKey: string,
+  direction: "source" | "target",
+): boolean {
+  return config.columns.some(
+    (column) =>
+      column.kind === "connection" &&
+      column.relationship_key === relationshipKey &&
+      column.direction === direction,
+  );
 }
 
 function objectLabelConflict(
@@ -332,11 +473,11 @@ function composeCreateTable(
       name: title,
       view_type: "table",
       object_key: objectKey,
-      config_json: tableViewConfigSchema.parse({
+      config_json: {
         fields: [nameFieldKey],
         title_field: nameFieldKey,
         include_archived: false,
-      }),
+      },
       audience: "internal",
       is_active: true,
     }),
@@ -345,14 +486,289 @@ function composeCreateTable(
   return finalizeAction("create_table", title, viewKey, operations);
 }
 
+function composeCreateSavedView(
+  snapshot: ConfigurationSnapshotV1,
+  intent: Extract<
+    DirectTableIntent,
+    { action: "create_saved_view" | "duplicate_saved_view" }
+  >,
+): ComposedDirectTableAction {
+  const source = activeTable(snapshot, intent.sourceViewKey);
+  if (tableNameConflict(snapshot, intent.name)) {
+    throw new DirectTableComposerError("direct_table_object_label_conflict");
+  }
+  const viewKey = allocateKey(
+    snapshot.views.map((view) => view.key),
+    intent.name,
+    "view",
+  );
+  const config = normalizeTableViewConfig({
+    ...source.config,
+    role: "saved",
+    fields: source.config.fields,
+    ...(intent.action === "create_saved_view"
+      ? { filters: [], filter_match: "all", sorts: [], group: null }
+      : {}),
+  });
+  const operation = tableViewOperation(
+    {
+      key: viewKey,
+      name: intent.name,
+      view_type: "table",
+      object_key: source.object.key,
+      audience: "internal",
+      is_active: true,
+    },
+    config,
+  );
+  return finalizeAction(
+    intent.action,
+    `${intent.action === "create_saved_view" ? "Create" : "Duplicate"} ${intent.name}`,
+    viewKey,
+    [operation],
+  );
+}
+
+function composeCreateConnectionProperty(
+  snapshot: ConfigurationSnapshotV1,
+  intent: Extract<DirectTableIntent, { action: "create_connection_property" }>,
+): ComposedDirectTableAction {
+  const source = activeTable(snapshot, intent.viewKey);
+  const target = activeTable(snapshot, intent.targetViewKey);
+  const relationshipKey = allocateKey(
+    snapshot.relationship_definitions.map((relationship) => relationship.key),
+    intent.label,
+    "relationship",
+  );
+  const cardinality =
+    intent.mode === "several_records" || intent.mode === "multiple"
+      ? "many_to_many"
+      : "one_to_many";
+  const reverseLabel = intent.reverseLabel ?? source.object.plural_label;
+  const relationship = setRelationshipOperationSchema.parse({
+    op: "set_relationship",
+    key: relationshipKey,
+    source_object_key: source.object.key,
+    target_object_key: target.object.key,
+    source_label: intent.label,
+    target_label: reverseLabel,
+    cardinality,
+    is_required: false,
+    is_active: true,
+  });
+  if (hasConnectionColumn(source.config, relationshipKey, "source")) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  const sourceColumn: TableViewColumn = {
+    kind: "connection",
+    relationship_key: relationshipKey,
+    direction: "source",
+    label: intent.label,
+  };
+  const operations: ConfigurationOperation[] = [relationship];
+  const sourceColumns = [...source.config.columns, sourceColumn];
+  if (target.view.key === source.view.key) {
+    if (!intent.addReverse) {
+      operations.push(
+        tableViewOperation(
+          source.view,
+          configWithColumns(source.config, sourceColumns),
+        ),
+      );
+    } else {
+      const reverseColumn: TableViewColumn = {
+        kind: "connection",
+        relationship_key: relationshipKey,
+        direction: "target",
+        label: reverseLabel,
+      };
+      operations.push(
+        tableViewOperation(
+          source.view,
+          configWithColumns(source.config, [...sourceColumns, reverseColumn]),
+        ),
+      );
+    }
+  } else {
+    operations.push(
+      tableViewOperation(
+        source.view,
+        configWithColumns(source.config, sourceColumns),
+      ),
+    );
+    if (intent.addReverse) {
+      if (hasConnectionColumn(target.config, relationshipKey, "target")) {
+        throw new DirectTableComposerError("direct_table_connection_invalid");
+      }
+      const reverseColumn: TableViewColumn = {
+        kind: "connection",
+        relationship_key: relationshipKey,
+        direction: "target",
+        label: reverseLabel,
+      };
+      operations.push(
+        tableViewOperation(
+          target.view,
+          configWithColumns(target.config, [
+            ...target.config.columns,
+            reverseColumn,
+          ]),
+        ),
+      );
+    }
+  }
+  return finalizeAction(
+    "create_connection_property",
+    `Add ${intent.label}`,
+    source.view.key,
+    operations,
+  );
+}
+
+function composeAddExistingConnectionProperty(
+  snapshot: ConfigurationSnapshotV1,
+  intent: Extract<
+    DirectTableIntent,
+    { action: "add_existing_connection_property" }
+  >,
+): ComposedDirectTableAction {
+  const table = activeTable(snapshot, intent.viewKey);
+  const relationship = relationshipForKey(snapshot, intent.relationshipKey);
+  const direction = connectionDirection(table, relationship, intent.direction);
+  if (hasConnectionColumn(table.config, relationship.key, direction)) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  const column: TableViewColumn = {
+    kind: "connection",
+    relationship_key: relationship.key,
+    direction,
+    ...(intent.label ? { label: intent.label } : {}),
+  };
+  return finalizeAction(
+    "add_existing_connection_property",
+    `Add ${intent.label ?? connectionLabel(relationship, direction)}`,
+    table.view.key,
+    [
+      tableViewOperation(
+        table.view,
+        configWithColumns(table.config, [...table.config.columns, column]),
+      ),
+    ],
+  );
+}
+
+function composeRenameConnectionProperty(
+  snapshot: ConfigurationSnapshotV1,
+  intent: Extract<DirectTableIntent, { action: "rename_connection_property" }>,
+): ComposedDirectTableAction {
+  const table = activeTable(snapshot, intent.viewKey);
+  relationshipForKey(snapshot, intent.relationshipKey);
+  const hasColumn = hasConnectionColumn(
+    table.config,
+    intent.relationshipKey,
+    intent.direction,
+  );
+  if (!hasColumn) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  const columns = table.config.columns.map((column) =>
+    column.kind === "connection" &&
+    column.relationship_key === intent.relationshipKey &&
+    column.direction === intent.direction
+      ? { ...column, label: intent.label }
+      : column,
+  );
+  return finalizeAction(
+    "rename_connection_property",
+    `Rename ${intent.label}`,
+    table.view.key,
+    [tableViewOperation(table.view, configWithColumns(table.config, columns))],
+  );
+}
+
+function composeSavedViewMutation(
+  snapshot: ConfigurationSnapshotV1,
+  intent: Extract<
+    DirectTableIntent,
+    { action: "rename_saved_view" | "update_view_query" | "archive_saved_view" }
+  >,
+): ComposedDirectTableAction {
+  const table = activeTable(snapshot, intent.viewKey);
+  if (table.config.role !== "saved") {
+    throw new DirectTableComposerError("direct_table_saved_view_invalid");
+  }
+  let config = table.config;
+  let title = table.view.name;
+  let active = table.view.is_active;
+  if (intent.action === "rename_saved_view") {
+    if (tableNameConflict(snapshot, intent.name, table.view.key)) {
+      throw new DirectTableComposerError("direct_table_object_label_conflict");
+    }
+    title = intent.name;
+  } else if (intent.action === "update_view_query") {
+    try {
+      validateTableViewQuery(intent.query, {
+        fields: snapshot.field_definitions
+          .filter(
+            (field) =>
+              field.object_definition_id === table.object.id && field.is_active,
+          )
+          .map((field) => ({ key: field.key, field_type: field.field_type })),
+        relationships: snapshot.relationship_definitions
+          .filter((relationship) => relationship.is_active)
+          .map((relationship) => ({
+            key: relationship.key,
+            cardinality: relationship.cardinality,
+          })),
+        columns: table.config.columns,
+      });
+    } catch (error) {
+      throw new DirectTableComposerError("direct_table_query_invalid", error);
+    }
+    config = normalizeTableViewConfig({
+      ...table.config,
+      ...intent.query,
+      fields: table.config.fields,
+    });
+  } else {
+    active = false;
+  }
+  return finalizeAction(
+    intent.action,
+    intent.action === "rename_saved_view"
+      ? `Rename ${title}`
+      : intent.action === "update_view_query"
+        ? `Update ${table.view.name}`
+        : `Archive ${table.view.name}`,
+    table.view.key,
+    [
+      setViewOperationSchema.parse({
+        op: "set_view",
+        key: table.view.key,
+        name: title,
+        view_type: table.view.view_type,
+        object_key: table.view.object_key,
+        config_json: config,
+        audience: table.view.audience,
+        is_active: active,
+      }),
+    ],
+  );
+}
+
 function composeTableMutation(
   snapshot: ConfigurationSnapshotV1,
-  intent: Exclude<DirectTableIntent, { action: "create_table" }>,
+  intent: Exclude<
+    DirectTableIntent,
+    {
+      action: "create_table" | "create_saved_view" | "duplicate_saved_view";
+    }
+  >,
 ): ComposedDirectTableAction {
   const table = activeTable(snapshot, intent.viewKey);
   const fields = activeTableFields(snapshot, table);
-  let operations: ConfigurationOperation[];
-  let title: string;
+  let operations: ConfigurationOperation[] = [];
+  let title = "";
 
   switch (intent.action) {
     case "rename_table": {
@@ -373,16 +789,10 @@ function composeTableMutation(
           icon: table.object.icon,
           is_active: table.object.is_active,
         }),
-        setViewOperationSchema.parse({
-          op: "set_view",
-          key: table.view.key,
-          name: intent.title,
-          view_type: table.view.view_type,
-          object_key: table.view.object_key,
-          config_json: table.config,
-          audience: table.view.audience,
-          is_active: table.view.is_active,
-        }),
+        tableMutationViewOperation(
+          { ...table.view, name: intent.title },
+          table.config,
+        ),
       ];
       title = `Rename ${intent.title}`;
       break;
@@ -425,11 +835,11 @@ function composeTableMutation(
         position: nextPosition,
         is_active: true,
       });
-      const config = tableViewConfigSchema.parse({
-        ...table.config,
-        fields: [...table.config.fields, fieldKey],
-      });
-      operations = [field, tableViewOperation(table.view, config)];
+      const config = configWithColumns(table.config, [
+        ...table.config.columns,
+        { kind: "field", field_key: fieldKey },
+      ]);
+      operations = [field, tableMutationViewOperation(table.view, config)];
       title = `Add ${intent.label}`;
       break;
     }
@@ -469,14 +879,22 @@ function composeTableMutation(
         position: nextPosition,
         is_active: true,
       });
-      const insertAt = anchorIndex + (intent.position === "right" ? 1 : 0);
-      const fieldsNext = [...table.config.fields];
-      fieldsNext.splice(insertAt, 0, fieldKey);
+      const anchorColumnIndex = table.config.columns.findIndex(
+        (column) =>
+          column.kind === "field" && column.field_key === intent.anchorFieldKey,
+      );
+      if (anchorColumnIndex < 0) {
+        throw new DirectTableComposerError("direct_table_not_found");
+      }
+      const insertAt =
+        anchorColumnIndex + (intent.position === "right" ? 1 : 0);
+      const columnsNext = [...table.config.columns];
+      columnsNext.splice(insertAt, 0, { kind: "field", field_key: fieldKey });
       operations = [
         field,
-        tableViewOperation(
+        tableMutationViewOperation(
           table.view,
-          tableViewConfigSchema.parse({ ...table.config, fields: fieldsNext }),
+          configWithColumns(table.config, columnsNext),
         ),
       ];
       title = `Insert ${intent.label}`;
@@ -570,12 +988,9 @@ function composeTableMutation(
         throw new DirectTableComposerError("direct_table_reorder_invalid");
       }
       operations = [
-        tableViewOperation(
+        tableMutationViewOperation(
           table.view,
-          tableViewConfigSchema.parse({
-            ...table.config,
-            fields: intent.fieldKeys,
-          }),
+          configWithFieldKeys(table.config, intent.fieldKeys),
         ),
       ];
       title = `Reorder ${table.view.name}`;
@@ -586,9 +1001,9 @@ function composeTableMutation(
       const widths = { ...(table.config.column_widths ?? {}) };
       widths[intent.fieldKey] = intent.width;
       operations = [
-        tableViewOperation(
+        tableMutationViewOperation(
           table.view,
-          tableViewConfigSchema.parse({
+          normalizeTableViewConfig({
             ...table.config,
             column_widths: widths,
           }),
@@ -604,7 +1019,7 @@ function composeTableMutation(
 
 function tableViewOperation(
   view: ViewSource,
-  config: TableViewConfig,
+  config: TableViewConfigV2,
 ): ViewOperation {
   return setViewOperationSchema.parse({
     op: "set_view",
@@ -616,6 +1031,37 @@ function tableViewOperation(
     audience: view.audience,
     is_active: view.is_active,
   });
+}
+
+function legacyTableViewOperation(
+  view: ViewSource,
+  config: TableViewConfigV2,
+): ViewOperation {
+  return setViewOperationSchema.parse({
+    op: "set_view",
+    key: view.key,
+    name: view.name,
+    view_type: view.view_type,
+    object_key: view.object_key,
+    config_json: legacyTableConfig(config),
+    audience: view.audience,
+    is_active: view.is_active,
+  });
+}
+
+function tableMutationViewOperation(
+  view: ViewSource,
+  config: TableViewConfigV2,
+): ViewOperation {
+  const sourceConfig = view.config_json;
+  const isCanonical =
+    typeof sourceConfig === "object" &&
+    sourceConfig !== null &&
+    !Array.isArray(sourceConfig) &&
+    sourceConfig.schema_version === 2;
+  return isCanonical
+    ? tableViewOperation(view, config)
+    : legacyTableViewOperation(view, config);
 }
 
 function finalizeAction(
@@ -646,7 +1092,30 @@ export function composeDirectTableAction(
 ): ComposedDirectTableAction {
   const snapshot = parseSnapshot(snapshotInput);
   const intent = parseIntent(intentInput);
-  return intent.action === "create_table"
-    ? composeCreateTable(snapshot, intent.title)
-    : composeTableMutation(snapshot, intent);
+  if (intent.action === "create_table") {
+    return composeCreateTable(snapshot, intent.title);
+  }
+  if (
+    intent.action === "create_saved_view" ||
+    intent.action === "duplicate_saved_view"
+  ) {
+    return composeCreateSavedView(snapshot, intent);
+  }
+  if (intent.action === "create_connection_property") {
+    return composeCreateConnectionProperty(snapshot, intent);
+  }
+  if (intent.action === "add_existing_connection_property") {
+    return composeAddExistingConnectionProperty(snapshot, intent);
+  }
+  if (intent.action === "rename_connection_property") {
+    return composeRenameConnectionProperty(snapshot, intent);
+  }
+  if (
+    intent.action === "rename_saved_view" ||
+    intent.action === "update_view_query" ||
+    intent.action === "archive_saved_view"
+  ) {
+    return composeSavedViewMutation(snapshot, intent);
+  }
+  return composeTableMutation(snapshot, intent);
 }

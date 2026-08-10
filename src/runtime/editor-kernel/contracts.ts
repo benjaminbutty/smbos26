@@ -12,7 +12,8 @@ export type EditorColumnKind =
   | "date"
   | "datetime"
   | "multi_select"
-  | "file";
+  | "file"
+  | "connection";
 
 type EditorObjectValue = Readonly<
   Record<string, string | number | boolean | null | readonly string[]>
@@ -45,12 +46,19 @@ export interface EditorColumn {
   options?: readonly string[];
   currency?: string;
   readOnlyReason?: string;
+  connection?: {
+    relationshipKey: string;
+    direction: "source" | "target";
+    multiple: boolean;
+    targetObjectKey: string;
+  };
   width: number;
 }
 
 export interface EditorRow {
   id: string;
   values: Record<string, EditorValue>;
+  connectionValues?: Record<string, readonly { id: string; label: string }[]>;
   isDraft?: boolean;
 }
 
@@ -124,6 +132,14 @@ export interface TableEditorAdapter {
     columnKey: string,
     value: EditorValue,
   ): Promise<EditorRow>;
+  searchConnectionTargets?(
+    columnKey: string,
+    search: string,
+  ): Promise<readonly { id: string; label: string }[]>;
+  createConnectionTarget?(
+    columnKey: string,
+    primaryValue: string,
+  ): Promise<{ id: string; label: string }>;
   createRow(
     initialValues: Readonly<Record<string, EditorValue>>,
   ): Promise<EditorRow>;
@@ -166,6 +182,13 @@ export function editorValueForColumn(
   value: unknown,
 ): EditorValue {
   switch (column.kind) {
+    case "connection":
+      if (Array.isArray(value)) {
+        return value.filter((item): item is string => typeof item === "string");
+      }
+      return value === null || value === undefined || value === ""
+        ? []
+        : [String(value)];
     case "number":
     case "currency": {
       if (value === "" || value === null || value === undefined) {

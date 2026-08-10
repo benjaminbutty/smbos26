@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { tableViewQuerySchema } from "../../experience/schemas";
 import { graphKeySchema } from "../../graph/schemas";
 
 const directTableLabelSchema = z.string().trim().min(1).max(120);
@@ -28,6 +29,14 @@ export const directTableActionKindSchema = z.enum([
   "update_column_options",
   "reorder_columns",
   "resize_column",
+  "create_connection_property",
+  "add_existing_connection_property",
+  "rename_connection_property",
+  "create_saved_view",
+  "duplicate_saved_view",
+  "rename_saved_view",
+  "update_view_query",
+  "archive_saved_view",
 ]);
 
 const directTableOptionsSchema = z
@@ -231,6 +240,84 @@ const resizeColumnIntentSchema = z
   })
   .strict();
 
+const connectionModeSchema = z.enum([
+  "one_record",
+  "several_records",
+  "single",
+  "multiple",
+]);
+
+const createConnectionPropertyIntentSchema = z
+  .object({
+    action: z.literal("create_connection_property"),
+    viewKey: graphKeySchema,
+    targetViewKey: graphKeySchema,
+    label: directTableLabelSchema,
+    mode: connectionModeSchema,
+    reverseLabel: directTableLabelSchema.optional(),
+    addReverse: z.boolean().default(true),
+  })
+  .strict();
+
+const addExistingConnectionPropertyIntentSchema = z
+  .object({
+    action: z.literal("add_existing_connection_property"),
+    viewKey: graphKeySchema,
+    relationshipKey: graphKeySchema,
+    direction: z.enum(["source", "target"]).optional(),
+    label: directTableLabelSchema.optional(),
+  })
+  .strict();
+
+const renameConnectionPropertyIntentSchema = z
+  .object({
+    action: z.literal("rename_connection_property"),
+    viewKey: graphKeySchema,
+    relationshipKey: graphKeySchema,
+    direction: z.enum(["source", "target"]),
+    label: directTableLabelSchema,
+  })
+  .strict();
+
+const createSavedViewIntentSchema = z
+  .object({
+    action: z.literal("create_saved_view"),
+    sourceViewKey: graphKeySchema,
+    name: directTableLabelSchema,
+  })
+  .strict();
+
+const duplicateSavedViewIntentSchema = z
+  .object({
+    action: z.literal("duplicate_saved_view"),
+    sourceViewKey: graphKeySchema,
+    name: directTableLabelSchema,
+  })
+  .strict();
+
+const renameSavedViewIntentSchema = z
+  .object({
+    action: z.literal("rename_saved_view"),
+    viewKey: graphKeySchema,
+    name: directTableLabelSchema,
+  })
+  .strict();
+
+const updateViewQueryIntentSchema = z
+  .object({
+    action: z.literal("update_view_query"),
+    viewKey: graphKeySchema,
+    query: tableViewQuerySchema,
+  })
+  .strict();
+
+const archiveSavedViewIntentSchema = z
+  .object({
+    action: z.literal("archive_saved_view"),
+    viewKey: graphKeySchema,
+  })
+  .strict();
+
 export const directTableIntentSchema = z.discriminatedUnion("action", [
   createTableIntentSchema,
   renameTableIntentSchema,
@@ -241,6 +328,14 @@ export const directTableIntentSchema = z.discriminatedUnion("action", [
   updateColumnOptionsIntentSchema,
   reorderColumnsIntentSchema,
   resizeColumnIntentSchema,
+  createConnectionPropertyIntentSchema,
+  addExistingConnectionPropertyIntentSchema,
+  renameConnectionPropertyIntentSchema,
+  createSavedViewIntentSchema,
+  duplicateSavedViewIntentSchema,
+  renameSavedViewIntentSchema,
+  updateViewQueryIntentSchema,
+  archiveSavedViewIntentSchema,
 ]);
 
 export const directTableCurrentnessSchema = z
