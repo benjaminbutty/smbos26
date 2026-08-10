@@ -1,5 +1,10 @@
 import type { ExperienceViewBundle } from "../../../core/experience/service";
-import type { TableViewConfig } from "../../../core/experience/schemas";
+import { connectionColumnStorageKey } from "../../../core/experience/table-query";
+import {
+  normalizeTableViewConfig,
+  type TableViewColumn,
+  type TableViewConfig,
+} from "../../../core/experience/schemas";
 import type { Json, Tables } from "../../../db/supabase/database.types";
 import {
   directTableEditableFieldTypes,
@@ -47,6 +52,7 @@ const defaultWidths: Readonly<Record<EditorColumnKind, number>> = {
   datetime: 210,
   multi_select: 220,
   file: 220,
+  connection: 220,
 };
 
 function fieldOptions(field: Tables<"field_definitions">): string[] {
@@ -152,6 +158,51 @@ function mapField(
   };
 }
 
+function relationshipLabel(
+  relationship: Tables<"relationship_definitions">,
+  direction: "source" | "target",
+): string {
+  return direction === "source"
+    ? relationship.source_label
+    : relationship.target_label;
+}
+
+function mapConnection(
+  column: Extract<TableViewColumn, { kind: "connection" }>,
+  bundle: ExperienceViewBundle,
+): EditorColumn {
+  const relationship = (bundle.relationships ?? []).find(
+    (candidate) =>
+      candidate.key === column.relationship_key && candidate.is_active,
+  );
+  if (!relationship) {
+    throw new ProductionTableMappingError(
+      "This Table has a missing or inactive Connection property.",
+    );
+  }
+  const targetObjectKey =
+    column.direction === "source"
+      ? relationship.target_object_definition_id
+      : relationship.source_object_definition_id;
+  const multiple =
+    relationship.cardinality === "many_to_many" ||
+    (relationship.cardinality === "one_to_many" &&
+      column.direction === "target");
+  return {
+    key: connectionColumnStorageKey(column.relationship_key, column.direction),
+    label: column.label ?? relationshipLabel(relationship, column.direction),
+    kind: "connection",
+    editable: true,
+    connection: {
+      relationshipKey: column.relationship_key,
+      direction: column.direction,
+      multiple,
+      targetObjectKey,
+    },
+    width: 220,
+  };
+}
+
 function compatibleEditorObject(
   value: Record<string, Json | undefined>,
 ): EditorValue | null {
@@ -213,13 +264,24 @@ function recordData(
     : {};
 }
 
-function mapRow(table: EditorTable, record: Tables<"records">): EditorRow {
+function mapRow(
+  table: EditorTable,
+  record: Tables<"records">,
+  connectionValues?: Record<string, readonly { id: string; label: string }[]>,
+): EditorRow {
   const data = recordData(record);
   const values: Record<string, EditorValue> = {};
   for (const column of table.recordColumns ?? table.columns) {
-    values[column.key] = editorValueFromJson(data[column.key]);
+    values[column.key] =
+      column.kind === "connection"
+        ? (connectionValues?.[column.key]?.map((value) => value.id) ?? [])
+        : editorValueFromJson(data[column.key]);
   }
-  return { id: record.id, values };
+  return {
+    id: record.id,
+    values,
+    ...(connectionValues ? { connectionValues } : {}),
+  };
 }
 
 export function mapProductionRecordToEditorRow(
@@ -243,7 +305,7 @@ export function mapExperienceViewBundleToEditorTable({
     );
   }
 
-  const config = bundle.config as TableViewConfig;
+  const config = normalizeTableViewConfig(bundle.config);
   const fieldsByKey = new Map(bundle.fields.map((field) => [field.key, field]));
   const visibleFields = config.fields.map((fieldKey) => {
     const field = fieldsByKey.get(fieldKey);
@@ -271,16 +333,28 @@ export function mapExperienceViewBundleToEditorTable({
   }
 
   const recordFields = bundle.fields.filter((field) => field.is_active);
-  const recordColumns = recordFields.map((field) => {
+  const fieldColumns = recordFields.map((field) => {
     const column = mapField(field, config, editFormFieldKeys);
     return field.key === primaryColumnKey
       ? { ...column, primary: true }
       : column;
   });
-  const columns = visibleFields.map((field) => {
-    const column = recordColumns.find(
-      (candidate) => candidate.key === field.key,
-    );
+  const connectionColumns = config.columns
+    .filter(
+      (column): column is Extract<TableViewColumn, { kind: "connection" }> =>
+        column.kind === "connection",
+    )
+    .map((column) => mapConnection(column, bundle));
+  const allColumns = [...fieldColumns, ...connectionColumns];
+  const columns = config.columns.map((configuredColumn) => {
+    const key =
+      configuredColumn.kind === "field"
+        ? configuredColumn.field_key
+        : connectionColumnStorageKey(
+            configuredColumn.relationship_key,
+            configuredColumn.direction,
+          );
+    const column = allColumns.find((candidate) => candidate.key === key);
     if (!column) {
       throw new ProductionTableMappingError(
         "This Table has an unusable visible property.",
@@ -288,8 +362,11 @@ export function mapExperienceViewBundleToEditorTable({
     }
     return column;
   });
+  const recordColumns = [...fieldColumns, ...connectionColumns];
   const rows = bundle.records
-    .filter((record) => record.record_status === "active")
+    .filter(
+      (record) => config.include_archived || record.record_status === "active",
+    )
     .map((record) =>
       mapRow(
         {
@@ -301,6 +378,7 @@ export function mapExperienceViewBundleToEditorTable({
           rows: [],
         },
         record,
+        bundle.connectionValues?.[record.id],
       ),
     );
 

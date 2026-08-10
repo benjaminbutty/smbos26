@@ -131,6 +131,35 @@ as $$
     ) = base_fields;
 $$;
 
+create or replace function private.direct_table_columns_preserve_order_with_insert_v2(
+  base_columns jsonb,
+  candidate_columns jsonb,
+  inserted_key text
+)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select jsonb_array_length(candidate_columns) =
+      jsonb_array_length(base_columns) + 1
+    and (
+      select count(*)
+      from jsonb_array_elements(candidate_columns) as item
+      where item ->> 'kind' = 'field'
+        and item ->> 'field_key' = inserted_key
+    ) = 1
+    and (
+      select jsonb_agg(item order by ordinal)
+      from jsonb_array_elements(candidate_columns)
+        with ordinality as next_columns(item, ordinal)
+      where not (
+        item ->> 'kind' = 'field'
+        and item ->> 'field_key' = inserted_key
+      )
+    ) = base_columns;
+$$;
+
 create or replace function private.assert_lenni_direct_table_action_shape_v1(
   action_kind text,
   base_snapshot jsonb,
@@ -234,11 +263,38 @@ begin
         base_view - 'config_json'::text
       or candidate_view -> 'config_json' <>
         view_operation -> 'config_json'
-      or (candidate_view -> 'config_json') - 'fields'::text <>
-        (base_view -> 'config_json') - 'fields'::text
+      or (
+        base_view -> 'config_json' ->> 'schema_version' <> '2'
+        and (candidate_view -> 'config_json') - 'fields'::text <>
+          (base_view -> 'config_json') - 'fields'::text
+      )
     then
       raise exception 'direct_table_action_shape_invalid'
         using errcode = '22023';
+    end if;
+
+    if base_view -> 'config_json' ->> 'schema_version' = '2' then
+      if candidate_view - 'config_json'::text <>
+          base_view - 'config_json'::text
+        or candidate_view -> 'config_json' <>
+          view_operation -> 'config_json'
+        or (candidate_view -> 'config_json') - 'fields'::text - 'columns'::text <>
+          (base_view -> 'config_json') - 'fields'::text - 'columns'::text
+        or not private.direct_table_fields_preserve_order_with_insert_v2(
+          base_view -> 'config_json' -> 'fields',
+          candidate_view -> 'config_json' -> 'fields',
+          field_operation ->> 'key'
+        )
+        or not private.direct_table_columns_preserve_order_with_insert_v2(
+          base_view -> 'config_json' -> 'columns',
+          candidate_view -> 'config_json' -> 'columns',
+          field_operation ->> 'key'
+        )
+      then
+        raise exception 'direct_table_action_shape_invalid'
+          using errcode = '22023';
+      end if;
+      return;
     end if;
 
     base_fields := base_view -> 'config_json' -> 'fields';

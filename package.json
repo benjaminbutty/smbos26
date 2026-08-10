@@ -103,6 +103,7 @@
     "supabase:auth:ready:ci": "node scripts/wait-for-local-auth.mjs --recover",
     "supabase:lint": "supabase db lint --local --level warning",
     "demo:seed": "node scripts/demo-seed.mjs",
+    "workspace:proof:seed": "node scripts/internal-workspace-proof-seed.mjs",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {

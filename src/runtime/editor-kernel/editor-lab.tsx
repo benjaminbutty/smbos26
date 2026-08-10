@@ -510,14 +510,20 @@ export function EditorKernel({
           if (operationVersions.current.get(operationKey) !== version) {
             return;
           }
-          setTable((current) =>
-            replaceCell(
-              current,
-              rowId,
-              columnKey,
-              savedRow.values[columnKey] ?? null,
+          setTable((current) => ({
+            ...current,
+            rows: current.rows.map((candidate) =>
+              candidate.id === rowId
+                ? {
+                    ...candidate,
+                    values: { ...candidate.values, ...savedRow.values },
+                    ...(savedRow.connectionValues
+                      ? { connectionValues: savedRow.connectionValues }
+                      : {}),
+                  }
+                : candidate,
             ),
-          );
+          }));
           pendingSaves.current.delete(operationKey);
           if (pendingSaves.current.size === 0) {
             setSaveState({ status: "saved" });
@@ -1161,6 +1167,16 @@ export function EditorKernel({
         onChangeColumnType: handleChangeColumnType,
         onInsertColumn: handleInsertColumn,
         onMoveColumn: handleMoveColumn,
+        onSearchConnectionTargets: (columnKey, search) =>
+          adapter.searchConnectionTargets
+            ? adapter.searchConnectionTargets(columnKey, search)
+            : Promise.resolve([]),
+        onCreateConnectionTarget: (columnKey, primaryValue) =>
+          adapter.createConnectionTarget
+            ? adapter.createConnectionTarget(columnKey, primaryValue)
+            : Promise.reject(
+                new Error("Creating a connected Record is not available."),
+              ),
         canRenameColumns: capabilities.canRenameColumns,
         canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
         canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
@@ -1187,6 +1203,7 @@ export function EditorKernel({
       capabilities.canReorderColumns,
       capabilities.canResizeColumns,
       table.columns,
+      adapter,
     ],
   );
 
@@ -1345,6 +1362,18 @@ export function EditorKernel({
             columns={recordColumns}
             onClose={closePanel}
             onCommitCell={commitCell}
+            onSearchConnectionTargets={(columnKey, search) =>
+              adapter.searchConnectionTargets
+                ? adapter.searchConnectionTargets(columnKey, search)
+                : Promise.resolve([])
+            }
+            onCreateConnectionTarget={(columnKey, primaryValue) =>
+              adapter.createConnectionTarget
+                ? adapter.createConnectionTarget(columnKey, primaryValue)
+                : Promise.reject(
+                    new Error("Creating a connected Record is not available."),
+                  )
+            }
             row={panelRow}
             tableName={table.name}
           />

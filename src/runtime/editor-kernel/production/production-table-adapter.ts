@@ -14,6 +14,9 @@ import type {
   ProductionChangeColumnTypeAction,
   ProductionConfigurationCurrentness,
   ProductionCellEditAction,
+  ProductionConnectionCreateAction,
+  ProductionConnectionEditAction,
+  ProductionConnectionSearchAction,
   ProductionInsertColumnAction,
   ProductionPasteAction,
   ProductionRecordReadAction,
@@ -27,6 +30,9 @@ import type {
 
 export interface ProductionTableAdapterActions {
   updateCell: ProductionCellEditAction;
+  updateConnection?: ProductionConnectionEditAction;
+  searchConnectionTargets?: ProductionConnectionSearchAction;
+  createConnectionTarget?: ProductionConnectionCreateAction;
   createRow: ProductionRowCreateAction;
   openRecord: ProductionRecordReadAction;
   addColumn: ProductionAddColumnAction;
@@ -65,6 +71,16 @@ function cloneRow(row: EditorRow): EditorRow {
         cloneValue(value),
       ]),
     ),
+    ...(row.connectionValues
+      ? {
+          connectionValues: Object.fromEntries(
+            Object.entries(row.connectionValues).map(([key, values]) => [
+              key,
+              values.map((value) => ({ ...value })),
+            ]),
+          ),
+        }
+      : {}),
   };
 }
 
@@ -152,16 +168,63 @@ export class ProductionTableAdapter implements TableEditorAdapter {
     columnKey: string,
     value: EditorValue,
   ): Promise<EditorRow> {
-    const result = await this.actions.updateCell({
-      recordId: rowId,
-      fieldKey: columnKey,
-      value,
-    });
+    const column = (this.table.recordColumns ?? this.table.columns).find(
+      (candidate) => candidate.key === columnKey,
+    );
+    const result =
+      column?.kind === "connection" &&
+      column.connection &&
+      this.actions.updateConnection
+        ? await this.actions.updateConnection({
+            recordId: rowId,
+            relationshipKey: column.connection.relationshipKey,
+            direction: column.connection.direction,
+            targetRecordIds: Array.isArray(value) ? [...value] : [],
+          })
+        : await this.actions.updateCell({
+            recordId: rowId,
+            fieldKey: columnKey,
+            value,
+          });
     if (result.status === "error") {
       throw new Error(result.message);
     }
     this.table = replaceRow(this.table, result.value);
     return cloneRow(result.value);
+  }
+
+  async searchConnectionTargets(
+    columnKey: string,
+    search: string,
+  ): Promise<readonly { id: string; label: string }[]> {
+    if (!this.actions.searchConnectionTargets) {
+      return [];
+    }
+    const result = await this.actions.searchConnectionTargets({
+      columnKey,
+      search,
+    });
+    if (result.status === "error") {
+      throw new Error(result.message);
+    }
+    return result.value;
+  }
+
+  async createConnectionTarget(
+    columnKey: string,
+    primaryValue: string,
+  ): Promise<{ id: string; label: string }> {
+    if (!this.actions.createConnectionTarget) {
+      throw new Error("Creating a connected Record is not available.");
+    }
+    const result = await this.actions.createConnectionTarget({
+      columnKey,
+      primaryValue,
+    });
+    if (result.status === "error") {
+      throw new Error(result.message);
+    }
+    return result.value;
   }
 
   async createRow(

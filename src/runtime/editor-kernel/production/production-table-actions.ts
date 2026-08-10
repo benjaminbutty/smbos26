@@ -22,11 +22,16 @@ import {
   directTableTypeLabel,
 } from "../../../core/configuration/direct-tables/type-compatibility";
 import { createExperienceService } from "../../../core/experience/service";
-import type { TableViewConfig } from "../../../core/experience/schemas";
+import { normalizeTableViewConfig } from "../../../core/experience/schemas";
+import { tableViewQuerySchema } from "../../../core/experience/schemas";
 import { createServerClient } from "../../../db/supabase/server";
 import type { Json } from "../../../db/supabase/database.types";
 import { ExperienceSubmissionError } from "../../forms/submission";
 import { experienceKeyToPath } from "../../routing";
+import {
+  searchTableConnectionTargets,
+  setTableRecordConnectionValues,
+} from "../../../core/experience/table-query";
 import {
   applyProductionTableRecordCellEditValue,
   type DirectTableRecordTypedCellEditInput,
@@ -41,6 +46,9 @@ import type {
   ProductionAddColumnInput,
   ProductionChangeColumnTypeInput,
   ProductionCellEditInput,
+  ProductionConnectionCreateInput,
+  ProductionConnectionEditInput,
+  ProductionConnectionSearchInput,
   ProductionConfigurationCurrentness,
   ProductionInsertColumnInput,
   ProductionPasteInput,
@@ -50,6 +58,7 @@ import type {
   ProductionRenameTableInput,
   ProductionReorderColumnsInput,
   ProductionRowCreateInput,
+  ProductionSavedViewQueryInput,
   ProductionTableStructureState,
   ProductionUpdateColumnOptionsInput,
 } from "./action-types";
@@ -97,6 +106,26 @@ const cellInputSchema = z
     recordId: z.uuid(),
     fieldKey: viewKeySchema,
     value: editorValueSchema,
+  })
+  .strict();
+const connectionEditInputSchema = z
+  .object({
+    recordId: z.uuid(),
+    relationshipKey: viewKeySchema,
+    direction: z.enum(["source", "target"]),
+    targetRecordIds: z.array(z.uuid()).max(100),
+  })
+  .strict();
+const connectionSearchInputSchema = z
+  .object({
+    columnKey: z.string().min(1).max(180),
+    search: z.string().max(200),
+  })
+  .strict();
+const connectionCreateInputSchema = z
+  .object({
+    columnKey: z.string().min(1).max(180),
+    primaryValue: z.string().trim().min(1).max(1_000),
   })
   .strict();
 const rowInputSchema = z
@@ -250,6 +279,12 @@ const renameTableInputSchema = z
     title: z.string().trim().min(1).max(120),
   })
   .strict();
+const savedViewQueryInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    query: tableViewQuerySchema,
+  })
+  .strict();
 const pasteInputSchema = z
   .object({
     rows: z
@@ -399,7 +434,7 @@ async function loadMappedTable(
 ) {
   const experience = createExperienceService(supabase, { businessId });
   const bundle = await experience.loadView(viewKey, "internal");
-  const config = bundle.config as TableViewConfig;
+  const config = normalizeTableViewConfig(bundle.config);
   let editFormFieldKeys: readonly string[] | undefined;
   if (config.edit_form_key) {
     const form = await experience.loadForm(config.edit_form_key, "internal");
@@ -711,6 +746,28 @@ export async function renameProductionTableAction(
   );
 }
 
+export async function updateProductionSavedViewQueryAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionSavedViewQueryInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = savedViewQueryInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That saved view query could not be saved safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "update_view_query",
+      viewKey: context.viewKey,
+      query: parsed.data.query,
+    },
+  );
+}
+
 export async function updateProductionTableCellAction(
   businessSlugInput: string,
   viewKeyInput: string,
@@ -739,6 +796,152 @@ export async function updateProductionTableCellAction(
     return {
       status: "success",
       value: mapProductionRecordToEditorRow(mapped.table, record),
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function updateProductionTableConnectionAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionConnectionEditInput,
+): Promise<ProductionActionResult<EditorRow>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = connectionEditInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return resultError("That connection value is no longer available.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+  try {
+    const mapped = await loadMappedTable(supabase, tenant.business.id, viewKey);
+    const column = mapped.table.columns.find(
+      (candidate) =>
+        candidate.kind === "connection" &&
+        candidate.connection?.relationshipKey === parsed.data.relationshipKey &&
+        candidate.connection.direction === parsed.data.direction,
+    );
+    if (!column || column.kind !== "connection") {
+      return resultError("That connection property is no longer available.");
+    }
+    await setTableRecordConnectionValues(supabase, tenant.business.id, {
+      viewKey,
+      recordId: parsed.data.recordId,
+      relationshipKey: parsed.data.relationshipKey,
+      direction: parsed.data.direction,
+      targetRecordIds: parsed.data.targetRecordIds,
+    });
+    const refreshed = await loadMappedTable(
+      supabase,
+      tenant.business.id,
+      viewKey,
+    );
+    const row = refreshed.table.rows.find(
+      (candidate) => candidate.id === parsed.data.recordId,
+    );
+    if (!row) {
+      return resultError("That Record is no longer available.");
+    }
+    revalidatePath(routePath(businessSlug, viewKey), "page");
+    return { status: "success", value: row };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function searchProductionTableConnectionTargetsAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionConnectionSearchInput,
+): Promise<ProductionActionResult<readonly { id: string; label: string }[]>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = connectionSearchInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return resultError("That connection search is not available.");
+  }
+  const match = parsed.data.columnKey.match(
+    /^connection:([a-z][a-z0-9_]*):(source|target)$/,
+  );
+  if (!match) {
+    return resultError("That connection property is no longer available.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+  try {
+    const targets = await searchTableConnectionTargets(
+      supabase,
+      tenant.business.id,
+      {
+        viewKey,
+        relationshipKey: match[1]!,
+        direction: match[2] as "source" | "target",
+        search: parsed.data.search,
+        limit: 50,
+      },
+    );
+    return { status: "success", value: targets };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function createProductionTableConnectionTargetAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionConnectionCreateInput,
+): Promise<ProductionActionResult<{ id: string; label: string }>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = connectionCreateInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return resultError("That connected Record name is not available.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+
+  try {
+    const mapped = await loadMappedTable(supabase, tenant.business.id, viewKey);
+    const column = mapped.table.columns.find(
+      (candidate) => candidate.key === parsed.data.columnKey,
+    );
+    if (!column || column.kind !== "connection" || !column.connection) {
+      return resultError("That connection property is no longer available.");
+    }
+    const experience = createExperienceService(supabase, {
+      businessId: tenant.business.id,
+    });
+    const targetView = (await experience.listTableViews())
+      .filter(
+        (candidate) =>
+          candidate.object_definition_id === column.connection!.targetObjectKey,
+      )
+      .sort((left, right) => {
+        const leftConfig = normalizeTableViewConfig(left.config_json);
+        const rightConfig = normalizeTableViewConfig(right.config_json);
+        return (
+          (leftConfig.role === "primary" ? 0 : 1) -
+            (rightConfig.role === "primary" ? 0 : 1) ||
+          left.key.localeCompare(right.key)
+        );
+      })[0];
+    if (!targetView) {
+      return resultError("The connected Table is not available.");
+    }
+    const created = await createProductionTableRowAction(
+      businessSlug,
+      targetView.key,
+      { primaryValue: parsed.data.primaryValue },
+    );
+    if (created.status === "error") {
+      return created;
+    }
+    revalidatePath(routePath(businessSlug, targetView.key), "page");
+    return {
+      status: "success",
+      value: { id: created.value.id, label: parsed.data.primaryValue },
     };
   } catch (error) {
     return resultError(safeError(error));

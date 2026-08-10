@@ -6,6 +6,13 @@ import type {
 } from "../../core/experience/service";
 import type { PageLayout } from "../../core/experience/schemas";
 import type { PublicPreorderCatalogue } from "../../core/preorder/schemas";
+import type {
+  EditorCapabilities,
+  EditorTable,
+} from "../editor-kernel/contracts";
+import type { ProductionConfigurationCurrentness } from "../editor-kernel/production/action-types";
+import type { ProductionTableAdapterActions } from "../editor-kernel/production/production-table-adapter";
+import { ProductionTableWorkspace } from "../editor-kernel/production/production-table-workspace";
 import { FormRenderer, type FormAction } from "../forms/form-renderer";
 import { PreorderExperience } from "../preorder/preorder-experience";
 import type { InlineEditAction } from "../views/inline-edit-contract";
@@ -30,6 +37,14 @@ interface PageRendererProps {
   preorders?: Readonly<Record<string, ResolvedPreorderBlock>>;
   previewMode?: boolean;
   publicMode?: boolean;
+  tableEmbeds?: Readonly<Record<string, PageRendererTableEmbed>>;
+}
+
+export interface PageRendererTableEmbed {
+  table: EditorTable;
+  actions: ProductionTableAdapterActions;
+  capabilities: EditorCapabilities;
+  currentness?: ProductionConfigurationCurrentness | undefined;
 }
 
 function MissingBlock({ message }: Readonly<{ message: string }>): ReactNode {
@@ -49,6 +64,7 @@ export function PageRenderer({
   preorders = {},
   previewMode = false,
   publicMode = false,
+  tableEmbeds = {},
 }: Readonly<PageRendererProps>): ReactNode {
   return (
     <div className="runtime-page-blocks">
@@ -130,6 +146,30 @@ export function PageRenderer({
               );
             }
             const bundle = views[block.view_key];
+            const tableEmbed = tableEmbeds[block.view_key];
+            if (tableEmbed && bundle?.definition.view_type === "table") {
+              const capabilities: EditorCapabilities = {
+                ...tableEmbed.capabilities,
+                ...(block.read_only
+                  ? {
+                      rowCreation: "unavailable" as const,
+                      rowCreationMessage:
+                        "This Table is read-only on this Page.",
+                    }
+                  : {}),
+              };
+              return (
+                <ProductionTableWorkspace
+                  actions={tableEmbed.actions}
+                  capabilities={capabilities}
+                  currentness={tableEmbed.currentness}
+                  key={key}
+                  readOnly={block.read_only ?? false}
+                  surface="embedded"
+                  table={tableEmbed.table}
+                />
+              );
+            }
             return bundle && businessSlug ? (
               <ViewRenderer
                 bundle={bundle}

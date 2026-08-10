@@ -6,7 +6,10 @@ import { resolveTenant } from "../../../../../auth/authorization";
 import { Notice } from "../../../../../components/notice";
 import { loadDirectTableConfiguration } from "../../../../../core/configuration/direct-tables/service";
 import { createExperienceService } from "../../../../../core/experience/service";
-import type { TableViewConfig } from "../../../../../core/experience/schemas";
+import {
+  normalizeTableViewConfig,
+  type TableViewConfig,
+} from "../../../../../core/experience/schemas";
 import { createServerClient } from "../../../../../db/supabase/server";
 import {
   readSearchParam,
@@ -32,10 +35,15 @@ import {
   renameProductionTableColumnAction,
   reorderProductionTableColumnsAction,
   updateProductionTableCellAction,
+  updateProductionTableConnectionAction,
   updateProductionTableColumnOptionsAction,
+  createProductionTableConnectionTargetAction,
+  searchProductionTableConnectionTargetsAction,
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
 import { updateInlineRecordCell } from "../../../../../runtime/views/actions";
+import { TableViewControls } from "../../../../../runtime/views/table-view-controls";
+import { TableViewTabs } from "../../../../../runtime/views/table-view-navigation";
 import { ViewRenderer } from "../../../../../runtime/views/view-renderer";
 
 interface WorkspaceScreenPageProps {
@@ -66,6 +74,21 @@ export default async function WorkspaceScreenPage({
   }
 
   if (bundle.definition.view_type === "table") {
+    const tableViews = (await experience.listTableViews())
+      .filter(
+        (view) =>
+          view.object_definition_id === bundle.definition.object_definition_id,
+      )
+      .sort((left, right) => {
+        const leftConfig = normalizeTableViewConfig(left.config_json);
+        const rightConfig = normalizeTableViewConfig(right.config_json);
+        return (
+          (leftConfig.role === "primary" ? 0 : 1) -
+            (rightConfig.role === "primary" ? 0 : 1) ||
+          left.name.localeCompare(right.name) ||
+          left.key.localeCompare(right.key)
+        );
+      });
     const productionPreview = await (async () => {
       try {
         const config = bundle.config as TableViewConfig;
@@ -138,83 +161,117 @@ export default async function WorkspaceScreenPage({
             };
 
     return (
-      <ProductionTableWorkspace
-        actions={{
-          addColumn: addProductionTableColumnAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          insertColumn: insertProductionTableColumnAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          changeColumnType: changeProductionTableColumnTypeAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          createRow: createProductionTableRowAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          openRecord: readProductionTableRecordAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          paste: pasteProductionTableAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          renameColumn: renameProductionTableColumnAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          renameTable: renameProductionTableAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          reorderColumns: reorderProductionTableColumnsAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          updateCell: updateProductionTableCellAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-          updateColumnOptions: updateProductionTableColumnOptionsAction.bind(
-            null,
-            businessSlug,
-            bundle.definition.key,
-          ),
-        }}
-        capabilities={{
-          ...rowCreation,
-          canAddColumns: Boolean(currentness),
-          canInsertColumns: Boolean(currentness),
-          canRenameColumns: Boolean(currentness),
-          canChangeColumnTypes: Boolean(currentness),
-          canUpdateColumnOptions: Boolean(currentness),
-          canReorderColumns: Boolean(currentness),
-          canResizeColumns: Boolean(currentness),
-          canRenameTable: Boolean(currentness),
-        }}
-        creationFallbackHref={
-          availability.kind === "configured_form"
-            ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}/new`
-            : undefined
-        }
-        currentness={currentness}
-        table={mapped.table}
-      />
+      <>
+        <TableViewTabs
+          businessSlug={businessSlug}
+          currentViewKey={bundle.definition.key}
+          views={tableViews}
+        />
+        <TableViewControls
+          businessSlug={businessSlug}
+          config={normalizeTableViewConfig(bundle.config)}
+          currentness={currentness}
+          fields={bundle.fields}
+          {...(bundle.relationships
+            ? { relationships: bundle.relationships }
+            : {})}
+          viewKey={bundle.definition.key}
+        />
+        <ProductionTableWorkspace
+          actions={{
+            addColumn: addProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            insertColumn: insertProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            changeColumnType: changeProductionTableColumnTypeAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            createRow: createProductionTableRowAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            openRecord: readProductionTableRecordAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            paste: pasteProductionTableAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            renameColumn: renameProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            renameTable: renameProductionTableAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            reorderColumns: reorderProductionTableColumnsAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            updateCell: updateProductionTableCellAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            updateConnection: updateProductionTableConnectionAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            searchConnectionTargets:
+              searchProductionTableConnectionTargetsAction.bind(
+                null,
+                businessSlug,
+                bundle.definition.key,
+              ),
+            createConnectionTarget:
+              createProductionTableConnectionTargetAction.bind(
+                null,
+                businessSlug,
+                bundle.definition.key,
+              ),
+            updateColumnOptions: updateProductionTableColumnOptionsAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+          }}
+          capabilities={{
+            ...rowCreation,
+            canAddColumns: Boolean(currentness),
+            canInsertColumns: Boolean(currentness),
+            canRenameColumns: Boolean(currentness),
+            canChangeColumnTypes: Boolean(currentness),
+            canUpdateColumnOptions: Boolean(currentness),
+            canReorderColumns: Boolean(currentness),
+            canResizeColumns: Boolean(currentness),
+            canRenameTable: Boolean(currentness),
+          }}
+          creationFallbackHref={
+            availability.kind === "configured_form"
+              ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}/new`
+              : undefined
+          }
+          currentness={currentness}
+          table={mapped.table}
+        />
+      </>
     );
   }
 

@@ -196,9 +196,23 @@ export async function applyDirectTableAction(
     requested_action_kind: composed.actionKind,
     requested_operations: composed.operations,
   };
-  const { data, error } =
-    composed.actionKind === "insert_column" ||
-    composed.actionKind === "change_column_type"
+  const internalWorkspaceActionKinds = new Set([
+    "create_connection_property",
+    "add_existing_connection_property",
+    "rename_connection_property",
+    "create_saved_view",
+    "duplicate_saved_view",
+    "rename_saved_view",
+    "update_view_query",
+    "archive_saved_view",
+  ]);
+  const internalWorkspaceAction = internalWorkspaceActionKinds.has(
+    composed.actionKind,
+  );
+  const { data, error } = internalWorkspaceAction
+    ? await client.rpc("apply_internal_workspace_configuration_change", args)
+    : composed.actionKind === "insert_column" ||
+        composed.actionKind === "change_column_type"
       ? await client.rpc("apply_lenni_direct_configuration_change", args)
       : await client.rpc("apply_direct_configuration_change", args);
   if (error || !data) {
