@@ -10,13 +10,17 @@ import {
   type ExperienceFormBundle,
   type ExperienceViewBundle,
 } from "../../../../../core/experience/service";
-import type { TableViewConfig } from "../../../../../core/experience/schemas";
+import {
+  normalizeTableViewConfig,
+  type TableViewConfig,
+} from "../../../../../core/experience/schemas";
 import { createServerClient } from "../../../../../db/supabase/server";
 import {
   readSearchParam,
   type SearchParams,
 } from "../../../../../lib/search-params";
 import { saveExperienceForm } from "../../../../../runtime/forms/actions";
+import { experienceKeyToPath } from "../../../../../runtime/routing";
 import {
   mapExperienceViewBundleToEditorTable,
   ProductionTableMappingError,
@@ -28,6 +32,7 @@ import {
   createProductionTableRowAction,
   insertProductionTableColumnAction,
   pasteProductionTableAction,
+  readProductionRecordPanelContextAction,
   readProductionTableRecordAction,
   renameProductionTableAction,
   renameProductionTableColumnAction,
@@ -39,7 +44,7 @@ import {
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
 import {
-  savePageLayoutAction,
+  applyPageBlockAction,
   renamePageAction,
 } from "../../../../../runtime/pages/direct-actions";
 import {
@@ -57,6 +62,9 @@ interface InternalPageProps {
   params: Promise<{ businessSlug: string; pageSlug: string }>;
   searchParams: SearchParams;
 }
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 function rowCreationCapabilities(
   availability: Awaited<
@@ -145,6 +153,61 @@ function productionTableActions(
   };
 }
 
+function targetViewKeyByObjectId(
+  tableViews: readonly {
+    key: string;
+    name: string;
+    object_definition_id: string;
+    config_json: unknown;
+  }[],
+): Readonly<Record<string, string>> {
+  return [...tableViews]
+    .sort((left, right) => {
+      const leftConfig = normalizeTableViewConfig(left.config_json);
+      const rightConfig = normalizeTableViewConfig(right.config_json);
+      return (
+        (leftConfig.role === "primary" ? 0 : 1) -
+          (rightConfig.role === "primary" ? 0 : 1) ||
+        left.name.localeCompare(right.name) ||
+        left.key.localeCompare(right.key)
+      );
+    })
+    .reduce<Record<string, string>>((result, view) => {
+      if (!result[view.object_definition_id]) {
+        result[view.object_definition_id] = view.key;
+      }
+      return result;
+    }, {});
+}
+
+function tableEmbedContext(
+  businessSlug: string,
+  viewKey: string,
+  bundle: ExperienceViewBundle,
+) {
+  return {
+    recordTypeLabel: bundle.object.singular_label,
+    recordCountLabel: `${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`,
+    fullRecordPath: `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(viewKey)}`,
+    readConnectedRecord: readProductionRecordPanelContextAction.bind(
+      null,
+      businessSlug,
+    ),
+    updateConnectedRecordCell: updateProductionTableCellAction.bind(
+      null,
+      businessSlug,
+    ),
+    updateConnectedRecordConnection: updateProductionTableConnectionAction.bind(
+      null,
+      businessSlug,
+    ),
+    searchConnectedRecordTargets:
+      searchProductionTableConnectionTargetsAction.bind(null, businessSlug),
+    createConnectedRecordTarget:
+      createProductionTableConnectionTargetAction.bind(null, businessSlug),
+  };
+}
+
 export default async function InternalPage({
   params,
   searchParams,
@@ -228,12 +291,17 @@ export default async function InternalPage({
     }
   })();
 
+  const primaryViewKeyByObjectId = targetViewKeyByObjectId(tableViews);
+
   if (!canEdit) {
     const tableEmbeds: Record<string, PageRendererTableEmbed> = {};
     for (const [key, bundle] of Object.entries(views)) {
       if (bundle.definition.view_type !== "table") continue;
       try {
-        const mapped = mapExperienceViewBundleToEditorTable({ bundle });
+        const mapped = mapExperienceViewBundleToEditorTable({
+          bundle,
+          targetViewKeyByObjectId: primaryViewKeyByObjectId,
+        });
         const availability = await getDirectTableRowCreationAvailability(
           supabase,
           { businessId: tenant.business.id },
@@ -250,6 +318,7 @@ export default async function InternalPage({
               primary?.editable !== false,
             ),
             canAddColumns: false,
+            canAddConnections: false,
             canInsertColumns: false,
             canRenameColumns: false,
             canChangeColumnTypes: false,
@@ -258,6 +327,7 @@ export default async function InternalPage({
             canResizeColumns: false,
             canRenameTable: false,
           },
+          ...tableEmbedContext(businessSlug, key, bundle),
           table: mapped.table,
         };
       } catch {
@@ -323,6 +393,7 @@ export default async function InternalPage({
       const mapped = mapExperienceViewBundleToEditorTable({
         bundle,
         editFormFieldKeys,
+        targetViewKeyByObjectId: primaryViewKeyByObjectId,
       });
       const availability = await getDirectTableRowCreationAvailability(
         supabase,
@@ -335,6 +406,7 @@ export default async function InternalPage({
       const capabilities: EditorCapabilities = {
         ...rowCreationCapabilities(availability, primary?.editable !== false),
         canAddColumns: false,
+        canAddConnections: false,
         canInsertColumns: false,
         canRenameColumns: false,
         canChangeColumnTypes: false,
@@ -348,76 +420,8 @@ export default async function InternalPage({
         table: {
           table: mapped.table,
           capabilities,
-          actions: {
-            addColumn: addProductionTableColumnAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            insertColumn: insertProductionTableColumnAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            changeColumnType: changeProductionTableColumnTypeAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            createRow: createProductionTableRowAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            openRecord: readProductionTableRecordAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            paste: pasteProductionTableAction.bind(null, businessSlug, key),
-            renameColumn: renameProductionTableColumnAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            renameTable: renameProductionTableAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            reorderColumns: reorderProductionTableColumnsAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            updateCell: updateProductionTableCellAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            updateConnection: updateProductionTableConnectionAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-            searchConnectionTargets:
-              searchProductionTableConnectionTargetsAction.bind(
-                null,
-                businessSlug,
-                key,
-              ),
-            createConnectionTarget:
-              createProductionTableConnectionTargetAction.bind(
-                null,
-                businessSlug,
-                key,
-              ),
-            updateColumnOptions: updateProductionTableColumnOptionsAction.bind(
-              null,
-              businessSlug,
-              key,
-            ),
-          },
+          actions: productionTableActions(businessSlug, key),
+          ...tableEmbedContext(businessSlug, key, bundle),
         },
       };
     } catch {
@@ -426,21 +430,26 @@ export default async function InternalPage({
   }
 
   const editorProps: PageEditorProps = {
-    availableViews: tableViews.map((view) => ({
-      key: view.key,
-      name: view.name,
-      viewType: view.view_type,
-    })),
+    availableViews: tableViews.map((view) => {
+      const tableName = editorViews[view.key]?.bundle.object.plural_label;
+      return {
+        key: view.key,
+        name: view.name,
+        tableKey: view.object_definition_id,
+        viewType: view.view_type,
+        ...(tableName ? { tableName } : {}),
+      };
+    }),
+    applyPageBlockAction: applyPageBlockAction.bind(
+      null,
+      businessSlug,
+      page.definition.key,
+    ),
     businessSlug,
     currentness: directConfiguration.currentness,
     layout: page.layout,
     pageKey: page.definition.key,
     renamePageAction: renamePageAction.bind(
-      null,
-      businessSlug,
-      page.definition.key,
-    ),
-    savePageLayoutAction: savePageLayoutAction.bind(
       null,
       businessSlug,
       page.definition.key,
@@ -453,7 +462,10 @@ export default async function InternalPage({
     <section className="tenant-content runtime-page">
       {error ? <Notice kind="error">{error}</Notice> : null}
       {message ? <Notice kind="message">{message}</Notice> : null}
-      <PageEditor {...editorProps} />
+      <PageEditor
+        key={`${page.definition.key}-${directConfiguration.currentness.expectedHeadRevision}-${page.definition.title}`}
+        {...editorProps}
+      />
     </section>
   );
 }

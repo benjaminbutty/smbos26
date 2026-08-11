@@ -11,10 +11,18 @@ import type {
   EditorTable,
 } from "../editor-kernel/contracts";
 import type { ProductionConfigurationCurrentness } from "../editor-kernel/production/action-types";
+import type {
+  ProductionRecordPanelContextAction,
+  ProductionScopedCellEditAction,
+  ProductionScopedConnectionCreateAction,
+  ProductionScopedConnectionEditAction,
+  ProductionScopedConnectionSearchAction,
+} from "../editor-kernel/production/action-types";
 import type { ProductionTableAdapterActions } from "../editor-kernel/production/production-table-adapter";
 import { ProductionTableWorkspace } from "../editor-kernel/production/production-table-workspace";
 import { FormRenderer, type FormAction } from "../forms/form-renderer";
 import { PreorderExperience } from "../preorder/preorder-experience";
+import { experienceKeyToPath } from "../routing";
 import type { InlineEditAction } from "../views/inline-edit-contract";
 import { ViewRenderer } from "../views/view-renderer";
 
@@ -45,6 +53,14 @@ export interface PageRendererTableEmbed {
   actions: ProductionTableAdapterActions;
   capabilities: EditorCapabilities;
   currentness?: ProductionConfigurationCurrentness | undefined;
+  recordTypeLabel?: string;
+  recordCountLabel?: string;
+  fullRecordPath?: string;
+  readConnectedRecord?: ProductionRecordPanelContextAction;
+  updateConnectedRecordCell?: ProductionScopedCellEditAction;
+  updateConnectedRecordConnection?: ProductionScopedConnectionEditAction;
+  searchConnectedRecordTargets?: ProductionScopedConnectionSearchAction;
+  createConnectedRecordTarget?: ProductionScopedConnectionCreateAction;
 }
 
 function MissingBlock({ message }: Readonly<{ message: string }>): ReactNode {
@@ -158,16 +174,71 @@ export function PageRenderer({
                     }
                   : {}),
               };
+              const tablePath =
+                tableEmbed.fullRecordPath ??
+                `/app/${encodeURIComponent(
+                  businessSlug ?? "",
+                )}/workspace/${experienceKeyToPath(tableEmbed.table.key)}`;
               return (
-                <ProductionTableWorkspace
-                  actions={tableEmbed.actions}
-                  capabilities={capabilities}
-                  currentness={tableEmbed.currentness}
-                  key={key}
-                  readOnly={block.read_only ?? false}
-                  surface="embedded"
-                  table={tableEmbed.table}
-                />
+                <section className="page-view-block" key={key}>
+                  <header className="page-view-block-header">
+                    <div>
+                      <p className="eyebrow">Saved View</p>
+                      <strong>{bundle.definition.name}</strong>
+                      <span>From {bundle.object.plural_label}</span>
+                    </div>
+                    <a
+                      className="button button-secondary button-small"
+                      href={tablePath}
+                    >
+                      Open Table
+                    </a>
+                  </header>
+                  <ProductionTableWorkspace
+                    actions={tableEmbed.actions}
+                    {...(businessSlug !== undefined ? { businessSlug } : {})}
+                    capabilities={capabilities}
+                    currentness={tableEmbed.currentness}
+                    {...(tableEmbed.createConnectedRecordTarget
+                      ? {
+                          createConnectedRecordTarget:
+                            tableEmbed.createConnectedRecordTarget,
+                        }
+                      : {})}
+                    fullRecordPath={tablePath}
+                    key={`${key}-table`}
+                    {...(tableEmbed.recordCountLabel
+                      ? { recordCountLabel: tableEmbed.recordCountLabel }
+                      : {})}
+                    {...(tableEmbed.recordTypeLabel
+                      ? { recordTypeLabel: tableEmbed.recordTypeLabel }
+                      : {})}
+                    {...(tableEmbed.readConnectedRecord
+                      ? { readConnectedRecord: tableEmbed.readConnectedRecord }
+                      : {})}
+                    readOnly={block.read_only ?? false}
+                    {...(tableEmbed.searchConnectedRecordTargets
+                      ? {
+                          searchConnectedRecordTargets:
+                            tableEmbed.searchConnectedRecordTargets,
+                        }
+                      : {})}
+                    surface="embedded"
+                    table={tableEmbed.table}
+                    {...(tableEmbed.updateConnectedRecordCell
+                      ? {
+                          updateConnectedRecordCell:
+                            tableEmbed.updateConnectedRecordCell,
+                        }
+                      : {})}
+                    {...(tableEmbed.updateConnectedRecordConnection
+                      ? {
+                          updateConnectedRecordConnection:
+                            tableEmbed.updateConnectedRecordConnection,
+                        }
+                      : {})}
+                  />
+                </section>
               );
             }
             return bundle && businessSlug ? (

@@ -98,10 +98,45 @@ function cloneTable(table: EditorTable): EditorTable {
 }
 
 function replaceRow(table: EditorTable, row: EditorRow): EditorTable {
+  const connectionColumns = (table.recordColumns ?? table.columns).filter(
+    (column) => column.kind === "connection",
+  );
   return {
     ...table,
     rows: table.rows.map((candidate) =>
-      candidate.id === row.id ? cloneRow(row) : candidate,
+      candidate.id === row.id
+        ? (() => {
+            const next = cloneRow(row);
+            const currentConnectionValues = candidate.connectionValues ?? {};
+            const nextConnectionValues = next.connectionValues ?? {};
+            const mergedConnectionValues = {
+              ...currentConnectionValues,
+              ...nextConnectionValues,
+            };
+            const values = { ...candidate.values, ...next.values };
+
+            for (const column of connectionColumns) {
+              const hasIncomingLabels = Object.prototype.hasOwnProperty.call(
+                nextConnectionValues,
+                column.key,
+              );
+              const labels = hasIncomingLabels
+                ? nextConnectionValues[column.key]
+                : currentConnectionValues[column.key];
+              if (labels) {
+                values[column.key] = labels.map((value) => value.id);
+              }
+            }
+
+            return {
+              ...next,
+              values,
+              ...(Object.keys(mergedConnectionValues).length > 0
+                ? { connectionValues: mergedConnectionValues }
+                : {}),
+            };
+          })()
+        : candidate,
     ),
   };
 }
@@ -195,7 +230,10 @@ export class ProductionTableAdapter implements TableEditorAdapter {
       throw new Error(result.message);
     }
     this.table = replaceRow(this.table, result.value);
-    return cloneRow(result.value);
+    const storedRow = this.table.rows.find(
+      (candidate) => candidate.id === rowId,
+    );
+    return cloneRow(storedRow ?? result.value);
   }
 
   async searchConnectionTargets(

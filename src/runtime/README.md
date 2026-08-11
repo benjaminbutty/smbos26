@@ -45,9 +45,11 @@ snapshot and applies one complete M5-backed configuration change with exact
 currentness. Page layout JSON is the canonical SMBOS Page grammar, not editor
 JSON.
 
-`src/runtime/page-editor/` is a small Tiptap adapter for the supported Page
-blocks: plain text, Heading 1/2/3, Divider, Callout, and internal Table Views.
-It translates at the persistence boundary, keeps unsupported historical
-blocks as read-only atoms, and embeds the production Table kernel with
-structural controls disabled. Staff and published/static renderers continue to
-use `PageRenderer`; the authoring surface is not a second runtime renderer.
+`src/runtime/page-editor/` provides a bounded owner authoring surface for the
+supported Page blocks: Heading, Text, and exact internal saved View references,
+with existing Divider and historical blocks rendered safely. Editing is
+explicit and compact rather than a permanent form or rich-text workspace.
+Saved Views embed the production Table kernel with structural controls hidden,
+while operational Record and Connection behavior remains live. Staff and
+published/static renderers continue to use `PageRenderer`; the authoring
+surface is not a second runtime renderer.

@@ -267,6 +267,32 @@ function replaceCell(
   };
 }
 
+function mergeSavedRow(current: EditorRow, saved: EditorRow): EditorRow {
+  const currentConnectionValues = current.connectionValues ?? {};
+  const savedConnectionValues = saved.connectionValues ?? {};
+  const connectionValues = {
+    ...currentConnectionValues,
+    ...savedConnectionValues,
+  };
+  const values = { ...current.values, ...saved.values };
+
+  for (const [columnKey, labels] of Object.entries(connectionValues)) {
+    if (
+      !Object.prototype.hasOwnProperty.call(savedConnectionValues, columnKey) ||
+      savedConnectionValues[columnKey]
+    ) {
+      values[columnKey] = labels.map((value) => value.id);
+    }
+  }
+
+  return {
+    ...current,
+    ...saved,
+    values,
+    ...(Object.keys(connectionValues).length > 0 ? { connectionValues } : {}),
+  };
+}
+
 function readOnlyTable(table: EditorTable): EditorTable {
   const lockColumn = (column: EditorTable["columns"][number]) => ({
     ...column,
@@ -899,13 +925,7 @@ export function EditorKernel({
             ...current,
             rows: current.rows.map((candidate) =>
               candidate.id === rowId
-                ? {
-                    ...candidate,
-                    values: { ...candidate.values, ...savedRow.values },
-                    ...(savedRow.connectionValues
-                      ? { connectionValues: savedRow.connectionValues }
-                      : {}),
-                  }
+                ? mergeSavedRow(candidate, savedRow)
                 : candidate,
             ),
           }));
@@ -1126,13 +1146,7 @@ export function EditorKernel({
             current
               ? {
                   ...current,
-                  row: {
-                    ...current.row,
-                    values: { ...current.row.values, ...savedRow.values },
-                    ...(savedRow.connectionValues
-                      ? { connectionValues: savedRow.connectionValues }
-                      : {}),
-                  },
+                  row: mergeSavedRow(current.row, savedRow),
                 }
               : current,
           );

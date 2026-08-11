@@ -436,6 +436,74 @@ describe("production editor adapter", () => {
     ).rejects.toThrow("unavailable");
   });
 
+  it("preserves connected values when a field update returns a field-only row", async () => {
+    const connectionKey = "connection:pet_appointment:target";
+    const table: EditorTable = {
+      key: "appointments",
+      name: "Appointments",
+      primaryColumnKey: "name",
+      columns: [
+        {
+          key: "name",
+          label: "Name",
+          kind: "text",
+          primary: true,
+          width: 200,
+        },
+        {
+          key: connectionKey,
+          label: "Pet",
+          kind: "connection",
+          connection: {
+            relationshipKey: "pet_appointment",
+            direction: "target",
+            multiple: false,
+            targetObjectKey: "pets",
+          },
+          width: 200,
+        },
+      ],
+      rows: [
+        {
+          id: "appointment",
+          values: { name: "Before", [connectionKey]: ["milo"] },
+          connectionValues: {
+            [connectionKey]: [{ id: "milo", label: "Milo" }],
+          },
+        },
+      ],
+    };
+    const adapter = new ProductionTableAdapter(table, {
+      updateCell: async () => ({
+        status: "success" as const,
+        value: {
+          id: "appointment",
+          values: { name: "After", [connectionKey]: [] },
+        },
+      }),
+      createRow: async () => ({
+        status: "error" as const,
+        message: "unavailable",
+      }),
+      openRecord: async () => ({ status: "success" as const, value: null }),
+      addColumn: unavailableStructure,
+      renameColumn: unavailableStructure,
+      updateColumnOptions: unavailableStructure,
+      reorderColumns: unavailableStructure,
+      renameTable: unavailableStructure,
+    });
+
+    const updated = await adapter.updateCell("appointment", "name", "After");
+
+    expect(updated.values[connectionKey]).toEqual(["milo"]);
+    expect(updated.connectionValues?.[connectionKey]).toEqual([
+      { id: "milo", label: "Milo" },
+    ]);
+    expect(
+      adapter.getTable().rows[0]?.connectionValues?.[connectionKey],
+    ).toEqual([{ id: "milo", label: "Milo" }]);
+  });
+
   it("maps action failures to rejected adapter operations", async () => {
     const table: EditorTable = {
       key: "items",

@@ -3303,6 +3303,305 @@ textarea {
   gap: 1rem;
 }
 
+/* Phase 4 bounded Page authoring surface. The older Tiptap adapter styles above
+   remain available for legacy content, while the owner editor uses these
+   smaller, explicit block controls. */
+.page-editor-title-button {
+  display: block;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+
+.page-editor-title-button h1 {
+  margin: 0;
+  max-width: 24ch;
+  font-size: clamp(2.4rem, 5vw, 4.5rem);
+  line-height: 0.98;
+}
+
+.page-editor-title-button:hover h1 {
+  color: var(--accent);
+}
+
+.page-editor-title-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.page-editor-title-form input {
+  width: min(100%, 32rem);
+  min-height: 2.5rem;
+  font-size: clamp(1.7rem, 3.5vw, 2.75rem);
+  font-weight: 680;
+  letter-spacing: -0.045em;
+}
+
+.page-editor-canvas {
+  display: grid;
+  gap: 0.75rem;
+  padding: clamp(0.75rem, 2.4vw, 1.5rem);
+  overflow: visible;
+}
+
+.page-editor-empty {
+  display: grid;
+  justify-items: start;
+  gap: 0.3rem;
+  min-height: 10rem;
+  align-content: center;
+  color: var(--muted);
+}
+
+.page-editor-empty strong {
+  color: var(--foreground);
+  font-size: 1.1rem;
+}
+
+.page-editor-block {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0.8rem 0.85rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+}
+
+.page-editor-block:hover,
+.page-editor-block:focus-within {
+  border-color: var(--line);
+  background: #fffdfa;
+}
+
+.page-editor-block-content {
+  min-width: 0;
+}
+
+.page-editor-block-content > h1,
+.page-editor-block-content > h2,
+.page-editor-block-content > h3,
+.page-editor-block-content > p {
+  max-width: 58rem;
+  margin: 0;
+}
+
+.page-editor-block-content > p.page-text-block {
+  color: var(--muted);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.page-editor-block-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-height: 1.55rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.page-editor-block:hover .page-editor-block-actions,
+.page-editor-block:focus-within .page-editor-block-actions {
+  opacity: 1;
+}
+
+.page-editor-block-label {
+  margin-right: auto;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.page-editor-block-action {
+  min-height: 1.7rem;
+  padding: 0.15rem 0.4rem;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  font-size: 0.72rem;
+}
+
+.page-editor-block-action:hover:not(:disabled) {
+  color: var(--foreground);
+  border-color: var(--accent);
+}
+
+.page-editor-block-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.page-editor-block-remove:hover:not(:disabled) {
+  color: #a13a30;
+  border-color: #d9867c;
+}
+
+.page-editor-block-form {
+  display: grid;
+  gap: 0.6rem;
+  max-width: 58rem;
+}
+
+.page-editor-block-form input,
+.page-editor-block-form textarea {
+  width: 100%;
+}
+
+.page-editor-block-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.page-editor-insert-menu {
+  position: relative;
+  z-index: 20;
+  width: min(100%, 22rem);
+  margin: -0.35rem 0 0;
+}
+
+.page-editor-view-chooser {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.25rem;
+}
+
+.page-editor-view-chooser label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.page-editor-view-chooser select {
+  width: 100%;
+  min-width: 0;
+}
+
+.page-editor-selected-view {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.page-editor-view-block {
+  min-width: 0;
+  padding: 0.85rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  overflow: hidden;
+}
+
+.page-editor-view-block .production-table-workspace,
+.page-view-block .production-table-workspace {
+  min-width: 0;
+}
+
+.page-view-block {
+  min-width: 0;
+  margin-block: 1rem;
+  padding: 0.85rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  overflow: hidden;
+}
+
+.page-view-block-header {
+  align-items: center;
+  display: flex;
+  gap: 0.8rem;
+  justify-content: space-between;
+  min-width: 0;
+  margin-bottom: 0.75rem;
+}
+
+.page-view-block-header > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.page-view-block-header span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.page-editor-view-header {
+  min-width: 0;
+  margin-bottom: 0.75rem;
+}
+
+.page-editor-view-header > div {
+  min-width: 0;
+}
+
+.page-editor-view-source {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.page-editor-unavailable-view,
+.page-editor-view-fallback {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem;
+  color: var(--muted);
+  background: #f6f7f4;
+  border: 1px dashed #aab5ad;
+  border-radius: 0.65rem;
+}
+
+.page-editor-unavailable-view {
+  color: #8d3027;
+  background: #fff7f4;
+  border-color: #efc7c0;
+}
+
+.page-editor-legacy-inline {
+  padding: 0.8rem 0.9rem;
+  color: var(--muted);
+  background: #f6f7f4;
+  border: 1px dashed #aab5ad;
+  border-radius: 0.65rem;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 760px) {
+  .page-editor-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .page-editor-block-actions {
+    opacity: 1;
+  }
+
+  .page-editor-view-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-view-block-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .runtime-page-blocks .runtime-view,
 .runtime-page-blocks .runtime-form-panel {
   max-width: none;
