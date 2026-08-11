@@ -76,6 +76,7 @@ export interface EditorCapabilities {
   rowCreation: "direct" | "configured_form" | "unavailable";
   rowCreationMessage?: string;
   canAddColumns: boolean;
+  canAddConnections?: boolean;
   canInsertColumns?: boolean;
   canRenameColumns: boolean;
   canChangeColumnTypes?: boolean;
@@ -102,6 +103,24 @@ export interface CreateColumnInput {
   kind: EditorColumnKind;
   options?: readonly string[];
   currency?: string;
+}
+
+export type ConnectionMultiplicity = "one" | "several";
+
+export interface ConnectionTableOption {
+  viewKey: string;
+  label: string;
+  singularLabel: string;
+  pluralLabel: string;
+}
+
+export interface CreateConnectionPropertyInput {
+  targetViewKey: string;
+  label: string;
+  currentMultiplicity: ConnectionMultiplicity;
+  targetMultiplicity: ConnectionMultiplicity;
+  reverseLabel?: string;
+  addReverse: boolean;
 }
 
 export interface InsertColumnInput extends CreateColumnInput {

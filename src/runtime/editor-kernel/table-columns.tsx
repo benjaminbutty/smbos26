@@ -85,18 +85,42 @@ function connectionContent(
   if (labels.length === 0) {
     return <span className="editor-connection-empty">—</span>;
   }
+  const visibleLabels = labels.slice(0, column.connection?.multiple ? 2 : 1);
+  const hiddenLabelCount = labels.length - visibleLabels.length;
   return (
-    <span className="editor-connection-pills">
-      {labels.map((item) => (
-        <span className="editor-connection-pill" key={item.id}>
-          <span>{item.label}</span>
-          <span aria-hidden="true" className="editor-connection-pill-link">
-            ↗
-          </span>
+    <span
+      className="editor-table-connection-values"
+      title={labels.map((item) => item.label).join(", ")}
+    >
+      {visibleLabels.map((item, index) => (
+        <span className="editor-table-connection-value" key={item.id}>
+          {index > 0 ? ", " : null}
+          {item.label}
         </span>
       ))}
+      {hiddenLabelCount > 0 ? (
+        <span className="editor-table-connection-summary">
+          +{hiddenLabelCount}
+        </span>
+      ) : null}
     </span>
   );
+}
+
+export function openConnectionCellEditor(
+  column: EditorColumn | undefined,
+  row: EditorRow,
+  selectCell: (enableEditor?: boolean) => void,
+): void {
+  if (
+    !column ||
+    column.kind !== "connection" ||
+    column.editable === false ||
+    row.isDraft
+  ) {
+    return;
+  }
+  selectCell(true);
 }
 
 function HeaderCell({
@@ -670,6 +694,9 @@ export function createEditorColumns({
     frozen: column.primary,
     editable: (row: EditorRow) =>
       column.editable !== false && (!row.isDraft || Boolean(column.primary)),
+    ...(column.kind === "connection"
+      ? { editorOptions: { commitOnOutsideClick: false } }
+      : {}),
     renderHeaderCell: () => (
       <HeaderCell
         column={column}

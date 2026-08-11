@@ -455,6 +455,204 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     expect(recordAfterReorder).toEqual(recordBefore);
   });
 
+  it("creates a manual Connection through one atomic advance without touching Records", async () => {
+    const first = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: (await currentness(owner)).currentness,
+        intent: {
+          action: "create_table",
+          title: `Manual Current ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const second = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: first.currentness,
+        intent: {
+          action: "create_table",
+          title: `Manual Target ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const currentViewKey = first.composed!.viewKey;
+    const targetViewKey = second.composed!.viewKey;
+    const recordData = new FormData();
+    recordData.set("viewKey", currentViewKey);
+    recordData.set("name", "Unlinked record");
+    const record = await createDirectTableRow(
+      owner.client,
+      { businessId: business.id },
+      { viewKey: currentViewKey, formData: recordData },
+    );
+    const [beforeCounts] = await sql<
+      {
+        version_count: number;
+        head_revision: number;
+        change_count: number;
+        edge_count: number;
+      }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions
+         where business_id = ${business.id}) as version_count,
+        (select head_revision from public.business_configuration_heads
+         where business_id = ${business.id}) as head_revision,
+        (select count(*)::integer from public.configuration_change_sets
+         where business_id = ${business.id}) as change_count,
+        (select count(*)::integer from public.record_relationships
+         where business_id = ${business.id}) as edge_count
+    `;
+    const beforeRecord = await sql<{ data_json: unknown }[]>`
+      select data_json from public.records where id = ${record.id}
+    `;
+    if (!beforeCounts || !beforeRecord[0]) {
+      throw new Error("Could not read the manual Connection baseline.");
+    }
+
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: second.currentness,
+        intent: {
+          action: "create_connection_property",
+          viewKey: currentViewKey,
+          targetViewKey,
+          label: "Target",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
+          reverseLabel: "Currents",
+          addReverse: true,
+        },
+      },
+    );
+    expect(created.changeSet.status).toBe("applied");
+    expect(
+      created.composed?.operations.filter(
+        (operation) => operation.op === "set_relationship",
+      ),
+    ).toHaveLength(1);
+    const [afterCounts] = await sql<
+      {
+        version_count: number;
+        head_revision: number;
+        change_count: number;
+        edge_count: number;
+      }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions
+         where business_id = ${business.id}) as version_count,
+        (select head_revision from public.business_configuration_heads
+         where business_id = ${business.id}) as head_revision,
+        (select count(*)::integer from public.configuration_change_sets
+         where business_id = ${business.id}) as change_count,
+        (select count(*)::integer from public.record_relationships
+         where business_id = ${business.id}) as edge_count
+    `;
+    if (!afterCounts) {
+      throw new Error(
+        "Could not read the post-Connection configuration counts.",
+      );
+    }
+    expect({
+      ...afterCounts,
+      head_revision: Number(afterCounts.head_revision),
+    }).toMatchObject({
+      version_count: beforeCounts.version_count + 1,
+      head_revision: Number(beforeCounts.head_revision) + 1,
+      change_count: beforeCounts.change_count + 1,
+      edge_count: beforeCounts.edge_count,
+    });
+    const afterConfiguration = await currentness(owner);
+    const currentView = afterConfiguration.snapshot.views.find(
+      (candidate) => candidate.key === currentViewKey,
+    );
+    const targetView = afterConfiguration.snapshot.views.find(
+      (candidate) => candidate.key === targetViewKey,
+    );
+    expect(currentView?.config_json).toMatchObject({
+      columns: [
+        expect.objectContaining({ kind: "field", field_key: "name" }),
+        expect.objectContaining({ kind: "connection", direction: "target" }),
+      ],
+    });
+    expect(targetView?.config_json).toMatchObject({
+      columns: [
+        expect.objectContaining({ kind: "field", field_key: "name" }),
+        expect.objectContaining({ kind: "connection", direction: "source" }),
+      ],
+    });
+    expect(
+      (
+        await sql<{ data_json: unknown }[]>`
+        select data_json from public.records where id = ${record.id}
+      `
+      )[0],
+    ).toEqual(beforeRecord[0]);
+
+    await expect(
+      applyDirectTableAction(
+        owner.client,
+        { businessId: business.id, actorId: owner.user.id },
+        {
+          currentness: second.currentness,
+          intent: {
+            action: "create_connection_property",
+            viewKey: currentViewKey,
+            targetViewKey,
+            label: "Another target",
+            currentMultiplicity: "one",
+            targetMultiplicity: "several",
+            addReverse: false,
+          },
+        },
+      ),
+    ).rejects.toThrow(/reload|changed|stale/i);
+    const [afterStaleCounts] = await sql<
+      {
+        version_count: number;
+        head_revision: number;
+        change_count: number;
+        edge_count: number;
+      }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions
+         where business_id = ${business.id}) as version_count,
+        (select head_revision from public.business_configuration_heads
+         where business_id = ${business.id}) as head_revision,
+        (select count(*)::integer from public.configuration_change_sets
+         where business_id = ${business.id}) as change_count,
+        (select count(*)::integer from public.record_relationships
+         where business_id = ${business.id}) as edge_count
+    `;
+    expect(afterStaleCounts).toEqual(afterCounts);
+
+    await expect(
+      applyDirectTableAction(
+        staff.client,
+        { businessId: business.id, actorId: staff.user.id },
+        {
+          currentness: created.currentness,
+          intent: {
+            action: "create_connection_property",
+            viewKey: currentViewKey,
+            targetViewKey,
+            label: "Staff target",
+            currentMultiplicity: "one",
+            targetMultiplicity: "several",
+            addReverse: false,
+          },
+        },
+      ),
+    ).rejects.toThrow();
+  });
+
   it("refuses Undo when a direct Table or column already carries Records", async () => {
     const created = await applyDirectTableAction(
       owner.client,

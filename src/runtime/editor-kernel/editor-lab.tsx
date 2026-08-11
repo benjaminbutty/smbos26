@@ -13,6 +13,7 @@ import {
   type CellKeyDownArgs,
   type CellKeyboardEvent,
   type CellMouseArgs,
+  type CellMouseEvent,
   type DataGridHandle,
   type RowsChangeData,
 } from "react-data-grid";
@@ -26,6 +27,8 @@ import {
   hasDraftName,
   reorderColumnKeys,
   type CreateColumnInput,
+  type CreateConnectionPropertyInput,
+  type ConnectionTableOption,
   type EditorCapabilities,
   type EditorColumn,
   type EditorColumnKind,
@@ -40,7 +43,11 @@ import {
   selectionBounds,
   serializeClipboardMatrix,
 } from "./clipboard";
-import { createEditorColumns, type PendingEdit } from "./table-columns";
+import {
+  createEditorColumns,
+  openConnectionCellEditor,
+  type PendingEdit,
+} from "./table-columns";
 import { RecordPanel } from "./record-panel";
 import type { TableEditorAdapter } from "./contracts";
 import { OptionManager, ShortcutSheet, TypePicker } from "./lenni-ui";
@@ -64,6 +71,14 @@ export interface EditorKernelProps {
   marker?: ReactNode;
   newRecordLabel?: string;
   onStructureChanged?: () => void;
+  connectionSource?: Pick<
+    ConnectionTableOption,
+    "singularLabel" | "pluralLabel"
+  >;
+  connectionTargets?: readonly ConnectionTableOption[];
+  onCreateConnection?: (
+    input: CreateConnectionPropertyInput,
+  ) => Promise<boolean>;
   recordCountLabel?: string;
   recordTypeLabel?: string;
   fullRecordPath?: string;
@@ -283,18 +298,293 @@ function statusLabel(state: SaveState): string {
   }
 }
 
-function AddColumnPopover({
+export function ConnectionPropertyPopover({
+  onBack,
   onClose,
   onCreate,
+  source,
+  targets,
 }: Readonly<{
+  onBack: () => void;
+  onClose: () => void;
+  onCreate: (input: CreateConnectionPropertyInput) => Promise<boolean>;
+  source: Pick<ConnectionTableOption, "singularLabel" | "pluralLabel">;
+  targets: readonly ConnectionTableOption[];
+}>): ReactNode {
+  const [targetViewKey, setTargetViewKey] = useState(targets[0]?.viewKey ?? "");
+  const [currentMultiplicity, setCurrentMultiplicity] = useState<
+    "one" | "several"
+  >("one");
+  const [targetMultiplicity, setTargetMultiplicity] = useState<
+    "one" | "several"
+  >("several");
+  const [label, setLabel] = useState(targets[0]?.singularLabel ?? "");
+  const [reverseLabel, setReverseLabel] = useState(source.pluralLabel);
+  const [addReverse, setAddReverse] = useState(true);
+  const [labelTouched, setLabelTouched] = useState(false);
+  const [reverseLabelTouched, setReverseLabelTouched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const target = targets.find(
+    (candidate) => candidate.viewKey === targetViewKey,
+  );
+
+  return (
+    <form
+      className="editor-add-column-popover editor-connection-create-popover"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!target || !label.trim() || submitting) {
+          return;
+        }
+        if (addReverse && !reverseLabel.trim()) {
+          setError("Add a name for the property shown on the other Table.");
+          return;
+        }
+        setError(null);
+        setSubmitting(true);
+        const input: CreateConnectionPropertyInput = {
+          targetViewKey,
+          label: label.trim(),
+          currentMultiplicity,
+          targetMultiplicity,
+          addReverse,
+          ...(addReverse ? { reverseLabel: reverseLabel.trim() } : {}),
+        };
+        void onCreate(input)
+          .then((created) => {
+            if (created) {
+              onClose();
+            }
+          })
+          .catch((submissionError: unknown) => {
+            setError(saveErrorMessage(submissionError));
+          })
+          .finally(() => setSubmitting(false));
+      }}
+    >
+      <div className="editor-popover-heading">
+        <strong>Connect to another Table</strong>
+        <button
+          aria-label="Close connection setup"
+          onClick={onClose}
+          type="button"
+        >
+          ×
+        </button>
+      </div>
+      <label>
+        Table to connect
+        <select
+          aria-label="Table to connect"
+          onChange={(event) => {
+            const nextTargetViewKey = event.currentTarget.value;
+            const nextTarget = targets.find(
+              (candidate) => candidate.viewKey === nextTargetViewKey,
+            );
+            setTargetViewKey(nextTargetViewKey);
+            setLabelTouched(false);
+            setReverseLabelTouched(false);
+            if (nextTarget) {
+              setLabel(
+                currentMultiplicity === "one"
+                  ? nextTarget.singularLabel
+                  : nextTarget.pluralLabel,
+              );
+              setReverseLabel(
+                targetMultiplicity === "several"
+                  ? source.pluralLabel
+                  : source.singularLabel,
+              );
+            }
+          }}
+          value={targetViewKey}
+        >
+          {targets.map((candidate) => (
+            <option key={candidate.viewKey} value={candidate.viewKey}>
+              {candidate.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {target ? (
+        <>
+          <label>
+            On {source.singularLabel}, call this property
+            <input
+              aria-label={`On ${source.singularLabel}, call this property`}
+              maxLength={120}
+              onChange={(event) => {
+                setLabelTouched(true);
+                setLabel(event.currentTarget.value);
+              }}
+              required
+              value={label}
+            />
+          </label>
+          <div className="editor-connection-multiplicity">
+            <span>Each {source.singularLabel} can have:</span>
+            <label>
+              <span className="editor-sr-only">How many connected Records</span>
+              <select
+                aria-label={`Each ${source.singularLabel} can have`}
+                onChange={(event) => {
+                  const nextMultiplicity = event.currentTarget.value as
+                    "one" | "several";
+                  setCurrentMultiplicity(nextMultiplicity);
+                  if (!labelTouched && target) {
+                    setLabel(
+                      nextMultiplicity === "one"
+                        ? target.singularLabel
+                        : target.pluralLabel,
+                    );
+                  }
+                }}
+                value={currentMultiplicity}
+              >
+                <option value="one">One</option>
+                <option value="several">Several</option>
+              </select>
+            </label>
+            <span>
+              {currentMultiplicity === "one"
+                ? target.singularLabel
+                : target.pluralLabel}
+            </span>
+          </div>
+          <div className="editor-connection-multiplicity">
+            <span>Each {target.singularLabel} can have:</span>
+            <label>
+              <span className="editor-sr-only">
+                How many Records can connect back
+              </span>
+              <select
+                aria-label={`Each ${target.singularLabel} can have`}
+                onChange={(event) => {
+                  const nextMultiplicity = event.currentTarget.value as
+                    "one" | "several";
+                  setTargetMultiplicity(nextMultiplicity);
+                  if (!reverseLabelTouched) {
+                    setReverseLabel(
+                      nextMultiplicity === "several"
+                        ? source.pluralLabel
+                        : source.singularLabel,
+                    );
+                  }
+                }}
+                value={targetMultiplicity}
+              >
+                <option value="one">One</option>
+                <option value="several">Several</option>
+              </select>
+            </label>
+            <span>
+              {targetMultiplicity === "one"
+                ? source.singularLabel
+                : source.pluralLabel}
+            </span>
+          </div>
+          <label className="editor-connection-reverse-toggle">
+            <span>
+              <input
+                checked={addReverse}
+                onChange={(event) => setAddReverse(event.currentTarget.checked)}
+                type="checkbox"
+              />{" "}
+              Also show this on {target.label}
+            </span>
+          </label>
+          {addReverse ? (
+            <label>
+              On {target.singularLabel}, call this property
+              <input
+                aria-label={`On ${target.singularLabel}, call this property`}
+                maxLength={120}
+                onChange={(event) => {
+                  setReverseLabelTouched(true);
+                  setReverseLabel(event.currentTarget.value);
+                }}
+                required
+                value={reverseLabel}
+              />
+            </label>
+          ) : null}
+          <p className="editor-connection-summary">
+            Each {source.singularLabel} can have {currentMultiplicity}{" "}
+            {currentMultiplicity === "one"
+              ? target.singularLabel
+              : target.pluralLabel}
+            . Each {target.singularLabel} can have {targetMultiplicity}{" "}
+            {targetMultiplicity === "one"
+              ? source.singularLabel
+              : source.pluralLabel}
+            .
+          </p>
+        </>
+      ) : (
+        <span className="editor-structural-error" role="status">
+          Create another Table before adding a Connection.
+        </span>
+      )}
+      {error ? (
+        <span className="editor-structural-error" role="alert">
+          {error}
+        </span>
+      ) : null}
+      <div className="editor-connection-flow-actions">
+        <button className="editor-menu-back" onClick={onBack} type="button">
+          Back
+        </button>
+        <button
+          className="editor-menu-submit"
+          disabled={submitting || !target}
+          type="submit"
+        >
+          {submitting ? "Creating…" : "Create connection"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function AddColumnPopover({
+  canAddConnections,
+  connectionSource,
+  connectionTargets,
+  onClose,
+  onCreate,
+  onCreateConnection,
+}: Readonly<{
+  canAddConnections: boolean;
+  connectionSource?: Pick<
+    ConnectionTableOption,
+    "singularLabel" | "pluralLabel"
+  >;
+  connectionTargets?: readonly ConnectionTableOption[];
   onClose: () => void;
   onCreate: (input: CreateColumnInput) => Promise<void>;
+  onCreateConnection?: (
+    input: CreateConnectionPropertyInput,
+  ) => Promise<boolean>;
 }>): ReactNode {
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<EditorColumnKind>("text");
   const [options, setOptions] = useState<string[]>(["Active", "Inactive"]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  if (connectionOpen && connectionSource && onCreateConnection) {
+    return (
+      <ConnectionPropertyPopover
+        onBack={() => setConnectionOpen(false)}
+        onClose={onClose}
+        onCreate={onCreateConnection}
+        source={connectionSource}
+        targets={connectionTargets ?? []}
+      />
+    );
+  }
 
   return (
     <form
@@ -365,6 +655,27 @@ function AddColumnPopover({
       >
         {submitting ? "Adding…" : "Add column"}
       </button>
+      {canAddConnections && onCreateConnection && connectionSource ? (
+        (connectionTargets?.length ?? 0) > 0 ? (
+          <>
+            <div className="editor-add-property-divider" />
+            <button
+              className="editor-add-connection-link"
+              onClick={() => {
+                setError(null);
+                setConnectionOpen(true);
+              }}
+              type="button"
+            >
+              Connect to another Table
+            </button>
+          </>
+        ) : (
+          <span className="editor-property-type-note" role="status">
+            Create another Table before adding a Connection.
+          </span>
+        )
+      ) : null}
     </form>
   );
 }
@@ -378,6 +689,9 @@ export function EditorKernel({
   marker,
   newRecordLabel = "New record",
   onStructureChanged,
+  connectionSource,
+  connectionTargets,
+  onCreateConnection,
   recordCountLabel,
   recordTypeLabel,
   fullRecordPath,
@@ -873,6 +1187,16 @@ export function EditorKernel({
     [adapter, capabilities.canAddColumns, runStructural],
   );
 
+  const handleCreateConnection = useCallback(
+    async (input: CreateConnectionPropertyInput): Promise<boolean> => {
+      if (capabilities.canAddConnections === false || !onCreateConnection) {
+        return false;
+      }
+      return runStructural(() => onCreateConnection(input));
+    },
+    [capabilities.canAddConnections, onCreateConnection, runStructural],
+  );
+
   const handleRenameColumn = useCallback(
     async (columnKey: string, label: string): Promise<boolean> => {
       if (!capabilities.canRenameColumns) {
@@ -1301,6 +1625,19 @@ export function EditorKernel({
     [table.columns],
   );
 
+  const handleCellClick = useCallback(
+    (args: CellMouseArgs<EditorRow>, event: CellMouseEvent): void => {
+      if (event.shiftKey) {
+        return;
+      }
+      const column = table.columns.find(
+        (candidate) => candidate.key === args.column.key,
+      );
+      openConnectionCellEditor(column, args.row, args.selectCell);
+    },
+    [table.columns],
+  );
+
   const handleCellMouseDown = useCallback(
     (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
       const point = { rowIndex: args.rowIdx, columnIndex: args.column.idx };
@@ -1505,6 +1842,7 @@ export function EditorKernel({
               columns={gridColumns}
               data-testid="editor-grid"
               headerRowHeight={36}
+              onCellClick={handleCellClick}
               onCellMouseDown={handleCellMouseDown}
               onCellDoubleClick={handleDoubleClick}
               onCellKeyDown={handleCellKeyDown}
@@ -1562,8 +1900,14 @@ export function EditorKernel({
                 </button>
                 {addColumnOpen ? (
                   <AddColumnPopover
+                    canAddConnections={capabilities.canAddConnections !== false}
+                    {...(connectionSource ? { connectionSource } : {})}
+                    {...(connectionTargets ? { connectionTargets } : {})}
                     onClose={() => setAddColumnOpen(false)}
                     onCreate={handleCreateColumn}
+                    {...(onCreateConnection
+                      ? { onCreateConnection: handleCreateConnection }
+                      : {})}
                   />
                 ) : null}
               </>

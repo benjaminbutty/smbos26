@@ -1,4 +1,5 @@
 import type {
+  ConnectionMultiplicity,
   EditorColumn,
   EditorRow,
   EditorTable,
@@ -136,6 +137,16 @@ export interface ProductionRenameTableInput {
   title: string;
 }
 
+export interface ProductionCreateConnectionInput {
+  currentness: ProductionConfigurationCurrentness;
+  targetViewKey: string;
+  label: string;
+  currentMultiplicity: ConnectionMultiplicity;
+  targetMultiplicity: ConnectionMultiplicity;
+  reverseLabel?: string;
+  addReverse: boolean;
+}
+
 export interface ProductionSavedViewQueryInput {
   currentness: ProductionConfigurationCurrentness;
   query: TableViewQuery;
@@ -223,4 +234,8 @@ export type ProductionReorderColumnsAction = (
 
 export type ProductionRenameTableAction = (
   input: ProductionRenameTableInput,
+) => Promise<ProductionActionResult<ProductionTableStructureState>>;
+
+export type ProductionCreateConnectionAction = (
+  input: ProductionCreateConnectionInput,
 ) => Promise<ProductionActionResult<ProductionTableStructureState>>;

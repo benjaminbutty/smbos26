@@ -50,6 +50,7 @@ import type {
   ProductionConnectionEditInput,
   ProductionConnectionSearchInput,
   ProductionConfigurationCurrentness,
+  ProductionCreateConnectionInput,
   ProductionInsertColumnInput,
   ProductionPasteInput,
   ProductionPasteResult,
@@ -280,6 +281,26 @@ const renameTableInputSchema = z
     title: z.string().trim().min(1).max(120),
   })
   .strict();
+const createConnectionInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    targetViewKey: viewKeySchema,
+    label: z.string().trim().min(1).max(120),
+    currentMultiplicity: z.enum(["one", "several"]),
+    targetMultiplicity: z.enum(["one", "several"]),
+    reverseLabel: z.string().trim().min(1).max(120).optional(),
+    addReverse: z.boolean(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (!input.addReverse && input.reverseLabel !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "A hidden reverse property cannot have a name.",
+        path: ["reverseLabel"],
+      });
+    }
+  });
 const savedViewQueryInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
@@ -544,6 +565,35 @@ export async function addProductionTableColumnAction(
       columnType: parsed.data.columnType,
       ...(parsed.data.options ? { options: parsed.data.options } : {}),
       ...(parsed.data.currency ? { currency: parsed.data.currency } : {}),
+    },
+  );
+}
+
+export async function createProductionTableConnectionAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionCreateConnectionInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = createConnectionInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That Connection could not be created safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "create_connection_property",
+      viewKey: context.viewKey,
+      targetViewKey: parsed.data.targetViewKey,
+      label: parsed.data.label,
+      currentMultiplicity: parsed.data.currentMultiplicity,
+      targetMultiplicity: parsed.data.targetMultiplicity,
+      ...(parsed.data.reverseLabel
+        ? { reverseLabel: parsed.data.reverseLabel }
+        : {}),
+      addReverse: parsed.data.addReverse,
     },
   );
 }
@@ -845,6 +895,11 @@ export async function updateProductionTableConnectionAction(
     if (!column || column.kind !== "connection") {
       return resultError("That connection property is no longer available.");
     }
+    if (column.editable === false) {
+      return resultError(
+        "This Connection is managed by the configured workflow.",
+      );
+    }
     await setTableRecordConnectionValues(supabase, tenant.business.id, {
       viewKey,
       recordId: parsed.data.recordId,
@@ -890,6 +945,18 @@ export async function searchProductionTableConnectionTargetsAction(
   const supabase = await createServerClient();
   const tenant = await resolveTenant(businessSlug, supabase);
   try {
+    const mapped = await loadMappedTable(supabase, tenant.business.id, viewKey);
+    const column = mapped.table.columns.find(
+      (candidate) => candidate.key === parsed.data.columnKey,
+    );
+    if (!column || column.kind !== "connection") {
+      return resultError("That connection property is no longer available.");
+    }
+    if (column.editable === false) {
+      return resultError(
+        "This Connection is managed by the configured workflow.",
+      );
+    }
     const targets = await searchTableConnectionTargets(
       supabase,
       tenant.business.id,
@@ -928,6 +995,11 @@ export async function createProductionTableConnectionTargetAction(
     );
     if (!column || column.kind !== "connection" || !column.connection) {
       return resultError("That connection property is no longer available.");
+    }
+    if (column.editable === false) {
+      return resultError(
+        "This Connection is managed by the configured workflow.",
+      );
     }
     const experience = createExperienceService(supabase, {
       businessId: tenant.business.id,

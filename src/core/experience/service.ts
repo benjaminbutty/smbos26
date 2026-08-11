@@ -102,6 +102,8 @@ export interface ExperienceViewBundle {
   fields: Tables<"field_definitions">[];
   records: Tables<"records">[];
   relationships?: Tables<"relationship_definitions">[];
+  /** Connections owned by a configured transactional capability remain visible and navigable, but are not free-form editable. */
+  protectedConnectionRelationshipKeys?: readonly string[];
   connectionValues?: TableQueryResult["connectionValues"];
   query?: Pick<
     TableQueryResult,
@@ -348,14 +350,21 @@ export function createExperienceService(
             limit: 250,
           })
         : null;
-    const [object, fields, relationships, recordsResult, queriedTable] =
-      await Promise.all([
-        source.getObjectByKey(objectKey),
-        source.listFieldsForObject(objectKey),
-        source.listRelationships(),
-        recordsQuery,
-        tableQuery,
-      ]);
+    const [
+      object,
+      fields,
+      relationships,
+      preorders,
+      recordsResult,
+      queriedTable,
+    ] = await Promise.all([
+      source.getObjectByKey(objectKey),
+      source.listFieldsForObject(objectKey),
+      source.listRelationships(),
+      source.listPreorders(),
+      recordsQuery,
+      tableQuery,
+    ]);
     if (!object) {
       throw new ExperienceServiceError("This screen is not available.");
     }
@@ -380,18 +389,30 @@ export function createExperienceService(
       fields,
     );
 
+    const visibleRelationships = relationships.filter(
+      (relationship) =>
+        relationship.source_object_definition_id ===
+          definition.object_definition_id ||
+        relationship.target_object_definition_id ===
+          definition.object_definition_id,
+    );
+    const protectedRelationshipIds = new Set(
+      preorders.flatMap((preorder) => [
+        preorder.customer_places_order_relationship_definition_id,
+        preorder.order_contains_item_relationship_definition_id,
+        preorder.product_appears_in_item_relationship_definition_id,
+      ]),
+    );
+
     return {
       definition,
       object,
       fields,
       records,
-      relationships: relationships.filter(
-        (relationship) =>
-          relationship.source_object_definition_id ===
-            definition.object_definition_id ||
-          relationship.target_object_definition_id ===
-            definition.object_definition_id,
-      ),
+      relationships: visibleRelationships,
+      protectedConnectionRelationshipKeys: visibleRelationships
+        .filter((relationship) => protectedRelationshipIds.has(relationship.id))
+        .map((relationship) => relationship.key),
       ...(queriedTable
         ? {
             connectionValues: queriedTable.connectionValues,

@@ -190,12 +190,21 @@ function mapConnection(
   const multiple =
     relationship.cardinality === "many_to_many" ||
     (relationship.cardinality === "one_to_many" &&
-      column.direction === "target");
+      column.direction === "source");
+  const editable = !bundle.protectedConnectionRelationshipKeys?.includes(
+    column.relationship_key,
+  );
   return {
     key: connectionColumnStorageKey(column.relationship_key, column.direction),
     label: column.label ?? relationshipLabel(relationship, column.direction),
     kind: "connection",
-    editable: true,
+    editable,
+    ...(editable
+      ? {}
+      : {
+          readOnlyReason:
+            "This Connection is managed by the configured workflow.",
+        }),
     connection: {
       relationshipKey: column.relationship_key,
       direction: column.direction,

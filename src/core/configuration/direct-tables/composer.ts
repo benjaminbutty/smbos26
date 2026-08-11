@@ -535,87 +535,110 @@ function composeCreateConnectionProperty(
 ): ComposedDirectTableAction {
   const source = activeTable(snapshot, intent.viewKey);
   const target = activeTable(snapshot, intent.targetViewKey);
+
+  if (
+    source.object.id === target.object.id ||
+    source.object.kind !== "custom" ||
+    target.object.kind !== "custom" ||
+    target.config.role !== "primary"
+  ) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+
+  const currentIsRelationshipSource =
+    intent.currentMultiplicity === "several" ||
+    (intent.currentMultiplicity === "one" &&
+      intent.targetMultiplicity === "one");
+  const cardinality =
+    intent.currentMultiplicity === "one" && intent.targetMultiplicity === "one"
+      ? "one_to_one"
+      : intent.currentMultiplicity === "several" &&
+          intent.targetMultiplicity === "several"
+        ? "many_to_many"
+        : "one_to_many";
+  const reverseLabel =
+    intent.reverseLabel ??
+    (intent.targetMultiplicity === "several"
+      ? source.object.plural_label
+      : source.object.singular_label);
+  const sourceLabel = currentIsRelationshipSource ? intent.label : reverseLabel;
+  const targetLabel = currentIsRelationshipSource ? reverseLabel : intent.label;
+
+  const exactDuplicate = snapshot.relationship_definitions.some(
+    (relationship) =>
+      relationship.is_active &&
+      relationship.source_object_key ===
+        (currentIsRelationshipSource ? source.object.key : target.object.key) &&
+      relationship.target_object_key ===
+        (currentIsRelationshipSource ? target.object.key : source.object.key) &&
+      relationship.source_label === sourceLabel &&
+      relationship.target_label === targetLabel &&
+      relationship.cardinality === cardinality,
+  );
+  if (exactDuplicate) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+
   const relationshipKey = allocateKey(
     snapshot.relationship_definitions.map((relationship) => relationship.key),
     intent.label,
     "relationship",
   );
-  const cardinality =
-    intent.mode === "several_records" || intent.mode === "multiple"
-      ? "many_to_many"
-      : "one_to_many";
-  const reverseLabel = intent.reverseLabel ?? source.object.plural_label;
   const relationship = setRelationshipOperationSchema.parse({
     op: "set_relationship",
     key: relationshipKey,
-    source_object_key: source.object.key,
-    target_object_key: target.object.key,
-    source_label: intent.label,
-    target_label: reverseLabel,
+    source_object_key: currentIsRelationshipSource
+      ? source.object.key
+      : target.object.key,
+    target_object_key: currentIsRelationshipSource
+      ? target.object.key
+      : source.object.key,
+    source_label: sourceLabel,
+    target_label: targetLabel,
     cardinality,
     is_required: false,
     is_active: true,
   });
-  if (hasConnectionColumn(source.config, relationshipKey, "source")) {
+  const currentDirection = currentIsRelationshipSource ? "source" : "target";
+  const reverseDirection = currentIsRelationshipSource ? "target" : "source";
+  if (hasConnectionColumn(source.config, relationshipKey, currentDirection)) {
     throw new DirectTableComposerError("direct_table_connection_invalid");
   }
-  const sourceColumn: TableViewColumn = {
+  const currentColumn: TableViewColumn = {
     kind: "connection",
     relationship_key: relationshipKey,
-    direction: "source",
+    direction: currentDirection,
     label: intent.label,
   };
   const operations: ConfigurationOperation[] = [relationship];
-  const sourceColumns = [...source.config.columns, sourceColumn];
-  if (target.view.key === source.view.key) {
-    if (!intent.addReverse) {
-      operations.push(
-        tableViewOperation(
-          source.view,
-          configWithColumns(source.config, sourceColumns),
-        ),
-      );
-    } else {
-      const reverseColumn: TableViewColumn = {
-        kind: "connection",
-        relationship_key: relationshipKey,
-        direction: "target",
-        label: reverseLabel,
-      };
-      operations.push(
-        tableViewOperation(
-          source.view,
-          configWithColumns(source.config, [...sourceColumns, reverseColumn]),
-        ),
-      );
+  operations.push(
+    tableViewOperation(
+      source.view,
+      configWithColumns(source.config, [
+        ...source.config.columns,
+        currentColumn,
+      ]),
+    ),
+  );
+  if (intent.addReverse) {
+    if (hasConnectionColumn(target.config, relationshipKey, reverseDirection)) {
+      throw new DirectTableComposerError("direct_table_connection_invalid");
     }
-  } else {
+    const reverseColumn: TableViewColumn = {
+      kind: "connection",
+      relationship_key: relationshipKey,
+      direction: reverseDirection,
+      label: reverseLabel,
+    };
     operations.push(
       tableViewOperation(
-        source.view,
-        configWithColumns(source.config, sourceColumns),
+        target.view,
+        configWithColumns(target.config, [
+          ...target.config.columns,
+          reverseColumn,
+        ]),
       ),
     );
-    if (intent.addReverse) {
-      if (hasConnectionColumn(target.config, relationshipKey, "target")) {
-        throw new DirectTableComposerError("direct_table_connection_invalid");
-      }
-      const reverseColumn: TableViewColumn = {
-        kind: "connection",
-        relationship_key: relationshipKey,
-        direction: "target",
-        label: reverseLabel,
-      };
-      operations.push(
-        tableViewOperation(
-          target.view,
-          configWithColumns(target.config, [
-            ...target.config.columns,
-            reverseColumn,
-          ]),
-        ),
-      );
-    }
   }
   return finalizeAction(
     "create_connection_property",

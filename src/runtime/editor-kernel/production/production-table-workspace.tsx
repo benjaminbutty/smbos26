@@ -3,7 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useMemo, type ReactNode } from "react";
 
-import type { EditorCapabilities, EditorTable } from "../contracts";
+import type {
+  ConnectionTableOption,
+  CreateConnectionPropertyInput,
+  EditorCapabilities,
+  EditorTable,
+} from "../contracts";
 import { EditorKernel } from "../editor-kernel";
 import type { EditorColumn, EditorRow, EditorValue } from "../contracts";
 import type {
@@ -40,6 +45,11 @@ export interface ProductionTableWorkspaceProps {
   updateConnectedRecordConnection?: ProductionScopedConnectionEditAction;
   searchConnectedRecordTargets?: ProductionScopedConnectionSearchAction;
   createConnectedRecordTarget?: ProductionScopedConnectionCreateAction;
+  connectionSource?: Pick<
+    ConnectionTableOption,
+    "singularLabel" | "pluralLabel"
+  >;
+  connectionTargets?: readonly ConnectionTableOption[];
   readOnly?: boolean;
   surface?: "workspace" | "embedded";
 }
@@ -61,6 +71,8 @@ export function ProductionTableWorkspace({
   updateConnectedRecordConnection,
   searchConnectedRecordTargets,
   createConnectedRecordTarget,
+  connectionSource,
+  connectionTargets,
   surface = "workspace",
   table,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
@@ -68,6 +80,23 @@ export function ProductionTableWorkspace({
   const adapter = useMemo(
     () => createProductionTableAdapter(table, actions, currentness),
     [actions, currentness, table],
+  );
+
+  const createConnection = useMemo(
+    () =>
+      actions.createConnection && currentness
+        ? async (input: CreateConnectionPropertyInput): Promise<boolean> => {
+            const result = await actions.createConnection!({
+              ...input,
+              currentness,
+            });
+            if (result.status === "error") {
+              throw new Error(result.message);
+            }
+            return true;
+          }
+        : undefined,
+    [actions.createConnection, currentness],
   );
 
   const readConnectedRecordContext = useMemo(
@@ -204,6 +233,9 @@ export function ProductionTableWorkspace({
       headerContent={headerContent}
       {...(newRecordLabel !== undefined ? { newRecordLabel } : {})}
       onStructureChanged={() => router.refresh()}
+      {...(connectionSource ? { connectionSource } : {})}
+      {...(connectionTargets ? { connectionTargets } : {})}
+      {...(createConnection ? { onCreateConnection: createConnection } : {})}
       {...(recordCountLabel !== undefined ? { recordCountLabel } : {})}
       {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
       {...(fullRecordPath !== undefined ? { fullRecordPath } : {})}

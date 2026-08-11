@@ -441,6 +441,37 @@ describe("AI-safe Business model context projection", () => {
     expect(left.serializedBytes).toBe(right.serializedBytes);
   });
 
+  it("keeps V2 Table metadata out of the existing AI view contract", () => {
+    const v2Source = structuredClone(source());
+    v2Source.activeConfiguration.snapshot.views[0]!.config_json = {
+      schema_version: 2,
+      role: "primary",
+      columns: [
+        { kind: "field", field_key: "dietary_requirements" },
+        {
+          kind: "connection",
+          relationship_key: "customer_places_order",
+          direction: "target",
+          label: "Customer",
+        },
+      ],
+      fields: ["dietary_requirements"],
+      title_field: "dietary_requirements",
+      include_archived: false,
+      filters: [],
+      filter_match: "all",
+      sorts: [],
+      group: null,
+    };
+
+    const projected = projectAiBusinessModelContext(v2Source).modelContext;
+    expect(projected.views[0]?.configuration).toEqual({
+      fields: ["dietary_requirements"],
+      title_field: "dietary_requirements",
+      include_archived: false,
+    });
+  });
+
   it("excludes every URL/contact marker from task serialization and the provider request", async () => {
     const projected = projectAiBusinessModelContext(source()).modelContext;
     const taskInput = builderPlanTaskInputSchema.parse({

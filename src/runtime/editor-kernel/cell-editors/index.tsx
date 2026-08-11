@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { RenderEditCellProps } from "react-data-grid";
 
 import {
@@ -28,6 +29,8 @@ export function ConnectionPicker({
   onCommit,
   onSearch,
   onCreate,
+  initiallyOpen = false,
+  portal = false,
   value,
 }: Readonly<{
   column: EditorColumn;
@@ -38,16 +41,23 @@ export function ConnectionPicker({
     search: string,
   ) => Promise<readonly { id: string; label: string }[]>;
   onCreate?: (primaryValue: string) => Promise<{ id: string; label: string }>;
+  initiallyOpen?: boolean;
+  portal?: boolean;
   value: EditorValue;
 }>): React.ReactNode {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [portalPosition, setPortalPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [results, setResults] = useState<
     readonly { id: string; label: string }[]
   >(labels ?? []);
   const selected = Array.isArray(value) ? value : [];
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selected);
 
   useEffect(() => {
@@ -64,6 +74,60 @@ export function ConnectionPicker({
       cancelled = true;
     };
   }, [onSearch, open, query]);
+
+  useEffect(() => {
+    if (!open || !portal || typeof window === "undefined") {
+      return;
+    }
+
+    const updatePosition = (): void => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const bounds = trigger.getBoundingClientRect();
+      const popoverWidth = Math.min(304, window.innerWidth - 16);
+      const estimatedHeight = Math.min(360, window.innerHeight - 16);
+      const below = bounds.bottom + 4;
+      const top =
+        below + estimatedHeight <= window.innerHeight - 8
+          ? below
+          : Math.max(8, bounds.top - estimatedHeight - 4);
+      const left = Math.min(
+        Math.max(8, bounds.left),
+        Math.max(8, window.innerWidth - popoverWidth - 8),
+      );
+      setPortalPosition({ top, left });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, portal]);
+
+  useEffect(() => {
+    if (!open || !portal || typeof document === "undefined") return;
+
+    const handleOutsideMouseDown = (event: MouseEvent): void => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (
+        triggerRef.current?.contains(target) ||
+        popoverRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpen(false);
+      onCancel?.();
+    };
+
+    document.addEventListener("mousedown", handleOutsideMouseDown, true);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideMouseDown, true);
+    };
+  }, [onCancel, open, portal]);
 
   const commit = (next: readonly string[]): void => {
     onCommit(next);
@@ -86,6 +150,70 @@ export function ConnectionPicker({
       setCreating(false);
     }
   };
+
+  const popover = (
+    <div
+      className={`editor-connection-popover${portal ? " is-portal" : ""}`}
+      ref={popoverRef}
+      role="listbox"
+      style={
+        portalPosition
+          ? { left: portalPosition.left, top: portalPosition.top }
+          : undefined
+      }
+    >
+      <input
+        aria-label={`Search ${column.label}`}
+        autoFocus
+        className="editor-choice-search"
+        onChange={(event) => setQuery(event.currentTarget.value)}
+        placeholder="Search records"
+        value={query}
+      />
+      {results.map((result) => {
+        const active = selectedSet.has(result.id);
+        return (
+          <button
+            aria-selected={active}
+            className={`editor-connection-option${active ? " is-selected" : ""}`}
+            key={result.id}
+            onClick={() => {
+              const next = active
+                ? selected.filter((id) => id !== result.id)
+                : column.connection?.multiple
+                  ? [...selected, result.id]
+                  : [result.id];
+              commit(next);
+            }}
+            role="option"
+            type="button"
+          >
+            <span>{result.label}</span>
+            {active ? <span aria-hidden="true">✓</span> : null}
+          </button>
+        );
+      })}
+      {onCreate ? (
+        <button
+          className="editor-connection-create"
+          disabled={!query.trim() || creating}
+          onClick={() => void create()}
+          type="button"
+        >
+          {creating
+            ? "Creating…"
+            : `+ Create ${column.label.toLocaleLowerCase("en")}`}
+        </button>
+      ) : null}
+      <button
+        className="editor-choice-clear"
+        onClick={() => commit([])}
+        type="button"
+      >
+        Clear
+      </button>
+    </div>
+  );
 
   return (
     <div className="editor-connection-picker">
@@ -128,60 +256,11 @@ export function ConnectionPicker({
           ⌄
         </span>
       </button>
-      {open ? (
-        <div className="editor-connection-popover" role="listbox">
-          <input
-            aria-label={`Search ${column.label}`}
-            autoFocus
-            className="editor-choice-search"
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Search records"
-            value={query}
-          />
-          {results.map((result) => {
-            const active = selectedSet.has(result.id);
-            return (
-              <button
-                aria-selected={active}
-                className={`editor-connection-option${active ? " is-selected" : ""}`}
-                key={result.id}
-                onClick={() => {
-                  const next = active
-                    ? selected.filter((id) => id !== result.id)
-                    : column.connection?.multiple
-                      ? [...selected, result.id]
-                      : [result.id];
-                  commit(next);
-                }}
-                role="option"
-                type="button"
-              >
-                <span>{result.label}</span>
-                {active ? <span aria-hidden="true">✓</span> : null}
-              </button>
-            );
-          })}
-          {onCreate ? (
-            <button
-              className="editor-connection-create"
-              disabled={!query.trim() || creating}
-              onClick={() => void create()}
-              type="button"
-            >
-              {creating
-                ? "Creating…"
-                : `+ Create ${column.label.toLocaleLowerCase("en")}`}
-            </button>
-          ) : null}
-          <button
-            className="editor-choice-clear"
-            onClick={() => commit([])}
-            type="button"
-          >
-            Clear
-          </button>
-        </div>
-      ) : null}
+      {open
+        ? portal && portalPosition && typeof document !== "undefined"
+          ? createPortal(popover, document.body)
+          : popover
+        : null}
     </div>
   );
 }
@@ -272,6 +351,7 @@ function TextLikeEditor({
 
 function ConnectionEditor({
   columnDefinition,
+  onClose,
   onRowChange,
   row,
   onSearchConnectionTargets,
@@ -294,8 +374,9 @@ function ConnectionEditor({
   return (
     <ConnectionPicker
       column={columnDefinition}
+      initiallyOpen
       labels={row.connectionValues?.[columnDefinition.key]}
-      onCancel={() => undefined}
+      onCancel={() => onClose()}
       onCommit={(next) =>
         onRowChange(rowWithValue(row, columnDefinition.key, next), true)
       }
@@ -310,6 +391,7 @@ function ConnectionEditor({
               onCreateConnectionTarget(columnDefinition.key, primaryValue),
           }
         : {})}
+      portal
       value={value}
     />
   );

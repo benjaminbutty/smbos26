@@ -27,6 +27,7 @@ import { ProductionTableWorkspace } from "../../../../../runtime/editor-kernel/p
 import {
   addProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
+  createProductionTableConnectionAction,
   createProductionTableRowAction,
   insertProductionTableColumnAction,
   pasteProductionTableAction,
@@ -108,6 +109,38 @@ export default async function WorkspaceScreenPage({
           left.key.localeCompare(right.key)
         );
       });
+    const { data: tableObjects, error: tableObjectsError } = await supabase
+      .from("object_definitions")
+      .select("id, singular_label, plural_label, kind, is_active")
+      .eq("business_id", tenant.business.id)
+      .eq("is_active", true);
+    if (tableObjectsError || !tableObjects) {
+      notFound();
+    }
+    const tableObjectById = new Map(
+      tableObjects.map((object) => [object.id, object]),
+    );
+    const connectionTargets = [...allTableViews]
+      .filter(
+        (view) =>
+          targetViewKeyByObjectId[view.object_definition_id] === view.key &&
+          view.object_definition_id !== bundle.definition.object_definition_id,
+      )
+      .flatMap((view) => {
+        const object = tableObjectById.get(view.object_definition_id);
+        if (!object || object.kind !== "custom") {
+          return [];
+        }
+        return [
+          {
+            viewKey: view.key,
+            label: view.name,
+            singularLabel: object.singular_label,
+            pluralLabel: object.plural_label,
+          },
+        ];
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
     const productionPreview = await (async () => {
       try {
         const config = bundle.config as TableViewConfig;
@@ -192,6 +225,11 @@ export default async function WorkspaceScreenPage({
               businessSlug,
               bundle.definition.key,
             ),
+            createConnection: createProductionTableConnectionAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
             insertColumn: insertProductionTableColumnAction.bind(
               null,
               businessSlug,
@@ -263,6 +301,9 @@ export default async function WorkspaceScreenPage({
           capabilities={{
             ...rowCreation,
             canAddColumns: Boolean(currentness),
+            canAddConnections: Boolean(
+              currentness && bundle.object.kind === "custom",
+            ),
             canInsertColumns: Boolean(currentness),
             canRenameColumns: Boolean(currentness),
             canChangeColumnTypes: Boolean(currentness),
@@ -277,6 +318,11 @@ export default async function WorkspaceScreenPage({
               : undefined
           }
           currentness={currentness}
+          connectionSource={{
+            singularLabel: bundle.object.singular_label,
+            pluralLabel: bundle.object.plural_label,
+          }}
+          connectionTargets={connectionTargets}
           headerContent={
             <>
               <TableViewTabs
