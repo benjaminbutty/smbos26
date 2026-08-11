@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 
 import type { DirectPageActionResult } from "../pages/direct-actions";
 import type {
@@ -15,13 +15,12 @@ import { experienceKeyToPath } from "../routing";
 import { ProductionTableWorkspace } from "../editor-kernel/production/production-table-workspace";
 import type { EditorCapabilities } from "../editor-kernel/contracts";
 import type { PageEditorViewEmbed } from "./extensions";
-
-interface PageViewOption {
-  key: string;
-  name: string;
-  tableName?: string;
-  viewType: "table" | "list" | "cards" | "detail";
-}
+import {
+  groupPageViewsByTable,
+  selectPageView,
+  selectPageViewTable,
+  type PageViewOption,
+} from "./view-chooser";
 
 type PageBlockIntent = Extract<
   DirectPageIntent,
@@ -373,6 +372,10 @@ export function PageEditor({
   views,
 }: Readonly<PageEditorProps>): ReactNode {
   const router = useRouter();
+  const pageViewTables = useMemo(
+    () => groupPageViewsByTable(availableViews),
+    [availableViews],
+  );
   const [title, setTitle] = useState(initialTitle);
   const [titleDraft, setTitleDraft] = useState(initialTitle);
   const [layout, setLayout] = useState(initialLayout);
@@ -380,11 +383,21 @@ export function PageEditor({
   const [status, setStatus] = useState<EditorSaveStatus>("saved");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [addMenu, setAddMenu] = useState<AddMenu>("closed");
+  const [selectedTableKey, setSelectedTableKey] = useState(
+    () => pageViewTables[0]?.key ?? "",
+  );
   const [selectedViewKey, setSelectedViewKey] = useState(
-    availableViews[0]?.key ?? "",
+    () => pageViewTables[0]?.views[0]?.key ?? "",
   );
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState<BlockDraft | null>(null);
+  const selectedTable =
+    pageViewTables.find((table) => table.key === selectedTableKey) ??
+    pageViewTables[0];
+  const effectiveSelectedViewKey = selectPageView(
+    selectedTable,
+    selectedViewKey,
+  );
 
   const runStructureAction = async (
     intent: PageBlockIntent,
@@ -578,9 +591,18 @@ export function PageEditor({
               </button>
               <button
                 onClick={() => {
-                  setSelectedViewKey(
-                    selectedViewKey || availableViews[0]?.key || "",
+                  const table =
+                    pageViewTables.find((candidate) =>
+                      candidate.views.some(
+                        (view) => view.key === effectiveSelectedViewKey,
+                      ),
+                    ) ?? pageViewTables[0];
+                  const selection = selectPageViewTable(
+                    pageViewTables,
+                    table?.key ?? "",
                   );
+                  setSelectedTableKey(selection.tableKey);
+                  setSelectedViewKey(selection.viewKey);
                   setAddMenu("views");
                 }}
                 type="button"
@@ -593,8 +615,11 @@ export function PageEditor({
               className="page-editor-view-chooser"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (selectedViewKey) {
-                  void addBlock({ type: "view", viewKey: selectedViewKey });
+                if (effectiveSelectedViewKey) {
+                  void addBlock({
+                    type: "view",
+                    viewKey: effectiveSelectedViewKey,
+                  });
                 }
               }}
             >
@@ -605,26 +630,45 @@ export function PageEditor({
                 Table
                 <select
                   aria-label="Table"
-                  onChange={(event) =>
-                    setSelectedViewKey(event.currentTarget.value)
-                  }
-                  value={selectedViewKey}
+                  onChange={(event) => {
+                    const selection = selectPageViewTable(
+                      pageViewTables,
+                      event.currentTarget.value,
+                    );
+                    setSelectedTableKey(selection.tableKey);
+                    setSelectedViewKey(selection.viewKey);
+                  }}
+                  value={selectedTable?.key ?? ""}
                 >
-                  {availableViews.map((view) => (
-                    <option key={view.key} value={view.key}>
-                      {view.tableName ?? view.name}
+                  {pageViewTables.map((table) => (
+                    <option key={table.key} value={table.key}>
+                      {table.label}
                     </option>
                   ))}
                 </select>
               </label>
-              <p className="page-editor-selected-view">
-                View ·{" "}
-                {availableViews.find((view) => view.key === selectedViewKey)
-                  ?.name ?? "Unavailable"}
-              </p>
+              <label>
+                Saved View
+                <select
+                  aria-label="Saved View"
+                  disabled={!selectedTable}
+                  onChange={(event) =>
+                    setSelectedViewKey(
+                      selectPageView(selectedTable, event.currentTarget.value),
+                    )
+                  }
+                  value={effectiveSelectedViewKey}
+                >
+                  {selectedTable?.views.map((view) => (
+                    <option key={view.key} value={view.key}>
+                      {view.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <button
                 className="button button-small"
-                disabled={!selectedViewKey}
+                disabled={!effectiveSelectedViewKey}
                 type="submit"
               >
                 Add to Page

@@ -435,6 +435,7 @@ export default async function InternalPage({
       return {
         key: view.key,
         name: view.name,
+        tableKey: view.object_definition_id,
         viewType: view.view_type,
         ...(tableName ? { tableName } : {}),
       };
