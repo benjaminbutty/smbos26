@@ -12,10 +12,14 @@ interface SignInPageProps {
 export default async function SignInPage({
   searchParams,
 }: Readonly<SignInPageProps>): Promise<ReactNode> {
-  const [error, message] = await Promise.all([
+  const [error, message, returnTo] = await Promise.all([
     readSearchParam(searchParams, "error"),
     readSearchParam(searchParams, "message"),
+    readSearchParam(searchParams, "returnTo"),
   ]);
+  const signUpHref = returnTo
+    ? `/sign-up?returnTo=${encodeURIComponent(returnTo)}`
+    : "/sign-up";
 
   return (
     <main className="narrow-page">
@@ -28,6 +32,9 @@ export default async function SignInPage({
         {message ? <Notice kind="message">{message}</Notice> : null}
 
         <form action={signIn} className="stack-form">
+          {returnTo ? (
+            <input name="returnTo" type="hidden" value={returnTo} />
+          ) : null}
           <label>
             Email
             <input autoComplete="email" name="email" required type="email" />
@@ -46,7 +53,7 @@ export default async function SignInPage({
         </form>
 
         <p className="form-footer">
-          New to SMBOS? <Link href="/sign-up">Create an account</Link>
+          New to SMBOS? <Link href={signUpHref}>Create an account</Link>
         </p>
       </section>
     </main>

@@ -141,6 +141,65 @@ export type Database = {
           },
         ];
       };
+      anonymous_build_sessions: {
+        Row: {
+          claim_status: string;
+          claimed_at: string | null;
+          claimed_business_id: string | null;
+          claimed_user_id: string | null;
+          created_at: string;
+          expires_at: string;
+          id: string;
+          proposal_count: number;
+          proposal_json: Json;
+          regeneration_count: number;
+          request_text: string;
+          requested_category: string;
+          session_token_hash: string;
+          updated_at: string;
+        };
+        Insert: {
+          claim_status?: string;
+          claimed_at?: string | null;
+          claimed_business_id?: string | null;
+          claimed_user_id?: string | null;
+          created_at?: string;
+          expires_at: string;
+          id?: string;
+          proposal_count?: number;
+          proposal_json: Json;
+          regeneration_count?: number;
+          request_text: string;
+          requested_category: string;
+          session_token_hash: string;
+          updated_at?: string;
+        };
+        Update: {
+          claim_status?: string;
+          claimed_at?: string | null;
+          claimed_business_id?: string | null;
+          claimed_user_id?: string | null;
+          created_at?: string;
+          expires_at?: string;
+          id?: string;
+          proposal_count?: number;
+          proposal_json?: Json;
+          regeneration_count?: number;
+          request_text?: string;
+          requested_category?: string;
+          session_token_hash?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "anonymous_build_sessions_claimed_business_id_fkey";
+            columns: ["claimed_business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       business_ai_settings: {
         Row: {
           business_id: string;
@@ -1580,6 +1639,29 @@ export type Database = {
           requested_preorder_key: string;
         };
         Returns: Json;
+      };
+      claim_anonymous_build_session: {
+        Args: {
+          requested_business_name: string;
+          requested_session_token: string;
+          requested_timezone: string;
+        };
+        Returns: {
+          business_type: string;
+          created_at: string;
+          id: string;
+          name: string;
+          settings_json: Json;
+          slug: string;
+          timezone: string;
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "businesses";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
       };
       complete_preorder_confirmation_email: {
         Args: {

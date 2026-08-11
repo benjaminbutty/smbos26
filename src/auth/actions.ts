@@ -14,12 +14,32 @@ function redirectWithMessage(
   path: string,
   kind: "error" | "message",
   message: string,
+  returnTo?: string,
 ): never {
   const params = new URLSearchParams({ [kind]: message });
+  if (returnTo) {
+    params.set("returnTo", returnTo);
+  }
   redirect(`${path}?${params.toString()}`);
 }
 
-async function redirectAfterAuthentication(): Promise<never> {
+function safeReturnTo(value: unknown): string | undefined {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.includes("\\")
+  ) {
+    return undefined;
+  }
+  return value;
+}
+
+async function redirectAfterAuthentication(returnTo?: string): Promise<never> {
+  if (returnTo) {
+    redirect(returnTo);
+  }
+
   const supabase = await createServerClient();
   const { data: business } = await supabase
     .from("businesses")
@@ -32,6 +52,7 @@ async function redirectAfterAuthentication(): Promise<never> {
 }
 
 export async function signUp(formData: FormData): Promise<never> {
+  const returnTo = safeReturnTo(formData.get("returnTo"));
   const credentials = credentialsSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -42,6 +63,7 @@ export async function signUp(formData: FormData): Promise<never> {
       "/sign-up",
       "error",
       "Enter a valid email and a password of at least 8 characters.",
+      returnTo,
     );
   }
 
@@ -53,6 +75,7 @@ export async function signUp(formData: FormData): Promise<never> {
       "/sign-up",
       "error",
       "We could not create your account. Please try again.",
+      returnTo,
     );
   }
 
@@ -61,13 +84,15 @@ export async function signUp(formData: FormData): Promise<never> {
       "/sign-in",
       "message",
       "Check your email to confirm your account, then sign in.",
+      returnTo,
     );
   }
 
-  return redirectAfterAuthentication();
+  return redirectAfterAuthentication(returnTo);
 }
 
 export async function signIn(formData: FormData): Promise<never> {
+  const returnTo = safeReturnTo(formData.get("returnTo"));
   const credentials = credentialsSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -78,6 +103,7 @@ export async function signIn(formData: FormData): Promise<never> {
       "/sign-in",
       "error",
       "Enter a valid email and password.",
+      returnTo,
     );
   }
 
@@ -85,10 +111,15 @@ export async function signIn(formData: FormData): Promise<never> {
   const { error } = await supabase.auth.signInWithPassword(credentials.data);
 
   if (error) {
-    redirectWithMessage("/sign-in", "error", "Email or password is incorrect.");
+    redirectWithMessage(
+      "/sign-in",
+      "error",
+      "Email or password is incorrect.",
+      returnTo,
+    );
   }
 
-  return redirectAfterAuthentication();
+  return redirectAfterAuthentication(returnTo);
 }
 
 export async function signOut(): Promise<never> {

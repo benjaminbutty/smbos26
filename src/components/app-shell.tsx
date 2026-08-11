@@ -35,9 +35,9 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
             <a href="#why-smbos">Why SMBOS</a>
             <a href="#early-access">Early access</a>
             <Link href="/sign-in">Sign in</Link>
-            <a className="marketing-header-action" href="#early-access">
-              Join early access
-            </a>
+            <Link className="marketing-header-action" href="/start">
+              Start with Lenni
+            </Link>
           </nav>
 
           <details className="marketing-nav-mobile">

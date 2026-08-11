@@ -8,14 +8,16 @@ import HomePage from "../src/app/page";
 import { marketingMetadata } from "../src/app/marketing-metadata";
 
 describe("public marketing landing page", () => {
-  it("renders the brief-led hero, sections and early-access path", () => {
+  it("renders the brief-led hero and first Lenni entry path", () => {
     const markup = renderToStaticMarkup(createElement(HomePage));
 
     expect(markup).toContain("Run your business.");
     expect(markup).toContain("Your way.");
     expect(markup).toContain("Everything you need to run your business");
-    expect(markup).toContain('href="#early-access"');
-    expect(markup).toContain('href="#how-it-works"');
+    expect(markup).toContain('href="/start"');
+    expect(markup).toContain("Start with Lenni");
+    expect(markup).toContain('href="/sign-up"');
+    expect(markup).toContain("Build manually");
     expect(markup).toContain("AI helps you build");
     expect(markup).toContain("What is SMBOS?");
     expect(markup).not.toContain("SMBOS v0.1");
