@@ -13,6 +13,7 @@ import {
   type CellKeyDownArgs,
   type CellKeyboardEvent,
   type CellMouseArgs,
+  type CellMouseEvent,
   type DataGridHandle,
   type RowsChangeData,
 } from "react-data-grid";
@@ -26,7 +27,10 @@ import {
   hasDraftName,
   reorderColumnKeys,
   type CreateColumnInput,
+  type CreateConnectionPropertyInput,
+  type ConnectionTableOption,
   type EditorCapabilities,
+  type EditorColumn,
   type EditorColumnKind,
   type EditorRow,
   type EditorTable,
@@ -39,20 +43,72 @@ import {
   selectionBounds,
   serializeClipboardMatrix,
 } from "./clipboard";
-import { createEditorColumns, type PendingEdit } from "./table-columns";
+import {
+  createEditorColumns,
+  openConnectionCellEditor,
+  type PendingEdit,
+} from "./table-columns";
 import { RecordPanel } from "./record-panel";
 import type { TableEditorAdapter } from "./contracts";
 import { OptionManager, ShortcutSheet, TypePicker } from "./lenni-ui";
 
+export interface EditorRecordContext {
+  columns: readonly EditorColumn[];
+  fullRecordPath?: string;
+  isSource?: boolean;
+  recordTypeLabel?: string;
+  row: EditorRow;
+  tableName: string;
+  viewKey: string;
+}
+
 export interface EditorKernelProps {
   adapter: TableEditorAdapter;
+  businessSlug?: string;
   capabilities?: EditorCapabilities;
   footer?: ReactNode;
   headerContent?: ReactNode;
   marker?: ReactNode;
   newRecordLabel?: string;
   onStructureChanged?: () => void;
+  connectionSource?: Pick<
+    ConnectionTableOption,
+    "singularLabel" | "pluralLabel"
+  >;
+  connectionTargets?: readonly ConnectionTableOption[];
+  onCreateConnection?: (
+    input: CreateConnectionPropertyInput,
+  ) => Promise<boolean>;
   recordCountLabel?: string;
+  recordTypeLabel?: string;
+  fullRecordPath?: string;
+  loadConnectedRecord?:
+    | ((
+        targetViewKey: string,
+        recordId: string,
+      ) => Promise<EditorRecordContext | null>)
+    | undefined;
+  updateConnectedRecord?:
+    | ((
+        context: EditorRecordContext,
+        column: EditorColumn,
+        value: EditorValue,
+      ) => Promise<EditorRow>)
+    | undefined;
+  searchConnectedRecordTargets?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+        search: string,
+      ) => Promise<readonly { id: string; label: string }[]>)
+    | undefined;
+  createConnectedRecordTarget?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+        primaryValue: string,
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
   title?: string;
   readOnly?: boolean;
   variant?: "workspace" | "embedded";
@@ -242,18 +298,293 @@ function statusLabel(state: SaveState): string {
   }
 }
 
-function AddColumnPopover({
+export function ConnectionPropertyPopover({
+  onBack,
   onClose,
   onCreate,
+  source,
+  targets,
 }: Readonly<{
+  onBack: () => void;
+  onClose: () => void;
+  onCreate: (input: CreateConnectionPropertyInput) => Promise<boolean>;
+  source: Pick<ConnectionTableOption, "singularLabel" | "pluralLabel">;
+  targets: readonly ConnectionTableOption[];
+}>): ReactNode {
+  const [targetViewKey, setTargetViewKey] = useState(targets[0]?.viewKey ?? "");
+  const [currentMultiplicity, setCurrentMultiplicity] = useState<
+    "one" | "several"
+  >("one");
+  const [targetMultiplicity, setTargetMultiplicity] = useState<
+    "one" | "several"
+  >("several");
+  const [label, setLabel] = useState(targets[0]?.singularLabel ?? "");
+  const [reverseLabel, setReverseLabel] = useState(source.pluralLabel);
+  const [addReverse, setAddReverse] = useState(true);
+  const [labelTouched, setLabelTouched] = useState(false);
+  const [reverseLabelTouched, setReverseLabelTouched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const target = targets.find(
+    (candidate) => candidate.viewKey === targetViewKey,
+  );
+
+  return (
+    <form
+      className="editor-add-column-popover editor-connection-create-popover"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!target || !label.trim() || submitting) {
+          return;
+        }
+        if (addReverse && !reverseLabel.trim()) {
+          setError("Add a name for the property shown on the other Table.");
+          return;
+        }
+        setError(null);
+        setSubmitting(true);
+        const input: CreateConnectionPropertyInput = {
+          targetViewKey,
+          label: label.trim(),
+          currentMultiplicity,
+          targetMultiplicity,
+          addReverse,
+          ...(addReverse ? { reverseLabel: reverseLabel.trim() } : {}),
+        };
+        void onCreate(input)
+          .then((created) => {
+            if (created) {
+              onClose();
+            }
+          })
+          .catch((submissionError: unknown) => {
+            setError(saveErrorMessage(submissionError));
+          })
+          .finally(() => setSubmitting(false));
+      }}
+    >
+      <div className="editor-popover-heading">
+        <strong>Connect to another Table</strong>
+        <button
+          aria-label="Close connection setup"
+          onClick={onClose}
+          type="button"
+        >
+          ×
+        </button>
+      </div>
+      <label>
+        Table to connect
+        <select
+          aria-label="Table to connect"
+          onChange={(event) => {
+            const nextTargetViewKey = event.currentTarget.value;
+            const nextTarget = targets.find(
+              (candidate) => candidate.viewKey === nextTargetViewKey,
+            );
+            setTargetViewKey(nextTargetViewKey);
+            setLabelTouched(false);
+            setReverseLabelTouched(false);
+            if (nextTarget) {
+              setLabel(
+                currentMultiplicity === "one"
+                  ? nextTarget.singularLabel
+                  : nextTarget.pluralLabel,
+              );
+              setReverseLabel(
+                targetMultiplicity === "several"
+                  ? source.pluralLabel
+                  : source.singularLabel,
+              );
+            }
+          }}
+          value={targetViewKey}
+        >
+          {targets.map((candidate) => (
+            <option key={candidate.viewKey} value={candidate.viewKey}>
+              {candidate.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {target ? (
+        <>
+          <label>
+            On {source.singularLabel}, call this property
+            <input
+              aria-label={`On ${source.singularLabel}, call this property`}
+              maxLength={120}
+              onChange={(event) => {
+                setLabelTouched(true);
+                setLabel(event.currentTarget.value);
+              }}
+              required
+              value={label}
+            />
+          </label>
+          <div className="editor-connection-multiplicity">
+            <span>Each {source.singularLabel} can have:</span>
+            <label>
+              <span className="editor-sr-only">How many connected Records</span>
+              <select
+                aria-label={`Each ${source.singularLabel} can have`}
+                onChange={(event) => {
+                  const nextMultiplicity = event.currentTarget.value as
+                    "one" | "several";
+                  setCurrentMultiplicity(nextMultiplicity);
+                  if (!labelTouched && target) {
+                    setLabel(
+                      nextMultiplicity === "one"
+                        ? target.singularLabel
+                        : target.pluralLabel,
+                    );
+                  }
+                }}
+                value={currentMultiplicity}
+              >
+                <option value="one">One</option>
+                <option value="several">Several</option>
+              </select>
+            </label>
+            <span>
+              {currentMultiplicity === "one"
+                ? target.singularLabel
+                : target.pluralLabel}
+            </span>
+          </div>
+          <div className="editor-connection-multiplicity">
+            <span>Each {target.singularLabel} can have:</span>
+            <label>
+              <span className="editor-sr-only">
+                How many Records can connect back
+              </span>
+              <select
+                aria-label={`Each ${target.singularLabel} can have`}
+                onChange={(event) => {
+                  const nextMultiplicity = event.currentTarget.value as
+                    "one" | "several";
+                  setTargetMultiplicity(nextMultiplicity);
+                  if (!reverseLabelTouched) {
+                    setReverseLabel(
+                      nextMultiplicity === "several"
+                        ? source.pluralLabel
+                        : source.singularLabel,
+                    );
+                  }
+                }}
+                value={targetMultiplicity}
+              >
+                <option value="one">One</option>
+                <option value="several">Several</option>
+              </select>
+            </label>
+            <span>
+              {targetMultiplicity === "one"
+                ? source.singularLabel
+                : source.pluralLabel}
+            </span>
+          </div>
+          <label className="editor-connection-reverse-toggle">
+            <span>
+              <input
+                checked={addReverse}
+                onChange={(event) => setAddReverse(event.currentTarget.checked)}
+                type="checkbox"
+              />{" "}
+              Also show this on {target.label}
+            </span>
+          </label>
+          {addReverse ? (
+            <label>
+              On {target.singularLabel}, call this property
+              <input
+                aria-label={`On ${target.singularLabel}, call this property`}
+                maxLength={120}
+                onChange={(event) => {
+                  setReverseLabelTouched(true);
+                  setReverseLabel(event.currentTarget.value);
+                }}
+                required
+                value={reverseLabel}
+              />
+            </label>
+          ) : null}
+          <p className="editor-connection-summary">
+            Each {source.singularLabel} can have {currentMultiplicity}{" "}
+            {currentMultiplicity === "one"
+              ? target.singularLabel
+              : target.pluralLabel}
+            . Each {target.singularLabel} can have {targetMultiplicity}{" "}
+            {targetMultiplicity === "one"
+              ? source.singularLabel
+              : source.pluralLabel}
+            .
+          </p>
+        </>
+      ) : (
+        <span className="editor-structural-error" role="status">
+          Create another Table before adding a Connection.
+        </span>
+      )}
+      {error ? (
+        <span className="editor-structural-error" role="alert">
+          {error}
+        </span>
+      ) : null}
+      <div className="editor-connection-flow-actions">
+        <button className="editor-menu-back" onClick={onBack} type="button">
+          Back
+        </button>
+        <button
+          className="editor-menu-submit"
+          disabled={submitting || !target}
+          type="submit"
+        >
+          {submitting ? "Creating…" : "Create connection"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function AddColumnPopover({
+  canAddConnections,
+  connectionSource,
+  connectionTargets,
+  onClose,
+  onCreate,
+  onCreateConnection,
+}: Readonly<{
+  canAddConnections: boolean;
+  connectionSource?: Pick<
+    ConnectionTableOption,
+    "singularLabel" | "pluralLabel"
+  >;
+  connectionTargets?: readonly ConnectionTableOption[];
   onClose: () => void;
   onCreate: (input: CreateColumnInput) => Promise<void>;
+  onCreateConnection?: (
+    input: CreateConnectionPropertyInput,
+  ) => Promise<boolean>;
 }>): ReactNode {
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<EditorColumnKind>("text");
   const [options, setOptions] = useState<string[]>(["Active", "Inactive"]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  if (connectionOpen && connectionSource && onCreateConnection) {
+    return (
+      <ConnectionPropertyPopover
+        onBack={() => setConnectionOpen(false)}
+        onClose={onClose}
+        onCreate={onCreateConnection}
+        source={connectionSource}
+        targets={connectionTargets ?? []}
+      />
+    );
+  }
 
   return (
     <form
@@ -324,19 +655,50 @@ function AddColumnPopover({
       >
         {submitting ? "Adding…" : "Add column"}
       </button>
+      {canAddConnections && onCreateConnection && connectionSource ? (
+        (connectionTargets?.length ?? 0) > 0 ? (
+          <>
+            <div className="editor-add-property-divider" />
+            <button
+              className="editor-add-connection-link"
+              onClick={() => {
+                setError(null);
+                setConnectionOpen(true);
+              }}
+              type="button"
+            >
+              Connect to another Table
+            </button>
+          </>
+        ) : (
+          <span className="editor-property-type-note" role="status">
+            Create another Table before adding a Connection.
+          </span>
+        )
+      ) : null}
     </form>
   );
 }
 
 export function EditorKernel({
   adapter,
+  businessSlug,
   capabilities = defaultEditorCapabilities,
   footer,
   headerContent,
   marker,
   newRecordLabel = "New record",
   onStructureChanged,
+  connectionSource,
+  connectionTargets,
+  onCreateConnection,
   recordCountLabel,
+  recordTypeLabel,
+  fullRecordPath,
+  loadConnectedRecord,
+  updateConnectedRecord,
+  searchConnectedRecordTargets,
+  createConnectedRecordTarget,
   readOnly = false,
   title,
   variant = "workspace",
@@ -356,6 +718,9 @@ export function EditorKernel({
   const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
+  const [connectedPanel, setConnectedPanel] =
+    useState<EditorRecordContext | null>(null);
+  const [panelHistory, setPanelHistory] = useState<EditorRecordContext[]>([]);
   const [draftActivation, setDraftActivation] = useState<{
     rowIdx: number;
     columnIdx: number;
@@ -371,6 +736,18 @@ export function EditorKernel({
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
     : null;
   const recordColumns = table.recordColumns ?? table.columns;
+  const sourcePanel = panelRow
+    ? {
+        columns: recordColumns,
+        ...(fullRecordPath !== undefined ? { fullRecordPath } : {}),
+        isSource: true,
+        ...(recordTypeLabel !== undefined ? { recordTypeLabel } : {}),
+        row: panelRow,
+        tableName: table.name,
+        viewKey: table.key,
+      }
+    : null;
+  const activePanel = connectedPanel ?? sourcePanel;
   const columnForKey = useCallback(
     (columnKey: string) =>
       recordColumns.find((column) => column.key === columnKey) ?? null,
@@ -381,6 +758,8 @@ export function EditorKernel({
     const origin = panelOrigin;
     setPanelRowId(null);
     setPanelOrigin(null);
+    setConnectedPanel(null);
+    setPanelHistory([]);
     if (!origin) {
       return;
     }
@@ -667,12 +1046,132 @@ export function EditorKernel({
           }));
           setPanelOrigin({ rowId, columnKey });
           setPanelRowId(rowId);
+          setConnectedPanel(null);
+          setPanelHistory([]);
         })
         .catch(() => {
           setSaveState({ status: "error", cellLabel: "Record" });
         });
     },
     [adapter],
+  );
+
+  const followConnectedRecord = useCallback(
+    (targetViewKey: string, recordId: string): void => {
+      if (!loadConnectedRecord || !activePanel) {
+        return;
+      }
+      void loadConnectedRecord(targetViewKey, recordId)
+        .then((next) => {
+          if (!next) {
+            setSaveState({ status: "error", cellLabel: "Record" });
+            return;
+          }
+          setPanelHistory((current) => [...current, activePanel]);
+          setConnectedPanel({ ...next, isSource: false });
+        })
+        .catch(() => {
+          setSaveState({ status: "error", cellLabel: "Record" });
+        });
+    },
+    [activePanel, loadConnectedRecord],
+  );
+
+  const backConnectedRecord = useCallback((): void => {
+    const previous = panelHistory[panelHistory.length - 1];
+    if (!previous) {
+      return;
+    }
+    setPanelHistory((current) => current.slice(0, -1));
+    if (previous.isSource) {
+      setConnectedPanel(null);
+    } else {
+      setConnectedPanel(previous);
+    }
+  }, [panelHistory]);
+
+  const commitConnectedCell = useCallback(
+    (rowId: string, columnKey: string, rawValue: unknown): void => {
+      if (!connectedPanel || !updateConnectedRecord) {
+        return;
+      }
+      const column = connectedPanel.columns.find(
+        (candidate) => candidate.key === columnKey,
+      );
+      if (!column || column.editable === false) {
+        return;
+      }
+      let value: EditorValue;
+      try {
+        value = editorValueForColumn(column, rawValue);
+      } catch {
+        setSaveState({ status: "error", cellLabel: column.label });
+        return;
+      }
+      const previousRow = connectedPanel.row;
+      setConnectedPanel((current) =>
+        current
+          ? {
+              ...current,
+              row: {
+                ...current.row,
+                values: { ...current.row.values, [columnKey]: value },
+              },
+            }
+          : current,
+      );
+      void updateConnectedRecord(connectedPanel, column, value)
+        .then((savedRow) => {
+          setConnectedPanel((current) =>
+            current
+              ? {
+                  ...current,
+                  row: {
+                    ...current.row,
+                    values: { ...current.row.values, ...savedRow.values },
+                    ...(savedRow.connectionValues
+                      ? { connectionValues: savedRow.connectionValues }
+                      : {}),
+                  },
+                }
+              : current,
+          );
+          setSaveState({ status: "saved" });
+        })
+        .catch(() => {
+          setConnectedPanel((current) =>
+            current ? { ...current, row: previousRow } : current,
+          );
+          setSaveState({ status: "error", cellLabel: column.label });
+        });
+    },
+    [connectedPanel, updateConnectedRecord],
+  );
+
+  const searchPanelConnectionTargets = useCallback(
+    (columnKey: string, search: string) => {
+      if (!connectedPanel || !searchConnectedRecordTargets) {
+        return Promise.resolve([] as readonly { id: string; label: string }[]);
+      }
+      return searchConnectedRecordTargets(connectedPanel, columnKey, search);
+    },
+    [connectedPanel, searchConnectedRecordTargets],
+  );
+
+  const createPanelConnectionTarget = useCallback(
+    (columnKey: string, primaryValue: string) => {
+      if (!connectedPanel || !createConnectedRecordTarget) {
+        return Promise.reject(
+          new Error("Creating a connected Record is not available."),
+        );
+      }
+      return createConnectedRecordTarget(
+        connectedPanel,
+        columnKey,
+        primaryValue,
+      );
+    },
+    [connectedPanel, createConnectedRecordTarget],
   );
 
   const handleCreateColumn = useCallback(
@@ -686,6 +1185,16 @@ export function EditorKernel({
       }
     },
     [adapter, capabilities.canAddColumns, runStructural],
+  );
+
+  const handleCreateConnection = useCallback(
+    async (input: CreateConnectionPropertyInput): Promise<boolean> => {
+      if (capabilities.canAddConnections === false || !onCreateConnection) {
+        return false;
+      }
+      return runStructural(() => onCreateConnection(input));
+    },
+    [capabilities.canAddConnections, onCreateConnection, runStructural],
   );
 
   const handleRenameColumn = useCallback(
@@ -1116,6 +1625,19 @@ export function EditorKernel({
     [table.columns],
   );
 
+  const handleCellClick = useCallback(
+    (args: CellMouseArgs<EditorRow>, event: CellMouseEvent): void => {
+      if (event.shiftKey) {
+        return;
+      }
+      const column = table.columns.find(
+        (candidate) => candidate.key === args.column.key,
+      );
+      openConnectionCellEditor(column, args.row, args.selectCell);
+    },
+    [table.columns],
+  );
+
   const handleCellMouseDown = useCallback(
     (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
       const point = { rowIndex: args.rowIdx, columnIndex: args.column.idx };
@@ -1320,6 +1842,7 @@ export function EditorKernel({
               columns={gridColumns}
               data-testid="editor-grid"
               headerRowHeight={36}
+              onCellClick={handleCellClick}
               onCellMouseDown={handleCellMouseDown}
               onCellDoubleClick={handleDoubleClick}
               onCellKeyDown={handleCellKeyDown}
@@ -1377,8 +1900,14 @@ export function EditorKernel({
                 </button>
                 {addColumnOpen ? (
                   <AddColumnPopover
+                    canAddConnections={capabilities.canAddConnections !== false}
+                    {...(connectionSource ? { connectionSource } : {})}
+                    {...(connectionTargets ? { connectionTargets } : {})}
                     onClose={() => setAddColumnOpen(false)}
                     onCreate={handleCreateColumn}
+                    {...(onCreateConnection
+                      ? { onCreateConnection: handleCreateConnection }
+                      : {})}
                   />
                 ) : null}
               </>
@@ -1396,26 +1925,47 @@ export function EditorKernel({
             </div>
           ) : null}
         </div>
-        {panelRow ? (
+        {activePanel ? (
           <RecordPanel
-            key={`${panelRow.id}:${JSON.stringify(panelRow.values)}`}
-            columns={recordColumns}
+            key={`${activePanel.viewKey}:${activePanel.row.id}:${JSON.stringify(activePanel.row.values)}`}
+            {...(businessSlug !== undefined ? { businessSlug } : {})}
+            columns={activePanel.columns}
+            {...(activePanel.fullRecordPath !== undefined
+              ? { fullRecordPath: activePanel.fullRecordPath }
+              : {})}
+            {...(panelHistory.length > 0
+              ? { onBack: backConnectedRecord }
+              : {})}
             onClose={closePanel}
-            onCommitCell={commitCell}
-            onSearchConnectionTargets={(columnKey, search) =>
-              adapter.searchConnectionTargets
-                ? adapter.searchConnectionTargets(columnKey, search)
-                : Promise.resolve([])
+            onCommitCell={connectedPanel ? commitConnectedCell : commitCell}
+            onFollowConnectedRecord={
+              loadConnectedRecord ? followConnectedRecord : undefined
             }
-            onCreateConnectionTarget={(columnKey, primaryValue) =>
-              adapter.createConnectionTarget
-                ? adapter.createConnectionTarget(columnKey, primaryValue)
-                : Promise.reject(
-                    new Error("Creating a connected Record is not available."),
-                  )
+            onSearchConnectionTargets={
+              connectedPanel
+                ? searchPanelConnectionTargets
+                : (columnKey, search) =>
+                    adapter.searchConnectionTargets
+                      ? adapter.searchConnectionTargets(columnKey, search)
+                      : Promise.resolve([])
             }
-            row={panelRow}
-            tableName={table.name}
+            onCreateConnectionTarget={
+              connectedPanel
+                ? createPanelConnectionTarget
+                : (columnKey, primaryValue) =>
+                    adapter.createConnectionTarget
+                      ? adapter.createConnectionTarget(columnKey, primaryValue)
+                      : Promise.reject(
+                          new Error(
+                            "Creating a connected Record is not available.",
+                          ),
+                        )
+            }
+            row={activePanel.row}
+            {...(activePanel.recordTypeLabel !== undefined
+              ? { recordTypeLabel: activePanel.recordTypeLabel }
+              : {})}
+            tableName={activePanel.tableName}
           />
         ) : null}
       </div>

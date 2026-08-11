@@ -77,46 +77,50 @@ function valueForRow(row: EditorRow, column: EditorColumn): EditorValue {
   return row.values[column.key] ?? null;
 }
 
-function connectionDisplay(row: EditorRow, column: EditorColumn): string {
+function connectionContent(
+  row: EditorRow,
+  column: EditorColumn,
+): React.ReactNode {
   const labels = row.connectionValues?.[column.key] ?? [];
-  return labels.length > 0
-    ? labels.map((value) => value.label).join(", ")
-    : "—";
+  if (labels.length === 0) {
+    return <span className="editor-connection-empty">—</span>;
+  }
+  const visibleLabels = labels.slice(0, column.connection?.multiple ? 2 : 1);
+  const hiddenLabelCount = labels.length - visibleLabels.length;
+  return (
+    <span
+      className="editor-table-connection-values"
+      title={labels.map((item) => item.label).join(", ")}
+    >
+      {visibleLabels.map((item, index) => (
+        <span className="editor-table-connection-value" key={item.id}>
+          {index > 0 ? ", " : null}
+          {item.label}
+        </span>
+      ))}
+      {hiddenLabelCount > 0 ? (
+        <span className="editor-table-connection-summary">
+          +{hiddenLabelCount}
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
-function statusChipTone(
-  value: EditorValue,
-): "success" | "accent" | "muted" | "neutral" {
-  const normalized = editorInputValue(value)
-    .trim()
-    .toLocaleLowerCase("en")
-    .replaceAll("_", " ");
+export function openConnectionCellEditor(
+  column: EditorColumn | undefined,
+  row: EditorRow,
+  selectCell: (enableEditor?: boolean) => void,
+): void {
   if (
-    [
-      "active",
-      "available",
-      "booked",
-      "complete",
-      "completed",
-      "confirmed",
-      "collected",
-      "ready",
-      "yes",
-    ].includes(normalized)
+    !column ||
+    column.kind !== "connection" ||
+    column.editable === false ||
+    row.isDraft
   ) {
-    return "success";
+    return;
   }
-  if (["lead", "new", "pending", "in progress", "open"].includes(normalized)) {
-    return "accent";
-  }
-  if (
-    ["archived", "cancelled", "canceled", "closed", "inactive", "no"].includes(
-      normalized,
-    )
-  ) {
-    return "muted";
-  }
-  return "neutral";
+  selectCell(true);
 }
 
 function HeaderCell({
@@ -604,21 +608,20 @@ export function EditorCell({
     );
   }
 
-  const display =
-    column.kind === "connection"
-      ? connectionDisplay(row, column)
-      : displayEditorValue(column, value);
+  const display = displayEditorValue(column, value);
   const content = (
     <span
       className={
         column.kind === "status" || column.kind === "select"
-          ? `editor-status-pill editor-status-pill-${statusChipTone(value)}`
+          ? "editor-status-pill editor-status-pill-neutral"
           : undefined
       }
     >
-      {column.kind === "url" &&
-      typeof value === "string" &&
-      /^https?:\/\/\S+$/i.test(value) ? (
+      {column.kind === "connection" ? (
+        connectionContent(row, column)
+      ) : column.kind === "url" &&
+        typeof value === "string" &&
+        /^https?:\/\/\S+$/i.test(value) ? (
         <a href={value} rel="noreferrer" target="_blank">
           {display}
         </a>
@@ -691,6 +694,9 @@ export function createEditorColumns({
     frozen: column.primary,
     editable: (row: EditorRow) =>
       column.editable !== false && (!row.isDraft || Boolean(column.primary)),
+    ...(column.kind === "connection"
+      ? { editorOptions: { commitOnOutsideClick: false } }
+      : {}),
     renderHeaderCell: () => (
       <HeaderCell
         column={column}

@@ -240,12 +240,7 @@ const resizeColumnIntentSchema = z
   })
   .strict();
 
-const connectionModeSchema = z.enum([
-  "one_record",
-  "several_records",
-  "single",
-  "multiple",
-]);
+const connectionMultiplicitySchema = z.enum(["one", "several"]);
 
 const createConnectionPropertyIntentSchema = z
   .object({
@@ -253,7 +248,8 @@ const createConnectionPropertyIntentSchema = z
     viewKey: graphKeySchema,
     targetViewKey: graphKeySchema,
     label: directTableLabelSchema,
-    mode: connectionModeSchema,
+    currentMultiplicity: connectionMultiplicitySchema,
+    targetMultiplicity: connectionMultiplicitySchema,
     reverseLabel: directTableLabelSchema.optional(),
     addReverse: z.boolean().default(true),
   })

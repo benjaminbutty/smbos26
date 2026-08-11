@@ -50,6 +50,7 @@ export interface ConfigurationDefinitionSource {
   getObjectById(objectId: string): Promise<ObjectDefinition | null>;
   getObjectByKey(objectKey: string): Promise<ObjectDefinition | null>;
   listFieldsForObject(objectKey: string): Promise<FieldDefinition[]>;
+  listPreorders(): Promise<PreorderDefinition[]>;
   getPreorderByKey(preorderKey: string): Promise<PreorderDefinition | null>;
   listPreorderLocations(preorderKey: string): Promise<PreorderLocation[]>;
 }
@@ -363,6 +364,16 @@ export function createActiveConfigurationDefinitionSource(
         .eq("is_active", true)
         .order("created_at");
       return requireRows(data, error, "Could not load configured Connections.");
+    },
+
+    async listPreorders() {
+      const { data, error } = await client
+        .from("preorder_experiences")
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("is_active", true)
+        .order("created_at");
+      return requireRows(data, error, "Could not load configured preorders.");
     },
 
     async getPageByKey(pageKey) {
@@ -680,6 +691,9 @@ export function createSnapshotConfigurationDefinitionSource(
     },
     async listRelationships() {
       return relationships;
+    },
+    async listPreorders() {
+      return preorders;
     },
     async getPageByKey(pageKey) {
       return pages.find((definition) => definition.key === pageKey) ?? null;

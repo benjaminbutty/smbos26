@@ -27,10 +27,12 @@ import { ProductionTableWorkspace } from "../../../../../runtime/editor-kernel/p
 import {
   addProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
+  createProductionTableConnectionAction,
   createProductionTableRowAction,
   insertProductionTableColumnAction,
   pasteProductionTableAction,
   readProductionTableRecordAction,
+  readProductionRecordPanelContextAction,
   renameProductionTableAction,
   renameProductionTableColumnAction,
   reorderProductionTableColumnsAction,
@@ -74,7 +76,25 @@ export default async function WorkspaceScreenPage({
   }
 
   if (bundle.definition.view_type === "table") {
-    const tableViews = (await experience.listTableViews())
+    const allTableViews = await experience.listTableViews();
+    const targetViewKeyByObjectId = [...allTableViews]
+      .sort((left, right) => {
+        const leftConfig = normalizeTableViewConfig(left.config_json);
+        const rightConfig = normalizeTableViewConfig(right.config_json);
+        return (
+          (leftConfig.role === "primary" ? 0 : 1) -
+            (rightConfig.role === "primary" ? 0 : 1) ||
+          left.name.localeCompare(right.name) ||
+          left.key.localeCompare(right.key)
+        );
+      })
+      .reduce<Record<string, string>>((result, view) => {
+        if (!result[view.object_definition_id]) {
+          result[view.object_definition_id] = view.key;
+        }
+        return result;
+      }, {});
+    const tableViews = allTableViews
       .filter(
         (view) =>
           view.object_definition_id === bundle.definition.object_definition_id,
@@ -89,6 +109,38 @@ export default async function WorkspaceScreenPage({
           left.key.localeCompare(right.key)
         );
       });
+    const { data: tableObjects, error: tableObjectsError } = await supabase
+      .from("object_definitions")
+      .select("id, singular_label, plural_label, kind, is_active")
+      .eq("business_id", tenant.business.id)
+      .eq("is_active", true);
+    if (tableObjectsError || !tableObjects) {
+      notFound();
+    }
+    const tableObjectById = new Map(
+      tableObjects.map((object) => [object.id, object]),
+    );
+    const connectionTargets = [...allTableViews]
+      .filter(
+        (view) =>
+          targetViewKeyByObjectId[view.object_definition_id] === view.key &&
+          view.object_definition_id !== bundle.definition.object_definition_id,
+      )
+      .flatMap((view) => {
+        const object = tableObjectById.get(view.object_definition_id);
+        if (!object || object.kind !== "custom") {
+          return [];
+        }
+        return [
+          {
+            viewKey: view.key,
+            label: view.name,
+            singularLabel: object.singular_label,
+            pluralLabel: object.plural_label,
+          },
+        ];
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
     const productionPreview = await (async () => {
       try {
         const config = bundle.config as TableViewConfig;
@@ -115,6 +167,7 @@ export default async function WorkspaceScreenPage({
         const mapped = mapExperienceViewBundleToEditorTable({
           bundle,
           editFormFieldKeys,
+          targetViewKeyByObjectId,
         });
         const availability = await getDirectTableRowCreationAvailability(
           supabase,
@@ -165,8 +218,14 @@ export default async function WorkspaceScreenPage({
         {error ? <Notice kind="error">{error}</Notice> : null}
         {message ? <Notice kind="message">{message}</Notice> : null}
         <ProductionTableWorkspace
+          businessSlug={businessSlug}
           actions={{
             addColumn: addProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            createConnection: createProductionTableConnectionAction.bind(
               null,
               businessSlug,
               bundle.definition.key,
@@ -242,6 +301,9 @@ export default async function WorkspaceScreenPage({
           capabilities={{
             ...rowCreation,
             canAddColumns: Boolean(currentness),
+            canAddConnections: Boolean(
+              currentness && bundle.object.kind === "custom",
+            ),
             canInsertColumns: Boolean(currentness),
             canRenameColumns: Boolean(currentness),
             canChangeColumnTypes: Boolean(currentness),
@@ -256,6 +318,11 @@ export default async function WorkspaceScreenPage({
               : undefined
           }
           currentness={currentness}
+          connectionSource={{
+            singularLabel: bundle.object.singular_label,
+            pluralLabel: bundle.object.plural_label,
+          }}
+          connectionTargets={connectionTargets}
           headerContent={
             <>
               <TableViewTabs
@@ -276,7 +343,29 @@ export default async function WorkspaceScreenPage({
             </>
           }
           newRecordLabel={`New ${bundle.object.singular_label.toLocaleLowerCase("en")}`}
+          recordTypeLabel={bundle.object.singular_label}
           recordCountLabel={`${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`}
+          fullRecordPath={`/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}`}
+          readConnectedRecord={readProductionRecordPanelContextAction.bind(
+            null,
+            businessSlug,
+          )}
+          updateConnectedRecordCell={updateProductionTableCellAction.bind(
+            null,
+            businessSlug,
+          )}
+          updateConnectedRecordConnection={updateProductionTableConnectionAction.bind(
+            null,
+            businessSlug,
+          )}
+          searchConnectedRecordTargets={searchProductionTableConnectionTargetsAction.bind(
+            null,
+            businessSlug,
+          )}
+          createConnectedRecordTarget={createProductionTableConnectionTargetAction.bind(
+            null,
+            businessSlug,
+          )}
           table={mapped.table}
         />
       </section>

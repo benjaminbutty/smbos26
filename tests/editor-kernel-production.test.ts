@@ -7,6 +7,7 @@ import type { TableViewConfig } from "../src/core/experience/schemas";
 import type { Tables } from "../src/db/supabase/database.types";
 import type { EditorTable } from "../src/runtime/editor-kernel/contracts";
 import type { ProductionTableStructureState } from "../src/runtime/editor-kernel/production/action-types";
+import { productionTableRefreshKey } from "../src/runtime/editor-kernel/production/action-types";
 import { createEditorColumns } from "../src/runtime/editor-kernel/table-columns";
 import {
   createProductionTableAdapter,
@@ -63,10 +64,33 @@ function record(
   } as Tables<"records">;
 }
 
+function relationship(
+  key: string,
+  sourceObjectDefinitionId: string,
+  targetObjectDefinitionId: string,
+  cardinality: Tables<"relationship_definitions">["cardinality"],
+): Tables<"relationship_definitions"> {
+  return {
+    id: crypto.randomUUID(),
+    business_id: businessId,
+    key,
+    source_object_definition_id: sourceObjectDefinitionId,
+    target_object_definition_id: targetObjectDefinitionId,
+    source_label: "Source",
+    target_label: "Target",
+    cardinality,
+    is_required: false,
+    is_active: true,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 function bundle(
   fields: Tables<"field_definitions">[],
   config: TableViewConfig,
   records: Tables<"records">[],
+  relationships: Tables<"relationship_definitions">[] = [],
 ): ExperienceViewBundle {
   return {
     definition: {
@@ -98,6 +122,7 @@ function bundle(
     },
     fields,
     records,
+    relationships,
     config,
   };
 }
@@ -222,6 +247,127 @@ describe("production editor Table mapping", () => {
       formBacked.recordColumns?.find((column) => column.key === "attachment"),
     ).toMatchObject({ editable: false });
   });
+
+  it("maps generic Connection identity, direction, and cardinality for the editor", () => {
+    const petObjectId = "20000000-0000-4000-8000-000000000002";
+    const serviceObjectId = "20000000-0000-4000-8000-000000000003";
+    const connectionConfig: TableViewConfig = {
+      schema_version: 2,
+      role: "primary",
+      columns: [
+        { kind: "field", field_key: "name" },
+        {
+          kind: "connection",
+          relationship_key: "phase2_pet_has_appointment",
+          direction: "target",
+          label: "Pet",
+        },
+        {
+          kind: "connection",
+          relationship_key: "phase2_appointment_uses_service",
+          direction: "source",
+          label: "Services",
+        },
+      ],
+      fields: ["name"],
+      title_field: "name",
+      include_archived: false,
+      filters: [],
+      filter_match: "all",
+      sorts: [],
+      group: null,
+    };
+    const mapped = mapExperienceViewBundleToEditorTable({
+      bundle: bundle(
+        fields,
+        connectionConfig,
+        [record("30000000-0000-4000-0000-000000000001", { name: "Order" })],
+        [
+          relationship(
+            "phase2_pet_has_appointment",
+            petObjectId,
+            objectId,
+            "one_to_many",
+          ),
+          relationship(
+            "phase2_appointment_uses_service",
+            objectId,
+            serviceObjectId,
+            "many_to_many",
+          ),
+        ],
+      ),
+    }).table;
+    const pet = mapped.columns.find((column) => column.label === "Pet");
+    const services = mapped.columns.find(
+      (column) => column.label === "Services",
+    );
+
+    expect(pet).toMatchObject({
+      key: "connection:phase2_pet_has_appointment:target",
+      kind: "connection",
+      editable: true,
+      connection: {
+        relationshipKey: "phase2_pet_has_appointment",
+        direction: "target",
+        multiple: false,
+        targetObjectKey: petObjectId,
+      },
+    });
+    expect(services).toMatchObject({
+      key: "connection:phase2_appointment_uses_service:source",
+      kind: "connection",
+      editable: true,
+      connection: {
+        relationshipKey: "phase2_appointment_uses_service",
+        direction: "source",
+        multiple: true,
+        targetObjectKey: serviceObjectId,
+      },
+    });
+
+    const protectedMapped = mapExperienceViewBundleToEditorTable({
+      bundle: {
+        ...bundle(
+          fields,
+          connectionConfig,
+          [record("30000000-0000-4000-0000-000000000002", { name: "Order" })],
+          [
+            relationship(
+              "phase2_pet_has_appointment",
+              petObjectId,
+              objectId,
+              "one_to_many",
+            ),
+            relationship(
+              "phase2_appointment_uses_service",
+              objectId,
+              serviceObjectId,
+              "many_to_many",
+            ),
+          ],
+        ),
+        protectedConnectionRelationshipKeys: [
+          "phase2_pet_has_appointment",
+          "phase2_appointment_uses_service",
+        ],
+      },
+    }).table;
+    expect(
+      protectedMapped.columns.filter((column) => column.kind === "connection"),
+    ).toMatchObject([
+      {
+        editable: false,
+        readOnlyReason:
+          "This Connection is managed by the configured workflow.",
+      },
+      {
+        editable: false,
+        readOnlyReason:
+          "This Connection is managed by the configured workflow.",
+      },
+    ]);
+  });
 });
 
 describe("production editor adapter", () => {
@@ -317,6 +463,140 @@ describe("production editor adapter", () => {
     await expect(adapter.createRow({ name: "New" })).rejects.toThrow(
       "Cannot create.",
     );
+  });
+
+  it("forwards Connection searches and replacements with relationship identity and direction", async () => {
+    const petColumn = {
+      key: "connection:phase2_pet_has_appointment:target",
+      label: "Pet",
+      kind: "connection" as const,
+      editable: true,
+      connection: {
+        relationshipKey: "phase2_pet_has_appointment",
+        direction: "target" as const,
+        multiple: false,
+        targetObjectKey: "phase2_pet",
+      },
+      width: 220,
+    };
+    const servicesColumn = {
+      key: "connection:phase2_appointment_uses_service:source",
+      label: "Services",
+      kind: "connection" as const,
+      editable: true,
+      connection: {
+        relationshipKey: "phase2_appointment_uses_service",
+        direction: "source" as const,
+        multiple: true,
+        targetObjectKey: "phase2_service",
+      },
+      width: 220,
+    };
+    const table: EditorTable = {
+      key: "orders",
+      name: "Orders",
+      primaryColumnKey: petColumn.key,
+      columns: [petColumn, servicesColumn],
+      rows: [
+        {
+          id: "record",
+          values: {
+            [petColumn.key]: ["pet-one"],
+            [servicesColumn.key]: ["service-one", "service-two"],
+          },
+        },
+      ],
+    };
+    const searchConnectionTargets = vi.fn(async () => ({
+      status: "success" as const,
+      value: [{ id: "pet-two", label: "Luna" }],
+    }));
+    const updateConnection = vi.fn(async (input) => ({
+      status: "success" as const,
+      value: {
+        id: input.recordId,
+        values: {
+          [petColumn.key]: input.targetRecordIds,
+          [servicesColumn.key]: ["service-one", "service-two"],
+        },
+      },
+    }));
+    const adapter = new ProductionTableAdapter(table, {
+      updateCell: unavailableStructure,
+      updateConnection,
+      searchConnectionTargets,
+      createRow: async () => ({
+        status: "error" as const,
+        message: "unavailable",
+      }),
+      openRecord: async () => ({ status: "success" as const, value: null }),
+      addColumn: unavailableStructure,
+      renameColumn: unavailableStructure,
+      updateColumnOptions: unavailableStructure,
+      reorderColumns: unavailableStructure,
+      renameTable: unavailableStructure,
+    });
+
+    await expect(
+      adapter.searchConnectionTargets(petColumn.key, "Milo"),
+    ).resolves.toEqual([{ id: "pet-two", label: "Luna" }]);
+    expect(searchConnectionTargets).toHaveBeenCalledWith({
+      columnKey: petColumn.key,
+      search: "Milo",
+    });
+
+    await adapter.updateCell("record", petColumn.key, ["pet-two"]);
+    expect(updateConnection).toHaveBeenCalledWith({
+      recordId: "record",
+      relationshipKey: "phase2_pet_has_appointment",
+      direction: "target",
+      targetRecordIds: ["pet-two"],
+    });
+  });
+
+  it("does not send a mutation for a workflow-managed Connection", async () => {
+    const column = {
+      key: "connection:phase2_pet_has_appointment:target",
+      label: "Pet",
+      kind: "connection" as const,
+      editable: false,
+      connection: {
+        relationshipKey: "phase2_pet_has_appointment",
+        direction: "target" as const,
+        multiple: false,
+        targetObjectKey: "phase2_pet",
+      },
+      width: 220,
+    };
+    const updateConnection = vi.fn();
+    const adapter = new ProductionTableAdapter(
+      {
+        key: "orders",
+        name: "Orders",
+        primaryColumnKey: column.key,
+        columns: [column],
+        rows: [{ id: "record", values: { [column.key]: ["customer-one"] } }],
+      },
+      {
+        updateCell: unavailableStructure,
+        updateConnection,
+        createRow: async () => ({
+          status: "error" as const,
+          message: "unavailable",
+        }),
+        openRecord: async () => ({ status: "success" as const, value: null }),
+        addColumn: unavailableStructure,
+        renameColumn: unavailableStructure,
+        updateColumnOptions: unavailableStructure,
+        reorderColumns: unavailableStructure,
+        renameTable: unavailableStructure,
+      },
+    );
+
+    await expect(
+      adapter.updateCell("record", column.key, ["pet-two"]),
+    ).rejects.toThrow("workflow");
+    expect(updateConnection).not.toHaveBeenCalled();
   });
 
   it("routes structural changes through typed currentness and keeps resize local", async () => {
@@ -469,6 +749,24 @@ describe("production editor adapter", () => {
 });
 
 describe("production editor structural containment", () => {
+  it("uses the authoritative currentness to refresh the current Table after success", () => {
+    const before = {
+      expectedBaseVersionId: "40000000-0000-4000-8000-000000000001",
+      expectedHeadRevision: 1,
+    };
+    const after = {
+      expectedBaseVersionId: "40000000-0000-4000-8000-000000000002",
+      expectedHeadRevision: 2,
+    };
+
+    expect(productionTableRefreshKey(after)).not.toBe(
+      productionTableRefreshKey(before),
+    );
+    expect(productionTableRefreshKey(after)).toBe(
+      `${after.expectedBaseVersionId}:${after.expectedHeadRevision}`,
+    );
+  });
+
   it("does not render structural controls when capabilities disable them", () => {
     const table: EditorTable = {
       key: "items",

@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createExperienceService } from "../../src/core/experience/service";
+import { normalizeTableViewConfig } from "../../src/core/experience/schemas";
 import { defaultPreorderEmailAdapter } from "../../src/core/preorder/email";
 import {
   claimPreorderConfirmationEmail,
@@ -2375,16 +2376,54 @@ describe("Milestone 4 preorder", () => {
     expect(orders.definition.view_type).toBe("table");
     expect(orders.definition.object_definition_id).toBe(orderObject.id);
     expect(orders.records.length).toBeGreaterThanOrEqual(13);
-    expect(orders.config).toMatchObject({
+    const ordersConfig = normalizeTableViewConfig(orders.config);
+    expect(ordersConfig).toMatchObject({
+      schema_version: 2,
+      columns: expect.arrayContaining([
+        {
+          kind: "connection",
+          relationship_key: "customer_places_order",
+          direction: "target",
+          label: "Customer",
+        },
+        {
+          kind: "connection",
+          relationship_key: "order_contains_order_item",
+          direction: "source",
+          label: "Items",
+        },
+      ]),
       fields: expect.arrayContaining([
         "public_reference",
-        "customer_name",
         "collection_location_name",
         "collection_local_display",
-        "item_summary",
         "total",
         "status",
       ]),
+    });
+    expect(ordersConfig.columns).not.toContainEqual({
+      kind: "field",
+      field_key: "customer_name",
+    });
+    expect(
+      ordersConfig.columns.filter(
+        (column) => column.kind === "connection" && column.label === "Customer",
+      ),
+    ).toHaveLength(1);
+    expect(
+      ordersConfig.columns.filter(
+        (column) => column.kind === "connection" && column.label === "Items",
+      ),
+    ).toHaveLength(1);
+    expect(orders.protectedConnectionRelationshipKeys).toEqual(
+      expect.arrayContaining([
+        "customer_places_order",
+        "order_contains_order_item",
+      ]),
+    );
+    expect(ordersConfig.columns).not.toContainEqual({
+      kind: "field",
+      field_key: "item_summary",
     });
     const detail = await experience.loadDetailViewForObject(orderObject.id);
     expect(detail?.definition.key).toBe("order_detail");
@@ -2457,6 +2496,16 @@ describe("Milestone 4 preorder", () => {
     if (!submittedOrder) {
       throw new Error("The submitted generic View fixture Order is missing.");
     }
+    expect(
+      orders.connectionValues?.[submittedOrder.id]?.[
+        "connection:customer_places_order:target"
+      ],
+    ).toEqual([expect.objectContaining({ label: "Ada Lovelace" })]);
+    expect(
+      orders.connectionValues?.[submittedOrder.id]?.[
+        "connection:order_contains_order_item:source"
+      ],
+    ).toEqual([expect.objectContaining({ label: "Afternoon Tea Box" })]);
     const collectionAt = new Date(viewSubmission.collection_at).toISOString();
     const localDisplay = formatCollectionDisplay(collectionAt, "Europe/London");
     const utcDisplay = formatCollectionDisplay(collectionAt, "UTC");
@@ -2466,6 +2515,8 @@ describe("Milestone 4 preorder", () => {
       ).toISOString(),
     ).toBe(collectionAt);
     expect(asObject(submittedOrder.data_json)).toMatchObject({
+      customer_name: "Ada Lovelace",
+      item_summary: "1 × Afternoon Tea Box",
       collection_local_display: localDisplay,
       collection_timezone: "Europe/London",
     });

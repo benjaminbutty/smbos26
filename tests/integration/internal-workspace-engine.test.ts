@@ -218,7 +218,8 @@ async function configureScenario(
       viewKey: state.tableViews.get(connection.sourceTableKey)!,
       targetViewKey: state.tableViews.get(connection.targetTableKey)!,
       label: connection.label,
-      mode: connection.mode,
+      currentMultiplicity: connection.currentMultiplicity,
+      targetMultiplicity: connection.targetMultiplicity,
       addReverse: true,
     });
     const relationship = created.composed?.operations.find(

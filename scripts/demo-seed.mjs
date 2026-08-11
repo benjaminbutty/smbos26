@@ -18,7 +18,10 @@ const ownerEmail = "demo@smbos.local";
 const staffEmail = "staff@smbos.local";
 const demoPassword = "Local-demo-2026!";
 const demoBusinessSlug = "bedford-bakery-demo";
+const connectionDemoBusinessName = "Lenni Connections Demo";
+const connectionDemoBusinessSlug = "lenni-connections-demo";
 const initialChangeTitle = "Install Bedford Bakery configuration";
+const connectionDemoChangeTitle = "Install Connection acceptance configuration";
 const configurationCollections = [
   "object_definitions",
   "field_definitions",
@@ -403,18 +406,41 @@ function buildBedfordConfigurationOperations(locationIds) {
       view_type: "table",
       object_key: "order",
       config_json: {
+        schema_version: 2,
+        role: "primary",
+        columns: [
+          { kind: "field", field_key: "public_reference" },
+          {
+            kind: "connection",
+            relationship_key: "customer_places_order",
+            direction: "target",
+            label: "Customer",
+          },
+          { kind: "field", field_key: "collection_location_name" },
+          { kind: "field", field_key: "collection_local_display" },
+          {
+            kind: "connection",
+            relationship_key: "order_contains_order_item",
+            direction: "source",
+            label: "Items",
+          },
+          { kind: "field", field_key: "total" },
+          { kind: "field", field_key: "status" },
+        ],
         fields: [
           "public_reference",
-          "customer_name",
           "collection_location_name",
           "collection_local_display",
-          "item_summary",
           "total",
           "status",
         ],
         title_field: "public_reference",
         edit_form_key: "order_status_edit",
         include_archived: false,
+        filters: [],
+        filter_match: "all",
+        sorts: [],
+        group: null,
       },
       audience: "internal",
       is_active: true,
@@ -469,6 +495,194 @@ function buildBedfordConfigurationOperations(locationIds) {
       product_appears_in_item_relationship_key: "product_appears_in_order_item",
       config_json: preorderConfig,
       allowed_location_ids: locationIds,
+      is_active: true,
+    },
+  ];
+}
+
+function phaseTwoTableViewConfig(columns, fields, titleField) {
+  return {
+    schema_version: 2,
+    role: "primary",
+    columns,
+    fields,
+    title_field: titleField,
+    include_archived: false,
+    filters: [],
+    filter_match: "all",
+    sorts: [],
+    group: null,
+  };
+}
+
+function buildPhaseTwoAcceptanceOperations() {
+  return [
+    {
+      op: "set_object",
+      key: "phase2_customer",
+      singular_label: "Customer",
+      plural_label: "Customers",
+      description: "A generic customer in the Connection acceptance fixture",
+      icon: null,
+      is_active: true,
+    },
+    {
+      op: "set_object",
+      key: "phase2_pet",
+      singular_label: "Pet",
+      plural_label: "Pets",
+      description: "A generic pet in the Connection acceptance fixture",
+      icon: null,
+      is_active: true,
+    },
+    {
+      op: "set_object",
+      key: "phase2_appointment",
+      singular_label: "Appointment",
+      plural_label: "Appointments",
+      description: "A generic appointment in the Connection acceptance fixture",
+      icon: null,
+      is_active: true,
+    },
+    {
+      op: "set_object",
+      key: "phase2_service",
+      singular_label: "Service",
+      plural_label: "Services",
+      description: "A generic service in the Connection acceptance fixture",
+      icon: null,
+      is_active: true,
+    },
+    field("phase2_customer", "email", "Email", "email", false, 1),
+    field("phase2_customer", "name", "Name", "short_text", true, 0),
+    field("phase2_pet", "breed", "Breed", "short_text", false, 1),
+    field("phase2_pet", "name", "Name", "short_text", true, 0),
+    field("phase2_appointment", "date", "Date", "date", true, 1),
+    field("phase2_appointment", "name", "Name", "short_text", true, 0),
+    field("phase2_appointment", "status", "Status", "status", true, 2, {
+      defaultValue: "Confirmed",
+      settings: { options: ["Confirmed", "Unconfirmed"] },
+    }),
+    field("phase2_service", "duration", "Duration", "number", false, 1),
+    field("phase2_service", "name", "Name", "short_text", true, 0),
+    {
+      op: "set_relationship",
+      key: "phase2_customer_has_pet",
+      source_object_key: "phase2_customer",
+      target_object_key: "phase2_pet",
+      source_label: "pets",
+      target_label: "customer",
+      cardinality: "one_to_many",
+      is_required: false,
+      is_active: true,
+    },
+    {
+      op: "set_relationship",
+      key: "phase2_pet_has_appointment",
+      source_object_key: "phase2_pet",
+      target_object_key: "phase2_appointment",
+      source_label: "appointments",
+      target_label: "pet",
+      cardinality: "one_to_many",
+      is_required: false,
+      is_active: true,
+    },
+    {
+      op: "set_relationship",
+      key: "phase2_appointment_uses_service",
+      source_object_key: "phase2_appointment",
+      target_object_key: "phase2_service",
+      source_label: "services",
+      target_label: "appointments",
+      cardinality: "many_to_many",
+      is_required: false,
+      is_active: true,
+    },
+    {
+      op: "set_view",
+      key: "phase2_appointments",
+      name: "Appointments",
+      view_type: "table",
+      object_key: "phase2_appointment",
+      config_json: phaseTwoTableViewConfig(
+        [
+          { kind: "field", field_key: "name" },
+          {
+            kind: "connection",
+            relationship_key: "phase2_pet_has_appointment",
+            direction: "target",
+            label: "Pet",
+          },
+          { kind: "field", field_key: "date" },
+          {
+            kind: "connection",
+            relationship_key: "phase2_appointment_uses_service",
+            direction: "source",
+            label: "Services",
+          },
+          { kind: "field", field_key: "status" },
+        ],
+        ["name", "date", "status"],
+        "name",
+      ),
+      audience: "internal",
+      is_active: true,
+    },
+    {
+      op: "set_view",
+      key: "phase2_customers",
+      name: "Customers",
+      view_type: "table",
+      object_key: "phase2_customer",
+      config_json: phaseTwoTableViewConfig(
+        [
+          { kind: "field", field_key: "name" },
+          { kind: "field", field_key: "email" },
+        ],
+        ["name", "email"],
+        "name",
+      ),
+      audience: "internal",
+      is_active: true,
+    },
+    {
+      op: "set_view",
+      key: "phase2_pets",
+      name: "Pets",
+      view_type: "table",
+      object_key: "phase2_pet",
+      config_json: phaseTwoTableViewConfig(
+        [
+          { kind: "field", field_key: "name" },
+          { kind: "field", field_key: "breed" },
+          {
+            kind: "connection",
+            relationship_key: "phase2_customer_has_pet",
+            direction: "target",
+            label: "Customer",
+          },
+        ],
+        ["name", "breed"],
+        "name",
+      ),
+      audience: "internal",
+      is_active: true,
+    },
+    {
+      op: "set_view",
+      key: "phase2_services",
+      name: "Services",
+      view_type: "table",
+      object_key: "phase2_service",
+      config_json: phaseTwoTableViewConfig(
+        [
+          { kind: "field", field_key: "name" },
+          { kind: "field", field_key: "duration" },
+        ],
+        ["name", "duration"],
+        "name",
+      ),
+      audience: "internal",
       is_active: true,
     },
   ];
@@ -674,6 +888,114 @@ async function ensureConfiguredVersionTwo({
   return versions[1];
 }
 
+async function ensureConnectionDemoVersionTwo({
+  admin,
+  owner,
+  ownerId,
+  sql,
+  businessId,
+}) {
+  const head = requireData(
+    await admin
+      .from("business_configuration_heads")
+      .select("*")
+      .eq("business_id", businessId)
+      .single(),
+    "Could not inspect the Connection demo configuration head.",
+  );
+  const activeVersion = requireData(
+    await admin
+      .from("configuration_versions")
+      .select("*")
+      .eq("business_id", businessId)
+      .eq("id", head.active_version_id)
+      .single(),
+    "Could not inspect the Connection demo active configuration version.",
+  );
+
+  if (activeVersion.version_number === 1) {
+    if (
+      head.head_revision !== 1 ||
+      !isEmptyBaseline(activeVersion.snapshot_json)
+    ) {
+      throw new Error(
+        "The Connection demo Version 1 must be the empty revision-1 Business baseline.",
+      );
+    }
+    const proposed = requireData(
+      await owner.rpc("propose_configuration_change", {
+        expected_business_id: businessId,
+        expected_actor_id: ownerId,
+        expected_base_version_id: activeVersion.id,
+        expected_head_revision: head.head_revision,
+        requested_title: connectionDemoChangeTitle,
+        requested_description:
+          "Create the generic Customer, Pet, Appointment and Service Connection acceptance fixture.",
+        requested_operations: buildPhaseTwoAcceptanceOperations(),
+      }),
+      "Could not propose the Connection demo configuration.",
+    );
+    const validated = requireData(
+      await owner.rpc("validate_configuration_change", {
+        expected_business_id: businessId,
+        expected_actor_id: ownerId,
+        requested_change_set_id: proposed.id,
+      }),
+      "Could not validate the Connection demo configuration.",
+    );
+    if (validated.status !== "validated") {
+      throw new Error(
+        `Connection demo configuration validation ended as ${validated.status}.`,
+      );
+    }
+    const applied = requireData(
+      await owner.rpc("apply_configuration_change", {
+        expected_business_id: businessId,
+        expected_actor_id: ownerId,
+        requested_change_set_id: proposed.id,
+      }),
+      "Could not apply the Connection demo configuration.",
+    );
+    if (applied.status !== "applied") {
+      throw new Error(
+        `Connection demo configuration application ended as ${applied.status}.`,
+      );
+    }
+  } else if (activeVersion.version_number !== 2 || head.head_revision !== 2) {
+    throw new Error(
+      "The Connection demo already has configuration history beyond Version 2.",
+    );
+  }
+
+  const [liveProjection] = await sql`
+    select private.configuration_snapshot_v1(${businessId}::uuid) as snapshot
+  `;
+  const versions = requireData(
+    await admin
+      .from("configuration_versions")
+      .select("*")
+      .eq("business_id", businessId)
+      .order("version_number"),
+    "Could not verify the Connection demo configuration versions.",
+  );
+  if (
+    versions.length !== 2 ||
+    versions[0]?.version_number !== 1 ||
+    versions[0]?.kind !== "baseline" ||
+    !isEmptyBaseline(versions[0]?.snapshot_json) ||
+    versions[1]?.version_number !== 2 ||
+    versions[1]?.kind !== "change" ||
+    versions[1]?.parent_version_id !== versions[0]?.id ||
+    versions[1]?.created_by !== ownerId ||
+    !isDeepStrictEqual(liveProjection?.snapshot, versions[1]?.snapshot_json)
+  ) {
+    throw new Error(
+      "The Connection demo configuration does not match its immutable Version 2.",
+    );
+  }
+  return versions[1];
+}
+
 const productFixtures = [
   {
     name: "Afternoon Tea Box",
@@ -790,6 +1112,189 @@ async function ensureOperationalProducts(owner, businessId, locationsByName) {
   }
 }
 
+const phaseTwoFixtureRecords = [
+  {
+    objectKey: "phase2_customer",
+    name: "Sam Jones",
+    data: { name: "Sam Jones", email: "sam.jones@example.test" },
+  },
+  {
+    objectKey: "phase2_pet",
+    name: "Milo",
+    data: { name: "Milo", breed: "Cockapoo" },
+  },
+  {
+    objectKey: "phase2_appointment",
+    name: "Milo",
+    data: { name: "Milo", date: "2026-08-12", status: "Confirmed" },
+  },
+  {
+    objectKey: "phase2_service",
+    name: "Wash",
+    data: { name: "Wash", duration: 45 },
+  },
+  {
+    objectKey: "phase2_service",
+    name: "Trim",
+    data: { name: "Trim", duration: 30 },
+  },
+];
+
+const phaseTwoFixtureConnections = [
+  {
+    relationshipKey: "phase2_customer_has_pet",
+    sourceObjectKey: "phase2_customer",
+    sourceName: "Sam Jones",
+    targetObjectKey: "phase2_pet",
+    targetName: "Milo",
+  },
+  {
+    relationshipKey: "phase2_pet_has_appointment",
+    sourceObjectKey: "phase2_pet",
+    sourceName: "Milo",
+    targetObjectKey: "phase2_appointment",
+    targetName: "Milo",
+  },
+  {
+    relationshipKey: "phase2_appointment_uses_service",
+    sourceObjectKey: "phase2_appointment",
+    sourceName: "Milo",
+    targetObjectKey: "phase2_service",
+    targetName: "Wash",
+  },
+  {
+    relationshipKey: "phase2_appointment_uses_service",
+    sourceObjectKey: "phase2_appointment",
+    sourceName: "Milo",
+    targetObjectKey: "phase2_service",
+    targetName: "Trim",
+  },
+];
+
+async function ensurePhaseTwoAcceptanceFixture(owner, businessId) {
+  const objectRows = requireData(
+    await owner
+      .from("object_definitions")
+      .select("*")
+      .eq("business_id", businessId)
+      .in("key", [
+        "phase2_customer",
+        "phase2_pet",
+        "phase2_appointment",
+        "phase2_service",
+      ]),
+    "Could not inspect the Phase 2 acceptance Objects.",
+  );
+  const objectsByKey = new Map(
+    objectRows.map((object) => [object.key, object]),
+  );
+  const recordsByObjectAndName = new Map();
+
+  for (const fixture of phaseTwoFixtureRecords) {
+    const object = objectsByKey.get(fixture.objectKey);
+    if (!object) {
+      throw new Error(
+        `Missing Phase 2 acceptance Object ${fixture.objectKey}.`,
+      );
+    }
+    const records = requireData(
+      await owner
+        .from("records")
+        .select("*")
+        .eq("business_id", businessId)
+        .eq("object_definition_id", object.id),
+      `Could not inspect Phase 2 acceptance ${fixture.objectKey} Records.`,
+    );
+    const matches = records.filter(
+      (record) => record.data_json?.name === fixture.name,
+    );
+    if (matches.length > 1) {
+      throw new Error(
+        `Phase 2 acceptance has duplicate ${fixture.objectKey} ${fixture.name} Records.`,
+      );
+    }
+    let current = matches[0];
+    if (!current) {
+      current = requireData(
+        await owner.rpc("create_graph_record", {
+          expected_business_id: businessId,
+          target_object_definition_id: object.id,
+          requested_data: fixture.data,
+          requested_record_status: "active",
+        }),
+        `Could not create Phase 2 acceptance ${fixture.objectKey} ${fixture.name}.`,
+      );
+    } else if (
+      current.record_status !== "active" ||
+      !isDeepStrictEqual(current.data_json, fixture.data)
+    ) {
+      current = requireData(
+        await owner.rpc("update_graph_record", {
+          expected_business_id: businessId,
+          target_record_id: current.id,
+          data_patch: fixture.data,
+          requested_record_status: "active",
+        }),
+        `Could not refresh Phase 2 acceptance ${fixture.objectKey} ${fixture.name}.`,
+      );
+    }
+    recordsByObjectAndName.set(`${fixture.objectKey}:${fixture.name}`, current);
+  }
+
+  const relationshipRows = requireData(
+    await owner
+      .from("relationship_definitions")
+      .select("*")
+      .eq("business_id", businessId)
+      .in(
+        "key",
+        phaseTwoFixtureConnections.map(
+          (connection) => connection.relationshipKey,
+        ),
+      ),
+    "Could not inspect Phase 2 acceptance Connections.",
+  );
+  const relationshipsByKey = new Map(
+    relationshipRows.map((relationship) => [relationship.key, relationship]),
+  );
+
+  for (const connection of phaseTwoFixtureConnections) {
+    const relationship = relationshipsByKey.get(connection.relationshipKey);
+    const source = recordsByObjectAndName.get(
+      `${connection.sourceObjectKey}:${connection.sourceName}`,
+    );
+    const target = recordsByObjectAndName.get(
+      `${connection.targetObjectKey}:${connection.targetName}`,
+    );
+    if (!relationship || !source || !target) {
+      throw new Error(
+        `Could not resolve Phase 2 acceptance Connection ${connection.relationshipKey}.`,
+      );
+    }
+    const existing = requireData(
+      await owner
+        .from("record_relationships")
+        .select("id")
+        .eq("business_id", businessId)
+        .eq("relationship_definition_id", relationship.id)
+        .eq("source_record_id", source.id)
+        .eq("target_record_id", target.id),
+      `Could not inspect Phase 2 acceptance Connection ${connection.relationshipKey}.`,
+    );
+    if (existing.length === 0) {
+      requireData(
+        await owner.rpc("create_graph_relationship", {
+          expected_business_id: businessId,
+          target_relationship_definition_id: relationship.id,
+          target_source_record_id: source.id,
+          target_target_record_id: target.id,
+        }),
+        `Could not connect Phase 2 acceptance ${connection.sourceName} to ${connection.targetName}.`,
+      );
+    }
+  }
+}
+
 const { apiUrl, databaseUrl, publishableKey, serviceRoleKey } =
   loadLocalSupabase();
 await waitForLocalAuthReadiness({
@@ -882,6 +1387,49 @@ try {
     ]),
   );
 
+  const connectionDemoResult = await admin
+    .from("businesses")
+    .select("*")
+    .eq("slug", connectionDemoBusinessSlug)
+    .maybeSingle();
+  if (connectionDemoResult.error) {
+    throw connectionDemoResult.error;
+  }
+  let connectionDemoBusiness = connectionDemoResult.data;
+  if (!connectionDemoBusiness) {
+    connectionDemoBusiness = requireData(
+      await owner.rpc("create_business", {
+        business_name: connectionDemoBusinessName,
+        requested_business_type: "services",
+        requested_timezone: "Europe/London",
+      }),
+      "Could not create the Connection demo Business.",
+    );
+  } else {
+    requireData(
+      await admin
+        .from("business_memberships")
+        .upsert(
+          {
+            business_id: connectionDemoBusiness.id,
+            user_id: ownerUser.id,
+            role: "owner",
+          },
+          { onConflict: "business_id,user_id" },
+        )
+        .select("id"),
+      "Could not ensure the Connection demo membership.",
+    );
+  }
+  await ensureConnectionDemoVersionTwo({
+    admin,
+    owner,
+    ownerId: ownerUser.id,
+    sql,
+    businessId: connectionDemoBusiness.id,
+  });
+  await ensurePhaseTwoAcceptanceFixture(owner, connectionDemoBusiness.id);
+
   console.log("Local Bedford Bakery preorder demo is ready at Version 2.");
   console.log(
     `Public preorder: http://localhost:3000/p/${demoBusinessSlug}/preorder`,
@@ -891,6 +1439,12 @@ try {
   console.log(`Password: ${demoPassword}`);
   console.log(
     `Staff Orders: http://localhost:3000/app/${demoBusinessSlug}/workspace/orders`,
+  );
+  console.log(
+    `Phase 2 acceptance: http://localhost:3000/app/${demoBusinessSlug}/workspace/phase2_appointments`,
+  );
+  console.log(
+    `Connection creation acceptance: http://localhost:3000/app/${connectionDemoBusiness.slug}/workspace/phase2_appointments`,
   );
   console.log(
     "Confirmation email: the terminal running `npm run dev` (local console email adapter).",

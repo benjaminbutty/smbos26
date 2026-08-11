@@ -69,11 +69,15 @@ connection behavior but has no structural or query controls.
 ## Connections
 
 Connection property configuration is an atomic M5 change over one relationship
-and the affected endpoint Views. The supported modes are:
-
-- One Record: one-to-many, with at most one source-side target;
-- Several Records: many-to-many;
-- existing one-to-one: one target at either side.
+and the affected endpoint Views. Manual creation is exposed from the existing
+Add property flow using two independent owner-facing choices: One or Several
+for the current Table and One or Several for the other Table. The trusted
+composer derives one-to-one, one-to-many orientation, or many-to-many from
+those choices; the current Table is not assumed to be the stored source.
+Every manually created Connection is optional. The current View receives its
+requested V2 Connection column and, when enabled, only the other Table's
+primary View receives the inverse column. Saved Views, Records and
+record_relationships are not changed by structural creation.
 
 Reverse properties are optional and default to on. V1 does not support deleting
 a property, changing cardinality, or creating required connections. Operational

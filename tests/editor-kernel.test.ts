@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { RenderCellProps } from "react-data-grid";
 
 import {
@@ -19,7 +19,11 @@ import {
   mockFailureTrigger,
 } from "../src/runtime/editor-kernel/mock-table-adapter";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
-import { createEditorColumns } from "../src/runtime/editor-kernel/table-columns";
+import { ConnectionPropertyPopover } from "../src/runtime/editor-kernel/editor-lab";
+import {
+  createEditorColumns,
+  openConnectionCellEditor,
+} from "../src/runtime/editor-kernel/table-columns";
 
 describe("editor kernel contracts", () => {
   it("normalizes column names, typed values, and display values", () => {
@@ -155,7 +159,7 @@ describe("editor kernel contracts", () => {
     expect(savedMarkup).not.toMatch(/Save|Cancel/);
   });
 
-  it("renders record properties as one static value per row", () => {
+  it("renders a titled record panel with static property values", () => {
     const table = createMockTableAdapter({ delayMs: 0 }).getTable();
     const row = table.rows[0];
     if (!row) {
@@ -172,10 +176,213 @@ describe("editor kernel contracts", () => {
       }),
     );
 
-    expect(markup.match(/Amelia Carter/g)).toHaveLength(1);
+    expect(markup.match(/Amelia Carter/g)).toHaveLength(2);
     expect(markup).toContain("editor-record-property-label");
     expect(markup).not.toContain("editor-panel-inline-editor");
     expect(markup).not.toContain("<small");
     expect(markup).not.toMatch(/Save|Cancel/);
+  });
+
+  it("keeps generic single and several Connections plain at rest and opens their picker on click", () => {
+    const petColumn = {
+      key: "pet",
+      label: "Pet",
+      kind: "connection" as const,
+      editable: true,
+      width: 180,
+      connection: {
+        relationshipKey: "phase2_pet_has_appointment",
+        direction: "target" as const,
+        multiple: false,
+        targetObjectKey: "phase2_pet",
+      },
+    };
+    const servicesColumn = {
+      key: "services",
+      label: "Services",
+      kind: "connection" as const,
+      editable: true,
+      width: 180,
+      connection: {
+        relationshipKey: "phase2_appointment_uses_service",
+        direction: "source" as const,
+        multiple: true,
+        targetObjectKey: "phase2_service",
+      },
+    };
+    const row: EditorRow = {
+      id: "30000000-0000-4000-8000-000000000001",
+      values: {
+        pet: ["40000000-0000-4000-8000-000000000001"],
+        services: ["50000000-0000-4000-8000-000000000001"],
+      },
+      connectionValues: {
+        pet: [
+          {
+            id: "40000000-0000-4000-8000-000000000001",
+            label: "Milo",
+          },
+        ],
+        services: [
+          {
+            id: "50000000-0000-4000-8000-000000000001",
+            label: "Wash",
+          },
+        ],
+      },
+    };
+    const columns = createEditorColumns({
+      columnMenuKey: null,
+      columns: [petColumn, servicesColumn],
+      onActivateDraft: () => undefined,
+      onOpenColumnMenu: () => undefined,
+      onOpenRecord: () => undefined,
+      onRenameColumn: async () => true,
+      onUpdateColumnOptions: async () => true,
+      pendingEdit: null,
+    });
+    const pet = columns[0];
+    const services = columns[1];
+    if (!pet || !services) {
+      throw new Error("Expected the seeded connection columns.");
+    }
+    const customerCellProps = {
+      column: { idx: 0, key: petColumn.key },
+      isCellEditable: true,
+      onRowChange: () => undefined,
+      row,
+      rowIdx: 0,
+      tabIndex: 0,
+    } as unknown as RenderCellProps<EditorRow>;
+    const itemsCellProps = {
+      ...customerCellProps,
+      column: { idx: 1, key: servicesColumn.key },
+    } as unknown as RenderCellProps<EditorRow>;
+
+    const petRestingMarkup = renderToStaticMarkup(
+      pet.renderCell?.(customerCellProps) ?? null,
+    );
+    expect(petRestingMarkup).toContain("Milo");
+    expect(petRestingMarkup).toContain("editor-table-connection-values");
+    expect(petRestingMarkup).not.toContain("editor-connection-picker");
+    expect(petRestingMarkup).not.toContain("<button");
+
+    const severalRow: EditorRow = {
+      ...row,
+      connectionValues: {
+        ...row.connectionValues,
+        services: [
+          ...(row.connectionValues?.services ?? []),
+          {
+            id: "50000000-0000-4000-8000-000000000002",
+            label: "Trim",
+          },
+          {
+            id: "50000000-0000-4000-8000-000000000003",
+            label: "Puppy Intro",
+          },
+        ],
+      },
+    };
+    const severalMarkup = renderToStaticMarkup(
+      services.renderCell?.({ ...itemsCellProps, row: severalRow }) ?? null,
+    );
+    expect(severalMarkup).toContain("Wash");
+    expect(severalMarkup).toContain("Trim");
+    expect(severalMarkup).toContain("+1");
+    expect(severalMarkup).not.toContain(">Puppy Intro<");
+
+    const onRowChange = vi.fn();
+    const pickerMarkup = renderToStaticMarkup(
+      pet.renderEditCell?.({
+        column: { idx: 0, key: petColumn.key },
+        onClose: () => undefined,
+        onRowChange,
+        row,
+        rowIdx: 0,
+      } as never) ?? null,
+    );
+    expect(pickerMarkup).toContain("editor-connection-picker");
+    expect(pickerMarkup).toContain('aria-expanded="true"');
+    expect(pickerMarkup).toContain('role="listbox"');
+    expect(onRowChange).not.toHaveBeenCalled();
+    expect(pet.editorOptions).toMatchObject({
+      commitOnOutsideClick: false,
+    });
+
+    const petSelectCell = vi.fn();
+    openConnectionCellEditor(petColumn, row, petSelectCell);
+    expect(petSelectCell).toHaveBeenCalledWith(true);
+    const servicesSelectCell = vi.fn();
+    openConnectionCellEditor(servicesColumn, severalRow, servicesSelectCell);
+    expect(servicesSelectCell).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps arbitrary Status values in a neutral chip", () => {
+    const table = createMockTableAdapter({ delayMs: 0 }).getTable();
+    const columns = createEditorColumns({
+      columnMenuKey: null,
+      columns: table.columns,
+      onActivateDraft: () => undefined,
+      onOpenColumnMenu: () => undefined,
+      onOpenRecord: () => undefined,
+      onRenameColumn: async () => true,
+      onUpdateColumnOptions: async () => true,
+      pendingEdit: null,
+    });
+    const status = columns.find((column) => column.key === "status");
+    const row = table.rows[0];
+    if (!status || !row) {
+      throw new Error("Expected a seeded status Record.");
+    }
+
+    const markup = renderToStaticMarkup(
+      status.renderCell?.({
+        column: {
+          idx: table.columns.findIndex((column) => column.key === status.key),
+          key: status.key,
+        },
+        isCellEditable: true,
+        onRowChange: () => undefined,
+        row,
+        rowIdx: 0,
+        tabIndex: 0,
+      } as never) ?? null,
+    );
+
+    expect(markup).toContain("editor-status-pill-neutral");
+    expect(markup).not.toContain("editor-status-pill-success");
+    expect(markup).not.toContain("editor-status-pill-accent");
+    expect(markup).not.toContain("editor-status-pill-muted");
+  });
+
+  it("keeps manual Connection setup in owner language and does not submit on open", () => {
+    const onCreate = vi.fn(async () => true);
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionPropertyPopover, {
+        onBack: () => undefined,
+        onClose: () => undefined,
+        onCreate,
+        source: { singularLabel: "Appointment", pluralLabel: "Appointments" },
+        targets: [
+          {
+            viewKey: "services",
+            label: "Services",
+            singularLabel: "Service",
+            pluralLabel: "Services",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("Connect to another Table");
+    expect(markup).toContain("Table to connect");
+    expect(markup).toContain("One");
+    expect(markup).toContain("Several");
+    expect(markup).toContain("Create connection");
+    expect(markup).not.toMatch(
+      /Object|Relationship|cardinality|source|target|UUID/i,
+    );
+    expect(onCreate).not.toHaveBeenCalled();
   });
 });

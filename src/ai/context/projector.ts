@@ -2,7 +2,10 @@ import {
   configurationSnapshotV1Schema,
   type ConfigurationSnapshotV1,
 } from "../../core/configuration/definition-source";
-import { parseViewConfig } from "../../core/experience/schemas";
+import {
+  parseViewConfig,
+  type TableViewConfig,
+} from "../../core/experience/schemas";
 import { AiBusinessContextError } from "./errors";
 import {
   AI_BUSINESS_CONTEXT_MAX_BYTES,
@@ -182,6 +185,26 @@ function projectPageBlock(
   }
 }
 
+function projectViewConfiguration(
+  view: ConfigurationSnapshotV1["views"][number],
+) {
+  const configuration = parseViewConfig(view.view_type, view.config_json);
+  if (view.view_type !== "table") {
+    return configuration;
+  }
+
+  const table = configuration as TableViewConfig;
+  return {
+    fields: table.fields,
+    ...(table.title_field ? { title_field: table.title_field } : {}),
+    ...(table.create_form_key
+      ? { create_form_key: table.create_form_key }
+      : {}),
+    ...(table.edit_form_key ? { edit_form_key: table.edit_form_key } : {}),
+    include_archived: table.include_archived,
+  };
+}
+
 function platformCapabilities() {
   return {
     registry_version: 1 as const,
@@ -343,7 +366,7 @@ export function projectAiBusinessModelContext(
         object_key: view.object_key,
         audience: view.audience,
         is_active: view.is_active,
-        configuration: parseViewConfig(view.view_type, view.config_json),
+        configuration: projectViewConfiguration(view),
       }))
       .toSorted(compareKey);
 

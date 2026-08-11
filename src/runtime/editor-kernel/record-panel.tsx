@@ -8,13 +8,20 @@ import {
   type EditorValue,
 } from "./contracts";
 import { ChoiceStatusPicker, ConnectionPicker } from "./cell-editors";
+import { experienceKeyToPath } from "../routing";
 
 interface RecordPanelProps {
+  businessSlug?: string;
   columns: readonly EditorColumn[];
+  fullRecordPath?: string;
+  recordTypeLabel?: string;
   row: EditorRow;
   tableName: string;
+  onBack?: (() => void) | undefined;
   onClose: () => void;
   onCommitCell: (rowId: string, columnKey: string, value: EditorValue) => void;
+  onFollowConnectedRecord?:
+    ((targetViewKey: string, recordId: string) => void) | undefined;
   onSearchConnectionTargets?:
     | ((
         columnKey: string,
@@ -27,6 +34,19 @@ interface RecordPanelProps {
         primaryValue: string,
       ) => Promise<{ id: string; label: string }>)
     | undefined;
+}
+
+function connectedRecordHref(
+  businessSlug: string | undefined,
+  targetViewKey: string | undefined,
+  recordId: string,
+): string | undefined {
+  if (!businessSlug || !targetViewKey) {
+    return undefined;
+  }
+  return `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(
+    targetViewKey,
+  )}/${encodeURIComponent(recordId)}`;
 }
 
 function panelDisplayValue(
@@ -185,16 +205,34 @@ function InlinePropertyEditor({
 }
 
 export function RecordPanel({
+  businessSlug,
   columns,
+  fullRecordPath,
+  recordTypeLabel,
   row,
   tableName,
+  onBack,
   onClose,
   onCommitCell,
+  onFollowConnectedRecord,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
+  const propertyColumns = columns.filter(
+    (column) => column.kind !== "connection",
+  );
+  const connectionColumns = columns.filter(
+    (column) => column.kind === "connection",
+  );
+  const recordTitle = primaryColumn
+    ? displayEditorValue(primaryColumn, row.values[primaryColumn.key] ?? null)
+    : "Record details";
+  const fullRecordHref = fullRecordPath
+    ? `${fullRecordPath}/${encodeURIComponent(row.id)}`
+    : undefined;
 
   const updateDraft = (columnKey: string, value: EditorValue): void => {
     setDraftValues((current) => ({ ...current, [columnKey]: value }));
@@ -225,9 +263,19 @@ export function RecordPanel({
     <aside aria-label={`${tableName} record`} className="editor-record-panel">
       <div className="editor-record-panel-header">
         <div>
-          <p className="editor-panel-eyebrow">Record</p>
-          <h2>Record details</h2>
-          <p className="editor-panel-table-name">{tableName}</p>
+          {onBack ? (
+            <button
+              className="editor-record-panel-back"
+              onClick={onBack}
+              type="button"
+            >
+              ← Back
+            </button>
+          ) : null}
+          <h2>{recordTitle}</h2>
+          <p className="editor-panel-table-name">
+            {recordTypeLabel ?? tableName} record
+          </p>
         </div>
         <button
           aria-label="Close record panel"
@@ -240,7 +288,7 @@ export function RecordPanel({
       </div>
 
       <div className="editor-record-properties">
-        {columns.map((column) => {
+        {propertyColumns.map((column) => {
           const value = draftValues[column.key] ?? null;
           const isEditing = editingKey === column.key;
 
@@ -295,6 +343,112 @@ export function RecordPanel({
           );
         })}
       </div>
+      {connectionColumns.length > 0 ? (
+        <section className="editor-record-connections">
+          <h3>Connected records</h3>
+          <div className="editor-record-connection-list">
+            {connectionColumns.map((column) => {
+              const labels = row.connectionValues?.[column.key] ?? [];
+              return (
+                <div className="editor-record-connection" key={column.key}>
+                  <span
+                    aria-hidden="true"
+                    className="editor-record-connection-icon"
+                  >
+                    ◇
+                  </span>
+                  <div className="editor-record-connection-copy">
+                    <span className="editor-record-connection-label">
+                      {column.label}
+                    </span>
+                    {labels.length > 0 ? (
+                      <div className="editor-record-connection-values">
+                        {labels.map((item, index) => {
+                          const targetViewKey =
+                            column.connection?.targetViewKey;
+                          const href = connectedRecordHref(
+                            businessSlug,
+                            targetViewKey,
+                            item.id,
+                          );
+                          return (
+                            <span key={item.id}>
+                              {targetViewKey && onFollowConnectedRecord ? (
+                                <button
+                                  className="editor-record-connection-link"
+                                  onClick={() =>
+                                    onFollowConnectedRecord(
+                                      targetViewKey,
+                                      item.id,
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {item.label}
+                                </button>
+                              ) : href ? (
+                                <a
+                                  className="editor-record-connection-link"
+                                  href={href}
+                                >
+                                  {item.label}
+                                </a>
+                              ) : (
+                                <span>{item.label}</span>
+                              )}
+                              {index < labels.length - 1 ? ", " : ""}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {column.editable !== false ? (
+                      <ConnectionPicker
+                        column={column}
+                        labels={labels}
+                        onCommit={(next) =>
+                          onCommitCell(row.id, column.key, next)
+                        }
+                        onSearch={(search) =>
+                          onSearchConnectionTargets
+                            ? onSearchConnectionTargets(column.key, search)
+                            : Promise.resolve(labels)
+                        }
+                        {...(onCreateConnectionTarget
+                          ? {
+                              onCreate: (primaryValue: string) =>
+                                onCreateConnectionTarget(
+                                  column.key,
+                                  primaryValue,
+                                ),
+                            }
+                          : {})}
+                        value={row.values[column.key] ?? []}
+                      />
+                    ) : labels.length === 0 ? (
+                      <span className="editor-record-connection-values">—</span>
+                    ) : null}
+                  </div>
+                  <span
+                    aria-hidden="true"
+                    className="editor-record-connection-chevron"
+                  >
+                    ›
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+      {fullRecordHref ? (
+        <div className="editor-record-panel-footer">
+          <a className="editor-record-full-link" href={fullRecordHref}>
+            <span aria-hidden="true">↗</span>
+            Open full record
+          </a>
+        </div>
+      ) : null}
     </aside>
   );
 }

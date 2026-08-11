@@ -25,7 +25,8 @@ export interface InternalWorkspaceProofConnectionFixture {
   sourceTableKey: string;
   targetTableKey: string;
   label: string;
-  mode: "one_record" | "several_records";
+  currentMultiplicity: "one" | "several";
+  targetMultiplicity: "one" | "several";
 }
 
 export interface InternalWorkspaceProofRecordFixture {
@@ -110,19 +111,22 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "standing_orders",
           targetTableKey: "customers",
           label: "Customer",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
         {
           sourceTableKey: "standing_order_lines",
           targetTableKey: "standing_orders",
           label: "Standing order",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
         {
           sourceTableKey: "standing_order_lines",
           targetTableKey: "products",
           label: "Product",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
       ],
       records: [
@@ -215,19 +219,22 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "pets",
           targetTableKey: "customers",
           label: "Customer",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
         {
           sourceTableKey: "appointments",
           targetTableKey: "pets",
           label: "Pet",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
         {
           sourceTableKey: "appointments",
           targetTableKey: "services",
           label: "Services",
-          mode: "several_records",
+          currentMultiplicity: "several",
+          targetMultiplicity: "several",
         },
       ],
       records: [
@@ -320,19 +327,22 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "enquiries",
           targetTableKey: "contacts",
           label: "Contact",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
         {
           sourceTableKey: "events",
           targetTableKey: "enquiries",
           label: "Enquiry",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
         {
           sourceTableKey: "quotes",
           targetTableKey: "enquiries",
           label: "Enquiry",
-          mode: "one_record",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
         },
       ],
       records: [

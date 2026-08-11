@@ -17,6 +17,7 @@ import type {
   ProductionConnectionCreateAction,
   ProductionConnectionEditAction,
   ProductionConnectionSearchAction,
+  ProductionCreateConnectionAction,
   ProductionInsertColumnAction,
   ProductionPasteAction,
   ProductionRecordReadAction,
@@ -29,6 +30,7 @@ import type {
 } from "./action-types";
 
 export interface ProductionTableAdapterActions {
+  createConnection?: ProductionCreateConnectionAction;
   updateCell: ProductionCellEditAction;
   updateConnection?: ProductionConnectionEditAction;
   searchConnectionTargets?: ProductionConnectionSearchAction;
@@ -171,6 +173,9 @@ export class ProductionTableAdapter implements TableEditorAdapter {
     const column = (this.table.recordColumns ?? this.table.columns).find(
       (candidate) => candidate.key === columnKey,
     );
+    if (column?.kind === "connection" && column.editable === false) {
+      throw new Error("This Connection is managed by the configured workflow.");
+    }
     const result =
       column?.kind === "connection" &&
       column.connection &&
@@ -200,6 +205,12 @@ export class ProductionTableAdapter implements TableEditorAdapter {
     if (!this.actions.searchConnectionTargets) {
       return [];
     }
+    const column = (this.table.recordColumns ?? this.table.columns).find(
+      (candidate) => candidate.key === columnKey,
+    );
+    if (column?.kind === "connection" && column.editable === false) {
+      throw new Error("This Connection is managed by the configured workflow.");
+    }
     const result = await this.actions.searchConnectionTargets({
       columnKey,
       search,
@@ -216,6 +227,12 @@ export class ProductionTableAdapter implements TableEditorAdapter {
   ): Promise<{ id: string; label: string }> {
     if (!this.actions.createConnectionTarget) {
       throw new Error("Creating a connected Record is not available.");
+    }
+    const column = (this.table.recordColumns ?? this.table.columns).find(
+      (candidate) => candidate.key === columnKey,
+    );
+    if (column?.kind === "connection" && column.editable === false) {
+      throw new Error("This Connection is managed by the configured workflow.");
     }
     const result = await this.actions.createConnectionTarget({
       columnKey,
