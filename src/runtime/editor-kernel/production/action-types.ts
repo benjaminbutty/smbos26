@@ -71,6 +71,15 @@ export interface ProductionConfigurationCurrentness {
   expectedHeadRevision: number;
 }
 
+export function productionTableRefreshKey(
+  currentness: ProductionConfigurationCurrentness | undefined,
+): string {
+  if (!currentness) {
+    return "no-configuration-currentness";
+  }
+  return `${currentness.expectedBaseVersionId}:${currentness.expectedHeadRevision}`;
+}
+
 export type ProductionColumnType =
   | "short_text"
   | "long_text"

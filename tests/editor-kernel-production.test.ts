@@ -7,6 +7,7 @@ import type { TableViewConfig } from "../src/core/experience/schemas";
 import type { Tables } from "../src/db/supabase/database.types";
 import type { EditorTable } from "../src/runtime/editor-kernel/contracts";
 import type { ProductionTableStructureState } from "../src/runtime/editor-kernel/production/action-types";
+import { productionTableRefreshKey } from "../src/runtime/editor-kernel/production/action-types";
 import { createEditorColumns } from "../src/runtime/editor-kernel/table-columns";
 import {
   createProductionTableAdapter,
@@ -748,6 +749,24 @@ describe("production editor adapter", () => {
 });
 
 describe("production editor structural containment", () => {
+  it("uses the authoritative currentness to refresh the current Table after success", () => {
+    const before = {
+      expectedBaseVersionId: "40000000-0000-4000-8000-000000000001",
+      expectedHeadRevision: 1,
+    };
+    const after = {
+      expectedBaseVersionId: "40000000-0000-4000-8000-000000000002",
+      expectedHeadRevision: 2,
+    };
+
+    expect(productionTableRefreshKey(after)).not.toBe(
+      productionTableRefreshKey(before),
+    );
+    expect(productionTableRefreshKey(after)).toBe(
+      `${after.expectedBaseVersionId}:${after.expectedHeadRevision}`,
+    );
+  });
+
   it("does not render structural controls when capabilities disable them", () => {
     const table: EditorTable = {
       key: "items",
