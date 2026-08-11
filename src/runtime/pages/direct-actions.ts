@@ -37,6 +37,7 @@ export type DirectPageActionResult =
       status: "success";
       pageSlug: string;
       currentness: z.infer<typeof directPageCurrentnessSchema>;
+      layout: z.infer<typeof pageLayoutSchema>;
     }
   | { status: "stale"; message: string }
   | { status: "error"; message: string };
@@ -114,6 +115,11 @@ async function applyPageIntent(
       status: "success",
       pageSlug: applied.composed.pageSlug,
       currentness: applied.currentness,
+      layout: pageLayoutSchema.parse(
+        applied.snapshot.pages.find(
+          (page) => page.key === applied.composed.pageKey,
+        )?.layout_json ?? { blocks: [] },
+      ),
     };
   } catch (error) {
     return safeError(error);
@@ -154,6 +160,19 @@ export async function renamePageAction(
     pageKey,
     title: title.data,
   });
+}
+
+export async function applyPageBlockAction(
+  businessSlug: string,
+  pageKey: string,
+  input: { currentness: unknown; intent: unknown },
+): Promise<DirectPageActionResult> {
+  return applyPageIntent(
+    businessSlug,
+    pageKey,
+    input.currentness,
+    input.intent,
+  );
 }
 
 export async function createPageAction(

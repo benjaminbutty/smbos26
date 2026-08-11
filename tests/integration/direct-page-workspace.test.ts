@@ -127,11 +127,34 @@ describe("workspace foundation direct Page actions", () => {
       layout_json: { blocks: [] },
     });
 
-    const renamed = await applyDirectPageAction(
+    const added = await applyDirectPageAction(
       owner.client,
       { businessId: business.id, actorId: owner.user.id },
       {
         currentness: created.currentness,
+        intent: {
+          action: "add_page_block",
+          pageKey: created.composed.pageKey,
+          block: { type: "text", text: "Use the saved Views below." },
+        },
+      },
+    );
+    const addedPage = added.snapshot.pages.find(
+      (page) => page.key === created.composed.pageKey,
+    );
+    expect(addedPage?.layout_json.blocks).toEqual([
+      expect.objectContaining({
+        type: "text",
+        text: "Use the saved Views below.",
+      }),
+    ]);
+    expect(addedPage?.layout_json.blocks[0]).toHaveProperty("id");
+
+    const renamed = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: added.currentness,
         intent: {
           action: "rename_page",
           pageKey: created.composed.pageKey,

@@ -15,6 +15,8 @@ import {
 const pageId = "00000000-0000-4000-8000-000000000001";
 const objectId = "00000000-0000-4000-8000-000000000002";
 const viewId = "00000000-0000-4000-8000-000000000003";
+const headingBlockId = "00000000-0000-4000-8000-000000000004";
+const viewBlockId = "00000000-0000-4000-8000-000000000005";
 
 const snapshot: ConfigurationSnapshotV1 = {
   schema_version: 1,
@@ -156,6 +158,102 @@ describe("Page grammar and direct Workspace composer", () => {
       text: "Updated",
     });
     expect(savedLayout.blocks[0]).toHaveProperty("id");
+  });
+
+  it("adds an exact saved View reference without copying View or Record data", () => {
+    const result = composeDirectPageAction(snapshot, {
+      action: "add_page_block",
+      pageKey: "workspace",
+      block: { type: "view", viewKey: "contacts" },
+    });
+    const layout = (result.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+
+    expect(layout.blocks).toHaveLength(3);
+    expect(layout.blocks[0]).toMatchObject({
+      type: "heading",
+      text: "Welcome",
+    });
+    expect(layout.blocks[1]).toMatchObject({
+      type: "view",
+      view_key: "contacts",
+    });
+    expect(layout.blocks[1]).not.toHaveProperty("records");
+    expect(layout.blocks[1]).not.toHaveProperty("config_json");
+    expect(layout.blocks[1]).toHaveProperty("id");
+  });
+
+  it("supports bounded block update, reorder, and removal by stable ID", () => {
+    const editableSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          layout_json: {
+            blocks: [
+              {
+                id: headingBlockId,
+                type: "heading",
+                text: "Welcome",
+                level: 2,
+              },
+              { id: viewBlockId, type: "view", view_key: "contacts" },
+            ],
+          },
+        },
+      ],
+    };
+
+    const updated = composeDirectPageAction(editableSnapshot, {
+      action: "update_page_block",
+      pageKey: "workspace",
+      blockId: headingBlockId,
+      block: { type: "heading", text: "Daily work", level: 1 },
+    });
+    const updatedLayout = (updated.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(updatedLayout.blocks[0]).toMatchObject({
+      id: headingBlockId,
+      type: "heading",
+      text: "Daily work",
+      level: 1,
+    });
+
+    const moved = composeDirectPageAction(editableSnapshot, {
+      action: "move_page_block",
+      pageKey: "workspace",
+      blockId: viewBlockId,
+      direction: "up",
+    });
+    const movedLayout = (moved.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(movedLayout.blocks.map((block) => block.id)).toEqual([
+      viewBlockId,
+      headingBlockId,
+    ]);
+
+    const removed = composeDirectPageAction(editableSnapshot, {
+      action: "remove_page_block",
+      pageKey: "workspace",
+      blockId: viewBlockId,
+    });
+    const removedLayout = (removed.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(removedLayout.blocks).toEqual([
+      expect.objectContaining({ id: headingBlockId }),
+    ]);
+  });
+
+  it("fails closed when a Page block references an unavailable View", () => {
+    expect(() =>
+      composeDirectPageAction(snapshot, {
+        action: "add_page_block",
+        pageKey: "workspace",
+        block: { type: "view", viewKey: "missing_view" },
+      }),
+    ).toThrowError(
+      expect.objectContaining({ code: "direct_page_view_unavailable" }),
+    );
   });
 
   it("fails closed for duplicate names and unknown Pages", () => {

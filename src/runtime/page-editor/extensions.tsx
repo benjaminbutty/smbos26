@@ -17,7 +17,14 @@ import {
   type ProductionTableWorkspaceProps,
 } from "../editor-kernel/production/production-table-workspace";
 import type { ProductionTableAdapterActions } from "../editor-kernel/production/production-table-adapter";
-import type { ProductionConfigurationCurrentness } from "../editor-kernel/production/action-types";
+import type {
+  ProductionConfigurationCurrentness,
+  ProductionRecordPanelContextAction,
+  ProductionScopedCellEditAction,
+  ProductionScopedConnectionCreateAction,
+  ProductionScopedConnectionEditAction,
+  ProductionScopedConnectionSearchAction,
+} from "../editor-kernel/production/action-types";
 import { experienceKeyToPath } from "../routing";
 import { ViewRenderer } from "../views/view-renderer";
 import { pageEditorNodeNames } from "./page-translator";
@@ -27,6 +34,14 @@ export interface PageEditorTableEmbed {
   actions: ProductionTableAdapterActions;
   capabilities: EditorCapabilities;
   currentness?: ProductionConfigurationCurrentness;
+  recordTypeLabel?: string;
+  recordCountLabel?: string;
+  fullRecordPath?: string;
+  readConnectedRecord?: ProductionRecordPanelContextAction;
+  updateConnectedRecordCell?: ProductionScopedCellEditAction;
+  updateConnectedRecordConnection?: ProductionScopedConnectionEditAction;
+  searchConnectedRecordTargets?: ProductionScopedConnectionSearchAction;
+  createConnectedRecordTarget?: ProductionScopedConnectionCreateAction;
 }
 
 export interface PageEditorViewEmbed {

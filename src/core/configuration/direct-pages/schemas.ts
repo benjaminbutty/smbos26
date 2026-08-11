@@ -4,6 +4,70 @@ import { graphKeySchema } from "../../graph/schemas";
 import { pageLayoutSchema } from "../../experience/schemas";
 
 const directPageTitleSchema = z.string().trim().min(1).max(120);
+const directPageBlockIdSchema = z.uuid();
+
+const directPageHeadingBlockSchema = z
+  .object({
+    type: z.literal("heading"),
+    text: z.string().trim().min(1).max(200),
+    level: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
+  })
+  .strict();
+
+const directPageTextBlockSchema = z
+  .object({
+    type: z.literal("text"),
+    text: z.string().trim().min(1).max(5_000),
+  })
+  .strict();
+
+const directPageViewBlockSchema = z
+  .object({
+    type: z.literal("view"),
+    viewKey: graphKeySchema,
+    readOnly: z.boolean().optional(),
+  })
+  .strict();
+
+export const directPageBlockInputSchema = z.discriminatedUnion("type", [
+  directPageHeadingBlockSchema,
+  directPageTextBlockSchema,
+  directPageViewBlockSchema,
+]);
+
+const addPageBlockIntentSchema = z
+  .object({
+    action: z.literal("add_page_block"),
+    pageKey: graphKeySchema,
+    block: directPageBlockInputSchema,
+  })
+  .strict();
+
+const updatePageBlockIntentSchema = z
+  .object({
+    action: z.literal("update_page_block"),
+    pageKey: graphKeySchema,
+    blockId: directPageBlockIdSchema,
+    block: z.union([directPageHeadingBlockSchema, directPageTextBlockSchema]),
+  })
+  .strict();
+
+const removePageBlockIntentSchema = z
+  .object({
+    action: z.literal("remove_page_block"),
+    pageKey: graphKeySchema,
+    blockId: directPageBlockIdSchema,
+  })
+  .strict();
+
+const movePageBlockIntentSchema = z
+  .object({
+    action: z.literal("move_page_block"),
+    pageKey: graphKeySchema,
+    blockId: directPageBlockIdSchema,
+    direction: z.enum(["up", "down"]),
+  })
+  .strict();
 
 export const directPageActionKindSchema = z.enum([
   "create_page",
@@ -38,6 +102,10 @@ export const directPageIntentSchema = z.discriminatedUnion("action", [
   createPageIntentSchema,
   renamePageIntentSchema,
   savePageLayoutIntentSchema,
+  addPageBlockIntentSchema,
+  updatePageBlockIntentSchema,
+  removePageBlockIntentSchema,
+  movePageBlockIntentSchema,
 ]);
 
 export const directPageCurrentnessSchema = z
@@ -48,5 +116,6 @@ export const directPageCurrentnessSchema = z
   .strict();
 
 export type DirectPageIntent = z.infer<typeof directPageIntentSchema>;
+export type DirectPageBlockInput = z.infer<typeof directPageBlockInputSchema>;
 export type DirectPageActionKind = z.infer<typeof directPageActionKindSchema>;
 export type DirectPageCurrentness = z.infer<typeof directPageCurrentnessSchema>;

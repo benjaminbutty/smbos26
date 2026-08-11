@@ -15,6 +15,7 @@ import {
 import { pageLayoutSchema, type PageLayout } from "../../experience/schemas";
 import {
   directPageIntentSchema,
+  type DirectPageBlockInput,
   type DirectPageActionKind,
   type DirectPageIntent,
 } from "./schemas";
@@ -28,6 +29,9 @@ export const directPageErrorCodes = [
   "direct_page_title_conflict",
   "direct_page_key_unavailable",
   "direct_page_slug_unavailable",
+  "direct_page_view_unavailable",
+  "direct_page_block_not_found",
+  "direct_page_block_unchanged",
   "direct_page_operations_invalid",
 ] as const;
 
@@ -46,6 +50,11 @@ const directPageErrorMessages: Readonly<Record<DirectPageErrorCode, string>> = {
     "That Page could not be prepared safely. Try a different name.",
   direct_page_slug_unavailable:
     "That Page address could not be prepared safely. Try a different name.",
+  direct_page_view_unavailable:
+    "That saved View is no longer available to add to this Page.",
+  direct_page_block_not_found:
+    "That Page block is no longer available. Reload and try again.",
+  direct_page_block_unchanged: "That Page block is already in that position.",
   direct_page_operations_invalid:
     "The Page change could not be prepared safely. Reload and try again.",
 };
@@ -173,6 +182,57 @@ function pageLayoutWithStableIds(input: unknown): PageLayout {
   });
 }
 
+function pageBlockFromInput(
+  input: DirectPageBlockInput,
+): PageLayout["blocks"][number] {
+  switch (input.type) {
+    case "heading":
+      return {
+        type: "heading",
+        text: input.text,
+        level: input.level,
+      };
+    case "text":
+      return { type: "text", text: input.text };
+    case "view":
+      return {
+        type: "view",
+        view_key: input.viewKey,
+        ...(input.readOnly ? { read_only: true } : {}),
+      };
+  }
+}
+
+function assertEligibleSavedView(
+  snapshot: ConfigurationSnapshotV1,
+  viewKey: string,
+): void {
+  const view = snapshot.views.find(
+    (candidate) =>
+      candidate.key === viewKey &&
+      candidate.view_type === "table" &&
+      candidate.audience === "internal" &&
+      candidate.is_active,
+  );
+  if (!view) {
+    throw new DirectPageComposerError("direct_page_view_unavailable");
+  }
+}
+
+function blockById(
+  layout: PageLayout,
+  blockId: string,
+): { block: PageLayout["blocks"][number]; index: number } {
+  const index = layout.blocks.findIndex(
+    (candidate) => "id" in candidate && candidate.id === blockId,
+  );
+  const block = layout.blocks[index];
+  if (!block) {
+    throw new DirectPageComposerError("direct_page_block_not_found");
+  }
+  return { block, index };
+}
+
 function pageOperation(values: Omit<PageOperation, "op">): PageOperation {
   return setPageOperationSchema.parse({ op: "set_page", ...values });
 }
@@ -260,6 +320,64 @@ function composePageMutation(
     );
   }
 
+  if (intent.action === "save_page_layout") {
+    return finalizeAction(
+      "save_page_layout",
+      `Save ${page.title}`,
+      page.key,
+      page.slug,
+      pageOperation({
+        key: page.key,
+        title: page.title,
+        slug: page.slug,
+        audience: page.audience,
+        layout_json: pageLayoutWithStableIds(intent.layout),
+        status: page.status,
+        is_active: page.is_active,
+      }),
+    );
+  }
+
+  const stableLayout = pageLayoutWithStableIds(baseLayout);
+  let nextBlocks = [...stableLayout.blocks];
+
+  if (intent.action === "add_page_block") {
+    if (intent.block.type === "view") {
+      assertEligibleSavedView(snapshot, intent.block.viewKey);
+    }
+    nextBlocks.push({
+      ...pageBlockFromInput(intent.block),
+      id: globalThis.crypto.randomUUID(),
+    });
+  } else if (intent.action === "update_page_block") {
+    const { index, block } = blockById(stableLayout, intent.blockId);
+    if (block.type !== intent.block.type) {
+      throw new DirectPageComposerError("direct_page_block_not_found");
+    }
+    nextBlocks[index] = {
+      ...pageBlockFromInput(intent.block),
+      id: intent.blockId,
+    };
+  } else if (intent.action === "remove_page_block") {
+    blockById(stableLayout, intent.blockId);
+    nextBlocks = nextBlocks.filter(
+      (candidate) => !("id" in candidate && candidate.id === intent.blockId),
+    );
+  } else {
+    const { index } = blockById(stableLayout, intent.blockId);
+    const nextIndex = intent.direction === "up" ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= nextBlocks.length) {
+      throw new DirectPageComposerError("direct_page_block_unchanged");
+    }
+    const current = nextBlocks[index];
+    const adjacent = nextBlocks[nextIndex];
+    if (!current || !adjacent) {
+      throw new DirectPageComposerError("direct_page_block_not_found");
+    }
+    nextBlocks[index] = adjacent;
+    nextBlocks[nextIndex] = current;
+  }
+
   return finalizeAction(
     "save_page_layout",
     `Save ${page.title}`,
@@ -270,7 +388,7 @@ function composePageMutation(
       title: page.title,
       slug: page.slug,
       audience: page.audience,
-      layout_json: pageLayoutWithStableIds(intent.layout),
+      layout_json: pageLayoutSchema.parse({ blocks: nextBlocks }),
       status: page.status,
       is_active: page.is_active,
     }),
