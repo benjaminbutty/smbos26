@@ -1035,3 +1035,17 @@ explicit that an ordinary request naming deliveries must include a reusable
 Deliveries or delivery-runs business area. No evaluator threshold or scenario
 was weakened. The complete qualification and reliability gates are being rerun
 against that correction.
+
+The first complete reliability rerun of the corrected subject at the same
+feature SHA was also retained as historical evidence:
+
+```text
+reliability: 23/24
+failed scenario: enquiry_service, repetition 3
+failed gate: required_concepts
+estimated cost: 331,422 microusd
+```
+
+No further production instruction or evaluator change was made for this
+single-repetition variance; the full 24-execution reliability gate is being
+rerun unchanged.
