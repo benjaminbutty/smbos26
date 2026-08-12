@@ -345,7 +345,7 @@ export function createRecordLocationLinkService(
         client
           .from("preorder_experiences")
           .select(
-            "order_object_definition_id,order_item_object_definition_id,is_active",
+            "product_object_definition_id,order_object_definition_id,order_item_object_definition_id,is_active",
           )
           .eq("business_id", businessId),
         client
@@ -392,10 +392,16 @@ export function createRecordLocationLinkService(
             preorder.order_item_object_definition_id ===
               request.objectDefinitionId),
       );
+      const productOfActivePreorder = (preorderResult.data ?? []).some(
+        (preorder) =>
+          preorder.is_active &&
+          preorder.product_object_definition_id === request.objectDefinitionId,
+      );
       const eligible =
         recordResult.data.record_status === "active" &&
         objectResult.data.is_active &&
-        !protectedByPreorder;
+        !protectedByPreorder &&
+        (links.length > 0 || productOfActivePreorder);
       const linksByLocation = new Map(
         links.map((link) => [link.location_id, link.id]),
       );

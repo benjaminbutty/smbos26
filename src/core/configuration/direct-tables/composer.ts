@@ -8,15 +8,17 @@ import {
 } from "../definition-source";
 import {
   configurationOperationsSchema,
-  setObjectOperationSchema,
+  setFormOperationSchema,
   setFieldOperationSchema,
+  setObjectOperationSchema,
   setRelationshipOperationSchema,
   setViewOperationSchema,
   type ConfigurationOperation,
 } from "../schemas";
 import {
-  normalizeTableViewConfig,
   deterministicTableViewRoles,
+  formConfigSchema,
+  normalizeTableViewConfig,
   validateTableViewQuery,
   type TableViewColumn,
   type TableViewConfigV1,
@@ -34,6 +36,7 @@ import { directTableSettingsForTypeChange } from "./type-compatibility";
 
 type FieldOperation = Extract<ConfigurationOperation, { op: "set_field" }>;
 type ObjectOperation = Extract<ConfigurationOperation, { op: "set_object" }>;
+type FormOperation = Extract<ConfigurationOperation, { op: "set_form" }>;
 type ViewOperation = Extract<ConfigurationOperation, { op: "set_view" }>;
 type RelationshipDefinition =
   ConfigurationSnapshotV1["relationship_definitions"][number];
@@ -411,6 +414,75 @@ function settingsObject(value: Json): Record<string, Json | undefined> {
 
 function fieldOperation(values: Omit<FieldOperation, "op">): FieldOperation {
   return setFieldOperationSchema.parse({ op: "set_field", ...values });
+}
+
+/**
+ * A Table's configured create/edit Forms are the operating-surface allow-list
+ * for the Table, inline editor, drawer and full-record edit route. Keep those
+ * Forms coherent when the Table itself creates a new Field, without touching
+ * other Forms for the same Object.
+ */
+function tableOwnedFormOperations(
+  snapshot: ConfigurationSnapshotV1,
+  table: ReturnType<typeof activeTable>,
+  fieldKey: string,
+): FormOperation[] {
+  const references = [
+    ...(table.config.create_form_key
+      ? [{ key: table.config.create_form_key, mode: "create" as const }]
+      : []),
+    ...(table.config.edit_form_key
+      ? [{ key: table.config.edit_form_key, mode: "edit" as const }]
+      : []),
+  ];
+  const seen = new Set<string>();
+
+  return references.flatMap(({ key, mode }) => {
+    if (seen.has(key)) {
+      return [];
+    }
+    seen.add(key);
+
+    const form = snapshot.forms.find(
+      (candidate) =>
+        candidate.key === key &&
+        candidate.is_active &&
+        candidate.audience === "internal" &&
+        candidate.mode === mode &&
+        candidate.object_key === table.object.key &&
+        candidate.object_definition_id === table.object.id,
+    );
+    if (!form) {
+      throw new DirectTableComposerError("direct_table_snapshot_invalid");
+    }
+
+    try {
+      const config = formConfigSchema.parse(form.config_json);
+      if (config.fields.some((field) => field.field === fieldKey)) {
+        return [];
+      }
+      return [
+        setFormOperationSchema.parse({
+          op: "set_form",
+          key: form.key,
+          name: form.name,
+          object_key: form.object_key,
+          mode: form.mode,
+          config_json: {
+            ...config,
+            fields: [...config.fields, { field: fieldKey, hidden: false }],
+          },
+          audience: form.audience,
+          is_active: form.is_active,
+        }),
+      ];
+    } catch (error) {
+      throw new DirectTableComposerError(
+        "direct_table_snapshot_invalid",
+        error,
+      );
+    }
+  });
 }
 
 function objectOperation(values: Omit<ObjectOperation, "op">): ObjectOperation {
@@ -862,7 +934,11 @@ function composeTableMutation(
         ...table.config.columns,
         { kind: "field", field_key: fieldKey },
       ]);
-      operations = [field, tableMutationViewOperation(table.view, config)];
+      operations = [
+        field,
+        ...tableOwnedFormOperations(snapshot, table, fieldKey),
+        tableMutationViewOperation(table.view, config),
+      ];
       title = `Add ${intent.label}`;
       break;
     }
@@ -915,6 +991,7 @@ function composeTableMutation(
       columnsNext.splice(insertAt, 0, { kind: "field", field_key: fieldKey });
       operations = [
         field,
+        ...tableOwnedFormOperations(snapshot, table, fieldKey),
         tableMutationViewOperation(
           table.view,
           configWithColumns(table.config, columnsNext),

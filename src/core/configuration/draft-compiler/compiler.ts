@@ -1,7 +1,10 @@
 import {
+  deterministicTableViewRoles,
   formConfigSchema,
+  normalizeTableViewConfig,
   pageLayoutSchema,
   parseViewConfig,
+  type TableViewConfigV2,
 } from "../../experience/schemas";
 import { graphKeySchema } from "../../graph/schemas";
 import {
@@ -1040,6 +1043,230 @@ class ConfigurationDraftCompiler {
     return fields;
   }
 
+  private existingFieldBindingsByObject(): Map<string, FieldBinding[]> {
+    const fieldsByObject = new Map<string, FieldBinding[]>();
+    const fields = [...this.#draft.fields].sort((left, right) =>
+      compareDraftEntities(
+        left,
+        right,
+        normaliseGraphKeyBase(left.label, "field"),
+        normaliseGraphKeyBase(right.label, "field"),
+        this.#sequences,
+      ),
+    );
+    for (const field of fields) {
+      if (field.object_reference.source !== "existing") {
+        continue;
+      }
+      const binding = this.#fieldsByDraftReference.get(field.reference);
+      if (!binding) {
+        fail("configuration_draft_compile_input_invalid");
+      }
+      const fields = fieldsByObject.get(binding.objectKey) ?? [];
+      fields.push(binding);
+      fieldsByObject.set(binding.objectKey, fields);
+    }
+    return fieldsByObject;
+  }
+
+  private primaryTableSurface(objectKey: string): {
+    view: SnapshotView;
+    config: TableViewConfigV2;
+  } | null {
+    const candidates = [...this.#index.viewsByKey.values()].filter(
+      (view) =>
+        view.object_key === objectKey &&
+        view.view_type === "table" &&
+        view.audience === "internal" &&
+        view.is_active,
+    );
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    let roles: Map<string, "primary" | "saved">;
+    try {
+      roles = deterministicTableViewRoles(candidates);
+    } catch {
+      fail("configuration_draft_compile_snapshot_inconsistent");
+    }
+    const view = candidates.find(
+      (candidate) => roles.get(candidate.key) === "primary",
+    );
+    if (!view) {
+      fail("configuration_draft_compile_snapshot_inconsistent");
+    }
+    try {
+      return {
+        view,
+        config: normalizeTableViewConfig(
+          view.config_json,
+          roles.get(view.key) ?? "primary",
+        ),
+      };
+    } catch {
+      fail("configuration_draft_compile_snapshot_inconsistent");
+    }
+  }
+
+  private tableMutationConfig(
+    source: SnapshotView,
+    config: TableViewConfigV2,
+  ): Record<string, unknown> {
+    const sourceConfig = source.config_json;
+    const isCanonical =
+      typeof sourceConfig === "object" &&
+      sourceConfig !== null &&
+      !Array.isArray(sourceConfig) &&
+      sourceConfig.schema_version === 2;
+    if (isCanonical) {
+      return config;
+    }
+    return {
+      fields: config.fields,
+      title_field: config.title_field,
+      ...(config.column_widths ? { column_widths: config.column_widths } : {}),
+      ...(config.create_form_key
+        ? { create_form_key: config.create_form_key }
+        : {}),
+      ...(config.edit_form_key ? { edit_form_key: config.edit_form_key } : {}),
+      include_archived: config.include_archived,
+    };
+  }
+
+  private existingTableFormOperations(
+    surface: { view: SnapshotView; config: TableViewConfigV2 },
+    objectKey: string,
+    newFields: readonly FieldBinding[],
+  ): Array<Extract<ConfigurationOperation, { op: "set_form" }>> {
+    const references = [
+      ...(surface.config.create_form_key
+        ? [{ key: surface.config.create_form_key, mode: "create" as const }]
+        : []),
+      ...(surface.config.edit_form_key
+        ? [{ key: surface.config.edit_form_key, mode: "edit" as const }]
+        : []),
+    ];
+    const seen = new Set<string>();
+
+    return references.flatMap(({ key, mode }) => {
+      if (seen.has(key)) {
+        return [];
+      }
+      seen.add(key);
+
+      const form = this.#index.formsByKey.get(key);
+      if (
+        !form ||
+        !form.is_active ||
+        form.audience !== "internal" ||
+        form.mode !== mode ||
+        form.object_key !== objectKey ||
+        form.object_definition_id !== surface.view.object_definition_id
+      ) {
+        fail("configuration_draft_compile_existing_reference_mismatch");
+      }
+
+      let config: ReturnType<typeof formConfigSchema.parse>;
+      try {
+        config = formConfigSchema.parse(form.config_json);
+      } catch {
+        fail("configuration_draft_compile_existing_reference_mismatch");
+      }
+
+      const configured = new Set(config.fields.map((field) => field.field));
+      const additions = newFields
+        .filter((field) => !configured.has(field.key))
+        .map((field) => ({ field: field.key, hidden: false }));
+      if (additions.length === 0) {
+        return [];
+      }
+
+      return [
+        setFormOperationSchema.parse({
+          op: "set_form",
+          key: form.key,
+          name: form.name,
+          object_key: form.object_key,
+          mode: form.mode,
+          config_json: {
+            ...config,
+            fields: [...config.fields, ...additions],
+          },
+          audience: form.audience,
+          is_active: form.is_active,
+        }),
+      ];
+    });
+  }
+
+  private existingTableViewOperation(
+    surface: { view: SnapshotView; config: TableViewConfigV2 },
+    newFields: readonly FieldBinding[],
+  ): Extract<ConfigurationOperation, { op: "set_view" }> | null {
+    const existingColumns = new Set(
+      surface.config.columns.flatMap((column) =>
+        column.kind === "field" ? [column.field_key] : [],
+      ),
+    );
+    const additions = newFields
+      .filter((field) => !existingColumns.has(field.key))
+      .map((field) => ({ kind: "field" as const, field_key: field.key }));
+    if (additions.length === 0) {
+      return null;
+    }
+
+    const columns = [...surface.config.columns, ...additions];
+    const config = normalizeTableViewConfig({
+      ...surface.config,
+      columns,
+      fields: columns.flatMap((column) =>
+        column.kind === "field" ? [column.field_key] : [],
+      ),
+    });
+    return setViewOperationSchema.parse({
+      op: "set_view",
+      key: surface.view.key,
+      name: surface.view.name,
+      view_type: surface.view.view_type,
+      object_key: surface.view.object_key,
+      config_json: this.tableMutationConfig(surface.view, config),
+      audience: surface.view.audience,
+      is_active: surface.view.is_active,
+    });
+  }
+
+  private existingTableSurfaceOperations(): {
+    forms: Array<Extract<ConfigurationOperation, { op: "set_form" }>>;
+    views: Array<Extract<ConfigurationOperation, { op: "set_view" }>>;
+  } {
+    const forms: Array<Extract<ConfigurationOperation, { op: "set_form" }>> =
+      [];
+    const views: Array<Extract<ConfigurationOperation, { op: "set_view" }>> =
+      [];
+    const fieldsByObject = this.existingFieldBindingsByObject();
+
+    for (const objectKey of [...fieldsByObject.keys()].sort()) {
+      const newFields = fieldsByObject.get(objectKey);
+      if (!newFields || newFields.length === 0) {
+        continue;
+      }
+      const surface = this.primaryTableSurface(objectKey);
+      if (!surface) {
+        continue;
+      }
+      forms.push(
+        ...this.existingTableFormOperations(surface, objectKey, newFields),
+      );
+      const view = this.existingTableViewOperation(surface, newFields);
+      if (view) {
+        views.push(view);
+      }
+    }
+
+    return { forms, views };
+  }
+
   private formKeyForView(
     reference: DraftFormReference,
     objectKey: string,
@@ -1224,7 +1451,7 @@ class ConfigurationDraftCompiler {
   private compileFormOperations(): Array<
     Extract<ConfigurationOperation, { op: "set_form" }>
   > {
-    return this.#draft.forms
+    const explicit = this.#draft.forms
       .map((form) => {
         const binding = this.#formsByDraftReference.get(form.reference);
         if (!binding) {
@@ -1251,12 +1478,16 @@ class ConfigurationDraftCompiler {
         });
       })
       .sort((left, right) => compareStrings(left.key, right.key));
+    const implicit = this.existingTableSurfaceOperations().forms;
+    return [...explicit, ...implicit].sort((left, right) =>
+      compareStrings(left.key, right.key),
+    );
   }
 
   private compileViewOperations(): Array<
     Extract<ConfigurationOperation, { op: "set_view" }>
   > {
-    return this.#draft.views
+    const explicit = this.#draft.views
       .map((view) => {
         const binding = this.#viewsByDraftReference.get(view.reference);
         if (!binding) {
@@ -1274,6 +1505,10 @@ class ConfigurationDraftCompiler {
         });
       })
       .sort((left, right) => compareStrings(left.key, right.key));
+    const implicit = this.existingTableSurfaceOperations().views;
+    return [...explicit, ...implicit].sort((left, right) =>
+      compareStrings(left.key, right.key),
+    );
   }
 
   private compilePageBlock(

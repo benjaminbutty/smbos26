@@ -37,10 +37,16 @@ let outsiderUser: User;
 let business: Tables<"businesses">;
 let product: Tables<"object_definitions">;
 let equipment: Tables<"object_definitions">;
+let dog: Tables<"object_definitions">;
+let customer: Tables<"object_definitions">;
+let booking: Tables<"object_definitions">;
 let bedford: Tables<"locations">;
 let cambridge: Tables<"locations">;
 let kidsProduct: Tables<"records">;
 let projector: Tables<"records">;
+let dogRecord: Tables<"records">;
+let customerRecord: Tables<"records">;
+let bookingRecord: Tables<"records">;
 let sql: Sql;
 
 async function createSignedInIdentity(
@@ -331,6 +337,82 @@ describe("lean confirmed generic Record update boundary", () => {
       hire_price: 50,
       available: true,
     });
+
+    const [createdDog] = await fixtures.insert("object_definitions", {
+      business_id: business.id,
+      key: "dog",
+      singular_label: "Dog",
+      plural_label: "Dogs",
+      description: "Dogs in the business records",
+      kind: "custom",
+      semantic_type: null,
+    });
+    if (!createdDog) throw new Error("Could not create Dog fixture.");
+    dog = createdDog;
+    await fixtures.insert("field_definitions", {
+      business_id: business.id,
+      object_definition_id: dog.id,
+      key: "name",
+      label: "Name",
+      field_type: "short_text",
+      required: true,
+      default_value: null,
+      settings_json: {},
+      position: 1,
+    });
+    dogRecord = await createRecord(dog.id, { name: "Milo" });
+
+    const [createdCustomer] = await fixtures.insert("object_definitions", {
+      business_id: business.id,
+      key: "customer",
+      singular_label: "Customer",
+      plural_label: "Customers",
+      description: "Customers in the business records",
+      kind: "custom",
+      semantic_type: null,
+    });
+    if (!createdCustomer) {
+      throw new Error("Could not create Customer fixture.");
+    }
+    customer = createdCustomer;
+    await fixtures.insert("field_definitions", {
+      business_id: business.id,
+      object_definition_id: customer.id,
+      key: "name",
+      label: "Name",
+      field_type: "short_text",
+      required: true,
+      default_value: null,
+      settings_json: {},
+      position: 1,
+    });
+    customerRecord = await createRecord(customer.id, { name: "Beth" });
+
+    const [createdBooking] = await fixtures.insert("object_definitions", {
+      business_id: business.id,
+      key: "booking",
+      singular_label: "Booking",
+      plural_label: "Bookings",
+      description: "Bookings in the business records",
+      kind: "custom",
+      semantic_type: null,
+    });
+    if (!createdBooking) {
+      throw new Error("Could not create Booking fixture.");
+    }
+    booking = createdBooking;
+    await fixtures.insert("field_definitions", {
+      business_id: business.id,
+      object_definition_id: booking.id,
+      key: "name",
+      label: "Name",
+      field_type: "short_text",
+      required: true,
+      default_value: null,
+      settings_json: {},
+      position: 1,
+    });
+    bookingRecord = await createRecord(booking.id, { name: "Milo booking" });
 
     const initialLink = await owner.rpc("create_record_location_link", {
       expected_business_id: business.id,
@@ -919,6 +1001,33 @@ describe("lean confirmed generic Record update boundary", () => {
       .eq("business_id", business.id)
       .eq("id", cambridge.id);
     expect(restoredLocation.error).toBeNull();
+  });
+
+  it("keeps manual availability contextual for unlinked generic Records", async () => {
+    const service = createRecordLocationLinkService(owner, {
+      businessId: business.id,
+    });
+    const dogState = await service.readManualAvailability({
+      recordId: dogRecord.id,
+      objectDefinitionId: dog.id,
+    });
+    const bookingState = await service.readManualAvailability({
+      recordId: bookingRecord.id,
+      objectDefinitionId: booking.id,
+    });
+    const customerState = await service.readManualAvailability({
+      recordId: customerRecord.id,
+      objectDefinitionId: customer.id,
+    });
+    const linkedProductState = await service.readManualAvailability({
+      recordId: kidsProduct.id,
+      objectDefinitionId: product.id,
+    });
+
+    expect(dogState.eligible).toBe(false);
+    expect(customerState.eligible).toBe(false);
+    expect(bookingState.eligible).toBe(false);
+    expect(linkedProductState.eligible).toBe(true);
   });
 
   it("returns bounded no-match, ambiguity and inactive-location states", async () => {

@@ -24,6 +24,9 @@ const nameId = "00000000-0000-4000-8000-000000000002";
 const statusId = "00000000-0000-4000-8000-000000000003";
 const viewId = "00000000-0000-4000-8000-000000000004";
 const archivedId = "00000000-0000-4000-8000-000000000005";
+const createFormId = "00000000-0000-4000-8000-000000000006";
+const editFormId = "00000000-0000-4000-8000-000000000007";
+const publicFormId = "00000000-0000-4000-8000-000000000008";
 
 const snapshot: ConfigurationSnapshotV1 = {
   schema_version: 1,
@@ -103,6 +106,65 @@ const snapshot: ConfigurationSnapshotV1 = {
   pages: [],
   preorder_experiences: [],
   preorder_experience_locations: [],
+};
+
+const operatingFormsSnapshot: ConfigurationSnapshotV1 = {
+  ...snapshot,
+  views: snapshot.views.map((view) => ({
+    ...view,
+    config_json: {
+      ...(view.config_json as Record<string, unknown>),
+      create_form_key: "contacts_create",
+      edit_form_key: "contacts_edit",
+    },
+  })),
+  forms: [
+    {
+      id: createFormId,
+      key: "contacts_create",
+      name: "New contact",
+      object_definition_id: objectId,
+      object_key: "contacts",
+      mode: "create",
+      config_json: {
+        fields: [
+          { field: "name", hidden: false },
+          { field: "status", hidden: false },
+        ],
+        submit_label: "Add contact",
+      },
+      audience: "internal",
+      is_active: true,
+    },
+    {
+      id: editFormId,
+      key: "contacts_edit",
+      name: "Edit contact",
+      object_definition_id: objectId,
+      object_key: "contacts",
+      mode: "edit",
+      config_json: {
+        fields: [
+          { field: "name", hidden: false },
+          { field: "status", hidden: false },
+        ],
+        submit_label: "Save contact",
+      },
+      audience: "internal",
+      is_active: true,
+    },
+    {
+      id: publicFormId,
+      key: "contacts_public",
+      name: "Contact us",
+      object_definition_id: objectId,
+      object_key: "contacts",
+      mode: "create",
+      config_json: { fields: [{ field: "name", hidden: false }] },
+      audience: "public",
+      is_active: true,
+    },
+  ],
 };
 
 describe("direct Table Workspace composer", () => {
@@ -264,6 +326,74 @@ describe("direct Table Workspace composer", () => {
     expect(resized.operations[0]).toMatchObject({
       op: "set_view",
       config_json: expect.objectContaining({ column_widths: { status: 320 } }),
+    });
+  });
+
+  it("keeps a Table's configured create/edit Forms usable when adding or inserting a Field", () => {
+    const added = composeDirectTableAction(operatingFormsSnapshot, {
+      action: "add_column",
+      viewKey: "contacts",
+      label: "Notes",
+      columnType: "long_text",
+    });
+    expect(added.operations.map((operation) => operation.op)).toEqual([
+      "set_field",
+      "set_form",
+      "set_form",
+      "set_view",
+    ]);
+    const addedForms = added.operations.filter(
+      (operation) => operation.op === "set_form",
+    );
+    expect(addedForms).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "contacts_create",
+          config_json: expect.objectContaining({
+            fields: [
+              { field: "name", hidden: false },
+              { field: "status", hidden: false },
+              { field: "notes", hidden: false },
+            ],
+            submit_label: "Add contact",
+          }),
+        }),
+        expect.objectContaining({
+          key: "contacts_edit",
+          config_json: expect.objectContaining({
+            fields: [
+              { field: "name", hidden: false },
+              { field: "status", hidden: false },
+              { field: "notes", hidden: false },
+            ],
+          }),
+        }),
+      ]),
+    );
+    expect(
+      added.operations.some(
+        (operation) =>
+          operation.op === "set_form" && operation.key === "contacts_public",
+      ),
+    ).toBe(false);
+
+    const inserted = composeDirectTableAction(operatingFormsSnapshot, {
+      action: "insert_column",
+      viewKey: "contacts",
+      anchorFieldKey: "name",
+      position: "right",
+      label: "Email",
+      columnType: "short_text",
+    });
+    expect(
+      inserted.operations.filter((operation) => operation.op === "set_form"),
+    ).toHaveLength(2);
+    expect(
+      inserted.operations.find((operation) => operation.op === "set_view"),
+    ).toMatchObject({
+      config_json: expect.objectContaining({
+        fields: ["name", "email", "status"],
+      }),
     });
   });
 

@@ -7,18 +7,26 @@ import {
   createExperienceService,
   type ExperienceViewBundle,
 } from "../../../../../../core/experience/service";
-import type { DetailViewConfig } from "../../../../../../core/experience/schemas";
+import {
+  normalizeTableViewConfig,
+  type DetailViewConfig,
+  type TableViewConfig,
+} from "../../../../../../core/experience/schemas";
+import { connectionColumnStorageKey } from "../../../../../../core/experience/table-query";
 import { createServerClient } from "../../../../../../db/supabase/server";
 import {
   readSearchParam,
   type SearchParams,
 } from "../../../../../../lib/search-params";
-import { experiencePathToKey } from "../../../../../../runtime/routing";
 import {
+  experienceKeyToPath,
+  experiencePathToKey,
+} from "../../../../../../runtime/routing";
+import {
+  type RuntimeDetailConnectionGroup,
   ViewRenderer,
   viewFieldKeys,
 } from "../../../../../../runtime/views/view-renderer";
-import { hasCapability } from "../../../../../../auth/authorization";
 import { RecordLocationAvailability } from "./record-location-availability";
 
 interface RecordDetailPageProps {
@@ -60,6 +68,68 @@ function fallbackDetailBundle(
   };
 }
 
+function detailConnectionGroups(
+  source: ExperienceViewBundle,
+  recordId: string,
+  businessSlug: string,
+  tableViews: readonly { key: string; object_definition_id: string }[],
+): RuntimeDetailConnectionGroup[] {
+  if (source.definition.view_type !== "table") {
+    return [];
+  }
+
+  const config = normalizeTableViewConfig(source.config as TableViewConfig);
+  const connectionValues = source.connectionValues?.[recordId] ?? {};
+  const tableViewByObject = new Map<string, string>();
+  for (const view of tableViews) {
+    if (!tableViewByObject.has(view.object_definition_id)) {
+      tableViewByObject.set(view.object_definition_id, view.key);
+    }
+  }
+
+  return config.columns.flatMap((column) => {
+    if (column.kind !== "connection") {
+      return [];
+    }
+    const relationship = source.relationships?.find(
+      (candidate) => candidate.key === column.relationship_key,
+    );
+    if (!relationship) {
+      return [];
+    }
+    const targetObjectDefinitionId =
+      column.direction === "source"
+        ? relationship.target_object_definition_id
+        : relationship.source_object_definition_id;
+    const targetViewKey = tableViewByObject.get(targetObjectDefinitionId);
+    const values =
+      connectionValues[
+        connectionColumnStorageKey(column.relationship_key, column.direction)
+      ] ?? [];
+    return [
+      {
+        key: `${column.relationship_key}:${column.direction}`,
+        label:
+          column.label ??
+          (column.direction === "source"
+            ? relationship.source_label
+            : relationship.target_label),
+        items: values.map((value) => ({
+          id: value.id,
+          label: value.label,
+          ...(targetViewKey
+            ? {
+                href: `/app/${encodeURIComponent(
+                  businessSlug,
+                )}/workspace/${experienceKeyToPath(targetViewKey)}/${encodeURIComponent(value.id)}`,
+              }
+            : {}),
+        })),
+      },
+    ];
+  });
+}
+
 export default async function RecordDetailPage({
   params,
   searchParams,
@@ -75,9 +145,12 @@ export default async function RecordDetailPage({
     readSearchParam(searchParams, "message"),
   ]);
 
-  const { source, detail, record } = await (async () => {
+  const { source, detail, record, detailConnections } = await (async () => {
     try {
-      const source = await experience.loadView(experiencePathToKey(screenSlug));
+      const [source, tableViews] = await Promise.all([
+        experience.loadView(experiencePathToKey(screenSlug)),
+        experience.listTableViews(),
+      ]);
       const sourceRecord = source.records.find(
         (candidate) => candidate.id === recordId,
       );
@@ -98,7 +171,17 @@ export default async function RecordDetailPage({
         notFound();
       }
 
-      return { detail, record, source };
+      return {
+        detail,
+        record,
+        source,
+        detailConnections: detailConnectionGroups(
+          source,
+          record.id,
+          businessSlug,
+          tableViews,
+        ),
+      };
     } catch {
       notFound();
     }
@@ -113,16 +196,15 @@ export default async function RecordDetailPage({
         businessSlug={businessSlug}
         navigationViewKey={source.definition.key}
         record={record}
+        detailConnections={detailConnections}
       />
-      {hasCapability(tenant.membership.role, "manage_locations") ? (
-        <RecordLocationAvailability
-          businessId={tenant.business.id}
-          businessSlug={businessSlug}
-          objectDefinitionId={detail.object.id}
-          recordId={record.id}
-          screenSlug={screenSlug}
-        />
-      ) : null}
+      <RecordLocationAvailability
+        businessId={tenant.business.id}
+        businessSlug={businessSlug}
+        screenSlug={screenSlug}
+        recordId={record.id}
+        objectDefinitionId={detail.object.id}
+      />
     </section>
   );
 }

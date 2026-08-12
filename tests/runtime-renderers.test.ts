@@ -275,6 +275,46 @@ describe("generic experience renderers", () => {
     expect(html).toContain(">Edit<");
   });
 
+  it("renders generic connected Record groups without a second mutation surface", () => {
+    const html = renderToStaticMarkup(
+      createElement(ViewRenderer, {
+        bundle: viewBundle("detail", {
+          fields: ["company_name", "status"],
+          title_field: "company_name",
+          edit_form_key: "catering_edit",
+          include_archived: false,
+        }),
+        businessSlug: "bedford-bakery",
+        record: records[0]!,
+        detailConnections: [
+          {
+            key: "customer:source",
+            label: "Customer",
+            items: [
+              {
+                id: "00000000-0000-4000-8000-000000000099",
+                label: "Beth Smith",
+                href: "/app/bedford-bakery/workspace/customers/00000000-0000-4000-8000-000000000099",
+              },
+            ],
+          },
+          {
+            key: "services:source",
+            label: "Services",
+            items: [],
+          },
+        ],
+      }),
+    );
+
+    expect(html).toContain("Connected records");
+    expect(html).toContain("Beth Smith");
+    expect(html).toContain("Services");
+    expect(html).toContain("None connected yet.");
+    expect(html).toContain("/workspace/customers/");
+    expect(html).toContain(">Edit<");
+  });
+
   it("renders configured Form controls with friendly labels", () => {
     const html = renderToStaticMarkup(
       createElement(FormRenderer, {

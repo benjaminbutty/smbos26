@@ -2770,7 +2770,92 @@ textarea {
 }
 
 .runtime-detail {
-  max-width: 64rem;
+  min-width: 0;
+}
+
+.runtime-detail-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem);
+  gap: 1rem;
+  max-width: 76rem;
+}
+
+.runtime-detail-connections {
+  align-self: start;
+  min-width: 0;
+  padding: 1.15rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.9rem;
+  box-shadow: 0 0.7rem 2.5rem rgba(29, 40, 34, 0.035);
+}
+
+.runtime-detail-connections-heading {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-detail-connections-heading .eyebrow {
+  margin: 0;
+}
+
+.runtime-detail-connections-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.runtime-detail-connection-groups {
+  display: grid;
+  gap: 0;
+}
+
+.runtime-detail-connection-group {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-detail-connection-group:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.runtime-detail-connection-group h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.runtime-detail-connection-group ul {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.runtime-detail-connection-group a,
+.runtime-detail-connection-group li > span {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  padding: 0.35rem 0.1rem;
+  color: var(--foreground);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.runtime-detail-connection-group a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
 }
 
 .detail-grid {
@@ -4252,6 +4337,10 @@ textarea {
   }
 
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-detail-layout {
     grid-template-columns: 1fr;
   }
 

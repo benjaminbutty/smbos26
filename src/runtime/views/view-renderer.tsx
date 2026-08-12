@@ -13,11 +13,24 @@ import { FieldValue, getSafeFileUrl } from "../fields/field-renderer";
 import type { InlineEditAction } from "./inline-edit-contract";
 import { InlineTable } from "./inline-table";
 
+export interface RuntimeDetailConnectionItem {
+  id: string;
+  label: string;
+  href?: string;
+}
+
+export interface RuntimeDetailConnectionGroup {
+  key: string;
+  label: string;
+  items: readonly RuntimeDetailConnectionItem[];
+}
+
 interface ViewRendererProps {
   bundle: ExperienceViewBundle;
   businessSlug: string;
   record?: Tables<"records">;
   navigationViewKey?: string;
+  detailConnections?: readonly RuntimeDetailConnectionGroup[];
   inlineEditAction?: InlineEditAction;
   preview?: boolean;
   readOnly?: boolean;
@@ -367,6 +380,7 @@ export function DetailView({
   navigationViewKey,
   fieldsByKey,
   recordBasePath,
+  detailConnections,
   preview = false,
   readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
@@ -385,50 +399,89 @@ export function DetailView({
     : fields[0];
 
   return (
-    <article className="runtime-detail">
-      <header className="detail-header">
-        <div>
-          <p className="eyebrow">{bundle.object.singular_label}</p>
-          <h1 className="runtime-title">
-            {titleField ? (
-              <FieldValue field={titleField} value={data[titleField.key]} />
-            ) : (
-              bundle.object.singular_label
-            )}
-          </h1>
-        </div>
-        {config.edit_form_key && !locked ? (
-          <a
-            className="button"
-            href={`/app/${businessSlug}/workspace/${friendlyPathKey(
-              navigationViewKey ?? bundle.definition.key,
-            )}/${selectedRecord.id}/edit`}
-          >
-            Edit
+    <div className="runtime-detail-layout">
+      <article className="runtime-detail">
+        <header className="detail-header">
+          <div>
+            <p className="eyebrow">{bundle.object.singular_label}</p>
+            <h1 className="runtime-title">
+              {titleField ? (
+                <FieldValue field={titleField} value={data[titleField.key]} />
+              ) : (
+                bundle.object.singular_label
+              )}
+            </h1>
+          </div>
+          {config.edit_form_key && !locked ? (
+            <a
+              className="button"
+              href={`/app/${businessSlug}/workspace/${friendlyPathKey(
+                navigationViewKey ?? bundle.definition.key,
+              )}/${selectedRecord.id}/edit`}
+            >
+              Edit
+            </a>
+          ) : null}
+        </header>
+
+        <dl className="detail-grid">
+          {fields.map((field) => (
+            <div key={field.key}>
+              <dt>{field.label}</dt>
+              <dd>
+                <FieldValue field={field} value={data[field.key]} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+
+        {selectedRecord.record_status === "archived" ? (
+          <p className="archived-note">This item is archived.</p>
+        ) : null}
+        {!locked ? (
+          <a className="back-link" href={recordBasePath}>
+            ← Back to {bundle.object.plural_label}
           </a>
         ) : null}
-      </header>
+      </article>
 
-      <dl className="detail-grid">
-        {fields.map((field) => (
-          <div key={field.key}>
-            <dt>{field.label}</dt>
-            <dd>
-              <FieldValue field={field} value={data[field.key]} />
-            </dd>
+      {detailConnections && detailConnections.length > 0 ? (
+        <aside
+          aria-label="Connected records"
+          className="runtime-detail-connections"
+        >
+          <div className="runtime-detail-connections-heading">
+            <p className="eyebrow">Context</p>
+            <h2>Connected records</h2>
           </div>
-        ))}
-      </dl>
-
-      {selectedRecord.record_status === "archived" ? (
-        <p className="archived-note">This item is archived.</p>
+          <div className="runtime-detail-connection-groups">
+            {detailConnections.map((group) => (
+              <section
+                className="runtime-detail-connection-group"
+                key={group.key}
+              >
+                <h3>{group.label}</h3>
+                {group.items.length > 0 ? (
+                  <ul>
+                    {group.items.map((item) => (
+                      <li key={item.id}>
+                        {item.href ? (
+                          <a href={item.href}>{item.label}</a>
+                        ) : (
+                          <span>{item.label}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="empty-value">None connected yet.</p>
+                )}
+              </section>
+            ))}
+          </div>
+        </aside>
       ) : null}
-      {!locked ? (
-        <a className="back-link" href={recordBasePath}>
-          ← Back to {bundle.object.plural_label}
-        </a>
-      ) : null}
-    </article>
+    </div>
   );
 }
 
@@ -437,6 +490,7 @@ export function ViewRenderer({
   businessSlug,
   record,
   navigationViewKey,
+  detailConnections,
   inlineEditAction,
   preview = false,
   readOnly = false,
@@ -514,6 +568,7 @@ export function ViewRenderer({
           preview={preview}
           readOnly={readOnly}
           recordBasePath={recordBasePath}
+          {...(detailConnections ? { detailConnections } : {})}
           {...(record ? { record } : {})}
         />
       ) : null}

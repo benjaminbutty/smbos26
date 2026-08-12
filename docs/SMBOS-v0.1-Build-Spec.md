@@ -2972,10 +2972,17 @@ opens in a query-parameter side panel. These are ordinary operational Record
 writes and do not advance configuration history. Legacy Tables with an
 `edit_form_key` retain their existing edit Form's non-hidden Field whitelist;
 formless Tables use metadata-derived supported Field types. The side panel
-shows the Table name and Record status and links to the full Record route for
-existing Location controls. Candidate preview remains read-only, the full
-Record route remains available as fallback, and AI, Builder planning and
-provider/accounting paths are unchanged.
+shows the Table name and Record status and links to the full Record route.
+Candidate preview remains read-only. The full Record route is the generic
+scalar-and-Connections fallback and does not universalise Location availability;
+existing trusted Location and preorder surfaces remain available through their
+own boundaries. AI, Builder planning and provider/accounting paths remain
+configuration-bound and do not apply changes automatically.
+
+When a Field is added or inserted from a Table, the same structural proposal
+also keeps that Table's explicitly configured internal create/edit Forms
+coherent. Unrelated or public Forms remain untouched, and later Record value
+writes stay in the operational lane without creating a configuration Version.
 
 Broader Field settings, delete/archive, formulas, relations, permissions,
 bulk/spreadsheet behavior and operational undo/history remain deferred.
