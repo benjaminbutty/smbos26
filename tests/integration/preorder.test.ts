@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createExperienceService } from "../../src/core/experience/service";
 import { normalizeTableViewConfig } from "../../src/core/experience/schemas";
+import { createRecordLocationLinkService } from "../../src/core/graph/location-links";
 import { defaultPreorderEmailAdapter } from "../../src/core/preorder/email";
 import {
   claimPreorderConfirmationEmail,
@@ -1752,6 +1753,54 @@ describe("Milestone 4 preorder", () => {
       "preorder_experience_locations",
       inactiveAssociation.id,
     );
+  });
+
+  it("exposes manual availability for an active preorder Product without links", async () => {
+    const product = products["Celebration Box"];
+    if (!product) {
+      throw new Error("Celebration Box is missing.");
+    }
+    const existingLinks = requireData(
+      await owner
+        .from("record_location_links")
+        .select("id,location_id")
+        .eq("business_id", business.id)
+        .eq("record_id", product.id),
+      "Could not load Product Location connections",
+    );
+    expect(existingLinks.length).toBeGreaterThan(0);
+
+    for (const link of existingLinks) {
+      const removed = await owner.rpc("remove_record_location_link", {
+        expected_business_id: business.id,
+        target_record_location_link_id: link.id,
+      });
+      expect(removed.error).toBeNull();
+    }
+
+    try {
+      const state = await createRecordLocationLinkService(owner, {
+        businessId: business.id,
+      }).readManualAvailability({
+        recordId: product.id,
+        objectDefinitionId: productObject.id,
+      });
+      expect(state.eligible).toBe(true);
+      expect(state.locations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ linkId: null, isActive: true }),
+        ]),
+      );
+    } finally {
+      for (const link of existingLinks) {
+        const restored = await owner.rpc("create_record_location_link", {
+          expected_business_id: business.id,
+          target_record_id: product.id,
+          target_location_id: link.location_id,
+        });
+        expect(restored.error).toBeNull();
+      }
+    }
   });
 
   it("rejects invalid slots, cutoffs, horizons, fields, quantities and forged values", async () => {

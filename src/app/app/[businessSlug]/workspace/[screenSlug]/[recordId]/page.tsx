@@ -27,6 +27,7 @@ import {
   ViewRenderer,
   viewFieldKeys,
 } from "../../../../../../runtime/views/view-renderer";
+import { RecordLocationAvailability } from "./record-location-availability";
 
 interface RecordDetailPageProps {
   params: Promise<{
@@ -196,6 +197,13 @@ export default async function RecordDetailPage({
         navigationViewKey={source.definition.key}
         record={record}
         detailConnections={detailConnections}
+      />
+      <RecordLocationAvailability
+        businessId={tenant.business.id}
+        businessSlug={businessSlug}
+        screenSlug={screenSlug}
+        recordId={record.id}
+        objectDefinitionId={detail.object.id}
       />
     </section>
   );
