@@ -1019,3 +1019,19 @@ explicit and opt-in; CI uses injected providers and remains network-free.
 The acquisition qualification and reliability gates must be rerun after this
 validator change before the new evidence is accepted. The rerun result and
 exact feature SHA will be recorded here.
+
+The first post-guard qualification rerun at feature SHA
+`c545d8360f5262011fb048f7dcb7e46f924761d0` was recorded as a failed gate:
+
+```text
+qualification: 7/8
+failed scenario: general_delivery
+failed gate: required_concepts
+estimated cost: 109,369 microusd
+```
+
+The single reviewed correction was to make the existing acquisition instruction
+explicit that an ordinary request naming deliveries must include a reusable
+Deliveries or delivery-runs business area. No evaluator threshold or scenario
+was weakened. The complete qualification and reliability gates are being rerun
+against that correction.
