@@ -2,13 +2,16 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AcquisitionProposalCard } from "../../components/acquisition-proposal";
+import { AcquisitionRequestInput } from "../../components/acquisition-request-input";
 import { Notice } from "../../components/notice";
+import { PendingSubmitButton } from "../../components/pending-submit-button";
 import { createProposalAction } from "./actions";
 import {
   acquisitionCategoryOptions,
   type AcquisitionCategory,
 } from "../../core/acquisition/schemas";
 import { loadAcquisitionSession } from "../../core/acquisition/service";
+import { emitAcquisitionEvent } from "../../core/acquisition/events";
 import { readSearchParam, type SearchParams } from "../../lib/search-params";
 
 interface StartPageProps {
@@ -16,8 +19,8 @@ interface StartPageProps {
 }
 
 function categoryValue(value: unknown): AcquisitionCategory {
-  return value === "delivery" || value === "jobs" || value === "other"
-    ? value
+  return acquisitionCategoryOptions.some((option) => option.value === value)
+    ? (value as AcquisitionCategory)
     : "appointments";
 }
 
@@ -31,6 +34,9 @@ export default async function StartPage({
   const activeSession = session && !session.expired ? session : null;
   const activeProposal = activeSession?.payload.proposal ?? null;
   const selectedCategory = categoryValue(activeProposal?.category);
+  emitAcquisitionEvent("public_build_viewed", {
+    has_proposal: Boolean(activeProposal),
+  });
 
   return (
     <main className="acquisition-page">
@@ -119,20 +125,12 @@ function ProposalForm({
         </div>
       </fieldset>
 
-      <label className="acquisition-request-label">
-        Describe what you need
-        <textarea
-          defaultValue={defaultRequest}
-          maxLength={4_000}
-          name="request"
-          placeholder="I run a dog grooming business and need to manage customers, pets, appointments and services."
-          required
-          rows={5}
-        />
-        <small>Use your own words. A few sentences is enough.</small>
-      </label>
+      <AcquisitionRequestInput defaultValue={defaultRequest} />
 
-      <button type="submit">{submitLabel}</button>
+      <PendingSubmitButton
+        label={submitLabel}
+        pendingLabel="Understanding your business…"
+      />
     </form>
   );
 }

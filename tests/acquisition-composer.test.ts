@@ -14,6 +14,9 @@ describe("Phase 5 starter compositions", () => {
     ["appointments", ["customer", "pet", "appointment", "service"]],
     ["delivery", ["customer", "product", "order", "order_item", "delivery"]],
     ["jobs", ["customer", "job", "quote", "task"]],
+    ["enquiries", ["customer", "enquiry", "follow_up"]],
+    ["products", ["product"]],
+    ["other", ["customer", "enquiry", "follow_up"]],
   ] as const)(
     "builds the %s composition from existing operations",
     (category, objectKeys) => {
@@ -47,6 +50,17 @@ describe("Phase 5 starter compositions", () => {
         not_included: parsed.proposal.not_included,
       });
       expect(ownerCopy).not.toMatch(/schema|uuid|field|relationship/i);
+      expect(parsed.proposal.source).toBe("fallback");
+      expect(parsed.proposal.understanding).toContain(
+        "couldn’t tailor this right now",
+      );
+      expect(parsed.proposal.landing_page_key).toBe("overview");
+      expect(
+        parsed.operations.filter(
+          (operation) =>
+            operation.op === "set_field" && operation.field_type === "currency",
+        ),
+      ).toHaveLength(0);
     },
   );
 
@@ -89,11 +103,27 @@ describe("Phase 5 starter compositions", () => {
       "Enquiries",
       "Follow-ups",
     ]);
-    expect(result.proposal.understanding).toContain(
-      "A flexible starting point",
-    );
+    expect(result.proposal.understanding).toContain("reliable starting point");
     expect(result.proposal.not_included).toContain(
       "A tailored setup for a specific industry",
     );
+  });
+
+  it("uses a truthful neutral Overview page and unfiltered view names", () => {
+    for (const category of [
+      "appointments",
+      "delivery",
+      "jobs",
+      "enquiries",
+      "products",
+      "other",
+    ] as const) {
+      const result = composeStarterComposition(category, request);
+      expect(result.proposal.pages[0]?.name).toBe("Overview");
+      expect(JSON.stringify(result.proposal.views)).not.toMatch(/today/i);
+      expect(
+        result.operations.find((operation) => operation.op === "set_page"),
+      ).toMatchObject({ key: "overview", slug: "overview", title: "Overview" });
+    }
   });
 });

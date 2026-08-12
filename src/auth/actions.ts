@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { createServerClient } from "../db/supabase/server";
+import { emitAcquisitionEvent } from "../core/acquisition/events";
 
 const credentialsSchema = z.object({
   email: z.email(),
@@ -88,6 +89,10 @@ export async function signUp(formData: FormData): Promise<never> {
     );
   }
 
+  if (returnTo === "/start/business") {
+    emitAcquisitionEvent("signup_completed", { method: "sign_up" });
+  }
+
   return redirectAfterAuthentication(returnTo);
 }
 
@@ -117,6 +122,10 @@ export async function signIn(formData: FormData): Promise<never> {
       "Email or password is incorrect.",
       returnTo,
     );
+  }
+
+  if (returnTo === "/start/business") {
+    emitAcquisitionEvent("signup_completed", { method: "sign_in" });
   }
 
   return redirectAfterAuthentication(returnTo);

@@ -973,3 +973,43 @@ maps `builder_record_location_link_intent_v1` to
 `builder_record_location_link_intent_terra_medium_v1` using GPT-5.6 Terra with
 medium reasoning. The global/default registry remains disabled, and the
 historical failed qualification above remains preserved.
+
+## Phase 5 anonymous acquisition evaluation
+
+Phase 5 adds the separately bounded `acquisition_workspace_plan_v1` subject for
+pre-signup interpretation. It has no tools or database access. Its strict
+output is validated, adapted into the existing frozen configuration-drafting
+grammar, checked by that grammar's semantic validator and compiled by the
+existing pure configuration draft compiler.
+
+Development qualification runs exposed the following historical failures and
+remain evidence rather than accepted gates:
+
+```text
+two-stage planning/drafting: 0/8, then 1/8 (unreliable structured drafting)
+first narrow-plan run:       1/8 (validator defect)
+after validator correction: 6/8
+after evaluator correction: 7/8
+first reliability run:      23/24
+```
+
+The two-stage result demonstrated that chaining a public planner into a second
+model drafting call could not meet the bounded acquisition reliability target.
+The narrow acquisition plan plus deterministic adapter removed that extra model
+failure surface while retaining the existing grammar, validator, compiler and
+M5 application boundary. The 23/24 reliability miss was an evaluator synonym
+classification defect; no production instruction was tuned in response.
+
+The final complete live gates passed:
+
+```text
+qualification: 8/8, estimated cost 119,689 microusd
+reliability:  24/24, every scenario 3/3, estimated cost 331,122 microusd
+```
+
+The eight scenarios were dog grooming, hair salon, recurring milk delivery,
+general delivery, trades/jobs, enquiry-led professional services, product
+tracking and an unusual business with an unsupported request. The production
+composition was exercised through strict acquisition validation, the existing
+draft semantic validator and the existing compiler. Live commands remain
+explicit and opt-in; CI uses injected providers and remains network-free.

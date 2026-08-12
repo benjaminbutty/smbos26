@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { signUp } from "../../auth/actions";
 import { Notice } from "../../components/notice";
 import { readSearchParam, type SearchParams } from "../../lib/search-params";
+import { emitAcquisitionEvent } from "../../core/acquisition/events";
 
 interface SignUpPageProps {
   searchParams: SearchParams;
@@ -19,6 +20,9 @@ export default async function SignUpPage({
   const signInHref = returnTo
     ? `/sign-in?returnTo=${encodeURIComponent(returnTo)}`
     : "/sign-in";
+  if (returnTo === "/start/business") {
+    emitAcquisitionEvent("signup_started", { route: "acquisition" });
+  }
 
   return (
     <main className="narrow-page">

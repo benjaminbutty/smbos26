@@ -2815,3 +2815,37 @@ of Connections, saved Views, filtering, sorting and grouping. It does so through
 the existing generic primitives and typed M5/operational boundaries; formulas,
 workflows, public editing, collaboration and AI/Builder Table changes remain
 deferred. See ADR-039 and `docs/INTERNAL-WORKSPACE-ENGINE.md`.
+
+## ADR-040 — Pre-signup Lenni proposals use temporary server-owned acquisition state
+
+**Status:** Proposed in Phase 5 PR #34
+
+**Date:** 12 August 2026
+
+Pre-signup Lenni workspace proposals are held in temporary, platform-owned
+acquisition state and are deliberately claimed into the existing configuration
+lifecycle. No Business exists while the visitor describes their work. This
+state is neither Business data nor operational data, and the browser receives
+only an owner-readable proposal; authoritative configuration operations remain
+server-owned.
+
+Anonymous interpretation has a separate bounded acquisition allowance and
+cost policy. The model may interpret and plan, but it has no database client,
+mutation tool or public Apply/Publish capability. Strict parsing, the existing
+qualified configuration-drafting grammar, the pure deterministic compiler and
+Milestone 5 validation/application own the trusted configuration operations.
+The authenticated claim creates a new Business and Owner membership and applies
+exactly one owner-approved starting configuration atomically. Failure leaves no
+partial Business. Configuration and operational Record lanes remain separate.
+
+The anonymous request is temporary and data-minimised: it is not copied into
+Business configuration history, Records, analytics or logs; successful claim
+scrubs it immediately, and bounded opportunistic cleanup scrubs expired state.
+A short-lived HMAC-keyed quota row prevents browser-cookie replacement from
+bypassing the public daily ceiling without persisting a raw network address.
+
+Deterministic starter compositions remain an honest fallback, and manual
+workspace creation remains available without AI. Phase 5 adds no permanent
+conversation, transcript, memory, platform primitive, second runtime or public
+AI mutation tool. This ADR records the boundary proposed by PR #34 and does not
+claim that the PR or Phase 5 has merged.

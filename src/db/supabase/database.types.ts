@@ -141,8 +141,33 @@ export type Database = {
           },
         ];
       };
+      anonymous_build_daily_quotas: {
+        Row: {
+          attempt_count: number;
+          attempt_day: string;
+          created_at: string;
+          rate_key: string;
+          updated_at: string;
+        };
+        Insert: {
+          attempt_count: number;
+          attempt_day: string;
+          created_at?: string;
+          rate_key: string;
+          updated_at?: string;
+        };
+        Update: {
+          attempt_count?: number;
+          attempt_day?: string;
+          created_at?: string;
+          rate_key?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       anonymous_build_sessions: {
         Row: {
+          attempt_count: number;
           claim_status: string;
           claimed_at: string | null;
           claimed_business_id: string | null;
@@ -151,14 +176,15 @@ export type Database = {
           expires_at: string;
           id: string;
           proposal_count: number;
-          proposal_json: Json;
+          proposal_json: Json | null;
           regeneration_count: number;
-          request_text: string;
+          request_text: string | null;
           requested_category: string;
           session_token_hash: string;
           updated_at: string;
         };
         Insert: {
+          attempt_count?: number;
           claim_status?: string;
           claimed_at?: string | null;
           claimed_business_id?: string | null;
@@ -167,14 +193,15 @@ export type Database = {
           expires_at: string;
           id?: string;
           proposal_count?: number;
-          proposal_json: Json;
+          proposal_json?: Json | null;
           regeneration_count?: number;
-          request_text: string;
+          request_text?: string | null;
           requested_category: string;
           session_token_hash: string;
           updated_at?: string;
         };
         Update: {
+          attempt_count?: number;
           claim_status?: string;
           claimed_at?: string | null;
           claimed_business_id?: string | null;
@@ -183,9 +210,9 @@ export type Database = {
           expires_at?: string;
           id?: string;
           proposal_count?: number;
-          proposal_json?: Json;
+          proposal_json?: Json | null;
           regeneration_count?: number;
-          request_text?: string;
+          request_text?: string | null;
           requested_category?: string;
           session_token_hash?: string;
           updated_at?: string;
@@ -1540,55 +1567,35 @@ export type Database = {
           requested_action_kind: string;
           requested_operations: Json;
         };
-        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
-        SetofOptions: {
-          from: "*";
-          to: "configuration_change_sets";
-          isOneToOne: true;
-          isSetofReturn: false;
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          display_context_json: Json;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
         };
-      };
-      apply_direct_table_record_batch: {
-        Args: {
-          expected_business_id: string;
-          requested_rows: Json;
-          requested_view_key: string;
-        };
-        Returns: Json;
-        SetofOptions: {
-          from: "*";
-          to: "Json";
-          isOneToOne: false;
-          isSetofReturn: false;
-        };
-      };
-      apply_internal_workspace_configuration_change: {
-        Args: {
-          expected_actor_id: string;
-          expected_base_version_id: string;
-          expected_business_id: string;
-          expected_head_revision: number;
-          requested_action_kind: string;
-          requested_operations: Json;
-        };
-        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
-        SetofOptions: {
-          from: "*";
-          to: "configuration_change_sets";
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
-      apply_lenni_direct_configuration_change: {
-        Args: {
-          expected_actor_id: string;
-          expected_base_version_id: string;
-          expected_business_id: string;
-          expected_head_revision: number;
-          requested_action_kind: string;
-          requested_operations: Json;
-        };
-        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
         SetofOptions: {
           from: "*";
           to: "configuration_change_sets";
@@ -1605,7 +1612,133 @@ export type Database = {
           requested_action_kind: string;
           requested_operations: Json;
         };
-        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          display_context_json: Json;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      apply_direct_table_record_batch: {
+        Args: {
+          expected_business_id: string;
+          requested_rows: Json;
+          requested_view_key: string;
+        };
+        Returns: Json;
+      };
+      apply_internal_workspace_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          display_context_json: Json;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
+      apply_lenni_direct_configuration_change: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          requested_action_kind: string;
+          requested_operations: Json;
+        };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          display_context_json: Json;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
         SetofOptions: {
           from: "*";
           to: "configuration_change_sets";
@@ -1632,14 +1765,6 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      claim_preorder_confirmation_email: {
-        Args: {
-          requested_business_slug: string;
-          requested_idempotency_token: string;
-          requested_preorder_key: string;
-        };
-        Returns: Json;
-      };
       claim_anonymous_build_session: {
         Args: {
           requested_business_name: string;
@@ -1662,6 +1787,14 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      claim_preorder_confirmation_email: {
+        Args: {
+          requested_business_slug: string;
+          requested_idempotency_token: string;
+          requested_preorder_key: string;
+        };
+        Returns: Json;
       };
       complete_preorder_confirmation_email: {
         Args: {
@@ -1696,12 +1829,16 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      create_graph_record: {
+      create_confirmed_graph_record: {
         Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
           expected_business_id: string;
-          requested_data?: Json;
-          requested_record_status?: Database["public"]["Enums"]["graph_record_status"];
-          target_object_definition_id: string;
+          expected_head_revision: number;
+          expected_object_schema_digest: string;
+          expected_record_state_digest: string;
+          requested_data: Json;
+          target_object_key: string;
         };
         Returns: {
           business_id: string;
@@ -1720,16 +1857,12 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      create_confirmed_graph_record: {
+      create_graph_record: {
         Args: {
-          expected_actor_id: string;
-          expected_base_version_id: string;
           expected_business_id: string;
-          expected_head_revision: number;
-          expected_object_schema_digest: string;
-          expected_record_state_digest: string;
-          requested_data: Json;
-          target_object_key: string;
+          requested_data?: Json;
+          requested_record_status?: Database["public"]["Enums"]["graph_record_status"];
+          target_object_definition_id: string;
         };
         Returns: {
           business_id: string;
@@ -1799,54 +1932,6 @@ export type Database = {
           isSetofReturn: false;
         };
       };
-      get_confirmed_graph_record_creation_state: {
-        Args: {
-          expected_actor_id: string;
-          expected_business_id: string;
-          target_object_key: string;
-        };
-        Returns: {
-          actor_id: string;
-          base_version_id: string;
-          business_id: string;
-          eligibility: Json;
-          fields: Json;
-          head_revision: number;
-          internal_views: Json;
-          is_active: boolean;
-          object_definition_id: string;
-          object_key: string;
-          object_schema_digest: string;
-          plural_label: string;
-          record_state_digest: string;
-          schema_version: number;
-          singular_label: string;
-        }[];
-      };
-      get_confirmed_graph_record_update_state: {
-        Args: {
-          expected_actor_id: string;
-          expected_business_id: string;
-          requested_selector: Json;
-          requested_update_field_keys: string[];
-          target_object_key: string;
-        };
-        Returns: Json;
-      };
-      get_location_creation_state: {
-        Args: {
-          expected_actor_id: string;
-          expected_business_id: string;
-        };
-        Returns: {
-          actor_id: string;
-          business_id: string;
-          business_timezone: string;
-          location_state_digest: string;
-          locations: Json;
-          schema_version: number;
-        }[];
-      };
       create_preorder_experience: {
         Args: {
           expected_business_id: string;
@@ -1904,17 +1989,6 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
-      };
-      get_confirmed_record_location_link_state: {
-        Args: {
-          expected_actor_id: string;
-          expected_business_id: string;
-          requested_action: string;
-          requested_selector: Json;
-          target_location_id: string;
-          target_object_key: string;
-        };
-        Returns: Json;
       };
       get_business_ai_settings: {
         Args: { expected_actor_id: string; expected_business_id: string };
@@ -2000,6 +2074,62 @@ export type Database = {
           isOneToOne: true;
           isSetofReturn: false;
         };
+      };
+      get_confirmed_graph_record_creation_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          target_object_key: string;
+        };
+        Returns: {
+          actor_id: string;
+          base_version_id: string;
+          business_id: string;
+          eligibility: Json;
+          fields: Json;
+          head_revision: number;
+          internal_views: Json;
+          is_active: boolean;
+          object_definition_id: string;
+          object_key: string;
+          object_schema_digest: string;
+          plural_label: string;
+          record_state_digest: string;
+          schema_version: number;
+          singular_label: string;
+        }[];
+      };
+      get_confirmed_graph_record_update_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_selector: Json;
+          requested_update_field_keys: string[];
+          target_object_key: string;
+        };
+        Returns: Json;
+      };
+      get_confirmed_record_location_link_state: {
+        Args: {
+          expected_actor_id: string;
+          expected_business_id: string;
+          requested_action: string;
+          requested_selector: Json;
+          target_location_id: string;
+          target_object_key: string;
+        };
+        Returns: Json;
+      };
+      get_location_creation_state: {
+        Args: { expected_actor_id: string; expected_business_id: string };
+        Returns: {
+          actor_id: string;
+          business_id: string;
+          business_timezone: string;
+          location_state_digest: string;
+          locations: Json;
+          schema_version: number;
+        }[];
       };
       list_business_ai_execution_runs: {
         Args: { expected_actor_id: string; expected_business_id: string };
@@ -2139,9 +2269,9 @@ export type Database = {
       };
       prepare_configuration_rollback: {
         Args: {
+          expected_active_source_version_id: string;
           expected_actor_id: string;
           expected_business_id: string;
-          expected_active_source_version_id: string;
           expected_head_revision: number;
           requested_description: string;
           requested_target_version_id: string;
@@ -2229,6 +2359,15 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      query_view_records: {
+        Args: {
+          expected_business_id: string;
+          requested_limit?: number;
+          requested_offset?: number;
+          requested_view_key: string;
+        };
+        Returns: Json;
+      };
       remove_graph_relationship: {
         Args: {
           expected_business_id: string;
@@ -2242,6 +2381,15 @@ export type Database = {
           target_record_location_link_id: string;
         };
         Returns: boolean;
+      };
+      reserve_anonymous_build_attempt: {
+        Args: {
+          requested_category_value: string;
+          requested_expires_at: string;
+          requested_rate_key: string;
+          requested_session_token_hash: string;
+        };
+        Returns: Json;
       };
       reserve_business_ai_execution: {
         Args: {
@@ -2290,15 +2438,6 @@ export type Database = {
           requested_business_slug: string;
           requested_page_slug: string;
           requested_preorder_key: string;
-        };
-        Returns: Json;
-      };
-      query_view_records: {
-        Args: {
-          expected_business_id: string;
-          requested_limit?: number;
-          requested_offset?: number;
-          requested_view_key: string;
         };
         Returns: Json;
       };
@@ -2373,6 +2512,49 @@ export type Database = {
         };
         Returns: Json;
       };
+      undo_direct_configuration_change: {
+        Args: {
+          expected_active_source_version_id: string;
+          expected_actor_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+        };
+        Returns: {
+          applied_at: string | null;
+          applied_by: string | null;
+          applied_version_id: string | null;
+          base_head_revision: number;
+          base_version_id: string;
+          business_id: string;
+          candidate_checksum: string;
+          candidate_snapshot_json: Json;
+          closed_at: string | null;
+          closed_by: string | null;
+          created_at: string;
+          description: string | null;
+          display_context_json: Json;
+          id: string;
+          id_allocations_json: Json;
+          kind: Database["public"]["Enums"]["configuration_change_kind"];
+          operations_json: Json;
+          operations_schema_version: number;
+          requested_by: string;
+          rollback_target_version_id: string | null;
+          semantic_diff_json: Json;
+          status: Database["public"]["Enums"]["configuration_change_status"];
+          title: string;
+          updated_at: string;
+          validated_at: string | null;
+          validated_by: string | null;
+          validation_result_json: Json | null;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "configuration_change_sets";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_business_ai_settings: {
         Args: {
           expected_actor_id: string;
@@ -2395,6 +2577,35 @@ export type Database = {
           updated_by: string;
         }[];
       };
+      update_confirmed_graph_record: {
+        Args: {
+          expected_actor_id: string;
+          expected_base_version_id: string;
+          expected_business_id: string;
+          expected_head_revision: number;
+          expected_object_definition_id: string;
+          expected_record_updated_at: string;
+          requested_data_patch: Json;
+          target_object_key: string;
+          target_record_id: string;
+        };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          created_by: string | null;
+          data_json: Json;
+          id: string;
+          object_definition_id: string;
+          record_status: Database["public"]["Enums"]["graph_record_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       update_graph_record: {
         Args: {
           data_patch?: Json;
@@ -2415,50 +2626,6 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "records";
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
-      update_confirmed_graph_record: {
-        Args: {
-          expected_actor_id: string;
-          expected_base_version_id: string;
-          expected_business_id: string;
-          expected_head_revision: number;
-          expected_object_definition_id: string;
-          expected_record_updated_at: string;
-          requested_data_patch: Json;
-          target_record_id: string;
-          target_object_key: string;
-        };
-        Returns: {
-          business_id: string;
-          created_at: string;
-          created_by: string | null;
-          data_json: Json;
-          id: string;
-          object_definition_id: string;
-          record_status: Database["public"]["Enums"]["graph_record_status"];
-          updated_at: string;
-        };
-        SetofOptions: {
-          from: "*";
-          to: "records";
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
-      undo_direct_configuration_change: {
-        Args: {
-          expected_actor_id: string;
-          expected_active_source_version_id: string;
-          expected_business_id: string;
-          expected_head_revision: number;
-        };
-        Returns: Database["public"]["Tables"]["configuration_change_sets"]["Row"];
-        SetofOptions: {
-          from: "*";
-          to: "configuration_change_sets";
           isOneToOne: true;
           isSetofReturn: false;
         };

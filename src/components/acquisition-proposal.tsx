@@ -21,8 +21,17 @@ export function AcquisitionProposalCard({
       </div>
 
       <div className="acquisition-understanding">
-        <p className="acquisition-section-label">What Lenni understood</p>
+        <p className="acquisition-section-label">
+          {proposal.source === "tailored"
+            ? "What Lenni understood"
+            : "Reliable starting point"}
+        </p>
         <p>{proposal.understanding}</p>
+      </div>
+
+      <div className="acquisition-why">
+        <p className="acquisition-section-label">Why this fits</p>
+        <p>{proposal.why}</p>
       </div>
 
       <div className="acquisition-proposal-grid">
@@ -38,6 +47,11 @@ export function AcquisitionProposalCard({
               <article className="acquisition-concept" key={concept.name}>
                 <h3>{concept.name}</h3>
                 <p>{concept.description}</p>
+                {concept.tracked_information.length > 0 ? (
+                  <small>
+                    Tracks {concept.tracked_information.join(", ")}.
+                  </small>
+                ) : null}
               </article>
             ))}
           </div>
@@ -57,7 +71,19 @@ export function AcquisitionProposalCard({
           </ul>
 
           <p className="acquisition-section-label acquisition-page-label">
-            Your first page
+            Saved views
+          </p>
+          <div className="acquisition-view-list">
+            {proposal.views.map((view) => (
+              <div className="acquisition-page-preview" key={view.name}>
+                <strong>{view.name}</strong>
+                <span>{view.description}</span>
+              </div>
+            ))}
+          </div>
+
+          <p className="acquisition-section-label acquisition-page-label">
+            Starting page
           </p>
           {proposal.pages.map((page) => (
             <div className="acquisition-page-preview" key={page.name}>

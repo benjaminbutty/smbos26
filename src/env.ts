@@ -23,6 +23,7 @@ export const environmentSchema = z
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().trim().min(1),
     SUPABASE_SERVICE_ROLE_KEY: optionalString,
     PREORDER_RATE_LIMIT_SECRET: optionalString,
+    ACQUISITION_RATE_LIMIT_SECRET: optionalString,
     BUILDER_OPERATIONAL_CONFIRMATION_SECRET: optionalString,
   })
   .superRefine((environment, context) => {
@@ -49,6 +50,18 @@ export const environmentSchema = z
         path: ["PREORDER_RATE_LIMIT_SECRET"],
       });
     }
+
+    if (
+      environment.NODE_ENV === "production" &&
+      !environment.ACQUISITION_RATE_LIMIT_SECRET
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "ACQUISITION_RATE_LIMIT_SECRET is required for public acquisition hashing in production.",
+        path: ["ACQUISITION_RATE_LIMIT_SECRET"],
+      });
+    }
   });
 
 export type Environment = z.infer<typeof environmentSchema>;
@@ -68,6 +81,7 @@ export function getEnvironment(): Environment {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     PREORDER_RATE_LIMIT_SECRET: process.env.PREORDER_RATE_LIMIT_SECRET,
+    ACQUISITION_RATE_LIMIT_SECRET: process.env.ACQUISITION_RATE_LIMIT_SECRET,
     BUILDER_OPERATIONAL_CONFIRMATION_SECRET:
       process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET,
   });

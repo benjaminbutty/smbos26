@@ -7735,7 +7735,7 @@ textarea {
   color: var(--foreground);
   font-size: 0.8rem;
   font-weight: 750;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 .acquisition-category-grid {
@@ -7810,6 +7810,33 @@ textarea {
   line-height: 1.55;
 }
 
+.acquisition-example-label {
+  margin-top: 0.25rem;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.acquisition-example-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.acquisition-example-list button {
+  width: auto;
+  min-height: 0;
+  padding: 0.55rem 0.7rem;
+  color: var(--muted);
+  background: var(--surface-canvas);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+}
+
 .acquisition-manual-route {
   margin: 1.5rem 0 0;
   color: var(--muted);
@@ -7847,8 +7874,9 @@ textarea {
 .acquisition-proposal-status {
   flex: 0 0 auto;
   padding: 0.45rem 0.7rem;
-  color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--foreground);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 750;
@@ -7859,8 +7887,7 @@ textarea {
   margin: 0 0 0.7rem;
   color: var(--muted);
   font-size: 0.7rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .acquisition-understanding {
@@ -7874,6 +7901,13 @@ textarea {
 .acquisition-understanding p:last-child {
   margin: 0;
   color: var(--foreground);
+  line-height: 1.6;
+}
+
+.acquisition-why p:last-child {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--muted);
   line-height: 1.6;
 }
 
@@ -7909,6 +7943,14 @@ textarea {
   line-height: 1.45;
 }
 
+.acquisition-concept small {
+  display: block;
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 .acquisition-connection-list {
   display: grid;
   gap: 0.65rem;
@@ -7941,6 +7983,11 @@ textarea {
   background: var(--surface-subtle);
   border: 1px solid var(--line);
   border-radius: 0.7rem;
+}
+
+.acquisition-view-list {
+  display: grid;
+  gap: 0.55rem;
 }
 
 .acquisition-first-step,
@@ -8011,6 +8058,27 @@ textarea {
   font-size: 0.95rem;
 }
 
+.acquisition-timezone-field {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.acquisition-timezone-confirmation {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 0.55rem !important;
+  color: var(--muted) !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+}
+
+.acquisition-timezone-confirmation input {
+  width: auto;
+  min-height: auto;
+  margin-top: 0.15rem;
+  accent-color: var(--coral-600);
+}
+
 @media (max-width: 48rem) {
   .acquisition-category-grid,
   .acquisition-proposal-grid,
@@ -8023,6 +8091,22 @@ textarea {
   }
 
   .acquisition-proposal-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .acquisition-page {
+    width: min(calc(100% - 1.25rem), 66rem);
+    padding-block: 2rem;
+  }
+
+  .acquisition-form,
+  .acquisition-proposal,
+  .acquisition-revise {
+    padding: 1rem;
+    border-radius: 0.85rem;
+  }
+
+  .acquisition-concept-list {
     grid-template-columns: 1fr;
   }
 }

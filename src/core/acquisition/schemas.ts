@@ -9,6 +9,8 @@ export const acquisitionCategorySchema = z.enum([
   "appointments",
   "delivery",
   "jobs",
+  "enquiries",
+  "products",
   "other",
 ]);
 
@@ -20,6 +22,7 @@ const proposalConceptSchema = z
   .object({
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().min(1).max(500),
+    tracked_information: z.array(z.string().trim().min(1).max(120)).max(12),
   })
   .strict();
 
@@ -36,15 +39,26 @@ const proposalPageSchema = z
   })
   .strict();
 
+const proposalViewSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    description: z.string().trim().min(1).max(300),
+  })
+  .strict();
+
 export const acquisitionProposalSchema = z
   .object({
     schema_version: z.literal(1),
+    source: z.enum(["tailored", "fallback"]),
     category: acquisitionCategorySchema,
     title: z.string().trim().min(1).max(160),
     understanding: z.string().trim().min(1).max(900),
-    concepts: z.array(proposalConceptSchema).min(1).max(12),
-    connections: z.array(proposalConnectionSchema).max(16),
-    pages: z.array(proposalPageSchema).min(1).max(6),
+    why: z.string().trim().min(1).max(900),
+    concepts: z.array(proposalConceptSchema).min(1).max(6),
+    connections: z.array(proposalConnectionSchema).max(10),
+    views: z.array(proposalViewSchema).min(1).max(8),
+    pages: z.array(proposalPageSchema).min(1).max(3),
+    landing_page_key: z.string().regex(/^[a-z][a-z0-9_]{0,79}$/),
     first_step: z.string().trim().min(1).max(300),
     not_included: z.array(z.string().trim().min(1).max(160)).max(8),
   })
@@ -81,7 +95,7 @@ export const acquisitionCategoryOptions: ReadonlyArray<{
   },
   {
     value: "delivery",
-    label: "Products, orders & delivery",
+    label: "Orders & delivery",
     description: "Organise products, orders, quantities and deliveries.",
   },
   {
@@ -90,11 +104,27 @@ export const acquisitionCategoryOptions: ReadonlyArray<{
     description: "Keep customers, jobs, quotes and tasks together.",
   },
   {
+    value: "enquiries",
+    label: "Enquiries & sales",
+    description: "Keep enquiries, customers and follow-ups moving.",
+  },
+  {
+    value: "products",
+    label: "Products & stock",
+    description: "Track products and manually maintained stock information.",
+  },
+  {
     value: "other",
-    label: "Enquiries, sales or something else",
-    description: "Start with a flexible customer and follow-up workspace.",
+    label: "Something else",
+    description: "Describe the process and Lenni will find a useful structure.",
   },
 ];
+
+export const acquisitionPromptExamples = Object.freeze([
+  "I run a dog grooming business and bookings are becoming hard to keep organised.",
+  "I deliver milk locally and confirm every week what each customer wants.",
+  "I’m a builder and need a better way to keep customers, jobs, quotes and tasks together.",
+]);
 
 export function acquisitionCategoryLabel(
   category: AcquisitionCategory,

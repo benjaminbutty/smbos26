@@ -7,6 +7,9 @@ import { loadAcquisitionSession } from "../../../core/acquisition/service";
 import { requireAuthenticatedUser } from "../../../auth/authorization";
 import { createServerClient } from "../../../db/supabase/server";
 import { Notice } from "../../../components/notice";
+import { TimezoneConfirmation } from "../../../components/timezone-confirmation";
+import { PendingSubmitButton } from "../../../components/pending-submit-button";
+import { emitAcquisitionEvent } from "../../../core/acquisition/events";
 import { readSearchParam, type SearchParams } from "../../../lib/search-params";
 import { claimWorkspaceAction } from "../actions";
 
@@ -35,6 +38,10 @@ export default async function BusinessSetupPage({
   }
 
   const proposal = session.payload.proposal;
+  emitAcquisitionEvent("create_workspace_clicked", {
+    category: proposal.category,
+    source: proposal.source,
+  });
   return (
     <main className="narrow-page acquisition-business-page">
       <section className="panel">
@@ -65,14 +72,11 @@ export default async function BusinessSetupPage({
               required
             />
           </label>
-          <label>
-            Timezone
-            <input defaultValue="UTC" maxLength={80} name="timezone" required />
-            <small className="field-help">
-              Use an IANA timezone such as Europe/London or America/New_York.
-            </small>
-          </label>
-          <button type="submit">Create workspace</button>
+          <TimezoneConfirmation />
+          <PendingSubmitButton
+            label="Create workspace"
+            pendingLabel="Checking how the parts fit together…"
+          />
         </form>
 
         <p className="form-footer">

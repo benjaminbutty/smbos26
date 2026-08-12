@@ -48,11 +48,15 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Run Phase 5 acquisition composition acceptance
+        run: npm run test:acquisition
+
       - name: Build application
         run: npm run build
         env:
           SUPABASE_SERVICE_ROLE_KEY: ci-build-only-not-a-real-credential
           PREORDER_RATE_LIMIT_SECRET: ci-build-only-rate-limit-secret
+          ACQUISITION_RATE_LIMIT_SECRET: ci-build-only-acquisition-secret
 
       - name: Start local Supabase
         run: npm run supabase:start

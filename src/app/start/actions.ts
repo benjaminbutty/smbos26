@@ -9,8 +9,10 @@ import {
   AcquisitionServiceError,
   clearAcquisitionCookie,
   createOrRegenerateProposal,
+  loadAcquisitionSession,
   readAcquisitionCookieToken,
 } from "../../core/acquisition/service";
+import { emitAcquisitionEvent } from "../../core/acquisition/events";
 import {
   acquisitionCategorySchema,
   acquisitionRequestSchema,
@@ -19,6 +21,7 @@ import {
 const workspaceDetailsSchema = z.object({
   businessName: z.string().trim().min(1).max(120),
   timezone: z.string().trim().min(1).max(80),
+  timezoneConfirmed: z.literal("yes"),
 });
 
 function redirectWithError(path: string, message: string): never {
@@ -80,9 +83,13 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
   const details = workspaceDetailsSchema.safeParse({
     businessName: formData.get("businessName"),
     timezone: formData.get("timezone"),
+    timezoneConfirmed: formData.get("timezoneConfirmed"),
   });
   if (!details.success) {
-    redirectWithError("/start/business", "Enter a business name and timezone.");
+    redirectWithError(
+      "/start/business",
+      "Enter a business name and confirm the timezone.",
+    );
   }
 
   const supabase = await createServerClient();
@@ -98,7 +105,13 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
       "Your Lenni session could not be read. Start again to prepare a fresh proposal.",
     );
   }
+  const session = await loadAcquisitionSession();
+  const landingPageKey =
+    session?.payload.proposal.landing_page_key ?? "overview";
 
+  emitAcquisitionEvent("workspace_apply_started", {
+    category: session?.payload.proposal.category ?? "unknown",
+  });
   const { data, error } = await supabase.rpc("claim_anonymous_build_session", {
     requested_business_name: details.data.businessName,
     requested_session_token: sessionToken,
@@ -106,10 +119,17 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
   });
 
   if (error || !data) {
+    emitAcquisitionEvent("workspace_apply_failed", {
+      reason: "claim_failed",
+    });
     redirectWithError("/start/business", claimErrorMessage(error));
   }
 
+  emitAcquisitionEvent("proposal_claimed");
+  emitAcquisitionEvent("workspace_apply_succeeded");
   await clearAcquisitionCookie();
   revalidatePath(`/app/${data.slug}`, "layout");
-  redirect(`/app/${encodeURIComponent(data.slug)}/pages/today`);
+  redirect(
+    `/app/${encodeURIComponent(data.slug)}/pages/${encodeURIComponent(landingPageKey)}`,
+  );
 }

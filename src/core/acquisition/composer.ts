@@ -116,15 +116,6 @@ function selectField(
   };
 }
 
-function currencyField(key: string, label: string): StarterField {
-  return {
-    key,
-    label,
-    field_type: "currency",
-    settings_json: { currency: "GBP" },
-  };
-}
-
 function dateField(key: string, label: string, required = false): StarterField {
   return { key, label, field_type: "date", required };
 }
@@ -220,7 +211,6 @@ const appointmentDefinition: StarterDefinition = {
       fields: [
         textField("name", "Name", { required: true }),
         numberField("duration_minutes", "Duration (minutes)"),
-        currencyField("price", "Price"),
       ],
       view_connections: [
         { relationship_key: "appointment_uses_service", direction: "target" },
@@ -257,9 +247,9 @@ const appointmentDefinition: StarterDefinition = {
     },
   ],
   workObjectKey: "appointment",
-  workViewLabel: "Today’s appointments",
+  workViewLabel: "Appointments",
   workPageText:
-    "Add a customer, pet or service, then keep today’s bookings moving.",
+    "Add a customer, pet or service, then keep your bookings moving.",
   firstStep:
     "Add a customer, then add an appointment and connect it to the right pet or service.",
   notIncluded: ["Online payments", "Automated reminders", "Public booking"],
@@ -278,7 +268,6 @@ const deliveryDefinition: StarterDefinition = {
       description: "The products you sell or send to customers.",
       fields: [
         textField("name", "Name", { required: true }),
-        currencyField("price", "Price"),
         textField("unit", "Unit"),
         statusField("status", "Status", ["Active", "Paused"], "Active"),
       ],
@@ -319,7 +308,6 @@ const deliveryDefinition: StarterDefinition = {
       description: "Each product and quantity included in an order.",
       fields: [
         numberField("quantity", "Quantity", true, 1),
-        currencyField("unit_price", "Unit price"),
         longTextField("notes", "Notes"),
       ],
       view_connections: [
@@ -386,7 +374,7 @@ const deliveryDefinition: StarterDefinition = {
     },
   ],
   workObjectKey: "delivery",
-  workViewLabel: "Today’s deliveries",
+  workViewLabel: "Deliveries",
   workPageText:
     "See the deliveries that need attention and keep quantities with their order items.",
   firstStep:
@@ -433,7 +421,6 @@ const jobsDefinition: StarterDefinition = {
       description: "The prices and decisions attached to your jobs.",
       fields: [
         textField("title", "Quote", { required: true }),
-        currencyField("amount", "Amount"),
         statusField(
           "status",
           "Status",
@@ -496,7 +483,7 @@ const jobsDefinition: StarterDefinition = {
     },
   ],
   workObjectKey: "task",
-  workViewLabel: "Today’s tasks",
+  workViewLabel: "Tasks",
   workPageText:
     "Start with the next task, then keep the job and customer context close by.",
   firstStep:
@@ -577,12 +564,43 @@ const otherDefinition: StarterDefinition = {
   ],
 };
 
+const productsDefinition: StarterDefinition = {
+  title: "Product tracking workspace",
+  understandingLabel:
+    "A reliable starting point for manually keeping product and stock information organised.",
+  objects: [
+    {
+      key: "product",
+      singular_label: "Product",
+      plural_label: "Products",
+      description: "The products you sell, supply or keep track of.",
+      fields: [
+        textField("name", "Name", { required: true }),
+        textField("sku", "SKU"),
+        numberField("quantity_on_hand", "Quantity on hand"),
+        textField("unit", "Unit"),
+        statusField("status", "Status", ["Active", "Paused"], "Active"),
+        longTextField("notes", "Notes"),
+      ],
+    },
+  ],
+  relationships: [],
+  workObjectKey: "product",
+  workViewLabel: "Products",
+  workPageText:
+    "Keep product information and manually updated quantities visible.",
+  firstStep: "Add the first real product you want to track.",
+  notIncluded: ["Inventory automation", "Payments", "Supplier integrations"],
+};
+
 const starterDefinitions: Readonly<
   Record<AcquisitionCategory, StarterDefinition>
 > = {
   appointments: appointmentDefinition,
   delivery: deliveryDefinition,
   jobs: jobsDefinition,
+  enquiries: otherDefinition,
+  products: productsDefinition,
   other: otherDefinition,
 };
 
@@ -672,13 +690,13 @@ function viewOperation(
 function pageOperation(definition: StarterDefinition): ConfigurationOperation {
   return setPageOperationSchema.parse({
     op: "set_page",
-    key: "today",
-    title: "Today",
-    slug: "today",
+    key: "overview",
+    title: "Overview",
+    slug: "overview",
     audience: "internal",
     layout_json: pageLayoutSchema.parse({
       blocks: [
-        { type: "heading", text: "Today", level: 1 },
+        { type: "heading", text: "Overview", level: 1 },
         { type: "text", text: definition.workPageText },
         { type: "view", view_key: `${definition.workObjectKey}_view` },
       ],
@@ -752,31 +770,39 @@ export function composeStarterComposition(
   requestInput: unknown,
 ): AcquisitionBuildPayload {
   const category = acquisitionCategorySchema.parse(categoryInput);
-  const request = acquisitionRequestSchema
-    .parse(requestInput)
-    .replace(/\s+/g, " ");
+  acquisitionRequestSchema.parse(requestInput);
   const definition = starterDefinitions[category];
-  const requestExcerpt =
-    request.length > 720 ? `${request.slice(0, 717)}…` : request;
   const operations = composeOperations(definition);
   const proposal = acquisitionProposalSchema.parse({
     schema_version: 1,
+    source: "fallback",
     category,
     title: definition.title,
-    understanding: `You described this: “${requestExcerpt}” ${definition.understandingLabel}`,
+    understanding:
+      "Lenni couldn’t tailor this right now, so here’s a reliable starting point based on the kind of work you selected.",
+    why: definition.understandingLabel,
     concepts: definition.objects.map((object) => ({
       name: object.plural_label,
       description: object.description,
+      tracked_information: object.fields.map((field) => field.label),
     })),
     connections: definition.relationships.map((relationship) => ({
       text: relationship.text,
     })),
+    views: definition.objects.map((object) => ({
+      name:
+        object.key === definition.workObjectKey
+          ? definition.workViewLabel
+          : `All ${object.plural_label.toLocaleLowerCase("en")}`,
+      description: `A practical view of ${object.plural_label.toLocaleLowerCase("en")}.`,
+    })),
     pages: [
       {
-        name: "Today",
+        name: "Overview",
         description: `A useful place to see ${definition.workViewLabel.toLocaleLowerCase("en")} and add real work.`,
       },
     ],
+    landing_page_key: "overview",
     first_step: definition.firstStep,
     not_included: definition.notIncluded,
   });
