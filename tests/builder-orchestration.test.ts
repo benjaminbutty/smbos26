@@ -549,6 +549,119 @@ function draft(): BuilderConfigurationDraftOutput {
   });
 }
 
+function existingObjectFieldPlan(
+  objectKey: string,
+  objectLabel: string,
+): Extract<BuilderPlanOutput, { state: "ready" }> {
+  const parsed = builderPlanOutputSchema.parse({
+    schema_version: 1,
+    state: "ready",
+    understanding: `Add one optional Field to the existing ${objectLabel} concept.`,
+    assumptions: [],
+    unsupported_requirements: [],
+    plan: {
+      outcome: `The Business can track one additional ${objectLabel} property.`,
+      concepts: [
+        {
+          reference: "concept_1",
+          label: objectLabel,
+          disposition: "existing",
+          existing_object_key: objectKey,
+          purpose: `The existing ${objectLabel} concept.`,
+        },
+      ],
+      user_journeys: [],
+      steps: [
+        {
+          reference: "step_1",
+          sequence: 1,
+          summary: `Add one Field to ${objectLabel}.`,
+          dependencies: [],
+          affected_concepts: ["concept_1"],
+          existing_object_keys: [objectKey],
+          location_references: [],
+          materiality: "low",
+          requires_owner_confirmation: true,
+          lane: "configuration",
+          category: "define_field",
+        },
+      ],
+    },
+  });
+  if (parsed.state !== "ready") {
+    throw new Error("Expected a ready existing-object Field plan.");
+  }
+  return parsed;
+}
+
+function existingObjectFieldDraft(
+  objectKey: string,
+  label: string,
+): BuilderConfigurationDraftOutput {
+  return builderConfigurationDraftOutputSchema.parse({
+    schema_version: 1,
+    summary: `Add the optional ${label} Field.`,
+    objects: [],
+    fields: [
+      {
+        reference: "draft_field_1",
+        source_step_references: ["step_1"],
+        object_reference: { source: "existing", object_key: objectKey },
+        label,
+        required: false,
+        field_type: "long_text",
+        settings: null,
+      },
+    ],
+    relationships: [],
+    views: [],
+    forms: [],
+    pages: [],
+  });
+}
+
+function existingObjectContext(
+  objectKey: string,
+  objectLabel: string,
+): AuthoritativeAiBusinessContext {
+  const objectId = "90000000-0000-4000-8000-000000000011";
+  return authoritative({
+    contextSource: source({
+      snapshot: {
+        ...emptySnapshot(),
+        object_definitions: [
+          {
+            id: objectId,
+            key: objectKey,
+            singular_label: objectLabel,
+            plural_label: `${objectLabel}s`,
+            description: `Existing ${objectLabel} records.`,
+            kind: "custom",
+            semantic_type: null,
+            icon: null,
+            is_active: true,
+          },
+        ],
+        field_definitions: [
+          {
+            id: "90000000-0000-4000-8000-000000000012",
+            object_definition_id: objectId,
+            object_key: objectKey,
+            key: "name",
+            label: "Name",
+            field_type: "short_text",
+            required: true,
+            default_value: null,
+            settings_json: {},
+            position: 0,
+            is_active: true,
+          },
+        ],
+      },
+    }),
+  });
+}
+
 function proposalResult(): BuilderConfigurationProposalResult {
   return builderConfigurationProposalResultSchema.parse({
     schema_version: 1,
@@ -1312,6 +1425,63 @@ describe("authenticated Builder orchestration contract", () => {
     expect(JSON.stringify(result)).not.toContain("Raw draft content marker");
     expect(JSON.stringify(result)).not.toContain("secret_provider_marker");
   });
+
+  it.each([
+    [
+      "I need to be able to track a dog's allergies.",
+      "dog",
+      "Dog",
+      "Allergies",
+    ],
+    [
+      "I need to track the serial number for Equipment.",
+      "equipment",
+      "Equipment",
+      "Serial number",
+    ],
+  ] as const)(
+    "routes an existing-object %s request through the generic configuration proposal path",
+    async (ownerRequest, objectKey, objectLabel, fieldLabel) => {
+      const context = existingObjectContext(objectKey, objectLabel);
+      const test = harness({
+        firstContext: context,
+        secondContext: context,
+        planningOutput: existingObjectFieldPlan(objectKey, objectLabel),
+        draftOutput: existingObjectFieldDraft(objectKey, fieldLabel),
+      });
+
+      const result = await test.service.run(test.client, {
+        businessId: ids.business,
+        ownerRequest,
+      });
+
+      expect(test.events).toEqual([
+        "context",
+        "planning",
+        "reserve:builder_plan_v1",
+        "settle:90000000-0000-4000-8000-000000000009",
+        "context",
+        "drafting",
+        "reserve:builder_configuration_draft_v1",
+        "settle:90000000-0000-4000-8000-000000000010",
+        "proposal-orchestration",
+      ]);
+      expect(test.proposalService.propose).toHaveBeenCalledWith(
+        test.client,
+        expect.objectContaining({
+          businessId: ids.business,
+          taskInput: test.draftingInputs[0],
+          draft: existingObjectFieldDraft(objectKey, fieldLabel),
+        }),
+      );
+      expect(result).toMatchObject({
+        state: "proposed",
+        operation_count: 1,
+        summary: `Add the optional ${fieldLabel} Field.`,
+      });
+      expect(JSON.stringify(result)).not.toContain(objectKey);
+    },
+  );
 
   it.each([
     ["business", authoritative({ businessId: ids.otherBusiness })],

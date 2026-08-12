@@ -15,10 +15,12 @@ The default experience is a familiar Table: properties, connected Records,
 saved tabs, filters, sorting and grouping. Database, JSON, relationship
 cardinality and query-grammar terms stay behind the platform boundary.
 
-Manual controls are the first client of the engine. Future AI planning must
-produce the same typed intents that manual controls produce. The runtime never
-executes model-generated code, SQL, arbitrary query text or generic HTTP
-requests.
+Manual controls are the first client of the engine. A Field added from a Table
+is composed through the existing configuration proposal boundary and keeps
+that Table's explicitly configured internal create/edit Forms usable; unrelated
+Forms remain untouched. Future AI planning must produce the same effective
+configuration and runtime result. The runtime never executes model-generated
+code, SQL, arbitrary query text or generic HTTP requests.
 
 ## Table View contract
 
@@ -153,3 +155,10 @@ changes and AI-generated runtime operations remain outside this boundary.
 
 Any expansion must first show a recurring cross-business need and reuse the
 existing primitives and typed action lifecycle.
+
+The generic full Record route is intentionally a presentation reuse of the
+existing runtime: it shows configured scalar information and connected Record
+groups, while the compact Record panel remains the lightweight edit surface.
+Location availability is contextual rather than universal; generic Record
+detail does not show it solely because a Business or actor can manage
+Locations. Existing trusted preorder and Location operations are unchanged.

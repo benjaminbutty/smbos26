@@ -146,3 +146,29 @@ of Connections, saved Views, filtering, sorting and grouping. It does so through
 the existing generic primitives and typed M5/operational boundaries; formulas,
 workflows, public editing, collaboration and AI/Builder Table changes remain
 deferred. See ADR-039 and `docs/INTERNAL-WORKSPACE-ENGINE.md`.
+
+## Post-MLP adaptability correction
+
+The direct Table Add/Insert property actions now keep the Table's configured
+internal create/edit Forms coherent inside the same ordinary configuration
+proposal. A new optional scalar Field therefore appears in the Table and its
+Table-owned operating Forms immediately, while unrelated or public Forms for
+the Object remain unchanged. Writing a value is still an operational Record
+update and does not create a configuration Version.
+
+The generic full Record route presents the configured title and scalar Fields
+alongside owner-facing connected Record groups, with trusted links to available
+Record routes. The compact side panel remains the quick context and lightweight
+edit surface; the full route is the richer understanding surface and stacks at
+narrow widths. Generic Record detail does not universalise Location availability;
+existing trusted Location and preorder surfaces remain available where their own
+operational boundaries apply.
+
+Authenticated Builder requests for a bounded additive Field on an existing
+Object continue through `builder_plan_v1` →
+`builder_configuration_draft_v1` → the deterministic compiler and ordinary
+configuration proposal boundary. The compiler composes the existing primary
+Table's configured create/edit Forms and Table View when those surfaces are
+explicitly bound, so manual and Builder changes converge on the same generic
+runtime. No qualified AI subject, platform primitive or automatic apply path
+was changed or added.

@@ -1204,6 +1204,96 @@ describe("key, slug and position allocation", () => {
     );
   });
 
+  it("keeps an existing primary Table operating surface coherent for additive Fields", () => {
+    const input = compilerInput();
+    authorizeExistingObject(input, ["step_2"]);
+    const table = input.snapshot.views.find(
+      (view) => view.key === "customer_table",
+    );
+    const createForm = input.snapshot.forms.find(
+      (form) => form.key === "customer_create",
+    );
+    if (!table || !createForm) {
+      throw new Error("Expected the Customer Table and create Form fixtures.");
+    }
+    table.config_json = {
+      fields: ["name"],
+      create_form_key: "customer_create",
+      edit_form_key: "customer_edit",
+      include_archived: false,
+    };
+    input.snapshot.forms.push({
+      ...structuredClone(createForm),
+      id: id(14),
+      key: "customer_edit",
+      name: "Edit customer",
+      mode: "edit",
+    });
+    appendDraftField(input, {
+      reference: "draft_field_6",
+      object_reference: { source: "existing", object_key: "customer" },
+      label: "Allergies",
+      required: false,
+      field_type: "long_text",
+      settings: null,
+    });
+
+    const output = compileConfigurationDraft(input);
+    const forms = output.operations.filter(
+      (operation): operation is Extract<typeof operation, { op: "set_form" }> =>
+        operation.op === "set_form",
+    );
+    const views = output.operations.filter(
+      (operation): operation is Extract<typeof operation, { op: "set_view" }> =>
+        operation.op === "set_view",
+    );
+    expect(forms).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "customer_create",
+          config_json: {
+            fields: [
+              { field: "name", hidden: false },
+              { field: "allergies", hidden: false },
+            ],
+          },
+        }),
+        expect.objectContaining({
+          key: "customer_edit",
+          config_json: {
+            fields: [
+              { field: "name", hidden: false },
+              { field: "allergies", hidden: false },
+            ],
+          },
+        }),
+      ]),
+    );
+    expect(views).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "customer_table",
+          config_json: expect.objectContaining({
+            fields: ["name", "allergies"],
+            create_form_key: "customer_create",
+            edit_form_key: "customer_edit",
+          }),
+        }),
+      ]),
+    );
+    expect(
+      output.operations.filter(
+        (operation) =>
+          (operation.op === "set_field" &&
+            operation.object_key === "customer") ||
+          ((operation.op === "set_form" || operation.op === "set_view") &&
+            ["customer_create", "customer_edit", "customer_table"].includes(
+              operation.key,
+            )),
+      ),
+    ).toHaveLength(4);
+  });
+
   it("fails safely instead of overflowing an existing-object position", () => {
     const input = compilerInput();
     authorizeExistingObject(input, ["step_2"]);
