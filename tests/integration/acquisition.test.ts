@@ -181,7 +181,7 @@ describe("Phase 5 anonymous acquisition boundary", () => {
   it("claims a proposal atomically and applies the generated Page/runtime configuration", async () => {
     const payload = composeStarterComposition(
       "appointments",
-      "I run a dog grooming business and need customers, pets, appointments and services.",
+      "I need customers, appointments and services.",
     );
     const token = `phase5-${crypto.randomUUID()}`;
     await insertSession(
@@ -213,7 +213,6 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     expect(objects.data?.map((row) => row.key)).toEqual([
       "appointment",
       "customer",
-      "pet",
       "service",
     ]);
 
