@@ -1058,5 +1058,17 @@ estimated cost: 342,807 microusd
 The second reviewed correction is a bounded instruction clarification for
 enquiry-led work: when the request names those stages, require reusable
 customer/prospective-client, enquiry/lead and follow-up/next-action areas. No
-evaluator threshold or scenario was weakened. The complete 24-execution gate
-is being rerun against this correction.
+evaluator threshold or scenario was weakened.
+
+The final post-guard gates passed against exact feature SHA
+`290350f88632e299e5ceb291ec3fe4db54c55ba4`, including the Location guard and
+the two reviewed instruction corrections:
+
+```text
+qualification: 8/8, estimated cost 116,235 microusd
+reliability:  24/24, every scenario 3/3, estimated cost 351,075 microusd
+```
+
+These gates exercised the production composition for all eight frozen
+scenarios. The results are accepted as the current Phase 5 acquisition
+qualification evidence; exact-head CI remains a separate repository gate.
