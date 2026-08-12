@@ -32,13 +32,17 @@ existing configuration-drafting grammar and semantic validator
         ↓
 existing deterministic draft compiler
         ↓
+deterministic acquisition View/Page composition
+        ↓
 owner-readable proposal
 ```
 
 The acquisition planner has no tools, database access or mutation authority. It
 selects the smallest coherent set of reusable business areas, tracked
 information, ordinary-language connections and a neutral internal `Overview`
-Page. It must not create a custom `Location`/`Locations` business Table;
+Page. The acquisition composition adds the already-planned Connections as
+visible owner-facing columns on the relevant Table Views. It must not create a
+custom `Location`/`Locations` business Table;
 Location is a first-class platform concept and remains optional and
 contextual. The deterministic validator also rejects that identity after NFKC
 and case normalisation.
@@ -56,24 +60,29 @@ the server-generated proposal payload, usage counters, expiry and claim state.
 It is not Business data, configuration history or operational Record data.
 
 The public allowance is one initial proposal plus one regeneration per session.
-A separate server-owned daily HMAC-keyed ceiling prevents replacing the browser
-cookie from providing unlimited model attempts. Reservations are atomic and
-occur before provider execution. The public policy has finite input/output,
-timeout, attempt and cost bounds; the model has no tools and no database
-client.
+A separate server-owned daily HMAC-keyed ceiling permits at most six provider
+attempts per trusted rate key per day, so replacing the browser cookie does not
+provide unlimited model attempts. Reservations are atomic and occur before
+provider execution. The public policy has finite input/output, timeout, attempt
+and cost bounds; the model has no tools and no database client.
 
 The free-text input carries a quiet warning not to include customer names,
 email addresses, phone numbers or other personal information. Raw prompts and
 model output are not sent to analytics or application logs. A successful claim
-scrubs temporary request/proposal material immediately. Expired unclaimed
-state is scrubbed opportunistically and removed after the bounded retention
-window documented by the acquisition implementation.
+scrubs temporary request/proposal material immediately. Expired unclaimed state
+is scrubbed by session reads and the next bounded reservation cleanup; scrubbed
+expired rows are removed after two days.
 
 ## Claim and workspace creation
 
 After the visitor chooses **Create this workspace**, signup/login returns to
-`/start/business`. The owner supplies only a Business name and confirms the
-browser-suggested IANA timezone. The authenticated claim transaction then:
+`/start/business`. The owner supplies only a Business name and chooses a
+human-readable Business timezone. The browser supplies a convenience suggestion
+such as “United Kingdom / London”; the server and database continue to validate
+the submitted IANA value authoritatively, and no checkbox or raw timezone input
+is required.
+
+The authenticated claim transaction then:
 
 1. resolves the temporary session by its server-owned token;
 2. creates the Business and Owner membership through `create_business`;
@@ -84,15 +93,22 @@ browser-suggested IANA timezone. The authenticated claim transaction then:
 6. marks the acquisition session claimed.
 
 Any failure rolls back the Business, membership and configuration changes. A
-successful claim opens the generated internal `Overview` Page.
+successful claim opens the generated internal `Overview` Page. It contains a
+quiet **Start here** first-use sequence, ordinary-language relationship
+explanations and a live saved View. The owner can add the first real Record directly in a Table when its primary property is safe
+for the compact row draft; the configured creation Form remains available for a
+richer route or for structured primary properties.
 
 ## Starter compositions and fallback
 
 Tailored interpretation can produce different reusable structures for the same
 broad category. For example, dog grooming may include Customers, Pets,
 Appointments and Services, while a hair salon may use Customers, Appointments
-and Services without Pets. A milk round can use Customers, Products, Regular
-Orders, Order Items and Deliveries, with quantities on the item/line concept.
+and Services without Pets. A milk round can use Customers, Products, Orders,
+Order Items and Deliveries, with quantities on the item/line concept. The
+deterministic delivery fallback keeps this same generic composition and exposes
+Customer, Product, Order Item and Delivery Connections in owner-facing Table
+Views; it does not invent a standing-order module.
 
 The deterministic fallback remains available when AI is disabled or unavailable
 and is described honestly as a reliable starting point rather than as tailored
@@ -112,16 +128,16 @@ without AI.
 ## Operating boundary
 
 The generated `Overview` Page embeds a real saved View and uses the existing
-generic Record runtime. The owner can create real Records through generated
-Forms and see them in the appropriate View. Those operational writes do not
-create configuration Versions. Initial structure is created only through the
-trusted proposal → validate → apply → Version boundary.
+generic Record runtime. The owner can create real Records through a direct Table
+row draft or a generated Form and see them in the appropriate View. Those
+operational writes do not create configuration Versions. Initial structure is
+created only through the trusted proposal → validate → apply → Version boundary.
 
 Phase 5 does not provide permanent Lenni conversation/history, public booking,
 public generic Forms, payments, workflows or automation, dashboards or
 analytics, billing, integrations, customer portals, inventory automation,
 Location orchestration, autonomous AI application, a visual schema builder,
-mobile apps or a new vertical runtime.
+full mobile workspace editing, mobile apps or a new vertical runtime.
 
 ### ADR-038 implementation note — superseded deferred items
 

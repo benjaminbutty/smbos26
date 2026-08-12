@@ -141,4 +141,34 @@ describe("Phase 5 starter compositions", () => {
       ).toMatchObject({ key: "overview", slug: "overview", title: "Overview" });
     }
   });
+
+  it("puts starter relationship explanations and first-use guidance on Overview", () => {
+    const result = composeStarterComposition("delivery", request);
+    const page = result.operations.find(
+      (operation) => operation.op === "set_page",
+    );
+    const blocks = page?.op === "set_page" ? page.layout_json.blocks : [];
+    const pageText = blocks
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join(" ");
+
+    expect(pageText).toContain(
+      "Create an order, add an order item for each product with its quantity, then add a delivery linked to that order.",
+    );
+    expect(pageText).toContain("Customers place orders.");
+    expect(pageText).toContain("Orders contain order items.");
+    expect(pageText).toContain(
+      "Order items refer to products, with quantity kept on each order item.",
+    );
+    expect(pageText).toContain("Deliveries belong to orders.");
+    expect(blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "heading",
+          text: "How the parts fit together",
+        }),
+      ]),
+    );
+  });
 });

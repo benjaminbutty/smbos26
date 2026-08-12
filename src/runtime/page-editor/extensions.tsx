@@ -34,6 +34,7 @@ export interface PageEditorTableEmbed {
   actions: ProductionTableAdapterActions;
   capabilities: EditorCapabilities;
   currentness?: ProductionConfigurationCurrentness;
+  creationFallbackHref?: string | undefined;
   recordTypeLabel?: string;
   recordCountLabel?: string;
   fullRecordPath?: string;
@@ -136,6 +137,7 @@ function PageViewNodeView({
       actions: embed.table.actions,
       capabilities,
       currentness: embed.table.currentness,
+      creationFallbackHref: embed.table.creationFallbackHref,
       readOnly,
       surface: "embedded",
       table: embed.table.table,

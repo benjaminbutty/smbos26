@@ -134,6 +134,39 @@ const customerObject: StarterObject = {
   ],
 };
 
+const deliveryCustomerObject: StarterObject = {
+  ...customerObject,
+  view_connections: [
+    {
+      relationship_key: "customer_places_order",
+      direction: "source",
+      label: "Orders",
+    },
+  ],
+};
+
+const jobsCustomerObject: StarterObject = {
+  ...customerObject,
+  view_connections: [
+    {
+      relationship_key: "customer_has_job",
+      direction: "source",
+      label: "Jobs",
+    },
+  ],
+};
+
+const enquiriesCustomerObject: StarterObject = {
+  ...customerObject,
+  view_connections: [
+    {
+      relationship_key: "customer_has_enquiry",
+      direction: "source",
+      label: "Enquiries",
+    },
+  ],
+};
+
 const appointmentDefinition: StarterDefinition = {
   title: "Appointment workspace",
   understandingLabel:
@@ -190,7 +223,7 @@ const appointmentDefinition: StarterDefinition = {
   workViewLabel: "Appointments",
   workPageText: "Add a customer or service, then keep your bookings moving.",
   firstStep:
-    "Add a customer, then add an appointment and connect it to a service.",
+    "Add a customer and a service, then add an appointment and connect it to the service.",
   notIncluded: ["Online payments", "Automated reminders", "Public booking"],
 };
 
@@ -199,7 +232,7 @@ const deliveryDefinition: StarterDefinition = {
   understandingLabel:
     "Customers, products, orders and delivery work connected in one operating list.",
   objects: [
-    customerObject,
+    deliveryCustomerObject,
     {
       key: "product",
       singular_label: "Product",
@@ -211,7 +244,11 @@ const deliveryDefinition: StarterDefinition = {
         statusField("status", "Status", ["Active", "Paused"], "Active"),
       ],
       view_connections: [
-        { relationship_key: "product_appears_in_item", direction: "source" },
+        {
+          relationship_key: "product_appears_in_item",
+          direction: "source",
+          label: "Order items",
+        },
       ],
     },
     {
@@ -231,13 +268,21 @@ const deliveryDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "customer_places_order", direction: "target" },
+        {
+          relationship_key: "customer_places_order",
+          direction: "target",
+          label: "Customer",
+        },
         {
           relationship_key: "order_contains_item",
           direction: "source",
           label: "Items",
         },
-        { relationship_key: "order_has_delivery", direction: "source" },
+        {
+          relationship_key: "order_has_delivery",
+          direction: "source",
+          label: "Deliveries",
+        },
       ],
     },
     {
@@ -250,8 +295,16 @@ const deliveryDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "order_contains_item", direction: "target" },
-        { relationship_key: "product_appears_in_item", direction: "target" },
+        {
+          relationship_key: "order_contains_item",
+          direction: "target",
+          label: "Order",
+        },
+        {
+          relationship_key: "product_appears_in_item",
+          direction: "target",
+          label: "Product",
+        },
       ],
     },
     {
@@ -270,7 +323,11 @@ const deliveryDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "order_has_delivery", direction: "target" },
+        {
+          relationship_key: "order_has_delivery",
+          direction: "target",
+          label: "Order",
+        },
       ],
     },
   ],
@@ -317,7 +374,7 @@ const deliveryDefinition: StarterDefinition = {
   workPageText:
     "See the deliveries that need attention and keep quantities with their order items.",
   firstStep:
-    "Add a customer or product, then record an order and its order items.",
+    "Add a customer and the products they order. Create an order, add an order item for each product with its quantity, then add a delivery linked to that order.",
   notIncluded: [
     "Online payments",
     "Automatic delivery notifications",
@@ -330,7 +387,7 @@ const jobsDefinition: StarterDefinition = {
   understandingLabel:
     "Customers, jobs, quotes and tasks arranged around the work you deliver.",
   objects: [
-    customerObject,
+    jobsCustomerObject,
     {
       key: "job",
       singular_label: "Job",
@@ -426,7 +483,7 @@ const jobsDefinition: StarterDefinition = {
   workPageText:
     "Start with the next task, then keep the job and customer context close by.",
   firstStep:
-    "Add a customer, create a job and then add the tasks that move it forward.",
+    "Add a customer, create a job, add a quote if needed, then add the tasks that move it forward.",
   notIncluded: ["Online payments", "Automatic scheduling", "Customer portal"],
 };
 
@@ -435,7 +492,7 @@ const otherDefinition: StarterDefinition = {
   understandingLabel:
     "A flexible starting point for customers, enquiries and the follow-ups that matter.",
   objects: [
-    customerObject,
+    enquiriesCustomerObject,
     {
       key: "enquiry",
       singular_label: "Enquiry",
@@ -494,7 +551,8 @@ const otherDefinition: StarterDefinition = {
   workObjectKey: "enquiry",
   workViewLabel: "Open enquiries",
   workPageText: "Capture the next enquiry and keep the next follow-up visible.",
-  firstStep: "Add a customer, then record an enquiry and its next follow-up.",
+  firstStep:
+    "Add a customer, record an enquiry, then add the next follow-up linked to that enquiry.",
   notIncluded: [
     "A tailored setup for a specific industry",
     "Payments",
@@ -636,6 +694,17 @@ function pageOperation(definition: StarterDefinition): ConfigurationOperation {
     layout_json: pageLayoutSchema.parse({
       blocks: [
         { type: "heading", text: "Overview", level: 1 },
+        { type: "heading", text: "Start here", level: 2 },
+        { type: "text", text: definition.firstStep },
+        {
+          type: "heading",
+          text: "How the parts fit together",
+          level: 3,
+        },
+        ...definition.relationships.map(({ text }) => ({
+          type: "text" as const,
+          text,
+        })),
         { type: "text", text: definition.workPageText },
         { type: "view", view_key: `${definition.workObjectKey}_view` },
       ],

@@ -5,9 +5,15 @@ import {
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 import { composeStarterComposition } from "../../src/core/acquisition/composer";
+import {
+  createDirectTableRow,
+  getDirectTableRowCreationAvailability,
+} from "../../src/runtime/views/direct-table-record-service";
 import type { Database, Json } from "../../src/db/supabase/database.types";
 import {
   getLocalSupabaseSettings,
@@ -232,7 +238,50 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     expect(page.data?.layout_json).toMatchObject({
       blocks: expect.arrayContaining([
         expect.objectContaining({ type: "view", view_key: "appointment_view" }),
+        expect.objectContaining({ type: "heading", text: "Start here" }),
       ]),
+    });
+
+    const pageBlocks = (
+      page.data?.layout_json as {
+        blocks?: Array<{ type: string; text?: string }>;
+      }
+    ).blocks;
+    expect(
+      pageBlocks?.findIndex((block) => block.text === "Start here"),
+    ).toBeLessThan(
+      pageBlocks?.findIndex((block) => block.type === "view") ?? -1,
+    );
+
+    const customerAvailability = await getDirectTableRowCreationAvailability(
+      owner,
+      { businessId: business.id },
+      "customer_view",
+    );
+    expect(customerAvailability).toMatchObject({
+      kind: "direct",
+      formKey: "customer_create",
+    });
+    const customerFormData = new FormData();
+    customerFormData.set("name", "Created from the Table");
+    const directCustomer = await createDirectTableRow(
+      owner,
+      { businessId: business.id },
+      { viewKey: "customer_view", formData: customerFormData },
+    );
+    expect(directCustomer.data_json).toEqual({
+      name: "Created from the Table",
+    });
+
+    await expect(
+      getDirectTableRowCreationAvailability(
+        owner,
+        { businessId: business.id },
+        "appointment_view",
+      ),
+    ).resolves.toMatchObject({
+      kind: "unavailable",
+      formKey: "appointment_create",
     });
 
     const head = await owner
@@ -351,6 +400,45 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     expect(session.data?.claim_status).toBe("active");
   });
 
+  it("rejects an invalid Business timezone without partial claim state", async () => {
+    const token = `invalid-timezone-${crypto.randomUUID()}`;
+    const payload = composeStarterComposition(
+      "jobs",
+      "I need to keep customers, jobs and tasks together.",
+    );
+    const name = `Invalid timezone ${crypto.randomUUID()}`;
+    const sessionId = await insertSession(
+      token,
+      payload as unknown as Json,
+      new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+    );
+
+    const { data, error } = await owner.rpc("claim_anonymous_build_session", {
+      requested_business_name: name,
+      requested_session_token: token,
+      requested_timezone: "Mars/Olympus",
+    });
+    expect(data).toBeNull();
+    expect(error?.message).toBe("business_timezone_invalid");
+
+    const business = await admin
+      .from("businesses")
+      .select("id")
+      .eq("name", name)
+      .maybeSingle();
+    expect(business.error).toBeNull();
+    expect(business.data).toBeNull();
+
+    const session = await admin
+      .from("anonymous_build_sessions")
+      .select("claim_status, request_text, proposal_json")
+      .eq("id", sessionId)
+      .single();
+    expect(session.data?.claim_status).toBe("active");
+    expect(session.data?.request_text).toBeTruthy();
+    expect(session.data?.proposal_json).toBeTruthy();
+  });
+
   it("applies delivery and job compositions through the same claim boundary", async () => {
     for (const category of ["delivery", "jobs"] as const) {
       const payload = composeStarterComposition(
@@ -408,6 +496,73 @@ describe("Phase 5 anonymous acquisition boundary", () => {
         expect(quantity.data).toMatchObject({
           field_type: "number",
           required: true,
+        });
+
+        const deliveryViews = await owner
+          .from("views")
+          .select("key, config_json")
+          .eq("business_id", data.id)
+          .in("key", [
+            "customer_view",
+            "product_view",
+            "order_view",
+            "order_item_view",
+            "delivery_view",
+          ]);
+        expect(deliveryViews.error).toBeNull();
+        const columnsByView = new Map(
+          deliveryViews.data?.map((view) => [
+            view.key,
+            (
+              view.config_json as {
+                columns?: Array<{ kind: string; label?: string }>;
+              }
+            ).columns ?? [],
+          ]),
+        );
+        expect(columnsByView.get("customer_view")).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ kind: "connection", label: "Orders" }),
+          ]),
+        );
+        expect(columnsByView.get("order_view")).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ kind: "connection", label: "Customer" }),
+            expect.objectContaining({ kind: "connection", label: "Items" }),
+            expect.objectContaining({
+              kind: "connection",
+              label: "Deliveries",
+            }),
+          ]),
+        );
+        expect(columnsByView.get("order_item_view")).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ kind: "connection", label: "Order" }),
+            expect.objectContaining({ kind: "connection", label: "Product" }),
+          ]),
+        );
+        expect(columnsByView.get("product_view")).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              kind: "connection",
+              label: "Order items",
+            }),
+          ]),
+        );
+        expect(columnsByView.get("delivery_view")).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ kind: "connection", label: "Order" }),
+          ]),
+        );
+        await expect(
+          getDirectTableRowCreationAvailability(
+            owner,
+            { businessId: data.id },
+            "order_item_view",
+          ),
+        ).resolves.toMatchObject({
+          kind: "configured_form",
+          formKey: "order_item_create",
         });
       } else {
         expect(objects.data?.map((row) => row.key)).toEqual(

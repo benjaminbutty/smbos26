@@ -197,6 +197,7 @@ function SavedViewBlock({
           block.read_only === true,
         )}
         currentness={tableEmbed.currentness}
+        creationFallbackHref={tableEmbed.creationFallbackHref}
         {...(tableEmbed.createConnectedRecordTarget
           ? {
               createConnectedRecordTarget:
