@@ -13,12 +13,29 @@ export class AcquisitionPlanningValidationError extends Error {
 const fail = (code: string): never => {
   throw new AcquisitionPlanningValidationError(code);
 };
+function normaliseBusinessIdentity(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase("en");
+}
+
+function isLocationIdentity(value: string): boolean {
+  const normalised = normaliseBusinessIdentity(value);
+  return normalised === "location" || normalised === "locations";
+}
+
 export function validateAcquisitionPlanningOutput(
   input: AcquisitionPlanningInput,
   candidate: AcquisitionPlanningOutput,
 ): AcquisitionPlanningOutput {
   const output = acquisitionPlanningOutputSchema.parse(candidate);
   if (output.state === "needs_more_detail") return output;
+  if (
+    output.tables.some(
+      (table) =>
+        isLocationIdentity(table.singular_name) ||
+        isLocationIdentity(table.plural_name),
+    )
+  )
+    fail("location_table_forbidden");
   const refs = output.tables.map(({ reference }) => reference);
   if (new Set(refs).size !== refs.length) fail("duplicate_table_reference");
   if (!refs.includes(output.primary_table_reference))

@@ -11,7 +11,7 @@ const request =
 
 describe("Phase 5 starter compositions", () => {
   it.each([
-    ["appointments", ["customer", "pet", "appointment", "service"]],
+    ["appointments", ["customer", "appointment", "service"]],
     ["delivery", ["customer", "product", "order", "order_item", "delivery"]],
     ["jobs", ["customer", "job", "quote", "task"]],
     ["enquiries", ["customer", "enquiry", "follow_up"]],
@@ -88,6 +88,21 @@ describe("Phase 5 starter compositions", () => {
     expect(first.proposal.not_included).toContain("Online payments");
     expect(acquisitionProposalSchema.parse(first.proposal).schema_version).toBe(
       1,
+    );
+  });
+
+  it("keeps the Appointments fallback generic", () => {
+    const result = composeStarterComposition(
+      "appointments",
+      "I run a salon and need to organise appointments and services.",
+    );
+    const objectKeys = result.operations
+      .filter((operation) => operation.op === "set_object")
+      .map((operation) => operation.key);
+
+    expect(objectKeys).toEqual(["customer", "appointment", "service"]);
+    expect(result.proposal.concepts.map(({ name }) => name)).not.toContain(
+      "Pets",
     );
   });
 

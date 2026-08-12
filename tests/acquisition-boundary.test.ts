@@ -3,10 +3,65 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { openAiAcquisitionPlanningPolicy } from "../src/ai/policies";
+import {
+  acquisitionPlanningInputSchema,
+  type AcquisitionPlanningOutput,
+} from "../src/ai/acquisition-planning/schemas";
+import { validateAcquisitionPlanningOutput } from "../src/ai/acquisition-planning/validation";
 import { acquisitionEvaluationScenarios } from "../src/ai/evaluation/acquisition/scenarios";
 import { emitAcquisitionEvent } from "../src/core/acquisition/events";
 
 describe("Phase 5 public AI and telemetry boundary", () => {
+  it.each([
+    ["Location", "Locations"],
+    ["Ｌｏｃａｔｉｏｎ", "LOCATIONS"],
+  ])(
+    "rejects a custom Location table after case and NFKC normalisation",
+    (singularName, pluralName) => {
+      const input = acquisitionPlanningInputSchema.parse({
+        schema_version: 1,
+        category: "other",
+        owner_request: "I need a small internal workspace.",
+        grounded_currency: null,
+      });
+      const output: AcquisitionPlanningOutput = {
+        schema_version: 1,
+        state: "ready",
+        understanding: "A small internal workspace for the work you do.",
+        why: "These business areas keep the work organised.",
+        tables: [
+          {
+            reference: "table_1",
+            singular_name: singularName,
+            plural_name: pluralName,
+            purpose: "Keep the work organised.",
+            fields: [
+              {
+                label: "Name",
+                field_type: "short_text",
+                required: true,
+                options: null,
+                currency: null,
+              },
+            ],
+          },
+        ],
+        connections: [],
+        primary_table_reference: "table_1",
+        unsupported_requirements: [],
+      };
+
+      expect(() => validateAcquisitionPlanningOutput(input, output)).toThrow(
+        "The acquisition plan is not safe to use.",
+      );
+      try {
+        validateAcquisitionPlanningOutput(input, output);
+      } catch (error) {
+        expect(error).toMatchObject({ code: "location_table_forbidden" });
+      }
+    },
+  );
+
   it("keeps the public interpretation inside the acquisition cost envelope", () => {
     expect(openAiAcquisitionPlanningPolicy).toMatchObject({
       maxInputBytes: 8 * 1024,

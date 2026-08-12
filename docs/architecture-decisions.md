@@ -2818,7 +2818,7 @@ deferred. See ADR-039 and `docs/INTERNAL-WORKSPACE-ENGINE.md`.
 
 ## ADR-040 — Pre-signup Lenni proposals use temporary server-owned acquisition state
 
-**Status:** Proposed in Phase 5 PR #34
+**Status:** Accepted for v0.1
 
 **Date:** 12 August 2026
 
@@ -2847,5 +2847,6 @@ bypassing the public daily ceiling without persisting a raw network address.
 Deterministic starter compositions remain an honest fallback, and manual
 workspace creation remains available without AI. Phase 5 adds no permanent
 conversation, transcript, memory, platform primitive, second runtime or public
-AI mutation tool. This ADR records the boundary proposed by PR #34 and does not
-claim that the PR or Phase 5 has merged.
+AI mutation tool. This ADR records the boundary accepted for v0.1 and
+implemented on the Phase 5 branch; implementation remains pending merge through
+PR #34 and this ADR does not claim that the PR or Phase 5 has merged.

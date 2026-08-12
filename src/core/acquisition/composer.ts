@@ -103,19 +103,6 @@ function statusField(
   };
 }
 
-function selectField(
-  key: string,
-  label: string,
-  options: readonly string[],
-): StarterField {
-  return {
-    key,
-    label,
-    field_type: "select",
-    settings_json: { options: [...options] },
-  };
-}
-
 function dateField(key: string, label: string, required = false): StarterField {
   return { key, label, field_type: "date", required };
 }
@@ -152,35 +139,7 @@ const appointmentDefinition: StarterDefinition = {
   understandingLabel:
     "Appointments, customers and services organised around the work you do each day.",
   objects: [
-    {
-      ...customerObject,
-      view_connections: [
-        {
-          relationship_key: "customer_has_pet",
-          direction: "source",
-          label: "Pets",
-        },
-      ],
-    },
-    {
-      key: "pet",
-      singular_label: "Pet",
-      plural_label: "Pets",
-      description: "Animals connected to the customers who care for them.",
-      fields: [
-        textField("name", "Name", { required: true }),
-        selectField("species", "Type", ["Dog", "Cat", "Other"]),
-        longTextField("notes", "Notes"),
-      ],
-      view_connections: [
-        { relationship_key: "customer_has_pet", direction: "target" },
-        {
-          relationship_key: "pet_has_appointment",
-          direction: "source",
-          label: "Appointments",
-        },
-      ],
-    },
+    customerObject,
     {
       key: "appointment",
       singular_label: "Appointment",
@@ -199,7 +158,6 @@ const appointmentDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "pet_has_appointment", direction: "target" },
         { relationship_key: "appointment_uses_service", direction: "source" },
       ],
     },
@@ -219,24 +177,6 @@ const appointmentDefinition: StarterDefinition = {
   ],
   relationships: [
     {
-      key: "customer_has_pet",
-      source_object_key: "customer",
-      target_object_key: "pet",
-      source_label: "has pets",
-      target_label: "customer",
-      cardinality: "one_to_many",
-      text: "Pets belong to customers.",
-    },
-    {
-      key: "pet_has_appointment",
-      source_object_key: "pet",
-      target_object_key: "appointment",
-      source_label: "has appointments",
-      target_label: "pet",
-      cardinality: "one_to_many",
-      text: "Appointments belong to pets.",
-    },
-    {
       key: "appointment_uses_service",
       source_object_key: "appointment",
       target_object_key: "service",
@@ -248,10 +188,9 @@ const appointmentDefinition: StarterDefinition = {
   ],
   workObjectKey: "appointment",
   workViewLabel: "Appointments",
-  workPageText:
-    "Add a customer, pet or service, then keep your bookings moving.",
+  workPageText: "Add a customer or service, then keep your bookings moving.",
   firstStep:
-    "Add a customer, then add an appointment and connect it to the right pet or service.",
+    "Add a customer, then add an appointment and connect it to a service.",
   notIncluded: ["Online payments", "Automated reminders", "Public booking"],
 };
 

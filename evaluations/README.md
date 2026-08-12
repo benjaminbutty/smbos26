@@ -1000,7 +1000,9 @@ failure surface while retaining the existing grammar, validator, compiler and
 M5 application boundary. The 23/24 reliability miss was an evaluator synonym
 classification defect; no production instruction was tuned in response.
 
-The final complete live gates passed:
+The following pre-guard live gates passed, but are now historical and
+invalidated because the deterministic acquisition semantic validator has since
+gained the `location_table_forbidden` invariant:
 
 ```text
 qualification: 8/8, estimated cost 119,689 microusd
@@ -1013,3 +1015,7 @@ tracking and an unusual business with an unsupported request. The production
 composition was exercised through strict acquisition validation, the existing
 draft semantic validator and the existing compiler. Live commands remain
 explicit and opt-in; CI uses injected providers and remains network-free.
+
+The acquisition qualification and reliability gates must be rerun after this
+validator change before the new evidence is accepted. The rerun result and
+exact feature SHA will be recorded here.
