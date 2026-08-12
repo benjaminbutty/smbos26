@@ -1046,6 +1046,17 @@ failed gate: required_concepts
 estimated cost: 331,422 microusd
 ```
 
-No further production instruction or evaluator change was made for this
-single-repetition variance; the full 24-execution reliability gate is being
-rerun unchanged.
+The unchanged rerun at feature SHA `8125c01` also retained one miss:
+
+```text
+reliability: 23/24
+failed scenario: enquiry_service, repetition 2
+failed gate: required_concepts
+estimated cost: 342,807 microusd
+```
+
+The second reviewed correction is a bounded instruction clarification for
+enquiry-led work: when the request names those stages, require reusable
+customer/prospective-client, enquiry/lead and follow-up/next-action areas. No
+evaluator threshold or scenario was weakened. The complete 24-execution gate
+is being rerun against this correction.

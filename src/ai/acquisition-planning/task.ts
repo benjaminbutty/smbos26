@@ -16,6 +16,7 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
   "A salon must not receive Pets unless the description actually involves animals.",
   "Recurring deliveries should use reusable Customers and Products plus a standing or regular order structure; quantities belong on an item or line concept between Products and Orders.",
   "When the request explicitly names deliveries, include a reusable Deliveries or delivery-runs business area unless the request clearly names a more specific equivalent.",
+  "For enquiry-led work, include reusable customer or prospective-client, enquiry or lead, and follow-up or next-action business areas when the request names those stages.",
   "Do not create or reference Locations. Routes, territories, addresses and regions are not Locations.",
   "Do not include operational Records or sample data.",
   "Do not claim payments, public booking, public generic forms, inventory automation, workflow automation, integrations, email or SMS automation, arbitrary code, availability engines, dashboards, analytics or customer portals.",
