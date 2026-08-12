@@ -82,6 +82,13 @@ export function timezoneOptions(): readonly TimezoneOption[] {
     .sort((left, right) => left.label.localeCompare(right.label, "en"));
 }
 
+export function timezoneHelpText(
+  selectedLabel: string,
+  selectedManually: boolean,
+): string {
+  return `${selectedManually ? "Using" : "We suggested"} ${selectedLabel}. This helps Lenni show dates and organise your business day. You can change it here.`;
+}
+
 export function TimezoneConfirmation(): ReactNode {
   const options = useMemo(() => timezoneOptions(), []);
   const browserTimezone = useSyncExternalStore(
@@ -100,6 +107,7 @@ export function TimezoneConfirmation(): ReactNode {
   const selectedLabel =
     options.find((option) => option.value === timezone)?.label ??
     "your selected timezone";
+  const helpText = timezoneHelpText(selectedLabel, selectedTimezone !== null);
 
   return (
     <div className="acquisition-timezone-field">
@@ -121,10 +129,7 @@ export function TimezoneConfirmation(): ReactNode {
             </option>
           ))}
         </select>
-        <small className="field-help">
-          We suggested {selectedLabel}. This helps Lenni show dates and organise
-          your business day; you can change it here.
-        </small>
+        <small className="field-help">{helpText}</small>
       </label>
     </div>
   );

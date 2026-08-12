@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  timezoneHelpText,
   timezoneOptionLabel,
   timezoneOptions,
 } from "../src/components/timezone-confirmation";
@@ -25,5 +26,17 @@ describe("acquisition timezone selection", () => {
     });
     expect(options.some((option) => option.value === "UTC")).toBe(true);
     expect(options.every((option) => option.label !== option.value)).toBe(true);
+  });
+
+  it("describes a manually selected timezone accurately", () => {
+    expect(timezoneHelpText("United Kingdom / London", false)).toContain(
+      "We suggested United Kingdom / London.",
+    );
+    expect(timezoneHelpText("United States / New York", true)).toContain(
+      "Using United States / New York.",
+    );
+    expect(timezoneHelpText("United States / New York", true)).not.toContain(
+      "We suggested",
+    );
   });
 });

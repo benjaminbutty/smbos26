@@ -94,8 +94,8 @@ The authenticated claim transaction then:
 
 Any failure rolls back the Business, membership and configuration changes. A
 successful claim opens the generated internal `Overview` Page. It contains a
-quiet **Start here** explanation followed by a live saved View. The owner can
-add the first real Record directly in a Table when its primary property is safe
+quiet **Start here** first-use sequence, ordinary-language relationship
+explanations and a live saved View. The owner can add the first real Record directly in a Table when its primary property is safe
 for the compact row draft; the configured creation Form remains available for a
 richer route or for structured primary properties.
 

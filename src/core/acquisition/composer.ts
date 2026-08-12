@@ -223,7 +223,7 @@ const appointmentDefinition: StarterDefinition = {
   workViewLabel: "Appointments",
   workPageText: "Add a customer or service, then keep your bookings moving.",
   firstStep:
-    "Add a customer, then add an appointment and connect it to a service.",
+    "Add a customer and a service, then add an appointment and connect it to the service.",
   notIncluded: ["Online payments", "Automated reminders", "Public booking"],
 };
 
@@ -374,7 +374,7 @@ const deliveryDefinition: StarterDefinition = {
   workPageText:
     "See the deliveries that need attention and keep quantities with their order items.",
   firstStep:
-    "Add a customer or product, then record an order and its order items.",
+    "Add a customer and the products they order. Create an order, add an order item for each product with its quantity, then add a delivery linked to that order.",
   notIncluded: [
     "Online payments",
     "Automatic delivery notifications",
@@ -483,7 +483,7 @@ const jobsDefinition: StarterDefinition = {
   workPageText:
     "Start with the next task, then keep the job and customer context close by.",
   firstStep:
-    "Add a customer, create a job and then add the tasks that move it forward.",
+    "Add a customer, create a job, add a quote if needed, then add the tasks that move it forward.",
   notIncluded: ["Online payments", "Automatic scheduling", "Customer portal"],
 };
 
@@ -551,7 +551,8 @@ const otherDefinition: StarterDefinition = {
   workObjectKey: "enquiry",
   workViewLabel: "Open enquiries",
   workPageText: "Capture the next enquiry and keep the next follow-up visible.",
-  firstStep: "Add a customer, then record an enquiry and its next follow-up.",
+  firstStep:
+    "Add a customer, record an enquiry, then add the next follow-up linked to that enquiry.",
   notIncluded: [
     "A tailored setup for a specific industry",
     "Payments",
@@ -695,6 +696,15 @@ function pageOperation(definition: StarterDefinition): ConfigurationOperation {
         { type: "heading", text: "Overview", level: 1 },
         { type: "heading", text: "Start here", level: 2 },
         { type: "text", text: definition.firstStep },
+        {
+          type: "heading",
+          text: "How the parts fit together",
+          level: 3,
+        },
+        ...definition.relationships.map(({ text }) => ({
+          type: "text" as const,
+          text,
+        })),
         { type: "text", text: definition.workPageText },
         { type: "view", view_key: `${definition.workObjectKey}_view` },
       ],
