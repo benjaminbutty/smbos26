@@ -328,6 +328,10 @@ export default async function InternalPage({
             canRenameTable: false,
           },
           ...tableEmbedContext(businessSlug, key, bundle),
+          creationFallbackHref: availability.formKey
+            ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(key)}/new`
+            : undefined,
+
           table: mapped.table,
         };
       } catch {
@@ -422,6 +426,9 @@ export default async function InternalPage({
           capabilities,
           actions: productionTableActions(businessSlug, key),
           ...tableEmbedContext(businessSlug, key, bundle),
+          creationFallbackHref: availability.formKey
+            ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(key)}/new`
+            : undefined,
         },
       };
     } catch {

@@ -148,4 +148,40 @@ describe("Phase 5 tailored acquisition composition", () => {
     expect(detectGroundedCurrency("Use USD.")).toBe("USD");
     expect(detectGroundedCurrency("A salon in London.")).toBeNull();
   });
+
+  it("turns tailored Connections into visible columns on both Tables", async () => {
+    const payload = await interpretAcquisitionRequest(
+      "delivery",
+      "I need customers, orders and order items connected.",
+      execution(["Customers", "Orders", "Order Items"]),
+    );
+    const views = payload.operations.filter(
+      (operation) => operation.op === "set_view",
+    );
+    const relationships = payload.operations.filter(
+      (operation) => operation.op === "set_relationship",
+    );
+
+    expect(relationships).toHaveLength(2);
+    expect(views).toHaveLength(3);
+    for (const view of views) {
+      const config = view.config_json as {
+        columns?: Array<{ kind: string; label?: string }>;
+      };
+      expect(config.columns).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "connection" }),
+        ]),
+      );
+    }
+
+    const page = payload.operations.find(
+      (operation) => operation.op === "set_page",
+    );
+    expect(page?.op === "set_page" ? page.layout_json : null).toMatchObject({
+      blocks: expect.arrayContaining([
+        expect.objectContaining({ type: "heading", text: "Start here" }),
+      ]),
+    });
+  });
 });

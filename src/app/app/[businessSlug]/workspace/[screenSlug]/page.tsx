@@ -313,7 +313,7 @@ export default async function WorkspaceScreenPage({
             canRenameTable: Boolean(currentness),
           }}
           creationFallbackHref={
-            availability.kind === "configured_form"
+            availability.formKey
               ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}/new`
               : undefined
           }

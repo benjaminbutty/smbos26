@@ -12,9 +12,20 @@ import { createGraphService } from "../../core/graph/service";
 import type { Database, Tables } from "../../db/supabase/database.types";
 
 export type DirectTableRowCreationAvailability =
-  | { kind: "direct"; fields: Tables<"field_definitions">[] }
+  | {
+      kind: "direct";
+      fields: Tables<"field_definitions">[];
+      formKey?: string;
+    }
   | { kind: "configured_form"; formKey: string }
-  | { kind: "unavailable"; message: string };
+  | { kind: "unavailable"; message: string; formKey?: string };
+
+// The production row draft supplies one string primary value. Keep structured
+// and numeric primary properties on their configured Form until the editor can
+// submit those values with their native controls.
+const directRowPrimaryFieldTypes = new Set<
+  Tables<"field_definitions">["field_type"]
+>(["short_text", "long_text", "email", "phone", "url"]);
 
 function activeTableFields(
   view: Awaited<
@@ -67,9 +78,6 @@ export async function getDirectTableRowCreationAvailability(
     };
   }
   const config = view.config as TableViewConfig;
-  if (config.create_form_key) {
-    return { kind: "configured_form", formKey: config.create_form_key };
-  }
 
   const fields = activeTableFields(view, config);
   const activeFields = activeObjectFields(view);
@@ -86,6 +94,16 @@ export async function getDirectTableRowCreationAvailability(
     };
   }
 
+  if (!directRowPrimaryFieldTypes.has(primary.field_type)) {
+    return config.create_form_key
+      ? { kind: "configured_form", formKey: config.create_form_key }
+      : {
+          kind: "unavailable",
+          message:
+            "Add row is not available because this Table's primary property needs a full creation screen.",
+        };
+  }
+
   const missingDefault = activeFields.find(
     (field) =>
       field.key !== primary.key &&
@@ -96,8 +114,13 @@ export async function getDirectTableRowCreationAvailability(
     ? {
         kind: "unavailable",
         message: `Add row needs a value for ${missingDefault.label}. Use the configured creation screen for this Table.`,
+        ...(config.create_form_key ? { formKey: config.create_form_key } : {}),
       }
-    : { kind: "direct", fields };
+    : {
+        kind: "direct",
+        fields,
+        ...(config.create_form_key ? { formKey: config.create_form_key } : {}),
+      };
 }
 
 export async function createDirectTableRow(
@@ -111,10 +134,16 @@ export async function createDirectTableRow(
     throw new ExperienceSubmissionError("Add row is only available in Tables.");
   }
 
-  const config = view.config as TableViewConfig;
-  if (config.create_form_key) {
+  const availability = await getDirectTableRowCreationAvailability(
+    client,
+    tenant,
+    input.viewKey,
+  );
+  if (availability.kind !== "direct") {
     throw new ExperienceSubmissionError(
-      "This Table uses its configured creation screen.",
+      availability.kind === "unavailable"
+        ? availability.message
+        : "Use this Table's configured creation screen to add a record.",
     );
   }
 

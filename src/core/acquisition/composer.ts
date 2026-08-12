@@ -134,6 +134,39 @@ const customerObject: StarterObject = {
   ],
 };
 
+const deliveryCustomerObject: StarterObject = {
+  ...customerObject,
+  view_connections: [
+    {
+      relationship_key: "customer_places_order",
+      direction: "source",
+      label: "Orders",
+    },
+  ],
+};
+
+const jobsCustomerObject: StarterObject = {
+  ...customerObject,
+  view_connections: [
+    {
+      relationship_key: "customer_has_job",
+      direction: "source",
+      label: "Jobs",
+    },
+  ],
+};
+
+const enquiriesCustomerObject: StarterObject = {
+  ...customerObject,
+  view_connections: [
+    {
+      relationship_key: "customer_has_enquiry",
+      direction: "source",
+      label: "Enquiries",
+    },
+  ],
+};
+
 const appointmentDefinition: StarterDefinition = {
   title: "Appointment workspace",
   understandingLabel:
@@ -199,7 +232,7 @@ const deliveryDefinition: StarterDefinition = {
   understandingLabel:
     "Customers, products, orders and delivery work connected in one operating list.",
   objects: [
-    customerObject,
+    deliveryCustomerObject,
     {
       key: "product",
       singular_label: "Product",
@@ -211,7 +244,11 @@ const deliveryDefinition: StarterDefinition = {
         statusField("status", "Status", ["Active", "Paused"], "Active"),
       ],
       view_connections: [
-        { relationship_key: "product_appears_in_item", direction: "source" },
+        {
+          relationship_key: "product_appears_in_item",
+          direction: "source",
+          label: "Order items",
+        },
       ],
     },
     {
@@ -231,13 +268,21 @@ const deliveryDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "customer_places_order", direction: "target" },
+        {
+          relationship_key: "customer_places_order",
+          direction: "target",
+          label: "Customer",
+        },
         {
           relationship_key: "order_contains_item",
           direction: "source",
           label: "Items",
         },
-        { relationship_key: "order_has_delivery", direction: "source" },
+        {
+          relationship_key: "order_has_delivery",
+          direction: "source",
+          label: "Deliveries",
+        },
       ],
     },
     {
@@ -250,8 +295,16 @@ const deliveryDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "order_contains_item", direction: "target" },
-        { relationship_key: "product_appears_in_item", direction: "target" },
+        {
+          relationship_key: "order_contains_item",
+          direction: "target",
+          label: "Order",
+        },
+        {
+          relationship_key: "product_appears_in_item",
+          direction: "target",
+          label: "Product",
+        },
       ],
     },
     {
@@ -270,7 +323,11 @@ const deliveryDefinition: StarterDefinition = {
         longTextField("notes", "Notes"),
       ],
       view_connections: [
-        { relationship_key: "order_has_delivery", direction: "target" },
+        {
+          relationship_key: "order_has_delivery",
+          direction: "target",
+          label: "Order",
+        },
       ],
     },
   ],
@@ -330,7 +387,7 @@ const jobsDefinition: StarterDefinition = {
   understandingLabel:
     "Customers, jobs, quotes and tasks arranged around the work you deliver.",
   objects: [
-    customerObject,
+    jobsCustomerObject,
     {
       key: "job",
       singular_label: "Job",
@@ -435,7 +492,7 @@ const otherDefinition: StarterDefinition = {
   understandingLabel:
     "A flexible starting point for customers, enquiries and the follow-ups that matter.",
   objects: [
-    customerObject,
+    enquiriesCustomerObject,
     {
       key: "enquiry",
       singular_label: "Enquiry",
@@ -636,6 +693,8 @@ function pageOperation(definition: StarterDefinition): ConfigurationOperation {
     layout_json: pageLayoutSchema.parse({
       blocks: [
         { type: "heading", text: "Overview", level: 1 },
+        { type: "heading", text: "Start here", level: 2 },
+        { type: "text", text: definition.firstStep },
         { type: "text", text: definition.workPageText },
         { type: "view", view_key: `${definition.workObjectKey}_view` },
       ],

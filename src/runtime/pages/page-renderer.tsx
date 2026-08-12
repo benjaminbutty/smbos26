@@ -53,6 +53,7 @@ export interface PageRendererTableEmbed {
   actions: ProductionTableAdapterActions;
   capabilities: EditorCapabilities;
   currentness?: ProductionConfigurationCurrentness | undefined;
+  creationFallbackHref?: string | undefined;
   recordTypeLabel?: string;
   recordCountLabel?: string;
   fullRecordPath?: string;
@@ -199,6 +200,7 @@ export function PageRenderer({
                     {...(businessSlug !== undefined ? { businessSlug } : {})}
                     capabilities={capabilities}
                     currentness={tableEmbed.currentness}
+                    creationFallbackHref={tableEmbed.creationFallbackHref}
                     {...(tableEmbed.createConnectedRecordTarget
                       ? {
                           createConnectedRecordTarget:

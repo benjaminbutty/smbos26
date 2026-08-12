@@ -12,7 +12,12 @@ import {
   type AcquisitionExecutionCore,
 } from "../../ai/acquisition-planning/runtime";
 import { compileConfigurationDraft } from "../configuration/draft-compiler/compiler";
-import { configurationOperationsSchema } from "../configuration/schemas";
+import {
+  configurationOperationsSchema,
+  setViewOperationSchema,
+  type ConfigurationOperation,
+} from "../configuration/schemas";
+import { normalizeTableViewConfig } from "../experience/schemas";
 import {
   acquisitionBusinessContext,
   emptyAcquisitionSnapshot,
@@ -145,6 +150,7 @@ function composeDraft(plan: AcquisitionReadyPlan) {
   });
   const formRef = (index: number, edit: boolean) =>
     `draft_form_${index * 2 + (edit ? 2 : 1)}`;
+  const firstStep = `Add your first real ${plan.tables[0]!.singular_name.toLocaleLowerCase("en")}.`;
   const draft = builderConfigurationDraftOutputSchema.parse({
     schema_version: 1,
     summary: plan.why,
@@ -220,6 +226,12 @@ function composeDraft(plan: AcquisitionReadyPlan) {
         audience: "internal",
         blocks: [
           { type: "heading", text: "Overview", level: 1 },
+          { type: "heading", text: "Start here", level: 2 },
+          { type: "text", text: firstStep },
+          ...plan.connections.map(({ explanation }) => ({
+            type: "text" as const,
+            text: explanation,
+          })),
           {
             type: "view",
             view_reference: {
@@ -232,6 +244,110 @@ function composeDraft(plan: AcquisitionReadyPlan) {
     ],
   });
   return { readyPlan, draft };
+}
+
+function addAcquisitionConnectionColumns(
+  operations: readonly ConfigurationOperation[],
+  plan: AcquisitionReadyPlan,
+): ConfigurationOperation[] {
+  const objectOperations = operations.filter(
+    (
+      operation,
+    ): operation is Extract<ConfigurationOperation, { op: "set_object" }> =>
+      operation.op === "set_object",
+  );
+  const objectKeysByTableReference = new Map<string, string>();
+  for (const table of plan.tables) {
+    const matches = objectOperations.filter(
+      (operation) =>
+        operation.singular_label === table.singular_name &&
+        operation.plural_label === table.plural_name,
+    );
+    if (matches.length !== 1) {
+      throw new AcquisitionInterpretationError("composition_invalid");
+    }
+    objectKeysByTableReference.set(table.reference, matches[0]!.key);
+  }
+
+  const relationshipOperations = operations.filter(
+    (
+      operation,
+    ): operation is Extract<
+      ConfigurationOperation,
+      { op: "set_relationship" }
+    > => operation.op === "set_relationship",
+  );
+  const connectionColumnsByObjectKey = new Map<
+    string,
+    Array<{
+      kind: "connection";
+      relationship_key: string;
+      direction: "source" | "target";
+      label: string;
+    }>
+  >();
+  const addColumn = (
+    objectKey: string,
+    column: {
+      kind: "connection";
+      relationship_key: string;
+      direction: "source" | "target";
+      label: string;
+    },
+  ) => {
+    const columns = connectionColumnsByObjectKey.get(objectKey) ?? [];
+    columns.push(column);
+    connectionColumnsByObjectKey.set(objectKey, columns);
+  };
+
+  for (const connection of plan.connections) {
+    const sourceObjectKey = objectKeysByTableReference.get(
+      connection.source_table_reference,
+    );
+    const targetObjectKey = objectKeysByTableReference.get(
+      connection.target_table_reference,
+    );
+    const relationship = relationshipOperations.filter(
+      (operation) =>
+        operation.source_object_key === sourceObjectKey &&
+        operation.target_object_key === targetObjectKey &&
+        operation.source_label === connection.source_label &&
+        operation.target_label === connection.target_label,
+    );
+    if (!sourceObjectKey || !targetObjectKey || relationship.length !== 1) {
+      throw new AcquisitionInterpretationError("composition_invalid");
+    }
+    const relationshipKey = relationship[0]!.key;
+    addColumn(sourceObjectKey, {
+      kind: "connection",
+      relationship_key: relationshipKey,
+      direction: "source",
+      label: connection.source_label,
+    });
+    addColumn(targetObjectKey, {
+      kind: "connection",
+      relationship_key: relationshipKey,
+      direction: "target",
+      label: connection.target_label,
+    });
+  }
+
+  return configurationOperationsSchema.parse(
+    operations.map((operation) => {
+      if (operation.op !== "set_view") return operation;
+      const columns = connectionColumnsByObjectKey.get(operation.object_key);
+      if (!columns?.length) return operation;
+      const config = normalizeTableViewConfig(operation.config_json);
+      return setViewOperationSchema.parse({
+        ...operation,
+        config_json: normalizeTableViewConfig({
+          ...config,
+          columns: [...config.columns, ...columns],
+          fields: config.fields,
+        }),
+      });
+    }),
+  );
 }
 export async function interpretAcquisitionRequest(
   categoryInput: unknown,
@@ -266,13 +382,15 @@ export async function interpretAcquisitionRequest(
     ready_plan: readyPlan,
   };
   validateConfigurationDraftOutput(taskInput, draft);
-  const operations = configurationOperationsSchema.parse(
+  const operations = addAcquisitionConnectionColumns(
     compileConfigurationDraft({
       taskInput,
       draft,
       snapshot: emptyAcquisitionSnapshot,
     }).operations,
+    plan,
   );
+  const firstStep = `Add your first real ${plan.tables[0]!.singular_name.toLocaleLowerCase("en")}.`;
   const proposal = acquisitionProposalSchema.parse({
     schema_version: 1,
     source: "tailored",
@@ -300,7 +418,7 @@ export async function interpretAcquisitionRequest(
       },
     ],
     landing_page_key: "overview",
-    first_step: `Add your first real ${plan.tables[0]!.singular_name.toLocaleLowerCase("en")}.`,
+    first_step: firstStep,
     not_included: [
       ...new Set([
         ...plan.unsupported_requirements,

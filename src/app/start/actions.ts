@@ -21,7 +21,6 @@ import {
 const workspaceDetailsSchema = z.object({
   businessName: z.string().trim().min(1).max(120),
   timezone: z.string().trim().min(1).max(80),
-  timezoneConfirmed: z.literal("yes"),
 });
 
 function redirectWithError(path: string, message: string): never {
@@ -48,6 +47,9 @@ function claimErrorMessage(error: { message?: string } | null): string {
   }
   if (message.includes("anonymous_build_session_already_claimed")) {
     return "This proposal has already been claimed. Start again if you want another workspace.";
+  }
+  if (message.includes("business_timezone_invalid")) {
+    return "Choose a valid timezone for your business, then try again. Nothing was created.";
   }
   if (
     message.includes("anonymous_build_configuration") ||
@@ -83,12 +85,11 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
   const details = workspaceDetailsSchema.safeParse({
     businessName: formData.get("businessName"),
     timezone: formData.get("timezone"),
-    timezoneConfirmed: formData.get("timezoneConfirmed"),
   });
   if (!details.success) {
     redirectWithError(
       "/start/business",
-      "Enter a business name and confirm the timezone.",
+      "Enter a business name and choose the timezone for your business.",
     );
   }
 
