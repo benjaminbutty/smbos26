@@ -59,10 +59,12 @@ describe("environment validation", () => {
         NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "publishable-key",
         SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
         PREORDER_RATE_LIMIT_SECRET: "rate-limit-secret",
+        ACQUISITION_RATE_LIMIT_SECRET: "acquisition-rate-limit-secret",
       }),
     ).toMatchObject({
       SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
       PREORDER_RATE_LIMIT_SECRET: "rate-limit-secret",
+      ACQUISITION_RATE_LIMIT_SECRET: "acquisition-rate-limit-secret",
     });
   });
 });

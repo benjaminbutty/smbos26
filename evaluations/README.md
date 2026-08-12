@@ -973,3 +973,102 @@ maps `builder_record_location_link_intent_v1` to
 `builder_record_location_link_intent_terra_medium_v1` using GPT-5.6 Terra with
 medium reasoning. The global/default registry remains disabled, and the
 historical failed qualification above remains preserved.
+
+## Phase 5 anonymous acquisition evaluation
+
+Phase 5 adds the separately bounded `acquisition_workspace_plan_v1` subject for
+pre-signup interpretation. It has no tools or database access. Its strict
+output is validated, adapted into the existing frozen configuration-drafting
+grammar, checked by that grammar's semantic validator and compiled by the
+existing pure configuration draft compiler.
+
+Development qualification runs exposed the following historical failures and
+remain evidence rather than accepted gates:
+
+```text
+two-stage planning/drafting: 0/8, then 1/8 (unreliable structured drafting)
+first narrow-plan run:       1/8 (validator defect)
+after validator correction: 6/8
+after evaluator correction: 7/8
+first reliability run:      23/24
+```
+
+The two-stage result demonstrated that chaining a public planner into a second
+model drafting call could not meet the bounded acquisition reliability target.
+The narrow acquisition plan plus deterministic adapter removed that extra model
+failure surface while retaining the existing grammar, validator, compiler and
+M5 application boundary. The 23/24 reliability miss was an evaluator synonym
+classification defect; no production instruction was tuned in response.
+
+The following pre-guard live gates passed, but are now historical and
+invalidated because the deterministic acquisition semantic validator has since
+gained the `location_table_forbidden` invariant:
+
+```text
+qualification: 8/8, estimated cost 119,689 microusd
+reliability:  24/24, every scenario 3/3, estimated cost 331,122 microusd
+```
+
+The eight scenarios were dog grooming, hair salon, recurring milk delivery,
+general delivery, trades/jobs, enquiry-led professional services, product
+tracking and an unusual business with an unsupported request. The production
+composition was exercised through strict acquisition validation, the existing
+draft semantic validator and the existing compiler. Live commands remain
+explicit and opt-in; CI uses injected providers and remains network-free.
+
+The acquisition qualification and reliability gates must be rerun after this
+validator change before the new evidence is accepted. The rerun result and
+exact feature SHA will be recorded here.
+
+The first post-guard qualification rerun at feature SHA
+`c545d8360f5262011fb048f7dcb7e46f924761d0` was recorded as a failed gate:
+
+```text
+qualification: 7/8
+failed scenario: general_delivery
+failed gate: required_concepts
+estimated cost: 109,369 microusd
+```
+
+The single reviewed correction was to make the existing acquisition instruction
+explicit that an ordinary request naming deliveries must include a reusable
+Deliveries or delivery-runs business area. No evaluator threshold or scenario
+was weakened. The complete qualification and reliability gates are being rerun
+against that correction.
+
+The first complete reliability rerun of the corrected subject at the same
+feature SHA was also retained as historical evidence:
+
+```text
+reliability: 23/24
+failed scenario: enquiry_service, repetition 3
+failed gate: required_concepts
+estimated cost: 331,422 microusd
+```
+
+The unchanged rerun at feature SHA `8125c01` also retained one miss:
+
+```text
+reliability: 23/24
+failed scenario: enquiry_service, repetition 2
+failed gate: required_concepts
+estimated cost: 342,807 microusd
+```
+
+The second reviewed correction is a bounded instruction clarification for
+enquiry-led work: when the request names those stages, require reusable
+customer/prospective-client, enquiry/lead and follow-up/next-action areas. No
+evaluator threshold or scenario was weakened.
+
+The final post-guard gates passed against exact feature SHA
+`290350f88632e299e5ceb291ec3fe4db54c55ba4`, including the Location guard and
+the two reviewed instruction corrections:
+
+```text
+qualification: 8/8, estimated cost 116,235 microusd
+reliability:  24/24, every scenario 3/3, estimated cost 351,075 microusd
+```
+
+These gates exercised the production composition for all eight frozen
+scenarios. The results are accepted as the current Phase 5 acquisition
+qualification evidence; exact-head CI remains a separate repository gate.

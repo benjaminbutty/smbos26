@@ -7683,6 +7683,434 @@ textarea {
   background: var(--surface-subtle);
 }
 
+/* Phase 5 — public Lenni acquisition journey */
+.acquisition-page {
+  width: min(calc(100% - 2rem), 66rem);
+  margin-inline: auto;
+  padding-block: clamp(3.5rem, 8vw, 7rem);
+}
+
+.acquisition-hero {
+  max-width: 48rem;
+  margin-bottom: 2rem;
+}
+
+.acquisition-hero h1 {
+  max-width: 13ch;
+  font-size: clamp(2.6rem, 7vw, 5.8rem);
+}
+
+.acquisition-hero > p:last-child {
+  max-width: 38rem;
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1.65;
+}
+
+.acquisition-form,
+.acquisition-proposal,
+.acquisition-revise {
+  display: grid;
+  gap: 1.5rem;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  box-shadow: 0 1rem 4rem rgb(29 40 34 / 6%);
+}
+
+.acquisition-form fieldset {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.acquisition-form legend,
+.acquisition-request-label,
+.acquisition-section-label {
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.acquisition-category-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.acquisition-category-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 1rem;
+  background: var(--surface-canvas);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  cursor: pointer;
+}
+
+.acquisition-category-option:has(input:checked) {
+  background: var(--coral-50);
+  border-color: var(--coral-500);
+  box-shadow: 0 0 0 2px rgb(255 90 77 / 12%);
+}
+
+.acquisition-category-option input {
+  width: auto;
+  min-height: auto;
+  margin-top: 0.2rem;
+  accent-color: var(--coral-600);
+}
+
+.acquisition-category-option span,
+.acquisition-category-option small,
+.acquisition-revise,
+.acquisition-proposal-actions,
+.acquisition-exclusions,
+.acquisition-first-step,
+.acquisition-page-preview,
+.acquisition-business-summary {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.acquisition-category-option strong {
+  color: var(--foreground);
+  font-size: 0.9rem;
+}
+
+.acquisition-category-option small,
+.acquisition-request-label small,
+.acquisition-proposal-actions span,
+.acquisition-revise p,
+.acquisition-page-preview span,
+.acquisition-business-summary span,
+.acquisition-business-page .field-help {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.acquisition-request-label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.acquisition-request-label textarea {
+  min-height: 9rem;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.acquisition-example-label {
+  margin-top: 0.25rem;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.acquisition-example-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.acquisition-example-list button {
+  width: auto;
+  min-height: 0;
+  padding: 0.55rem 0.7rem;
+  color: var(--muted);
+  background: var(--surface-canvas);
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.acquisition-manual-route {
+  margin: 1.5rem 0 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.acquisition-manual-route a {
+  color: var(--accent);
+  font-weight: 700;
+  text-underline-offset: 0.2rem;
+}
+
+.acquisition-proposal {
+  gap: 2rem;
+}
+
+.acquisition-proposal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.acquisition-proposal-heading .eyebrow {
+  margin-bottom: 0.65rem;
+}
+
+.acquisition-proposal-heading h2 {
+  max-width: 28rem;
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.35rem);
+  letter-spacing: -0.04em;
+}
+
+.acquisition-proposal-status {
+  flex: 0 0 auto;
+  padding: 0.45rem 0.7rem;
+  color: var(--foreground);
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.acquisition-section-label {
+  display: block;
+  margin: 0 0 0.7rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0;
+}
+
+.acquisition-understanding {
+  max-width: 48rem;
+  padding: 1rem 1.15rem;
+  background: var(--coral-50);
+  border-left: 3px solid var(--coral-500);
+  border-radius: 0 0.7rem 0.7rem 0;
+}
+
+.acquisition-understanding p:last-child {
+  margin: 0;
+  color: var(--foreground);
+  line-height: 1.6;
+}
+
+.acquisition-why p:last-child {
+  max-width: 48rem;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.acquisition-proposal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(16rem, 0.85fr);
+  gap: 2rem;
+}
+
+.acquisition-concept-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.acquisition-concept {
+  min-height: 7rem;
+  padding: 0.9rem;
+  background: var(--surface-canvas);
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+}
+
+.acquisition-concept h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.acquisition-concept p {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.acquisition-concept small {
+  display: block;
+  margin-top: 0.65rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.acquisition-connection-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acquisition-connection-list li {
+  position: relative;
+  padding-left: 1.2rem;
+  color: var(--foreground);
+  line-height: 1.5;
+}
+
+.acquisition-connection-list li::before {
+  position: absolute;
+  margin-left: -1.15rem;
+  color: var(--coral-600);
+  content: "→";
+  font-weight: 750;
+}
+
+.acquisition-page-label {
+  margin-top: 1.75rem;
+}
+
+.acquisition-page-preview {
+  padding: 0.85rem;
+  background: var(--surface-subtle);
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+}
+
+.acquisition-view-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.acquisition-first-step,
+.acquisition-exclusions {
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.acquisition-first-step strong,
+.acquisition-exclusions strong {
+  font-size: 0.9rem;
+}
+
+.acquisition-first-step span,
+.acquisition-exclusions span,
+.acquisition-exclusions small {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.acquisition-exclusions small {
+  font-size: 0.78rem;
+}
+
+.acquisition-proposal-actions {
+  align-items: start;
+  grid-template-columns: auto 1fr;
+  gap: 0.8rem 1rem;
+}
+
+.acquisition-revise {
+  grid-template-columns: minmax(0, 0.8fr) minmax(18rem, 1.2fr);
+  align-items: start;
+  margin-top: 1.5rem;
+  background: var(--surface-canvas);
+  box-shadow: none;
+}
+
+.acquisition-revise p {
+  margin: 0;
+}
+
+.acquisition-revise .acquisition-form {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.acquisition-revise .acquisition-category-grid {
+  grid-template-columns: 1fr;
+}
+
+.acquisition-business-page {
+  max-width: 42rem;
+}
+
+.acquisition-business-summary {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--coral-50);
+  border: 1px solid var(--coral-100);
+  border-radius: 0.8rem;
+}
+
+.acquisition-business-summary strong {
+  font-size: 0.95rem;
+}
+
+.acquisition-timezone-field {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.acquisition-timezone-confirmation {
+  display: flex !important;
+  align-items: flex-start;
+  gap: 0.55rem !important;
+  color: var(--muted) !important;
+  font-size: 0.8rem !important;
+  font-weight: 500 !important;
+}
+
+.acquisition-timezone-confirmation input {
+  width: auto;
+  min-height: auto;
+  margin-top: 0.15rem;
+  accent-color: var(--coral-600);
+}
+
+@media (max-width: 48rem) {
+  .acquisition-category-grid,
+  .acquisition-proposal-grid,
+  .acquisition-revise {
+    grid-template-columns: 1fr;
+  }
+
+  .acquisition-proposal-heading {
+    display: grid;
+  }
+
+  .acquisition-proposal-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .acquisition-page {
+    width: min(calc(100% - 1.25rem), 66rem);
+    padding-block: 2rem;
+  }
+
+  .acquisition-form,
+  .acquisition-proposal,
+  .acquisition-revise {
+    padding: 1rem;
+    border-radius: 0.85rem;
+  }
+
+  .acquisition-concept-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 68.75rem) {
   .workspace-table-page .editor-lab-workspace:has(.editor-record-panel) {
     grid-template-columns: minmax(0, 1fr) minmax(18rem, 20rem);

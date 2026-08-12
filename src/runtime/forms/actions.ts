@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { resolveTenant } from "../../auth/authorization";
 import { createServerClient } from "../../db/supabase/server";
+import { emitAcquisitionEvent } from "../../core/acquisition/events";
 import { ExperienceSubmissionError, submitExperienceForm } from "./submission";
 
 function safeReturnPath(businessSlug: string, requestedPath: string): string {
@@ -47,6 +48,15 @@ export async function saveExperienceForm(
         ...(recordId ? { recordId } : {}),
       },
     );
+    if (!recordId) {
+      const { count } = await supabase
+        .from("records")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", tenant.business.id);
+      if (count === 1) {
+        emitAcquisitionEvent("first_record_created");
+      }
+    }
   } catch (error) {
     const message =
       error instanceof ExperienceSubmissionError

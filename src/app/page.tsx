@@ -195,15 +195,15 @@ export default function HomePage(): ReactNode {
             into someone else&apos;s process.
           </p>
           <div className="marketing-hero-actions">
-            <a className="marketing-button" href="#early-access">
-              Join early access
+            <a className="marketing-button" href="/start">
+              Start with Lenni
             </a>
-            <a className="marketing-text-button" href="#how-it-works">
-              See how it works <span aria-hidden="true">↘</span>
+            <a className="marketing-text-button" href="/sign-up">
+              Build manually <span aria-hidden="true">↘</span>
             </a>
           </div>
           <p className="marketing-hero-note">
-            Built for owner-operators and small teams. No account is created.
+            See a useful starting point before you create an account.
           </p>
         </div>
 

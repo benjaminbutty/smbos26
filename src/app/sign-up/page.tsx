@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { signUp } from "../../auth/actions";
 import { Notice } from "../../components/notice";
 import { readSearchParam, type SearchParams } from "../../lib/search-params";
+import { emitAcquisitionEvent } from "../../core/acquisition/events";
 
 interface SignUpPageProps {
   searchParams: SearchParams;
@@ -12,7 +13,16 @@ interface SignUpPageProps {
 export default async function SignUpPage({
   searchParams,
 }: Readonly<SignUpPageProps>): Promise<ReactNode> {
-  const error = await readSearchParam(searchParams, "error");
+  const [error, returnTo] = await Promise.all([
+    readSearchParam(searchParams, "error"),
+    readSearchParam(searchParams, "returnTo"),
+  ]);
+  const signInHref = returnTo
+    ? `/sign-in?returnTo=${encodeURIComponent(returnTo)}`
+    : "/sign-in";
+  if (returnTo === "/start/business") {
+    emitAcquisitionEvent("signup_started", { route: "acquisition" });
+  }
 
   return (
     <main className="narrow-page">
@@ -26,6 +36,9 @@ export default async function SignUpPage({
         {error ? <Notice kind="error">{error}</Notice> : null}
 
         <form action={signUp} className="stack-form">
+          {returnTo ? (
+            <input name="returnTo" type="hidden" value={returnTo} />
+          ) : null}
           <label>
             Email
             <input autoComplete="email" name="email" required type="email" />
@@ -44,7 +57,7 @@ export default async function SignUpPage({
         </form>
 
         <p className="form-footer">
-          Already have an account? <Link href="/sign-in">Sign in</Link>
+          Already have an account? <Link href={signInHref}>Sign in</Link>
         </p>
       </section>
     </main>
