@@ -11,6 +11,8 @@ import {
   loadDirectTableConfiguration,
   undoDirectTableAction,
 } from "../../src/core/configuration/direct-tables/service";
+import { ConfigurationChangeService } from "../../src/core/configuration/service";
+import { normalizeTableViewConfig } from "../../src/core/experience/schemas";
 import { createDirectTableRow } from "../../src/runtime/views/direct-table-record-service";
 import {
   applyDirectTableRecordCellEdit,
@@ -728,6 +730,321 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
         },
       ),
     ).rejects.toThrow(/cannot be undone|current Table history/i);
+  });
+
+  it("accepts Add and Insert long-text properties with Table-owned Forms", async () => {
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: (await currentness(owner)).currentness,
+        intent: {
+          action: "create_table",
+          title: `Explicit Forms ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const beforeForms = await currentness(owner);
+    const view = beforeForms.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    )!;
+    const createFormKey = `${view.object_key}_create_internal`;
+    const editFormKey = `${view.object_key}_edit_internal`;
+    const publicFormKey = `${view.object_key}_public_unrelated`;
+    const canonicalViewConfig = normalizeTableViewConfig(
+      beforeForms.snapshot.views.find((candidate) => candidate.key === viewKey)!
+        .config_json,
+    );
+    const configuration = new ConfigurationChangeService(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const formsProposal = await configuration.proposeChangeSet({
+      expectedBaseVersionId: beforeForms.currentness.expectedBaseVersionId,
+      expectedHeadRevision: beforeForms.currentness.expectedHeadRevision,
+      title: "Configure explicit Table forms",
+      description: null,
+      operations: [
+        {
+          op: "set_form",
+          key: createFormKey,
+          name: "Add explicit form record",
+          object_key: view.object_key,
+          mode: "create",
+          config_json: {
+            fields: [{ field: "name", hidden: false }],
+            submit_label: "Add record",
+          },
+          audience: "internal",
+          is_active: true,
+        },
+        {
+          op: "set_form",
+          key: editFormKey,
+          name: "Edit explicit form record",
+          object_key: view.object_key,
+          mode: "edit",
+          config_json: {
+            fields: [{ field: "name", hidden: false }],
+            submit_label: "Save changes",
+          },
+          audience: "internal",
+          is_active: true,
+        },
+        {
+          op: "set_form",
+          key: publicFormKey,
+          name: "Public unrelated form",
+          object_key: view.object_key,
+          mode: "create",
+          config_json: {
+            fields: [{ field: "name", hidden: false }],
+            submit_label: "Send",
+          },
+          audience: "public",
+          is_active: true,
+        },
+        {
+          op: "set_view",
+          key: viewKey,
+          name: view.name,
+          view_type: "table",
+          object_key: view.object_key,
+          config_json: {
+            ...canonicalViewConfig,
+            create_form_key: createFormKey,
+            edit_form_key: editFormKey,
+          },
+          audience: "internal",
+          is_active: true,
+        },
+      ],
+    });
+    const formsValidation = await configuration.validateChangeSet(
+      formsProposal.id,
+    );
+    expect(formsValidation.status).toBe("validated");
+    const formsApplied = await configuration.applyChangeSet(formsProposal.id);
+    expect(formsApplied.status).toBe("applied");
+
+    const configured = await currentness(owner);
+    const publicFormBefore = configured.snapshot.forms.find(
+      (candidate) => candidate.key === publicFormKey,
+    )!;
+    const counts = async (): Promise<{
+      versionCount: number;
+      changeCount: number;
+    }> => {
+      const [result] = await sql<
+        { version_count: number; change_count: number }[]
+      >`
+        select
+          (select count(*)::integer from public.configuration_versions
+           where business_id = ${business.id}) as version_count,
+          (select count(*)::integer from public.configuration_change_sets
+           where business_id = ${business.id}) as change_count
+      `;
+      if (!result) throw new Error("Could not read configuration counts.");
+      return {
+        versionCount: Number(result.version_count),
+        changeCount: Number(result.change_count),
+      };
+    };
+
+    const beforeAdd = await counts();
+    const added = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: configured.currentness,
+        intent: {
+          action: "add_column",
+          viewKey,
+          label: "Notes",
+          columnType: "long_text",
+        },
+      },
+    );
+    expect(added.changeSet.status).toBe("applied");
+    expect(added.composed!.operations.map((operation) => operation.op)).toEqual(
+      ["set_field", "set_form", "set_form", "set_view"],
+    );
+    const addedFieldKey = added.composed!.operations.find(
+      (operation) => operation.op === "set_field",
+    )!.key;
+    const afterAddCounts = await counts();
+    expect(afterAddCounts.versionCount).toBe(beforeAdd.versionCount + 1);
+    expect(afterAddCounts.changeCount).toBe(beforeAdd.changeCount + 1);
+
+    const afterAdd = await currentness(owner);
+    const addedField = afterAdd.snapshot.field_definitions.find(
+      (candidate) => candidate.key === addedFieldKey,
+    )!;
+    expect(addedField).toMatchObject({
+      object_key: view.object_key,
+      field_type: "long_text",
+      required: false,
+      is_active: true,
+    });
+    const addedView = afterAdd.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    )!;
+    expect(addedView.config_json).toMatchObject({
+      fields: ["name", addedFieldKey],
+    });
+    for (const formKey of [createFormKey, editFormKey]) {
+      const form = afterAdd.snapshot.forms.find(
+        (candidate) => candidate.key === formKey,
+      )!;
+      expect(form.config_json).toMatchObject({
+        fields: [
+          { field: "name", hidden: false },
+          { field: addedFieldKey, hidden: false },
+        ],
+      });
+    }
+    expect(
+      afterAdd.snapshot.forms.find(
+        (candidate) => candidate.key === publicFormKey,
+      ),
+    ).toEqual(publicFormBefore);
+
+    const rowData = new FormData();
+    rowData.set("viewKey", viewKey);
+    rowData.set("name", "Long-text record");
+    const row = await createDirectTableRow(
+      owner.client,
+      { businessId: business.id },
+      { viewKey, formData: rowData },
+    );
+    const edited = await applyDirectTableRecordCellEditValue(
+      owner.client,
+      { businessId: business.id },
+      {
+        viewKey,
+        recordId: row.id,
+        fieldKey: addedFieldKey,
+        value: "A subsequent operational value",
+      },
+    );
+    expect(edited.data_json).toMatchObject({
+      [addedFieldKey]: "A subsequent operational value",
+    });
+    expect(await counts()).toEqual(afterAddCounts);
+
+    const beforeInsert = await counts();
+    const inserted = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: afterAdd.currentness,
+        intent: {
+          action: "insert_column",
+          viewKey,
+          anchorFieldKey: "name",
+          position: "right",
+          label: "Details",
+          columnType: "long_text",
+        },
+      },
+    );
+    expect(inserted.changeSet.status).toBe("applied");
+    expect(
+      inserted.composed!.operations.map((operation) => operation.op),
+    ).toEqual(["set_field", "set_form", "set_form", "set_view"]);
+    const insertedFieldKey = inserted.composed!.operations.find(
+      (operation) => operation.op === "set_field",
+    )!.key;
+    const afterInsert = await currentness(owner);
+    const afterInsertCounts = await counts();
+    expect(afterInsertCounts.versionCount).toBe(beforeInsert.versionCount + 1);
+    expect(afterInsertCounts.changeCount).toBe(beforeInsert.changeCount + 1);
+    expect(
+      afterInsert.snapshot.field_definitions.find(
+        (candidate) => candidate.key === insertedFieldKey,
+      ),
+    ).toMatchObject({ field_type: "long_text", required: false });
+    expect(
+      afterInsert.snapshot.views.find((candidate) => candidate.key === viewKey)
+        ?.config_json,
+    ).toMatchObject({ fields: ["name", insertedFieldKey, addedFieldKey] });
+    for (const formKey of [createFormKey, editFormKey]) {
+      const form = afterInsert.snapshot.forms.find(
+        (candidate) => candidate.key === formKey,
+      )!;
+      expect(form.config_json).toMatchObject({
+        fields: [
+          { field: "name", hidden: false },
+          { field: addedFieldKey, hidden: false },
+          { field: insertedFieldKey, hidden: false },
+        ],
+      });
+    }
+    expect(
+      afterInsert.snapshot.forms.find(
+        (candidate) => candidate.key === publicFormKey,
+      ),
+    ).toEqual(publicFormBefore);
+  });
+
+  it("keeps Add and Insert supported when a Table has no Forms", async () => {
+    const created = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: (await currentness(administrator)).currentness,
+        intent: {
+          action: "create_table",
+          title: `No Forms ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const added = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "add_column",
+          viewKey,
+          label: "Notes",
+          columnType: "long_text",
+        },
+      },
+    );
+    expect(added.composed!.operations.map((operation) => operation.op)).toEqual(
+      ["set_field", "set_view"],
+    );
+    const inserted = await applyDirectTableAction(
+      administrator.client,
+      { businessId: business.id, actorId: administrator.user.id },
+      {
+        currentness: added.currentness,
+        intent: {
+          action: "insert_column",
+          viewKey,
+          anchorFieldKey: "name",
+          position: "right",
+          label: "Details",
+          columnType: "long_text",
+        },
+      },
+    );
+    expect(inserted.changeSet.status).toBe("applied");
+    expect(
+      inserted.composed!.operations.map((operation) => operation.op),
+    ).toEqual(["set_field", "set_view"]);
+    const finalState = await currentness(administrator);
+    const finalView = finalState.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    )!;
+    expect(
+      finalState.snapshot.forms.filter(
+        (form) => form.object_key === finalView.object_key,
+      ),
+    ).toHaveLength(0);
   });
 
   it("allows Admin structural changes and Staff direct Record work while preserving boundaries", async () => {
