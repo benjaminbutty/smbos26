@@ -12,8 +12,11 @@ import {
   ACQUISITION_RELIABILITY_EXECUTIONS,
   ACQUISITION_RELIABILITY_REPETITIONS,
   acquisitionEvaluationScenarios,
-  type AcquisitionEvaluationScenario,
 } from "./scenarios";
+import {
+  evaluateAcquisitionScenario,
+  productionCompositionFailureResult,
+} from "./evaluator";
 
 type Environment = {
   AI_PROVIDER?: string | undefined;
@@ -34,95 +37,6 @@ function activated(environment: Environment, gate: Gate): boolean {
     environment.AI_PROVIDER === "openai" &&
     Boolean(environment.OPENAI_API_KEY?.trim())
   );
-}
-
-function includesEvery(
-  haystack: string,
-  needles: readonly (string | readonly string[])[],
-): boolean {
-  return needles.every((needle) =>
-    typeof needle === "string"
-      ? haystack.includes(needle)
-      : needle.some((alternative) => haystack.includes(alternative)),
-  );
-}
-
-function evaluate(
-  scenario: AcquisitionEvaluationScenario,
-  payload: Awaited<ReturnType<typeof interpretAcquisitionRequest>>,
-): string[] {
-  const failures: string[] = [];
-  const conceptText = payload.proposal.concepts
-    .map(({ name }) => name.toLocaleLowerCase("en"))
-    .join(" ");
-  const excludedText = payload.proposal.not_included
-    .join(" ")
-    .toLocaleLowerCase("en");
-  if (payload.proposal.source !== "tailored") failures.push("not_tailored");
-  if (!includesEvery(conceptText, scenario.requiredConcepts)) {
-    failures.push("required_concepts");
-  }
-  if (
-    scenario.forbiddenConcepts?.some((value) => conceptText.includes(value))
-  ) {
-    failures.push("forbidden_concept");
-  }
-  if (
-    scenario.requiredUnsupported &&
-    !scenario.requiredUnsupported.some((value) => excludedText.includes(value))
-  ) {
-    failures.push("unsupported_not_disclosed");
-  }
-  const proposalText = JSON.stringify(payload.proposal);
-  if (
-    /\b(?:schema|uuid|json|database|cardinality|foreign key)\b/i.test(
-      proposalText,
-    )
-  ) {
-    failures.push("technical_owner_language");
-  }
-  if (payload.proposal.landing_page_key !== "overview") {
-    failures.push("landing_page_not_overview");
-  }
-  if (
-    payload.operations.some((operation) =>
-      JSON.stringify(operation).includes("location"),
-    )
-  ) {
-    failures.push("location_added");
-  }
-  if (
-    payload.operations.some(
-      (operation) =>
-        operation.op === "set_field" && operation.field_type === "currency",
-    )
-  ) {
-    failures.push("currency_invented");
-  }
-  if (scenario.requiresLineItemQuantity) {
-    const lineObjects = payload.operations
-      .filter(
-        (operation) =>
-          operation.op === "set_object" &&
-          /(?:item|line)/i.test(
-            `${operation.singular_label} ${operation.plural_label}`,
-          ),
-      )
-      .map(({ key }) => key);
-    if (
-      lineObjects.length === 0 ||
-      !payload.operations.some(
-        (operation) =>
-          operation.op === "set_field" &&
-          lineObjects.includes(operation.object_key) &&
-          /quantity|amount/i.test(operation.label) &&
-          operation.field_type === "number",
-      )
-    ) {
-      failures.push("line_item_quantity_missing");
-    }
-  }
-  return failures;
 }
 
 export async function runLiveAcquisitionGate(
@@ -158,6 +72,10 @@ export async function runLiveAcquisitionGate(
     repetition: number;
     passed: boolean;
     failed_gate_codes: string[];
+    hard_passed: boolean;
+    hard_findings: string[];
+    quality_passed: boolean;
+    quality_findings: string[];
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
@@ -184,30 +102,26 @@ export async function runLiveAcquisitionGate(
           return execution;
         },
       };
-      let failures: string[];
+      let result: ReturnType<typeof evaluateAcquisitionScenario>;
       try {
         const payload = await interpretAcquisitionRequest(
           scenario.category,
           scenario.request,
           tracked,
         );
-        failures = evaluate(scenario, payload);
+        result = evaluateAcquisitionScenario(scenario, payload);
       } catch (error) {
-        const name = error instanceof Error ? error.name : "unknown";
-        const code =
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          typeof error.code === "string"
-            ? error.code
-            : "unclassified";
-        failures = [`production_composition_failed:${name}:${code}`];
+        result = productionCompositionFailureResult(error);
       }
       reports.push({
         scenario_id: scenario.id,
         repetition,
-        passed: failures.length === 0,
-        failed_gate_codes: failures,
+        passed: result.hard_passed,
+        failed_gate_codes: result.hard_findings,
+        hard_passed: result.hard_passed,
+        hard_findings: result.hard_findings,
+        quality_passed: result.quality_passed,
+        quality_findings: result.quality_findings,
       });
     }
   }
@@ -217,6 +131,12 @@ export async function runLiveAcquisitionGate(
     passed,
     passed_executions: reports.filter((report) => report.passed).length,
     total_executions: reports.length,
+    hard_passed_executions: reports.filter((report) => report.hard_passed)
+      .length,
+    hard_total_executions: reports.length,
+    quality_passed_executions: reports.filter((report) => report.quality_passed)
+      .length,
+    quality_total_executions: reports.length,
     estimated_cost_microusd: estimatedCostMicrousd,
     reports,
   };
