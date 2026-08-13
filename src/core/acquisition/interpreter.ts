@@ -22,6 +22,7 @@ import {
   acquisitionBusinessContext,
   emptyAcquisitionSnapshot,
 } from "./context";
+import { deriveAcquisitionConnectionLabels } from "./connection-labels";
 import {
   acquisitionBuildPayloadSchema,
   acquisitionCategorySchema,
@@ -46,6 +47,33 @@ export class AcquisitionInterpretationError extends Error {
     this.name = "AcquisitionInterpretationError";
   }
 }
+
+function connectionLabelsForPlan(
+  plan: AcquisitionReadyPlan,
+  connection: AcquisitionReadyPlan["connections"][number],
+) {
+  const source = plan.tables.find(
+    (table) => table.reference === connection.source_table_reference,
+  );
+  const target = plan.tables.find(
+    (table) => table.reference === connection.target_table_reference,
+  );
+  if (!source || !target) {
+    throw new AcquisitionInterpretationError("composition_invalid");
+  }
+  return deriveAcquisitionConnectionLabels({
+    source: {
+      singular: source.singular_name,
+      plural: source.plural_name,
+    },
+    target: {
+      singular: target.singular_name,
+      plural: target.plural_name,
+    },
+    cardinality: connection.cardinality,
+  });
+}
+
 export function detectGroundedCurrency(
   request: string,
 ): "GBP" | "USD" | "EUR" | null {
@@ -163,16 +191,19 @@ function composeDraft(plan: AcquisitionReadyPlan) {
       description: table.purpose,
     })),
     fields,
-    relationships: plan.connections.map((connection, index) => ({
-      reference: `draft_relationship_${index + 1}`,
-      source_step_references: [step("define_relationship")],
-      source_object_reference: objectRef(connection.source_table_reference),
-      target_object_reference: objectRef(connection.target_table_reference),
-      source_label: connection.source_label,
-      target_label: connection.target_label,
-      cardinality: connection.cardinality,
-      is_required: false,
-    })),
+    relationships: plan.connections.map((connection, index) => {
+      const labels = connectionLabelsForPlan(plan, connection);
+      return {
+        reference: `draft_relationship_${index + 1}`,
+        source_step_references: [step("define_relationship")],
+        source_object_reference: objectRef(connection.source_table_reference),
+        target_object_reference: objectRef(connection.target_table_reference),
+        source_label: labels.source,
+        target_label: labels.target,
+        cardinality: connection.cardinality,
+        is_required: false,
+      };
+    }),
     forms: plan.tables.flatMap((table, index) =>
       ([false, true] as const).map((edit) => ({
         reference: formRef(index, edit),
@@ -307,12 +338,14 @@ function addAcquisitionConnectionColumns(
     const targetObjectKey = objectKeysByTableReference.get(
       connection.target_table_reference,
     );
+    const labels = connectionLabelsForPlan(plan, connection);
     const relationship = relationshipOperations.filter(
       (operation) =>
         operation.source_object_key === sourceObjectKey &&
         operation.target_object_key === targetObjectKey &&
-        operation.source_label === connection.source_label &&
-        operation.target_label === connection.target_label,
+        operation.source_label === labels.source &&
+        operation.target_label === labels.target &&
+        operation.cardinality === connection.cardinality,
     );
     if (!sourceObjectKey || !targetObjectKey || relationship.length !== 1) {
       throw new AcquisitionInterpretationError("composition_invalid");
@@ -322,13 +355,13 @@ function addAcquisitionConnectionColumns(
       kind: "connection",
       relationship_key: relationshipKey,
       direction: "source",
-      label: connection.source_label,
+      label: labels.source,
     });
     addColumn(targetObjectKey, {
       kind: "connection",
       relationship_key: relationshipKey,
       direction: "target",
-      label: connection.target_label,
+      label: labels.target,
     });
   }
 

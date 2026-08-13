@@ -528,7 +528,10 @@ describe("Phase 5 anonymous acquisition boundary", () => {
         expect(columnsByView.get("order_view")).toEqual(
           expect.arrayContaining([
             expect.objectContaining({ kind: "connection", label: "Customer" }),
-            expect.objectContaining({ kind: "connection", label: "Items" }),
+            expect.objectContaining({
+              kind: "connection",
+              label: "Order items",
+            }),
             expect.objectContaining({
               kind: "connection",
               label: "Deliveries",

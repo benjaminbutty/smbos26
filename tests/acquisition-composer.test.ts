@@ -106,6 +106,58 @@ describe("Phase 5 starter compositions", () => {
     );
   });
 
+  it("derives fallback Connection labels from the endpoint concepts", () => {
+    const result = composeStarterComposition(
+      "appointments",
+      "I run a salon and need to organise appointments and services.",
+    );
+    const relationship = result.operations.find(
+      (operation) => operation.op === "set_relationship",
+    );
+    const views = result.operations.filter(
+      (operation) => operation.op === "set_view",
+    );
+
+    expect(relationship).toMatchObject({
+      source_label: "Services",
+      target_label: "Appointments",
+      cardinality: "many_to_many",
+    });
+    if (!relationship || relationship.op !== "set_relationship") return;
+    expect(
+      views.find(
+        (operation) =>
+          operation.op === "set_view" && operation.object_key === "appointment",
+      ),
+    ).toMatchObject({
+      config_json: expect.objectContaining({
+        columns: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "connection",
+            relationship_key: relationship.key,
+            label: "Services",
+          }),
+        ]),
+      }),
+    });
+    expect(
+      views.find(
+        (operation) =>
+          operation.op === "set_view" && operation.object_key === "service",
+      ),
+    ).toMatchObject({
+      config_json: expect.objectContaining({
+        columns: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "connection",
+            relationship_key: relationship.key,
+            label: "Appointments",
+          }),
+        ]),
+      }),
+    });
+  });
+
   it("provides a generic safe starting point for something else", () => {
     const result = composeStarterComposition(
       "other",
