@@ -19,7 +19,10 @@ import {
   mockFailureTrigger,
 } from "../src/runtime/editor-kernel/mock-table-adapter";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
-import { ConnectionPropertyPopover } from "../src/runtime/editor-kernel/editor-lab";
+import {
+  AddColumnPopover,
+  ConnectionPropertyPopover,
+} from "../src/runtime/editor-kernel/editor-lab";
 import {
   createEditorColumns,
   openConnectionCellEditor,
@@ -384,5 +387,23 @@ describe("editor kernel contracts", () => {
       /Object|Relationship|cardinality|source|target|UUID/i,
     );
     expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("keeps Add Property submission owned by its structural form", () => {
+    const addColumn = vi.fn(async () => undefined);
+    const markup = renderToStaticMarkup(
+      createElement(AddColumnPopover, {
+        canAddConnections: false,
+        onClose: () => undefined,
+        onCreate: addColumn,
+      }),
+    );
+
+    expect(markup).toContain('<form class="editor-add-column-popover">');
+    expect(markup).toMatch(
+      /<button[^>]*type="submit"[^>]*>Add column<\/button>/,
+    );
+    expect(markup).not.toContain("formAction");
+    expect(addColumn).not.toHaveBeenCalled();
   });
 });
