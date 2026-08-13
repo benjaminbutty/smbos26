@@ -22,6 +22,10 @@ import {
   type AcquisitionBuildPayload,
   type AcquisitionCategory,
 } from "./schemas";
+import {
+  deriveAcquisitionConnectionLabels,
+  type AcquisitionConnectionLabels,
+} from "./connection-labels";
 
 type FieldOperation = Extract<ConfigurationOperation, { op: "set_field" }>;
 type ConnectionColumn = {
@@ -649,14 +653,26 @@ function viewOperation(
   object: StarterObject,
   createFormKey: string,
   editFormKey: string,
+  relationshipLabels: ReadonlyMap<string, AcquisitionConnectionLabels>,
 ): ConfigurationOperation {
   const fields = object.fields.map((field) => field.key);
   const columns = [
     ...fields.map((field_key) => ({ kind: "field" as const, field_key })),
-    ...(object.view_connections ?? []).map((connection) => ({
-      kind: "connection" as const,
-      ...connection,
-    })),
+    ...(object.view_connections ?? []).map((connection) => {
+      const labels = relationshipLabels.get(connection.relationship_key);
+      if (!labels) {
+        throw new Error(
+          `Missing connection labels for ${connection.relationship_key}.`,
+        );
+      }
+      return {
+        kind: "connection" as const,
+        relationship_key: connection.relationship_key,
+        direction: connection.direction,
+        label:
+          connection.direction === "source" ? labels.source : labels.target,
+      };
+    }),
   ];
   const config = parseViewConfig("table", {
     schema_version: 2,
@@ -719,6 +735,32 @@ function composeOperations(
 ): ConfigurationOperation[] {
   const operations: ConfigurationOperation[] = [];
   const formKeys = new Map<string, { create: string; edit: string }>();
+  const objectsByKey = new Map(
+    definition.objects.map((object) => [object.key, object]),
+  );
+  const relationshipLabels = new Map<string, AcquisitionConnectionLabels>();
+
+  for (const relationship of definition.relationships) {
+    const source = objectsByKey.get(relationship.source_object_key);
+    const target = objectsByKey.get(relationship.target_object_key);
+    if (!source || !target) {
+      throw new Error(`Missing objects for ${relationship.key}.`);
+    }
+    relationshipLabels.set(
+      relationship.key,
+      deriveAcquisitionConnectionLabels({
+        source: {
+          singular: source.singular_label,
+          plural: source.plural_label,
+        },
+        target: {
+          singular: target.singular_label,
+          plural: target.plural_label,
+        },
+        cardinality: relationship.cardinality,
+      }),
+    );
+  }
 
   for (const object of definition.objects) {
     operations.push(
@@ -738,14 +780,18 @@ function composeOperations(
   }
 
   for (const relationship of definition.relationships) {
+    const labels = relationshipLabels.get(relationship.key);
+    if (!labels) {
+      throw new Error(`Missing connection labels for ${relationship.key}.`);
+    }
     operations.push(
       setRelationshipOperationSchema.parse({
         op: "set_relationship",
         key: relationship.key,
         source_object_key: relationship.source_object_key,
         target_object_key: relationship.target_object_key,
-        source_label: relationship.source_label,
-        target_label: relationship.target_label,
+        source_label: labels.source,
+        target_label: labels.target,
         cardinality: relationship.cardinality,
         is_required: false,
         is_active: true,
@@ -766,7 +812,9 @@ function composeOperations(
     if (!keys) {
       throw new Error(`Missing form keys for ${object.key}.`);
     }
-    operations.push(viewOperation(object, keys.create, keys.edit));
+    operations.push(
+      viewOperation(object, keys.create, keys.edit, relationshipLabels),
+    );
   }
   operations.push(pageOperation(definition));
 
