@@ -38,6 +38,7 @@ import {
 } from "./contracts";
 import {
   buildClipboardMatrix,
+  clipboardEventBelongsToGrid,
   MAX_PASTE_CELLS,
   MAX_PASTE_ROWS,
   selectionBounds,
@@ -1435,6 +1436,7 @@ export function EditorKernel({
 
   const handleCopyCapture = useCallback(
     (event: React.ClipboardEvent): void => {
+      if (!clipboardEventBelongsToGrid(event.target)) return;
       const point = selectionAnchor ?? activeGridPoint();
       const end = selectionEnd ?? point;
       const bounds = selectionBounds(point, end);
@@ -1457,6 +1459,7 @@ export function EditorKernel({
 
   const handlePasteCapture = useCallback(
     (event: React.ClipboardEvent): void => {
+      if (!clipboardEventBelongsToGrid(event.target)) return;
       const text = event.clipboardData.getData("text/plain");
       if (!text) return;
       event.preventDefault();

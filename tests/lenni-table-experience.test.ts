@@ -10,6 +10,7 @@ import {
 } from "../src/core/configuration/direct-tables/type-compatibility";
 import {
   buildClipboardMatrix,
+  clipboardEventBelongsToGrid,
   parseClipboardMatrix,
   selectionBounds,
   serializeClipboardMatrix,
@@ -172,6 +173,19 @@ describe("Lenni Table structural and clipboard boundaries", () => {
     expect(() =>
       buildClipboardMatrix("A\tB\tC\tD\tE\tF\tG", table.columns),
     ).toThrow("Paste cannot add properties");
+  });
+
+  it("keeps Add Property text entry outside the Table paste action", () => {
+    const addPropertyInput = {
+      closest: vi.fn(() => ({ tagName: "FORM" })),
+    } as unknown as EventTarget;
+    const gridCell = {
+      closest: vi.fn(() => null),
+    } as unknown as EventTarget;
+
+    expect(clipboardEventBelongsToGrid(addPropertyInput)).toBe(false);
+    expect(clipboardEventBelongsToGrid(gridCell)).toBe(true);
+    expect(clipboardEventBelongsToGrid(null)).toBe(true);
   });
 
   it("applies a mock paste as one adapter boundary and reports invalid rows", async () => {

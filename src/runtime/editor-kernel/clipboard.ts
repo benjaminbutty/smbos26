@@ -8,6 +8,21 @@ import {
 export const MAX_PASTE_CELLS = 500;
 export const MAX_PASTE_ROWS = 100;
 
+const clipboardControlSelector =
+  'input, textarea, select, [contenteditable="true"], form';
+
+export function clipboardEventBelongsToGrid(
+  target: EventTarget | null,
+): boolean {
+  const candidate = target as
+    (EventTarget & { closest?: (selector: string) => unknown }) | null;
+
+  return (
+    typeof candidate?.closest !== "function" ||
+    candidate.closest(clipboardControlSelector) === null
+  );
+}
+
 export interface ClipboardMatrixResult {
   matrix: readonly (EditorValue | null)[][];
   cellCount: number;
