@@ -1072,3 +1072,72 @@ reliability:  24/24, every scenario 3/3, estimated cost 351,075 microusd
 These gates exercised the production composition for all eight frozen
 scenarios. The results are accepted as the current Phase 5 acquisition
 qualification evidence; exact-head CI remains a separate repository gate.
+
+## Acquisition evaluation-policy closeout (2026-08-13)
+
+The acquisition gate now reports two deliberately separate lanes:
+
+- **Hard acquisition contract** is merge-blocking. It covers production
+  interpretation/composition, trusted output boundaries, truthful unsupported
+  capability handling, forbidden Location/currency behaviour and other
+  deterministic safety requirements.
+- **Product-quality scorecard** remains visible evidence about whether Lenni
+  chose a useful business model for a representative owner. It can inform
+  product-readiness decisions, but it is not treated as unsafe configuration
+  and does not trigger deterministic vertical fallback.
+
+The qualified production/evaluator candidate was
+`0366a9681cc599b378c1b2c7b737af583ee86db4` (branch
+`agent/acquisition-evaluation-policy-closeout`). It contains the minimal
+`one_to_many` convention clarification (source is the ONE side and target is
+the MANY side), compound-name evaluation matching and candidate-set
+Relationship matching. It does **not** contain the rejected generic
+linking-record planner calibration.
+
+Live evidence against that exact candidate:
+
+```text
+qualification hard contract: 8/8
+qualification product quality: 8/8
+estimated qualification cost: 117,024 microusd
+
+reliability hard contract: 24/24
+reliability product quality: 23/24
+estimated reliability cost: 345,402 microusd
+```
+
+The single reliability quality finding was `milk_round`, repetition 3:
+the generated model omitted the preferred Customer → Order-like → Item-like
+quality shape. Its output remained within the existing SMBOS primitives and
+had no hard-contract finding. No accepted reliability execution violated the
+trusted acquisition contract.
+
+Fresh owner-path smoke evidence used three disposable Businesses. Trades
+created Customers, Jobs and Next actions; the Customer → Job connection was
+created through the normal picker and appeared from both sides in the Table
+drawer, full Record and connected navigation. Enquiry-led catering created
+Contacts, Enquiries and Follow-ups; the Contact → Enquiry connection behaved
+the same way. Each operational edge left its disposable Business at
+configuration head 2, so the edge did not create a configuration Version.
+Both proposals truthfully described unsupported external messaging/integration
+behaviour and did not introduce Location. The milk-round proposal contained
+Customers, Milk products, Weekly orders, Order items with Quantity and
+Delivery runs, with the same truthful WhatsApp limitation; this was recorded
+as quality evidence, not a new production rule.
+
+Historical local-only experiments remain preserved and are not production
+history:
+
+- `ed14c112fd5a38f9362b6e004787838f005aecb1` — Relationship calibration,
+  qualification 6/8; later diagnosed primarily as compound-name evaluator
+  overconstraint.
+- `0c674ef2e42d34fd33a09a7522eb96955b6c5d52` — evaluator correction,
+  qualification 8/8 and reliability 23/24; the genuine miss was a
+  milk-round product-quality variation.
+- `c3171218757e8b62fa3e73e918abad6f6176076e` — final linking-record planner
+  experiment, qualification 7/8; the milk-round model again missed the
+  desired recurring-order structure.
+
+None of those SHAs was merged or pushed as a production PR. No production
+schema, graph/runtime, primitive, tenant data, fallback subsystem or PR #38
+Connection-label rule was changed by this closeout.
