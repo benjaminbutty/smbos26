@@ -8628,3 +8628,534 @@ textarea {
     font-size: 0.82rem;
   }
 }
+
+/* Lenni Unified Product Experience — C2 acquisition and Home orientation. */
+.lenni-public-frame {
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+  font-family: var(--lenni-font);
+}
+
+.lenni-public-frame .site-header,
+.lenni-public-frame .site-footer {
+  width: min(calc(100% - 2rem), 90rem);
+  border-color: var(--border-subtle);
+}
+
+.lenni-public-frame .brand {
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+}
+
+.lenni-public-frame .brand-mark {
+  width: 2.35rem;
+  height: 2.35rem;
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.lenni-public-frame .header-link {
+  color: var(--text-secondary);
+}
+
+.lenni-public-frame .header-link:hover {
+  color: var(--text-primary);
+}
+
+.lenni-public-frame .eyebrow {
+  color: var(--coral-700);
+}
+
+.lenni-public-frame .button,
+.lenni-public-frame button[type="submit"] {
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+}
+
+.lenni-public-frame .button:hover,
+.lenni-public-frame button[type="submit"]:hover {
+  color: var(--surface-base);
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+  filter: none;
+}
+
+.lenni-public-frame .site-footer {
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.acquisition-page {
+  width: min(calc(100% - 2rem), 72rem);
+  padding-block: clamp(2.75rem, 7vw, 6.5rem);
+}
+
+.acquisition-hero {
+  max-width: 54rem;
+  margin-bottom: var(--space-8);
+}
+
+.acquisition-hero h1 {
+  max-width: 12ch;
+  color: var(--text-primary);
+  font-size: clamp(2.8rem, 7vw, 5.25rem);
+  letter-spacing: -0.075em;
+  line-height: 0.98;
+}
+
+.acquisition-hero > p:last-child {
+  max-width: 42rem;
+  margin-top: var(--space-5);
+  color: var(--text-secondary);
+  font-size: clamp(1rem, 2vw, 1.2rem);
+  line-height: 1.55;
+}
+
+.acquisition-form,
+.acquisition-proposal,
+.acquisition-revise {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-subtle);
+}
+
+.acquisition-form {
+  max-width: 58rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: var(--surface-base);
+}
+
+.acquisition-form legend,
+.acquisition-request-label > span:first-child {
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.acquisition-category-option {
+  min-height: 3.5rem;
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-full);
+}
+
+.acquisition-category-option:hover,
+.acquisition-category-option:has(input:focus-visible) {
+  border-color: var(--coral-300);
+}
+
+.acquisition-category-option:has(input:checked) {
+  color: var(--coral-800);
+  background: var(--coral-50);
+  border-color: var(--coral-400);
+}
+
+.acquisition-request-label {
+  gap: var(--space-3);
+}
+
+.acquisition-request-label textarea {
+  min-height: 11rem;
+  padding: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border-color: var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.acquisition-request-label textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.acquisition-state {
+  display: grid;
+  max-width: 58rem;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-left: var(--border-width-strong) solid var(--coral-600);
+  border-radius: var(--radius-md);
+}
+
+.acquisition-state-label {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.acquisition-state .notice {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.acquisition-state .button-secondary {
+  justify-self: start;
+  margin-top: var(--space-2);
+}
+
+.acquisition-proposal {
+  max-width: 72rem;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  background: var(--surface-base);
+}
+
+.acquisition-proposal-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(13rem, 17rem);
+  gap: var(--space-8);
+  align-items: start;
+}
+
+.acquisition-proposal-heading h2 {
+  max-width: 15ch;
+  margin: 0.4rem 0 0;
+  color: var(--text-primary);
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  letter-spacing: -0.065em;
+  line-height: 1;
+}
+
+.acquisition-proposal-title {
+  max-width: 42rem;
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.acquisition-plan-summary {
+  display: grid;
+  gap: 0.25rem;
+  padding: var(--space-4);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.acquisition-plan-summary strong {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.acquisition-plan-summary > span {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.acquisition-plan-summary dl {
+  display: grid;
+  gap: 0.6rem;
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-4);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.acquisition-plan-summary dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.acquisition-plan-summary dt,
+.acquisition-plan-summary dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.acquisition-plan-summary dd {
+  color: var(--text-primary);
+  font-weight: 800;
+}
+
+.acquisition-proposal-status-row {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.acquisition-proposal-status {
+  justify-self: start;
+  padding: 0.32rem 0.7rem;
+  color: var(--trust-checked-text);
+  background: var(--trust-checked-surface);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.acquisition-proposal-status-row .notice {
+  margin: 0;
+}
+
+.acquisition-understanding {
+  max-width: 58rem;
+  margin-top: var(--space-6);
+  padding: var(--space-5);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.acquisition-understanding p:last-child {
+  margin-bottom: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.acquisition-proposal-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-8) var(--space-6);
+  margin-top: var(--space-8);
+}
+
+.acquisition-proposal-sections > section {
+  min-width: 0;
+  padding-top: var(--space-5);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.acquisition-proposal-sections h3,
+.acquisition-exclusions h3 {
+  margin: 0 0 var(--space-4);
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  letter-spacing: -0.035em;
+}
+
+.acquisition-concept h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.98rem;
+}
+
+.acquisition-concept small,
+.acquisition-empty-detail,
+.acquisition-proposal-sections > section > p {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.acquisition-empty-detail {
+  margin: 0;
+}
+
+.acquisition-proposal-sections .acquisition-section-label {
+  margin-top: var(--space-4);
+}
+
+.acquisition-exclusions {
+  margin-top: var(--space-8);
+  padding: var(--space-5);
+  background: var(--surface-subtle);
+  border-top: 0 !important;
+  border-radius: var(--radius-lg);
+}
+
+.acquisition-exclusions ul {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  color: var(--text-secondary);
+}
+
+.acquisition-exclusions small {
+  display: block;
+  margin-top: var(--space-4);
+  color: var(--text-tertiary);
+}
+
+.acquisition-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+  padding-top: var(--space-5);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.acquisition-proposal-actions > span {
+  flex-basis: 100%;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.acquisition-revise {
+  max-width: 72rem;
+  margin-top: var(--space-5);
+  box-shadow: none;
+}
+
+.acquisition-revise .acquisition-form {
+  max-width: none;
+  box-shadow: none;
+}
+
+.home-start-route-primary {
+  background: var(--surface-base);
+  border-right: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.home-start-panel .home-start-ai {
+  background: var(--surface-subtle);
+  border-right: 0;
+}
+
+.home-secondary-action {
+  display: inline-flex;
+  margin-top: var(--space-5);
+  color: var(--coral-700);
+  text-decoration: none;
+}
+
+.home-ai-note {
+  min-height: auto !important;
+  margin-top: var(--space-3) !important;
+  color: var(--text-tertiary) !important;
+  font-size: 0.78rem !important;
+}
+
+.workspace-home-populated .home-greeting {
+  margin-top: var(--space-6);
+}
+
+.workspace-home-next {
+  max-width: 48rem;
+  margin-top: var(--space-8);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-top: var(--border-width-strong) solid var(--coral-600);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.workspace-home-next .button {
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+}
+
+.workspace-home-next .button:hover {
+  color: var(--surface-base);
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+  filter: none;
+}
+
+.workspace-home-next h2 {
+  margin: 0.4rem 0 0;
+  color: var(--text-primary);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  letter-spacing: -0.05em;
+}
+
+.workspace-home-next p:not(.eyebrow) {
+  margin: var(--space-3) 0 var(--space-5);
+  color: var(--text-secondary);
+}
+
+.workspace-home-supporting {
+  margin-top: var(--space-8);
+}
+
+.workspace-home-supporting h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+}
+
+@media (max-width: 48rem) {
+  .lenni-public-frame .site-header,
+  .lenni-public-frame .site-footer {
+    width: min(calc(100% - 1.25rem), 90rem);
+  }
+
+  .lenni-public-frame .site-header {
+    padding-block: 0.9rem;
+  }
+
+  .lenni-public-frame .public-nav {
+    gap: 0.55rem;
+  }
+
+  .lenni-public-frame .public-nav .button-small {
+    display: none;
+  }
+
+  .acquisition-page {
+    width: min(calc(100% - 1.25rem), 72rem);
+    padding-block: 2rem 3rem;
+  }
+
+  .acquisition-hero h1 {
+    max-width: 10ch;
+    font-size: clamp(2.65rem, 14vw, 4rem);
+  }
+
+  .acquisition-form,
+  .acquisition-proposal,
+  .acquisition-revise {
+    border-radius: var(--radius-lg);
+  }
+
+  .acquisition-proposal-heading,
+  .acquisition-proposal-sections {
+    grid-template-columns: 1fr;
+  }
+
+  .acquisition-proposal-heading {
+    gap: var(--space-5);
+  }
+
+  .acquisition-proposal-heading h2 {
+    max-width: 12ch;
+    font-size: clamp(2rem, 11vw, 3rem);
+  }
+
+  .acquisition-proposal-sections {
+    gap: var(--space-5);
+    margin-top: var(--space-6);
+  }
+
+  .acquisition-proposal-actions {
+    display: grid;
+    align-items: stretch;
+  }
+
+  .acquisition-proposal-actions .button,
+  .acquisition-proposal-actions .button-secondary {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .home-start-route-primary {
+    border-right: 0;
+    border-bottom: var(--border-width-thin) solid var(--border-subtle);
+  }
+
+  .home-start-panel .home-start-ai {
+    border-bottom: 0;
+  }
+
+  .workspace-home-next {
+    margin-top: var(--space-6);
+  }
+}

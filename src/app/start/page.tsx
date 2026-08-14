@@ -18,6 +18,26 @@ interface StartPageProps {
   searchParams: SearchParams;
 }
 
+type AcquisitionState =
+  "detail" | "expired" | "generic" | "limit" | "unavailable";
+
+function acquisitionState(value: string | undefined): AcquisitionState {
+  return value === "detail" ||
+    value === "expired" ||
+    value === "limit" ||
+    value === "unavailable"
+    ? value
+    : "generic";
+}
+
+const stateLabels: Readonly<Record<AcquisitionState, string>> = {
+  detail: "A little more detail will help",
+  expired: "Start a fresh proposal",
+  generic: "We need to try that again",
+  limit: "Free builds used for today",
+  unavailable: "Lenni is temporarily unavailable",
+};
+
 function categoryValue(value: unknown): AcquisitionCategory {
   return acquisitionCategoryOptions.some((option) => option.value === value)
     ? (value as AcquisitionCategory)
@@ -27,10 +47,12 @@ function categoryValue(value: unknown): AcquisitionCategory {
 export default async function StartPage({
   searchParams,
 }: Readonly<StartPageProps>): Promise<ReactNode> {
-  const [session, error] = await Promise.all([
+  const [session, error, rawState] = await Promise.all([
     loadAcquisitionSession(),
     readSearchParam(searchParams, "error"),
+    readSearchParam(searchParams, "state"),
   ]);
+  const state = acquisitionState(rawState);
   const activeSession = session && !session.expired ? session : null;
   const activeProposal = activeSession?.payload.proposal ?? null;
   const selectedCategory = categoryValue(activeProposal?.category);
@@ -42,15 +64,30 @@ export default async function StartPage({
     <main className="acquisition-page">
       <section className="acquisition-hero" aria-labelledby="start-title">
         <p className="eyebrow">Start with Lenni</p>
-        <h1 id="start-title">Build the system your business actually needs.</h1>
+        <h1 id="start-title">What are you building?</h1>
         <p>
-          Tell Lenni what you want to organise. You&apos;ll see a clear starting
-          point before you create an account or workspace.
+          Describe the work you run and Lenni will suggest a clear starting
+          workspace before you create an account.
         </p>
       </section>
 
-      {error ? <Notice kind="error">{error}</Notice> : null}
-      {session?.expired ? (
+      {error ? (
+        <section
+          aria-labelledby="acquisition-state-title"
+          className={`acquisition-state acquisition-state-${state}`}
+        >
+          <p className="acquisition-state-label" id="acquisition-state-title">
+            {stateLabels[state]}
+          </p>
+          <Notice kind="error">{error}</Notice>
+          {state === "detail" || state === "expired" || state === "limit" ? (
+            <Link className="button-secondary" href="/start">
+              Start again
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
+      {!error && session?.expired ? (
         <Notice kind="message">
           This proposal has expired. Start again below and Lenni will prepare a
           fresh starting point.
@@ -61,6 +98,7 @@ export default async function StartPage({
         <>
           <AcquisitionProposalCard proposal={activeProposal} />
           <section
+            id="revise"
             className="acquisition-revise"
             aria-labelledby="revise-title"
           >
@@ -75,6 +113,7 @@ export default async function StartPage({
             <ProposalForm
               defaultCategory={selectedCategory}
               defaultRequest={activeSession?.row.request_text ?? ""}
+              formKey="revise"
               submitLabel="Regenerate proposal"
             />
           </section>
@@ -82,6 +121,7 @@ export default async function StartPage({
       ) : (
         <ProposalForm
           defaultCategory="appointments"
+          formKey="initial"
           submitLabel="See my starting point"
         />
       )}
@@ -97,16 +137,18 @@ export default async function StartPage({
 function ProposalForm({
   defaultCategory,
   defaultRequest = "",
+  formKey,
   submitLabel,
 }: Readonly<{
   defaultCategory: AcquisitionCategory;
   defaultRequest?: string;
+  formKey: "initial" | "revise";
   submitLabel: string;
 }>): ReactNode {
   return (
     <form action={createProposalAction} className="acquisition-form">
       <fieldset>
-        <legend>What kind of work do you want to organise?</legend>
+        <legend>What best describes the work?</legend>
         <div className="acquisition-category-grid">
           {acquisitionCategoryOptions.map((option) => (
             <label className="acquisition-category-option" key={option.value}>
@@ -129,7 +171,8 @@ function ProposalForm({
 
       <PendingSubmitButton
         label={submitLabel}
-        pendingLabel="Understanding your business…"
+        pendingLabel="Preparing your starting point…"
+        statusId={`acquisition-${formKey}-progress`}
       />
     </form>
   );

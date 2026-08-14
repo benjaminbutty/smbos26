@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({
 
 import { WorkspaceHome } from "../src/components/workspace-home";
 import { WorkspaceMobileNav } from "../src/components/workspace-mobile-nav";
+import { AcquisitionProposalCard } from "../src/components/acquisition-proposal";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
 
@@ -174,7 +175,7 @@ describe("Lenni unified workspace presentation", () => {
     );
   });
 
-  it("gives an empty Business equally clear AI and manual starting routes", () => {
+  it("makes manual setup the clear first route for an empty Business", () => {
     const html = renderToStaticMarkup(
       createElement(WorkspaceHome, {
         businessName: "Willow & Co",
@@ -185,11 +186,12 @@ describe("Lenni unified workspace presentation", () => {
       }),
     );
 
-    expect(html).toContain("Build the system your business needs.");
+    expect(html).toContain("Set up your workspace.");
     expect(html).toContain("Tell Lenni what you need");
     expect(html).toContain("Create manually");
     expect(html).toContain("New Table");
     expect(html).toContain("New Page");
+    expect(html).toContain("Describe your business");
     expect(html).toContain("/app/willow-co/builder");
     expect(html).toContain(
       "/app/willow-co?new=table#tables-navigation-heading",
@@ -218,7 +220,110 @@ describe("Lenni unified workspace presentation", () => {
 
     expect(html).toContain("Mobile Grooming");
     expect(html).toContain("Equipment");
+    expect(html).toContain("Start here");
+    expect(html).toContain("Open Equipment");
     expect(html).not.toContain("Customers");
+  });
+
+  it("prioritises an existing Page as the populated Home next action", () => {
+    const html = renderToStaticMarkup(
+      createElement(WorkspaceHome, {
+        businessName: "Milk Woman Fran",
+        businessSlug: "milkwomanfran",
+        canManageConfiguration: true,
+        destinations: [
+          {
+            description: "Open this workspace page",
+            href: "/app/milkwomanfran/pages/overview",
+            kind: "page",
+            label: "Overview",
+          },
+          {
+            description: "View and manage this work",
+            href: "/app/milkwomanfran/workspace/milk-products",
+            kind: "view",
+            label: "Milk products",
+          },
+        ],
+        greetingName: "Owner",
+      }),
+    );
+
+    expect(html).toContain("Open Overview");
+    expect(html).toContain("Your work");
+    expect(html).toContain("Milk products");
+    expect(html).toContain("/app/milkwomanfran/pages/overview");
+  });
+
+  it("renders the proposal hierarchy without inventing capabilities", () => {
+    const html = renderToStaticMarkup(
+      createElement(AcquisitionProposalCard, {
+        proposal: {
+          category: "appointments",
+          concepts: [
+            {
+              description: "People who book with you",
+              name: "Customers",
+              tracked_information: ["Name", "Phone"],
+            },
+          ],
+          connections: [{ text: "Each appointment belongs to one customer" }],
+          first_step: "Review the starting workspace.",
+          landing_page_key: "today",
+          not_included: ["Online booking", "Payments"],
+          pages: [
+            { description: "The work that needs attention.", name: "Today" },
+          ],
+          source: "fallback",
+          title: "A calm starting workspace",
+          understanding: "You need to organise appointments and customers.",
+          views: [
+            {
+              description: "Bookings for today.",
+              name: "Appointments — Today",
+            },
+          ],
+          why: "These pieces keep the day easy to see.",
+        } as never,
+      }),
+    );
+
+    expect(html).toContain("Your plan");
+    expect(html).toContain("What Lenni will create");
+    expect(html).toContain("How it fits together");
+    expect(html).toContain("What you&#x27;ll see");
+    expect(html).toContain("Why this starting point");
+    expect(html).toContain("Not included yet");
+    expect(html).toContain("Reliable starting point");
+    expect(html).toContain("Create this workspace");
+    expect(html).not.toContain("Print");
+    expect(html).not.toContain("Archive");
+  });
+
+  it("keeps acquisition availability and account continuity explicit", () => {
+    const startSource = readFileSync(
+      new URL("../src/app/start/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const actionSource = readFileSync(
+      new URL("../src/app/start/actions.ts", import.meta.url),
+      "utf8",
+    );
+    const shellSource = readFileSync(
+      new URL("../src/components/app-shell.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(startSource).toContain("What are you building?");
+    expect(startSource).toContain("What best describes the work?");
+    expect(startSource).toContain("state");
+    expect(startSource).toContain("Start again");
+    expect(actionSource).toContain('"proposal_limit_reached"');
+    expect(actionSource).toContain('"needs_more_detail"');
+    expect(actionSource).toContain('"anonymous_build_session_expired"');
+    expect(actionSource).toContain("state }).toString()");
+    expect(shellSource).toContain("lenni-public-frame");
+    expect(shellSource).toContain('href="/start"');
   });
 
   it("keeps saved Views inside a Table tab strip", () => {

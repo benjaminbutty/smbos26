@@ -10,22 +10,22 @@ export function AcquisitionRequestInput({
   const [value, setValue] = useState(defaultValue);
   return (
     <label className="acquisition-request-label">
-      Describe what you need
+      <span>Describe how the work runs</span>
       <textarea
         maxLength={4_000}
         name="request"
         onChange={(event) => setValue(event.currentTarget.value)}
-        placeholder="Tell Lenni what is becoming difficult to organise."
+        placeholder="I run a dog-grooming business and need to keep track of customers, dogs, appointments and services."
         required
         rows={5}
         value={value}
       />
       <small>
-        Describe the process, not individual customers. Don&apos;t include
-        customer names, email addresses, phone numbers or other personal
-        information.
+        Tell Lenni what you run, what you need to keep track of, and what feels
+        messy today. Don&apos;t include customer names, email addresses, phone
+        numbers or other personal information.
       </small>
-      <span className="acquisition-example-label">Try an example</span>
+      <span className="acquisition-example-label">Need a starting point?</span>
       <span className="acquisition-example-list">
         {acquisitionPromptExamples.map((example) => (
           <button key={example} onClick={() => setValue(example)} type="button">

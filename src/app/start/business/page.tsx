@@ -33,7 +33,7 @@ export default async function BusinessSetupPage({
 
   if (!session || session.expired) {
     redirect(
-      "/start?error=This+proposal+has+expired.+Start+again+to+prepare+a+fresh+one.",
+      "/start?error=This+proposal+has+expired.+Start+again+to+prepare+a+fresh+one.&state=expired",
     );
   }
 
@@ -45,11 +45,11 @@ export default async function BusinessSetupPage({
   return (
     <main className="narrow-page acquisition-business-page">
       <section className="panel">
-        <p className="eyebrow">One last step</p>
-        <h1 className="page-title">Create your workspace</h1>
+        <p className="eyebrow">Your plan is ready</p>
+        <h1 className="page-title">Save it and create your workspace</h1>
         <p className="muted">
-          Signed in as {user.email ?? "your account"}. Lenni will create a
-          starting workspace for{" "}
+          Signed in as {user.email ?? "your account"}. Lenni will create the
+          starting workspace you just reviewed for{" "}
           {acquisitionCategoryLabel(proposal.category).toLocaleLowerCase("en")}.
         </p>
 
@@ -76,6 +76,7 @@ export default async function BusinessSetupPage({
           <PendingSubmitButton
             label="Create workspace"
             pendingLabel="Checking how the parts fit together…"
+            statusId="workspace-create-progress"
           />
         </form>
 
