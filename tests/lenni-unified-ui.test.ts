@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -39,8 +40,52 @@ describe("Lenni unified workspace presentation", () => {
     expect(ownerHtml).toContain("Work");
     expect(ownerHtml).toContain("More");
     expect(staffHtml).not.toContain("Tell Lenni");
+    expect(staffHtml).not.toContain("Changes");
+    expect(staffHtml).not.toContain("Setup");
     expect(staffHtml).toContain("Work");
     expect(staffHtml).toContain("More");
+  });
+
+  it("keeps the mobile sheet focus, escape, and overflow contract", () => {
+    const source = readFileSync(
+      new URL("../src/components/workspace-mobile-nav.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain('role="dialog"');
+    expect(source).toContain('aria-modal="true"');
+    expect(source).toContain("window.requestAnimationFrame");
+    expect(source).toContain('event.key === "Escape"');
+    expect(source).toContain('event.key !== "Tab"');
+    expect(source).toContain(
+      "event.shiftKey && document.activeElement === first",
+    );
+    expect(source).toContain(
+      "!event.shiftKey && document.activeElement === last",
+    );
+    expect(source).toContain("trigger.focus()");
+    expect(source).toContain('document.body.style.overflow = "hidden"');
+    expect(source).toContain("document.body.style.overflow = previousOverflow");
+  });
+
+  it("keeps the canonical Lenni token families in the current CSS source", () => {
+    const source = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    for (const token of [
+      "--space-1",
+      "--space-12",
+      "--radius-sm",
+      "--radius-pill",
+      "--border-width-thin",
+      "--border-width-strong",
+      "--elevation-subtle",
+      "--elevation-overlay",
+    ]) {
+      expect(source).toContain(token);
+    }
   });
 
   it("gives an empty Business equally clear AI and manual starting routes", () => {

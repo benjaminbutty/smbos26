@@ -11,6 +11,26 @@
   --surface-subtle: #f5f2ee;
   --surface-strong: #ece7e1;
   --border-subtle: #e5ded7;
+  --border-width-thin: 1px;
+  --border-width-strong: 2px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --radius-sm: 0.35rem;
+  --radius-md: 0.55rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-pill: 999px;
+  --elevation-none: none;
+  --elevation-subtle: 0 0.25rem 0.75rem rgb(23 26 29 / 0.06);
+  --elevation-panel: 0 0.65rem 1.5rem rgb(23 26 29 / 0.12);
+  --elevation-overlay: 0 1rem 3rem rgb(23 26 29 / 0.16);
   --text-primary: #171a1d;
   --text-secondary: #5d646b;
   --text-tertiary: #6a7178;
@@ -6232,7 +6252,7 @@ textarea {
   padding: 1.2rem 0.8rem 0.85rem;
   color: var(--text-primary);
   background: var(--surface-canvas);
-  border-right: 1px solid var(--border-subtle);
+  border-right: var(--border-width-thin) solid var(--border-subtle);
 }
 
 .workspace-sidebar-header {
@@ -6260,7 +6280,7 @@ textarea {
   color: var(--text-primary);
   background: var(--surface-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.65rem;
+  border-radius: var(--radius-lg);
   text-decoration: none;
 }
 
@@ -6276,7 +6296,7 @@ textarea {
   place-items: center;
   color: var(--coral-700);
   background: var(--coral-100);
-  border-radius: 0.45rem;
+  border-radius: var(--radius-sm);
   font-size: 0.62rem;
   font-weight: 800;
 }
@@ -6409,7 +6429,7 @@ textarea {
 .workspace-sidebar-footer {
   gap: 0.7rem;
   padding: 0.85rem 0.2rem 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
 }
 
 .workspace-utility-nav {
@@ -6457,7 +6477,7 @@ textarea {
   gap: 1rem;
   padding: 0 1.4rem;
   background: var(--surface-base);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
 }
 
 .workspace-topbar-context {
@@ -6482,7 +6502,7 @@ textarea {
   color: var(--text-primary);
   background: var(--surface-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-md);
   font-size: 0.73rem;
   font-weight: 750;
   text-decoration: none;
@@ -6507,7 +6527,7 @@ textarea {
   color: var(--text-secondary);
   background: var(--surface-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.6rem;
+  border-radius: var(--radius-md);
   font-size: 0.62rem;
   font-weight: 800;
   text-decoration: none;
@@ -6571,7 +6591,7 @@ textarea {
   overflow: visible;
   background: var(--surface-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.75rem;
+  border-radius: var(--radius-lg);
 }
 
 .home-start-route {
@@ -6627,7 +6647,7 @@ textarea {
   color: var(--surface-base) !important;
   background: var(--coral-700) !important;
   border-color: var(--coral-700) !important;
-  border-radius: 0.55rem !important;
+  border-radius: var(--radius-md) !important;
   font-size: 0.73rem;
   font-weight: 750;
   text-decoration: none;
@@ -6654,7 +6674,7 @@ textarea {
   color: var(--text-primary);
   background: var(--surface-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.55rem;
+  border-radius: var(--radius-md);
   text-decoration: none;
 }
 
@@ -6671,7 +6691,7 @@ textarea {
   place-items: center;
   color: var(--text-secondary);
   background: var(--surface-subtle);
-  border-radius: 0.4rem;
+  border-radius: var(--radius-sm);
   font-size: 1rem;
 }
 
@@ -6768,7 +6788,7 @@ textarea {
   padding: 1rem 1.1rem;
   background: var(--surface-base);
   border: 1px solid var(--border-subtle);
-  border-radius: 0.65rem;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: 0.82rem;
 }
@@ -8413,12 +8433,12 @@ textarea {
     left: 0;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.25rem;
+    gap: var(--space-1);
     min-height: 4.65rem;
     padding: 0.45rem 0.6rem calc(0.45rem + env(safe-area-inset-bottom));
     background: rgb(255 255 255 / 0.96);
-    border-top: 1px solid var(--border-subtle);
-    box-shadow: 0 -0.5rem 1.5rem rgb(23 26 29 / 0.06);
+    border-top: var(--border-width-thin) solid var(--border-subtle);
+    box-shadow: var(--elevation-subtle);
   }
 
   .workspace-mobile-nav-staff {
@@ -8516,8 +8536,8 @@ textarea {
 
   .workspace-mobile-sheet-body {
     display: grid;
-    gap: 1.5rem;
-    padding: 1.25rem 0 2rem;
+    gap: var(--space-6);
+    padding: var(--space-5) 0 var(--space-8);
   }
 
   .workspace-mobile-sheet-body section {
@@ -8536,7 +8556,7 @@ textarea {
 
   .workspace-mobile-sheet-links {
     display: grid;
-    gap: 0.45rem;
+    gap: var(--space-2);
   }
 
   .workspace-mobile-sheet-links a {
