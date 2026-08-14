@@ -13,6 +13,8 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
   "The category is a context hint only; the description determines the proposed business areas.",
   "Return needs_more_detail only when a safe useful internal workspace cannot be inferred; ask for one concise revised description, not a conversation.",
   "For a ready result, describe no more than six reusable business areas, their important information and ordinary-language connections. Prefer fewer.",
+  "For one_to_many connections, source_table_reference is the ONE side and target_table_reference is the MANY side. Choose source and target so the Relationship reflects the real business meaning: one Customer can have several Jobs means Customer is source and Job is target.",
+  "For one_to_one connections, both sides permit one; keep the direction aligned with the clearest ordinary business phrasing. For many_to_many connections, both sides permit several; keep the direction stable and coherent even though the one/many meaning is symmetric.",
   "A salon must not receive Pets unless the description actually involves animals.",
   "Recurring deliveries should use reusable Customers and Products plus a standing or regular order structure; quantities belong on an item or line concept between Products and Orders.",
   "When the request explicitly names deliveries, include a reusable Deliveries or delivery-runs business area unless the request clearly names a more specific equivalent.",

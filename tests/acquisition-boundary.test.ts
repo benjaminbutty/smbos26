@@ -8,6 +8,7 @@ import {
   type AcquisitionPlanningOutput,
 } from "../src/ai/acquisition-planning/schemas";
 import { validateAcquisitionPlanningOutput } from "../src/ai/acquisition-planning/validation";
+import { ACQUISITION_PLANNING_INSTRUCTION } from "../src/ai/acquisition-planning/task";
 import { acquisitionEvaluationScenarios } from "../src/ai/evaluation/acquisition/scenarios";
 import { emitAcquisitionEvent } from "../src/core/acquisition/events";
 
@@ -78,6 +79,21 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(
       new Set(acquisitionEvaluationScenarios.map(({ id }) => id)).size,
     ).toBe(8);
+  });
+
+  it("keeps the minimal one-to-many convention without porting linking-record prompt tuning", () => {
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "source_table_reference is the ONE side",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "target_table_reference is the MANY side",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).not.toContain(
+      "quantity-bearing linking business area",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).not.toContain(
+      "particular pairing or inclusion",
+    );
   });
 
   it("drops prompt, customer and authoritative payload metadata", () => {
