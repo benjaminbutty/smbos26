@@ -123,8 +123,10 @@ evidence carried into the next checkpoint.
 
 - Branch: `redesign/c6-today-operational-dashboard`
 - Feature implementation SHA: `0d39b79f3658e4971f7ca83b484fca8f290d3a84`
-- PR, final exact-head SHA, merge SHA and CI run: to be added after
-  publication
+- PR: [#46](https://github.com/benjaminbutty/smbos26/pull/46)
+- Final exact-head SHA: `cbeef762156536e7eb0ae7d37d61c840123bd653`
+- Merge SHA: `1edbb14f4f7bb803c53bbb2b3333b13d7cf277e7`
+- Exact-head CI: [run 31848422193](https://github.com/benjaminbutty/smbos26/actions/runs/31848422193)
 - Surfaces: Builder result trust hierarchy, operational confirmation
   distinction, Changes/History consequence centre, lifecycle labels, Preview
   not live, stale/currentness, technical disclosures and forward-only rollback
