@@ -13,20 +13,20 @@ type Page = Tables<"pages">;
 
 const statusPresentation = {
   proposed: {
-    label: "Proposed — awaiting validation",
+    label: "Proposed — review before checking",
     tone: "attention",
   },
   validated: {
-    label: "Validated — ready to apply",
+    label: "Checked — ready to apply",
     tone: "ready",
   },
-  applied: { label: "Applied", tone: "complete" },
-  rejected: { label: "Rejected — incompatible", tone: "problem" },
+  applied: { label: "Applied · Live", tone: "complete" },
+  rejected: { label: "Rejected — needs a new proposal", tone: "problem" },
   conflicted: {
-    label: "Conflicted — configuration moved on",
+    label: "Things changed — review current setup",
     tone: "problem",
   },
-  abandoned: { label: "Abandoned", tone: "muted" },
+  abandoned: { label: "Closed — abandoned", tone: "muted" },
 } as const;
 
 const entityLabels: Readonly<
@@ -120,6 +120,52 @@ function StatusBadge({
       <span className="sr-only">. Stored status: {status}.</span>
     </span>
   );
+}
+
+function ownerConsequence(
+  status: ChangeSet["status"],
+  appliedVersionNumber: number | null,
+): { eyebrow: string; heading: string; body: string } {
+  switch (status) {
+    case "proposed":
+      return {
+        eyebrow: "Configuration proposal",
+        heading: "Nothing is live yet",
+        body: "Review the before-and-after change, check it against current operational information, then apply it deliberately if it is right.",
+      };
+    case "validated":
+      return {
+        eyebrow: "Checked proposal",
+        heading: "Ready for deliberate application",
+        body: "This proposal has been checked against current operational information. Checking did not make it live; Apply remains a separate action.",
+      };
+    case "applied":
+      return {
+        eyebrow: "Applied configuration",
+        heading: appliedVersionNumber
+          ? `Live as Version ${appliedVersionNumber}`
+          : "Live configuration",
+        body: "This change is now the active configuration. Any undo or rollback creates a new forward history entry; it does not roll back ordinary business records.",
+      };
+    case "conflicted":
+      return {
+        eyebrow: "Things changed",
+        heading: "Review the current setup",
+        body: "The active configuration moved on before this proposal could continue. Nothing was silently rebased or applied; prepare a new proposal from the current setup.",
+      };
+    case "rejected":
+      return {
+        eyebrow: "Needs a new proposal",
+        heading: "Nothing from this candidate is live",
+        body: "The current operational information was not compatible with this candidate. Review the checked result and prepare a new proposal.",
+      };
+    case "abandoned":
+      return {
+        eyebrow: "Closed proposal",
+        heading: "Live configuration was not changed",
+        body: "This proposal is closed. Its stored history remains available for reference, but no configuration action is available.",
+      };
+  }
 }
 
 function DiffCounts({ diff }: Readonly<{ diff: SemanticDiff }>): ReactNode {
@@ -297,7 +343,7 @@ function ValidationResult({
       >
         <strong>
           {result.outcome === "valid"
-            ? "Validated successfully"
+            ? "Checked successfully"
             : "Rejected because current operational data is incompatible"}
         </strong>
         {validatedAt ? (
@@ -344,7 +390,7 @@ export function SemanticDiffView({
     <section className="change-section" aria-labelledby="semantic-diff-heading">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Stored engine output</p>
+          <p className="eyebrow">Owner impact · before and after</p>
           <h2 id="semantic-diff-heading">What changes</h2>
         </div>
         <DiffCounts diff={diff} />
@@ -385,7 +431,10 @@ export function SemanticDiffView({
                           </span>
                           <h4>{change.label}</h4>
                         </div>
-                        <code>{change.entity_key}</code>
+                        <details className="technical-details diff-technical-details">
+                          <summary>Technical ID</summary>
+                          <code>{change.entity_key}</code>
+                        </details>
                       </header>
                       {change.properties.length > 0 ? (
                         <div className="diff-properties">
@@ -478,9 +527,12 @@ function ChangeCard({
         <p className="change-description">{changeSet.description}</p>
       ) : null}
       <p className="change-card-meta">
-        Requested <Timestamp value={changeSet.created_at} /> · Base revision{" "}
-        {changeSet.base_head_revision}
+        Requested <Timestamp value={changeSet.created_at} />
       </p>
+      <details className="technical-details change-technical-details">
+        <summary>Technical details</summary>
+        <p>Base revision {changeSet.base_head_revision}</p>
+      </details>
       {appliedVersion ? (
         <p className="change-provenance">
           Applied as Version {appliedVersion.version_number}
@@ -578,9 +630,12 @@ function VersionHistory({
                     : " · Rollback restoring an earlier version"
                   : ""}
               </p>
-              <p>
-                Checksum <code>{version.snapshot_checksum.slice(0, 12)}</code>
-              </p>
+              <details className="technical-details change-technical-details">
+                <summary>Technical details</summary>
+                <p>
+                  Checksum <code>{version.snapshot_checksum.slice(0, 12)}</code>
+                </p>
+              </details>
               <Link
                 aria-label={`View configuration Version ${version.version_number}`}
                 className="text-link"
@@ -623,7 +678,8 @@ export function ConfigurationChangesOverview({
           <p className="eyebrow">Configuration</p>
           <h1 className="runtime-title">Changes</h1>
           <p className="muted">
-            Review proposed work and the immutable history of this Business.
+            See what is proposed, what has been checked, and what is live in
+            this Business.
           </p>
         </div>
         <nav aria-label="Changes sections" className="history-section-links">
@@ -642,7 +698,7 @@ export function ConfigurationChangesOverview({
           <div className="section-heading">
             <div>
               <h3 id="needs-attention-heading">Needs attention</h3>
-              <p className="muted">Proposed and validated changes.</p>
+              <p className="muted">Proposed and checked changes.</p>
             </div>
             <span className="section-count">{open.length}</span>
           </div>
@@ -764,10 +820,28 @@ export function ConfigurationChangeDetail({
 
       {notice}
 
+      {(() => {
+        const consequence = ownerConsequence(
+          changeSet.status,
+          appliedVersion?.version_number ?? null,
+        );
+        return (
+          <section
+            aria-labelledby="owner-consequence-heading"
+            className="history-impact"
+          >
+            <p className="eyebrow">{consequence.eyebrow}</p>
+            <h2 id="owner-consequence-heading">{consequence.heading}</h2>
+            <p>{consequence.body}</p>
+          </section>
+        );
+      })()}
+
       <section
         className="change-section configuration-action-panel"
         aria-labelledby="available-actions-heading"
       >
+        <p className="eyebrow">Next deliberate action</p>
         <h2 id="available-actions-heading">Available actions</h2>
         {changeSet.status === "proposed" ? (
           <div className="configuration-action-links">
@@ -819,7 +893,8 @@ export function ConfigurationChangeDetail({
           changeSet.status === "validated") &&
         preview.state === "available" ? (
           <p className="muted">
-            Candidate preview links are available in the preview section below.
+            Preview links below are read-only and do not make configuration
+            live.
           </p>
         ) : null}
       </section>
@@ -846,8 +921,11 @@ export function ConfigurationChangeDetail({
             <dd>
               <Link href={pathForVersion(businessSlug, baseVersion.id)}>
                 Version {baseVersion.version_number}
-              </Link>{" "}
-              · revision {changeSet.base_head_revision}
+              </Link>
+              <details className="technical-details">
+                <summary>Technical revision</summary>
+                <p>Base revision {changeSet.base_head_revision}</p>
+              </details>
             </dd>
           </div>
           {rollbackTarget ? (
@@ -871,11 +949,14 @@ export function ConfigurationChangeDetail({
             </div>
           ) : null}
           <div>
-            <dt>Candidate checksum</dt>
+            <dt>Candidate</dt>
             <dd>
-              <code title={changeSet.candidate_checksum}>
-                {changeSet.candidate_checksum.slice(0, 12)}
-              </code>
+              <details className="technical-details">
+                <summary>Technical details</summary>
+                <code title={changeSet.candidate_checksum}>
+                  Candidate checksum {changeSet.candidate_checksum}
+                </code>
+              </details>
             </dd>
           </div>
         </dl>
@@ -890,10 +971,10 @@ export function ConfigurationChangeDetail({
           </div>
           {changeSet.validated_at ? (
             <div>
-              <dt>Validated</dt>
+              <dt>Checked</dt>
               <dd>
                 <Timestamp value={changeSet.validated_at} />
-                <span className="actor-label">Validated by an Owner/Admin</span>
+                <span className="actor-label">Checked by an Owner/Admin</span>
               </dd>
             </div>
           ) : null}
@@ -925,11 +1006,12 @@ export function ConfigurationChangeDetail({
       <SemanticDiffView diff={diff} />
 
       <section className="change-section" aria-labelledby="preview-heading">
-        <h2 id="preview-heading">Candidate preview</h2>
+        <h2 id="preview-heading">Preview — not live</h2>
         {preview.state === "available" ? (
           <>
             <p className="muted">
-              These active candidate Pages open inside authenticated preview.
+              These candidate Pages are read-only and open inside authenticated
+              preview. They do not change the live workspace.
             </p>
             <ul className="preview-page-list">
               {preview.pages.map((page) => (
@@ -958,10 +1040,19 @@ export function ConfigurationChangeDetail({
             This candidate has no active Pages available to preview.
           </div>
         ) : preview.state === "stale" ? (
-          <div className="history-notice history-notice-warning">
-            <strong>
-              Preview unavailable — the active configuration has moved on
-            </strong>
+          <div
+            aria-live="polite"
+            className="history-notice history-notice-warning"
+            role="alert"
+          >
+            <strong>Things changed — Preview is unavailable</strong>
+            <p>
+              The active configuration moved on. Review the current Changes
+              before preparing a new proposal.
+            </p>
+            <Link className="text-link" href={`/app/${businessSlug}/changes`}>
+              Return to Changes
+            </Link>
           </div>
         ) : (
           <div className="history-empty">
@@ -1071,6 +1162,16 @@ export function ConfigurationVersionDetail({
         </section>
       ) : null}
 
+      {!active ? (
+        <div className="history-notice history-notice-warning">
+          <strong>Rollback is a new forward configuration change.</strong>
+          <p>
+            Preparing or applying it will not roll back Customers, Orders,
+            Products or other ordinary business records.
+          </p>
+        </div>
+      ) : null}
+
       {version.kind === "baseline" ? (
         <div className="history-notice">
           <strong>Empty configuration created with the Business.</strong>
@@ -1138,9 +1239,12 @@ export function ConfigurationVersionDetail({
             </dd>
           </div>
           <div>
-            <dt>Checksum</dt>
+            <dt>Snapshot</dt>
             <dd>
-              <code>{version.snapshot_checksum}</code>
+              <details className="technical-details">
+                <summary>Technical details</summary>
+                <code>{version.snapshot_checksum}</code>
+              </details>
             </dd>
           </div>
         </dl>

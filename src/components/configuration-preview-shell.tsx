@@ -44,10 +44,13 @@ export function ConfigurationPreviewShell({
           <h1>{title}</h1>
           <p>
             {kind === "rollback" ? "Rollback" : "Change"} ·{" "}
-            {status === "validated" ? "Validated" : "Proposed"} · Candidate{" "}
-            <code>{candidateChecksum.slice(0, 12)}</code>
+            {status === "validated" ? "Checked" : "Proposed"} · Read-only
           </p>
-          <p>No edits or submissions will be saved.</p>
+          <p>No edits or submissions will be saved. This is not live.</p>
+          <details className="technical-details preview-technical-details">
+            <summary>Technical details</summary>
+            <code>Candidate checksum {candidateChecksum}</code>
+          </details>
         </div>
         <Link className="button button-secondary" href={`/app/${businessSlug}`}>
           Exit preview
