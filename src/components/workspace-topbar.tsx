@@ -55,10 +55,16 @@ export function WorkspaceTopbar({
 }: Readonly<WorkspaceTopbarProps>): ReactNode {
   const pathname = usePathname();
   const context = contextForPath(pathname, businessSlug, tables, pages);
+  const rootPath = `/app/${encodeURIComponent(businessSlug)}`;
 
   return (
     <header className="workspace-topbar">
-      <p className="workspace-topbar-context">{context}</p>
+      <div className="workspace-topbar-leading">
+        <Link className="workspace-topbar-brand" href={rootPath}>
+          Lenni
+        </Link>
+        <p className="workspace-topbar-context">{context}</p>
+      </div>
       <div className="workspace-topbar-actions">
         {canManageConfiguration ? (
           <Link

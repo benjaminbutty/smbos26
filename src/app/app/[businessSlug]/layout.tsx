@@ -7,6 +7,7 @@ import { ConfigurationChangeService } from "../../../core/configuration/service"
 import { createExperienceService } from "../../../core/experience/service";
 import { createServerClient } from "../../../db/supabase/server";
 import { WorkspaceNavLink } from "../../../components/workspace-nav-link";
+import { WorkspaceMobileNav } from "../../../components/workspace-mobile-nav";
 import { WorkspaceTopbar } from "../../../components/workspace-topbar";
 import { experienceKeyToPath } from "../../../runtime/routing";
 import { PagesSidebar } from "../../../runtime/navigation/pages-sidebar";
@@ -45,6 +46,11 @@ export default async function TenantLayout({
   const nonTableViews = navigation.views.filter(
     (view) => view.view_type !== "table",
   );
+  const otherViews = nonTableViews.map((view) => ({
+    key: view.key,
+    name: view.name,
+    path: experienceKeyToPath(view.key),
+  }));
   let currentness: {
     expectedBaseVersionId: string;
     expectedHeadRevision: number;
@@ -98,52 +104,60 @@ export default async function TenantLayout({
             </span>
             Home
           </WorkspaceNavLink>
-          <TablesSidebar
-            action={createDirectTableAction.bind(null, businessSlug)}
-            businessSlug={businessSlug}
-            currentness={canManageConfiguration ? currentness : null}
-            tables={tables}
-          />
-          <PagesSidebar
-            action={
-              canManageConfiguration && currentness
-                ? createPageAction.bind(null, businessSlug, currentness)
-                : undefined
-            }
-            businessSlug={businessSlug}
-            currentness={canManageConfiguration ? currentness : null}
-            pages={navigation.pages.map((page) => ({
-              id: page.id,
-              slug: page.slug,
-              title: page.title,
-            }))}
-          />
-          {nonTableViews.length > 0 ? (
-            <section
-              aria-labelledby="views-navigation-heading"
-              className="sidebar-section sidebar-view-section"
-            >
-              <div className="sidebar-section-heading">
-                <h2 id="views-navigation-heading">Views</h2>
-              </div>
-              <nav aria-label="Views">
-                {nonTableViews.map((view) => (
-                  <Link
-                    className="workspace-secondary-destination"
-                    href={`/app/${businessSlug}/workspace/${experienceKeyToPath(
-                      view.key,
-                    )}`}
-                    key={view.id}
-                  >
-                    <span aria-hidden="true" className="workspace-nav-icon">
-                      ◌
-                    </span>
-                    {view.name}
-                  </Link>
-                ))}
-              </nav>
-            </section>
-          ) : null}
+          <section
+            aria-labelledby="work-navigation-heading"
+            className="workspace-work-group"
+          >
+            <div className="workspace-work-heading">
+              <h2 id="work-navigation-heading">Work</h2>
+            </div>
+            <TablesSidebar
+              action={createDirectTableAction.bind(null, businessSlug)}
+              businessSlug={businessSlug}
+              currentness={canManageConfiguration ? currentness : null}
+              tables={tables}
+            />
+            <PagesSidebar
+              action={
+                canManageConfiguration && currentness
+                  ? createPageAction.bind(null, businessSlug, currentness)
+                  : undefined
+              }
+              businessSlug={businessSlug}
+              currentness={canManageConfiguration ? currentness : null}
+              pages={navigation.pages.map((page) => ({
+                id: page.id,
+                slug: page.slug,
+                title: page.title,
+              }))}
+            />
+            {nonTableViews.length > 0 ? (
+              <section
+                aria-labelledby="other-views-navigation-heading"
+                className="sidebar-section workspace-other-views"
+              >
+                <div className="sidebar-section-heading">
+                  <h3 id="other-views-navigation-heading">Other views</h3>
+                </div>
+                <nav aria-label="Other views">
+                  {nonTableViews.map((view) => (
+                    <Link
+                      className="workspace-secondary-destination"
+                      href={`/app/${businessSlug}/workspace/${experienceKeyToPath(
+                        view.key,
+                      )}`}
+                      key={view.id}
+                    >
+                      <span aria-hidden="true" className="workspace-nav-icon">
+                        ◌
+                      </span>
+                      {view.name}
+                    </Link>
+                  ))}
+                </nav>
+              </section>
+            ) : null}
+          </section>
         </nav>
 
         <div className="workspace-sidebar-footer">
@@ -205,6 +219,17 @@ export default async function TenantLayout({
         />
         {children}
       </main>
+      <WorkspaceMobileNav
+        businessName={tenant.business.name}
+        businessSlug={businessSlug}
+        canManageConfiguration={canManageConfiguration}
+        otherViews={otherViews}
+        pages={navigation.pages.map((page) => ({
+          slug: page.slug,
+          title: page.title,
+        }))}
+        tables={tables}
+      />
     </div>
   );
 }
