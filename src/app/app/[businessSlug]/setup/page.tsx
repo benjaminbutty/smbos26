@@ -359,10 +359,38 @@ export default async function SetupPage({
   }
 
   return (
-    <section className="tenant-content setup-page">
-      <p className="eyebrow">Business setup</p>
-      <h1 className="page-title">Edit setup</h1>
-      <p className="lede">
+    <section className="tenant-content setup-page c7-settings-page">
+      <header className="c7-settings-route-heading">
+        <div>
+          <p className="eyebrow">Settings / Setup</p>
+          <h1 className="page-title">Edit setup</h1>
+          <p className="lede">
+            Prepare a bounded change for review without changing the live
+            customer experience.
+          </p>
+        </div>
+        <nav className="c7-settings-section-nav" aria-label="Settings sections">
+          <Link
+            href={`/app/${encodeURIComponent(businessSlug)}/locations#business`}
+          >
+            Business
+          </Link>
+          <Link
+            href={`/app/${encodeURIComponent(businessSlug)}/locations#locations`}
+          >
+            Locations
+          </Link>
+          <Link
+            href={`/app/${encodeURIComponent(businessSlug)}/locations#team`}
+          >
+            Team &amp; permissions
+          </Link>
+          <a href="#preorder-heading" aria-current="page">
+            Setup
+          </a>
+        </nav>
+      </header>
+      <p className="c7-settings-read-only-note">
         Choose an area to prepare a change for review. Your live customer pages
         stay unchanged until an Owner or Admin deliberately validates and
         applies the proposal.

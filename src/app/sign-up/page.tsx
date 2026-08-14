@@ -25,12 +25,16 @@ export default async function SignUpPage({
   }
 
   return (
-    <main className="narrow-page">
-      <section className="panel">
+    <main className="narrow-page c7-auth-page">
+      <section className="panel c7-auth-panel">
         <p className="eyebrow">Create your account</p>
         <h1 className="page-title">Get started</h1>
         <p className="muted">
           Use your work email and a password of at least 8 characters.
+        </p>
+        <p className="c7-auth-note">
+          Your account is the key to the businesses and workspaces you are
+          invited to use.
         </p>
 
         {error ? <Notice kind="error">{error}</Notice> : null}

@@ -70,6 +70,77 @@ describe("Lenni unified workspace presentation", () => {
     expect(source).toContain("document.body.style.overflow = previousOverflow");
   });
 
+  it("keeps C7 settings, auth and public preorder presentation bounded", () => {
+    const locationsSource = readFileSync(
+      new URL(
+        "../src/app/app/[businessSlug]/locations/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const setupSource = readFileSync(
+      new URL("../src/app/app/[businessSlug]/setup/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const signInSource = readFileSync(
+      new URL("../src/app/sign-in/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const signUpSource = readFileSync(
+      new URL("../src/app/sign-up/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const publicSource = readFileSync(
+      new URL(
+        "../src/app/p/[businessSlug]/[pageSlug]/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const preorderSource = readFileSync(
+      new URL(
+        "../src/runtime/preorder/preorder-experience.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(locationsSource).toContain('from("business_memberships")');
+    expect(locationsSource).toContain('id="business"');
+    expect(locationsSource).toContain('id="locations"');
+    expect(locationsSource).toContain('id="team"');
+    expect(locationsSource).toContain('name="timezone"');
+    expect(locationsSource).toContain('"manage_locations"');
+    expect(locationsSource).toContain('"manage_memberships"');
+    expect(setupSource).toContain("Settings / Setup");
+    expect(setupSource).toContain('aria-label="Settings sections"');
+    expect(setupSource).toContain("prepare a change for review");
+
+    expect(signInSource).toContain("c7-auth-page");
+    expect(signInSource).toContain("c7-auth-panel");
+    expect(signUpSource).toContain("c7-auth-page");
+    expect(signUpSource).toContain("c7-auth-panel");
+    expect(publicSource).toContain("c7-public-experience-header");
+    expect(publicSource).toContain("Powered by Lenni");
+    expect(publicSource).toContain("c7-public-preorder");
+    expect(preorderSource).toContain("aria-busy={submitting}");
+    expect(preorderSource).toContain('id="preorder-error"');
+    expect(preorderSource).toContain('role="alert"');
+    expect(preorderSource).not.toContain("reach the bakery");
+
+    expect(cssSource).toContain(".c7-settings-section-nav");
+    expect(cssSource).toContain(".c7-settings-role-grid");
+    expect(cssSource).toContain(".c7-auth-panel");
+    expect(cssSource).toContain(".c7-public-experience-header");
+    expect(cssSource).toContain(".c7-public-preorder .preorder-summary");
+    expect(cssSource).toContain("@media (max-width: 48rem)");
+    expect(cssSource).toContain("@media (max-width: 38rem)");
+  });
+
   it("keeps the Page editor bounded, direct, and renderer-backed", () => {
     const editorSource = readFileSync(
       new URL("../src/runtime/page-editor/page-editor.tsx", import.meta.url),
