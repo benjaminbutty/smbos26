@@ -233,6 +233,12 @@ export function ProductionTableWorkspace({
       {...(businessSlug !== undefined ? { businessSlug } : {})}
       footer={footer}
       headerContent={headerContent}
+      marker={
+        surface === "workspace" ? (
+          <p className="editor-lab-kicker">Table</p>
+        ) : undefined
+      }
+      {...(creationFallbackHref !== undefined ? { creationFallbackHref } : {})}
       {...(newRecordLabel !== undefined ? { newRecordLabel } : {})}
       onStructureChanged={() => router.refresh()}
       {...(connectionSource ? { connectionSource } : {})}

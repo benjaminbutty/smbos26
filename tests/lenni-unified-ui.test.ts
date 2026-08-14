@@ -355,6 +355,39 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("Saved");
   });
 
+  it("keeps the production Table action and empty-state contract explicit", () => {
+    const editorSource = readFileSync(
+      new URL("../src/runtime/editor-kernel/editor-lab.tsx", import.meta.url),
+      "utf8",
+    );
+    const productionSource = readFileSync(
+      new URL(
+        "../src/runtime/editor-kernel/production/production-table-workspace.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(editorSource).toContain(
+      "data-row-creation={capabilities.rowCreation}",
+    );
+    expect(editorSource).toContain('className="editor-new-record-action"');
+    expect(editorSource).toContain('data-testid="editor-grid-empty"');
+    expect(editorSource).toContain("capabilities.rowCreationMessage");
+    expect(productionSource).toContain("creationFallbackHref");
+    expect(productionSource).toContain('className="editor-lab-kicker">Table');
+    expect(cssSource).toContain(
+      ".workspace-table-page .editor-header-content:empty",
+    );
+    expect(cssSource).toContain(
+      ".workspace-table-page .editor-header-menu-button",
+    );
+  });
+
   it("keeps connected records navigable from the record panel", () => {
     const html = renderToStaticMarkup(
       createElement(RecordPanel, {

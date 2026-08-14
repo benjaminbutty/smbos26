@@ -67,6 +67,7 @@ export interface EditorKernelProps {
   adapter: TableEditorAdapter;
   businessSlug?: string;
   capabilities?: EditorCapabilities;
+  creationFallbackHref?: string;
   footer?: ReactNode;
   headerContent?: ReactNode;
   marker?: ReactNode;
@@ -711,6 +712,7 @@ export function EditorKernel({
   adapter,
   businessSlug,
   capabilities = defaultEditorCapabilities,
+  creationFallbackHref,
   footer,
   headerContent,
   marker,
@@ -1764,13 +1766,20 @@ export function EditorKernel({
     activeCell && activeRow
       ? editorInputValue(activeRow.values[activeCell.columnKey] ?? null)
       : null;
+  const emptyRecordLabel =
+    recordCountLabel?.replace(/^\d+\s+/, "").trim() ||
+    (recordTypeLabel
+      ? `${recordTypeLabel.toLocaleLowerCase("en")}s`
+      : "records");
 
   return (
     <section
       className={`editor-kernel-page ${variant === "embedded" ? "editor-kernel-embedded" : ""}`}
+      data-read-only={readOnly ? "true" : "false"}
+      data-row-creation={capabilities.rowCreation}
     >
       <header className="editor-lab-header">
-        <div>
+        <div className="editor-table-title-block">
           {marker}
           <TableTitleEditor
             displayTitle={title ?? table.name}
@@ -1844,6 +1853,33 @@ export function EditorKernel({
         <span className="editor-lab-shortcut-hint">
           Enter / double-click to edit · ⌘C / ⌘V supported
         </span>
+        <div className="editor-lab-meta-actions">
+          {capabilities.rowCreation === "direct" ? (
+            <button
+              className="editor-new-record-action"
+              onClick={() => {
+                const primaryColumnIndex = table.columns.findIndex(
+                  (column) => column.key === table.primaryColumnKey,
+                );
+                if (primaryColumnIndex >= 0) {
+                  setDraftActivation({
+                    rowIdx: table.rows.length,
+                    columnIdx: primaryColumnIndex,
+                  });
+                }
+              }}
+              type="button"
+            >
+              <span aria-hidden="true">+</span>
+              {newRecordLabel}
+            </button>
+          ) : creationFallbackHref ? (
+            <a className="editor-new-record-action" href={creationFallbackHref}>
+              <span aria-hidden="true">+</span>
+              {newRecordLabel}
+            </a>
+          ) : null}
+        </div>
       </div>
 
       <div className="editor-lab-workspace">
@@ -1901,6 +1937,26 @@ export function EditorKernel({
               rowKeyGetter={(row) => row.id}
               rows={gridRows}
             />
+            {table.rows.length === 0 ? (
+              <div
+                className="editor-grid-empty"
+                data-testid="editor-grid-empty"
+                role="status"
+              >
+                <span aria-hidden="true" className="editor-grid-empty-icon">
+                  □
+                </span>
+                <strong>No {emptyRecordLabel} yet</strong>
+                <span>
+                  {capabilities.rowCreation === "direct"
+                    ? "Start with the first record using the row below or the button above."
+                    : capabilities.rowCreation === "configured_form"
+                      ? "Records added through the configured creation screen will appear here."
+                      : (capabilities.rowCreationMessage ??
+                        "Records will appear here when they are available.")}
+                </span>
+              </div>
+            ) : null}
             {capabilities.canAddColumns ? (
               <>
                 <button
