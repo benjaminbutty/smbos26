@@ -212,12 +212,12 @@ describe("read-only configuration Changes interface", () => {
 
     expect(html).toContain("Needs attention");
     expect(html).toContain("Completed");
-    expect(html).toContain("Proposed — awaiting validation");
-    expect(html).toContain("Validated — ready to apply");
-    expect(html).toContain("Applied");
-    expect(html).toContain("Rejected — incompatible");
-    expect(html).toContain("Conflicted — configuration moved on");
-    expect(html).toContain("Abandoned");
+    expect(html).toContain("Proposed — review before checking");
+    expect(html).toContain("Checked — ready to apply");
+    expect(html).toContain("Applied · Live");
+    expect(html).toContain("Rejected — needs a new proposal");
+    expect(html).toContain("Things changed — review current setup");
+    expect(html).toContain("Closed — abandoned");
     expect(html.indexOf("validated proposal")).toBeLessThan(
       html.indexOf("proposed proposal"),
     );
@@ -246,7 +246,7 @@ describe("read-only configuration Changes interface", () => {
       }),
     );
 
-    expect(html).toContain("Validated successfully");
+    expect(html).toContain("Checked successfully");
     expect(html).toContain("existing_records_hidden");
     expect(html).toContain("Some existing information will not appear");
     expect(html).toContain("Created (1)");
@@ -311,9 +311,7 @@ describe("read-only configuration Changes interface", () => {
       /postgres|public\.|select \*|stack trace/i,
     );
     expect(proposedHtml).toContain("Validation has not run");
-    expect(proposedHtml).toContain(
-      "Preview unavailable — the active configuration has moved on",
-    );
+    expect(proposedHtml).toContain("Things changed — Preview is unavailable");
   });
 
   it("offers stable-key authenticated preview links only for available open proposals", () => {

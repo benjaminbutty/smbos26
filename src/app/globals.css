@@ -2304,6 +2304,52 @@ textarea {
   border-color: rgba(23, 94, 64, 0.22);
 }
 
+.builder-result-proposed {
+  color: var(--trust-proposed-text);
+  background: var(--trust-proposed-surface);
+  border-color: color-mix(in srgb, var(--trust-proposed-text) 24%, white);
+}
+
+.builder-result-unavailable {
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border-color: color-mix(
+    in srgb,
+    var(--trust-warning-needs-review-text) 24%,
+    white
+  );
+}
+
+.builder-result-unavailable-ai_disabled,
+.builder-result-unavailable-nothing_to_propose {
+  color: var(--trust-read-only-text);
+  background: var(--trust-read-only-surface);
+  border-color: var(--border-strong);
+}
+
+.builder-result-lede,
+.builder-consequence {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.builder-result-lede {
+  padding: 0.9rem 1rem;
+  background: color-mix(in srgb, var(--surface-base) 72%, transparent);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.builder-result-lede p,
+.builder-consequence p {
+  margin: 0;
+}
+
+.builder-consequence {
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+}
+
 .builder-result-clarification {
   background: rgba(255, 255, 255, 0.9);
 }
@@ -4049,6 +4095,30 @@ textarea {
   border-radius: 0.8rem;
 }
 
+.history-impact {
+  display: grid;
+  gap: 0.55rem;
+  padding: clamp(1.25rem, 3vw, 1.75rem);
+  color: var(--trust-proposed-text);
+  background: var(--trust-proposed-surface);
+  border: 1px solid color-mix(in srgb, var(--trust-proposed-text) 22%, white);
+  border-radius: var(--radius-lg);
+}
+
+.history-impact h2,
+.history-impact p {
+  margin: 0;
+}
+
+.history-impact p:last-child {
+  color: color-mix(
+    in srgb,
+    var(--trust-proposed-text) 78%,
+    var(--text-primary)
+  );
+  line-height: 1.6;
+}
+
 .history-notice {
   color: var(--foreground);
   border-style: solid;
@@ -4265,6 +4335,38 @@ textarea {
   color: var(--accent);
   cursor: pointer;
   font-weight: 700;
+}
+
+.change-technical-details {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.change-technical-details p {
+  margin: 0.45rem 0 0;
+}
+
+.diff-technical-details {
+  max-width: 45%;
+  margin-left: auto;
+}
+
+.diff-technical-details code {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.4rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.preview-technical-details code {
+  display: block;
+  max-width: min(100%, 40rem);
+  margin-top: 0.4rem;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.75rem;
 }
 
 .technical-details pre {

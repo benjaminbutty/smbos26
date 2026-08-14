@@ -61,6 +61,55 @@ function locationsPath(businessSlug: string): string {
   return `/app/${encodeURIComponent(businessSlug)}/locations`;
 }
 
+function workspacePath(businessSlug: string): string {
+  return `/app/${encodeURIComponent(businessSlug)}`;
+}
+
+const unavailablePresentation = {
+  ai_disabled: {
+    eyebrow: "Manual route available",
+    heading: "Builder AI is unavailable",
+    nextStep:
+      "Your live workspace is unchanged. Continue with the existing workspace or build it manually.",
+    action: "Build manually",
+  },
+  budget_reached: {
+    eyebrow: "AI limit reached",
+    heading: "Builder is paused for today",
+    nextStep:
+      "Your live workspace is unchanged. Continue manually while the limit resets.",
+    action: "Continue manually",
+  },
+  temporarily_unavailable: {
+    eyebrow: "Builder unavailable",
+    heading: "Your request was not changed",
+    nextStep:
+      "Builder could not prepare a result right now. Your live workspace is unchanged.",
+    action: "Continue manually",
+  },
+  stale: {
+    eyebrow: "Things changed",
+    heading: "Review the current workspace",
+    nextStep:
+      "The workspace changed while Builder was preparing this request. Nothing was silently reapplied.",
+    action: "Review current workspace",
+  },
+  nothing_to_propose: {
+    eyebrow: "No configuration proposal",
+    heading: "There is no setup change to review",
+    nextStep:
+      "Your live workspace is unchanged. Continue manually if you know the setup change you need.",
+    action: "Open workspace",
+  },
+  could_not_prepare: {
+    eyebrow: "No safe proposal",
+    heading: "Builder could not prepare this request",
+    nextStep:
+      "Your live workspace is unchanged. Continue manually or submit a smaller setup request.",
+    action: "Continue manually",
+  },
+} as const;
+
 export function BuilderResultPanel({
   action,
   businessSlug,
@@ -98,10 +147,27 @@ export function BuilderResultPanel({
   }
 
   if (state.state === "unavailable") {
+    const presentation = unavailablePresentation[state.reason];
     return (
-      <div className="builder-result builder-result-error" role="alert">
-        <strong>{state.message}</strong>
-      </div>
+      <section
+        aria-labelledby="builder-unavailable-heading"
+        className={`builder-result builder-result-unavailable builder-result-unavailable-${state.reason}`}
+        role="alert"
+      >
+        <p className="eyebrow">{presentation.eyebrow}</p>
+        <h2 id="builder-unavailable-heading">{presentation.heading}</h2>
+        <p>{state.message}</p>
+        <div className="builder-consequence">
+          <strong>What this means</strong>
+          <p>{presentation.nextStep}</p>
+        </div>
+        <Link
+          className="button button-secondary"
+          href={workspacePath(businessSlug)}
+        >
+          {presentation.action}
+        </Link>
+      </section>
     );
   }
 
@@ -122,6 +188,12 @@ export function BuilderResultPanel({
           and pages, plus selected operational actions such as adding one
           Location. Try one complete request at a time.
         </p>
+        <Link
+          className="button button-secondary"
+          href={workspacePath(businessSlug)}
+        >
+          Build manually instead
+        </Link>
       </section>
     );
   }
@@ -133,7 +205,7 @@ export function BuilderResultPanel({
         className="builder-result builder-result-warning"
         role="status"
       >
-        <p className="eyebrow">Ready for confirmation</p>
+        <p className="eyebrow">Operational action · Ready for confirmation</p>
         <h2 id="builder-location-confirmation-heading">
           Add {state.location_name} as a new Location?
         </h2>
@@ -206,7 +278,7 @@ export function BuilderResultPanel({
         className="builder-result builder-result-warning"
         role="status"
       >
-        <p className="eyebrow">Ready for confirmation</p>
+        <p className="eyebrow">Operational action · Ready for confirmation</p>
         <h2 id="builder-record-confirmation-heading">
           Add {state.object_label}
         </h2>
@@ -259,7 +331,7 @@ export function BuilderResultPanel({
         className="builder-result builder-result-warning"
         role="status"
       >
-        <p className="eyebrow">Ready for confirmation</p>
+        <p className="eyebrow">Operational action · Ready for confirmation</p>
         <h2 id="builder-record-update-confirmation-heading">
           Update {state.object_label}?
         </h2>
@@ -321,7 +393,7 @@ export function BuilderResultPanel({
         className="builder-result builder-result-warning"
         role="status"
       >
-        <p className="eyebrow">Ready for confirmation</p>
+        <p className="eyebrow">Operational action · Ready for confirmation</p>
         <h2 id="builder-record-location-confirmation-heading">
           {actionLabel} {state.object_label} at {state.location_name}?
         </h2>
@@ -496,20 +568,23 @@ export function BuilderResultPanel({
     return (
       <section
         aria-labelledby="builder-proposed-heading"
-        className="builder-result builder-result-success"
+        className="builder-result builder-result-proposed"
         role="status"
       >
-        <p className="eyebrow">Proposal ready</p>
+        <p className="eyebrow">Configuration proposal · Proposed</p>
         <h2 id="builder-proposed-heading">Review the prepared change</h2>
         <p>{state.summary}</p>
         <p>
           {state.operation_count} configuration change
           {state.operation_count === 1 ? "" : "s"} is ready for review.
         </p>
-        <p className="builder-safety-note">
-          Nothing is live yet. Review the proposal, preview any available pages,
-          then validate and apply it deliberately when ready.
-        </p>
+        <div className="builder-consequence">
+          <strong>What happens next</strong>
+          <p>
+            Nothing is live yet. Review the proposal, preview any available
+            Pages, then validate and apply it deliberately when ready.
+          </p>
+        </div>
         <Link
           className="button"
           href={proposalPath(businessSlug, state.proposal_id)}
@@ -527,11 +602,14 @@ export function BuilderResultPanel({
       role="status"
     >
       <h2 id="builder-clarification-heading">A little more detail will help</h2>
-      <p>{state.understanding}</p>
+      <div className="builder-result-lede">
+        <strong>What Lenni understood</strong>
+        <p>{state.understanding}</p>
+      </div>
 
       {state.known_requirements.length > 0 ? (
         <div className="builder-result-section">
-          <h3>What SMBOS already understands</h3>
+          <h3>Already understood</h3>
           <ul>
             {state.known_requirements.map((requirement) => (
               <li key={requirement}>{requirement}</li>

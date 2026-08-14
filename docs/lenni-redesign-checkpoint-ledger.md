@@ -97,8 +97,9 @@ evidence carried into the next checkpoint.
 
 - Branch: `redesign/c5-pages-dashboard`
 - Feature implementation SHA: `9a3a2842b187f693a96a6bfdbd28ece0c4a30d7a`
-- PR, final exact-head SHA, merge SHA and CI run: to be added after
-  publication
+- PR: [#45](https://github.com/benjaminbutty/smbos26/pull/45)
+- Final exact-head SHA: `d7c291ee2e03c32513e12fde2a9faa21fd688f5e`
+- Merge SHA: `7eff04186f3726f037060c36b54bde8273c9f0ec`
 - Surfaces: bounded Page route chrome, direct Heading/Text editing, `/` add
   menu, drag/Up/Down/remove controls, save/currentness state, calm Page canvas,
   exact Saved View embeds, local embedded-grid overflow and empty Page/View
@@ -117,3 +118,34 @@ evidence carried into the next checkpoint.
 - Exclusions/debt: no CMS, rich-text expansion, media, collaboration, custom
   code, website builder, second renderer, new capability or AI change; live
   Staff/Admin Page evidence remains a fixture debt for C8
+
+### C6 — Tell Lenni, Changes and History
+
+- Branch: `redesign/c6-today-operational-dashboard`
+- Feature implementation SHA: `0d39b79f3658e4971f7ca83b484fca8f290d3a84`
+- PR, final exact-head SHA, merge SHA and CI run: to be added after
+  publication
+- Surfaces: Builder result trust hierarchy, operational confirmation
+  distinction, Changes/History consequence centre, lifecycle labels, Preview
+  not live, stale/currentness, technical disclosures and forward-only rollback
+  language
+- Browser evidence: `/private/tmp/lenni-c6-before-changes-*` and
+  `/private/tmp/lenni-c6-after-changes-*` at 1440×900, 1024×768 and 390×844;
+  `/private/tmp/lenni-c6-after-change-detail-1440x900.png` and
+  `/private/tmp/lenni-c6-after-builder-ai-disabled-1440x900.png`; Owner/manual
+  live route, with Staff/Admin behavior source- and test-backed
+- Tests/CI: focused C6 UI suite 39 passed; full unit/contract suite 825
+  passed; focused live integration 15 passed with 5 intentional skips; schema
+  lint, type generation, non-incremental TypeScript, lint, format and
+  production build passed; exact-head CI and audit are recorded after
+  publication
+- Decisions: reuse the existing bounded Builder states/actions, authorization,
+  Changes actions, renderer and currentness checks; map stored `validated` to
+  owner-visible `Checked`, reserve `Applied · Live` for stored applied state,
+  move engine IDs/checksums behind disclosure and make rollback explicitly a
+  new forward configuration change
+- Exclusions/debt: no prompt/provider/model changes, new AI task, lifecycle,
+  rollback engine, schema, dependency or route redesign; AI-disabled/manual
+  continuity remains source/test-backed because the live Owner fixture has
+  Builder disabled and the local Staff identity has no seeded Business
+  membership

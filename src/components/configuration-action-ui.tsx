@@ -197,8 +197,11 @@ export function ValidateConfigurationConfirmation({
           <div>
             <dt>Base</dt>
             <dd>
-              Version {baseVersion.version_number} · revision{" "}
-              {changeSet.base_head_revision}
+              Version {baseVersion.version_number}
+              <details className="technical-details">
+                <summary>Technical revision</summary>
+                <p>Base revision {changeSet.base_head_revision}</p>
+              </details>
             </dd>
           </div>
           <div>
@@ -206,9 +209,12 @@ export function ValidateConfigurationConfirmation({
             <dd>Not run</dd>
           </div>
           <div>
-            <dt>Candidate checksum</dt>
+            <dt>Candidate</dt>
             <dd>
-              <code>{changeSet.candidate_checksum.slice(0, 12)}</code>
+              <details className="technical-details">
+                <summary>Technical details</summary>
+                <code>Candidate checksum {changeSet.candidate_checksum}</code>
+              </details>
             </dd>
           </div>
         </dl>

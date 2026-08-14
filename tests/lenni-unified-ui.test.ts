@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
 import { WorkspaceHome } from "../src/components/workspace-home";
 import { WorkspaceMobileNav } from "../src/components/workspace-mobile-nav";
 import { AcquisitionProposalCard } from "../src/components/acquisition-proposal";
+import { BuilderResultPanel } from "../src/components/builder-ui";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
 
@@ -413,6 +414,97 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(
       ".workspace-table-page .editor-header-menu-button",
     );
+  });
+
+  it("keeps Builder trust states distinct and preserves manual continuity", () => {
+    const unavailableHtml = renderToStaticMarkup(
+      createElement(BuilderResultPanel, {
+        businessSlug: "bakery",
+        state: {
+          state: "unavailable",
+          reason: "ai_disabled",
+          message:
+            "Builder is enabled for this Business, but AI is currently unavailable in this environment.",
+        },
+      }),
+    );
+    const proposalHtml = renderToStaticMarkup(
+      createElement(BuilderResultPanel, {
+        businessSlug: "bakery",
+        state: {
+          state: "proposed",
+          proposal_id: "00000000-0000-4000-8000-000000000001",
+          summary: "Add an Enquiries information type.",
+          operation_count: 1,
+        },
+      }),
+    );
+    const clarificationHtml = renderToStaticMarkup(
+      createElement(BuilderResultPanel, {
+        businessSlug: "bakery",
+        state: {
+          state: "needs_clarification",
+          understanding: "You want to organise customer enquiries.",
+          known_requirements: ["Customer name"],
+          assumptions: [],
+          questions: [
+            {
+              question: "What should an enquiry include?",
+              reason: "This determines the fields in the proposed setup.",
+              response_style: "free_text",
+              options: [],
+            },
+          ],
+          unsupported_requirements: [],
+        },
+      }),
+    );
+
+    expect(unavailableHtml).toContain("Builder AI is unavailable");
+    expect(unavailableHtml).toContain("Build manually");
+    expect(unavailableHtml).toContain('href="/app/bakery"');
+    expect(unavailableHtml).toContain("live workspace is unchanged");
+    expect(proposalHtml).toContain("Configuration proposal · Proposed");
+    expect(proposalHtml).toContain("Nothing is live yet");
+    expect(proposalHtml).toContain("Review proposed change");
+    expect(clarificationHtml).toContain("What Lenni understood");
+    expect(clarificationHtml).toContain("Questions to answer");
+  });
+
+  it("keeps Changes and Preview trust language owner-centred", () => {
+    const historySource = readFileSync(
+      new URL(
+        "../src/components/configuration-history-ui.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const previewSource = readFileSync(
+      new URL(
+        "../src/components/configuration-preview-shell.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(historySource).toContain("Checked — ready to apply");
+    expect(historySource).toContain("Applied · Live");
+    expect(historySource).toContain("ownerConsequence");
+    expect(historySource).toContain("Things changed — Preview is unavailable");
+    expect(historySource).toContain("Technical revision");
+    expect(historySource).toContain(
+      "Rollback is a new forward configuration change",
+    );
+    expect(previewSource).toContain("Preview — not live");
+    expect(previewSource).toContain("Read-only");
+    expect(previewSource).toContain("No edits or submissions will be saved");
+    expect(cssSource).toContain(".history-impact");
+    expect(cssSource).toContain(".builder-result-unavailable");
+    expect(cssSource).toContain(".diff-technical-details");
   });
 
   it("keeps connected records navigable from the record panel", () => {

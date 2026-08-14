@@ -67,7 +67,7 @@ describe("authenticated rendered configuration preview route", () => {
 
     expect(html).toContain("Preview — not live");
     expect(html).toContain("Restore weekend collection");
-    expect(html).toContain("Rollback · Validated");
+    expect(html).toContain("Rollback · Checked · Read-only");
     expect(html).toContain("abcdef012345");
     expect(html).toContain("No edits or submissions will be saved.");
     expect(html).toContain('href="/app/bedford-bakery"');
