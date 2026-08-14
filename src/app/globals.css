@@ -9159,3 +9159,246 @@ textarea {
     margin-top: var(--space-6);
   }
 }
+
+/* Lenni Unified Product Experience — C3 Table workspace direction. */
+.workspace-table-page .editor-kernel-page {
+  gap: 0;
+}
+
+.workspace-table-page .editor-lab-header {
+  padding-block: var(--space-1) var(--space-4);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-table-page .editor-table-title-block {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.workspace-table-page .editor-lab-kicker {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.workspace-table-page .editor-lab-header-actions {
+  gap: var(--space-3);
+}
+
+.workspace-table-page .editor-save-state {
+  min-height: 2rem;
+  padding-inline: var(--space-2);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+}
+
+.workspace-table-page .editor-save-saving {
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border-color: var(--coral-200);
+}
+
+.workspace-table-page .editor-save-error {
+  color: var(--trust-destructive-error-text);
+  background: var(--trust-destructive-error-surface);
+  border-color: var(--coral-200);
+}
+
+.workspace-table-page .editor-header-content {
+  gap: 0;
+  margin-top: var(--space-4);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-table-page .editor-header-content:empty {
+  display: none;
+}
+
+.workspace-table-page .table-view-tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.workspace-table-page .table-view-tab {
+  flex: 0 0 auto;
+  min-height: 2.6rem;
+  padding-inline: var(--space-3);
+}
+
+.workspace-table-page .table-view-controls {
+  min-width: 0;
+  margin: 0;
+}
+
+.workspace-table-page .table-view-query-summary {
+  justify-content: flex-start;
+  min-height: 2.75rem;
+  padding-block: var(--space-2);
+}
+
+.workspace-table-page .table-view-query-button {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .table-view-query-button:hover,
+.workspace-table-page .table-view-query-button[aria-expanded="true"] {
+  color: var(--coral-700);
+  background: var(--coral-50);
+  border-color: var(--coral-200);
+}
+
+.workspace-table-page .table-view-query-popover {
+  box-sizing: border-box;
+  width: min(28rem, calc(100vw - 2rem));
+  max-width: 100%;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+}
+
+.workspace-table-page .editor-lab-meta {
+  flex-wrap: wrap;
+  min-height: 3rem;
+  padding-block: var(--space-2);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-table-page .editor-lab-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.workspace-table-page .editor-new-record-action {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  color: var(--surface-base) !important;
+  background: var(--coral-600) !important;
+  border: var(--border-width-thin) solid var(--coral-600) !important;
+  border-radius: var(--radius-control);
+  font-size: 0.68rem;
+  font-weight: 750;
+  line-height: 1.1;
+  text-decoration: none;
+}
+
+.workspace-table-page .editor-new-record-action:hover {
+  color: var(--surface-base) !important;
+  background: var(--coral-700) !important;
+  border-color: var(--coral-700) !important;
+  filter: none;
+}
+
+.workspace-table-page .editor-new-record-action > span {
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 0.8;
+}
+
+.workspace-table-page .editor-grid-shell {
+  border-radius: var(--radius-sm);
+}
+
+.workspace-table-page .editor-grid-empty {
+  position: absolute;
+  z-index: 2;
+  inset: 4.5rem var(--space-4) var(--space-4);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-6);
+  color: var(--text-secondary);
+  text-align: center;
+  pointer-events: none;
+}
+
+.workspace-table-page .editor-grid-empty-icon {
+  display: inline-grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  color: var(--text-tertiary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 1.1rem;
+}
+
+.workspace-table-page .editor-grid-empty strong {
+  color: var(--text-primary);
+  font-size: 0.86rem;
+}
+
+.workspace-table-page .editor-grid-empty > span:last-child {
+  max-width: 28rem;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 48rem) {
+  .workspace-table-page .editor-lab-header {
+    padding-bottom: var(--space-3);
+  }
+
+  .workspace-table-page .editor-lab-header-actions {
+    gap: var(--space-2);
+  }
+
+  .workspace-table-page .editor-header-menu-button {
+    opacity: 1;
+  }
+
+  .workspace-table-page .editor-lab-shortcut-hint {
+    display: none !important;
+  }
+
+  .workspace-table-page .editor-lab-meta {
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .workspace-table-page .editor-lab-meta-actions {
+    margin-left: auto;
+  }
+
+  .workspace-table-page .editor-new-record-action {
+    min-height: 2.15rem;
+  }
+
+  .workspace-table-page .table-view-query-popover {
+    width: 100%;
+  }
+
+  .workspace-table-page .editor-grid-empty {
+    inset-inline: var(--space-2);
+    padding-inline: var(--space-3);
+  }
+}
