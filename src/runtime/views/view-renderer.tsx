@@ -399,11 +399,11 @@ export function DetailView({
     : fields[0];
 
   return (
-    <div className="runtime-detail-layout">
+    <div className="runtime-detail-layout" data-record-surface="full">
       <article className="runtime-detail">
         <header className="detail-header">
-          <div>
-            <p className="eyebrow">{bundle.object.singular_label}</p>
+          <div className="runtime-detail-heading-copy">
+            <p className="eyebrow">Record</p>
             <h1 className="runtime-title">
               {titleField ? (
                 <FieldValue field={titleField} value={data[titleField.key]} />
@@ -411,29 +411,48 @@ export function DetailView({
                 bundle.object.singular_label
               )}
             </h1>
+            <p className="runtime-detail-heading-context">
+              {bundle.object.singular_label} details
+            </p>
           </div>
-          {config.edit_form_key && !locked ? (
-            <a
-              className="button"
-              href={`/app/${businessSlug}/workspace/${friendlyPathKey(
-                navigationViewKey ?? bundle.definition.key,
-              )}/${selectedRecord.id}/edit`}
-            >
-              Edit
-            </a>
-          ) : null}
+          <div className="runtime-detail-heading-actions">
+            {locked ? (
+              <span className="runtime-detail-state">
+                {preview ? "Preview" : "Read-only"}
+              </span>
+            ) : null}
+            {config.edit_form_key && !locked ? (
+              <a
+                className="button"
+                href={`/app/${businessSlug}/workspace/${friendlyPathKey(
+                  navigationViewKey ?? bundle.definition.key,
+                )}/${selectedRecord.id}/edit`}
+              >
+                Edit
+              </a>
+            ) : null}
+          </div>
         </header>
 
-        <dl className="detail-grid">
-          {fields.map((field) => (
-            <div key={field.key}>
-              <dt>{field.label}</dt>
-              <dd>
-                <FieldValue field={field} value={data[field.key]} />
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <section
+          aria-labelledby="runtime-detail-information-heading"
+          className="runtime-detail-information"
+        >
+          <div className="runtime-detail-section-heading">
+            <p className="eyebrow">Details</p>
+            <h2 id="runtime-detail-information-heading">Key information</h2>
+          </div>
+          <dl className="detail-grid">
+            {fields.map((field) => (
+              <div key={field.key}>
+                <dt>{field.label}</dt>
+                <dd>
+                  <FieldValue field={field} value={data[field.key]} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
 
         {selectedRecord.record_status === "archived" ? (
           <p className="archived-note">This item is archived.</p>
@@ -446,13 +465,10 @@ export function DetailView({
       </article>
 
       {detailConnections && detailConnections.length > 0 ? (
-        <aside
-          aria-label="Connected records"
-          className="runtime-detail-connections"
-        >
+        <aside aria-label="Connections" className="runtime-detail-connections">
           <div className="runtime-detail-connections-heading">
-            <p className="eyebrow">Context</p>
-            <h2>Connected records</h2>
+            <p className="eyebrow">Related work</p>
+            <h2>Connections</h2>
           </div>
           <div className="runtime-detail-connection-groups">
             {detailConnections.map((group) => (

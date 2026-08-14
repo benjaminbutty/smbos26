@@ -55,30 +55,40 @@ evidence carried into the next checkpoint.
 ### C3 — Tables, Saved Views and structural controls
 
 - Branch: `redesign/c3-tables-views-properties`
+- Feature SHA: `176f164c81f26f435ac27ced6fb7218cf9619e5b`
+- PR: [#43](https://github.com/benjaminbutty/smbos26/pull/43)
+- Merge SHA: `3af64ba5ee973e2c778a23131da876ca2f5d415c`
+- Surfaces: Table title/context hierarchy, View tabs, Saved View query
+  controls, property menus, save-state trust presentation, direct first-record
+  action, configured-form fallback and honest empty Table states
+- Browser evidence: `/private/tmp/lenni-c3-*`; full index in
+  `docs/lenni-redesign-c3-report.md` at 1440×900, 1024×768 and 390×844
+- Tests/CI: focused C3 suite 41 passed; complete unit/contract suite 822
+  passed; exact-head CI passed in [run 31833427857](https://github.com/benjaminbutty/smbos26/actions/runs/31833427857)
+- Decisions: direct creation focuses the existing draft row; configured-form
+  fallback remains an existing route; empty/loading/error and save states use
+  the current kernel and canonical tokens with scoped C3 presentation
+- Exclusions/debt: preserve the Table kernel and current structural/record
+  boundaries; no new Field types, formulas, query language, bulk engine or
+  persistence model
+
+### C4 — Connections, Record experiences and Forms
+
+- Branch: `redesign/c4-connections-record-forms`
 - Feature SHA: pending implementation
 - PR: pending publication
 - Merge SHA: pending normal merge
-- Surfaces: pending C3 implementation
-- Browser evidence: pending C3 capture index
-- Tests/CI: pending C3 verification
-- Decisions: pending C3 evidence
-- Exclusions/debt: preserve the Table kernel and current structural/record
-  boundaries; no new Field types, formulas, query language or persistence model
-
-
-### C2 — acquisition, activation and Home
-
-- Branch: `redesign/c2-acquisition-home`
-- Feature SHA: recorded after the final checkpoint commit
-- PR: pending publication
-- Merge SHA: pending normal merge
-- Surfaces: `/start`, proposal review, `/start/business`, public auth framing,
-  empty Home and populated Home
-- Browser evidence: `/private/tmp/lenni-c2-*`; full index in
-  `docs/lenni-redesign-c2-report.md`
-- Tests/CI: local verification complete; exact-head CI pending PR publication
-- Decisions: live proposal data, honest state taxonomy, manual-first empty Home,
-  deterministic actual Page/View next action, scoped C2 CSS
-- Exclusions/debt: no AI/provider/prompt/schema changes; no later checkpoint
-  styling; Admin live browser identity remains source/test-backed rather than
-  fabricated
+- Surfaces: Connection picker/cells, Record drawer, full Record detail and
+  generic create/edit Forms
+- Browser evidence: `/private/tmp/lenni-c4-*`; full index in
+  `docs/lenni-redesign-c4-report.md` at 1440×900, 1024×768 and 390×844,
+  including Owner/manual and Staff/read-only evidence
+- Tests/CI: pending C4 verification
+- Decisions: reuse the existing Record/Form/Connection abstractions; add
+  discoverable one/several connection states, explicit unlink, grouped Record
+  detail, responsive drawer behavior and generic Form consequence/help/action
+  presentation; keep role and persistence boundaries unchanged
+- Exclusions/debt: preserve operational link/unlink services, relationship
+  configuration boundaries, Record write services and current authorization;
+  no universal Location, notes/timeline/payment/order widgets, AI insight
+  panels, new relationship semantics, history/undo or public editing

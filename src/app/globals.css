@@ -9402,3 +9402,350 @@ textarea {
     padding-inline: var(--space-3);
   }
 }
+
+/* Lenni Unified Product Experience — C4 Connections, Records and Forms. */
+.runtime-detail-layout {
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.runtime-detail-layout > * {
+  min-width: 0;
+}
+
+.runtime-detail-heading-copy {
+  min-width: 0;
+}
+
+.runtime-detail-heading-context,
+.runtime-form-consequence {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.runtime-detail-heading-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.runtime-detail-state,
+.editor-record-connection-readonly {
+  display: inline-flex;
+  min-height: 1.8rem;
+  align-items: center;
+  padding: 0.25rem 0.55rem;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.runtime-detail-information {
+  min-width: 0;
+}
+
+.runtime-detail-section-heading {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: var(--space-3);
+}
+
+.runtime-detail-section-heading .eyebrow,
+.editor-record-section-eyebrow {
+  margin: 0;
+  color: var(--coral-700);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.runtime-detail-section-heading h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  letter-spacing: -0.035em;
+}
+
+.runtime-detail-connections,
+.runtime-form {
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.runtime-detail-connections-heading {
+  border-color: var(--border-subtle);
+}
+
+.runtime-detail-connections-heading .eyebrow {
+  color: var(--coral-700);
+}
+
+.detail-grid {
+  min-width: 0;
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.detail-grid div,
+.detail-grid div:nth-child(even) {
+  border-color: var(--border-subtle);
+}
+
+.runtime-form-page,
+.runtime-form-panel,
+.runtime-form {
+  min-width: 0;
+}
+
+.runtime-form-panel {
+  width: 100%;
+}
+
+.runtime-form-consequence {
+  max-width: 38rem;
+}
+
+.runtime-form {
+  max-width: 44rem;
+}
+
+.runtime-form-fields {
+  min-width: 0;
+}
+
+.form-actions {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.form-actions > button {
+  margin-left: auto;
+}
+
+.form-cancel {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.form-cancel:hover {
+  color: var(--coral-700);
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+.runtime-form-page > .notice {
+  max-width: 44rem;
+  margin-bottom: var(--space-4);
+}
+
+.workspace-table-page .editor-lab-workspace:has(.editor-record-panel) {
+  min-width: 0;
+}
+
+.workspace-table-page .editor-record-panel {
+  min-width: 0;
+  overflow-x: hidden;
+  border-color: var(--border-subtle);
+}
+
+.workspace-table-page .editor-record-connections {
+  min-width: 0;
+}
+
+.editor-record-connections-heading {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.editor-record-connections-heading h3 {
+  margin-top: 0.2rem;
+}
+
+.editor-record-connections-help {
+  max-width: 30rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.editor-record-connection-mode {
+  color: var(--text-tertiary);
+  font-size: 0.66rem;
+}
+
+.editor-record-connection-values {
+  display: grid;
+  gap: 0.25rem;
+  overflow: visible;
+  white-space: normal;
+}
+
+.editor-record-connection-value {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  align-items: center;
+}
+
+.editor-record-connection-value > span,
+.editor-record-connection-value > .editor-record-connection-link,
+.editor-record-connection-value > .editor-record-connection-remove {
+  min-width: 0;
+}
+
+.editor-record-connection-remove {
+  min-height: 1.6rem;
+  padding: 0.15rem 0.35rem;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.editor-record-connection-remove:hover {
+  color: var(--coral-700);
+  background: var(--coral-50);
+  border-color: var(--coral-200);
+  filter: none;
+}
+
+.editor-record-connection-empty {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+}
+
+.editor-connection-popover-heading {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.3rem 0.35rem 0.55rem;
+  color: var(--text-primary);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+  font-size: 0.72rem;
+}
+
+.editor-connection-popover-heading span {
+  color: var(--text-tertiary);
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+.editor-connection-status {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.65rem 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.editor-connection-status.is-unavailable {
+  color: var(--coral-800);
+  background: var(--coral-50);
+  border-radius: var(--radius-sm);
+}
+
+.editor-connection-status button {
+  justify-self: start;
+  min-height: 1.8rem;
+  padding: 0.2rem 0.45rem;
+  color: var(--coral-700);
+  background: transparent;
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.editor-connection-status button:hover {
+  background: var(--surface-base);
+  filter: none;
+}
+
+@media (max-width: 68.75rem) {
+  .workspace-table-page .editor-lab-workspace:has(.editor-record-panel) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-table-page
+    .editor-lab-workspace:has(.editor-record-panel)
+    .editor-grid-area {
+    grid-column: 1;
+  }
+
+  .workspace-table-page .editor-record-panel {
+    grid-column: 1;
+    max-height: none;
+    padding: var(--space-4) 0 var(--space-6);
+    border-top: var(--border-width-thin) solid var(--border-subtle);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 48rem) {
+  .runtime-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+
+  .runtime-detail-heading-actions {
+    align-self: start;
+  }
+
+  .runtime-detail-connections {
+    width: 100%;
+    padding: var(--space-4);
+  }
+
+  .detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detail-grid div,
+  .detail-grid div:nth-child(even) {
+    border-right: 0;
+  }
+
+  .runtime-form {
+    padding: var(--space-4);
+  }
+
+  .form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .form-actions > button,
+  .form-cancel {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
+  }
+}

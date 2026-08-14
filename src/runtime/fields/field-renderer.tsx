@@ -8,6 +8,7 @@ interface FieldValueProps {
 }
 
 interface FieldInputControlProps {
+  ariaDescribedBy?: string | undefined;
   field: Tables<"field_definitions">;
   value: Json | undefined;
   ariaLabel?: string;
@@ -201,6 +202,7 @@ function valueIsPresent(value: Json | undefined): boolean {
 export function FieldInputControl({
   autoFocus = false,
   ariaLabel,
+  ariaDescribedBy,
   field,
   value,
   isEdit = false,
@@ -210,6 +212,7 @@ export function FieldInputControl({
     id: `field-${field.key}`,
     name: field.key,
     required: field.required,
+    ...(ariaDescribedBy ? { "aria-describedby": ariaDescribedBy } : {}),
   };
   const accessibleName = ariaLabel ? { "aria-label": ariaLabel } : {};
 
@@ -241,6 +244,9 @@ export function FieldInputControl({
           <input
             id={common.id}
             name={common.name}
+            {...(ariaDescribedBy
+              ? { "aria-describedby": ariaDescribedBy }
+              : {})}
             {...accessibleName}
             defaultChecked={value === true}
             type="checkbox"

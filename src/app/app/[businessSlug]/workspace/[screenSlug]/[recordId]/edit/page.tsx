@@ -89,10 +89,13 @@ export default async function EditRecordPage({
   return (
     <section className="tenant-content runtime-form-page">
       {error ? <Notice kind="error">{error}</Notice> : null}
-      <FormRenderer action={action} bundle={form} record={record} />
-      <a className="back-link" href={detailPath}>
-        ← Cancel
-      </a>
+      <FormRenderer
+        action={action}
+        bundle={form}
+        cancelHref={detailPath}
+        cancelLabel="← Cancel"
+        record={record}
+      />
     </section>
   );
 }

@@ -70,10 +70,12 @@ export default async function NewRecordPage({
   return (
     <section className="tenant-content runtime-form-page">
       {error ? <Notice kind="error">{error}</Notice> : null}
-      <FormRenderer action={action} bundle={form} />
-      <a className="back-link" href={screenPath}>
-        ← Back to {view.definition.name}
-      </a>
+      <FormRenderer
+        action={action}
+        bundle={form}
+        cancelHref={screenPath}
+        cancelLabel={`← Back to ${view.definition.name}`}
+      />
     </section>
   );
 }

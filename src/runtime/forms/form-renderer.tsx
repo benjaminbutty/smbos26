@@ -9,6 +9,8 @@ export type FormAction =
 
 interface FormRendererCommonProps {
   bundle: ExperienceFormBundle;
+  cancelHref?: string;
+  cancelLabel?: string;
   record?: Tables<"records">;
   showHeading?: boolean;
 }
@@ -35,7 +37,13 @@ function recordData(
 }
 
 export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
-  const { bundle, record, showHeading = true } = props;
+  const {
+    bundle,
+    cancelHref,
+    cancelLabel = "Cancel",
+    record,
+    showHeading = true,
+  } = props;
   const preview = props.mode === "preview";
   const fieldsByKey = new Map(bundle.fields.map((field) => [field.key, field]));
   const values = recordData(record);
@@ -49,6 +57,13 @@ export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
             {bundle.object.singular_label}
           </p>
           <h1 className="runtime-title">{bundle.definition.name}</h1>
+          <p className="runtime-form-consequence">
+            {preview
+              ? "This is a preview. Nothing will be saved."
+              : bundle.definition.mode === "create"
+                ? `Add a new ${bundle.object.singular_label.toLowerCase()} to your workspace.`
+                : "Update this record. Your changes save to the business data."}
+          </p>
         </div>
       ) : null}
 
@@ -82,29 +97,40 @@ export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
                     ) : null}
                   </span>
                   <FieldInputControl
+                    ariaDescribedBy={
+                      configuredField.help_text
+                        ? `help-${field.key}`
+                        : undefined
+                    }
                     field={field}
                     isEdit={bundle.definition.mode === "edit"}
                     value={value}
                   />
                 </label>
                 {configuredField.help_text ? (
-                  <p className="field-help">{configuredField.help_text}</p>
+                  <p className="field-help" id={`help-${field.key}`}>
+                    {configuredField.help_text}
+                  </p>
                 ) : null}
               </div>
             );
           })}
-
-          <div className="form-actions">
-            <button type="submit">
-              {preview
-                ? "Disabled in preview"
-                : (bundle.config.submit_label ??
-                  (bundle.definition.mode === "create"
-                    ? `Create ${bundle.object.singular_label.toLowerCase()}`
-                    : "Save changes"))}
-            </button>
-          </div>
         </fieldset>
+        <div className="form-actions">
+          {cancelHref && !preview ? (
+            <a className="form-cancel" href={cancelHref}>
+              {cancelLabel}
+            </a>
+          ) : null}
+          <button disabled={preview} type="submit">
+            {preview
+              ? "Disabled in preview"
+              : (bundle.config.submit_label ??
+                (bundle.definition.mode === "create"
+                  ? `Create ${bundle.object.singular_label.toLowerCase()}`
+                  : "Save changes"))}
+          </button>
+        </div>
       </form>
     </section>
   );

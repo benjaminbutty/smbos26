@@ -45,9 +45,13 @@ export function ConnectionPicker({
   portal?: boolean;
   value: EditorValue;
 }>): React.ReactNode {
+  type SearchState = "idle" | "loading" | "ready" | "unavailable";
+
   const [open, setOpen] = useState(initiallyOpen);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [searchAttempt, setSearchAttempt] = useState(0);
+  const [searchState, setSearchState] = useState<SearchState>("idle");
   const [portalPosition, setPortalPosition] = useState<{
     top: number;
     left: number;
@@ -59,21 +63,27 @@ export function ConnectionPicker({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selected);
+  const isSearching =
+    open && (searchState === "loading" || searchState === "idle");
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     void onSearch(query)
       .then((next) => {
-        if (!cancelled) setResults(next);
+        if (cancelled) return;
+        setResults(next);
+        setSearchState("ready");
       })
       .catch(() => {
-        if (!cancelled) setResults([]);
+        if (cancelled) return;
+        setResults([]);
+        setSearchState("unavailable");
       });
     return () => {
       cancelled = true;
     };
-  }, [onSearch, open, query]);
+  }, [onSearch, open, query, searchAttempt]);
 
   useEffect(() => {
     if (!open || !portal || typeof window === "undefined") {
@@ -153,7 +163,17 @@ export function ConnectionPicker({
 
   const popover = (
     <div
+      aria-busy={isSearching}
+      aria-label={`Connect to ${column.label}`}
       className={`editor-connection-popover${portal ? " is-portal" : ""}`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+          onCancel?.();
+        }
+      }}
       ref={popoverRef}
       role="listbox"
       style={
@@ -166,33 +186,71 @@ export function ConnectionPicker({
         aria-label={`Search ${column.label}`}
         autoFocus
         className="editor-choice-search"
-        onChange={(event) => setQuery(event.currentTarget.value)}
+        onChange={(event) => {
+          setSearchState("loading");
+          setQuery(event.currentTarget.value);
+        }}
         placeholder="Search records"
         value={query}
       />
-      {results.map((result) => {
-        const active = selectedSet.has(result.id);
-        return (
+      <div className="editor-connection-popover-heading">
+        <strong>Connect to {column.label}</strong>
+        <span>
+          {column.connection?.multiple ? "Several records" : "One record"}
+        </span>
+      </div>
+      {searchState === "unavailable" ? (
+        <div
+          aria-live="polite"
+          className="editor-connection-status is-unavailable"
+          role="status"
+        >
+          <span>Connections are temporarily unavailable.</span>
           <button
-            aria-selected={active}
-            className={`editor-connection-option${active ? " is-selected" : ""}`}
-            key={result.id}
             onClick={() => {
-              const next = active
-                ? selected.filter((id) => id !== result.id)
-                : column.connection?.multiple
-                  ? [...selected, result.id]
-                  : [result.id];
-              commit(next);
+              setSearchState("loading");
+              setSearchAttempt((current) => current + 1);
             }}
-            role="option"
             type="button"
           >
-            <span>{result.label}</span>
-            {active ? <span aria-hidden="true">✓</span> : null}
+            Try again
           </button>
-        );
-      })}
+        </div>
+      ) : isSearching ? (
+        <p aria-live="polite" className="editor-connection-status">
+          Searching…
+        </p>
+      ) : results.length === 0 ? (
+        <p aria-live="polite" className="editor-connection-status">
+          {query.trim()
+            ? "No matching records."
+            : "No records available to connect yet."}
+        </p>
+      ) : (
+        results.map((result) => {
+          const active = selectedSet.has(result.id);
+          return (
+            <button
+              aria-selected={active}
+              className={`editor-connection-option${active ? " is-selected" : ""}`}
+              key={result.id}
+              onClick={() => {
+                const next = active
+                  ? selected.filter((id) => id !== result.id)
+                  : column.connection?.multiple
+                    ? [...selected, result.id]
+                    : [result.id];
+                commit(next);
+              }}
+              role="option"
+              type="button"
+            >
+              <span>{result.label}</span>
+              {active ? <span aria-hidden="true">✓</span> : null}
+            </button>
+          );
+        })
+      )}
       {onCreate ? (
         <button
           className="editor-connection-create"
@@ -220,12 +278,21 @@ export function ConnectionPicker({
       <button
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-label={`Edit ${column.label}`}
+        aria-label={`Connect to ${column.label}`}
         className="editor-connection-trigger"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          setSearchState("loading");
+          setOpen(true);
+        }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
+            setOpen(false);
             onCancel?.();
           } else if (event.key === "Backspace" || event.key === "Delete") {
             event.preventDefault();
@@ -250,7 +317,7 @@ export function ConnectionPicker({
             ))}
           </span>
         ) : (
-          <span className="editor-connection-placeholder">Connect…</span>
+          <span className="editor-connection-placeholder">Connect to…</span>
         )}
         <span aria-hidden="true" className="editor-connection-trigger-chevron">
           ⌄
