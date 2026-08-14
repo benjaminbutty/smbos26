@@ -246,6 +246,7 @@ function PageBlockView({
   embed,
   onCancel,
   onChange,
+  onEdit,
   onSave,
 }: Readonly<{
   block: PageBlock;
@@ -254,6 +255,7 @@ function PageBlockView({
   embed: PageEditorViewEmbed | undefined;
   onCancel: () => void;
   onChange: (value: string) => void;
+  onEdit: () => void;
   onSave: () => void;
 }>): ReactNode {
   const id = blockId(block);
@@ -303,13 +305,34 @@ function PageBlockView({
     );
   }
 
+  const editableContent = (content: ReactNode): ReactNode => {
+    if (!editable || !id) return content;
+    return (
+      <div
+        aria-label={`Edit ${blockLabel(block)}`}
+        className="page-editor-inline-edit"
+        onClick={onEdit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onEdit();
+          }
+        }}
+        role="button"
+        tabIndex={0}
+      >
+        {content}
+      </div>
+    );
+  };
+
   switch (block.type) {
     case "heading":
-      if (block.level === 1) return <h1>{block.text}</h1>;
-      if (block.level === 3) return <h3>{block.text}</h3>;
-      return <h2>{block.text}</h2>;
+      if (block.level === 1) return editableContent(<h1>{block.text}</h1>);
+      if (block.level === 3) return editableContent(<h3>{block.text}</h3>);
+      return editableContent(<h2>{block.text}</h2>);
     case "text":
-      return <p className="page-text-block">{block.text}</p>;
+      return editableContent(<p className="page-text-block">{block.text}</p>);
     case "view":
       return (
         <SavedViewBlock
@@ -392,6 +415,7 @@ export function PageEditor({
   );
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState<BlockDraft | null>(null);
+  const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
   const selectedTable =
     pageViewTables.find((table) => table.key === selectedTableKey) ??
     pageViewTables[0];
@@ -421,6 +445,55 @@ export function PageEditor({
     setStatus(result.status === "stale" ? "stale" : "error");
     setStatusMessage(result.message);
     return null;
+  };
+
+  const moveBlockToIndex = async (
+    sourceId: string,
+    targetIndex: number,
+  ): Promise<void> => {
+    const sourceIndex = layout.blocks.findIndex(
+      (block) => blockId(block) === sourceId,
+    );
+    if (
+      sourceIndex < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= layout.blocks.length ||
+      sourceIndex === targetIndex
+    ) {
+      return;
+    }
+
+    setStatus("saving");
+    setStatusMessage(null);
+    let nextCurrentness = currentnessRef;
+    let nextLayout = layout;
+    let nextIndex = sourceIndex;
+
+    while (nextIndex !== targetIndex) {
+      const direction = nextIndex < targetIndex ? "down" : "up";
+      const result = await applyPageBlockAction({
+        currentness: nextCurrentness,
+        intent: {
+          action: "move_page_block",
+          pageKey,
+          blockId: sourceId,
+          direction,
+        },
+      });
+      if (result.status !== "success") {
+        setStatus(result.status === "stale" ? "stale" : "error");
+        setStatusMessage(result.message);
+        return;
+      }
+      nextCurrentness = result.currentness;
+      nextLayout = result.layout;
+      nextIndex += direction === "down" ? 1 : -1;
+    }
+
+    setCurrentnessRef(nextCurrentness);
+    setLayout(nextLayout);
+    setStatus("saved");
+    router.refresh();
   };
 
   const rename = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -532,6 +605,8 @@ export function PageEditor({
         </div>
         <div
           className={`page-editor-save-state page-editor-save-${status}`}
+          data-save-state={status}
+          aria-live="polite"
           role="status"
         >
           {statusText(status)}
@@ -555,6 +630,8 @@ export function PageEditor({
 
       <div className="page-editor-controls">
         <button
+          aria-controls="page-editor-add-menu"
+          aria-expanded={addMenu !== "closed"}
           className="button button-secondary"
           onClick={() =>
             setAddMenu((value) => (value === "blocks" ? "closed" : "blocks"))
@@ -563,10 +640,16 @@ export function PageEditor({
         >
           + Add block
         </button>
+        <span className="page-editor-add-hint">Press / to add</span>
       </div>
 
       {addMenu !== "closed" ? (
-        <div className="page-editor-insert-menu" role="menu">
+        <div
+          aria-label="Add to Page"
+          className="page-editor-insert-menu"
+          id="page-editor-add-menu"
+          role="menu"
+        >
           {addMenu === "blocks" ? (
             <>
               <div className="page-editor-insert-menu-heading">Add block</div>
@@ -686,7 +769,26 @@ export function PageEditor({
         </div>
       ) : null}
 
-      <div aria-label={`${title} content`} className="page-editor-canvas">
+      <div
+        aria-keyshortcuts="/"
+        aria-label={`${title} content`}
+        className="page-editor-canvas"
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (
+            event.key !== "/" ||
+            addMenu !== "closed" ||
+            renaming ||
+            editing ||
+            target.closest("input, textarea, select, [contenteditable='true']")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          setAddMenu("blocks");
+        }}
+        tabIndex={0}
+      >
         {layout.blocks.length === 0 ? (
           <div className="page-editor-empty">
             <strong>Start your Page</strong>
@@ -697,9 +799,34 @@ export function PageEditor({
           const id = blockId(block);
           return (
             <article
-              className="page-editor-block"
+              className={`page-editor-block${
+                draggingBlockId === id ? " is-dragging" : ""
+              }`}
               data-block-type={block.type}
+              draggable={Boolean(id)}
               key={id ?? `${index}-${block.type}`}
+              onDragEnd={() => setDraggingBlockId(null)}
+              onDragOver={(event) => {
+                if (draggingBlockId && draggingBlockId !== id) {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }
+              }}
+              onDragStart={(event) => {
+                if (!id) return;
+                setDraggingBlockId(id);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", id);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const sourceId =
+                  event.dataTransfer.getData("text/plain") || draggingBlockId;
+                setDraggingBlockId(null);
+                if (sourceId && sourceId !== id) {
+                  void moveBlockToIndex(sourceId, index);
+                }
+              }}
             >
               <div className="page-editor-block-content">
                 <PageBlockView
@@ -709,6 +836,7 @@ export function PageEditor({
                   embed={
                     block.type === "view" ? views[block.view_key] : undefined
                   }
+                  onEdit={() => startEditing(block)}
                   onCancel={() => setEditing(null)}
                   onChange={(text) =>
                     setEditing((value) => (value ? { ...value, text } : value))
@@ -717,6 +845,15 @@ export function PageEditor({
                 />
               </div>
               <div className="page-editor-block-actions">
+                {id ? (
+                  <span
+                    aria-label="Drag to reorder Page block"
+                    className="page-editor-drag-handle"
+                    title="Drag to reorder"
+                  >
+                    ⋮⋮
+                  </span>
+                ) : null}
                 <span className="page-editor-block-label">
                   {blockLabel(block)}
                 </span>

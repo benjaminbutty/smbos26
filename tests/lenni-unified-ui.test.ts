@@ -69,6 +69,33 @@ describe("Lenni unified workspace presentation", () => {
     expect(source).toContain("document.body.style.overflow = previousOverflow");
   });
 
+  it("keeps the Page editor bounded, direct, and renderer-backed", () => {
+    const editorSource = readFileSync(
+      new URL("../src/runtime/page-editor/page-editor.tsx", import.meta.url),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(editorSource).toContain('aria-keyshortcuts="/"');
+    expect(editorSource).toContain("Press / to add");
+    expect(editorSource).toContain('aria-controls="page-editor-add-menu"');
+    expect(editorSource).toContain('aria-live="polite"');
+    expect(editorSource).toContain("draggable={Boolean(id)}");
+    expect(editorSource).toContain("moveBlockToIndex");
+    expect(editorSource).toContain("Open Table");
+    expect(editorSource).toContain("Read-only");
+    expect(editorSource).toContain("ProductionTableWorkspace");
+
+    expect(cssSource).toContain("/* C5 Page canvas presentation.");
+    expect(cssSource).toContain(".page-editor-inline-edit:focus-visible");
+    expect(cssSource).toContain(".page-editor-view-block .editor-grid-shell");
+    expect(cssSource).toContain("overflow-x: auto");
+    expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
+  });
+
   it("keeps the canonical Lenni token families in the current CSS source", () => {
     const source = readFileSync(
       new URL("../src/app/globals.css", import.meta.url),
