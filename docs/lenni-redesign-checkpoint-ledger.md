@@ -50,8 +50,6 @@ evidence carried into the next checkpoint.
   styling; Admin live browser identity remains source/test-backed rather than
   fabricated
 
-## Current checkpoint
-
 ### C3 — Tables, Saved Views and structural controls
 
 - Branch: `redesign/c3-tables-views-properties`
@@ -75,15 +73,17 @@ evidence carried into the next checkpoint.
 ### C4 — Connections, Record experiences and Forms
 
 - Branch: `redesign/c4-connections-record-forms`
-- Feature SHA: pending implementation
-- PR: pending publication
-- Merge SHA: pending normal merge
+- Feature SHA: `0ff72c846ef7a0d6acb88d116c223f828ee6549a`
+- PR: [#44](https://github.com/benjaminbutty/smbos26/pull/44)
+- Merge SHA: `df9fd6fb6cf4b524dae0a5302a7453478b55e415`
 - Surfaces: Connection picker/cells, Record drawer, full Record detail and
   generic create/edit Forms
 - Browser evidence: `/private/tmp/lenni-c4-*`; full index in
   `docs/lenni-redesign-c4-report.md` at 1440×900, 1024×768 and 390×844,
   including Owner/manual and Staff/read-only evidence
-- Tests/CI: pending C4 verification
+- Tests/CI: focused 56 passed; full unit/contract 822 passed; integration 257
+  passed with 5 skipped; exact-head CI passed in [run
+  31837725748](https://github.com/benjaminbutty/smbos26/actions/runs/31837725748)
 - Decisions: reuse the existing Record/Form/Connection abstractions; add
   discoverable one/several connection states, explicit unlink, grouped Record
   detail, responsive drawer behavior and generic Form consequence/help/action
@@ -92,3 +92,28 @@ evidence carried into the next checkpoint.
   configuration boundaries, Record write services and current authorization;
   no universal Location, notes/timeline/payment/order widgets, AI insight
   panels, new relationship semantics, history/undo or public editing
+
+### C5 — Pages and embedded Views
+
+- Branch: `redesign/c5-pages-dashboard`
+- Feature implementation SHA: `9a3a2842b187f693a96a6bfdbd28ece0c4a30d7a`
+- PR, final exact-head SHA, merge SHA and CI run: to be added after
+  publication
+- Surfaces: bounded Page route chrome, direct Heading/Text editing, `/` add
+  menu, drag/Up/Down/remove controls, save/currentness state, calm Page canvas,
+  exact Saved View embeds, local embedded-grid overflow and empty Page/View
+  states
+- Browser evidence: `/private/tmp/lenni-c5-*` at 1440×900, 1024×768 and
+  390×844; Owner/manual live route, with Staff/Admin role behavior
+  source/test-backed because the local Staff identity has no seeded Business
+  membership
+- Tests/CI: focused C5 suite 23 passed; full unit/contract 823 passed; clean
+  integration 257 passed with 5 skipped; schema lint, build, type generation,
+  TypeScript, lint and format passed; exact-head CI and the production audit
+  are recorded after publication
+- Decisions: reuse strict Page actions/currentness, the bounded Page editor,
+  production Table renderer and server capability projection; native drag
+  reorder repeats existing adjacent moves and retains keyboard/touch controls
+- Exclusions/debt: no CMS, rich-text expansion, media, collaboration, custom
+  code, website builder, second renderer, new capability or AI change; live
+  Staff/Admin Page evidence remains a fixture debt for C8

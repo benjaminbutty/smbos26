@@ -4,9 +4,9 @@
 
 - Checkpoint: C4 — Connections, Record experiences and Forms
 - Branch: `redesign/c4-connections-record-forms`
-- Feature SHA: recorded after the final checkpoint commit
-- PR: recorded after publication
-- Merge SHA: recorded after the normal merge
+- Feature SHA: `0ff72c846ef7a0d6acb88d116c223f828ee6549a`
+- PR: [#44](https://github.com/benjaminbutty/smbos26/pull/44)
+- Merge SHA: `df9fd6fb6cf4b524dae0a5302a7453478b55e415`
 - Authority: Sections 8 and 9 of the Unified Lenni Product Experience
   Redesign v1 execution prompt, the Design System and UX Constitution v2,
   the Stitch Reference Manifest, and the existing Record/Form kernel contracts
@@ -106,7 +106,7 @@ Observed acceptance points:
 - PostgreSQL integration and RLS coverage: 25 files passed, 257 tests passed,
   5 skipped.
 - Local Supabase schema lint passed with no schema errors.
-- Exact-head GitHub CI: recorded after publication and before merge.
+- Exact-head GitHub CI passed in [run 31837725748](https://github.com/benjaminbutty/smbos26/actions/runs/31837725748) on the feature SHA.
 
 ## Decisions, exclusions and carried debt
 
