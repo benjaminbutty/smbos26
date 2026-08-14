@@ -74,18 +74,104 @@ describe("Lenni unified workspace presentation", () => {
       "utf8",
     );
 
-    for (const token of [
-      "--space-1",
-      "--space-12",
-      "--radius-sm",
-      "--radius-pill",
-      "--border-width-thin",
-      "--border-width-strong",
-      "--elevation-subtle",
-      "--elevation-overlay",
-    ]) {
-      expect(source).toContain(token);
+    const readRootToken = (token: string) => {
+      const escapedToken = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = source.match(
+        new RegExp(`\\n\\s*${escapedToken}:\\s*([^;]+);`),
+      );
+      expect(
+        match,
+        `Expected ${token} in the canonical root token source`,
+      ).toBeTruthy();
+      return match?.[1]?.trim();
+    };
+
+    const canonicalTokens = {
+      "--coral-50": "#fff1ef",
+      "--coral-100": "#ffe4df",
+      "--coral-200": "#ffc9c2",
+      "--coral-300": "#ffa69c",
+      "--coral-400": "#ff8273",
+      "--coral-500": "#ff5a4d",
+      "--coral-600": "#e9483c",
+      "--coral-700": "#d83a2f",
+      "--coral-800": "#b92c24",
+      "--coral-900": "#8f211b",
+      "--border-strong": "#d5ccc3",
+      "--surface-dark": "#111315",
+      "--space-1": "4px",
+      "--space-2": "8px",
+      "--space-3": "12px",
+      "--space-4": "16px",
+      "--space-5": "20px",
+      "--space-6": "24px",
+      "--space-8": "32px",
+      "--space-10": "40px",
+      "--space-12": "48px",
+      "--space-16": "64px",
+      "--radius-sm": "6px",
+      "--radius-md": "10px",
+      "--radius-lg": "14px",
+      "--radius-xl": "20px",
+      "--radius-full": "9999px",
+      "--trust-suggestion-text": "#5d646b",
+      "--trust-suggestion-surface": "#f3f4f5",
+      "--trust-proposed-text": "#6546b4",
+      "--trust-proposed-surface": "#f2edff",
+      "--trust-checked-text": "#0f6f70",
+      "--trust-checked-surface": "#e8f7f6",
+      "--trust-preview-text": "#245ea8",
+      "--trust-preview-surface": "#ecf4ff",
+      "--trust-live-applied-text": "#147a55",
+      "--trust-live-applied-surface": "#eaf7f1",
+      "--trust-published-text": "#3d4650",
+      "--trust-published-surface": "#f1f3f5",
+      "--trust-warning-needs-review-text": "#8a5200",
+      "--trust-warning-needs-review-surface": "#fff5df",
+      "--trust-destructive-error-text": "#b42318",
+      "--trust-destructive-error-surface": "#fdecea",
+      "--trust-read-only-text": "#5d646b",
+      "--trust-read-only-surface": "#f5f2ee",
+    } as const;
+
+    for (const [token, value] of Object.entries(canonicalTokens)) {
+      expect(readRootToken(token), `${token} must use its approved value`).toBe(
+        value,
+      );
     }
+
+    const compatibilityAliases = {
+      "--radius-control": "var(--radius-md)",
+      "--radius-panel": "var(--radius-lg)",
+      "--radius-pill": "var(--radius-full)",
+      "--semantic-success": "var(--trust-live-applied-text)",
+      "--semantic-warning": "var(--trust-warning-needs-review-text)",
+      "--semantic-danger": "var(--trust-destructive-error-text)",
+      "--semantic-info": "var(--trust-preview-text)",
+      "--surface": "color-mix(in srgb, var(--surface-base) 78%, transparent)",
+      "--accent": "var(--trust-live-applied-text)",
+      "--accent-soft": "var(--trust-live-applied-surface)",
+    } as const;
+
+    for (const [token, value] of Object.entries(compatibilityAliases)) {
+      expect(
+        readRootToken(token),
+        `${token} must reference a canonical token`,
+      ).toBe(value);
+    }
+
+    expect(readRootToken("--border-width-thin")).toBe("1px");
+    expect(readRootToken("--border-width-strong")).toBe("2px");
+    expect(readRootToken("--elevation-none")).toBe("none");
+    expect(readRootToken("--elevation-subtle")).toBe(
+      "0 0.25rem 0.75rem rgb(23 26 29 / 0.06)",
+    );
+    expect(readRootToken("--elevation-panel")).toBe(
+      "0 0.65rem 1.5rem rgb(23 26 29 / 0.12)",
+    );
+    expect(readRootToken("--elevation-overlay")).toBe(
+      "0 1rem 3rem rgb(23 26 29 / 0.16)",
+    );
   });
 
   it("gives an empty Business equally clear AI and manual starting routes", () => {

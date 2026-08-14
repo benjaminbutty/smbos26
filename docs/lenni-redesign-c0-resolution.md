@@ -182,19 +182,24 @@ records.
 
 ## C1 foundation reconciliation
 
-The C1 review found one genuinely missing foundation: the canonical root token
-source had surfaces, semantic colours, typography, two radius tokens and a
-border colour, but no explicit spacing, border-width or elevation families.
-Those primitives were added to `src/app/globals.css` and are consumed by the
-shell/sheet layer. No new component or design-system abstraction was added.
+The C1 review found one remaining foundation discrepancy: the canonical root
+token source was incomplete and several compatibility aliases still defined
+parallel values. `src/app/globals.css` now matches the approved constitution
+for Coral 50–900, warm surfaces/borders including `border-strong` and
+`surface-dark`, spacing through `space-16`, the approved radius scale with
+`radius-full`, and explicit text/surface pairs for every approved trust state:
+Suggestion, Proposed, Checked, Preview, Live-Applied, Published,
+Warning-needs-review, Destructive-error and Read-only. Legacy semantic,
+radius, surface and action aliases now reference those canonical tokens. No
+new component or design-system abstraction was added.
 
 | Section 9 requirement | Reused current evidence | Correction result |
 | --- | --- | --- |
-| Canonical tokens | `:root` in `src/app/globals.css` | Added `--space-*`, `--radius-*`, `--border-width-*` and `--elevation-*`; retained existing Coral, neutral surface and semantic trust tokens |
+| Canonical tokens | `:root` in `src/app/globals.css` | Reconciled the approved Coral 50–900, neutral, border, spacing, radius, elevation and trust-state families; compatibility aliases reference canonical values |
 | Buttons | Global `button`/`.button`, `.button-secondary`, `.button-danger`, `.button-small`, `.button-link`; shell-specific existing action classes | Reused; no duplicate button primitive |
 | Fields / textareas | Global `input`, `select`, `textarea`, focus rules, `.form-field`, `.field-help`, `.checkbox-control` | Reused; no duplicate field abstraction |
 | Selects / pickers | Existing editor choice/date/Connection pickers and `.lenni-type-picker` / `.lenni-picker-options` | Reused; no route-specific picker styling added |
-| Status chips and states | `.status`, `.status-muted`, `.editor-status-pill`, change status presentation | Reused; semantic success/warning/danger/info tokens stay distinct from Coral |
+| Status chips and states | `.status`, `.status-muted`, `.editor-status-pill`, change status presentation | Reused; explicit trust text/surface pairs stay distinct from Coral, with legacy semantic aliases pointing to the relevant trust state |
 | Cards / panels | `.panel`, `.runtime-card`, `.workspace-home-card`, route/editor panels and mobile sheet | Reused; C1 shell consumes tokenized radius/elevation values |
 | Notices / alerts | `Notice`, `.notice-error`, `.notice-message`, `.history-notice-warning`, `.history-notice-success`, runtime preview warning | Reused; no duplicate notice component |
 | Loading / saving / error / stale / read-only / unavailable | `PendingSubmitButton`, editor save states, `page-editor-save-*`, `page-editor-view-readonly`, `runtime-unavailable`, `page-editor-unavailable-view` | Reused and documented; no missing presentation component remained |
@@ -256,10 +261,10 @@ and a fixed bottom nav rather than a horizontally exposed desktop sidebar.
 
 ## C1 after-evidence index
 
-The final corrected evidence is recorded below after the exact feature SHA is
-verified. It covers 1440 × 900, 1024 × 768 and 390 × 844, with the populated
-Owner shell, Staff shell, mobile Work/More sheets, and the empty/manual Home
-path where applicable.
+The token correction materially changes the approved radius values used by
+the shell, so the principal evidence was recaptured at the exact feature
+dimensions. It covers 1440 × 900, 1024 × 768 and 390 × 844, with the
+populated Owner shell, Staff shell and mobile Work/More sheets.
 
 ### Captured evidence
 
@@ -269,11 +274,11 @@ fixture; Staff evidence uses the populated `bedford-bakery-demo` fixture.
 
 | Role / surface | 1440 × 900 | 1024 × 768 | 390 × 844 |
 | --- | --- | --- | --- |
-| Owner Home | `/private/tmp/lenni-c1-after-owner-home-1440x900.png` | `/private/tmp/lenni-c1-after-owner-home-1024x768.png` | `/private/tmp/lenni-c1-after-owner-home-390x844.png` |
-| Owner populated Table | `/private/tmp/lenni-c1-after-owner-table-1440x900.png` | `/private/tmp/lenni-c1-after-owner-table-1024x768.png` | `/private/tmp/lenni-c1-after-owner-work-sheet-390x844.png` |
-| Owner More sheet | — | — | `/private/tmp/lenni-c1-after-owner-more-sheet-390x844.png` |
-| Staff Home | `/private/tmp/lenni-c1-after-staff-home-1440x900.png` | `/private/tmp/lenni-c1-after-staff-home-1024x768.png` | `/private/tmp/lenni-c1-after-staff-home-390x844.png` |
-| Staff Work / More sheets | — | — | `/private/tmp/lenni-c1-after-staff-work-sheet-390x844.png`, `/private/tmp/lenni-c1-after-staff-more-sheet-390x844.png` |
+| Owner Home | `/private/tmp/lenni-c1-token-owner-home-1440x900.png` | `/private/tmp/lenni-c1-token-owner-home-1024x768.png` | `/private/tmp/lenni-c1-token-owner-home-390x844.png` |
+| Owner populated Table | `/private/tmp/lenni-c1-token-owner-table-1440x900.png` | `/private/tmp/lenni-c1-token-owner-table-1024x768.png` | — |
+| Owner Work / More sheets | — | — | `/private/tmp/lenni-c1-token-owner-work-sheet-390x844.png`, `/private/tmp/lenni-c1-token-owner-more-sheet-390x844.png` |
+| Staff Home | `/private/tmp/lenni-c1-token-staff-home-1440x900.png` | `/private/tmp/lenni-c1-token-staff-home-1024x768.png` | `/private/tmp/lenni-c1-token-staff-home-390x844.png` |
+| Staff Work / More sheets | — | — | `/private/tmp/lenni-c1-token-staff-work-sheet-390x844.png`, `/private/tmp/lenni-c1-token-staff-more-sheet-390x844.png` |
 
 The browser checks recorded `body.scrollWidth === document.documentElement.scrollWidth`
 at 390 × 844 for Owner and Staff (`390 === 390`), fixed bottom navigation,
@@ -293,8 +298,8 @@ The Owner Home captures show the AI-assisted and manual start choices, while
 the AI-unavailable/manual fallback is source- and policy-test-backed as
 documented in the state matrix.
 
-## Next checkpoint
+## Checkpoint boundary
 
-Proceed with C1 foundation, shell, navigation, and responsive/accessibility
-implementation on this branch. Stop after focused verification and a bounded
-draft PR/report. Do not start C2 in the same run.
+This correction closes the remaining foundation-only C1 token discrepancy and
+updates the bounded C1 evidence. Stop here for review of draft PR #41; do not
+start C2 in the same run.
