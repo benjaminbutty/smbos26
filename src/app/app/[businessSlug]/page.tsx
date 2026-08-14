@@ -27,13 +27,15 @@ export default async function TenantHomePage({
   const destinations = [
     ...navigation.pages.map((page) => ({
       href: `/app/${businessSlug}/pages/${page.slug}`,
+      kind: "page" as const,
       label: page.title,
-      description: "Open workspace page",
+      description: "Open this workspace page",
     })),
     ...navigation.views.map((view) => ({
       href: `/app/${businessSlug}/workspace/${experienceKeyToPath(view.key)}`,
+      kind: "view" as const,
       label: view.name,
-      description: "View and manage information",
+      description: "View and manage this work",
     })),
   ];
 
