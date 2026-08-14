@@ -1,12 +1,48 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/app/bakery",
+}));
 
 import { WorkspaceHome } from "../src/components/workspace-home";
+import { WorkspaceMobileNav } from "../src/components/workspace-mobile-nav";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
 
 describe("Lenni unified workspace presentation", () => {
+  it("keeps mobile navigation role-aware while preserving shared destinations", () => {
+    const ownerHtml = renderToStaticMarkup(
+      createElement(WorkspaceMobileNav, {
+        businessName: "Bakery",
+        businessSlug: "bakery",
+        canManageConfiguration: true,
+        otherViews: [],
+        pages: [],
+        tables: [],
+      }),
+    );
+    const staffHtml = renderToStaticMarkup(
+      createElement(WorkspaceMobileNav, {
+        businessName: "Bakery",
+        businessSlug: "bakery",
+        canManageConfiguration: false,
+        otherViews: [],
+        pages: [],
+        tables: [],
+      }),
+    );
+
+    expect(ownerHtml).toContain('aria-label="Mobile workspace navigation"');
+    expect(ownerHtml).toContain("Tell Lenni");
+    expect(ownerHtml).toContain("Work");
+    expect(ownerHtml).toContain("More");
+    expect(staffHtml).not.toContain("Tell Lenni");
+    expect(staffHtml).toContain("Work");
+    expect(staffHtml).toContain("More");
+  });
+
   it("gives an empty Business equally clear AI and manual starting routes", () => {
     const html = renderToStaticMarkup(
       createElement(WorkspaceHome, {

@@ -1,15 +1,5 @@
 :root {
-  --background: #f4f1ea;
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-strong: #ffffff;
-  --foreground: #1d2822;
-  --muted: #657069;
-  --line: rgba(29, 40, 34, 0.14);
-  --accent: #22654a;
-  --accent-soft: #dcece3;
-  --max-width: 72rem;
-
-  /* Lenni product foundation — the canonical workspace token source. */
+  /* Lenni product foundation — the canonical presentation token source. */
   --coral-50: #fff1ef;
   --coral-100: #ffe4df;
   --coral-500: #ff5a4d;
@@ -25,6 +15,22 @@
   --text-secondary: #5d646b;
   --text-tertiary: #6a7178;
   --text-disabled: #a5aab0;
+  --semantic-success: #13795b;
+  --semantic-warning: #946a13;
+  --semantic-danger: #b42318;
+  --semantic-info: #3f6699;
+  --focus-ring: var(--coral-500);
+  --max-width: 72rem;
+  --radius-control: 0.55rem;
+  --radius-panel: 0.75rem;
+  --background: var(--surface-canvas);
+  --surface: rgb(255 255 255 / 0.78);
+  --foreground: var(--text-primary);
+  --muted: var(--text-secondary);
+  --line: var(--border-subtle);
+  /* Legacy non-workspace surfaces retain their existing green action lane. */
+  --accent: #22654a;
+  --accent-soft: #dcece3;
   --editor-coral: var(--coral-500);
   --editor-coral-soft: var(--coral-50);
   --lenni-coral-600: var(--coral-600);
@@ -8207,5 +8213,369 @@ textarea {
 
   .workspace-table-page .editor-record-panel {
     max-height: calc(100vh - 6.5rem);
+  }
+}
+
+/* Lenni Unified Product Experience — C1 foundation and shell. */
+.workspace-shell {
+  display: grid;
+  min-height: 100dvh;
+  overflow-x: clip;
+  grid-template-columns: clamp(13.5rem, 17vw, 15.5rem) minmax(0, 1fr);
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+  font-family: var(--lenni-font);
+}
+
+.workspace-shell a:focus-visible,
+.workspace-shell button:focus-visible,
+.workspace-shell input:focus-visible,
+.workspace-shell select:focus-visible,
+.workspace-shell textarea:focus-visible,
+.workspace-shell summary:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.workspace-sidebar {
+  min-width: 0;
+  min-height: 100dvh;
+}
+
+.workspace-navigation {
+  min-width: 0;
+}
+
+.workspace-work-group {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0.7rem 0 0.9rem;
+  padding: 0.75rem 0 0.65rem;
+  border-block: 1px solid var(--border-subtle);
+}
+
+.workspace-work-heading {
+  padding: 0 0.55rem 0.2rem;
+}
+
+.workspace-work-heading h2 {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-work-group > .sidebar-section {
+  margin: 0.3rem 0;
+}
+
+.workspace-work-group > .sidebar-section .sidebar-section-heading h2,
+.workspace-work-group > .sidebar-section .sidebar-section-heading h3 {
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: none;
+}
+
+.workspace-other-views {
+  padding-top: 0.25rem;
+}
+
+.workspace-other-views .sidebar-section-heading {
+  padding-bottom: 0.05rem;
+}
+
+.workspace-topbar-leading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.workspace-topbar-brand {
+  display: none;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  text-decoration: none;
+}
+
+.workspace-topbar-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-mobile-nav {
+  display: none;
+}
+
+.workspace-mobile-sheet {
+  display: none;
+}
+
+@media (max-width: 48rem) {
+  .workspace-shell {
+    display: block;
+    min-height: 100dvh;
+    padding-bottom: 4.9rem;
+  }
+
+  .workspace-sidebar {
+    display: none;
+  }
+
+  .workspace-main {
+    min-height: 100dvh;
+    overflow-x: clip;
+  }
+
+  .workspace-topbar {
+    position: sticky;
+    z-index: 10;
+    top: 0;
+    min-height: 3.7rem;
+    padding: 0.55rem 1rem;
+  }
+
+  .workspace-topbar-leading {
+    gap: 0.65rem;
+  }
+
+  .workspace-topbar-brand {
+    display: block;
+  }
+
+  .workspace-topbar-context {
+    max-width: min(44vw, 12rem);
+    font-size: 0.68rem;
+  }
+
+  .workspace-topbar-actions {
+    gap: 0.4rem;
+  }
+
+  .workspace-topbar .workspace-tell-lenni {
+    display: none;
+  }
+
+  .workspace-account {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .workspace-main .tenant-content {
+    width: min(calc(100% - 2rem), 72rem);
+    padding-block: 1.6rem 2rem;
+  }
+
+  .workspace-home-populated {
+    padding-top: 1.8rem !important;
+  }
+
+  .workspace-home-grid {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
+    margin-top: 1.25rem;
+  }
+
+  .workspace-home-card {
+    min-height: 8.5rem;
+    padding: 1rem;
+  }
+
+  .lenni-home-empty {
+    padding-top: 1.8rem !important;
+  }
+
+  .lenni-home h1 {
+    font-size: clamp(2rem, 10vw, 2.55rem);
+  }
+
+  .home-start-panel {
+    margin-top: 1.6rem;
+  }
+
+  .workspace-table-page {
+    max-width: none;
+    padding: 1.1rem 0.75rem 1.5rem;
+  }
+
+  .workspace-mobile-nav {
+    position: fixed;
+    z-index: 30;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.25rem;
+    min-height: 4.65rem;
+    padding: 0.45rem 0.6rem calc(0.45rem + env(safe-area-inset-bottom));
+    background: rgb(255 255 255 / 0.96);
+    border-top: 1px solid var(--border-subtle);
+    box-shadow: 0 -0.5rem 1.5rem rgb(23 26 29 / 0.06);
+  }
+
+  .workspace-mobile-nav-staff {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workspace-mobile-nav a,
+  .workspace-mobile-nav button {
+    display: grid;
+    min-width: 0;
+    min-height: 3.55rem;
+    align-content: center;
+    justify-items: center;
+    gap: 0.2rem;
+    padding: 0.3rem 0.25rem;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    font-size: 0.64rem;
+    font-weight: 750;
+    line-height: 1.1;
+    text-decoration: none;
+  }
+
+  .workspace-mobile-nav a:hover,
+  .workspace-mobile-nav button:hover,
+  .workspace-mobile-nav a.selected,
+  .workspace-mobile-nav button.selected {
+    color: var(--coral-700);
+    background: var(--coral-50);
+    border-color: var(--coral-100);
+    filter: none;
+  }
+
+  .workspace-mobile-nav a span,
+  .workspace-mobile-nav button span {
+    min-height: 1rem;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .workspace-mobile-sheet {
+    position: fixed;
+    z-index: 40;
+    inset: 0;
+    display: block;
+    overflow-y: auto;
+    padding: env(safe-area-inset-top) 1rem
+      calc(1.5rem + env(safe-area-inset-bottom));
+    color: var(--text-primary);
+    background: var(--surface-canvas);
+  }
+
+  .workspace-mobile-sheet-header {
+    display: flex;
+    min-height: 4.8rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .workspace-mobile-sheet-kicker {
+    overflow: hidden;
+    margin: 0 0 0.2rem;
+    color: var(--text-tertiary);
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-mobile-sheet h2 {
+    margin: 0;
+    font-size: 1.45rem;
+    letter-spacing: -0.04em;
+  }
+
+  .workspace-mobile-sheet-close {
+    display: inline-grid;
+    width: 2.5rem;
+    height: 2.5rem;
+    min-height: 2.5rem;
+    flex: 0 0 auto;
+    place-items: center;
+    padding: 0;
+    color: var(--text-primary);
+    background: var(--surface-base);
+    border: 1px solid var(--border-subtle);
+    border-radius: 50%;
+    font-size: 1.4rem;
+    line-height: 1;
+  }
+
+  .workspace-mobile-sheet-body {
+    display: grid;
+    gap: 1.5rem;
+    padding: 1.25rem 0 2rem;
+  }
+
+  .workspace-mobile-sheet-body section {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .workspace-mobile-sheet h3 {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .workspace-mobile-sheet-links {
+    display: grid;
+    gap: 0.45rem;
+  }
+
+  .workspace-mobile-sheet-links a {
+    display: flex;
+    min-height: 3.1rem;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 0.8rem;
+    color: var(--text-primary);
+    background: var(--surface-base);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-control);
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .workspace-mobile-sheet-links a:hover,
+  .workspace-mobile-sheet-links a[aria-current="page"] {
+    color: var(--coral-700);
+    background: var(--coral-50);
+    border-color: var(--coral-100);
+    filter: none;
+  }
+
+  .workspace-mobile-sheet-links a span {
+    display: inline-grid;
+    width: 1.2rem;
+    flex: 0 0 1.2rem;
+    place-items: center;
+    color: var(--coral-700);
+    font-size: 1rem;
+  }
+
+  .workspace-mobile-sheet-empty {
+    padding: 0.8rem;
+    color: var(--text-disabled);
+    background: var(--surface-subtle);
+    border-radius: var(--radius-control);
+    font-size: 0.82rem;
   }
 }
