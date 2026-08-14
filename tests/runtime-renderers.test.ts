@@ -122,7 +122,11 @@ const tableBundle = viewBundle("table", {
 
 const formConfig: FormConfig = {
   fields: [
-    { field: "company_name", hidden: false },
+    {
+      field: "company_name",
+      hidden: false,
+      help_text: "Use the business or customer name people recognise.",
+    },
     { field: "event_date", hidden: false },
     { field: "guest_count", hidden: false },
     { field: "budget", hidden: false },
@@ -307,7 +311,8 @@ describe("generic experience renderers", () => {
       }),
     );
 
-    expect(html).toContain("Connected records");
+    expect(html).toContain("Connections");
+    expect(html).toContain("Related work");
     expect(html).toContain("Beth Smith");
     expect(html).toContain("Services");
     expect(html).toContain("None connected yet.");
@@ -329,6 +334,8 @@ describe("generic experience renderers", () => {
     expect(html).toContain('type="number"');
     expect(html).toContain("<textarea");
     expect(html).toContain("Add enquiry");
+    expect(html).toContain('aria-describedby="help-company_name"');
+    expect(html).toContain("Add a new catering enquiry to your workspace.");
   });
 
   it("shows an object-backed File safely with a non-destructive replacement control", () => {

@@ -438,9 +438,11 @@ describe("Lenni unified workspace presentation", () => {
       } as never),
     );
 
-    expect(html).toContain("Connected records");
+    expect(html).toContain("Connections");
+    expect(html).toContain("Related work");
     expect(html).toContain("Beth Smith");
-    expect(html).toContain('aria-label="Edit Customer"');
+    expect(html).toContain('aria-label="Connect to Customer"');
+    expect(html).toContain('aria-label="Remove Beth Smith from Customer"');
     expect(html).toContain("/app/bakery/workspace/customers/");
     expect(html).toContain("Open full record");
   });

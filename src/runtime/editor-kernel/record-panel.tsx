@@ -64,6 +64,13 @@ function panelDisplayValue(
   return displayEditorValue(column, value);
 }
 
+function connectionIds(row: EditorRow, column: EditorColumn): string[] {
+  const value = row.values[column.key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 function inputType(
   column: EditorColumn,
 ): "date" | "email" | "number" | "tel" | "text" | "url" {
@@ -344,13 +351,26 @@ export function RecordPanel({
         })}
       </div>
       {connectionColumns.length > 0 ? (
-        <section className="editor-record-connections">
-          <h3>Connected records</h3>
-          <div className="editor-record-connection-list">
+        <section aria-label="Connections" className="editor-record-connections">
+          <div className="editor-record-connections-heading">
+            <div>
+              <p className="editor-record-section-eyebrow">Related work</p>
+              <h3>Connections</h3>
+            </div>
+            <p className="editor-record-connections-help">
+              Link related records and keep them in context.
+            </p>
+          </div>
+          <div className="editor-record-connection-list" role="list">
             {connectionColumns.map((column) => {
               const labels = row.connectionValues?.[column.key] ?? [];
+              const selectedIds = connectionIds(row, column);
               return (
-                <div className="editor-record-connection" key={column.key}>
+                <div
+                  className="editor-record-connection"
+                  key={column.key}
+                  role="listitem"
+                >
                   <span
                     aria-hidden="true"
                     className="editor-record-connection-icon"
@@ -361,9 +381,17 @@ export function RecordPanel({
                     <span className="editor-record-connection-label">
                       {column.label}
                     </span>
+                    <span className="editor-record-connection-mode">
+                      {column.connection?.multiple
+                        ? "Several records"
+                        : "One record"}
+                    </span>
                     {labels.length > 0 ? (
-                      <div className="editor-record-connection-values">
-                        {labels.map((item, index) => {
+                      <div
+                        className="editor-record-connection-values"
+                        role="list"
+                      >
+                        {labels.map((item) => {
                           const targetViewKey =
                             column.connection?.targetViewKey;
                           const href = connectedRecordHref(
@@ -372,7 +400,11 @@ export function RecordPanel({
                             item.id,
                           );
                           return (
-                            <span key={item.id}>
+                            <div
+                              className="editor-record-connection-value"
+                              key={item.id}
+                              role="listitem"
+                            >
                               {targetViewKey && onFollowConnectedRecord ? (
                                 <button
                                   className="editor-record-connection-link"
@@ -396,12 +428,33 @@ export function RecordPanel({
                               ) : (
                                 <span>{item.label}</span>
                               )}
-                              {index < labels.length - 1 ? ", " : ""}
-                            </span>
+                              {column.editable !== false ? (
+                                <button
+                                  aria-label={`Remove ${item.label} from ${column.label}`}
+                                  className="editor-record-connection-remove"
+                                  onClick={() =>
+                                    onCommitCell(
+                                      row.id,
+                                      column.key,
+                                      selectedIds.filter(
+                                        (id) => id !== item.id,
+                                      ),
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  Remove
+                                </button>
+                              ) : null}
+                            </div>
                           );
                         })}
                       </div>
-                    ) : null}
+                    ) : (
+                      <p className="editor-record-connection-empty">
+                        None connected yet.
+                      </p>
+                    )}
                     {column.editable !== false ? (
                       <ConnectionPicker
                         column={column}
@@ -425,8 +478,14 @@ export function RecordPanel({
                           : {})}
                         value={row.values[column.key] ?? []}
                       />
-                    ) : labels.length === 0 ? (
-                      <span className="editor-record-connection-values">—</span>
+                    ) : null}
+                    {column.editable === false ? (
+                      <span
+                        className="editor-record-connection-readonly"
+                        title={column.readOnlyReason}
+                      >
+                        Read-only
+                      </span>
                     ) : null}
                   </div>
                   <span
