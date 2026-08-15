@@ -5,6 +5,9 @@ import { z } from "zod";
 export const acquisitionEventNameSchema = z.enum([
   "public_build_viewed",
   "prompt_submitted",
+  "clarification_question_shown",
+  "clarification_answered",
+  "clarification_completed",
   "proposal_ready",
   "proposal_failed",
   "proposal_regenerated",

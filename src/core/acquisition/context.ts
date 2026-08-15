@@ -41,7 +41,17 @@ export function acquisitionBusinessContext(
       relationship_cardinalities: ["one_to_one", "one_to_many", "many_to_many"],
       view_types: ["table", "list", "cards", "detail"],
       form_modes: ["create", "edit"],
-      page_block_types: ["heading", "text", "view", "form", "divider"],
+      page_block_types: [
+        "heading",
+        "text",
+        "view",
+        "form",
+        "public_form",
+        "booking",
+        "preorder",
+        "divider",
+        "callout",
+      ],
       configuration_operation_names: [
         "set_object",
         "set_field",
@@ -57,6 +67,9 @@ export function acquisitionBusinessContext(
         "configured_views_forms_pages",
         "immutable_configuration_versions",
         "configuration_candidate_preview",
+        "public_create_forms",
+        "scheduling_booking",
+        "sites_public_pages",
       ],
       unavailable: { workflows: true, rules: true, arbitrary_code: true },
       change_lanes: [

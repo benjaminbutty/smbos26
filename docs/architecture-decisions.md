@@ -2851,13 +2851,34 @@ AI mutation tool. This ADR records the boundary accepted for v0.1 and
 implemented on the Phase 5 branch; implementation remains pending merge through
 PR #34 and this ADR does not claim that the PR or Phase 5 has merged.
 
-## ADR-041 — Journey 1 public Forms and reusable Booking capability
+## ADR-041 — Journey 1 uses bounded acquisition conversation, interactive candidate preview, Sites for public Pages, generic public create Forms, and a reusable Scheduling/Booking capability
 
 **Status:** Accepted for Journey 1
 
 **Date:** 15 August 2026
 
-Journey 1 adds two narrow, reusable public capabilities over the existing
+Journey 1 begins with one ordinary-language owner description followed by a
+strictly bounded acquisition conversation. Lenni asks only material business
+questions, retains the original request and structured answers in temporary
+server-owned state, asks no more than three questions in the normal path and no
+more than two clarification rounds, and never turns the journey into permanent
+chat or a transcript. If the provider is unavailable, deterministic discovery
+and starter composition remain available.
+
+The primary acquisition proposal is an interactive read-only candidate
+workspace, not a structural text lecture. It uses the same product anatomy as
+the live Table, Page, Record, Connection and public Site surfaces, with a small
+deterministic synthetic dataset held only in the temporary candidate assembly.
+Preview has no operational or configuration write path. `Back to Lenni` returns
+to the same bounded acquisition session; `Use this setup` records deliberate
+candidate intent without creating a Business.
+
+Sites is owner-facing vocabulary and navigation for existing Page definitions
+whose audience is `public`; it is not a new primitive. Internal Pages remain
+under Work, public Pages appear under Sites, and accepted Sites enter the
+Business as draft rather than being automatically published.
+
+Journey 1 also adds two narrow, reusable public capabilities over the existing
 generic graph. An explicit `public_form` Page block may reference one active
 public create Form on a published public Page. The anonymous boundary derives
 Business, Page, Form and Object identity from the published Site and creates

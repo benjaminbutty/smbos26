@@ -8,6 +8,15 @@ import { z } from "zod";
 import type { Json, Tables } from "../../db/supabase/database.types";
 import { createAdminClient } from "../../db/supabase/admin";
 import { getEnvironment } from "../../env";
+import {
+  addClarificationAnswer,
+  assessAcquisitionClarifications,
+  acquisitionClarificationKeySchema,
+  acquisitionClarificationStateSchema,
+  buildEnrichedAcquisitionRequest,
+  type AcquisitionClarificationState,
+} from "./clarification";
+import { enhanceAcquisitionPayload } from "./capabilities";
 import { composeStarterComposition } from "./composer";
 import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
@@ -28,7 +37,8 @@ type AcquisitionSessionRow = Tables<"anonymous_build_sessions">;
 export type LoadedAcquisitionSession = {
   token: string;
   row: AcquisitionSessionRow;
-  payload: AcquisitionBuildPayload;
+  payload: AcquisitionBuildPayload | null;
+  clarification: AcquisitionClarificationState | null;
   expired: false;
 };
 
@@ -167,14 +177,24 @@ export async function loadAcquisitionSession(): Promise<LoadedAcquisitionSession
         claim_status: "expired",
         proposal_json: null,
         request_text: null,
+        clarification_json: null,
       })
       .eq("id", row.id)
       .eq("claim_status", "active");
     return null;
   }
   const payload = acquisitionBuildPayloadSchema.safeParse(row.proposal_json);
-  if (!payload.success) return null;
-  return { token, row, payload: payload.data, expired: false };
+  const clarification = acquisitionClarificationStateSchema.safeParse(
+    row.clarification_json,
+  );
+  if (!payload.success && !clarification.success) return null;
+  return {
+    token,
+    row,
+    payload: payload.success ? payload.data : null,
+    clarification: clarification.success ? clarification.data : null,
+    expired: false,
+  };
 }
 
 async function reserveAttempt(category: AcquisitionCategory) {
@@ -230,56 +250,201 @@ export async function createOrRegenerateProposal(
     attempt_number: reservation.attempt_number,
   });
 
-  let payload: AcquisitionBuildPayload;
-  try {
-    payload = await interpretAcquisitionRequest(category, request);
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      error.code === "needs_more_detail"
-    ) {
-      emitAcquisitionEvent("proposal_failed", {
-        category,
-        reason: "needs_more_detail",
-      });
-      throw new AcquisitionServiceError(
-        "needs_more_detail",
-        error,
-        error.message,
-      );
-    }
-    emitAcquisitionEvent("proposal_failed", {
+  const assessment = assessAcquisitionClarifications(category, request);
+  if (assessment.nextQuestion) {
+    await writeClarificationState({
+      sessionId: reservation.session_id,
+      attemptNumber: reservation.attempt_number,
       category,
-      reason: "tailoring_unavailable",
+      request,
+      state: assessment.state,
     });
-    payload = composeStarterComposition(category, request);
+    emitAcquisitionEvent("clarification_question_shown", {
+      category,
+      question_key: assessment.nextQuestion,
+      round: assessment.state.round,
+    });
+    return;
   }
 
-  const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("anonymous_build_sessions")
-    .update({
-      proposal_count: reservation.attempt_number,
-      regeneration_count: reservation.attempt_number > 1 ? 1 : 0,
-      proposal_json: payload as unknown as Json,
-      request_text: request,
-      requested_category: category,
-    })
-    .eq("id", reservation.session_id)
-    .eq("claim_status", "active")
-    .eq("attempt_count", reservation.attempt_number)
-    .select("id")
-    .maybeSingle();
-  if (error || !data) {
-    emitAcquisitionEvent("proposal_failed", {
-      category,
-      reason: "write_failed",
-    });
-    throw new AcquisitionServiceError("proposal_write_failed", error);
-  }
+  const payload = await generateCandidate(
+    category,
+    request,
+    assessment.decisions,
+  );
+  await writeProposal({
+    sessionId: reservation.session_id,
+    attemptNumber: reservation.attempt_number,
+    category,
+    request,
+    payload,
+    clarification: assessment.state,
+  });
   emitAcquisitionEvent(
     reservation.attempt_number > 1 ? "proposal_regenerated" : "proposal_ready",
     { category, source: payload.proposal.source },
   );
+}
+
+async function generateCandidate(
+  category: AcquisitionCategory,
+  request: string,
+  decisions: Parameters<typeof enhanceAcquisitionPayload>[1],
+): Promise<AcquisitionBuildPayload> {
+  const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
+  let payload: AcquisitionBuildPayload;
+  try {
+    payload = await interpretAcquisitionRequest(category, enrichedRequest);
+  } catch (error) {
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason:
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "needs_more_detail"
+          ? "discovery_needs_detail"
+          : "tailoring_unavailable",
+    });
+    payload = composeStarterComposition(category, request);
+  }
+  return enhanceAcquisitionPayload(payload, decisions, request);
+}
+
+async function writeClarificationState(input: {
+  sessionId: string;
+  attemptNumber: number;
+  category: AcquisitionCategory;
+  request: string;
+  state: AcquisitionClarificationState;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("anonymous_build_sessions")
+    .update({
+      proposal_count: 0,
+      proposal_json: null,
+      request_text: input.request,
+      requested_category: input.category,
+      clarification_json: input.state as unknown as Json,
+    })
+    .eq("id", input.sessionId)
+    .eq("claim_status", "active")
+    .eq("attempt_count", input.attemptNumber)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    emitAcquisitionEvent("proposal_failed", {
+      category: input.category,
+      reason: "write_failed",
+    });
+    throw new AcquisitionServiceError("proposal_write_failed", error);
+  }
+}
+
+async function writeProposal(input: {
+  sessionId: string;
+  attemptNumber: number;
+  category: AcquisitionCategory;
+  request: string;
+  payload: AcquisitionBuildPayload;
+  clarification: AcquisitionClarificationState;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("anonymous_build_sessions")
+    .update({
+      proposal_count: input.attemptNumber,
+      regeneration_count: input.attemptNumber > 1 ? 1 : 0,
+      proposal_json: input.payload as unknown as Json,
+      request_text: input.request,
+      requested_category: input.category,
+      clarification_json: input.clarification as unknown as Json,
+    })
+    .eq("id", input.sessionId)
+    .eq("claim_status", "active")
+    .eq("attempt_count", input.attemptNumber)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    emitAcquisitionEvent("proposal_failed", {
+      category: input.category,
+      reason: "write_failed",
+    });
+    throw new AcquisitionServiceError("proposal_write_failed", error);
+  }
+}
+
+export async function answerAcquisitionQuestion(
+  questionKeyInput: unknown,
+  answerInput: unknown,
+): Promise<void> {
+  const questionKey = acquisitionClarificationKeySchema.parse(questionKeyInput);
+  const answer = z.string().trim().min(1).max(500).parse(answerInput);
+  const session = await loadAcquisitionSession();
+  if (!session?.clarification || !session.row.request_text) {
+    throw new AcquisitionServiceError("session_invalid");
+  }
+  const currentQuestion = session.clarification.asked_keys.find(
+    (key) => !session.clarification?.answers.some((entry) => entry.key === key),
+  );
+  if (currentQuestion !== questionKey) {
+    throw new AcquisitionServiceError("session_invalid");
+  }
+
+  const withAnswer = addClarificationAnswer(
+    session.clarification,
+    questionKey,
+    answer,
+  );
+  const category = acquisitionCategorySchema.parse(
+    session.row.requested_category,
+  );
+  const assessment = assessAcquisitionClarifications(
+    category,
+    session.row.request_text,
+    withAnswer,
+  );
+  emitAcquisitionEvent("clarification_answered", {
+    category,
+    question_key: questionKey,
+    round: withAnswer.round,
+  });
+
+  if (assessment.nextQuestion) {
+    await writeClarificationState({
+      sessionId: session.row.id,
+      attemptNumber: session.row.attempt_count,
+      category,
+      request: session.row.request_text,
+      state: assessment.state,
+    });
+    emitAcquisitionEvent("clarification_question_shown", {
+      category,
+      question_key: assessment.nextQuestion,
+      round: assessment.state.round,
+    });
+    return;
+  }
+
+  const payload = await generateCandidate(
+    category,
+    session.row.request_text,
+    assessment.decisions,
+  );
+  await writeProposal({
+    sessionId: session.row.id,
+    attemptNumber: session.row.attempt_count,
+    category,
+    request: session.row.request_text,
+    payload,
+    clarification: assessment.state,
+  });
+  emitAcquisitionEvent("clarification_completed", {
+    category,
+    round: assessment.state.round,
+  });
+  emitAcquisitionEvent("proposal_ready", {
+    category,
+    source: payload.proposal.source,
+  });
 }

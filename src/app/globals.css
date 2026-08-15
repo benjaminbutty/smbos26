@@ -10066,6 +10066,70 @@ textarea {
   margin-top: var(--space-2);
 }
 
+.acquisition-conversation {
+  display: grid;
+  max-width: 58rem;
+  gap: var(--space-5);
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--elevation-subtle);
+}
+
+.acquisition-conversation-intent,
+.acquisition-conversation-answer {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.acquisition-conversation-intent p:last-child,
+.acquisition-conversation-answer p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.acquisition-conversation-history {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.acquisition-conversation-answer small,
+.acquisition-conversation-limit {
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.acquisition-conversation-question {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.acquisition-conversation-question h2 {
+  max-width: 28ch;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(1.65rem, 4vw, 2.5rem);
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+}
+
+.acquisition-conversation-question .acquisition-form {
+  max-width: none;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}
+
+.acquisition-conversation-limit {
+  margin: 0;
+}
+
 .acquisition-proposal {
   max-width: 72rem;
   padding: clamp(1.25rem, 3vw, 2.25rem);

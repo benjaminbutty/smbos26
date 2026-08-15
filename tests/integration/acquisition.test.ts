@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { composeStarterComposition } from "../../src/core/acquisition/composer";
+import { enhanceAcquisitionPayload } from "../../src/core/acquisition/capabilities";
 import {
   createDirectTableRow,
   getDirectTableRowCreationAvailability,
@@ -76,12 +77,14 @@ async function insertSession(
   token: string,
   payload: Json,
   expiresAt: string,
+  clarification: Json | null = null,
 ): Promise<string> {
   const { data, error } = await admin
     .from("anonymous_build_sessions")
     .insert({
       expires_at: expiresAt,
       proposal_json: payload,
+      clarification_json: clarification,
       request_text: "I need a clear starting workspace for my business.",
       requested_category: "appointments",
       session_token_hash: tokenHash(token),
@@ -575,6 +578,101 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     }
   });
 
+  it("claims bounded acquisition candidates with draft public capabilities", async () => {
+    const bookingPayload = enhanceAcquisitionPayload(
+      composeStarterComposition(
+        "appointments",
+        "I run a mobile dog grooming business.",
+      ),
+      {
+        onlineBooking: true,
+        usesServices: true,
+        capacityPerSlot: 1,
+        publicEnquiry: null,
+      },
+      "I run a mobile dog grooming business.",
+    );
+    const bookingToken = `journey1-booking-${crypto.randomUUID()}`;
+    await insertSession(
+      bookingToken,
+      bookingPayload as unknown as Json,
+      new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+      {
+        schema_version: 1,
+        round: 2,
+        asked_keys: ["online_booking", "booking_services", "booking_capacity"],
+        answers: [
+          { key: "online_booking", answer: "yes" },
+          { key: "booking_services", answer: "yes" },
+          { key: "booking_capacity", answer: "one per slot" },
+        ],
+        status: "ready",
+      },
+    );
+    const bookingClaim = await owner.rpc("claim_anonymous_build_session", {
+      requested_business_name: `Journey One Booking ${crypto.randomUUID()}`,
+      requested_session_token: bookingToken,
+      requested_timezone: "Europe/London",
+    });
+    expect(bookingClaim.error).toBeNull();
+    expect(bookingClaim.data).toBeTruthy();
+    if (!bookingClaim.data) return;
+    createdBusinessIds.push(bookingClaim.data.id);
+
+    const bookingPages = await owner
+      .from("pages")
+      .select("audience, status, layout_json")
+      .eq("business_id", bookingClaim.data.id)
+      .eq("audience", "public");
+    expect(bookingPages.error).toBeNull();
+    expect(bookingPages.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ audience: "public", status: "draft" }),
+      ]),
+    );
+
+    const enquiryPayload = enhanceAcquisitionPayload(
+      composeStarterComposition(
+        "enquiries",
+        "I need to organise enquiries for my service business.",
+      ),
+      {
+        onlineBooking: null,
+        usesServices: null,
+        capacityPerSlot: 1,
+        publicEnquiry: true,
+      },
+      "I need to organise enquiries for my service business.",
+    );
+    const enquiryToken = `journey1-form-${crypto.randomUUID()}`;
+    await insertSession(
+      enquiryToken,
+      enquiryPayload as unknown as Json,
+      new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+    );
+    const enquiryClaim = await owner.rpc("claim_anonymous_build_session", {
+      requested_business_name: `Journey One Enquiry ${crypto.randomUUID()}`,
+      requested_session_token: enquiryToken,
+      requested_timezone: "Europe/London",
+    });
+    expect(enquiryClaim.error).toBeNull();
+    expect(enquiryClaim.data).toBeTruthy();
+    if (!enquiryClaim.data) return;
+    createdBusinessIds.push(enquiryClaim.data.id);
+
+    const publicForms = await owner
+      .from("forms")
+      .select("audience, mode")
+      .eq("business_id", enquiryClaim.data.id)
+      .eq("audience", "public");
+    expect(publicForms.error).toBeNull();
+    expect(publicForms.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ audience: "public", mode: "create" }),
+      ]),
+    );
+  });
+
   it("rejects expired sessions without creating a Business", async () => {
     const token = `expired-${crypto.randomUUID()}`;
     const payload = composeStarterComposition(
@@ -674,6 +772,13 @@ describe("Phase 5 anonymous acquisition boundary", () => {
       expiredToken,
       payload as unknown as Json,
       new Date(Date.now() - 1_000).toISOString(),
+      {
+        schema_version: 1,
+        round: 1,
+        asked_keys: ["online_booking"],
+        answers: [{ key: "online_booking", answer: "internal only" }],
+        status: "ready",
+      },
     );
     await admin.rpc("reserve_anonymous_build_attempt", {
       requested_category_value: "other",
@@ -687,13 +792,14 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     });
     const expired = await admin
       .from("anonymous_build_sessions")
-      .select("claim_status, request_text, proposal_json")
+      .select("claim_status, request_text, proposal_json, clarification_json")
       .eq("id", sessionId)
       .single();
     expect(expired.data).toEqual({
       claim_status: "expired",
       proposal_json: null,
       request_text: null,
+      clarification_json: null,
     });
   });
 });

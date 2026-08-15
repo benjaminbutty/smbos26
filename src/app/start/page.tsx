@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AcquisitionProposalCard } from "../../components/acquisition-proposal";
+import { AcquisitionConversation } from "../../components/acquisition-conversation";
 import { AcquisitionRequestInput } from "../../components/acquisition-request-input";
 import { Notice } from "../../components/notice";
 import { PendingSubmitButton } from "../../components/pending-submit-button";
@@ -54,7 +55,7 @@ export default async function StartPage({
   ]);
   const state = acquisitionState(rawState);
   const activeSession = session && !session.expired ? session : null;
-  const activeProposal = activeSession?.payload.proposal ?? null;
+  const activeProposal = activeSession?.payload?.proposal ?? null;
   const selectedCategory = categoryValue(activeProposal?.category);
   emitAcquisitionEvent("public_build_viewed", {
     has_proposal: Boolean(activeProposal),
@@ -94,7 +95,13 @@ export default async function StartPage({
         </Notice>
       ) : null}
 
-      {activeProposal ? (
+      {activeSession?.clarification?.status === "awaiting_answer" &&
+      !activeProposal ? (
+        <AcquisitionConversation
+          request={activeSession.row.request_text ?? ""}
+          state={activeSession.clarification}
+        />
+      ) : activeProposal ? (
         <>
           <AcquisitionProposalCard proposal={activeProposal} />
           <section
