@@ -6,9 +6,10 @@
 - Branch: `redesign/c7-settings-entry-public`
 - Feature implementation SHA: `1faa5d156a9bc6e909303853591202c713818004`
 - PR: [#47](https://github.com/benjaminbutty/smbos26/pull/47)
-- Exact-head CI for the C7 evidence head: [run 31851847926](https://github.com/benjaminbutty/smbos26/actions/runs/31851847926)
-- Final publication head and merge SHA: recorded in the checkpoint ledger after
-  metadata-head revalidation and normal merge
+- Evidence-head exact-head CI: [run 31851847926](https://github.com/benjaminbutty/smbos26/actions/runs/31851847926)
+- Final publication head: `ddb332b29cc42dfe7092c660f28891031d0c481f`
+- Final exact-head CI: [run 31853324408](https://github.com/benjaminbutty/smbos26/actions/runs/31853324408)
+- Merge SHA: `c478b5062ffb7de851963dddefe50c9cb34f9671`
 - Authority: Sections 8, 9 and 15 of the Unified Lenni Product Experience
   Redesign v1 execution prompt, the Programme Brief, Design System and UX
   Constitution v2, the Stitch Reference Manifest, and the existing
