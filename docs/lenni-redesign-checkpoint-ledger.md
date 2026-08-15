@@ -156,9 +156,11 @@ evidence carried into the next checkpoint.
 
 - Branch: `redesign/c7-settings-entry-public`
 - Feature implementation SHA: `1faa5d156a9bc6e909303853591202c713818004`
-- PR: recorded after publication
-- Final exact-head SHA: recorded after the report/ledger metadata commit
-- Merge SHA: recorded after normal merge
+- PR: [#47](https://github.com/benjaminbutty/smbos26/pull/47)
+- C7 evidence-head SHA: `555e1366e9affebf93dfefe486dea96dc02d5311`
+- Exact-head CI for the evidence head: [run 31851847926](https://github.com/benjaminbutty/smbos26/actions/runs/31851847926)
+- Final publication head and merge SHA: to be closed after metadata-head
+  revalidation and normal merge
 - Surfaces: Settings / Business / Locations / Team & permissions, bounded
   setup context, existing sign-in/sign-up entry, neutral public preorder
   identity and shared public state/accessibility presentation
@@ -169,7 +171,8 @@ evidence carried into the next checkpoint.
 - Tests/CI: focused 39 passed; full unit/contract 826 passed; configured
   integration 257 passed with 5 intentional skips; type generation,
   TypeScript, ESLint, Prettier, build, schema lint and migration immutability
-  passed; exact-head CI to be recorded after publication
+  passed; evidence-head exact-head CI passed in run 31851847926, with the
+  metadata publication head to be revalidated before merge
 - Decisions: reuse Location actions, capability projection, existing auth
   Server Actions, public preorder resolver/transaction and shared timezone
   options; present role boundaries without adding membership writes or a

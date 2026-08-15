@@ -5,8 +5,10 @@
 - Checkpoint: C7 — Settings, entry and public preorder
 - Branch: `redesign/c7-settings-entry-public`
 - Feature implementation SHA: `1faa5d156a9bc6e909303853591202c713818004`
-- PR, final exact-head SHA, merge SHA and CI run: recorded in the checkpoint
-  ledger after publication
+- PR: [#47](https://github.com/benjaminbutty/smbos26/pull/47)
+- Exact-head CI for the C7 evidence head: [run 31851847926](https://github.com/benjaminbutty/smbos26/actions/runs/31851847926)
+- Final publication head and merge SHA: recorded in the checkpoint ledger after
+  metadata-head revalidation and normal merge
 - Authority: Sections 8, 9 and 15 of the Unified Lenni Product Experience
   Redesign v1 execution prompt, the Programme Brief, Design System and UX
   Constitution v2, the Stitch Reference Manifest, and the existing
@@ -114,7 +116,8 @@ created during browser review, and the public journey was not submitted.
 - Historical migration immutability check passed for all 32 migrations.
 - Production Next build passed with the documented non-production local
   `ACQUISITION_RATE_LIMIT_SECRET` verification value. Exact-head GitHub CI is
-  the final publication gate.
+  the final publication gate; run 31851847926 passed on the C7 evidence head
+  and the metadata publication head is revalidated before merge.
 
 ## Decisions, exclusions and carried debt
 
