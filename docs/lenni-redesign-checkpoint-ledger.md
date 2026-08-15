@@ -186,12 +186,14 @@ evidence carried into the next checkpoint.
 ### C8 — Whole-product acceptance and bounded corrections
 
 - Branch: `redesign/c8-whole-product-acceptance`
-- Product correction SHA: none; bounded test-only correction canonicalizes the
+- Product correction SHA: none; bounded test-only correction at
+  `ae5bf3103cfedffeca9892d4df374afc45dc927e` canonicalizes the
   set-valued preorder `location_ids` in the retained preview compatibility
   assertion
-- PR: recorded after publication
-- Final exact-head SHA: recorded after the final C8 report commit
-- Merge SHA: recorded after normal merge
+- PR: [#48](https://github.com/benjaminbutty/smbos26/pull/48)
+- Final exact-head SHA: `ae5bf3103cfedffeca9892d4df374afc45dc927e`
+- Merge SHA: `52fdee589c7fd3399b340777c2157a0c4827856b`
+- Exact-head CI: [run 31857182305](https://github.com/benjaminbutty/smbos26/actions/runs/31857182305)
 - Surfaces: whole-product cross-business acceptance, responsive/accessibility
   review, Owner/Admin/Staff boundaries, AI available/unavailable/manual states,
   empty/populated/read-only/stale/loading/saving/error/unavailable states and
@@ -200,8 +202,9 @@ evidence carried into the next checkpoint.
   `docs/lenni-redesign-c8-report.md`; live proof Businesses cover milk, dog
   grooming and enquiry-led work, with Bedford preorder and Staff/Owner/Admin
   role evidence
-- Tests/CI: focused C8 coverage and the full unit/contract suite pass; the
-  complete integration gate and exact-head CI are recorded after publication
+- Tests/CI: focused C8 coverage, full unit/contract suite, clean full
+  PostgreSQL integration, separate RLS suite, production audit and exact-head
+  CI all pass in run 31857182305; local static/build verification also passes
 - Decisions: take the zero-product-correction path because no material
   consistency, accessibility, overflow or interaction defect was found; make
   the existing set semantics explicit in one focused acceptance assertion; keep

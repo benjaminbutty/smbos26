@@ -8,8 +8,10 @@
 - Product correction: none; one bounded acceptance-test correction canonicalizes
   set-valued preorder `location_ids` before comparing the current and retained
   Milestone 4 compatibility resolver
-- PR, exact-head SHA, merge SHA and CI run: recorded in the running ledger after
-  publication
+- PR: [#48](https://github.com/benjaminbutty/smbos26/pull/48)
+- Final exact-head SHA: `ae5bf3103cfedffeca9892d4df374afc45dc927e`
+- Merge SHA: `52fdee589c7fd3399b340777c2157a0c4827856b`
+- Exact-head CI: [run 31857182305](https://github.com/benjaminbutty/smbos26/actions/runs/31857182305)
 - Authority: Sections 8, 9, 16, 17 and 18 of the Unified Lenni Product
   Experience Redesign v1 execution prompt, the Programme Brief, Design System
   and UX Constitution v2, the Stitch Reference Manifest, and the existing
@@ -147,7 +149,7 @@ part of this acceptance review.
 - Existing preorder resolver, capacity/cutoff/pricing/idempotency and
   submission validation remain unchanged; the live valid submission confirmed
   the trusted transaction path.
-- Final local verification before publication included 14 focused files with
+- Final local verification included 14 focused files with
   85 tests passed, the full unit/contract suite with 77 files and 826 tests
   passed, Prettier, route type generation, TypeScript, ESLint, production
   build, schema lint and migration immutability. The focused configuration
@@ -155,7 +157,9 @@ part of this acceptance review.
   with 5 intentional skips after the bounded normalization. Two earlier full
   integration attempts each exposed one pre-existing local fixture/order
   sensitivity (256 passed, 5 skipped, one failed); exact-head CI is the clean
-  repository gate for the final publication.
+  repository gate. Exact-head CI run 31857182305 passed in 18m13s, including
+  the clean full PostgreSQL integration suite, separate RLS suite, production
+  dependency audit and all required static/build checks.
 
 ## Residual product-quality issues and MLP/v0 recommendation
 
