@@ -159,8 +159,9 @@ evidence carried into the next checkpoint.
 - PR: [#47](https://github.com/benjaminbutty/smbos26/pull/47)
 - C7 evidence-head SHA: `555e1366e9affebf93dfefe486dea96dc02d5311`
 - Exact-head CI for the evidence head: [run 31851847926](https://github.com/benjaminbutty/smbos26/actions/runs/31851847926)
-- Final publication head and merge SHA: to be closed after metadata-head
-  revalidation and normal merge
+- Final exact-head SHA: `ddb332b29cc42dfe7092c660f28891031d0c481f`
+- Final exact-head CI: [run 31853324408](https://github.com/benjaminbutty/smbos26/actions/runs/31853324408)
+- Merge SHA: `c478b5062ffb7de851963dddefe50c9cb34f9671`
 - Surfaces: Settings / Business / Locations / Team & permissions, bounded
   setup context, existing sign-in/sign-up entry, neutral public preorder
   identity and shared public state/accessibility presentation
@@ -171,8 +172,8 @@ evidence carried into the next checkpoint.
 - Tests/CI: focused 39 passed; full unit/contract 826 passed; configured
   integration 257 passed with 5 intentional skips; type generation,
   TypeScript, ESLint, Prettier, build, schema lint and migration immutability
-  passed; evidence-head exact-head CI passed in run 31851847926, with the
-  metadata publication head to be revalidated before merge
+  passed; evidence-head and final metadata-head exact-head CI passed in runs
+  31851847926 and 31853324408
 - Decisions: reuse Location actions, capability projection, existing auth
   Server Actions, public preorder resolver/transaction and shared timezone
   options; present role boundaries without adding membership writes or a
@@ -181,3 +182,28 @@ evidence carried into the next checkpoint.
   change, public builder, richer Location capability, new route/capability or
   C8 corrections; live Admin browser fixture and auth recovery remain
   source/test-backed gaps
+
+### C8 — Whole-product acceptance and bounded corrections
+
+- Branch: `redesign/c8-whole-product-acceptance`
+- Product correction SHA: none; acceptance/report-only checkpoint
+- PR: recorded after publication
+- Final exact-head SHA: recorded after the final C8 report commit
+- Merge SHA: recorded after normal merge
+- Surfaces: whole-product cross-business acceptance, responsive/accessibility
+  review, Owner/Admin/Staff boundaries, AI available/unavailable/manual states,
+  empty/populated/read-only/stale/loading/saving/error/unavailable states and
+  valid Bedford preorder confirmation
+- Browser evidence: C8 final screenshot index and target-size findings are in
+  `docs/lenni-redesign-c8-report.md`; live proof Businesses cover milk, dog
+  grooming and enquiry-led work, with Bedford preorder and Staff/Owner/Admin
+  role evidence
+- Tests/CI: C8 acceptance reuses the complete C1–C7 contracts and reruns the
+  repository verification against the final report head; exact-head CI is
+  recorded after publication
+- Decisions: take the zero-correction path because no material consistency,
+  accessibility, overflow or interaction defect was found; keep trades/jobs as
+  the documented source/integration-backed fixture boundary
+- Exclusions/debt: no new capability, architecture, route, schema, dependency,
+  AI/provider change or future-surface implementation; existing auth recovery
+  scope and trades/jobs persisted-fixture limitation remain explicit
