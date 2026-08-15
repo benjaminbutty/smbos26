@@ -111,7 +111,7 @@ export const acquisitionCategoryOptions: ReadonlyArray<{
   {
     value: "products",
     label: "Products & stock",
-    description: "Track products and manually maintained stock information.",
+    description: "Track products and manually maintain stock information.",
   },
   {
     value: "other",

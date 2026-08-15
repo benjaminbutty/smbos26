@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import type {
   Column,
   RenderCellProps,
@@ -125,6 +125,7 @@ export function openConnectionCellEditor(
 
 function HeaderCell({
   column,
+  canReorder,
   canRename,
   canUpdateOptions,
   canChangeType,
@@ -139,6 +140,7 @@ function HeaderCell({
   onMove,
 }: Readonly<{
   column: EditorColumn;
+  canReorder: boolean;
   canRename: boolean;
   canUpdateOptions: boolean;
   canChangeType: boolean;
@@ -166,9 +168,25 @@ function HeaderCell({
     | undefined;
   onMove: ((direction: "left" | "right") => void) | undefined;
 }>): React.ReactNode {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const canChangeOptions = column.kind === "select" || column.kind === "status";
+  const closeMenu = (): void => {
+    onClose();
+    window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+  };
   return (
-    <div className="editor-header-cell">
+    <div
+      className={`editor-header-cell${canReorder ? " is-reorderable" : ""}`}
+      data-reorderable={canReorder ? "true" : "false"}
+      ref={anchorRef}
+      title={canReorder ? "Drag to reorder column" : undefined}
+    >
+      {canReorder ? (
+        <span aria-hidden="true" className="editor-column-drag-affordance">
+          ⋮⋮
+        </span>
+      ) : null}
       <span className="editor-header-label">{column.label}</span>
       {canRename ||
       canChangeType ||
@@ -183,6 +201,7 @@ function HeaderCell({
               event.stopPropagation();
               onOpen();
             }}
+            ref={menuButtonRef}
             tabIndex={-1}
             type="button"
           >
@@ -190,13 +209,14 @@ function HeaderCell({
           </button>
           {isOpen ? (
             <ColumnMenu
+              anchorRef={anchorRef}
               canChangeType={canChangeType}
               canInsert={canInsert}
               canRename={canRename}
               canUpdateOptions={canUpdateOptions}
               column={column}
               onChangeType={onChangeType}
-              onClose={onClose}
+              onClose={closeMenu}
               onInsert={onInsert}
               onMove={onMove}
               onRename={onRename}
@@ -210,6 +230,7 @@ function HeaderCell({
 }
 
 function ColumnMenu({
+  anchorRef,
   canRename,
   canChangeType,
   canInsert,
@@ -222,6 +243,7 @@ function ColumnMenu({
   onRename,
   onUpdateOptions,
 }: Readonly<{
+  anchorRef: RefObject<HTMLDivElement | null>;
   canRename: boolean;
   canChangeType: boolean;
   canInsert: boolean;
@@ -249,9 +271,13 @@ function ColumnMenu({
   onClose: () => void;
 }>): React.ReactNode {
   const [label, setLabel] = useState(column.label);
-  const [options, setOptions] = useState<string[]>([
-    ...(column.options ?? ["Option 1", "Option 2"]),
-  ]);
+  const [options, setOptions] = useState<string[]>(() =>
+    column.options !== undefined
+      ? [...column.options]
+      : column.kind === "select" || column.kind === "status"
+        ? []
+        : ["Option 1", "Option 2"],
+  );
   const [kind, setKind] = useState<EditorColumnKind>(column.kind);
   const [mode, setMode] = useState<
     | "main"
@@ -276,7 +302,12 @@ function ColumnMenu({
   };
 
   return (
-    <Popover className="editor-column-menu" onClose={onClose}>
+    <Popover
+      anchorRef={anchorRef}
+      className="editor-column-menu"
+      onClose={onClose}
+      viewportSafe
+    >
       {mode === "main" ? (
         <Menu>
           <div className="editor-column-menu-title">{column.label}</div>
@@ -425,13 +456,18 @@ function ColumnMenu({
       ) : null}
       {mode === "options" && canChangeOptions ? (
         <div className="editor-column-menu-form">
+          {options.length === 0 ? (
+            <p className="editor-options-empty-state">
+              No options yet. Add at least two options to use this property.
+            </p>
+          ) : null}
           <OptionManager
             onChange={(next) => setOptions([...next])}
             options={options}
           />
           <button
             className="editor-menu-submit"
-            disabled={submitting}
+            disabled={submitting || !validOptions(options)}
             onClick={() => {
               if (!validOptions(options)) return;
               setSubmitting(true);
@@ -700,6 +736,7 @@ export function createEditorColumns({
     renderHeaderCell: () => (
       <HeaderCell
         column={column}
+        canReorder={canReorderColumns}
         canRename={canRenameColumns}
         canUpdateOptions={canUpdateColumnOptions}
         canChangeType={canChangeColumnTypes}

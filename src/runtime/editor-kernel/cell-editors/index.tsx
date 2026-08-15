@@ -50,6 +50,7 @@ export function ConnectionPicker({
   const [open, setOpen] = useState(initiallyOpen);
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [searchAttempt, setSearchAttempt] = useState(0);
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [portalPosition, setPortalPosition] = useState<{
@@ -151,10 +152,17 @@ export function ConnectionPicker({
   const create = async (): Promise<void> => {
     if (!onCreate || !query.trim() || creating) return;
     setCreating(true);
+    setCreateError(null);
     try {
       const created = await onCreate(query.trim());
       commit(
         column.connection?.multiple ? [...selected, created.id] : [created.id],
+      );
+    } catch (error) {
+      setCreateError(
+        error instanceof Error && error.message
+          ? error.message
+          : "This connected Record could not be created here.",
       );
     } finally {
       setCreating(false);
@@ -252,16 +260,33 @@ export function ConnectionPicker({
         })
       )}
       {onCreate ? (
-        <button
-          className="editor-connection-create"
-          disabled={!query.trim() || creating}
-          onClick={() => void create()}
-          type="button"
-        >
-          {creating
-            ? "Creating…"
-            : `+ Create ${column.label.toLocaleLowerCase("en")}`}
-        </button>
+        <>
+          {!query.trim() ? (
+            <p className="editor-connection-create-hint">
+              Type a name to enable quick-create.
+            </p>
+          ) : null}
+          {createError ? (
+            <p
+              aria-live="polite"
+              className="editor-connection-create-error"
+              role="alert"
+            >
+              {createError}
+            </p>
+          ) : null}
+          <button
+            aria-disabled={!query.trim() || creating}
+            className="editor-connection-create"
+            disabled={!query.trim() || creating}
+            onClick={() => void create()}
+            type="button"
+          >
+            {creating
+              ? "Creating…"
+              : `+ Create ${column.label.toLocaleLowerCase("en")}`}
+          </button>
+        </>
       ) : null}
       <button
         className="editor-choice-clear"
@@ -520,13 +545,17 @@ export function ChoiceStatusPicker({
   const [activeIndex, setActiveIndex] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const options = (column.options ?? []).filter((option) =>
+  const configuredOptions = (column.options ?? []).filter(
+    (option) => option.trim().length > 0,
+  );
+  const options = configuredOptions.filter((option) =>
     option.toLocaleLowerCase("en").includes(query.toLocaleLowerCase("en")),
   );
+  const hasConfiguredOptions = configuredOptions.length > 0;
   useEffect(() => buttonRef.current?.focus(), []);
   useEffect(() => {
-    if (open) searchRef.current?.focus();
-  }, [open]);
+    if (open && hasConfiguredOptions) searchRef.current?.focus();
+  }, [hasConfiguredOptions, open]);
   const commitOption = (option: string): void => {
     onCommit(option);
     setOpen(false);
@@ -535,7 +564,7 @@ export function ChoiceStatusPicker({
     <div className="editor-choice-picker">
       <button
         aria-expanded={open}
-        aria-haspopup="listbox"
+        aria-haspopup={hasConfiguredOptions ? "listbox" : "dialog"}
         aria-label={`Edit ${column.label}`}
         className="editor-choice-trigger"
         onClick={() => setOpen((current) => !current)}
@@ -558,78 +587,92 @@ export function ChoiceStatusPicker({
         ref={buttonRef}
         type="button"
       >
-        {editorInputValue(value) || "Choose…"}
+        {editorInputValue(value) ||
+          (hasConfiguredOptions ? "Choose…" : "No options yet")}
       </button>
       {open ? (
-        <div className="editor-choice-popover" role="listbox">
-          <input
-            aria-label={`Search ${column.label}`}
-            className="editor-choice-search"
-            ref={searchRef}
-            onChange={(event) => {
-              setQuery(event.currentTarget.value);
-              setActiveIndex(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                if (onCancel) {
-                  onCancel();
-                } else {
+        hasConfiguredOptions ? (
+          <div className="editor-choice-popover" role="listbox">
+            <input
+              aria-label={`Search ${column.label}`}
+              className="editor-choice-search"
+              ref={searchRef}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setActiveIndex(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  if (onCancel) {
+                    onCancel();
+                  } else {
+                    setOpen(false);
+                  }
+                } else if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setActiveIndex((current) =>
+                    options.length === 0
+                      ? 0
+                      : Math.min(current + 1, options.length - 1),
+                  );
+                } else if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setActiveIndex((current) => Math.max(current - 1, 0));
+                } else if (event.key === "Enter") {
+                  event.preventDefault();
+                  const option = options[activeIndex];
+                  if (option) commitOption(option);
+                } else if (
+                  (event.key === "Backspace" || event.key === "Delete") &&
+                  !query
+                ) {
+                  event.preventDefault();
+                  onCommit(null);
                   setOpen(false);
                 }
-              } else if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setActiveIndex((current) =>
-                  options.length === 0
-                    ? 0
-                    : Math.min(current + 1, options.length - 1),
-                );
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setActiveIndex((current) => Math.max(current - 1, 0));
-              } else if (event.key === "Enter") {
-                event.preventDefault();
-                const option = options[activeIndex];
-                if (option) commitOption(option);
-              } else if (
-                (event.key === "Backspace" || event.key === "Delete") &&
-                !query
-              ) {
-                event.preventDefault();
+              }}
+              placeholder="Search"
+              value={query}
+            />
+            {options.map((option, index) => (
+              <button
+                aria-current={option === value ? "true" : undefined}
+                aria-selected={index === activeIndex}
+                className={`editor-choice-option${index === activeIndex ? " is-active" : ""}`}
+                id={`editor-choice-${column.key}-${index}`}
+                key={option}
+                onClick={() => commitOption(option)}
+                onMouseEnter={() => setActiveIndex(index)}
+                role="option"
+                type="button"
+              >
+                <span className="editor-status-pill">{option}</span>
+              </button>
+            ))}
+            <button
+              className="editor-choice-clear"
+              onClick={() => {
                 onCommit(null);
                 setOpen(false);
-              }
-            }}
-            placeholder="Search"
-            value={query}
-          />
-          {options.map((option, index) => (
-            <button
-              aria-current={option === value ? "true" : undefined}
-              aria-selected={index === activeIndex}
-              className={`editor-choice-option${index === activeIndex ? " is-active" : ""}`}
-              id={`editor-choice-${column.key}-${index}`}
-              key={option}
-              onClick={() => commitOption(option)}
-              onMouseEnter={() => setActiveIndex(index)}
-              role="option"
+              }}
               type="button"
             >
-              <span className="editor-status-pill">{option}</span>
+              Clear
             </button>
-          ))}
-          <button
-            className="editor-choice-clear"
-            onClick={() => {
-              onCommit(null);
-              setOpen(false);
-            }}
-            type="button"
+          </div>
+        ) : (
+          <div
+            aria-live="polite"
+            className="editor-choice-popover editor-choice-empty-state"
+            role="status"
           >
-            Clear
-          </button>
-        </div>
+            <strong>No options yet</strong>
+            <span>
+              Use Edit options in the column menu to configure this property.
+            </span>
+          </div>
+        )
       ) : null}
     </div>
   );

@@ -64,10 +64,10 @@ export default async function StartPage({
     <main className="acquisition-page">
       <section className="acquisition-hero" aria-labelledby="start-title">
         <p className="eyebrow">Start with Lenni</p>
-        <h1 id="start-title">What are you building?</h1>
+        <h1 id="start-title">Tell Lenni about your business</h1>
         <p>
-          Describe the work you run and Lenni will suggest a clear starting
-          workspace before you create an account.
+          Describe the work you run and Lenni will suggest a setup to get you
+          started
         </p>
       </section>
 
@@ -122,7 +122,7 @@ export default async function StartPage({
         <ProposalForm
           defaultCategory="appointments"
           formKey="initial"
-          submitLabel="See my starting point"
+          submitLabel="Start building"
         />
       )}
 
