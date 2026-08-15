@@ -80,6 +80,8 @@ export function pageLayoutToTiptap(layoutInput: unknown): PageEditorDocument {
       case "image":
       case "button":
       case "form":
+      case "public_form":
+      case "booking":
       case "preorder":
         return legacyNode(block);
     }

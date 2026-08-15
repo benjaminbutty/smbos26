@@ -101,6 +101,10 @@ function blockLabel(block: PageBlock): string {
       return "Button";
     case "form":
       return "Form";
+    case "public_form":
+      return "Public Form";
+    case "booking":
+      return "Booking";
     case "preorder":
       return "Preorder";
   }
@@ -374,6 +378,8 @@ function PageBlockView({
         </p>
       );
     case "form":
+    case "public_form":
+    case "booking":
     case "preorder":
       return (
         <div className="page-editor-legacy-inline" role="status">

@@ -2850,3 +2850,40 @@ conversation, transcript, memory, platform primitive, second runtime or public
 AI mutation tool. This ADR records the boundary accepted for v0.1 and
 implemented on the Phase 5 branch; implementation remains pending merge through
 PR #34 and this ADR does not claim that the PR or Phase 5 has merged.
+
+## ADR-041 — Journey 1 public Forms and reusable Booking capability
+
+**Status:** Accepted for Journey 1
+
+**Date:** 15 August 2026
+
+Journey 1 adds two narrow, reusable public capabilities over the existing
+generic graph. An explicit `public_form` Page block may reference one active
+public create Form on a published public Page. The anonymous boundary derives
+Business, Page, Form and Object identity from the published Site and creates
+exactly one generic Record after the configured Field allow-list, authoritative
+Field validation, body/rate controls, honeypot and idempotency checks. It does
+not expose generic public Record reads, updates, archive operations or arbitrary
+Relationship creation.
+
+An explicit `booking` Page block represents the platform-owned Scheduling /
+Availability capability. Its strict configuration maps generic Customer,
+Booking/Appointment, optional Subject and optional Service Objects, exact
+Relationships, safe public Fields and a Business or trusted Location timezone.
+The reusable runtime derives slots and revalidates timezone, allowed days,
+interval, capacity, minimum notice and booking horizon in PostgreSQL before it
+atomically creates the configured generic Records and Relationships. It uses
+tenant-bound idempotency and slot counters, has no payment path, and is not a
+dog-grooming module or customer-created primitive.
+
+Both capabilities are versioned through the existing Page/configuration
+snapshot boundary. They remain draft after acquisition claim. Public preview
+uses no submission endpoint and no operational write. AI is not invoked by
+either public transaction; deterministic server/database checks are
+authoritative, and preorder remains an independent trusted capability whose
+transaction is not rewritten by this decision.
+
+This decision supersedes the earlier generic public Form and scheduling
+deferrals for Journey 1 only. Payment, public generic Record reads, arbitrary
+public graph mutation, advanced scheduling and later Journey 2–6 experience
+resets remain outside its scope.

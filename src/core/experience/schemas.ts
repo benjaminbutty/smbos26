@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { Json } from "../../db/supabase/database.types";
+import { bookingBlockSchema, publicFormBlockSchema } from "../booking/schemas";
 import {
   graphKeySchema,
   jsonObjectSchema,
@@ -862,6 +863,8 @@ export const pageBlockSchema = z.discriminatedUnion("type", [
   buttonBlockSchema,
   viewBlockSchema,
   formBlockSchema,
+  publicFormBlockSchema,
+  bookingBlockSchema,
   preorderBlockSchema,
   dividerBlockSchema,
   calloutBlockSchema,

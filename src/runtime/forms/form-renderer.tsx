@@ -11,6 +11,9 @@ interface FormRendererCommonProps {
   bundle: ExperienceFormBundle;
   cancelHref?: string;
   cancelLabel?: string;
+  hiddenFields?: ReadonlyArray<{ name: string; value: string }>;
+  honeypotName?: string;
+  method?: "get" | "post";
   record?: Tables<"records">;
   showHeading?: boolean;
 }
@@ -41,6 +44,9 @@ export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
     bundle,
     cancelHref,
     cancelLabel = "Cancel",
+    hiddenFields = [],
+    honeypotName,
+    method = "post",
     record,
     showHeading = true,
   } = props;
@@ -69,8 +75,27 @@ export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
 
       <form
         className="runtime-form"
+        method={method}
         {...(preview ? {} : { action: props.action })}
       >
+        {hiddenFields.map((field) => (
+          <input
+            key={field.name}
+            name={field.name}
+            type="hidden"
+            value={field.value}
+          />
+        ))}
+        {honeypotName ? (
+          <input
+            aria-hidden="true"
+            autoComplete="off"
+            className="public-form-honeypot"
+            name={honeypotName}
+            tabIndex={-1}
+            type="text"
+          />
+        ) : null}
         <fieldset className="runtime-form-fields" disabled={preview}>
           {bundle.config.fields.map((configuredField) => {
             const field = fieldsByKey.get(configuredField.field);
