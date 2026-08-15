@@ -8378,6 +8378,7 @@ textarea {
 }
 
 .workspace-table-page .editor-column-menu,
+.editor-column-menu[data-viewport-safe="true"],
 .workspace-table-page .editor-add-column-popover {
   box-sizing: border-box;
   min-width: 0;
@@ -8390,9 +8391,25 @@ textarea {
   white-space: normal;
 }
 
-.workspace-table-page .editor-column-menu {
-  width: min(16rem, calc(100vw - 1rem));
-  overflow: visible;
+.workspace-table-page .editor-column-menu,
+.editor-column-menu[data-viewport-safe="true"] {
+  width: min(18rem, calc(100vw - var(--space-2)));
+  min-width: min(18rem, calc(100vw - var(--space-2)));
+  max-height: min(32rem, calc(100vh - var(--space-4)));
+  padding: var(--space-2);
+  gap: var(--space-2);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-panel);
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: 90;
+}
+
+.editor-column-menu[data-viewport-safe="true"] {
+  position: fixed;
+  right: auto;
+  top: auto;
 }
 
 .workspace-table-page .editor-add-column-popover {
@@ -8403,11 +8420,12 @@ textarea {
   overflow: auto;
 }
 
-.workspace-table-page .editor-column-menu-form {
+.workspace-table-page .editor-column-menu-form,
+.editor-column-menu[data-viewport-safe="true"] .editor-column-menu-form {
   min-width: 0;
   width: 100%;
-  gap: 0.4rem;
-  padding: 0.45rem;
+  gap: var(--space-3);
+  padding: var(--space-2);
 }
 
 .workspace-table-page .editor-property-type-note {
@@ -8431,6 +8449,7 @@ textarea {
 }
 
 .workspace-table-page .editor-column-menu-form > label,
+.editor-column-menu[data-viewport-safe="true"] .editor-column-menu-form > label,
 .workspace-table-page .editor-add-column-popover > label {
   min-width: 0;
   font-size: 0.68rem;
@@ -8438,6 +8457,7 @@ textarea {
 }
 
 .workspace-table-page .editor-column-menu-form input,
+.editor-column-menu[data-viewport-safe="true"] .editor-column-menu-form input,
 .workspace-table-page .editor-add-column-popover input,
 .workspace-table-page .lenni-picker-search {
   min-width: 0;
@@ -8445,6 +8465,53 @@ textarea {
   padding: 0.3rem 0.45rem;
   font-size: 0.7rem;
   line-height: 1.2;
+}
+
+.workspace-table-page .editor-column-menu-form input,
+.workspace-table-page .editor-column-menu-form textarea,
+.workspace-table-page .editor-column-menu-form select,
+.editor-column-menu[data-viewport-safe="true"] .editor-column-menu-form input,
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-form
+  textarea,
+.editor-column-menu[data-viewport-safe="true"] .editor-column-menu-form select,
+.workspace-table-page .lenni-option-row,
+.workspace-table-page .lenni-option-add {
+  min-width: 0;
+}
+
+.workspace-table-page .editor-column-menu-form > .editor-menu-submit,
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-form
+  > .editor-menu-submit,
+.workspace-table-page .editor-column-menu-form > .editor-menu-back,
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-form
+  > .editor-menu-back {
+  width: 100%;
+}
+
+.workspace-table-page .editor-column-menu-form > .editor-menu-back,
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-form
+  > .editor-menu-back {
+  min-height: 2.25rem;
+  margin: 0;
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: 0;
+  padding-top: var(--space-2);
+}
+
+.workspace-table-page .editor-options-empty-state,
+.editor-column-menu[data-viewport-safe="true"] .editor-options-empty-state {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 
 .workspace-table-page .lenni-type-picker,
@@ -8847,10 +8914,16 @@ textarea {
 }
 
 .editor-connection-popover.is-portal .editor-connection-option {
+  display: flex;
+  width: 100%;
   min-height: 2.1rem;
   gap: 0.45rem;
   padding: 0.35rem 0.45rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
   border-radius: 0.3rem;
+  filter: none;
 }
 
 .editor-connection-popover.is-portal .editor-connection-option:hover,
@@ -8860,19 +8933,28 @@ textarea {
 }
 
 .workspace-table-page .editor-connection-option {
+  display: flex;
+  width: 100%;
   min-height: 2.1rem;
   gap: 0.45rem;
   padding: 0.35rem 0.45rem;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
   border-radius: 0.3rem;
+  filter: none;
 }
 
 .workspace-table-page .editor-connection-option:hover,
-.workspace-table-page .editor-connection-option.is-selected {
+.workspace-table-page .editor-connection-option.is-selected,
+.editor-connection-popover.is-portal .editor-connection-option:hover,
+.editor-connection-popover.is-portal .editor-connection-option.is-selected {
   color: var(--text-primary);
   background: var(--coral-50);
 }
 
 .workspace-table-page .editor-connection-create,
+.editor-connection-popover.is-portal .editor-connection-create,
 .workspace-table-page .editor-choice-clear {
   min-height: 2.1rem;
   padding: 0.35rem 0.45rem;
@@ -8881,13 +8963,111 @@ textarea {
   text-align: left;
 }
 
-.workspace-table-page .editor-connection-create {
-  color: var(--coral-700);
-  font-weight: 700;
+.workspace-table-page .editor-choice-clear,
+.editor-connection-popover.is-portal .editor-choice-clear {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  filter: none;
 }
 
-.workspace-table-page .editor-connection-create:disabled {
+.workspace-table-page .editor-connection-create,
+.editor-connection-popover.is-portal .editor-connection-create {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border: var(--border-width-thin) solid var(--coral-600);
+  font-weight: 700;
+  filter: none;
+}
+
+.workspace-table-page .editor-connection-create:hover:not(:disabled),
+.editor-connection-popover.is-portal
+  .editor-connection-create:hover:not(:disabled) {
+  color: var(--surface-base);
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+  filter: none;
+}
+
+.workspace-table-page .editor-connection-create:disabled,
+.editor-connection-popover.is-portal .editor-connection-create:disabled {
   color: var(--text-disabled);
+  background: var(--surface-subtle);
+  border-color: var(--border-subtle);
+  cursor: not-allowed;
+  filter: none;
+  opacity: 1;
+}
+
+.workspace-table-page .editor-connection-create-hint {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.editor-connection-popover.is-portal .editor-connection-create-hint {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.workspace-table-page .editor-connection-create-error,
+.editor-connection-popover.is-portal .editor-connection-create-error {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--trust-destructive-error-text);
+  background: var(--trust-destructive-error-surface);
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.workspace-table-page .editor-choice-empty-state {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.workspace-table-page .editor-choice-empty-state strong {
+  color: var(--text-primary);
+}
+
+.editor-header-cell.is-reorderable {
+  cursor: grab;
+}
+
+.editor-header-cell.is-reorderable:active {
+  cursor: grabbing;
+}
+
+.editor-column-drag-affordance {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  letter-spacing: -0.16em;
+  line-height: 1;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.editor-header-cell.is-reorderable:hover .editor-column-drag-affordance,
+.editor-header-cell.is-reorderable:active .editor-column-drag-affordance {
+  color: var(--coral-700);
+  opacity: 1;
 }
 
 .workspace-table-page .editor-status-pill,
@@ -8935,7 +9115,7 @@ textarea {
 
 .acquisition-form fieldset {
   display: grid;
-  gap: 1rem;
+  gap: var(--space-4);
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -9807,11 +9987,15 @@ textarea {
   font-weight: 750;
 }
 
+.acquisition-form legend {
+  margin-bottom: var(--space-1);
+}
+
 .acquisition-category-option {
   min-height: 3.5rem;
   background: var(--surface-base);
   border-color: var(--border-subtle);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-lg);
 }
 
 .acquisition-category-option:hover,
@@ -9842,6 +10026,12 @@ textarea {
 
 .acquisition-request-label textarea::placeholder {
   color: var(--text-tertiary);
+}
+
+.acquisition-manual-route {
+  width: min(100%, 58rem);
+  margin: var(--space-5) 0 0;
+  text-align: left;
 }
 
 .acquisition-state {

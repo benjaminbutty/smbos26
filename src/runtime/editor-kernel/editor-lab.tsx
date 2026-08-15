@@ -1719,12 +1719,14 @@ export function EditorKernel({
           adapter.searchConnectionTargets
             ? adapter.searchConnectionTargets(columnKey, search)
             : Promise.resolve([]),
-        onCreateConnectionTarget: (columnKey, primaryValue) =>
-          adapter.createConnectionTarget
-            ? adapter.createConnectionTarget(columnKey, primaryValue)
-            : Promise.reject(
-                new Error("Creating a connected Record is not available."),
-              ),
+        ...(adapter.createConnectionTarget
+          ? {
+              onCreateConnectionTarget: (
+                columnKey: string,
+                primaryValue: string,
+              ) => adapter.createConnectionTarget!(columnKey, primaryValue),
+            }
+          : {}),
         canRenameColumns: capabilities.canRenameColumns,
         canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
         canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
@@ -1851,6 +1853,9 @@ export function EditorKernel({
             : "Select a cell to begin"}
         </span>
         <span className="editor-lab-shortcut-hint">
+          {capabilities.canReorderColumns
+            ? "Drag column headings to reorder · "
+            : ""}
           Enter / double-click to edit · ⌘C / ⌘V supported
         </span>
         <div className="editor-lab-meta-actions">
@@ -2022,18 +2027,19 @@ export function EditorKernel({
                       ? adapter.searchConnectionTargets(columnKey, search)
                       : Promise.resolve([])
             }
-            onCreateConnectionTarget={
-              connectedPanel
-                ? createPanelConnectionTarget
-                : (columnKey, primaryValue) =>
-                    adapter.createConnectionTarget
-                      ? adapter.createConnectionTarget(columnKey, primaryValue)
-                      : Promise.reject(
-                          new Error(
-                            "Creating a connected Record is not available.",
-                          ),
-                        )
-            }
+            {...(connectedPanel
+              ? createConnectedRecordTarget
+                ? { onCreateConnectionTarget: createPanelConnectionTarget }
+                : {}
+              : adapter.createConnectionTarget
+                ? {
+                    onCreateConnectionTarget: (
+                      columnKey: string,
+                      primaryValue: string,
+                    ) =>
+                      adapter.createConnectionTarget!(columnKey, primaryValue),
+                  }
+                : {})}
             row={activePanel.row}
             {...(activePanel.recordTypeLabel !== undefined
               ? { recordTypeLabel: activePanel.recordTypeLabel }

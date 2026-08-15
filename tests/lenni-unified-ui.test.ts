@@ -413,7 +413,7 @@ describe("Lenni unified workspace presentation", () => {
       "utf8",
     );
 
-    expect(startSource).toContain("What are you building?");
+    expect(startSource).toContain("Tell Lenni about your business");
     expect(startSource).toContain("What best describes the work?");
     expect(startSource).toContain("state");
     expect(startSource).toContain("Start again");

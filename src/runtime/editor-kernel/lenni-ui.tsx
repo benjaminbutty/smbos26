@@ -1,6 +1,8 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { RefObject } from "react";
 
 import type { EditorColumnKind } from "./contracts";
 
@@ -32,15 +34,63 @@ export const lenniTypePickerOptions: readonly TypePickerOption[] = [
 ];
 
 export function Popover({
+  anchorRef,
   children,
   className = "",
   onClose,
+  viewportSafe = false,
 }: Readonly<{
+  anchorRef?: RefObject<HTMLElement | null>;
   children: ReactNode;
   className?: string;
   onClose?: () => void;
+  viewportSafe?: boolean;
 }>): ReactNode {
   const ref = useRef<HTMLDivElement>(null);
+  const [viewportPosition, setViewportPosition] = useState<
+    { left: number; top: number } | undefined
+  >();
+
+  useEffect(() => {
+    if (!viewportSafe || typeof window === "undefined") {
+      return;
+    }
+    const updatePosition = (): void => {
+      const popover = ref.current;
+      const anchor = anchorRef?.current ?? popover?.parentElement;
+      if (!anchor) return;
+      const bounds = anchor.getBoundingClientRect();
+      const gap = 8;
+      const width = Math.min(288, Math.max(0, window.innerWidth - gap * 2));
+      const estimatedHeight = Math.min(
+        512,
+        Math.max(
+          0,
+          popover?.getBoundingClientRect().height ||
+            window.innerHeight - gap * 2,
+        ),
+      );
+      const topBelow = bounds.bottom + gap;
+      const top =
+        topBelow + estimatedHeight <= window.innerHeight - gap
+          ? topBelow
+          : Math.max(gap, bounds.top - estimatedHeight - gap);
+      const left = Math.min(
+        Math.max(gap, bounds.right - width),
+        Math.max(gap, window.innerWidth - width - gap),
+      );
+      setViewportPosition({ left, top });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [anchorRef, viewportSafe]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
@@ -59,15 +109,24 @@ export function Popover({
       document.removeEventListener("pointerdown", onPointerDown);
     };
   }, [onClose]);
-  return (
+  const content = (
     <div
       className={`lenni-popover ${className}`.trim()}
+      data-viewport-safe={viewportSafe ? "true" : undefined}
       ref={ref}
       role="dialog"
+      style={{
+        ...viewportPosition,
+        visibility: viewportSafe && !viewportPosition ? "hidden" : undefined,
+      }}
     >
       {children}
     </div>
   );
+
+  return viewportSafe && viewportPosition && typeof document !== "undefined"
+    ? createPortal(content, document.body)
+    : content;
 }
 
 export function Menu({
@@ -143,6 +202,9 @@ export function OptionManager({
   };
   return (
     <div className="lenni-option-manager">
+      {options.length === 0 ? (
+        <p className="editor-options-empty-state">No options yet.</p>
+      ) : null}
       <div className="lenni-option-list">
         {options.map((option, index) => (
           <div className="lenni-option-row" key={`${index}:${option}`}>
