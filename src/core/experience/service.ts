@@ -128,6 +128,7 @@ export interface ExperiencePageBundle {
 
 export interface ExperienceNavigation {
   pages: Tables<"pages">[];
+  publicPages: Tables<"pages">[];
   views: Tables<"views">[];
 }
 
@@ -555,6 +556,7 @@ export function createExperienceService(
           (page) =>
             page.audience === "internal" && !wrapperPageKeys.has(page.key),
         ),
+        publicPages: pages.filter((page) => page.audience === "public"),
       };
     },
 

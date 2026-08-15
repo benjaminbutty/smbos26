@@ -11,6 +11,7 @@ interface WorkspaceTopbarProps {
   userInitials: string;
   tables: ReadonlyArray<{ name: string; path: string }>;
   pages: ReadonlyArray<{ slug: string; title: string }>;
+  sites?: ReadonlyArray<{ slug: string; title: string }>;
 }
 
 function contextForPath(
@@ -18,6 +19,7 @@ function contextForPath(
   businessSlug: string,
   tables: ReadonlyArray<{ name: string; path: string }>,
   pages: ReadonlyArray<{ slug: string; title: string }>,
+  sites: ReadonlyArray<{ slug: string; title: string }>,
 ): string {
   const root = `/app/${encodeURIComponent(businessSlug)}`;
   if (pathname === root || pathname === `${root}/`) {
@@ -38,6 +40,13 @@ function contextForPath(
     return `Pages / ${page.title}`;
   }
 
+  const site = sites.find((candidate) =>
+    pathname.includes(`/sites/${encodeURIComponent(candidate.slug)}`),
+  );
+  if (site) {
+    return `Sites / ${site.title}`;
+  }
+
   if (pathname.includes("/builder")) return "Tell Lenni";
   if (pathname.includes("/changes")) return "Changes";
   if (pathname.includes("/setup")) return "Settings / Setup";
@@ -50,11 +59,12 @@ export function WorkspaceTopbar({
   businessSlug,
   canManageConfiguration,
   pages,
+  sites = [],
   tables,
   userInitials,
 }: Readonly<WorkspaceTopbarProps>): ReactNode {
   const pathname = usePathname();
-  const context = contextForPath(pathname, businessSlug, tables, pages);
+  const context = contextForPath(pathname, businessSlug, tables, pages, sites);
   const rootPath = `/app/${encodeURIComponent(businessSlug)}`;
 
   return (

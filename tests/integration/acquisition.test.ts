@@ -11,6 +11,7 @@ vi.mock("server-only", () => ({}));
 
 import { composeStarterComposition } from "../../src/core/acquisition/composer";
 import { enhanceAcquisitionPayload } from "../../src/core/acquisition/capabilities";
+import { candidateChecksum } from "../../src/core/acquisition/preview";
 import {
   createDirectTableRow,
   getDirectTableRowCreationAvailability,
@@ -78,6 +79,7 @@ async function insertSession(
   payload: Json,
   expiresAt: string,
   clarification: Json | null = null,
+  accepted = true,
 ): Promise<string> {
   const { data, error } = await admin
     .from("anonymous_build_sessions")
@@ -89,10 +91,24 @@ async function insertSession(
       requested_category: "appointments",
       session_token_hash: tokenHash(token),
     })
-    .select("id")
+    .select("id, proposal_count")
     .single();
   if (error || !data) {
     throw error ?? new Error("Could not insert acquisition session.");
+  }
+  if (accepted) {
+    const checksum = candidateChecksum(
+      payload,
+      Math.max(1, data.proposal_count),
+    );
+    const { error: acceptanceError } = await admin
+      .from("anonymous_build_sessions")
+      .update({
+        accepted_candidate_checksum: checksum,
+        accepted_at: new Date().toISOString(),
+      })
+      .eq("id", data.id);
+    if (acceptanceError) throw acceptanceError;
   }
   return data.id;
 }
@@ -367,6 +383,28 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     });
   });
 
+  it("requires the owner acceptance marker before claim", async () => {
+    const token = `not-accepted-${crypto.randomUUID()}`;
+    await insertSession(
+      token,
+      composeStarterComposition(
+        "appointments",
+        "Customers and appointments.",
+      ) as unknown as Json,
+      new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+      null,
+      false,
+    );
+
+    const { data, error } = await owner.rpc("claim_anonymous_build_session", {
+      requested_business_name: "Must choose setup",
+      requested_session_token: token,
+      requested_timezone: "UTC",
+    });
+    expect(data).toBeNull();
+    expect(error?.message).toBe("anonymous_build_setup_not_accepted");
+  });
+
   it("keeps an invalid proposal from creating a partial Business", async () => {
     const token = `invalid-${crypto.randomUUID()}`;
     const sessionId = await insertSession(
@@ -376,7 +414,16 @@ describe("Phase 5 anonymous acquisition boundary", () => {
         operations: [{ op: "not_a_configuration_operation" }],
       },
       new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+      null,
+      false,
     );
+    await admin
+      .from("anonymous_build_sessions")
+      .update({
+        accepted_candidate_checksum: "a".repeat(64),
+        accepted_at: new Date().toISOString(),
+      })
+      .eq("id", sessionId);
     const name = `Should not exist ${crypto.randomUUID()}`;
 
     const { data, error } = await owner.rpc("claim_anonymous_build_session", {

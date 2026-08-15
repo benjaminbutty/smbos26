@@ -395,7 +395,11 @@ export function PageRenderer({
               return (
                 <MissingBlock
                   key={key}
-                  message="This Booking Site is temporarily unavailable."
+                  message={
+                    previewMode
+                      ? "This draft Booking Site will be available to customers after publication."
+                      : "This Booking Site is temporarily unavailable."
+                  }
                 />
               );
             }
@@ -415,7 +419,11 @@ export function PageRenderer({
             ) : (
               <MissingBlock
                 key={key}
-                message="This Booking Site is temporarily unavailable."
+                message={
+                  previewMode
+                    ? "This draft Booking Site will be available to customers after publication."
+                    : "This Booking Site is temporarily unavailable."
+                }
               />
             );
           }

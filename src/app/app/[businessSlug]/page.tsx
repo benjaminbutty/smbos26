@@ -25,6 +25,18 @@ export default async function TenantHomePage({
     "manage_configuration",
   );
   const destinations = [
+    ...navigation.publicPages.map((page) => ({
+      href: `/app/${businessSlug}/sites/${page.slug}`,
+      kind: "site" as const,
+      label:
+        page.status === "published"
+          ? `Open Site: ${page.title}`
+          : `Review draft Site: ${page.title}`,
+      description:
+        page.status === "published"
+          ? "Review the customer-facing Site"
+          : "Review the draft before publishing it",
+    })),
     ...navigation.pages.map((page) => ({
       href: `/app/${businessSlug}/pages/${page.slug}`,
       kind: "page" as const,

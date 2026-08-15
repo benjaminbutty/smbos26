@@ -20,6 +20,7 @@ export default async function SignUpPage({
   const signInHref = returnTo
     ? `/sign-in?returnTo=${encodeURIComponent(returnTo)}`
     : "/sign-in";
+  const isAcquisitionClaim = returnTo === "/start/business";
   if (returnTo === "/start/business") {
     emitAcquisitionEvent("signup_started", { route: "acquisition" });
   }
@@ -30,7 +31,9 @@ export default async function SignUpPage({
         <p className="eyebrow">Create your account</p>
         <h1 className="page-title">Get started</h1>
         <p className="muted">
-          Use your work email and a password of at least 8 characters.
+          {isAcquisitionClaim
+            ? "Create your account to save the workspace you just reviewed."
+            : "Use your work email and a password of at least 8 characters."}
         </p>
         <p className="c7-auth-note">
           Your account is the key to the businesses and workspaces you are
@@ -57,7 +60,11 @@ export default async function SignUpPage({
               type="password"
             />
           </label>
-          <button type="submit">Create account</button>
+          <button type="submit">
+            {isAcquisitionClaim
+              ? "Save workspace and create account"
+              : "Create account"}
+          </button>
         </form>
 
         <p className="form-footer">

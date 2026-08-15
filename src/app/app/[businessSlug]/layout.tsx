@@ -158,6 +158,21 @@ export default async function TenantLayout({
               </section>
             ) : null}
           </section>
+          {navigation.publicPages.length > 0 ? (
+            <section aria-label="Sites" className="workspace-sites-group">
+              <PagesSidebar
+                businessSlug={businessSlug}
+                currentness={null}
+                heading="Sites"
+                pages={navigation.publicPages.map((page) => ({
+                  id: page.id,
+                  slug: page.slug,
+                  title: page.title,
+                }))}
+                routeSegment="sites"
+              />
+            </section>
+          ) : null}
         </nav>
 
         <div className="workspace-sidebar-footer">
@@ -214,6 +229,10 @@ export default async function TenantLayout({
             slug: page.slug,
             title: page.title,
           }))}
+          sites={navigation.publicPages.map((page) => ({
+            slug: page.slug,
+            title: page.title,
+          }))}
           tables={tables}
           userInitials={(tenant.user.email?.slice(0, 2) ?? "AC").toUpperCase()}
         />
@@ -225,6 +244,10 @@ export default async function TenantLayout({
         canManageConfiguration={canManageConfiguration}
         otherViews={otherViews}
         pages={navigation.pages.map((page) => ({
+          slug: page.slug,
+          title: page.title,
+        }))}
+        sites={navigation.publicPages.map((page) => ({
           slug: page.slug,
           title: page.title,
         }))}

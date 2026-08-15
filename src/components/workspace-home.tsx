@@ -5,7 +5,7 @@ export interface WorkspaceHomeDestination {
   href: string;
   label: string;
   description: string;
-  kind?: "page" | "view";
+  kind?: "page" | "site" | "view";
 }
 
 interface WorkspaceHomeProps {
@@ -158,6 +158,7 @@ export function WorkspaceHome({
   }
 
   const primaryDestination =
+    destinations.find((destination) => destination.kind === "site") ??
     destinations.find((destination) => destination.kind === "page") ??
     destinations[0];
   if (!primaryDestination) {

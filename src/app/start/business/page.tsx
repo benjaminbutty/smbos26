@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { acquisitionCategoryLabel } from "../../../core/acquisition/schemas";
+import { candidateChecksum } from "../../../core/acquisition/preview";
 import { loadAcquisitionSession } from "../../../core/acquisition/service";
 import { requireAuthenticatedUser } from "../../../auth/authorization";
 import { createServerClient } from "../../../db/supabase/server";
@@ -43,6 +44,18 @@ export default async function BusinessSetupPage({
       "/start?error=Answer+Lenni%27s+questions+before+creating+a+workspace.&state=detail",
     );
   }
+  const currentChecksum = candidateChecksum(
+    session.payload,
+    Math.max(1, session.row.proposal_count),
+  );
+  if (
+    session.row.accepted_candidate_checksum !== currentChecksum ||
+    !session.row.accepted_at
+  ) {
+    redirect(
+      "/start?from=preview&error=Choose+Use+this+setup+in+the+preview+before+creating+the+workspace.&state=detail",
+    );
+  }
   emitAcquisitionEvent("create_workspace_clicked", {
     category: proposal.category,
     source: proposal.source,
@@ -51,7 +64,7 @@ export default async function BusinessSetupPage({
     <main className="narrow-page acquisition-business-page">
       <section className="panel">
         <p className="eyebrow">Your plan is ready</p>
-        <h1 className="page-title">Save it and create your workspace</h1>
+        <h1 className="page-title">Save this workspace and start using it</h1>
         <p className="muted">
           Signed in as {user.email ?? "your account"}. Lenni will create the
           starting workspace you just reviewed for{" "}
@@ -89,7 +102,7 @@ export default async function BusinessSetupPage({
           No payment details, team setup or fake business records are added.
         </p>
         <p className="form-footer">
-          <Link href="/start">Back to proposal</Link>
+          <Link href="/start/preview/home">Back to preview</Link>
         </p>
       </section>
     </main>
