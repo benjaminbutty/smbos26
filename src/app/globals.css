@@ -9472,6 +9472,336 @@ textarea {
   accent-color: var(--coral-600);
 }
 
+/* Journey 1 candidate workspace preview. The shell intentionally reuses the
+   live page/table anatomy while keeping the acquisition session ephemeral. */
+.candidate-preview-page {
+  min-height: 100dvh;
+  min-width: 0;
+  width: 100%;
+  background: var(--surface-canvas);
+  color: var(--text-primary);
+  font-family: var(--lenni-font);
+}
+
+.candidate-preview-shell {
+  min-height: 100dvh;
+  padding-bottom: 12rem;
+}
+
+.candidate-preview-topbar {
+  align-items: center;
+  background: var(--surface-base);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  min-height: 4.25rem;
+  padding: 0.85rem clamp(1rem, 3vw, 2.25rem);
+}
+
+.candidate-preview-brand {
+  align-items: baseline;
+  display: flex;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.candidate-preview-brand a {
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.candidate-preview-brand span {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.candidate-preview-tell {
+  color: var(--trust-preview-text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.candidate-preview-layout {
+  display: grid;
+  grid-template-columns: minmax(13rem, 16rem) minmax(0, 1fr);
+  min-height: calc(100dvh - 4.25rem);
+}
+
+.candidate-preview-sidebar {
+  background: var(--surface-strong);
+  border-right: 1px solid var(--border-subtle);
+  padding: 1.4rem 0.85rem;
+}
+
+.candidate-preview-sidebar nav {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.candidate-preview-nav-label {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  margin: 1.1rem 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.candidate-preview-nav-label:first-child {
+  margin-top: 0;
+}
+
+.candidate-preview-nav-link {
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  display: flex;
+  gap: 0.45rem;
+  justify-content: space-between;
+  padding: 0.55rem 0.65rem;
+  text-decoration: none;
+}
+
+.candidate-preview-nav-link:hover,
+.candidate-preview-nav-link[aria-current="page"] {
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.candidate-preview-draft {
+  background: var(--trust-preview-surface);
+  border-radius: var(--radius-full);
+  color: var(--trust-preview-text);
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+}
+
+.candidate-preview-nav-meta {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.candidate-preview-main {
+  min-width: 0;
+  padding: clamp(1.25rem, 4vw, 3.5rem) clamp(1rem, 4vw, 4.5rem);
+  padding-right: clamp(21rem, 38vw, 24rem);
+}
+
+.candidate-preview-content,
+.candidate-preview-home {
+  margin: 0 auto;
+  max-width: 78rem;
+}
+
+.candidate-preview-stale {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+  margin: 10vh auto;
+  max-width: 38rem;
+  padding: 2rem;
+}
+
+.candidate-preview-stale h1 {
+  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  letter-spacing: -0.025em;
+  margin: 0.35rem 0 0.75rem;
+}
+
+.candidate-preview-stale p:not(.eyebrow) {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.candidate-preview-content .page-preview-header,
+.candidate-preview-home {
+  margin-bottom: 2rem;
+}
+
+.candidate-preview-page-note,
+.candidate-preview-lede,
+.candidate-preview-home-note {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.candidate-preview-home h1 {
+  font-size: clamp(1.8rem, 3vw, 3rem);
+  letter-spacing: -0.03em;
+  margin: 0.25rem 0 0.75rem;
+  max-width: 42rem;
+}
+
+.candidate-preview-lede {
+  font-size: 1.05rem;
+  max-width: 42rem;
+}
+
+.candidate-preview-home-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 2rem;
+  max-width: 62rem;
+  width: 100%;
+}
+
+.candidate-preview-home-grid article {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+  padding: 1.25rem;
+}
+
+.candidate-preview-home-grid h2 {
+  font-size: 1.15rem;
+  margin: 0.25rem 0 0.55rem;
+}
+
+.candidate-preview-home-grid p:not(.eyebrow) {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  min-height: 3rem;
+}
+
+.candidate-preview-home-note {
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 2rem;
+  max-width: 62rem;
+  padding-top: 1rem;
+}
+
+.candidate-preview-overlay {
+  background: var(--surface-base);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  bottom: 1.5rem;
+  box-shadow: var(--elevation-overlay);
+  max-width: 23rem;
+  padding: 1.15rem;
+  position: fixed;
+  right: 1.5rem;
+  width: calc(100% - 3rem);
+  z-index: 50;
+}
+
+.candidate-preview-overlay h2 {
+  font-size: 1rem;
+  margin: 0.25rem 0 0.4rem;
+}
+
+.candidate-preview-overlay > p:not(.eyebrow) {
+  color: var(--text-secondary);
+  font-size: 0.87rem;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.candidate-preview-overlay-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.candidate-preview-overlay-actions form {
+  margin: 0;
+}
+
+.candidate-preview-overlay-actions .button,
+.candidate-preview-overlay-actions .button-secondary {
+  font-size: 0.85rem;
+  min-height: 2.5rem;
+}
+
+@media (max-width: 48rem) {
+  .candidate-preview-shell {
+    padding-bottom: 17rem;
+  }
+
+  .candidate-preview-brand span {
+    display: none;
+  }
+
+  .candidate-preview-layout {
+    display: block;
+  }
+
+  .candidate-preview-sidebar {
+    border-bottom: 1px solid var(--border-subtle);
+    border-right: 0;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 0.6rem 0.8rem;
+  }
+
+  .candidate-preview-sidebar nav {
+    align-items: center;
+    display: flex;
+    gap: 0.35rem;
+    min-width: max-content;
+  }
+
+  .candidate-preview-nav-label {
+    margin: 0 0.2rem 0 0.7rem;
+  }
+
+  .candidate-preview-nav-label:first-child {
+    margin-left: 0;
+  }
+
+  .candidate-preview-nav-link {
+    white-space: nowrap;
+  }
+
+  .candidate-preview-main {
+    padding: 1.25rem 0.8rem 2rem;
+  }
+
+  .candidate-preview-home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-preview-overlay {
+    bottom: 0.75rem;
+    left: 0.75rem;
+    max-width: none;
+    right: 0.75rem;
+    width: auto;
+  }
+
+  .candidate-preview-overlay-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .candidate-preview-overlay-actions .button,
+  .candidate-preview-overlay-actions .button-secondary {
+    justify-content: center;
+    text-align: center;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .candidate-preview-page * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media (max-width: 48rem) {
   .acquisition-category-grid,
   .acquisition-proposal-grid,

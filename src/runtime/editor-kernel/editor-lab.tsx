@@ -1853,10 +1853,9 @@ export function EditorKernel({
             : "Select a cell to begin"}
         </span>
         <span className="editor-lab-shortcut-hint">
-          {capabilities.canReorderColumns
-            ? "Drag column headings to reorder · "
-            : ""}
-          Enter / double-click to edit · ⌘C / ⌘V supported
+          {readOnly
+            ? "Select a Record to inspect its example details · Copy supported"
+            : `${capabilities.canReorderColumns ? "Drag column headings to reorder · " : ""}Enter / double-click to edit · ⌘C / ⌘V supported`}
         </span>
         <div className="editor-lab-meta-actions">
           {capabilities.rowCreation === "direct" ? (

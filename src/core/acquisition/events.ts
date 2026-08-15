@@ -8,6 +8,7 @@ export const acquisitionEventNameSchema = z.enum([
   "clarification_question_shown",
   "clarification_answered",
   "clarification_completed",
+  "candidate_accepted",
   "proposal_ready",
   "proposal_failed",
   "proposal_regenerated",

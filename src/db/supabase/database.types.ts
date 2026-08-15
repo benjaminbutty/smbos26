@@ -174,6 +174,8 @@ export type Database = {
           claimed_user_id: string | null;
           clarification_json: Json | null;
           created_at: string;
+          accepted_candidate_checksum: string | null;
+          accepted_at: string | null;
           expires_at: string;
           id: string;
           proposal_count: number;
@@ -192,6 +194,8 @@ export type Database = {
           claimed_user_id?: string | null;
           clarification_json?: Json | null;
           created_at?: string;
+          accepted_candidate_checksum?: string | null;
+          accepted_at?: string | null;
           expires_at: string;
           id?: string;
           proposal_count?: number;
@@ -210,6 +214,8 @@ export type Database = {
           claimed_user_id?: string | null;
           clarification_json?: Json | null;
           created_at?: string;
+          accepted_candidate_checksum?: string | null;
+          accepted_at?: string | null;
           expires_at?: string;
           id?: string;
           proposal_count?: number;

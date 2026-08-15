@@ -17,6 +17,7 @@ import {
   type AcquisitionClarificationState,
 } from "./clarification";
 import { enhanceAcquisitionPayload } from "./capabilities";
+import { candidateChecksum } from "./preview";
 import { composeStarterComposition } from "./composer";
 import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
@@ -284,6 +285,94 @@ export async function createOrRegenerateProposal(
     reservation.attempt_number > 1 ? "proposal_regenerated" : "proposal_ready",
     { category, source: payload.proposal.source },
   );
+}
+
+export async function acceptAcquisitionSetup(): Promise<string> {
+  const session = await loadAcquisitionSession();
+  if (!session?.payload) {
+    throw new AcquisitionServiceError(
+      "session_invalid",
+      undefined,
+      "This starting workspace is no longer available. Return to Lenni and prepare a fresh one.",
+    );
+  }
+  const checksum = candidateChecksum(
+    session.payload,
+    Math.max(1, session.row.proposal_count),
+  );
+  const proposalJson = session.row.proposal_json;
+  if (proposalJson === null) {
+    throw new AcquisitionServiceError("session_invalid");
+  }
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("anonymous_build_sessions")
+    .update({
+      accepted_candidate_checksum: checksum,
+      accepted_at: new Date().toISOString(),
+    })
+    .eq("id", session.row.id)
+    .eq("claim_status", "active")
+    .eq("proposal_json", proposalJson as NonNullable<Json>)
+    .select("accepted_candidate_checksum")
+    .maybeSingle();
+  if (error || !data || data.accepted_candidate_checksum !== checksum) {
+    throw new AcquisitionServiceError("proposal_write_failed", error);
+  }
+  emitAcquisitionEvent("candidate_accepted", {
+    category: session.row.requested_category,
+  });
+  return checksum;
+}
+
+export async function refineAcquisitionProposal(
+  refinementInput: unknown,
+): Promise<void> {
+  const refinement = z.string().trim().min(1).max(500).parse(refinementInput);
+  const session = await loadAcquisitionSession();
+  if (!session?.payload || !session.clarification) {
+    throw new AcquisitionServiceError(
+      "session_invalid",
+      undefined,
+      "This Lenni conversation is no longer available. Return to Lenni and start again.",
+    );
+  }
+  const category = acquisitionCategorySchema.parse(
+    session.row.requested_category,
+  );
+  if (!session.row.request_text) {
+    throw new AcquisitionServiceError("session_invalid");
+  }
+  const originalRequest = acquisitionRequestSchema.parse(
+    session.row.request_text,
+  );
+  const assessment = assessAcquisitionClarifications(
+    category,
+    originalRequest,
+    session.clarification,
+  );
+  const reservation = await reserveAttempt(category);
+  const request =
+    `${originalRequest.slice(0, 3_400)} Owner refinement: ${refinement}`
+      .replace(/\s+/g, " ")
+      .slice(0, 4_000);
+  const payload = await generateCandidate(
+    category,
+    request,
+    assessment.decisions,
+  );
+  await writeProposal({
+    sessionId: reservation.session_id,
+    attemptNumber: reservation.attempt_number,
+    category,
+    request,
+    payload,
+    clarification: assessment.state,
+  });
+  emitAcquisitionEvent("proposal_regenerated", {
+    category,
+    source: payload.proposal.source,
+  });
 }
 
 async function generateCandidate(
