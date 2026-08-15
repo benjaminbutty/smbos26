@@ -7341,6 +7341,679 @@ textarea {
   }
 }
 
+/* C7 Settings, account entry and neutral public preorder presentation. */
+
+.c7-settings-page {
+  width: min(calc(100% - 4rem), 72rem);
+  min-width: 0;
+  padding-block: clamp(2rem, 5vw, 3.5rem);
+}
+
+.c7-settings-intro,
+.c7-settings-route-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+}
+
+.c7-settings-intro .eyebrow,
+.c7-settings-route-heading .eyebrow,
+.c7-settings-section .eyebrow {
+  margin-bottom: var(--space-2);
+}
+
+.c7-settings-intro .page-title,
+.c7-settings-route-heading .page-title {
+  color: var(--text-primary);
+}
+
+.c7-settings-intro .lede,
+.c7-settings-route-heading .lede {
+  margin: var(--space-3) 0 0;
+}
+
+.c7-settings-role-badge,
+.c7-settings-current-role,
+.c7-settings-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2rem;
+  padding: var(--space-2) var(--space-3);
+  color: var(--trust-live-applied-text);
+  background: var(--trust-live-applied-surface);
+  border: 1px solid var(--coral-200);
+  border-radius: var(--radius-full);
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.c7-settings-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-8);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.c7-settings-section-nav a {
+  min-height: 2.75rem;
+  padding: 0.7rem 0.9rem;
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.c7-settings-section-nav a:hover,
+.c7-settings-section-nav a:focus-visible,
+.c7-settings-section-nav a[aria-current="page"] {
+  color: var(--coral-700);
+  background: var(--coral-50);
+}
+
+.c7-settings-section {
+  display: grid;
+  gap: var(--space-5);
+  margin-top: var(--space-10);
+  padding-top: var(--space-8);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.c7-settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.c7-settings-section-heading h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.c7-settings-section-heading .muted {
+  max-width: 46rem;
+  margin: var(--space-2) 0 0;
+}
+
+.c7-settings-business-mark,
+.c7-public-business-mark {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  color: var(--coral-700);
+  background: var(--coral-50);
+  border: 1px solid var(--coral-200);
+  border-radius: var(--radius-md);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.05em;
+}
+
+.c7-settings-summary-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.c7-settings-summary-list > div {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-5);
+  border-right: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.c7-settings-summary-list > div:last-child {
+  border-right: 0;
+}
+
+.c7-settings-summary-list dt {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.c7-settings-summary-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-weight: 750;
+}
+
+.c7-settings-read-only-note {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  color: var(--trust-read-only-text);
+  background: var(--trust-read-only-surface);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.c7-settings-form-card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.c7-settings-form-card h3,
+.c7-settings-location-card h3,
+.c7-settings-role-card h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.c7-settings-form-card .field-help {
+  margin: 0;
+}
+
+.c7-settings-location-form {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1fr) auto;
+  align-items: end;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+
+.c7-settings-location-form label {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.c7-settings-location-form input,
+.c7-settings-location-form select {
+  min-height: 2.75rem;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.c7-settings-location-form button,
+.c7-settings-location-actions > form > button {
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+
+.c7-settings-location-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.c7-settings-empty-state,
+.c7-settings-location-card {
+  padding: var(--space-5);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.c7-settings-empty-state {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-primary);
+}
+
+.c7-settings-empty-state p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.c7-settings-location-heading,
+.c7-settings-role-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.c7-settings-location-heading p {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.c7-status-active {
+  color: var(--trust-live-applied-text);
+  background: var(--trust-live-applied-surface);
+}
+
+.c7-settings-location-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.c7-settings-location-actions .c7-settings-location-form {
+  flex: 1;
+  margin-top: 0;
+}
+
+.c7-settings-role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.c7-settings-role-card {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.c7-settings-role-card.is-current {
+  border-color: var(--coral-300);
+  box-shadow: 0 0 0 2px var(--coral-50);
+}
+
+.c7-settings-role-card p {
+  min-height: 3.2rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.c7-settings-current-role {
+  min-height: 1.7rem;
+  padding: 0.3rem 0.55rem;
+  color: var(--coral-700);
+  background: var(--coral-50);
+  border-color: var(--coral-200);
+  font-size: 0.65rem;
+}
+
+.c7-settings-role-count {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.c7-settings-route-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-8) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.c7-settings-route-links a {
+  color: var(--coral-700);
+  font-weight: 750;
+}
+
+.c7-auth-page {
+  max-width: 40rem;
+}
+
+.c7-auth-panel {
+  border-color: var(--coral-200);
+  box-shadow: var(--elevation-panel);
+}
+
+.c7-auth-note {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--trust-read-only-text);
+  background: var(--trust-read-only-surface);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.c7-auth-panel .stack-form button {
+  min-height: 2.9rem;
+}
+
+.c7-public-runtime-page {
+  width: min(calc(100% - 2rem), 72rem);
+  min-width: 0;
+  padding-block: var(--space-4) var(--space-16);
+}
+
+.c7-public-experience-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 3.75rem;
+  padding-block: var(--space-3);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.c7-public-experience-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.c7-public-business-mark {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: var(--radius-md);
+  font-size: 0.62rem;
+}
+
+.c7-public-experience-identity div {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.c7-public-experience-identity strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.c7-public-experience-identity span:not(.c7-public-business-mark),
+.c7-public-powered-by {
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+}
+
+.c7-public-powered-by {
+  white-space: nowrap;
+}
+
+.c7-public-runtime-page > .public-page-heading {
+  margin-top: var(--space-8);
+  margin-bottom: var(--space-8);
+}
+
+.c7-public-preorder .public-page-heading {
+  padding: var(--space-4) 0 var(--space-6);
+}
+
+.c7-public-preorder .public-page-heading .eyebrow {
+  color: var(--coral-700);
+}
+
+.c7-public-preorder .preorder-flow {
+  gap: var(--space-6);
+  margin-top: 0;
+}
+
+.c7-public-preorder .preorder-preview-summary,
+.c7-public-preorder .preorder-section,
+.c7-public-preorder .preorder-confirmation {
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  box-shadow: var(--elevation-subtle);
+}
+
+.c7-public-preorder .preorder-preview-summary {
+  color: var(--trust-preview-text);
+  background: var(--trust-preview-surface);
+  border-color: var(--coral-200);
+}
+
+.c7-public-preorder .preorder-section {
+  border-radius: var(--radius-lg);
+}
+
+.c7-public-preorder .preorder-section-heading > span {
+  color: var(--surface-base);
+  background: var(--coral-700);
+}
+
+.c7-public-preorder .preorder-section-heading h2,
+.c7-public-preorder .preorder-confirmation h2,
+.c7-public-preorder .preorder-summary h2 {
+  font-family: inherit;
+}
+
+.c7-public-preorder .preorder-product-card {
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.c7-public-preorder .preorder-product-placeholder {
+  color: var(--coral-900);
+  background: var(--coral-50);
+}
+
+.c7-public-preorder .preorder-choice-grid select,
+.c7-public-preorder .preorder-fields input,
+.c7-public-preorder .preorder-fields select,
+.c7-public-preorder .preorder-fields textarea {
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.c7-public-preorder .preorder-choice-grid select:focus,
+.c7-public-preorder .preorder-fields input:focus,
+.c7-public-preorder .preorder-fields select:focus,
+.c7-public-preorder .preorder-fields textarea:focus {
+  border-color: var(--coral-500);
+  outline-color: var(--coral-200);
+}
+
+.c7-public-preorder .quantity-control {
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.c7-public-preorder .quantity-control button {
+  min-height: 2.75rem;
+  color: var(--text-primary);
+  background: var(--surface-subtle);
+}
+
+.c7-public-preorder .slot-picker label > span {
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.c7-public-preorder .slot-picker input:checked + span {
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+}
+
+.c7-public-preorder .slot-picker input:focus-visible + span {
+  outline-color: var(--coral-300);
+}
+
+.c7-public-preorder .preorder-summary {
+  color: var(--surface-base);
+  background: var(--surface-dark);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-panel);
+}
+
+.c7-public-preorder .preorder-collection-note {
+  color: var(--text-disabled);
+}
+
+.c7-public-preorder .preorder-summary > button,
+.c7-public-primary-action {
+  min-height: 2.9rem;
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+  border-radius: var(--radius-md);
+}
+
+.c7-public-preorder .preorder-summary > button:hover,
+.c7-public-primary-action:hover {
+  color: var(--surface-base);
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+}
+
+.c7-public-preorder .preorder-error {
+  color: var(--trust-destructive-error-text);
+  background: var(--trust-destructive-error-surface);
+  border: var(--border-width-thin) solid var(--coral-200);
+}
+
+.c7-public-state {
+  color: var(--trust-live-applied-text);
+  background: var(--trust-live-applied-surface);
+  border-color: var(--coral-200);
+}
+
+.c7-public-preorder .preorder-confirmation {
+  color: var(--text-primary);
+}
+
+.c7-public-preorder .confirmation-reference {
+  color: var(--trust-checked-text);
+  background: var(--trust-checked-surface);
+}
+
+@media (max-width: 48rem) {
+  .c7-settings-page {
+    width: min(calc(100% - 2rem), 72rem);
+  }
+
+  .c7-settings-intro,
+  .c7-settings-route-heading,
+  .c7-settings-section-heading {
+    flex-direction: column;
+  }
+
+  .c7-settings-role-badge,
+  .c7-settings-count {
+    align-self: flex-start;
+  }
+
+  .c7-settings-section-nav {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    padding-bottom: var(--space-2);
+  }
+
+  .c7-settings-section-nav a {
+    flex: 0 0 auto;
+  }
+
+  .c7-settings-summary-list,
+  .c7-settings-role-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .c7-settings-summary-list > div {
+    border-right: 0;
+    border-bottom: var(--border-width-thin) solid var(--border-subtle);
+  }
+
+  .c7-settings-summary-list > div:last-child {
+    border-bottom: 0;
+  }
+
+  .c7-settings-location-form {
+    grid-template-columns: 1fr;
+  }
+
+  .c7-settings-location-form button,
+  .c7-settings-location-actions > form > button {
+    width: 100%;
+  }
+
+  .c7-settings-location-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .c7-settings-location-actions .c7-settings-location-form {
+    width: 100%;
+  }
+
+  .c7-settings-role-card p {
+    min-height: 0;
+  }
+
+  .c7-public-runtime-page {
+    width: min(calc(100% - 2rem), 72rem);
+  }
+
+  .c7-public-experience-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .c7-public-powered-by {
+    padding-left: 3.1rem;
+  }
+
+  .c7-public-preorder .preorder-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .c7-public-preorder .preorder-summary {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 38rem) {
+  .c7-settings-page {
+    width: min(calc(100% - 1.5rem), 72rem);
+  }
+
+  .c7-settings-section,
+  .c7-settings-form-card,
+  .c7-settings-location-card,
+  .c7-settings-role-card {
+    padding: var(--space-4);
+  }
+
+  .c7-public-runtime-page {
+    width: min(calc(100% - 1.5rem), 72rem);
+  }
+
+  .c7-public-preorder .preorder-section,
+  .c7-public-preorder .preorder-summary,
+  .c7-public-preorder .preorder-confirmation {
+    padding: var(--space-4);
+  }
+
+  .c7-public-preorder .preorder-product-grid,
+  .c7-public-preorder .preorder-choice-grid,
+  .c7-public-preorder .preorder-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* C5 Page canvas presentation. This stays on the existing bounded Page editor
    and production View renderer; it does not create a second document surface. */
 .page-editor-shell {

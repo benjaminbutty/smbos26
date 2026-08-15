@@ -67,10 +67,22 @@ export default async function PublicPage({
     <main
       className={
         preorderKeys.length > 0
-          ? "public-runtime-page public-preorder-page"
-          : "public-runtime-page"
+          ? "public-runtime-page public-preorder-page c7-public-runtime-page c7-public-preorder"
+          : "public-runtime-page c7-public-runtime-page"
       }
     >
+      <header className="c7-public-experience-header">
+        <div className="c7-public-experience-identity">
+          <span className="c7-public-business-mark" aria-hidden="true">
+            {resolved.business.name.slice(0, 2).toUpperCase()}
+          </span>
+          <div>
+            <strong>{resolved.business.name}</strong>
+            <span>Customer page</span>
+          </div>
+        </div>
+        <span className="c7-public-powered-by">Powered by Lenni</span>
+      </header>
       <header className="public-page-heading">
         <p className="eyebrow">{resolved.business.name}</p>
         <h1 className="runtime-title">{resolved.page.title}</h1>

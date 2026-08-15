@@ -123,8 +123,10 @@ evidence carried into the next checkpoint.
 
 - Branch: `redesign/c6-today-operational-dashboard`
 - Feature implementation SHA: `0d39b79f3658e4971f7ca83b484fca8f290d3a84`
-- PR, final exact-head SHA, merge SHA and CI run: to be added after
-  publication
+- PR: [#46](https://github.com/benjaminbutty/smbos26/pull/46)
+- Final exact-head SHA: `cbeef762156536e7eb0ae7d37d61c840123bd653`
+- Merge SHA: `1edbb14f4f7bb803c53bbb2b3333b13d7cf277e7`
+- Exact-head CI: [run 31848422193](https://github.com/benjaminbutty/smbos26/actions/runs/31848422193)
 - Surfaces: Builder result trust hierarchy, operational confirmation
   distinction, Changes/History consequence centre, lifecycle labels, Preview
   not live, stale/currentness, technical disclosures and forward-only rollback
@@ -149,3 +151,33 @@ evidence carried into the next checkpoint.
   continuity remains source/test-backed because the live Owner fixture has
   Builder disabled and the local Staff identity has no seeded Business
   membership
+
+### C7 — Settings, entry and public preorder
+
+- Branch: `redesign/c7-settings-entry-public`
+- Feature implementation SHA: `1faa5d156a9bc6e909303853591202c713818004`
+- PR: [#47](https://github.com/benjaminbutty/smbos26/pull/47)
+- C7 evidence-head SHA: `555e1366e9affebf93dfefe486dea96dc02d5311`
+- Exact-head CI for the evidence head: [run 31851847926](https://github.com/benjaminbutty/smbos26/actions/runs/31851847926)
+- Final publication head and merge SHA: to be closed after metadata-head
+  revalidation and normal merge
+- Surfaces: Settings / Business / Locations / Team & permissions, bounded
+  setup context, existing sign-in/sign-up entry, neutral public preorder
+  identity and shared public state/accessibility presentation
+- Browser evidence: `/private/tmp/lenni-c7-before-*` and
+  `/private/tmp/lenni-c7-after-*` indexed in
+  `docs/lenni-redesign-c7-report.md`; Owner, Staff and public journeys are
+  covered at the target sizes
+- Tests/CI: focused 39 passed; full unit/contract 826 passed; configured
+  integration 257 passed with 5 intentional skips; type generation,
+  TypeScript, ESLint, Prettier, build, schema lint and migration immutability
+  passed; evidence-head exact-head CI passed in run 31851847926, with the
+  metadata publication head to be revalidated before merge
+- Decisions: reuse Location actions, capability projection, existing auth
+  Server Actions, public preorder resolver/transaction and shared timezone
+  options; present role boundaries without adding membership writes or a
+  recovery flow that does not exist
+- Exclusions/debt: no merchant theming, payments, preorder feature/runtime
+  change, public builder, richer Location capability, new route/capability or
+  C8 corrections; live Admin browser fixture and auth recovery remain
+  source/test-backed gaps

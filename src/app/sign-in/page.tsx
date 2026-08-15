@@ -22,11 +22,14 @@ export default async function SignInPage({
     : "/sign-up";
 
   return (
-    <main className="narrow-page">
-      <section className="panel">
+    <main className="narrow-page c7-auth-page">
+      <section className="panel c7-auth-panel">
         <p className="eyebrow">Welcome back</p>
         <h1 className="page-title">Sign in</h1>
         <p className="muted">Access the businesses you work with.</p>
+        <p className="c7-auth-note">
+          Your access follows your account and each business role you hold.
+        </p>
 
         {error ? <Notice kind="error">{error}</Notice> : null}
         {message ? <Notice kind="message">{message}</Notice> : null}

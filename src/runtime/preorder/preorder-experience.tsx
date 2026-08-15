@@ -221,7 +221,7 @@ export function PreorderExperience(
       setEmailStatus(result.email_status);
     } catch {
       setError(
-        "We could not reach the bakery. Your reference token is preserved; please try again.",
+        "We could not reach the preorder service. Your reference token is preserved; please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -230,7 +230,10 @@ export function PreorderExperience(
 
   if (confirmation) {
     return (
-      <section className="preorder-confirmation" aria-live="polite">
+      <section
+        className="preorder-confirmation c7-public-state"
+        aria-live="polite"
+      >
         <p className="eyebrow">Preorder confirmed</p>
         <h2>Thank you — we’ll have it ready.</h2>
         <p className="confirmation-reference">
@@ -290,9 +293,17 @@ export function PreorderExperience(
   }
 
   return (
-    <form className="preorder-flow" onSubmit={submit}>
+    <form
+      aria-busy={submitting}
+      aria-describedby={error ? "preorder-error" : undefined}
+      className="preorder-flow c7-preorder-flow"
+      onSubmit={submit}
+    >
       {preview ? (
-        <section className="preorder-preview-summary" role="status">
+        <section
+          className="preorder-preview-summary c7-public-state"
+          role="status"
+        >
           <strong>Explore this preorder — submission is disabled.</strong>
           <p>
             Your choices stay only in this browser view and reset when you leave
@@ -330,7 +341,10 @@ export function PreorderExperience(
           </p>
         </section>
       ) : null}
-      <section className="preorder-section" aria-labelledby="products-heading">
+      <section
+        className="preorder-section c7-preorder-step"
+        aria-labelledby="products-heading"
+      >
         <div className="preorder-section-heading">
           <span>1</span>
           <div>
@@ -342,7 +356,10 @@ export function PreorderExperience(
           {availableProducts.map((product) => {
             const quantity = quantities[product.id] ?? 0;
             return (
-              <article className="preorder-product-card" key={product.id}>
+              <article
+                className="preorder-product-card c7-preorder-product-card"
+                key={product.id}
+              >
                 {product.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img alt="" src={product.image_url} />
@@ -387,7 +404,7 @@ export function PreorderExperience(
       </section>
 
       <section
-        className="preorder-section"
+        className="preorder-section c7-preorder-step"
         aria-labelledby="collection-heading"
       >
         <div className="preorder-section-heading">
@@ -462,7 +479,10 @@ export function PreorderExperience(
         ) : null}
       </section>
 
-      <section className="preorder-section" aria-labelledby="details-heading">
+      <section
+        className="preorder-section c7-preorder-step"
+        aria-labelledby="details-heading"
+      >
         <div className="preorder-section-heading">
           <span>3</span>
           <div>
@@ -536,7 +556,10 @@ export function PreorderExperience(
         </label>
       </section>
 
-      <aside className="preorder-summary" aria-label="Order summary">
+      <aside
+        className="preorder-summary c7-preorder-summary"
+        aria-label="Order summary"
+      >
         <div>
           <h2>Your preorder</h2>
           {basket.length > 0 ? (
@@ -564,11 +587,15 @@ export function PreorderExperience(
           <strong>{formatMoney(total, catalogue.preorder.currency)}</strong>
         </p>
         {error ? (
-          <p className="preorder-error" role="alert">
+          <p className="preorder-error" id="preorder-error" role="alert">
             {error}
           </p>
         ) : null}
-        <button disabled={preview || submitting} type="submit">
+        <button
+          className="c7-public-primary-action"
+          disabled={preview || submitting}
+          type="submit"
+        >
           {preview
             ? "Disabled in preview"
             : submitting
