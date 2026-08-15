@@ -5,6 +5,7 @@ import type {
   ExperienceViewBundle,
 } from "../../core/experience/service";
 import type { PageLayout } from "../../core/experience/schemas";
+import type { PublicBookingCatalogue } from "../../core/booking/schemas";
 import type { PublicPreorderCatalogue } from "../../core/preorder/schemas";
 import type {
   EditorCapabilities,
@@ -21,6 +22,7 @@ import type {
 import type { ProductionTableAdapterActions } from "../editor-kernel/production/production-table-adapter";
 import { ProductionTableWorkspace } from "../editor-kernel/production/production-table-workspace";
 import { FormRenderer, type FormAction } from "../forms/form-renderer";
+import { BookingExperience } from "../booking/booking-experience";
 import { PreorderExperience } from "../preorder/preorder-experience";
 import { experienceKeyToPath } from "../routing";
 import type { InlineEditAction } from "../views/inline-edit-contract";
@@ -29,6 +31,13 @@ import { ViewRenderer } from "../views/view-renderer";
 interface ResolvedFormBlock {
   action?: FormAction;
   bundle: ExperienceFormBundle;
+  hiddenFields?: ReadonlyArray<{ name: string; value: string }>;
+  honeypotName?: string;
+}
+
+interface ResolvedBookingBlock {
+  catalogue: PublicBookingCatalogue;
+  endpoint?: string;
 }
 
 interface ResolvedPreorderBlock {
@@ -43,6 +52,7 @@ interface PageRendererProps {
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
   inlineEditAction?: InlineEditAction;
   preorders?: Readonly<Record<string, ResolvedPreorderBlock>>;
+  bookings?: Readonly<Record<string, ResolvedBookingBlock>>;
   previewMode?: boolean;
   publicMode?: boolean;
   tableEmbeds?: Readonly<Record<string, PageRendererTableEmbed>>;
@@ -79,6 +89,7 @@ export function PageRenderer({
   forms = {},
   inlineEditAction,
   preorders = {},
+  bookings = {},
   previewMode = false,
   publicMode = false,
   tableEmbeds = {},
@@ -298,6 +309,89 @@ export function PageRenderer({
               <MissingBlock
                 key={key}
                 message="This form is temporarily unavailable."
+              />
+            );
+          }
+          case "public_form": {
+            if (!publicMode && !previewMode) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="This public Form is only available on its Site."
+                />
+              );
+            }
+            const resolvedForm = forms[block.form_key];
+            if (!resolvedForm) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="This public Form is temporarily unavailable."
+                />
+              );
+            }
+            return previewMode ? (
+              <FormRenderer
+                bundle={resolvedForm.bundle}
+                key={key}
+                mode="preview"
+                showHeading={false}
+              />
+            ) : resolvedForm.action ? (
+              <FormRenderer
+                action={resolvedForm.action}
+                bundle={resolvedForm.bundle}
+                key={key}
+                showHeading={false}
+                {...(resolvedForm.hiddenFields
+                  ? { hiddenFields: resolvedForm.hiddenFields }
+                  : {})}
+                {...(resolvedForm.honeypotName
+                  ? { honeypotName: resolvedForm.honeypotName }
+                  : {})}
+              />
+            ) : (
+              <MissingBlock
+                key={key}
+                message="This public Form is temporarily unavailable."
+              />
+            );
+          }
+          case "booking": {
+            if (!publicMode && !previewMode) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="This Booking Site is only available publicly."
+                />
+              );
+            }
+            const resolvedBooking = bookings[block.booking_key];
+            if (!resolvedBooking) {
+              return (
+                <MissingBlock
+                  key={key}
+                  message="This Booking Site is temporarily unavailable."
+                />
+              );
+            }
+            return previewMode ? (
+              <BookingExperience
+                catalogue={resolvedBooking.catalogue}
+                key={key}
+                mode="preview"
+              />
+            ) : resolvedBooking.endpoint ? (
+              <BookingExperience
+                catalogue={resolvedBooking.catalogue}
+                endpoint={resolvedBooking.endpoint}
+                key={key}
+                mode="live"
+              />
+            ) : (
+              <MissingBlock
+                key={key}
+                message="This Booking Site is temporarily unavailable."
               />
             );
           }
