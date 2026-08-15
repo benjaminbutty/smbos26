@@ -8,11 +8,13 @@ import { createServerClient } from "../../db/supabase/server";
 import { acquisitionClarificationKeySchema } from "../../core/acquisition/clarification";
 import {
   AcquisitionServiceError,
+  acceptAcquisitionSetup,
   answerAcquisitionQuestion,
   clearAcquisitionCookie,
   createOrRegenerateProposal,
   loadAcquisitionSession,
   readAcquisitionCookieToken,
+  refineAcquisitionProposal,
 } from "../../core/acquisition/service";
 import { emitAcquisitionEvent } from "../../core/acquisition/events";
 import {
@@ -159,6 +161,47 @@ export async function answerClarificationAction(
     );
   }
   redirect("/start");
+}
+
+export async function useAcquisitionSetupAction(): Promise<never> {
+  try {
+    await acceptAcquisitionSetup();
+  } catch (error) {
+    redirectWithError(
+      "/start",
+      acquisitionErrorMessage(error),
+      acquisitionErrorState(error),
+    );
+  }
+  redirect("/sign-up?returnTo=%2Fstart%2Fbusiness");
+}
+
+export async function refineAcquisitionAction(
+  formData: FormData,
+): Promise<never> {
+  const refinement = z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .safeParse(formData.get("refinement"));
+  if (!refinement.success) {
+    redirectWithError(
+      "/start",
+      "Tell Lenni what you would like to change before previewing again.",
+      "detail",
+    );
+  }
+  try {
+    await refineAcquisitionProposal(refinement.data);
+  } catch (error) {
+    redirectWithError(
+      "/start",
+      acquisitionErrorMessage(error),
+      acquisitionErrorState(error),
+    );
+  }
+  redirect("/start?from=preview");
 }
 
 export async function claimWorkspaceAction(formData: FormData): Promise<never> {

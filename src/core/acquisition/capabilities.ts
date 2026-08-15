@@ -302,6 +302,61 @@ function addFieldToInternalForms(
   }
 }
 
+function addRelationshipToInternalViews(
+  operations: ConfigurationOperation[],
+  relationship: RelationshipOperation,
+): void {
+  for (let index = 0; index < operations.length; index += 1) {
+    const operation = operations[index];
+    if (
+      !operation ||
+      operation.op !== "set_view" ||
+      operation.view_type !== "table" ||
+      !operation.is_active ||
+      ![
+        relationship.source_object_key,
+        relationship.target_object_key,
+      ].includes(operation.object_key)
+    ) {
+      continue;
+    }
+    const config = parseViewConfig(operation.view_type, operation.config_json);
+    if (!("columns" in config)) continue;
+    const direction =
+      operation.object_key === relationship.source_object_key
+        ? "source"
+        : "target";
+    if (
+      config.columns.some(
+        (column) =>
+          column.kind === "connection" &&
+          column.relationship_key === relationship.key &&
+          column.direction === direction,
+      )
+    ) {
+      continue;
+    }
+    operations[index] = setViewOperationSchema.parse({
+      ...operation,
+      config_json: {
+        ...config,
+        columns: [
+          ...config.columns,
+          {
+            kind: "connection",
+            relationship_key: relationship.key,
+            direction,
+            label:
+              direction === "source"
+                ? relationship.source_label
+                : relationship.target_label,
+          },
+        ],
+      },
+    });
+  }
+}
+
 function removeSeparateService(
   operations: ConfigurationOperation[],
   serviceKey: string,
@@ -747,6 +802,14 @@ function addBookingSurface(
         "service",
       )
     : null;
+
+  addRelationshipToInternalViews(operations, customerBooking);
+  if (customerSubject)
+    addRelationshipToInternalViews(operations, customerSubject);
+  if (subjectBooking)
+    addRelationshipToInternalViews(operations, subjectBooking);
+  if (serviceBooking)
+    addRelationshipToInternalViews(operations, serviceBooking);
 
   const config = bookingConfigSchema.parse({
     booking_object_key: booking.object.key,

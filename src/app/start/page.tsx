@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { AcquisitionProposalCard } from "../../components/acquisition-proposal";
 import { AcquisitionConversation } from "../../components/acquisition-conversation";
+import { AcquisitionRefinement } from "../../components/acquisition-refinement";
 import { AcquisitionRequestInput } from "../../components/acquisition-request-input";
 import { Notice } from "../../components/notice";
 import { PendingSubmitButton } from "../../components/pending-submit-button";
@@ -48,12 +49,14 @@ function categoryValue(value: unknown): AcquisitionCategory {
 export default async function StartPage({
   searchParams,
 }: Readonly<StartPageProps>): Promise<ReactNode> {
-  const [session, error, rawState] = await Promise.all([
+  const [session, error, rawState, rawFrom] = await Promise.all([
     loadAcquisitionSession(),
     readSearchParam(searchParams, "error"),
     readSearchParam(searchParams, "state"),
+    readSearchParam(searchParams, "from"),
   ]);
   const state = acquisitionState(rawState);
+  const fromPreview = rawFrom === "preview";
   const activeSession = session && !session.expired ? session : null;
   const activeProposal = activeSession?.payload?.proposal ?? null;
   const selectedCategory = categoryValue(activeProposal?.category);
@@ -98,6 +101,14 @@ export default async function StartPage({
       {activeSession?.clarification?.status === "awaiting_answer" &&
       !activeProposal ? (
         <AcquisitionConversation
+          request={activeSession.row.request_text ?? ""}
+          state={activeSession.clarification}
+        />
+      ) : activeSession &&
+        activeProposal &&
+        fromPreview &&
+        activeSession.clarification ? (
+        <AcquisitionRefinement
           request={activeSession.row.request_text ?? ""}
           state={activeSession.clarification}
         />

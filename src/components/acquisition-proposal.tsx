@@ -160,13 +160,16 @@ export function AcquisitionProposalCard({
       ) : null}
 
       <div className="acquisition-proposal-actions">
-        <Link className="button" href="/start/business">
-          Create this workspace
+        <Link className="button" href="/start/preview/home">
+          Preview workspace
         </Link>
         <Link className="button-secondary" href="/start#revise">
           Edit my request
         </Link>
-        <span>There&apos;s no signup until you choose to create it.</span>
+        <span>
+          Preview first; choose Use this setup before Create this workspace. No
+          signup is needed until then.
+        </span>
       </div>
     </section>
   );

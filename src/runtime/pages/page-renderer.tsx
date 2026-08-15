@@ -24,6 +24,7 @@ import { ProductionTableWorkspace } from "../editor-kernel/production/production
 import { FormRenderer, type FormAction } from "../forms/form-renderer";
 import { BookingExperience } from "../booking/booking-experience";
 import { PreorderExperience } from "../preorder/preorder-experience";
+import { CandidateTableWorkspace } from "../../components/candidate-table-workspace";
 import { experienceKeyToPath } from "../routing";
 import type { InlineEditAction } from "../views/inline-edit-contract";
 import { ViewRenderer } from "../views/view-renderer";
@@ -56,6 +57,13 @@ interface PageRendererProps {
   previewMode?: boolean;
   publicMode?: boolean;
   tableEmbeds?: Readonly<Record<string, PageRendererTableEmbed>>;
+  candidateTables?: Readonly<Record<string, CandidatePreviewTableEmbed>>;
+}
+
+export interface CandidatePreviewTableEmbed {
+  table: EditorTable;
+  name: string;
+  objectLabel: string;
 }
 
 export interface PageRendererTableEmbed {
@@ -93,6 +101,7 @@ export function PageRenderer({
   previewMode = false,
   publicMode = false,
   tableEmbeds = {},
+  candidateTables = {},
 }: Readonly<PageRendererProps>): ReactNode {
   return (
     <div className="runtime-page-blocks">
@@ -171,6 +180,21 @@ export function PageRenderer({
                   key={key}
                   message="This information is not available publicly."
                 />
+              );
+            }
+            const candidateTable = candidateTables[block.view_key];
+            if (candidateTable && previewMode) {
+              return (
+                <section className="page-view-block" key={key}>
+                  <header className="page-view-block-header">
+                    <div>
+                      <p className="eyebrow">Table</p>
+                      <strong>{candidateTable.name}</strong>
+                      <span>Example {candidateTable.objectLabel}</span>
+                    </div>
+                  </header>
+                  <CandidateTableWorkspace table={candidateTable.table} />
+                </section>
               );
             }
             const bundle = views[block.view_key];
