@@ -37,7 +37,12 @@ export default async function BusinessSetupPage({
     );
   }
 
-  const proposal = session.payload.proposal;
+  const proposal = session.payload?.proposal;
+  if (!proposal) {
+    redirect(
+      "/start?error=Answer+Lenni%27s+questions+before+creating+a+workspace.&state=detail",
+    );
+  }
   emitAcquisitionEvent("create_workspace_clicked", {
     category: proposal.category,
     source: proposal.source,

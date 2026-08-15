@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { configurationOperationSchema } from "../../core/configuration/schemas";
+import { bookingConfigSchema } from "../../core/booking/schemas";
 import {
   experienceAudienceSchema,
   experienceFormModeSchema,
@@ -226,6 +227,21 @@ const aiContextFormBlockSchema = z
   })
   .strict();
 
+const aiContextPublicFormBlockSchema = z
+  .object({
+    type: z.literal("public_form"),
+    form_key: graphKeySchema,
+  })
+  .strict();
+
+const aiContextBookingBlockSchema = z
+  .object({
+    type: z.literal("booking"),
+    booking_key: graphKeySchema,
+    config: bookingConfigSchema,
+  })
+  .strict();
+
 const aiContextPreorderBlockSchema = z
   .object({
     type: z.literal("preorder"),
@@ -239,6 +255,14 @@ const aiContextDividerBlockSchema = z
   })
   .strict();
 
+const aiContextCalloutBlockSchema = z
+  .object({
+    type: z.literal("callout"),
+    text: z.string().trim().min(1).max(1_000),
+    tone: z.enum(["neutral", "info", "success", "warning"]),
+  })
+  .strict();
+
 export const aiContextPageBlockSchema = z.discriminatedUnion("type", [
   aiContextHeadingBlockSchema,
   aiContextTextBlockSchema,
@@ -246,8 +270,11 @@ export const aiContextPageBlockSchema = z.discriminatedUnion("type", [
   aiContextButtonBlockSchema,
   aiContextViewBlockSchema,
   aiContextFormBlockSchema,
+  aiContextPublicFormBlockSchema,
+  aiContextBookingBlockSchema,
   aiContextPreorderBlockSchema,
   aiContextDividerBlockSchema,
+  aiContextCalloutBlockSchema,
 ]);
 
 export const aiContextPageSchema = z
@@ -306,6 +333,9 @@ const platformCapabilityNameSchema = z.enum([
   "configuration_candidate_preview",
   "manual_preorder_schedule_amendments",
   "manual_preorder_question_amendments",
+  "public_create_forms",
+  "scheduling_booking",
+  "sites_public_pages",
 ]);
 
 const changeLaneSchema = z
@@ -334,8 +364,11 @@ export const aiContextPlatformCapabilitiesSchema = z
         "button",
         "view",
         "form",
+        "public_form",
+        "booking",
         "preorder",
         "divider",
+        "callout",
       ]),
     ),
     configuration_operation_names: z.array(
@@ -410,8 +443,11 @@ export const authoritativePageBlockTypes = [
   "button",
   "view",
   "form",
+  "public_form",
+  "booking",
   "preorder",
   "divider",
+  "callout",
 ] as const;
 export const authoritativeConfigurationOperationNames =
   configurationOperationSchema.options.map((schema) => schema.shape.op.value);

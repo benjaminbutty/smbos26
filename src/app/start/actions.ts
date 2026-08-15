@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { createServerClient } from "../../db/supabase/server";
+import { acquisitionClarificationKeySchema } from "../../core/acquisition/clarification";
 import {
   AcquisitionServiceError,
+  answerAcquisitionQuestion,
   clearAcquisitionCookie,
   createOrRegenerateProposal,
   loadAcquisitionSession,
@@ -127,6 +129,38 @@ export async function createProposalAction(formData: FormData): Promise<never> {
   redirect("/start");
 }
 
+export async function answerClarificationAction(
+  formData: FormData,
+): Promise<never> {
+  const questionKey = acquisitionClarificationKeySchema.safeParse(
+    formData.get("question_key"),
+  );
+  const answer = z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .safeParse(formData.get("answer"));
+  if (!questionKey.success || !answer.success) {
+    redirectWithError(
+      "/start",
+      "Tell Lenni a little more so it can shape the right starting point.",
+      "detail",
+    );
+  }
+
+  try {
+    await answerAcquisitionQuestion(questionKey.data, answer.data);
+  } catch (error) {
+    redirectWithError(
+      "/start",
+      acquisitionErrorMessage(error),
+      acquisitionErrorState(error),
+    );
+  }
+  redirect("/start");
+}
+
 export async function claimWorkspaceAction(formData: FormData): Promise<never> {
   const details = workspaceDetailsSchema.safeParse({
     businessName: formData.get("businessName"),
@@ -155,11 +189,18 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
     );
   }
   const session = await loadAcquisitionSession();
+  if (!session?.payload) {
+    redirectWithError(
+      "/start/business",
+      "Your accepted Lenni workspace is no longer available. Start again to prepare a fresh one.",
+      "expired",
+    );
+  }
   const landingPageKey =
-    session?.payload.proposal.landing_page_key ?? "overview";
+    session?.payload?.proposal.landing_page_key ?? "overview";
 
   emitAcquisitionEvent("workspace_apply_started", {
-    category: session?.payload.proposal.category ?? "unknown",
+    category: session.payload.proposal.category,
   });
   const { data, error } = await supabase.rpc("claim_anonymous_build_session", {
     requested_business_name: details.data.businessName,

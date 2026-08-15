@@ -172,6 +172,7 @@ export type Database = {
           claimed_at: string | null;
           claimed_business_id: string | null;
           claimed_user_id: string | null;
+          clarification_json: Json | null;
           created_at: string;
           expires_at: string;
           id: string;
@@ -189,6 +190,7 @@ export type Database = {
           claimed_at?: string | null;
           claimed_business_id?: string | null;
           claimed_user_id?: string | null;
+          clarification_json?: Json | null;
           created_at?: string;
           expires_at: string;
           id?: string;
@@ -206,6 +208,7 @@ export type Database = {
           claimed_at?: string | null;
           claimed_business_id?: string | null;
           claimed_user_id?: string | null;
+          clarification_json?: Json | null;
           created_at?: string;
           expires_at?: string;
           id?: string;

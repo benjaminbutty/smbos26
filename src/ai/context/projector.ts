@@ -178,10 +178,20 @@ function projectPageBlock(
       return { type: block.type, view_key: block.view_key };
     case "form":
       return { type: block.type, form_key: block.form_key };
+    case "public_form":
+      return { type: block.type, form_key: block.form_key };
+    case "booking":
+      return {
+        type: block.type,
+        booking_key: block.booking_key,
+        config: block.config,
+      };
     case "preorder":
       return { type: block.type, preorder_key: block.preorder_key };
     case "divider":
       return { type: block.type };
+    case "callout":
+      return { type: block.type, text: block.text, tone: block.tone };
   }
 }
 
@@ -227,8 +237,11 @@ function platformCapabilities() {
       "immutable_configuration_versions",
       "manual_preorder_question_amendments",
       "manual_preorder_schedule_amendments",
+      "public_create_forms",
       "published_public_pages",
       "record_to_location_connections",
+      "scheduling_booking",
+      "sites_public_pages",
       "trusted_public_preorder",
     ] as const,
     unavailable: {
