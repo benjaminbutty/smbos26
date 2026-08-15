@@ -5,7 +5,9 @@
 - Checkpoint: C8 — whole-product acceptance and bounded corrections
 - Branch: `redesign/c8-whole-product-acceptance`
 - Base: merged C7 `c478b5062ffb7de851963dddefe50c9cb34f9671`
-- Product correction: none; C8 is an acceptance-only checkpoint
+- Product correction: none; one bounded acceptance-test correction canonicalizes
+  set-valued preorder `location_ids` before comparing the current and retained
+  Milestone 4 compatibility resolver
 - PR, exact-head SHA, merge SHA and CI run: recorded in the running ledger after
   publication
 - Authority: Sections 8, 9, 16, 17 and 18 of the Unified Lenni Product
@@ -18,9 +20,12 @@
 C8 ran the redesigned product as a system across the available real fixtures,
 target sizes and role boundaries. The C7 baseline remains coherent across
 acquisition, the authenticated shell, operational work, configuration history,
-Settings, authentication entry and public preorder. No bounded correction was
-justified by the acceptance evidence, so no product code, capability, route,
-state, schema, dependency or AI behavior changed in C8.
+Settings, authentication entry and public preorder. No product correction was
+justified by the acceptance evidence. The only code change is the focused
+integration-test normalization above: preorder `location_ids` are a set for
+this compatibility assertion, while the current resolver deliberately emits a
+canonical order. No product code, capability, route, state, schema,
+dependency or AI behavior changed in C8.
 
 The only material evidence limits are fixture limits already recorded in C0:
 trades/jobs has no persisted local Business route, and the Bedford fixture has
@@ -132,7 +137,9 @@ part of this acceptance review.
 
 ## Correctness, security and readiness
 
-- No C8 product correction was required.
+- No C8 product correction was required. The single bounded test-only change
+  makes the existing set semantics explicit and leaves both resolver
+  implementations unchanged.
 - No schema, migration, dependency, capability, route, state framework,
   prompt, model, provider or transaction change was made.
 - Existing server-authoritative membership/capability boundaries remain the
@@ -140,8 +147,15 @@ part of this acceptance review.
 - Existing preorder resolver, capacity/cutoff/pricing/idempotency and
   submission validation remain unchanged; the live valid submission confirmed
   the trusted transaction path.
-- The complete repository verification and exact-head CI are rerun for the
-  acceptance/report head before publication.
+- Final local verification before publication included 14 focused files with
+  85 tests passed, the full unit/contract suite with 77 files and 826 tests
+  passed, Prettier, route type generation, TypeScript, ESLint, production
+  build, schema lint and migration immutability. The focused configuration
+  changes rerun passed 25/25 tests; the focused preview rerun passed 3 tests
+  with 5 intentional skips after the bounded normalization. Two earlier full
+  integration attempts each exposed one pre-existing local fixture/order
+  sensitivity (256 passed, 5 skipped, one failed); exact-head CI is the clean
+  repository gate for the final publication.
 
 ## Residual product-quality issues and MLP/v0 recommendation
 

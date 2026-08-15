@@ -83,6 +83,21 @@ function requireData<T>(
   return result.data as NonNullable<T>;
 }
 
+function normalizeCatalogueForEquivalence(
+  catalogue: PublicPreorderCatalogue,
+): PublicPreorderCatalogue {
+  return {
+    ...catalogue,
+    preorder: {
+      ...catalogue.preorder,
+      products: catalogue.preorder.products.map((product) => ({
+        ...product,
+        location_ids: [...product.location_ids].sort(),
+      })),
+    },
+  };
+}
+
 async function signIn(email: string): Promise<Identity> {
   const client = createClient<Database>(
     settings.apiUrl,
@@ -838,7 +853,15 @@ describe("Milestone 5 Phase 4B.1 authenticated preview foundation", () => {
           '2026-07-29T08:00:00Z'::timestamptz
         ) as legacy
     `;
-    expect(equivalence?.current).toEqual(equivalence?.legacy);
+    expect(
+      normalizeCatalogueForEquivalence(
+        publicPreorderCatalogueSchema.parse(equivalence?.current),
+      ),
+    ).toEqual(
+      normalizeCatalogueForEquivalence(
+        publicPreorderCatalogueSchema.parse(equivalence?.legacy),
+      ),
+    );
     expect(await capturedState(ordinaryProposal.id)).toEqual(before);
   }, 30_000);
 

@@ -186,7 +186,9 @@ evidence carried into the next checkpoint.
 ### C8 — Whole-product acceptance and bounded corrections
 
 - Branch: `redesign/c8-whole-product-acceptance`
-- Product correction SHA: none; acceptance/report-only checkpoint
+- Product correction SHA: none; bounded test-only correction canonicalizes the
+  set-valued preorder `location_ids` in the retained preview compatibility
+  assertion
 - PR: recorded after publication
 - Final exact-head SHA: recorded after the final C8 report commit
 - Merge SHA: recorded after normal merge
@@ -198,12 +200,12 @@ evidence carried into the next checkpoint.
   `docs/lenni-redesign-c8-report.md`; live proof Businesses cover milk, dog
   grooming and enquiry-led work, with Bedford preorder and Staff/Owner/Admin
   role evidence
-- Tests/CI: C8 acceptance reuses the complete C1–C7 contracts and reruns the
-  repository verification against the final report head; exact-head CI is
-  recorded after publication
-- Decisions: take the zero-correction path because no material consistency,
-  accessibility, overflow or interaction defect was found; keep trades/jobs as
-  the documented source/integration-backed fixture boundary
+- Tests/CI: focused C8 coverage and the full unit/contract suite pass; the
+  complete integration gate and exact-head CI are recorded after publication
+- Decisions: take the zero-product-correction path because no material
+  consistency, accessibility, overflow or interaction defect was found; make
+  the existing set semantics explicit in one focused acceptance assertion; keep
+  trades/jobs as the documented source/integration-backed fixture boundary
 - Exclusions/debt: no new capability, architecture, route, schema, dependency,
   AI/provider change or future-surface implementation; existing auth recovery
   scope and trades/jobs persisted-fixture limitation remain explicit
