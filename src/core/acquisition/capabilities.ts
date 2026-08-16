@@ -723,11 +723,7 @@ function addBookingSurface(
     });
   addFieldToInternalForms(operations, booking.object.key, bookingStatus.key);
   const bookingDate = findField(booking, [/^date$|date/i], ["date"]);
-  const bookingTime = findField(
-    booking,
-    [/^time$|time/i],
-    ["short_text"],
-  );
+  const bookingTime = findField(booking, [/^time$|time/i], ["short_text"]);
 
   const subjectName = subject
     ? (findField(
