@@ -598,7 +598,7 @@ function addBookingSurface(
       key: "title",
       label: "Booking",
       field_type: "short_text",
-      required: true,
+      required: false,
       default_value: null,
       settings_json: {},
       is_active: true,
@@ -722,6 +722,8 @@ function addBookingSurface(
       is_active: true,
     });
   addFieldToInternalForms(operations, booking.object.key, bookingStatus.key);
+  const bookingDate = findField(booking, [/^date$|date/i], ["date"]);
+  const bookingTime = findField(booking, [/^time$|time/i], ["short_text"]);
 
   const subjectName = subject
     ? (findField(
@@ -835,6 +837,8 @@ function addBookingSurface(
           typeof bookingStatus.default_value === "string"
             ? bookingStatus.default_value
             : "Requested",
+        date: bookingDate?.key ?? null,
+        time: bookingTime?.key ?? null,
       },
       subject: subject && subjectName ? { name: subjectName.key } : null,
       service: service && serviceName ? { name: serviceName.key } : null,
@@ -876,6 +880,30 @@ function addBookingSurface(
               field: subjectName.key,
               label: subjectName.label,
               required: true,
+              autocomplete: "off" as const,
+            },
+          ]
+        : []),
+      ...(bookingDate
+        ? [
+            {
+              target: "booking" as const,
+              field: bookingDate.key,
+              label: bookingDate.label,
+              required: true,
+              derived: true,
+              autocomplete: "off" as const,
+            },
+          ]
+        : []),
+      ...(bookingTime
+        ? [
+            {
+              target: "booking" as const,
+              field: bookingTime.key,
+              label: bookingTime.label,
+              required: true,
+              derived: true,
               autocomplete: "off" as const,
             },
           ]

@@ -60,6 +60,9 @@ export function BookingExperience(
   const slots = props.catalogue.booking.slots.filter(
     (slot) => slot.local_date === selectedDate,
   );
+  const visibleFields = props.catalogue.booking.public_fields.filter(
+    (field) => !field.derived,
+  );
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -78,7 +81,7 @@ export function BookingExperience(
       subject: {},
       booking: {},
     };
-    for (const field of props.catalogue.booking.public_fields) {
+    for (const field of visibleFields) {
       const value = form.get(`${field.target}.${field.field}`);
       if (typeof value === "string" && value.trim() !== "") {
         fields[field.target][field.field] = value.trim();
@@ -215,7 +218,7 @@ export function BookingExperience(
         </fieldset>
       ) : null}
       <div className="booking-fields">
-        {props.catalogue.booking.public_fields.map((field) => (
+        {visibleFields.map((field) => (
           <label key={`${field.target}.${field.field}`}>
             <span>
               {field.label}

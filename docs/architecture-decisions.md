@@ -2908,3 +2908,15 @@ This decision supersedes the earlier generic public Form and scheduling
 deferrals for Journey 1 only. Payment, public generic Record reads, arbitrary
 public graph mutation, advanced scheduling and later Journey 2–6 experience
 resets remain outside its scope.
+
+### ADR-041 implementation note — Journey 1 closeout
+
+Journey 1 implementation uses the existing opaque acquisition session and M5
+configuration claim boundary. The public runtime resolves published Pages,
+Forms and Booking capabilities through narrow security-definer RPCs because
+the configuration boundary does not expose raw metadata reads to anonymous
+runtime code. Booking candidates may mark ordinary date/time Fields as
+server-derived; the trusted transaction fills those Fields from the
+revalidated slot and never accepts them as browser authority. The derived
+Fields remain hidden from the public form. This is an additive constructability
+hardening and does not change the reusable graph or publication decision.
