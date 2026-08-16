@@ -21,6 +21,7 @@ import {
   acquisitionCategorySchema,
   acquisitionRequestSchema,
 } from "../../core/acquisition/schemas";
+import { candidateChecksum } from "../../core/acquisition/preview";
 
 const workspaceDetailsSchema = z.object({
   businessName: z.string().trim().min(1).max(120),
@@ -72,6 +73,9 @@ function claimErrorMessage(error: { message?: string } | null): string {
   ) {
     return "This Lenni proposal is no longer available. Start again to prepare a new one.";
   }
+  if (message.includes("anonymous_build_setup_not_accepted")) {
+    return "Choose Use this setup in the preview before creating the workspace.";
+  }
   if (message.includes("anonymous_build_session_already_claimed")) {
     return "This proposal has already been claimed. Start again if you want another workspace.";
   }
@@ -95,6 +99,7 @@ function claimErrorState(
     message.includes("anonymous_build_session_expired") ||
     message.includes("anonymous_build_session_not_found") ||
     message.includes("anonymous_build_proposal_invalid") ||
+    message.includes("anonymous_build_setup_not_accepted") ||
     message.includes("anonymous_build_session_already_claimed")
   ) {
     return "expired";
@@ -239,8 +244,20 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
       "expired",
     );
   }
-  const landingPageKey =
-    session?.payload?.proposal.landing_page_key ?? "overview";
+  const currentChecksum = candidateChecksum(
+    session.payload,
+    Math.max(1, session.row.proposal_count),
+  );
+  if (
+    session.row.accepted_candidate_checksum !== currentChecksum ||
+    !session.row.accepted_at
+  ) {
+    redirectWithError(
+      "/start/business",
+      "Choose Use this setup in the preview before creating the workspace.",
+      "detail",
+    );
+  }
 
   emitAcquisitionEvent("workspace_apply_started", {
     category: session.payload.proposal.category,
@@ -266,7 +283,5 @@ export async function claimWorkspaceAction(formData: FormData): Promise<never> {
   emitAcquisitionEvent("workspace_apply_succeeded");
   await clearAcquisitionCookie();
   revalidatePath(`/app/${data.slug}`, "layout");
-  redirect(
-    `/app/${encodeURIComponent(data.slug)}/pages/${encodeURIComponent(landingPageKey)}`,
-  );
+  redirect(`/app/${encodeURIComponent(data.slug)}`);
 }

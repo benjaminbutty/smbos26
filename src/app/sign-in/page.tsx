@@ -20,13 +20,18 @@ export default async function SignInPage({
   const signUpHref = returnTo
     ? `/sign-up?returnTo=${encodeURIComponent(returnTo)}`
     : "/sign-up";
+  const isAcquisitionClaim = returnTo === "/start/business";
 
   return (
     <main className="narrow-page c7-auth-page">
       <section className="panel c7-auth-panel">
         <p className="eyebrow">Welcome back</p>
         <h1 className="page-title">Sign in</h1>
-        <p className="muted">Access the businesses you work with.</p>
+        <p className="muted">
+          {isAcquisitionClaim
+            ? "Sign in to save the workspace you just reviewed."
+            : "Access the businesses you work with."}
+        </p>
         <p className="c7-auth-note">
           Your access follows your account and each business role you hold.
         </p>
@@ -52,7 +57,9 @@ export default async function SignInPage({
               type="password"
             />
           </label>
-          <button type="submit">Sign in</button>
+          <button type="submit">
+            {isAcquisitionClaim ? "Save workspace and sign in" : "Sign in"}
+          </button>
         </form>
 
         <p className="form-footer">

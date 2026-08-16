@@ -36,13 +36,18 @@ interface WorkspaceMobileNavProps {
   tables: ReadonlyArray<WorkspaceTableDestination>;
   pages: ReadonlyArray<WorkspacePageDestination>;
   otherViews: ReadonlyArray<WorkspaceViewDestination>;
+  sites?: ReadonlyArray<WorkspacePageDestination>;
 }
 
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 function isWorkPath(pathname: string): boolean {
-  return pathname.includes("/workspace/") || pathname.includes("/pages/");
+  return (
+    pathname.includes("/workspace/") ||
+    pathname.includes("/pages/") ||
+    pathname.includes("/sites/")
+  );
 }
 
 function closeOnNavigation(
@@ -58,6 +63,7 @@ export function WorkspaceMobileNav({
   canManageConfiguration,
   otherViews,
   pages,
+  sites = [],
   tables,
 }: Readonly<WorkspaceMobileNavProps>): ReactNode {
   const pathname = usePathname();
@@ -271,6 +277,31 @@ export function WorkspaceMobileNav({
                   )}
                 </div>
               </section>
+
+              {sites.length > 0 ? (
+                <section aria-labelledby="mobile-sites-heading">
+                  <h3 id="mobile-sites-heading">Sites</h3>
+                  <div className="workspace-mobile-sheet-links">
+                    {sites.map((site) => (
+                      <Link
+                        aria-current={
+                          pathname === `${rootPath}/sites/${site.slug}`
+                            ? "page"
+                            : undefined
+                        }
+                        href={`${rootPath}/sites/${site.slug}`}
+                        key={site.slug}
+                        onClick={(event) =>
+                          closeOnNavigation(event, closeSheet)
+                        }
+                      >
+                        <span aria-hidden="true">▣</span>
+                        {site.title}
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               {otherViews.length > 0 ? (
                 <section aria-labelledby="mobile-other-views-heading">

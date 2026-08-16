@@ -15,13 +15,17 @@ interface PagesSidebarProps {
     expectedHeadRevision: number;
   } | null;
   pages: ReadonlyArray<{ id: string; slug: string; title: string }>;
+  heading?: string;
+  routeSegment?: "pages" | "sites";
 }
 
 export function PagesSidebar({
   action,
   businessSlug,
   currentness,
+  heading = "Pages",
   pages,
+  routeSegment = "pages",
 }: Readonly<PagesSidebarProps>): ReactNode {
   const pathname = usePathname();
   const router = useRouter();
@@ -48,7 +52,7 @@ export function PagesSidebar({
       if (result.status === "success") {
         setOpen(false);
         router.push(
-          `/app/${encodeURIComponent(businessSlug)}/pages/${result.pageSlug}`,
+          `/app/${encodeURIComponent(businessSlug)}/${routeSegment}/${result.pageSlug}`,
         );
         router.refresh();
       } else {
@@ -61,11 +65,11 @@ export function PagesSidebar({
 
   return (
     <section
-      aria-labelledby="pages-navigation-heading"
+      aria-labelledby={`${routeSegment}-navigation-heading`}
       className="sidebar-section"
     >
       <div className="sidebar-section-heading">
-        <h2 id="pages-navigation-heading">Pages</h2>
+        <h2 id={`${routeSegment}-navigation-heading`}>{heading}</h2>
         {action && currentness ? (
           <button
             aria-expanded={open}
@@ -101,10 +105,10 @@ export function PagesSidebar({
           ) : null}
         </form>
       ) : null}
-      <nav aria-label="Pages">
+      <nav aria-label={heading}>
         {pages.length > 0 ? (
           pages.map((page) => {
-            const href = `/app/${encodeURIComponent(businessSlug)}/pages/${page.slug}`;
+            const href = `/app/${encodeURIComponent(businessSlug)}/${routeSegment}/${page.slug}`;
             return (
               <Link
                 aria-current={pathname === href ? "page" : undefined}
@@ -120,7 +124,9 @@ export function PagesSidebar({
             );
           })
         ) : (
-          <span className="sidebar-empty">No Pages yet</span>
+          <span className="sidebar-empty">
+            {routeSegment === "sites" ? "No Sites yet" : "No Pages yet"}
+          </span>
         )}
       </nav>
     </section>
