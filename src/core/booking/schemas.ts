@@ -69,6 +69,8 @@ const bookingMappingSchema = z
     start_at: graphKeySchema,
     status: graphKeySchema,
     default_status: labelSchema,
+    date: graphKeySchema.nullable().default(null),
+    time: graphKeySchema.nullable().default(null),
   })
   .strict();
 
@@ -90,6 +92,7 @@ export const bookingPublicFieldSchema = z
     field: graphKeySchema,
     label: labelSchema,
     required: z.boolean(),
+    derived: z.boolean().default(false),
     help_text: z.string().trim().min(1).max(500).optional(),
     autocomplete: z
       .enum(["name", "email", "tel", "organization", "off"])
@@ -184,6 +187,8 @@ export const bookingConfigSchema = z
       ["customer", config.field_mappings.customer.phone],
       ["booking", config.field_mappings.booking.start_at],
       ["booking", config.field_mappings.booking.status],
+      ["booking", config.field_mappings.booking.date],
+      ["booking", config.field_mappings.booking.time],
       ["subject", config.field_mappings.subject?.name],
       ["service", config.field_mappings.service?.name],
     ]

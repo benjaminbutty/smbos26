@@ -183,7 +183,7 @@ const appointmentDefinition: StarterDefinition = {
       plural_label: "Appointments",
       description: "The bookings that make up your daily work.",
       fields: [
-        textField("title", "Appointment", { required: true }),
+        textField("title", "Appointment"),
         dateField("date", "Date", true),
         textField("time", "Time"),
         statusField(

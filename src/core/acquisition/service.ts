@@ -300,10 +300,6 @@ export async function acceptAcquisitionSetup(): Promise<string> {
     session.payload,
     Math.max(1, session.row.proposal_count),
   );
-  const proposalJson = session.row.proposal_json;
-  if (proposalJson === null) {
-    throw new AcquisitionServiceError("session_invalid");
-  }
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("anonymous_build_sessions")
@@ -313,7 +309,6 @@ export async function acceptAcquisitionSetup(): Promise<string> {
     })
     .eq("id", session.row.id)
     .eq("claim_status", "active")
-    .eq("proposal_json", proposalJson as NonNullable<Json>)
     .select("accepted_candidate_checksum")
     .maybeSingle();
   if (error || !data || data.accepted_candidate_checksum !== checksum) {

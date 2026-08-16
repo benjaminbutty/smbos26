@@ -62,6 +62,11 @@ describe("Journey 1 candidate preview model", () => {
       "Full groom",
       "Wash and tidy",
     ]);
+    expect(
+      booking?.booking.public_fields.some(
+        (field) => field.target === "booking" && field.derived,
+      ),
+    ).toBe(true);
     expect(model.bookings.booking).not.toHaveProperty("endpoint");
     expect(model.preorders).toEqual({});
   });
