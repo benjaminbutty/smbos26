@@ -1,7 +1,7 @@
 # Lenni Journey 1 — Final Report
 
 Date: 16 August 2026  
-Status: Implementation complete; final closeout PR pending normal merge  
+Status: Complete; J1-E merged normally
 Scope: Journey 1 only
 
 ## Verdict
@@ -21,7 +21,7 @@ copied into the Business.
 ## Baselines and merge ledger
 
 Post-hygiene baseline: `5079100f653ae8e8ecf378b32eb444d42e2e9ea3`  
-Final main SHA: updated in the closeout ledger after the normal J1-E merge
+Final main SHA for the Journey 1 implementation: `161ba9d5e3f2f1a46d11a48275d23a357e3e6a47`
 
 | Checkpoint | PR | Normal merge commit | Result |
 | --- | --- | --- | --- |
@@ -30,7 +30,7 @@ Final main SHA: updated in the closeout ledger after the normal J1-E merge
 | J1-B acquisition conversation | #51 | `21c29bf9ca0b91fd18c86c8afbb7ca2ba9ec868a` | Merged; exact-head CI green |
 | J1-C interactive preview | #52 | `b2744b0b3e932a621d56c639e0b174ec5decdff5` | Merged; exact-head CI green |
 | J1-D claim, Home and Sites | #53 | `af4b0579a687339a3e409d1b818b477c765cfae4` | Merged; corrected exact-head CI green |
-| J1-E final acceptance | #54 | Recorded after merge | This closeout branch |
+| J1-E final acceptance | #54 | `161ba9d5e3f2f1a46d11a48275d23a357e3e6a47` | Merged; exact-head run `31932152134` green |
 
 ## Durable changes
 
