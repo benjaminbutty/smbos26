@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import type { DirectPageActionResult } from "../pages/direct-actions";
 
@@ -33,6 +39,7 @@ export function PagesSidebar({
   const [message, setMessage] = useState<string | null>(null);
   const requestedOpen = useSearchParams().get("new") === "page";
   const [open, setOpen] = useState(requestedOpen);
+  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!requestedOpen) return;
@@ -41,6 +48,32 @@ export function PagesSidebar({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [requestedOpen]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+      }
+    };
+    const closeOnOutsidePointer = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        sectionRef.current &&
+        !sectionRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -67,6 +100,7 @@ export function PagesSidebar({
     <section
       aria-labelledby={`${routeSegment}-navigation-heading`}
       className="sidebar-section"
+      ref={sectionRef}
     >
       <div className="sidebar-section-heading">
         <h2 id={`${routeSegment}-navigation-heading`}>{heading}</h2>

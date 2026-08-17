@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import type {
   TableViewConfigV2,
@@ -269,6 +269,33 @@ export function TableViewControls({
   const [groupOption, setGroupOption] = useState(() =>
     optionForQueryProperty(config.group, options),
   );
+  const controlsRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+      }
+    };
+    const closeOnOutsidePointer = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        controlsRef.current &&
+        !controlsRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!selectedProperty || selectedProperty.kind !== "connection") {
@@ -380,7 +407,11 @@ export function TableViewControls({
   )?.label;
 
   return (
-    <section aria-label="Saved view controls" className="table-view-controls">
+    <section
+      aria-label="Saved view controls"
+      className="table-view-controls"
+      ref={controlsRef}
+    >
       <div className="table-view-query-summary">
         {currentness ? (
           <button
