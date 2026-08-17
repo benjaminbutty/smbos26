@@ -133,8 +133,10 @@ describe("Phase 5 tailored acquisition composition", () => {
         absent,
       );
       expect(payload.proposal.source).toBe("tailored");
-      expect(payload.proposal.landing_page_key).toBe("overview");
-      expect(payload.operations.some(({ op }) => op === "set_page")).toBe(true);
+      expect(payload.proposal.landing_page_key).toBeNull();
+      expect(payload.operations.some(({ op }) => op === "set_page")).toBe(
+        false,
+      );
       expect(JSON.stringify(payload.operations)).not.toContain("location");
       expect(
         payload.operations.some(
@@ -149,7 +151,7 @@ describe("Phase 5 tailored acquisition composition", () => {
     expect(detectGroundedCurrency("A salon in London.")).toBeNull();
   });
 
-  it("turns tailored Connections into visible columns on both Tables", async () => {
+  it("keeps tailored Connections in the proposal and does not synthesize a Page", async () => {
     const payload = await interpretAcquisitionRequest(
       "delivery",
       "I need customers, orders and order items connected.",
@@ -175,13 +177,11 @@ describe("Phase 5 tailored acquisition composition", () => {
       );
     }
 
-    const page = payload.operations.find(
-      (operation) => operation.op === "set_page",
-    );
-    expect(page?.op === "set_page" ? page.layout_json : null).toMatchObject({
-      blocks: expect.arrayContaining([
-        expect.objectContaining({ type: "heading", text: "Start here" }),
+    expect(payload.proposal.connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Orders belong to Customers." }),
       ]),
-    });
+    );
+    expect(payload.operations.some(({ op }) => op === "set_page")).toBe(false);
   });
 });

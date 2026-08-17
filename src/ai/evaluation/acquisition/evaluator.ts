@@ -162,8 +162,11 @@ export function evaluateAcquisitionScenario(
   ) {
     hard_findings.push("technical_owner_language");
   }
-  if (payload.proposal.landing_page_key !== "overview") {
-    hard_findings.push("landing_page_not_overview");
+  if (
+    payload.proposal.pages.length === 0 &&
+    payload.proposal.landing_page_key !== null
+  ) {
+    hard_findings.push("landing_page_without_page");
   }
   if (
     payload.operations.some((operation) =>

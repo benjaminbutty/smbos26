@@ -29,6 +29,7 @@ import {
   acquisitionProposalSchema,
   acquisitionRequestSchema,
 } from "./schemas";
+import { validateAcquisitionCandidate } from "./quality";
 
 export const ACQUISITION_MAX_OBJECTS = 6;
 export const ACQUISITION_MAX_FIELDS_PER_OBJECT = 12;
@@ -104,7 +105,6 @@ function composeDraft(plan: AcquisitionReadyPlan) {
     ...(plan.connections.length ? ["define_relationship"] : []),
     "configure_form",
     "configure_view",
-    "configure_page",
   ] as const;
   const step = (category: string) =>
     `step_${categories.indexOf(category as never) + 1}`;
@@ -178,7 +178,6 @@ function composeDraft(plan: AcquisitionReadyPlan) {
   });
   const formRef = (index: number, edit: boolean) =>
     `draft_form_${index * 2 + (edit ? 2 : 1)}`;
-  const firstStep = `Add your first real ${plan.tables[0]!.singular_name.toLocaleLowerCase("en")}.`;
   const draft = builderConfigurationDraftOutputSchema.parse({
     schema_version: 1,
     summary: plan.why,
@@ -249,30 +248,7 @@ function composeDraft(plan: AcquisitionReadyPlan) {
         },
       },
     })),
-    pages: [
-      {
-        reference: "draft_page_1",
-        source_step_references: [step("configure_page")],
-        title: "Overview",
-        audience: "internal",
-        blocks: [
-          { type: "heading", text: "Overview", level: 1 },
-          { type: "heading", text: "Start here", level: 2 },
-          { type: "text", text: firstStep },
-          ...plan.connections.map(({ explanation }) => ({
-            type: "text" as const,
-            text: explanation,
-          })),
-          {
-            type: "view",
-            view_reference: {
-              source: "draft",
-              view_reference: `draft_view_${tableIndex(plan.primary_table_reference) + 1}`,
-            },
-          },
-        ],
-      },
-    ],
+    pages: [],
   });
   return { readyPlan, draft };
 }
@@ -443,14 +419,8 @@ export async function interpretAcquisitionRequest(
       name: table.plural_name,
       description: `A practical saved view of ${table.plural_name.toLocaleLowerCase("en")}.`,
     })),
-    pages: [
-      {
-        name: "Overview",
-        description:
-          "An internal starting page with a live saved view for everyday work.",
-      },
-    ],
-    landing_page_key: "overview",
+    pages: [],
+    landing_page_key: null,
     first_step: firstStep,
     not_included: [
       ...new Set([
@@ -459,5 +429,7 @@ export async function interpretAcquisitionRequest(
       ]),
     ].slice(0, 8),
   });
-  return acquisitionBuildPayloadSchema.parse({ proposal, operations });
+  return validateAcquisitionCandidate(
+    acquisitionBuildPayloadSchema.parse({ proposal, operations }),
+  );
 }

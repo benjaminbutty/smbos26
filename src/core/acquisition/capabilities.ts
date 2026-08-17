@@ -254,10 +254,8 @@ function appendRelationship(
   const existing = operations.find(
     (operation): operation is RelationshipOperation =>
       operation.op === "set_relationship" &&
-      ((operation.source_object_key === source.object.key &&
-        operation.target_object_key === target.object.key) ||
-        (operation.source_object_key === target.object.key &&
-          operation.target_object_key === source.object.key)),
+      operation.source_object_key === source.object.key &&
+      operation.target_object_key === target.object.key,
   );
   if (existing) return existing;
 

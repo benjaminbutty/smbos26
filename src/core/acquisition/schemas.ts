@@ -46,6 +46,16 @@ const proposalViewSchema = z
   })
   .strict();
 
+export const acquisitionRefinementSummarySchema = z
+  .object({
+    headline: z.string().trim().min(1).max(240),
+    added: z.array(z.string().trim().min(1).max(160)).max(12),
+    updated: z.array(z.string().trim().min(1).max(160)).max(12),
+    removed: z.array(z.string().trim().min(1).max(160)).max(12),
+    preserved: z.array(z.string().trim().min(1).max(160)).max(12),
+  })
+  .strict();
+
 export const acquisitionProposalSchema = z
   .object({
     schema_version: z.literal(1),
@@ -57,14 +67,21 @@ export const acquisitionProposalSchema = z
     concepts: z.array(proposalConceptSchema).min(1).max(6),
     connections: z.array(proposalConnectionSchema).max(10),
     views: z.array(proposalViewSchema).min(1).max(8),
-    pages: z.array(proposalPageSchema).min(1).max(3),
-    landing_page_key: z.string().regex(/^[a-z][a-z0-9_]{0,79}$/),
+    pages: z.array(proposalPageSchema).max(3),
+    landing_page_key: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]{0,79}$/)
+      .nullable(),
     first_step: z.string().trim().min(1).max(300),
     not_included: z.array(z.string().trim().min(1).max(160)).max(8),
+    refinement_summary: acquisitionRefinementSummarySchema.optional(),
   })
   .strict();
 
 export type AcquisitionProposal = z.infer<typeof acquisitionProposalSchema>;
+export type AcquisitionRefinementSummary = z.infer<
+  typeof acquisitionRefinementSummarySchema
+>;
 
 /**
  * The proposal is the only part of this payload that reaches the browser.

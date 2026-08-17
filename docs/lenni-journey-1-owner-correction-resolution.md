@@ -115,3 +115,21 @@ network-free CI remains the default.
   migration immutability, typecheck/lint/build, security checks, exact-head CI,
   and final owner handoff.
 
+## R1 implementation checkpoint
+
+R1 implements the bounded acquisition correction without adding an AI subject:
+
+- `src/core/acquisition/refinement.ts` reconciles a generated suggestion against
+  the current candidate, preserves unrelated operations, limits deletion to
+  explicit owner selectors, and emits an owner-readable change summary.
+- `src/core/acquisition/quality.ts` validates generic Object/Field/Connection,
+  View/Form/Page, and Booking mapping invariants before a candidate is written.
+- `src/core/acquisition/capabilities.ts` now keeps relationship direction
+  explicit when adding reusable Booking Connections.
+- Acquisition tests cover zero-Page candidates, quality rejection cases,
+  valid Booking mappings, preservation, explicit removal, and refinement
+  feedback without prompt-marker leakage.
+
+R1 local evidence: the focused acquisition suite passes 67 tests and
+`npm run typecheck` passes. The checkpoint is still pending remote PR/CI
+publication because the configured local GitHub CLI token is invalid.

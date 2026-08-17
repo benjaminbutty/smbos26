@@ -55,6 +55,42 @@ export function AcquisitionProposalCard({
         ) : null}
       </div>
 
+      {proposal.refinement_summary ? (
+        <section
+          aria-labelledby="acquisition-refinement-summary-title"
+          className="acquisition-refinement-summary"
+        >
+          <p
+            className="acquisition-section-label"
+            id="acquisition-refinement-summary-title"
+          >
+            What changed
+          </p>
+          <p>{proposal.refinement_summary.headline}</p>
+          <div className="acquisition-refinement-summary-grid">
+            {(
+              [
+                ["Added", proposal.refinement_summary.added],
+                ["Updated", proposal.refinement_summary.updated],
+                ["Removed", proposal.refinement_summary.removed],
+                ["Kept", proposal.refinement_summary.preserved],
+              ] as const
+            ).map(([label, items]) =>
+              items.length > 0 ? (
+                <div key={label}>
+                  <strong>{label}</strong>
+                  <ul>
+                    {items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null,
+            )}
+          </div>
+        </section>
+      ) : null}
+
       <section
         aria-labelledby="proposal-understanding-heading"
         className="acquisition-understanding"
