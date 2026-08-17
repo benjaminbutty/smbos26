@@ -25,7 +25,7 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
   "Put requested unavailable capabilities in unsupported_requirements and still plan the useful internal part.",
   "Do not create a currency Field when grounded_currency is null. If it is present, use only that exact currency later in drafting.",
   "Write understanding, why, labels and purposes in ordinary owner language without platform terms such as Object, Field, schema, UUID, JSON, database or cardinality.",
-  "Use table_N references only to connect business areas and choose one primary business area for a neutral Overview page.",
+  "Use table_N references only to connect business areas and choose one primary business area; do not invent an Overview Page or generic schema documentation.",
   "Every business area needs useful information. Choice and status properties require options; other properties use null options. Currency is null unless grounded_currency supplies the exact currency.",
   "Never output SQL, code, tools, IDs, database access, configuration operations, Apply, Publish or mutation instructions.",
 ].join(" ");

@@ -3,16 +3,11 @@ import {
   setFieldOperationSchema,
   setFormOperationSchema,
   setObjectOperationSchema,
-  setPageOperationSchema,
   setRelationshipOperationSchema,
   setViewOperationSchema,
   type ConfigurationOperation,
 } from "../configuration/schemas";
-import {
-  formConfigSchema,
-  pageLayoutSchema,
-  parseViewConfig,
-} from "../experience/schemas";
+import { formConfigSchema, parseViewConfig } from "../experience/schemas";
 import type { Json } from "../../db/supabase/database.types";
 import {
   acquisitionBuildPayloadSchema,
@@ -26,6 +21,7 @@ import {
   deriveAcquisitionConnectionLabels,
   type AcquisitionConnectionLabels,
 } from "./connection-labels";
+import { validateAcquisitionCandidate } from "./quality";
 
 type FieldOperation = Extract<ConfigurationOperation, { op: "set_field" }>;
 type ConnectionColumn = {
@@ -700,36 +696,6 @@ function viewOperation(
   });
 }
 
-function pageOperation(definition: StarterDefinition): ConfigurationOperation {
-  return setPageOperationSchema.parse({
-    op: "set_page",
-    key: "overview",
-    title: "Overview",
-    slug: "overview",
-    audience: "internal",
-    layout_json: pageLayoutSchema.parse({
-      blocks: [
-        { type: "heading", text: "Overview", level: 1 },
-        { type: "heading", text: "Start here", level: 2 },
-        { type: "text", text: definition.firstStep },
-        {
-          type: "heading",
-          text: "How the parts fit together",
-          level: 3,
-        },
-        ...definition.relationships.map(({ text }) => ({
-          type: "text" as const,
-          text,
-        })),
-        { type: "text", text: definition.workPageText },
-        { type: "view", view_key: `${definition.workObjectKey}_view` },
-      ],
-    }),
-    status: "published",
-    is_active: true,
-  });
-}
-
 function composeOperations(
   definition: StarterDefinition,
 ): ConfigurationOperation[] {
@@ -816,8 +782,6 @@ function composeOperations(
       viewOperation(object, keys.create, keys.edit, relationshipLabels),
     );
   }
-  operations.push(pageOperation(definition));
-
   return configurationOperationsSchema.parse(operations);
 }
 
@@ -852,18 +816,15 @@ export function composeStarterComposition(
           : `All ${object.plural_label.toLocaleLowerCase("en")}`,
       description: `A practical view of ${object.plural_label.toLocaleLowerCase("en")}.`,
     })),
-    pages: [
-      {
-        name: "Overview",
-        description: `A useful place to see ${definition.workViewLabel.toLocaleLowerCase("en")} and add real work.`,
-      },
-    ],
-    landing_page_key: "overview",
+    pages: [],
+    landing_page_key: null,
     first_step: definition.firstStep,
     not_included: definition.notIncluded,
   });
 
-  return acquisitionBuildPayloadSchema.parse({ proposal, operations });
+  return validateAcquisitionCandidate(
+    acquisitionBuildPayloadSchema.parse({ proposal, operations }),
+  );
 }
 
 export function starterDefinitionForCategory(

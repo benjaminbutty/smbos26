@@ -271,4 +271,34 @@ describe("Page grammar and direct Workspace composer", () => {
       }),
     ).toThrowError(DirectPageComposerError);
   });
+
+  it("applies the bounded Page mutation boundary to public Sites", () => {
+    const publicSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          key: "public_site",
+          title: "Public site",
+          slug: "public-site",
+          audience: "public",
+        },
+      ],
+    };
+
+    const result = composeDirectPageAction(publicSnapshot, {
+      action: "rename_page",
+      pageKey: "public_site",
+      title: "Book with us",
+    });
+
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        op: "set_page",
+        key: "public_site",
+        audience: "public",
+        title: "Book with us",
+      }),
+    ]);
+  });
 });

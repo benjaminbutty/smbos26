@@ -29,7 +29,7 @@ describe("Phase 5 starter compositions", () => {
       expect(createdObjects).toEqual(objectKeys);
       expect(
         parsed.operations.some((operation) => operation.op === "set_page"),
-      ).toBe(true);
+      ).toBe(false);
       expect(
         parsed.operations.some((operation) => operation.op === "set_view"),
       ).toBe(true);
@@ -54,7 +54,7 @@ describe("Phase 5 starter compositions", () => {
       expect(parsed.proposal.understanding).toContain(
         "couldn’t tailor this right now",
       );
-      expect(parsed.proposal.landing_page_key).toBe("overview");
+      expect(parsed.proposal.landing_page_key).toBeNull();
       expect(
         parsed.operations.filter(
           (operation) =>
@@ -176,7 +176,7 @@ describe("Phase 5 starter compositions", () => {
     );
   });
 
-  it("uses a truthful neutral Overview page and unfiltered view names", () => {
+  it("does not synthesize an Overview Page or filtered view names", () => {
     for (const category of [
       "appointments",
       "delivery",
@@ -186,41 +186,26 @@ describe("Phase 5 starter compositions", () => {
       "other",
     ] as const) {
       const result = composeStarterComposition(category, request);
-      expect(result.proposal.pages[0]?.name).toBe("Overview");
+      expect(result.proposal.pages).toEqual([]);
       expect(JSON.stringify(result.proposal.views)).not.toMatch(/today/i);
       expect(
-        result.operations.find((operation) => operation.op === "set_page"),
-      ).toMatchObject({ key: "overview", slug: "overview", title: "Overview" });
+        result.operations.some((operation) => operation.op === "set_page"),
+      ).toBe(false);
     }
   });
 
-  it("puts starter relationship explanations and first-use guidance on Overview", () => {
+  it("keeps relationship explanations in the owner proposal without a default Page", () => {
     const result = composeStarterComposition("delivery", request);
-    const page = result.operations.find(
-      (operation) => operation.op === "set_page",
-    );
-    const blocks = page?.op === "set_page" ? page.layout_json.blocks : [];
-    const pageText = blocks
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join(" ");
-
-    expect(pageText).toContain(
-      "Create an order, add an order item for each product with its quantity, then add a delivery linked to that order.",
-    );
-    expect(pageText).toContain("Customers place orders.");
-    expect(pageText).toContain("Orders contain order items.");
-    expect(pageText).toContain(
-      "Order items refer to products, with quantity kept on each order item.",
-    );
-    expect(pageText).toContain("Deliveries belong to orders.");
-    expect(blocks).toEqual(
+    expect(result.proposal.connections.map(({ text }) => text)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          type: "heading",
-          text: "How the parts fit together",
-        }),
+        "Customers place orders.",
+        "Orders contain order items.",
+        "Order items refer to products, with quantity kept on each order item.",
+        "Deliveries belong to orders.",
       ]),
     );
+    expect(
+      result.operations.some((operation) => operation.op === "set_page"),
+    ).toBe(false);
   });
 });

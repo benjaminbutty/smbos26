@@ -203,7 +203,7 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     );
   });
 
-  it("claims a proposal atomically and applies the generated Page/runtime configuration", async () => {
+  it("claims a proposal atomically and applies the generated graph/runtime configuration", async () => {
     const payload = composeStarterComposition(
       "appointments",
       "I need customers, appointments and services.",
@@ -241,36 +241,12 @@ describe("Phase 5 anonymous acquisition boundary", () => {
       "service",
     ]);
 
-    const page = await owner
+    const pages = await owner
       .from("pages")
-      .select("slug, title, audience, status, layout_json")
-      .eq("business_id", business.id)
-      .eq("slug", "overview")
-      .single();
-    expect(page.error).toBeNull();
-    expect(page.data).toMatchObject({
-      audience: "internal",
-      slug: "overview",
-      status: "published",
-      title: "Overview",
-    });
-    expect(page.data?.layout_json).toMatchObject({
-      blocks: expect.arrayContaining([
-        expect.objectContaining({ type: "view", view_key: "appointment_view" }),
-        expect.objectContaining({ type: "heading", text: "Start here" }),
-      ]),
-    });
-
-    const pageBlocks = (
-      page.data?.layout_json as {
-        blocks?: Array<{ type: string; text?: string }>;
-      }
-    ).blocks;
-    expect(
-      pageBlocks?.findIndex((block) => block.text === "Start here"),
-    ).toBeLessThan(
-      pageBlocks?.findIndex((block) => block.type === "view") ?? -1,
-    );
+      .select("id")
+      .eq("business_id", business.id);
+    expect(pages.error).toBeNull();
+    expect(pages.data).toHaveLength(0);
 
     const customerAvailability = await getDirectTableRowCreationAvailability(
       owner,

@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import type { DirectPageActionResult } from "../pages/direct-actions";
 import type {
@@ -10,11 +17,14 @@ import type {
   DirectPageCurrentness,
   DirectPageIntent,
 } from "../../core/configuration/direct-pages/schemas";
+import type { PublicBookingCatalogue } from "../../core/booking/schemas";
+import type { ExperienceFormBundle } from "../../core/experience/service";
 import type { PageBlock, PageLayout } from "../../core/experience/schemas";
 import { experienceKeyToPath } from "../routing";
 import { ProductionTableWorkspace } from "../editor-kernel/production/production-table-workspace";
 import type { EditorCapabilities } from "../editor-kernel/contracts";
 import type { PageEditorViewEmbed } from "./extensions";
+import { PageRenderer } from "../pages/page-renderer";
 import {
   groupPageViewsByTable,
   selectPageView,
@@ -53,6 +63,11 @@ export interface PageEditorProps {
   availableViews: readonly PageViewOption[];
   applyPageBlockAction: ApplyPageBlockAction;
   renamePageAction: RenamePageAction;
+  previewBookings?: Readonly<
+    Record<string, { catalogue: PublicBookingCatalogue }>
+  >;
+  previewForms?: Readonly<Record<string, { bundle: ExperienceFormBundle }>>;
+  siteMode?: boolean;
 }
 
 type EditorSaveStatus = "saved" | "saving" | "stale" | "error";
@@ -248,6 +263,8 @@ function PageBlockView({
   businessSlug,
   editing,
   embed,
+  previewBookings,
+  previewForms,
   onCancel,
   onChange,
   onEdit,
@@ -257,6 +274,10 @@ function PageBlockView({
   businessSlug: string;
   editing: BlockDraft | null;
   embed: PageEditorViewEmbed | undefined;
+  previewBookings: Readonly<
+    Record<string, { catalogue: PublicBookingCatalogue }>
+  >;
+  previewForms: Readonly<Record<string, { bundle: ExperienceFormBundle }>>;
   onCancel: () => void;
   onChange: (value: string) => void;
   onEdit: () => void;
@@ -378,8 +399,26 @@ function PageBlockView({
         </p>
       );
     case "form":
-    case "public_form":
+    case "public_form": {
+      const publicMode = block.type === "public_form";
+      return (
+        <PageRenderer
+          forms={previewForms}
+          layout={{ blocks: [block] }}
+          previewMode
+          publicMode={publicMode}
+        />
+      );
+    }
     case "booking":
+      return (
+        <PageRenderer
+          bookings={previewBookings}
+          layout={{ blocks: [block] }}
+          previewMode
+          publicMode
+        />
+      );
     case "preorder":
       return (
         <div className="page-editor-legacy-inline" role="status">
@@ -397,11 +436,15 @@ export function PageEditor({
   currentness,
   layout: initialLayout,
   pageKey,
+  previewBookings = {},
+  previewForms = {},
   renamePageAction,
+  siteMode = false,
   title: initialTitle,
   views,
 }: Readonly<PageEditorProps>): ReactNode {
   const router = useRouter();
+  const insertShellRef = useRef<HTMLDivElement>(null);
   const pageViewTables = useMemo(
     () => groupPageViewsByTable(availableViews),
     [availableViews],
@@ -429,6 +472,32 @@ export function PageEditor({
     selectedTable,
     selectedViewKey,
   );
+
+  useEffect(() => {
+    if (addMenu === "closed") return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setAddMenu("closed");
+      }
+    };
+    const closeOnOutsidePointer = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        insertShellRef.current &&
+        !insertShellRef.current.contains(target)
+      ) {
+        setAddMenu("closed");
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [addMenu]);
 
   const runStructureAction = async (
     intent: PageBlockIntent,
@@ -574,11 +643,11 @@ export function PageEditor({
     <section className="page-editor-shell">
       <header className="page-editor-header">
         <div>
-          <p className="eyebrow">Page</p>
+          <p className="eyebrow">{siteMode ? "Site" : "Page"}</p>
           {renaming ? (
             <form className="page-editor-title-form" onSubmit={rename}>
               <input
-                aria-label="Page name"
+                aria-label={`${siteMode ? "Site" : "Page"} name`}
                 autoFocus
                 maxLength={120}
                 onChange={(event) => setTitleDraft(event.currentTarget.value)}
@@ -600,7 +669,7 @@ export function PageEditor({
             </form>
           ) : (
             <button
-              aria-label="Rename Page"
+              aria-label={`Rename ${siteMode ? "Site" : "Page"}`}
               className="page-editor-title-button"
               onClick={() => setRenaming(true)}
               type="button"
@@ -634,146 +703,157 @@ export function PageEditor({
         </p>
       ) : null}
 
-      <div className="page-editor-controls">
-        <button
-          aria-controls="page-editor-add-menu"
-          aria-expanded={addMenu !== "closed"}
-          className="button button-secondary"
-          onClick={() =>
-            setAddMenu((value) => (value === "blocks" ? "closed" : "blocks"))
-          }
-          type="button"
-        >
-          + Add block
-        </button>
-        <span className="page-editor-add-hint">Press / to add</span>
-      </div>
-
-      {addMenu !== "closed" ? (
-        <div
-          aria-label="Add to Page"
-          className="page-editor-insert-menu"
-          id="page-editor-add-menu"
-          role="menu"
-        >
-          {addMenu === "blocks" ? (
-            <>
-              <div className="page-editor-insert-menu-heading">Add block</div>
-              <button
-                onClick={() =>
-                  void addBlock({
-                    type: "heading",
-                    text: "New heading",
-                    level: 2,
-                  })
-                }
-                type="button"
-              >
-                Heading
-              </button>
-              <button
-                onClick={() =>
-                  void addBlock({ type: "text", text: "Start writing…" })
-                }
-                type="button"
-              >
-                Text
-              </button>
-              <button
-                onClick={() => {
-                  const table =
-                    pageViewTables.find((candidate) =>
-                      candidate.views.some(
-                        (view) => view.key === effectiveSelectedViewKey,
-                      ),
-                    ) ?? pageViewTables[0];
-                  const selection = selectPageViewTable(
-                    pageViewTables,
-                    table?.key ?? "",
-                  );
-                  setSelectedTableKey(selection.tableKey);
-                  setSelectedViewKey(selection.viewKey);
-                  setAddMenu("views");
-                }}
-                type="button"
-              >
-                Saved View
-              </button>
-            </>
-          ) : (
-            <form
-              className="page-editor-view-chooser"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (effectiveSelectedViewKey) {
-                  void addBlock({
-                    type: "view",
-                    viewKey: effectiveSelectedViewKey,
-                  });
-                }
-              }}
-            >
-              <div className="page-editor-insert-menu-heading">
-                Add saved View
-              </div>
-              <label>
-                Table
-                <select
-                  aria-label="Table"
-                  onChange={(event) => {
-                    const selection = selectPageViewTable(
-                      pageViewTables,
-                      event.currentTarget.value,
-                    );
-                    setSelectedTableKey(selection.tableKey);
-                    setSelectedViewKey(selection.viewKey);
-                  }}
-                  value={selectedTable?.key ?? ""}
-                >
-                  {pageViewTables.map((table) => (
-                    <option key={table.key} value={table.key}>
-                      {table.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Saved View
-                <select
-                  aria-label="Saved View"
-                  disabled={!selectedTable}
-                  onChange={(event) =>
-                    setSelectedViewKey(
-                      selectPageView(selectedTable, event.currentTarget.value),
-                    )
-                  }
-                  value={effectiveSelectedViewKey}
-                >
-                  {selectedTable?.views.map((view) => (
-                    <option key={view.key} value={view.key}>
-                      {view.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                className="button button-small"
-                disabled={!effectiveSelectedViewKey}
-                type="submit"
-              >
-                Add to Page
-              </button>
-              <button
-                className="button button-secondary button-small"
-                onClick={() => setAddMenu("blocks")}
-                type="button"
-              >
-                Back
-              </button>
-            </form>
-          )}
+      <div className="page-editor-insert-shell" ref={insertShellRef}>
+        <div className="page-editor-controls">
+          <button
+            aria-controls="page-editor-add-menu"
+            aria-expanded={addMenu !== "closed"}
+            className="button button-secondary"
+            onClick={() =>
+              setAddMenu((value) => (value === "blocks" ? "closed" : "blocks"))
+            }
+            type="button"
+          >
+            + Add block
+          </button>
+          <span className="page-editor-add-hint">
+            {siteMode
+              ? "Edit content and order; preview matches the customer Site."
+              : "Press / to add"}
+          </span>
         </div>
-      ) : null}
+
+        {addMenu !== "closed" ? (
+          <div
+            aria-label={`Add to ${siteMode ? "Site" : "Page"}`}
+            className="page-editor-insert-menu"
+            id="page-editor-add-menu"
+            role="menu"
+          >
+            {addMenu === "blocks" ? (
+              <>
+                <div className="page-editor-insert-menu-heading">Add block</div>
+                <button
+                  onClick={() =>
+                    void addBlock({
+                      type: "heading",
+                      text: "New heading",
+                      level: 2,
+                    })
+                  }
+                  type="button"
+                >
+                  Heading
+                </button>
+                <button
+                  onClick={() =>
+                    void addBlock({ type: "text", text: "Start writing…" })
+                  }
+                  type="button"
+                >
+                  Text
+                </button>
+                {!siteMode ? (
+                  <button
+                    onClick={() => {
+                      const table =
+                        pageViewTables.find((candidate) =>
+                          candidate.views.some(
+                            (view) => view.key === effectiveSelectedViewKey,
+                          ),
+                        ) ?? pageViewTables[0];
+                      const selection = selectPageViewTable(
+                        pageViewTables,
+                        table?.key ?? "",
+                      );
+                      setSelectedTableKey(selection.tableKey);
+                      setSelectedViewKey(selection.viewKey);
+                      setAddMenu("views");
+                    }}
+                    type="button"
+                  >
+                    Saved View
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <form
+                className="page-editor-view-chooser"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (effectiveSelectedViewKey) {
+                    void addBlock({
+                      type: "view",
+                      viewKey: effectiveSelectedViewKey,
+                    });
+                  }
+                }}
+              >
+                <div className="page-editor-insert-menu-heading">
+                  Add saved View
+                </div>
+                <label>
+                  Table
+                  <select
+                    aria-label="Table"
+                    onChange={(event) => {
+                      const selection = selectPageViewTable(
+                        pageViewTables,
+                        event.currentTarget.value,
+                      );
+                      setSelectedTableKey(selection.tableKey);
+                      setSelectedViewKey(selection.viewKey);
+                    }}
+                    value={selectedTable?.key ?? ""}
+                  >
+                    {pageViewTables.map((table) => (
+                      <option key={table.key} value={table.key}>
+                        {table.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Saved View
+                  <select
+                    aria-label="Saved View"
+                    disabled={!selectedTable}
+                    onChange={(event) =>
+                      setSelectedViewKey(
+                        selectPageView(
+                          selectedTable,
+                          event.currentTarget.value,
+                        ),
+                      )
+                    }
+                    value={effectiveSelectedViewKey}
+                  >
+                    {selectedTable?.views.map((view) => (
+                      <option key={view.key} value={view.key}>
+                        {view.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="button button-small"
+                  disabled={!effectiveSelectedViewKey}
+                  type="submit"
+                >
+                  Add to Page
+                </button>
+                <button
+                  className="button button-secondary button-small"
+                  onClick={() => setAddMenu("blocks")}
+                  type="button"
+                >
+                  Back
+                </button>
+              </form>
+            )}
+          </div>
+        ) : null}
+      </div>
 
       <div
         aria-keyshortcuts="/"
@@ -797,8 +877,12 @@ export function PageEditor({
       >
         {layout.blocks.length === 0 ? (
           <div className="page-editor-empty">
-            <strong>Start your Page</strong>
-            <span>Add a heading, a note, or a live saved View.</span>
+            <strong>Start your {siteMode ? "Site" : "Page"}</strong>
+            <span>
+              {siteMode
+                ? "Add a heading or customer-facing text."
+                : "Add a heading, a note, or a live saved View."}
+            </span>
           </div>
         ) : null}
         {layout.blocks.map((block, index) => {
@@ -842,6 +926,8 @@ export function PageEditor({
                   embed={
                     block.type === "view" ? views[block.view_key] : undefined
                   }
+                  previewBookings={previewBookings}
+                  previewForms={previewForms}
                   onEdit={() => startEditing(block)}
                   onCancel={() => setEditing(null)}
                   onChange={(text) =>
@@ -934,8 +1020,9 @@ export function PageEditor({
       </div>
 
       <p className="page-editor-footer">
-        Pages bring guidance and live saved Views together. Record edits remain
-        operational and use the same Table workspace.
+        {siteMode
+          ? "Site edits use the same Page structure as the customer preview. Publishing remains a separate reviewed action."
+          : "Pages bring guidance and live saved Views together. Record edits remain operational and use the same Table workspace."}
       </p>
     </section>
   );

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useActionState } from "react";
 
 import type { DirectTableFormState } from "../views/direct-actions";
@@ -32,6 +32,7 @@ export function TablesSidebar({
   const pathname = usePathname();
   const requestedOpen = useSearchParams().get("new") === "table";
   const [open, setOpen] = useState(requestedOpen);
+  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!requestedOpen) return;
@@ -41,10 +42,37 @@ export function TablesSidebar({
     return () => window.cancelAnimationFrame(frame);
   }, [requestedOpen]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOpen(false);
+      }
+    };
+    const closeOnOutsidePointer = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        sectionRef.current &&
+        !sectionRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
+
   return (
     <section
       aria-labelledby="tables-navigation-heading"
       className="sidebar-section"
+      ref={sectionRef}
     >
       <div className="sidebar-section-heading">
         <h2 id="tables-navigation-heading">Tables</h2>

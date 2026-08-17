@@ -21,6 +21,8 @@ import { candidateChecksum } from "./preview";
 import { composeStarterComposition } from "./composer";
 import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
+import { validateAcquisitionCandidate } from "./quality";
+import { reconcileAcquisitionRefinement } from "./refinement";
 import {
   acquisitionBuildPayloadSchema,
   acquisitionCategorySchema,
@@ -341,28 +343,34 @@ export async function refineAcquisitionProposal(
   const originalRequest = acquisitionRequestSchema.parse(
     session.row.request_text,
   );
-  const assessment = assessAcquisitionClarifications(
-    category,
-    originalRequest,
-    session.clarification,
-  );
   const reservation = await reserveAttempt(category);
-  const request =
-    `${originalRequest.slice(0, 3_400)} Owner refinement: ${refinement}`
-      .replace(/\s+/g, " ")
-      .slice(0, 4_000);
-  const payload = await generateCandidate(
+  const request = `${originalRequest.slice(0, 3_400)}
+
+Owner-requested adjustment: ${refinement}`
+    .replace(/\s+/g, " ")
+    .slice(0, 4_000);
+  const refinementAssessment = assessAcquisitionClarifications(
     category,
     request,
-    assessment.decisions,
+    session.clarification,
+  );
+  const suggestedPayload = await generateCandidate(
+    category,
+    request,
+    refinementAssessment.decisions,
+  );
+  const payload = reconcileAcquisitionRefinement(
+    session.payload,
+    suggestedPayload,
+    refinement,
   );
   await writeProposal({
     sessionId: reservation.session_id,
     attemptNumber: reservation.attempt_number,
     category,
-    request,
+    request: originalRequest,
     payload,
-    clarification: assessment.state,
+    clarification: refinementAssessment.state,
   });
   emitAcquisitionEvent("proposal_regenerated", {
     category,
@@ -391,7 +399,20 @@ async function generateCandidate(
     });
     payload = composeStarterComposition(category, request);
   }
-  return enhanceAcquisitionPayload(payload, decisions, request);
+  try {
+    return validateAcquisitionCandidate(
+      enhanceAcquisitionPayload(payload, decisions, request),
+    );
+  } catch {
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    const fallback = composeStarterComposition(category, request);
+    return validateAcquisitionCandidate(
+      enhanceAcquisitionPayload(fallback, decisions, request),
+    );
+  }
 }
 
 async function writeClarificationState(input: {

@@ -110,6 +110,10 @@ async function applyPageIntent(
       { currentness, intent },
     );
     revalidatePath(pagePath(businessSlug, applied.composed.pageSlug), "page");
+    revalidatePath(
+      `/app/${encodeURIComponent(businessSlug)}/sites/${applied.composed.pageSlug}`,
+      "page",
+    );
     revalidatePath(`/app/${encodeURIComponent(businessSlug)}`, "layout");
     return {
       status: "success",
