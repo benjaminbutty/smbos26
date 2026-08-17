@@ -23,7 +23,7 @@ import {
   readSearchParam,
   type SearchParams,
 } from "../../../../../lib/search-params";
-import { preparePublicPagePublicationAction } from "../actions";
+import { publishPublicPageAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -63,6 +63,21 @@ function noticeFor(value: string | undefined): ReactNode {
   }
   if (value === "input_invalid") {
     return <Notice kind="error">Reload this Site and try again.</Notice>;
+  }
+  if (value === "published") {
+    return (
+      <Notice kind="message">
+        This Site is now available to customers at its public URL.
+      </Notice>
+    );
+  }
+  if (value === "publication_failed") {
+    return (
+      <Notice kind="error">
+        This Site could not be published safely. No incomplete publication was
+        left behind.
+      </Notice>
+    );
   }
   return null;
 }
@@ -197,8 +212,10 @@ export default async function SitePage({
             <a
               className="button button-secondary"
               href={publicPath(businessSlug, page.definition.slug)}
+              rel="noopener noreferrer"
+              target="_blank"
             >
-              Open public Site
+              Open live Site ↗
             </a>
           ) : null}
           <Link className="button-link" href={`/app/${businessSlug}`}>
@@ -209,32 +226,17 @@ export default async function SitePage({
 
       {noticeFor(notice)}
 
-      {page.definition.status === "draft" &&
-      canManageConfiguration &&
-      currentness ? (
+      {page.definition.status === "draft" && canManageConfiguration ? (
         <section className="panel compact-panel site-publication-panel">
-          <h2>Review before publishing</h2>
+          <h2>Publish this Site</h2>
           <p className="muted">
-            The preview below is read-only. Publishing is a separate reviewed
-            configuration change; workspace creation has not made this Site
-            public.
+            Review the customer-facing preview below, then make this current
+            Site available at its public URL.
           </p>
-          <form
-            action={preparePublicPagePublicationAction.bind(null, businessSlug)}
-          >
+          <form action={publishPublicPageAction.bind(null, businessSlug)}>
             <input name="pageKey" type="hidden" value={page.definition.key} />
             <input name="pageSlug" type="hidden" value={page.definition.slug} />
-            <input
-              name="expectedBaseVersionId"
-              type="hidden"
-              value={currentness.expectedBaseVersionId}
-            />
-            <input
-              name="expectedHeadRevision"
-              type="hidden"
-              value={currentness.expectedHeadRevision}
-            />
-            <button type="submit">Prepare publication</button>
+            <button type="submit">Publish Site</button>
           </form>
         </section>
       ) : null}
@@ -279,6 +281,7 @@ export default async function SitePage({
             bookings={bookings}
             forms={forms}
             layout={page.layout}
+            pageTitle={page.definition.title}
             previewMode
             publicMode
           />

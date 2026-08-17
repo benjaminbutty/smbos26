@@ -247,6 +247,8 @@ export const publicBookingCatalogueSchema = z.object({
   page: z.object({ title: z.string(), slug: z.string() }),
   booking: z.object({
     key: graphKeySchema,
+    customer_label: labelSchema.default("Customer"),
+    subject_label: labelSchema.nullable().default(null),
     timezone: z.string(),
     schedule: bookingScheduleSchema,
     slots: z.array(publicBookingSlotSchema),

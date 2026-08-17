@@ -317,6 +317,8 @@ describe("Journey 1 public Form and Booking boundaries", () => {
         requested_booking_key: "appointments",
       }),
     );
+    expect(catalogue.booking.customer_label).toBe("Customer");
+    expect(catalogue.booking.subject_label).toBeNull();
     const slot = catalogue.booking.slots[0];
     if (!slot) throw new Error("The Booking resolver returned no slot.");
     const token = crypto.randomUUID();

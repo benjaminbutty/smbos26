@@ -221,9 +221,16 @@ function blockById(
   layout: PageLayout,
   blockId: string,
 ): { block: PageLayout["blocks"][number]; index: number } {
-  const index = layout.blocks.findIndex(
+  let index = layout.blocks.findIndex(
     (candidate) => "id" in candidate && candidate.id === blockId,
   );
+  if (index < 0) {
+    const legacyIndex = /^legacy:(\d+)$/.exec(blockId)?.[1];
+    if (legacyIndex !== undefined) {
+      const parsedIndex = Number(legacyIndex);
+      if (Number.isSafeInteger(parsedIndex)) index = parsedIndex;
+    }
+  }
   const block = layout.blocks[index];
   if (!block) {
     throw new DirectPageComposerError("direct_page_block_not_found");
@@ -355,14 +362,15 @@ function composePageMutation(
     if (block.type !== intent.block.type) {
       throw new DirectPageComposerError("direct_page_block_not_found");
     }
+    const stableId = "id" in block && block.id ? block.id : intent.blockId;
     nextBlocks[index] = {
       ...pageBlockFromInput(intent.block),
-      id: intent.blockId,
+      id: stableId,
     };
   } else if (intent.action === "remove_page_block") {
-    blockById(stableLayout, intent.blockId);
+    const { index } = blockById(stableLayout, intent.blockId);
     nextBlocks = nextBlocks.filter(
-      (candidate) => !("id" in candidate && candidate.id === intent.blockId),
+      (_, candidateIndex) => candidateIndex !== index,
     );
   } else {
     const { index } = blockById(stableLayout, intent.blockId);

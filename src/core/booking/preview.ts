@@ -190,6 +190,21 @@ export async function resolveDraftBooking(
   const timezone = await bookingTimezone(client, input.businessId, config);
   if (!timezone) return null;
 
+  const labelKeys = [
+    config.customer_object_key,
+    ...(config.subject_object_key ? [config.subject_object_key] : []),
+  ];
+  const labelResult = await client
+    .from("object_definitions")
+    .select("key,singular_label")
+    .eq("business_id", input.businessId)
+    .in("key", labelKeys)
+    .eq("is_active", true);
+  if (labelResult.error) throw labelResult.error;
+  const labels = new Map(
+    labelResult.data.map((object) => [object.key, object.singular_label]),
+  );
+
   let services: Array<{ id: string; name: string }> = [];
   if (config.service_object_key && config.field_mappings.service) {
     const objectResult = await client
@@ -224,6 +239,10 @@ export async function resolveDraftBooking(
     page: { title: input.pageTitle, slug: input.pageSlug },
     booking: {
       key: input.bookingKey,
+      customer_label: labels.get(config.customer_object_key) ?? "Customer",
+      subject_label: config.subject_object_key
+        ? (labels.get(config.subject_object_key) ?? "Subject")
+        : null,
       timezone,
       schedule: config.schedule,
       slots: makeSlots(config.schedule, timezone),

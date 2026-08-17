@@ -111,6 +111,7 @@ export default async function StartPage({
         <AcquisitionRefinement
           request={activeSession.row.request_text ?? ""}
           state={activeSession.clarification}
+          successfulRefinements={activeSession.row.successful_refinement_count}
         />
       ) : activeProposal ? (
         <>

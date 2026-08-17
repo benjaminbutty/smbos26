@@ -96,6 +96,79 @@ describe("bounded acquisition refinement", () => {
     expect(() => validateAcquisitionCandidate(result)).not.toThrow();
   });
 
+  it("adds a bounded Connection between existing concepts for the repair-job request", () => {
+    const current = currentPayload();
+    const repairJob: ConfigurationOperation = {
+      op: "set_object",
+      key: "repair_job",
+      singular_label: "Repair job",
+      plural_label: "Repair jobs",
+      description: "The repair work customers ask the business to complete.",
+      icon: null,
+      is_active: true,
+    };
+    const currentWithRepairJobs = {
+      ...current,
+      operations: [...current.operations, repairJob],
+      proposal: {
+        ...current.proposal,
+        concepts: [
+          ...current.proposal.concepts,
+          {
+            name: "Repair jobs",
+            description: repairJob.description,
+            tracked_information: [],
+          },
+        ],
+      },
+    };
+    const suggested = {
+      ...currentWithRepairJobs,
+      operations: [
+        ...currentWithRepairJobs.operations,
+        {
+          op: "set_relationship",
+          key: "customer_has_repair_job",
+          source_object_key: "customer",
+          target_object_key: "repair_job",
+          source_label: "has repair jobs",
+          target_label: "customer",
+          cardinality: "one_to_many",
+          is_required: false,
+          is_active: true,
+        } satisfies ConfigurationOperation,
+      ],
+      proposal: {
+        ...currentWithRepairJobs.proposal,
+        connections: [
+          ...currentWithRepairJobs.proposal.connections,
+          { text: "Customers link directly to repair jobs." },
+        ],
+      },
+    };
+
+    const result = reconcileAcquisitionRefinement(
+      currentWithRepairJobs,
+      suggested,
+      "Customers should also be linked directly to repair jobs.",
+    );
+
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_relationship" &&
+          operation.key === "customer_has_repair_job",
+      ),
+    ).toBe(true);
+    expect(result.proposal.refinement_summary?.added).toContain(
+      "Customer ↔ Repair job",
+    );
+    expect(
+      result.operations.filter((operation) => operation.op === "set_object"),
+    ).toHaveLength(5);
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
   it("revalidates the reconciled candidate before returning", () => {
     const current = currentPayload();
     const invalidField = {

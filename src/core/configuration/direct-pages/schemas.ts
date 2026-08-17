@@ -4,7 +4,13 @@ import { graphKeySchema } from "../../graph/schemas";
 import { pageLayoutSchema } from "../../experience/schemas";
 
 const directPageTitleSchema = z.string().trim().min(1).max(120);
-const directPageBlockIdSchema = z.uuid();
+// Historical Page layouts may predate stable block IDs. The bounded editor
+// uses a position-scoped alias for those blocks until the first mutation
+// persists real UUIDs through the existing configuration change boundary.
+const directPageBlockIdSchema = z.union([
+  z.uuid(),
+  z.string().regex(/^legacy:\d+$/),
+]);
 
 const directPageHeadingBlockSchema = z
   .object({

@@ -118,6 +118,7 @@ export default async function PublicPage({
         bookings={bookings}
         forms={forms}
         layout={runtime.page.layout}
+        pageTitle={runtime.page.title}
         preorders={preorders}
         publicMode
       />

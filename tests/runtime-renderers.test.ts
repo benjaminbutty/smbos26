@@ -518,6 +518,8 @@ describe("generic experience renderers", () => {
               page: { title: "Book a groom", slug: "book" },
               booking: {
                 key: "booking",
+                customer_label: "Customer",
+                subject_label: "Pet",
                 timezone: "Europe/London",
                 schedule: {
                   timezone_source: "business",
@@ -548,7 +550,14 @@ describe("generic experience renderers", () => {
                   {
                     target: "customer",
                     field: "name",
-                    label: "Your name",
+                    label: "Name",
+                    required: true,
+                    derived: false,
+                  },
+                  {
+                    target: "subject",
+                    field: "name",
+                    label: "Name",
                     required: true,
                     derived: false,
                   },
@@ -564,7 +573,8 @@ describe("generic experience renderers", () => {
 
     expect(html).toContain("Explore this Booking Site");
     expect(html).toContain("Full groom");
-    expect(html).toContain("Your name *");
+    expect(html).toContain("Customer name *");
+    expect(html).toContain("Pet name *");
     expect(html).toContain('class="booking-honeypot"');
     expect(html).toContain('name="website"');
     expect(html).toContain('aria-hidden="true"');

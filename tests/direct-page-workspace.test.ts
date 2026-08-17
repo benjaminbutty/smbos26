@@ -244,6 +244,46 @@ describe("Page grammar and direct Workspace composer", () => {
     ]);
   });
 
+  it("supports bounded mutations for historical blocks without IDs", () => {
+    const updated = composeDirectPageAction(snapshot, {
+      action: "update_page_block",
+      pageKey: "workspace",
+      blockId: "legacy:0",
+      block: { type: "heading", text: "Daily work", level: 1 },
+    });
+    const updatedLayout = (updated.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(updatedLayout.blocks[0]).toMatchObject({
+      type: "heading",
+      text: "Daily work",
+      level: 1,
+    });
+    expect(updatedLayout.blocks[0]).toHaveProperty("id");
+
+    const moved = composeDirectPageAction(snapshot, {
+      action: "move_page_block",
+      pageKey: "workspace",
+      blockId: "legacy:1",
+      direction: "up",
+    });
+    const movedLayout = (moved.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(movedLayout.blocks.map((block) => block.type)).toEqual([
+      "view",
+      "heading",
+    ]);
+
+    const removed = composeDirectPageAction(snapshot, {
+      action: "remove_page_block",
+      pageKey: "workspace",
+      blockId: "legacy:1",
+    });
+    const removedLayout = (removed.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(removedLayout.blocks).toHaveLength(1);
+    expect(removedLayout.blocks[0]?.type).toBe("heading");
+  });
+
   it("fails closed when a Page block references an unavailable View", () => {
     expect(() =>
       composeDirectPageAction(snapshot, {
