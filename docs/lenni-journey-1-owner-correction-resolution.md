@@ -171,3 +171,32 @@ R3 removes the remaining generic Overview instruction from the acquisition
 
 R3 local evidence: the focused acquisition/Page/renderer suite passes 61 tests,
 `npm run typecheck`, `npm run lint`, and `git diff --check` pass.
+
+## R4 verification checkpoint
+
+The final verification pass covers the shared runtime and the required owner and
+customer surfaces:
+
+- `npm test`: 84 test files and 860 tests pass.
+- The Journey 1 public capability integration remains green: the anonymous
+  public Form creates one generic Record idempotently, the public Booking
+  resolves real slots and creates the configured graph data idempotently, and
+  forged capability keys plus direct Record reads are rejected.
+- The focused PostgreSQL integration set passes 37 tests across acquisition,
+  Experience, initial preorder/publication, and public capabilities; the RLS
+  suite passes 19 tests.
+- `npm run typecheck`, `npm run lint`, `npm run format:check`,
+  `npm run check:migration-immutability`, local Supabase schema lint, and the
+  production build pass.
+- At 1440x900, 1024x768, and 390x844, authenticated Site editing, the Table
+  workspace, and the public Dogs Booking page render without horizontal
+  overflow. Mobile visual checks retain the bounded Site editor, `Preview
+  Site`, `Add block`, Booking fields, and `Request booking`.
+- The public Dogs Booking honeypot remains in the submitted form boundary but is
+  off-screen, non-focusable, and hidden from the accessibility tree.
+
+The full local integration command passes 25 of 26 files and 260 of 266 tests.
+The sole failure is the pre-existing `ai-accounting.test.ts` expectation that
+every local Business is AI-disabled; the seeded `Workers` fixture has
+`business_ai_settings.is_enabled = true`. The Journey 1 changes do not touch AI
+accounting, and the isolated test reproduces the same fixture-only mismatch.
