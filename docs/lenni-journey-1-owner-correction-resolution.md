@@ -195,8 +195,11 @@ customer surfaces:
 - The public Dogs Booking honeypot remains in the submitted form boundary but is
   off-screen, non-focusable, and hidden from the accessibility tree.
 
-The full local integration command passes 25 of 26 files and 260 of 266 tests.
-The sole failure is the pre-existing `ai-accounting.test.ts` expectation that
-every local Business is AI-disabled; the seeded `Workers` fixture has
-`business_ai_settings.is_enabled = true`. The Journey 1 changes do not touch AI
-accounting, and the isolated test reproduces the same fixture-only mismatch.
+The initial local full integration run was affected by dirty fixture state:
+25 of 26 files passed, 260 of 266 tests passed, 1 failed, and 5 were skipped.
+After the repository-supported clean Supabase reset, the exact
+`ai-accounting.test.ts` command passed 18/18 on both current `main` and this
+feature head. Exact-head CI run `32039549568` then passed the clean full
+PostgreSQL suite with 26/26 files and 261/266 tests passed (5 skipped), plus
+the separate RLS suite with 19/19 tests passed. The fixture failure did not
+reproduce after a clean reset and is not a Journey 1 regression.

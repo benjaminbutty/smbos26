@@ -50,6 +50,65 @@ describe("generic acquisition candidate quality", () => {
     );
   });
 
+  it("rejects semantically redundant identity fields on one Object", () => {
+    const payload = jobsPayload();
+    const dogObject = {
+      ...payload.operations.find((operation) => operation.op === "set_object")!,
+      key: "dog",
+      singular_label: "Dog",
+      plural_label: "Dogs",
+    } satisfies ConfigurationOperation;
+    const dogName = {
+      op: "set_field",
+      object_key: "dog",
+      key: "dog_name",
+      label: "Dog name",
+      field_type: "short_text",
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 0,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+    const genericName = {
+      ...dogName,
+      key: "name",
+      label: "Name",
+      position: 1,
+    };
+    const withRedundantFields = {
+      ...payload,
+      operations: [...payload.operations, dogObject, dogName, genericName],
+    };
+
+    expect(() => validateAcquisitionCandidate(withRedundantFields)).toThrow(
+      /semantically redundant/i,
+    );
+  });
+
+  it("rejects a scalar field that leaks a related Object's value", () => {
+    const payload = jobsPayload();
+    const customerName = {
+      op: "set_field",
+      object_key: "job",
+      key: "customer_name",
+      label: "Customer name",
+      field_type: "short_text",
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 4,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+
+    expect(() =>
+      validateAcquisitionCandidate({
+        ...payload,
+        operations: [...payload.operations, customerName],
+      }),
+    ).toThrow(/cross-object/i);
+  });
+
   it("rejects Forms that leak a Field from another Object", () => {
     const payload = replaceOperation(
       jobsPayload(),

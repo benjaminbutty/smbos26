@@ -96,6 +96,33 @@ describe("bounded acquisition refinement", () => {
     expect(() => validateAcquisitionCandidate(result)).not.toThrow();
   });
 
+  it("revalidates the reconciled candidate before returning", () => {
+    const current = currentPayload();
+    const invalidField = {
+      op: "set_field",
+      object_key: "customer",
+      key: "job_id",
+      label: "Job",
+      field_type: "short_text",
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 3,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+
+    expect(() =>
+      reconcileAcquisitionRefinement(
+        current,
+        {
+          ...current,
+          operations: [...current.operations, invalidField],
+        },
+        "Add a Job field for customers.",
+      ),
+    ).toThrow(/duplicated by a scalar field/i);
+  });
+
   it("honors an explicit removal while preserving unrelated Objects", () => {
     const current = currentPayload();
     const result = reconcileAcquisitionRefinement(

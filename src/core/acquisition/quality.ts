@@ -33,6 +33,39 @@ const publicFieldTypes = new Set([
   "status",
 ]);
 
+const identityFieldTokens = new Set([
+  "name",
+  "title",
+  "label",
+  "id",
+  "email",
+  "phone",
+  "telephone",
+  "mobile",
+  "address",
+  "contact",
+]);
+const semanticStopWords = new Set([
+  "a",
+  "an",
+  "and",
+  "at",
+  "by",
+  "data",
+  "details",
+  "field",
+  "for",
+  "in",
+  "information",
+  "of",
+  "on",
+  "property",
+  "the",
+  "to",
+  "value",
+  "values",
+]);
+
 export class AcquisitionCandidateQualityError extends Error {
   constructor(
     readonly code: string,
@@ -53,6 +86,24 @@ function normalise(value: string): string {
 
 function compact(value: string): string {
   return normalise(value).replace(/[^a-z0-9]+/g, "");
+}
+
+function semanticTokens(value: string): Set<string> {
+  return new Set(
+    normalise(value)
+      .split(/[^a-z0-9]+/)
+      .filter((token) => token.length >= 2 && !semanticStopWords.has(token)),
+  );
+}
+
+function objectSemanticTokens(object: ObjectOperation): Set<string> {
+  return semanticTokens(
+    [object.key, object.singular_label, object.plural_label].join(" "),
+  );
+}
+
+function fieldSemanticTokens(field: FieldOperation): Set<string> {
+  return semanticTokens([field.key, field.label].join(" "));
 }
 
 function fail(code: string, message: string): never {
@@ -230,6 +281,93 @@ function isScalarConnectionDuplicate(
       );
     },
   );
+}
+
+function isSemanticallyRedundantField(
+  left: FieldOperation,
+  right: FieldOperation,
+  object: ObjectOperation,
+): boolean {
+  const leftTokens = fieldSemanticTokens(left);
+  const rightTokens = fieldSemanticTokens(right);
+  const [smaller, larger] =
+    leftTokens.size <= rightTokens.size
+      ? [leftTokens, rightTokens]
+      : [rightTokens, leftTokens];
+  if (smaller.size !== 1) return false;
+
+  const [onlyToken] = [...smaller];
+  if (!onlyToken || !identityFieldTokens.has(onlyToken)) return false;
+
+  const objectTokens = objectSemanticTokens(object);
+  return [...larger].every(
+    (token) => smaller.has(token) || objectTokens.has(token),
+  );
+}
+
+function validateSemanticallyRedundantFields(
+  objects: ReadonlyMap<string, ObjectOperation>,
+  fields: ReadonlyMap<string, Map<string, FieldOperation>>,
+): void {
+  for (const [objectKey, object] of objects) {
+    const objectFields = [...(fields.get(objectKey)?.values() ?? [])];
+    for (let leftIndex = 0; leftIndex < objectFields.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < objectFields.length;
+        rightIndex += 1
+      ) {
+        const left = objectFields[leftIndex]!;
+        const right = objectFields[rightIndex]!;
+        if (isSemanticallyRedundantField(left, right, object)) {
+          fail(
+            "semantically_redundant_field",
+            `Object ${object.plural_label} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
+          );
+        }
+      }
+    }
+  }
+}
+
+function validateCrossObjectFieldLeakage(
+  relationships: ReadonlyMap<string, RelationshipOperation>,
+  objects: ReadonlyMap<string, ObjectOperation>,
+  fields: ReadonlyMap<string, Map<string, FieldOperation>>,
+): void {
+  for (const relationship of relationships.values()) {
+    const source = requireObject(
+      objects,
+      relationship.source_object_key,
+      relationship.key,
+    );
+    const target = requireObject(
+      objects,
+      relationship.target_object_key,
+      relationship.key,
+    );
+    for (const [owner, related] of [
+      [source, target],
+      [target, source],
+    ] as const) {
+      const relatedTokens = objectSemanticTokens(related);
+      for (const field of fields.get(owner.key)?.values() ?? []) {
+        const fieldTokens = fieldSemanticTokens(field);
+        const mentionsRelated = [...relatedTokens].some((token) =>
+          fieldTokens.has(token),
+        );
+        const carriesIdentity = [...fieldTokens].some((token) =>
+          identityFieldTokens.has(token),
+        );
+        if (mentionsRelated && carriesIdentity) {
+          fail(
+            "cross_object_field_leakage",
+            `Cross-object field leakage: ${owner.plural_label} / ${field.label} duplicates values from related ${related.singular_label}.`,
+          );
+        }
+      }
+    }
+  }
 }
 
 function validateRelationshipScalarDuplication(
@@ -636,7 +774,9 @@ export function validateAcquisitionCandidate(
   const objects = activeObjects(operations);
   const fields = activeFields(operations, objects);
   const relationships = activeRelationships(operations, objects);
+  validateSemanticallyRedundantFields(objects, fields);
   validateRelationshipScalarDuplication(relationships, objects, fields);
+  validateCrossObjectFieldLeakage(relationships, objects, fields);
 
   const forms = new Map<string, FormOperation>();
   for (const operation of operations) {

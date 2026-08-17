@@ -6,6 +6,7 @@ import {
   setViewOperationSchema,
   type ConfigurationOperation,
 } from "../configuration/schemas";
+import { validateAcquisitionCandidate } from "./quality";
 import {
   acquisitionBuildPayloadSchema,
   type AcquisitionBuildPayload,
@@ -666,12 +667,14 @@ export function reconcileAcquisitionRefinement(
       config_json: parseViewConfig(operation.view_type, operation.config_json),
     });
   });
-  return acquisitionBuildPayloadSchema.parse({
-    proposal: mergeProposal(
-      current.proposal,
-      suggested.proposal,
-      merged.summary,
-    ),
-    operations,
-  });
+  return validateAcquisitionCandidate(
+    acquisitionBuildPayloadSchema.parse({
+      proposal: mergeProposal(
+        current.proposal,
+        suggested.proposal,
+        merged.summary,
+      ),
+      operations,
+    }),
+  );
 }
