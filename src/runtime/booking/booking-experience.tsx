@@ -21,15 +21,19 @@ interface BookingExperienceProps {
 function errorMessage(code: string): string {
   switch (code) {
     case "invalid_slot":
-      return "That time is no longer available. Choose another slot.";
     case "capacity_unavailable":
-      return "That slot has just filled. Choose another time.";
+      return "That time is no longer available. Choose another slot.";
     case "invalid_service":
       return "That service is no longer available.";
     case "required_field":
+    case "invalid_field":
       return "Complete the required details before continuing.";
     case "rate_limited":
       return "There have been too many attempts. Please wait and try again.";
+    case "not_found":
+    case "invalid_submission":
+    case "retry":
+    case "rejected":
     default:
       return "We could not complete that booking. Check the details and try again.";
   }
@@ -234,10 +238,17 @@ export function BookingExperience(
           </label>
         ))}
       </div>
-      <label aria-hidden="true" className="booking-honeypot">
-        Website
-        <input autoComplete="off" name="website" tabIndex={-1} type="text" />
-      </label>
+      <div aria-hidden="true" className="booking-honeypot">
+        <label htmlFor="booking-website">Website</label>
+        <input
+          aria-hidden="true"
+          autoComplete="off"
+          id="booking-website"
+          name="website"
+          tabIndex={-1}
+          type="text"
+        />
+      </div>
       {error ? (
         <p className="booking-error" role="alert">
           {error}

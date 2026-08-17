@@ -145,10 +145,7 @@ function activePage(
   pageKey: string,
 ): (typeof snapshot.pages)[number] {
   const page = snapshot.pages.find(
-    (candidate) =>
-      candidate.key === pageKey &&
-      candidate.is_active &&
-      candidate.audience === "internal",
+    (candidate) => candidate.key === pageKey && candidate.is_active,
   );
   if (!page) {
     throw new DirectPageComposerError("direct_page_not_found");
@@ -160,12 +157,13 @@ function pageTitleConflict(
   snapshot: ConfigurationSnapshotV1,
   title: string,
   exceptPageKey?: string,
+  audience?: "internal" | "public",
 ): boolean {
   const normalized = normalizeLabel(title);
   return snapshot.pages.some(
     (page) =>
       page.key !== exceptPageKey &&
-      page.audience === "internal" &&
+      (audience === undefined || page.audience === audience) &&
       page.is_active &&
       normalizeLabel(page.title) === normalized,
   );
@@ -262,7 +260,7 @@ function composeCreatePage(
   snapshot: ConfigurationSnapshotV1,
   title: string,
 ): ComposedDirectPageAction {
-  if (pageTitleConflict(snapshot, title)) {
+  if (pageTitleConflict(snapshot, title, undefined, "internal")) {
     throw new DirectPageComposerError("direct_page_title_conflict");
   }
 
@@ -300,7 +298,7 @@ function composePageMutation(
   const baseLayout = pageLayoutSchema.parse(page.layout_json);
 
   if (intent.action === "rename_page") {
-    if (pageTitleConflict(snapshot, intent.title, page.key)) {
+    if (pageTitleConflict(snapshot, intent.title, page.key, page.audience)) {
       throw new DirectPageComposerError("direct_page_title_conflict");
     }
     return finalizeAction(
@@ -343,6 +341,9 @@ function composePageMutation(
 
   if (intent.action === "add_page_block") {
     if (intent.block.type === "view") {
+      if (page.audience !== "internal") {
+        throw new DirectPageComposerError("direct_page_view_unavailable");
+      }
       assertEligibleSavedView(snapshot, intent.block.viewKey);
     }
     nextBlocks.push({

@@ -455,4 +455,119 @@ describe("generic experience renderers", () => {
     expect(html).not.toContain("/workspace/catering-table");
     expect(html).not.toContain("+ New catering enquiry");
   });
+
+  it("renders the configured Booking block in the same customer preview runtime", () => {
+    const html = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        layout: {
+          blocks: [
+            {
+              type: "booking",
+              booking_key: "booking",
+              config: {
+                booking_object_key: "booking",
+                customer_object_key: "customer",
+                subject_object_key: null,
+                service_object_key: "service",
+                relationships: {
+                  customer_booking: "customer_has_bookings",
+                  customer_subject: null,
+                  subject_booking: null,
+                  service_booking: "service_has_bookings",
+                },
+                field_mappings: {
+                  customer: { name: "name", email: "email", phone: null },
+                  booking: {
+                    start_at: "starts_at",
+                    status: "status",
+                    default_status: "Requested",
+                    date: null,
+                    time: null,
+                  },
+                  subject: null,
+                  service: { name: "name" },
+                },
+                public_fields: [
+                  {
+                    target: "customer",
+                    field: "name",
+                    label: "Your name",
+                    required: true,
+                    derived: false,
+                  },
+                ],
+                schedule: {
+                  timezone_source: "business",
+                  location_id: null,
+                  days_of_week: [1, 2, 3, 4, 5],
+                  first_time: "09:00",
+                  last_time: "17:00",
+                  slot_interval_minutes: 60,
+                  capacity_per_slot: 1,
+                  minimum_notice_minutes: 0,
+                  booking_horizon_days: 7,
+                },
+              },
+            },
+          ],
+        },
+        bookings: {
+          booking: {
+            catalogue: {
+              business: { name: "Milo Grooming", slug: "milo-grooming" },
+              page: { title: "Book a groom", slug: "book" },
+              booking: {
+                key: "booking",
+                timezone: "Europe/London",
+                schedule: {
+                  timezone_source: "business",
+                  location_id: null,
+                  days_of_week: [1, 2, 3, 4, 5],
+                  first_time: "09:00",
+                  last_time: "17:00",
+                  slot_interval_minutes: 60,
+                  capacity_per_slot: 1,
+                  minimum_notice_minutes: 0,
+                  booking_horizon_days: 7,
+                },
+                slots: [
+                  {
+                    start_at: "2026-08-18T09:00:00.000Z",
+                    local_date: "2026-08-18",
+                    local_time: "09:00",
+                    remaining: 1,
+                  },
+                ],
+                services: [
+                  {
+                    id: "00000000-0000-4000-8000-000000000099",
+                    name: "Full groom",
+                  },
+                ],
+                public_fields: [
+                  {
+                    target: "customer",
+                    field: "name",
+                    label: "Your name",
+                    required: true,
+                    derived: false,
+                  },
+                ],
+              },
+            },
+          },
+        },
+        previewMode: true,
+        publicMode: true,
+      }),
+    );
+
+    expect(html).toContain("Explore this Booking Site");
+    expect(html).toContain("Full groom");
+    expect(html).toContain("Your name *");
+    expect(html).toContain('class="booking-honeypot"');
+    expect(html).toContain('name="website"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain("Disabled in preview");
+  });
 });

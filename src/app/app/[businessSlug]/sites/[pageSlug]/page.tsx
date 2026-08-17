@@ -7,10 +7,18 @@ import {
   resolveTenant,
 } from "../../../../../auth/authorization";
 import { Notice } from "../../../../../components/notice";
+import type { PublicBookingCatalogue } from "../../../../../core/booking/schemas";
+import { resolveDraftBooking } from "../../../../../core/booking/preview";
+import { resolvePublicBooking } from "../../../../../core/booking/service";
 import { createExperienceService } from "../../../../../core/experience/service";
 import { ConfigurationChangeService } from "../../../../../core/configuration/service";
 import { createServerClient } from "../../../../../db/supabase/server";
 import { PageRenderer } from "../../../../../runtime/pages/page-renderer";
+import {
+  applyPageBlockAction,
+  renamePageAction,
+} from "../../../../../runtime/pages/direct-actions";
+import { PageEditor } from "../../../../../runtime/page-editor/page-editor";
 import {
   readSearchParam,
   type SearchParams,
@@ -98,6 +106,40 @@ export default async function SitePage({
     }
   }
 
+  const bookingBlocks = page.layout.blocks.filter(
+    (
+      block,
+    ): block is Extract<
+      (typeof page.layout.blocks)[number],
+      { type: "booking" }
+    > => block.type === "booking",
+  );
+  const bookings: Record<string, { catalogue: PublicBookingCatalogue }> = {};
+  for (const block of bookingBlocks) {
+    try {
+      const catalogue =
+        page.definition.status === "published"
+          ? await resolvePublicBooking(
+              supabase,
+              businessSlug,
+              page.definition.slug,
+              block.booking_key,
+            )
+          : await resolveDraftBooking(supabase, {
+              businessId: tenant.business.id,
+              businessName: tenant.business.name,
+              businessSlug,
+              bookingKey: block.booking_key,
+              pageTitle: page.definition.title,
+              pageSlug: page.definition.slug,
+              blockConfig: block.config,
+            });
+      if (catalogue) bookings[block.booking_key] = { catalogue };
+    } catch {
+      // PageRenderer shows a narrow unavailable state for an invalid Booking.
+    }
+  }
+
   const canManageConfiguration = hasCapability(
     tenant.membership.role,
     "manage_configuration",
@@ -117,6 +159,10 @@ export default async function SitePage({
     }
   }
   const notice = await readSearchParam(searchParams, "notice");
+  const mode = await readSearchParam(searchParams, "mode");
+  const editMode =
+    canManageConfiguration && currentness !== null && mode === "edit";
+  const sitePath = `/app/${encodeURIComponent(businessSlug)}/sites/${encodeURIComponent(page.definition.slug)}`;
 
   return (
     <section className="tenant-content runtime-page site-owner-page">
@@ -133,6 +179,20 @@ export default async function SitePage({
           </p>
         </div>
         <div className="site-owner-actions">
+          {canManageConfiguration && currentness ? (
+            editMode ? (
+              <Link className="button button-secondary" href={sitePath}>
+                Preview Site
+              </Link>
+            ) : (
+              <Link
+                className="button button-secondary"
+                href={`${sitePath}?mode=edit`}
+              >
+                Edit Site
+              </Link>
+            )
+          ) : null}
           {page.definition.status === "published" ? (
             <a
               className="button button-secondary"
@@ -179,15 +239,51 @@ export default async function SitePage({
         </section>
       ) : null}
 
-      <section className="site-owner-canvas" aria-label="Site preview">
-        <div className="site-owner-canvas-label">Read-only Site preview</div>
-        <PageRenderer
-          forms={forms}
-          layout={page.layout}
-          previewMode
-          publicMode
-        />
-      </section>
+      {editMode && currentness ? (
+        <section className="site-owner-editor" aria-label="Edit Site">
+          <div className="site-owner-canvas-label">
+            Edit Site — the preview below uses the customer-facing runtime.
+          </div>
+          <PageEditor
+            key={`${page.definition.key}-${currentness.expectedHeadRevision}-${page.definition.title}`}
+            applyPageBlockAction={applyPageBlockAction.bind(
+              null,
+              businessSlug,
+              page.definition.key,
+            )}
+            availableViews={[]}
+            businessSlug={businessSlug}
+            currentness={currentness}
+            layout={page.layout}
+            pageKey={page.definition.key}
+            previewBookings={bookings}
+            previewForms={forms}
+            renamePageAction={renamePageAction.bind(
+              null,
+              businessSlug,
+              page.definition.key,
+            )}
+            siteMode
+            title={page.definition.title}
+            views={{}}
+          />
+        </section>
+      ) : (
+        <section className="site-owner-canvas" aria-label="Site preview">
+          <div className="site-owner-canvas-label">
+            {page.definition.status === "draft"
+              ? "Read-only Site preview"
+              : "Customer-facing Site preview"}
+          </div>
+          <PageRenderer
+            bookings={bookings}
+            forms={forms}
+            layout={page.layout}
+            previewMode
+            publicMode
+          />
+        </section>
+      )}
     </section>
   );
 }

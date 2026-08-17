@@ -21,7 +21,6 @@ type RelationshipOperation = Extract<
 >;
 type ViewOperation = Extract<ConfigurationOperation, { op: "set_view" }>;
 type FormOperation = Extract<ConfigurationOperation, { op: "set_form" }>;
-type PageOperation = Extract<ConfigurationOperation, { op: "set_page" }>;
 
 const stopWords = new Set([
   "a",

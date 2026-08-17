@@ -133,3 +133,41 @@ R1 implements the bounded acquisition correction without adding an AI subject:
 R1 local evidence: the focused acquisition suite passes 67 tests and
 `npm run typecheck` passes. The checkpoint is still pending remote PR/CI
 publication because the configured local GitHub CLI token is invalid.
+
+## R2 implementation checkpoint
+
+R2 closes the Site/Booking boundary without introducing a second Site model:
+
+- `src/core/booking/preview.ts` resolves a draft Booking catalogue from the
+  active business graph, configured schedule, business/location timezone, and
+  service Records. It supplies the same `BookingExperience` used by the
+  published public route, with preview submissions disabled.
+- The authenticated Site route now resolves Booking blocks for both draft and
+  published Sites, exposes an obvious `Edit Site` / `Preview Site` path, and
+  renders bounded title/content/order edits through the existing direct Page
+  configuration RPC and currentness boundary.
+- Public and Booking honeypots remain submitted but are visually removed from
+  normal customer interaction; Booking results use calm customer copy for all
+  known failure codes.
+
+R2 local evidence: the public Dogs fixture renders real future slots and
+  configured customer/dog fields at `/p/dogs/book`; the Booking honeypot is
+  positioned off-screen at `left: -10000`, `1x1`, with `tabIndex=-1`; the local
+  public Form/Booking integration suite passes 2/2; and focused renderer/Page
+  tests pass 20/20.
+
+## R3 implementation checkpoint
+
+R3 removes the remaining generic Overview instruction from the acquisition
+  planning prompt and closes shared interaction seams:
+
+- acquisition planning now explicitly forbids inventing an Overview Page or
+  generic schema documentation;
+- Page, Site, Table query, and sidebar creation menus close on Escape and
+  outside pointer interaction where they remain open;
+- direct Page mutation supports both internal Pages and public Sites while
+  keeping saved View insertion internal-only; table column reorder remains
+  wired to the existing `onColumnsReorder` adapter boundary.
+
+R3 local evidence: the focused acquisition/Page/renderer suite passes 61 tests,
+`npm run typecheck`, `npm run lint`, and `git diff --check` pass.

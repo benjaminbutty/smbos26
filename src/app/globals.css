@@ -4907,6 +4907,15 @@ textarea {
   overflow: hidden !important;
 }
 
+.booking-honeypot,
+.public-form-honeypot {
+  position: absolute !important;
+  left: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+}
+
 .preorder-confirmation {
   max-width: 42rem;
   margin: 2rem auto;
@@ -11457,6 +11466,19 @@ textarea {
   font-weight: 750;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.site-owner-editor {
+  display: grid;
+  gap: var(--space-4);
+  padding: clamp(var(--space-4), 3vw, var(--space-8));
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.page-editor-insert-shell {
+  position: relative;
 }
 
 @media (max-width: 48rem) {
