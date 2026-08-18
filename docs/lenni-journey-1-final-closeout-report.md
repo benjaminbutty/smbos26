@@ -2,241 +2,170 @@
 
 ## Repository
 
-- Starting `main`: `babd0b6f66d1f9f107767c466f83199a351b0e1d`
-- Branch: `journey1/final-closeout`
-- Feature implementation commit: `f1418f10c112f23075ea5dbd5ea44938dfe081bd`
-- Public-Site editing checkpoint: `e542f7152a360e1f48be80776237b9000e14cdd5`
-- Acquisition/public-booking hardening commit: `ca988bc`
-- Changed files in the Site checkpoint: seven; hardening commit: 13
-- Scope: Journey 1 only. Journey 2 and Journey 4 were not started.
+- Branch: `journey1/final-closeout`.
+- Base SHA: `babd0b6f66d1f9f107767c466f83199a351b0e1d`.
+- Accepted implementation SHA used for the real-provider/browser run:
+  `fd61cbe1306b182e9ce0de92a832aa80858948f3`.
+- Scope: Journey 1 only. Journey 2 and Journey 4 were not implemented.
+- The handoff preflight confirmed a clean branch, a matching remote head before
+  closeout work, an open and unmerged PR #57, and no Journey 2/Journey 4
+  implementation.
 
-The branch was created from clean current `origin/main`; the final fetch before
-handoff still reported `origin/main` at the starting SHA. The merge base is the
-starting SHA.
+## Provider and environment preflight
 
-## Acquisition correction
+Redacted checks confirmed `AI_PROVIDER=openai`, non-empty OpenAI and Supabase
+service-role configuration, `.env.local` loaded by the running Next.js process,
+healthy local Supabase REST, and the intended local application environment.
+No secret values, cookies, credentials or provider response bodies were
+printed or persisted.
 
-### Finite dog-scenario diagnosis and generic correction
+## Real-provider acceptance
 
-The exact dog-grooming scenario was exercised through the real configured
-provider before the final browser rerun. The tailored candidate reached four
-Objects, three Connections and one public Booking Site, with the expected
-Customer, Dog/Pet and Appointment/Booking shape. The first finite failures were
-not provider-output failures: one candidate repeated a generic identity Field
-alongside a more specific subject name, and a later candidate selected a
-Booking status default that was not valid for its configured options. The
-generic interpreter canonicalises redundant identity Fields before Forms and
-Views are compiled, and the Booking capability now selects an existing valid
-status option.
+### Musical-instrument acquisition and refinement
 
-The first real public submission then returned a redacted `rejected` result.
-Finite local evidence showed all configured Objects, Relationships and public
-Fields resolved, and all four supplied synthetic Field values were valid. The
-booking Object nevertheless contained two required provider-shaped datetime or
-status Fields that were not the mapped Booking Fields; the transaction supplied
-the capability mappings, so no Record or Booking submission was created. The
-smallest generic cause was the semantic reuse matcher: it only recognised an
-exact status name and a single separator in appointment date/time names. It now
-recognises multi-word appointment start/date/time and status/state names, with a
-regression fixture covering provider-shaped names. No dog-specific condition or
-new primitive was added.
+The fresh exact musical-instrument scenario produced `proposal_source=tailored`
+with a coherent candidate containing Customers, Instruments and a
+Repairs/Repair-jobs concept. No fallback was counted.
 
-The clean browser plumbing rerun then passed draft Site editing, publication,
-published-Site live editing, separate public-tab rendering and one successful
-synthetic Booking. Aggregate evidence was one Customer Record, one Dog/Pet
-Record, one Appointment/Booking Record, three Relationships, one slot counter
-reservation and one idempotency token. The public capability integration also
-passes its idempotency and forged-field/RLS denial coverage.
+The first approved refinement succeeded through the real provider. Customers,
+Instruments and Repair jobs remained; a direct Customer ↔ Repair job Connection
+was added; the owner-readable delta and updated preview were present; and the
+owner UI showed one successful refinement remaining.
 
-Four subsequent exact provider retries on the clean local path were classified
-only as the finite redacted diagnostic
-`stage=provider_transport, code=provider_transport_rate_limited`. No provider
-body, candidate JSON, prompt, credentials or personal data was logged or
-persisted. The fallback was used only to exercise the deterministic runtime
-plumbing and is not counted as a tailored-provider pass; the external provider
-rate limit is the remaining hard stop for a fresh tailored rerun.
+The second approved refinement also succeeded through the real provider. The
+direct Connection remained, Priority was added to Repair jobs, the candidate
+remained coherent, the updated retained Repair-jobs View included Priority, and
+the owner UI showed zero successful refinements remaining. The session recorded
+two successful refinements. Rejected, unsupported and provider-failed paths do
+not increment that allowance, as covered by the refinement boundary tests; the
+current candidate is preserved on those paths.
 
-Before closeout, the anonymous session treated every provider-backed attempt as
-one of the two owner-facing refinement opportunities. Reservation happened
-before generation, and fallback/deterministic rejection could therefore make a
-failed refinement look like a completed attempt.
+The smallest generic cause found in the fresh run was that a selected new Field
+could be retained in the configuration without being surfaced by the retained
+View for the same Object. The deterministic reconciliation now adds selected
+new Fields to the appropriate retained table/list/cards/detail View shape. It
+does not change prompts, models, policies, validators or fallback behaviour.
+The focused regression test covers the retained View and owner-readable delta.
 
-The closeout keeps provider/accounting reservations and the existing daily
-anti-abuse ceiling truthful, widens the still-bounded session retry ceiling to
-six provider reservations, and adds `successful_refinement_count` to the
-existing session row. Only a validated, reconciled, successfully written
-refinement increments that counter. The owner-facing product allowance is:
+### Dog-grooming acquisition, preview and claim
+
+The fresh exact dog-grooming scenario produced `proposal_source=tailored` with
+Customers, Dogs, Grooming services and Appointments, sensible Connections, and
+a trusted online Booking Site. The Dog subject was retained as a reusable
+concept; Services did not replace it; and no dog-specific primitive or module
+was introduced.
+
+The candidate preview was read-only and synthetic/example-only. Deliberate
+`Use this setup` completed signup continuity and created the real Business.
+The claim landed on the authenticated Home with the generated Site in Draft
+under Sites. Immediately after claim, redacted local aggregates were
+`records=0|relationships=0`, proving preview/example operational data and
+Connections were not copied into the Business.
+
+## Site editing, publication and live editing
+
+On the claimed draft Booking Site, the owner acceptance passed for:
+
+- Site title rename;
+- existing Heading edit;
+- existing Text edit;
+- supported block reorder;
+- supported block removal; and
+- supported Text block addition and edit.
+
+The edits persisted after reload, the Site remained Draft, and every mutation
+advanced the existing trusted configuration boundary. The local head advanced
+through immutable forward configuration history; no direct Page DML or AI was
+used.
+
+One deliberate `Publish Site` action moved the same Site to Published through
+the existing proposal → deterministic validation → deliberate apply → immutable
+Version lifecycle. The published owner view showed `Open live Site ↗` and no
+second publication lifecycle. No model call or AI accounting entry was used by
+publication.
+
+The published editor clearly stated that changes go live when saved. A small
+supported Text edit saved directly while the Site remained Published; the
+published editor had no `Publish Site` button, and the public Site reflected the
+edit immediately. The owner URL remained in its original tab. `Open live Site
+↗` used a separate customer-context tab with `target="_blank"` and
+`rel="noopener noreferrer"`. The public page contained no owner-only `Back to
+Lenni` control.
+
+Redacted configuration aggregates after the browser run were
+`head=11|versions=11|changes=10|published_page=11`, proving the draft edits,
+publication and published save each used the forward history boundary.
+
+## Public Booking acceptance
+
+The published Booking Site passed the visual and interaction checks:
+
+- one dominant page heading and no duplicate `Book online` heading;
+- Customer and Dog fields clearly grouped and disambiguated;
+- date selection and accessible time-slot radios grouped under the Booking
+  experience;
+- explicit selected-slot state and text labels such as Available/Full;
+- honeypot off-screen and non-focusable (`aria-hidden`, `tabIndex=-1`);
+- no payment capability; and
+- no horizontal overflow at 1440×900, 1024×768 or 390×844.
+
+One legitimate synthetic booking returned confirmation. Redacted database
+evidence was exactly:
 
 ```text
-one initial candidate + two successful refinements
+records=3|relationships=3|submissions=1
+appointment|Appointments|1
+customer|Customers|1
+dog|Dogs|1
+customer_appointments_appointment|customer->appointment|1
+customer_dogs_dog|customer->dog|1
+dog_appointments_appointment|dog->appointment|1
 ```
 
-Rejected, unsupported, failed-generation, deterministic-validation and failed-
-write paths do not increment it. The current candidate remains in the session
-while a retry is reserved. The internal request no longer exposes prompt-
-concatenation language to the owner.
+The configured service concept remained present with no operational preview
+records. A repeated request returned `ok=true|idempotent=true` and did not add
+records or relationships. Forged field and capability checks returned HTTP 400
+and 404 respectively. Anonymous direct generic Record access was denied with
+HTTP 401.
 
-The conservative reconciliation test covers the exact additive request
-`Customers should also be linked directly to repair jobs.`: existing Customer
-and Repair job concepts remain, the new Connection is added, and unrelated
-objects remain unchanged. The service path disables fallback for refinements,
-so a provider failure is reported as a safe refinement failure rather than a
-synthetic success.
+## Provider/accounting truthfulness
 
-### Real provider-backed refinement closeout
-
-The first exact provider-backed owner-acceptance run reached a tailored musical
-instrument repair candidate, then safely rejected `Customers should also be
-linked directly to repair jobs.` The candidate and both successful-refinement
-allowances remained available.
-
-A narrow internal-only diagnostic classified the deterministic failures without
-logging or persisting the owner request, provider output, candidate JSON, model
-prose, PII, credentials or arbitrary error bodies. The finite diagnostics were:
-
-1. `stage=reconciliation`, `code=quality_required_form_field_missing`;
-2. after closing that invariant, `stage=reconciliation`,
-   `code=quality_object_reference_missing`.
-
-The generic reconciliation correction now keeps retained Forms valid when a
-selected required Field arrives through a regenerated/re-keyed Form set, and
-includes endpoint Objects required by selected Connections and other
-object-bound surfaces. The architecture remains unchanged:
-
-```text
-current reviewed candidate
-+ model suggestion
-+ owner refinement
-→ conservative deterministic reconciliation
-→ full candidate-quality validation
-→ updated candidate
-```
-
-The clean real-provider rerun passed. The initial candidate contained Customers,
-Instruments and Repair jobs. The exact first refinement added a direct Customer
-↔ Repair job Connection, retained all three concepts, displayed an owner-readable
-delta and opened the updated preview. The UI then showed one successful
-refinement remaining, proving the earlier failed attempts had not consumed the
-product allowance.
-
-The same session accepted `Also add a priority to each repair job.` The updated
-preview exposed Priority on a Repair job while the first direct Customer ↔ Repair
-job result remained in the candidate. The session then showed zero refinements
-remaining: two successful refinements used, failed attempts not counted. No AI
-task, prompt, model, schema or policy was changed for this acceptance.
-
-## Site editor correction
-
-Sites continue to use the existing Page layout, PageRenderer and direct Page
-configuration actions. The bounded editor now exposes:
-
-- current Site/Page title editing;
-- existing Heading and Text editing;
-- existing block move, remove and add controls;
-- visible Booking/Form capability frames with an `Edit settings` action to the
-  existing trusted Tell Lenni boundary;
-- no rich-text editor, arbitrary layout, or second Page model.
-
-Historical seeded layouts without block UUIDs now use a validated
-position-scoped legacy alias for the first mutation; the existing composer
-immediately persists real UUIDs through the same M5-backed change boundary.
-
-## Publication correction
-
-Draft Site publication is one explicit owner `Publish Site` action. The server
-action reloads authoritative Site/currentness, composes exactly one bounded
-`set_page` publication operation, calls the existing
-`ConfigurationChangeService`, requires deterministic validation, and deliberately
-applies only because of that owner POST. Success creates the normal immutable
-Version and Published Site state. Stale, validation and application failures
-remain Draft and fail closed.
-
-There is no model call, AI accounting, browser-supplied operation, direct Page
-DML, or global automatic-apply capability. Existing Changes and Version history
-remain available as evidence of the underlying lifecycle.
-
-## Public Booking and Form correction
-
-The public Booking runtime now:
-
-- avoids a duplicate dominant Page-title/Booking H1;
-- groups Customer, Subject and Booking details using trusted configured labels;
-- disambiguates repeated fields such as Name without exposing graph keys;
-- uses compact accessible slot controls with selected state and Available/Full
-  status rather than raw `1 left` capacity language;
-- keeps the trusted resolver, server-derived identity, RLS, schedule/current-time
-  checks, capacity, idempotency, honeypot and no-payment boundary unchanged.
-
-The real public capability integration creates and idempotently retries one
-generic Form Record and one configured Booking graph submission, including its
-Relationship data and forged-key/RLS denial checks. Bedford preorder integration
-continues to pass without changing its trusted operational transaction.
-
-## Navigation and responsive evidence
-
-Authenticated Site management keeps the owner workspace in the original tab;
-the public runtime has no owner-only shell or Back-to-Lenni control. The local
-browser evidence used the Milo's Grooming workspace created with synthetic
-credentials and covered `/start`, the authenticated draft Site, its published
-Site, the published Site editor, and `/p/milo-s-grooming/book` in a separate
-public tab. The latest tailored-provider attempt was rate-limited, so the Site
-and Booking browser evidence is explicitly recorded as deterministic plumbing
-evidence rather than a tailored-provider claim.
-
-The public Site was checked at 1440x900, 1024x768 and 390x844. Each viewport
-kept the form present with no horizontal overflow; at 390px the form remained
-366px wide within the viewport. No personal information was captured in
-screenshots.
+The tailored musical and dog-grooming acquisition/refinement calls were real
+OpenAI-provider calls and were recorded as tailored provider-backed outcomes.
+Fallback was not counted as acceptance. The successful-refinement allowance
+ended at two successful refinements, and the dedicated AI-accounting gate passed
+58/58 tests. Direct Site editing and publication used deterministic trusted
+boundaries and did not invoke AI or consume AI accounting.
 
 ## Verification
 
-Passed checks:
+Passed checks on the accepted implementation:
 
-- `npm test` — 85 files, 884 tests;
+- `npm test` — 85 files, 885 tests;
 - `npm run typecheck`;
 - `npm run lint`;
 - `npm run format:check`;
 - `npm run build`;
 - `npm run check:migration-immutability` — 38 historical migrations;
 - `git diff --check`;
-- `npm run supabase:reset` from the closeout branch;
+- clean `npm run supabase:reset`;
 - `npm run supabase:lint` — no schema errors;
 - `npm run test:rls` — 19/19;
-- `npm run test:ai-accounting` — 18/18 integration tests plus the two unit
--  suites (58 tests total);
-- focused acquisition suites — 8 files, 68 tests;
+- `npm run test:ai-accounting` — 58/58;
+- focused acquisition unit suites — 10 files, 87 tests;
 - acquisition integration — 13/13;
-- public Form/Booking, acquisition and direct Site integration — 20/20;
-- full closeout integration — 26/26 files, 265 passed and 5 skipped;
-- responsive public Site checks — 3/3 requested viewports, no horizontal
-  overflow;
-- exact provider retry diagnostics — four finite rate-limit classifications;
-  no tailored rerun could complete during the configured provider rate-limit
-  window.
+- Journey 1 public capability plus direct Site integration — 2 files, 7 tests;
+- Experience plus initial-preorder integration — 2 files, 23 tests;
+- complete integration — 26 files, 265 passed and 5 skipped;
+- explicit Bedford preorder regression — 26/26; and
+- requested browser responsive acceptance — 3/3 viewports, no horizontal
+  overflow.
 
-### Local fixture failure classification
+The final pushed head must retain green exact-head GitHub Actions before this PR
+is considered merge-ready. No merge was performed.
 
-The earlier dirty local full-integration run reported one failure against a
-seeded Workers Business AI-accounting expectation (25/26 files passed; 5 tests
-were skipped). This failure was not hidden or waived. After the repository-
-supported clean reset it did not reproduce on the closeout branch: the exact
-full integration command passed, and the dedicated AI-accounting integration
-command passed 18/18. The same clean reset and exact commands also passed on
-current `main`. It is classified as pre-existing dirty/local fixture debt, not
-a Journey 1 regression. No Journey 1 production behaviour was changed to
-satisfy that stale expectation.
+## Scope
 
-No new ADR was required: the one-action Site publication is a narrow owner-
-triggered orchestration over the existing proposal/validation/application/
-Version lifecycle, not a new generic auto-apply path.
-
-## Deferred scope
-
-Journey 2 was not started: no full Notion/Tiptap editor, rich text, expanded
-Page catalogue, Record redesign, broad Forms/Tables redesign, operating Home
-redesign, nested Connection creation, or identity-type redesign.
-
-Journey 4 was not started: no authenticated Tell Lenni conversation reset,
-general automatic Changes orchestration, global lifecycle-screen replacement,
-generic Builder site/page synonym handling, authenticated orphan-Form fix, or
-permanent conversation history.
+Journey 2 was not implemented. Journey 4 was not implemented. No new ADR,
+primitive, dog-specific architecture, payment capability, or production
+deployment was added during closeout.
