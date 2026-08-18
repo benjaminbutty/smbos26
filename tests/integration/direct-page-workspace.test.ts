@@ -3,13 +3,22 @@ import {
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
+import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   applyDirectPageAction,
   loadDirectPageConfiguration,
 } from "../../src/core/configuration/direct-pages/service";
-import type { Database, Tables } from "../../src/db/supabase/database.types";
+import { ConfigurationChangeService } from "../../src/core/configuration/service";
+import { publishPublicPage } from "../../src/core/configuration/publication/page-service";
+import type { ConfigurationOperation } from "../../src/core/configuration/schemas";
+import { resolvePublicPage } from "../../src/core/experience/service";
+import type {
+  Database,
+  Json,
+  Tables,
+} from "../../src/db/supabase/database.types";
 import {
   getLocalSupabaseSettings,
   type LocalSupabaseSettings,
@@ -24,6 +33,8 @@ const password = "Workspace-foundation-pages!";
 const createdUserIds: string[] = [];
 let settings: LocalSupabaseSettings;
 let admin: Client;
+let anonymous: Client;
+let sql: Sql;
 let owner: Identity;
 let staff: Identity;
 let business: Tables<"businesses">;
@@ -64,9 +75,91 @@ async function currentness(identity: Identity) {
   });
 }
 
+async function applyConfigurationOperations(
+  operations: ConfigurationOperation[],
+  title: string,
+) {
+  const state = await currentness(owner);
+  const configuration = new ConfigurationChangeService(owner.client, {
+    businessId: business.id,
+    actorId: owner.user.id,
+  });
+  const proposal = await configuration.proposeChangeSet({
+    expectedBaseVersionId: state.currentness.expectedBaseVersionId,
+    expectedHeadRevision: state.currentness.expectedHeadRevision,
+    title,
+    description: null,
+    operations,
+  });
+  const validated = await configuration.validateChangeSet(proposal.id);
+  expect(validated.status).toBe("validated");
+  const applied = await configuration.applyChangeSet(proposal.id);
+  expect(applied.status).toBe("applied");
+  return currentness(owner);
+}
+
+async function createPublicDraft(pageKey: string, pageSlug: string) {
+  return applyConfigurationOperations(
+    [
+      {
+        op: "set_page",
+        key: pageKey,
+        title: "Book online",
+        slug: pageSlug,
+        audience: "public",
+        layout_json: {
+          blocks: [{ type: "heading", text: "Book online", level: 1 }],
+        },
+        status: "draft",
+        is_active: true,
+      },
+    ],
+    `Create ${pageKey}`,
+  );
+}
+
+async function configurationCounts() {
+  const [counts] = await sql<
+    { versions: number; changes: number; revision: number }[]
+  >`
+    select
+      (select count(*)::integer from public.configuration_versions
+       where business_id = ${business.id}) as versions,
+      (select count(*)::integer from public.configuration_change_sets
+       where business_id = ${business.id}) as changes,
+      (select head_revision::integer from public.business_configuration_heads
+       where business_id = ${business.id}) as revision
+  `;
+  if (!counts) throw new Error("Could not read configuration counts.");
+  return {
+    versions: Number(counts.versions),
+    changes: Number(counts.changes),
+    revision: Number(counts.revision),
+  };
+}
+
+async function expectShapeRejected(
+  actionKind: "rename_page" | "save_page_layout",
+  baseSnapshot: Json,
+  candidateSnapshot: Json,
+  operations: Json,
+) {
+  await expect(
+    sql`
+      select private.assert_direct_page_action_shape_v1(
+        ${actionKind},
+        ${sql.json(baseSnapshot)}::jsonb,
+        ${sql.json(candidateSnapshot)}::jsonb,
+        ${sql.json(operations)}::jsonb
+      )
+    `,
+  ).rejects.toThrow(/direct_page_action_shape_invalid/);
+}
+
 describe("workspace foundation direct Page actions", () => {
   beforeAll(async () => {
     settings = getLocalSupabaseSettings();
+    sql = postgres(settings.databaseUrl, { max: 1 });
     admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -74,6 +167,17 @@ describe("workspace foundation direct Page actions", () => {
         persistSession: false,
       },
     });
+    anonymous = createClient<Database>(
+      settings.apiUrl,
+      settings.publishableKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          persistSession: false,
+        },
+      },
+    );
     owner = await createIdentity("owner");
     staff = await createIdentity("staff");
 
@@ -99,6 +203,7 @@ describe("workspace foundation direct Page actions", () => {
     for (const userId of createdUserIds) {
       await admin.auth.admin.deleteUser(userId);
     }
+    if (sql) await sql.end();
   });
 
   it("creates, renames, and saves a Page through one M5-backed action", async () => {
@@ -197,6 +302,271 @@ describe("workspace foundation direct Page actions", () => {
     expect(saved.changeSet.base_head_revision).toBe(
       renamed.changeSet.base_head_revision + 1,
     );
+  });
+
+  it("renames and edits a draft public Site without changing its identity or lifecycle", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `draft_site_${suffix}`;
+    const pageSlug = `draft-site-${suffix}`;
+    const created = await createPublicDraft(pageKey, pageSlug);
+    const original = created.snapshot.pages.find(
+      (page) => page.key === pageKey,
+    );
+    if (!original) throw new Error("Expected the draft public Site.");
+    const before = await configurationCounts();
+
+    const renamed = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "rename_page",
+          pageKey,
+          title: "Mobile grooming appointments",
+        },
+      },
+    );
+    const saved = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: renamed.currentness,
+        intent: {
+          action: "save_page_layout",
+          pageKey,
+          layout: {
+            blocks: [
+              {
+                type: "heading",
+                text: "Mobile grooming appointments",
+                level: 1,
+              },
+              { type: "text", text: "Choose a time that suits your dog." },
+            ],
+          },
+        },
+      },
+    );
+    const edited = saved.snapshot.pages.find((page) => page.key === pageKey);
+    const after = await configurationCounts();
+
+    expect(edited).toMatchObject({
+      id: original.id,
+      key: pageKey,
+      slug: pageSlug,
+      audience: "public",
+      status: "draft",
+      is_active: true,
+      title: "Mobile grooming appointments",
+    });
+    expect(edited?.layout_json.blocks).toHaveLength(2);
+    expect(after).toEqual({
+      versions: before.versions + 2,
+      changes: before.changes + 2,
+      revision: before.revision + 2,
+    });
+
+    const originalVersion = await new ConfigurationChangeService(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    }).getVersion(created.currentness.expectedBaseVersionId);
+    expect(
+      (
+        originalVersion.snapshot_json as { pages: typeof saved.snapshot.pages }
+      ).pages.find((page) => page.key === pageKey),
+    ).toMatchObject({
+      id: original.id,
+      title: "Book online",
+      status: "draft",
+    });
+  });
+
+  it("edits a published public Site in place and serves the saved version", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `live_site_${suffix}`;
+    const pageSlug = `live-site-${suffix}`;
+    await createPublicDraft(pageKey, pageSlug);
+    const configuration = new ConfigurationChangeService(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const publication = await publishPublicPage(configuration, { pageKey });
+    expect(publication.status).toBe("applied");
+    const published = await currentness(owner);
+    const publishedPage = published.snapshot.pages.find(
+      (page) => page.key === pageKey,
+    );
+    if (!publishedPage) throw new Error("Expected the published public Site.");
+
+    const renamed = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: published.currentness,
+        intent: {
+          action: "rename_page",
+          pageKey,
+          title: "Grooming visits at your door",
+        },
+      },
+    );
+    const saved = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: renamed.currentness,
+        intent: {
+          action: "save_page_layout",
+          pageKey,
+          layout: {
+            blocks: [
+              {
+                type: "heading",
+                text: "Freshly groomed at home",
+                level: 1,
+              },
+              { type: "text", text: "Book our mobile service online." },
+            ],
+          },
+        },
+      },
+    );
+    const edited = saved.snapshot.pages.find((page) => page.key === pageKey);
+    const live = await resolvePublicPage(
+      anonymous,
+      business.slug,
+      publishedPage.slug,
+    );
+
+    expect(edited).toMatchObject({
+      id: publishedPage.id,
+      key: pageKey,
+      slug: pageSlug,
+      audience: "public",
+      status: "published",
+      is_active: true,
+      title: "Grooming visits at your door",
+    });
+    expect(live?.page).toMatchObject({
+      key: pageKey,
+      slug: pageSlug,
+      title: "Grooming visits at your door",
+    });
+    expect(live?.page.layout.blocks).toEqual([
+      expect.objectContaining({
+        type: "heading",
+        text: "Freshly groomed at home",
+      }),
+      expect.objectContaining({
+        type: "text",
+        text: "Book our mobile service online.",
+      }),
+    ]);
+  });
+
+  it("rejects lifecycle, identity, other Page, and unrelated snapshot mutations", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `shape_site_${suffix}`;
+    const pageSlug = `shape-site-${suffix}`;
+    const state = await createPublicDraft(pageKey, pageSlug);
+    const base = structuredClone(state.snapshot);
+    const basePage = base.pages.find((page) => page.key === pageKey);
+    if (!basePage) throw new Error("Expected the action-shape Site.");
+    const changedLayout = {
+      blocks: [
+        { type: "heading" as const, text: "Changed", level: 1 as const },
+      ],
+    };
+    const validOperation = {
+      op: "set_page",
+      key: basePage.key,
+      title: basePage.title,
+      slug: basePage.slug,
+      audience: basePage.audience,
+      layout_json: changedLayout,
+      status: basePage.status,
+      is_active: basePage.is_active,
+    };
+    const validCandidate = structuredClone(base);
+    Object.assign(
+      validCandidate.pages.find((page) => page.key === pageKey)!,
+      validOperation,
+      { id: basePage.id },
+    );
+    delete (
+      validCandidate.pages.find((page) => page.key === pageKey)! as {
+        op?: string;
+      }
+    ).op;
+
+    for (const mutation of [
+      { property: "audience", value: "internal" },
+      { property: "status", value: "published" },
+      { property: "slug", value: `${pageSlug}-changed` },
+      { property: "key", value: `${pageKey}_changed` },
+      { property: "id", value: crypto.randomUUID() },
+    ] as const) {
+      const candidate = structuredClone(validCandidate);
+      const operation = structuredClone(validOperation) as Record<
+        string,
+        unknown
+      >;
+      const page = candidate.pages.find(
+        (entry) => entry.key === pageKey,
+      )! as unknown as Record<string, unknown>;
+      page[mutation.property] = mutation.value;
+      if (mutation.property !== "id") {
+        operation[mutation.property] = mutation.value;
+      }
+      await expectShapeRejected(
+        "save_page_layout",
+        base as unknown as Json,
+        candidate as unknown as Json,
+        [operation] as Json,
+      );
+    }
+
+    const otherPageCandidate = structuredClone(validCandidate);
+    const otherPage = otherPageCandidate.pages.find(
+      (page) => page.key !== pageKey,
+    );
+    if (!otherPage) throw new Error("Expected an unrelated Page fixture.");
+    otherPage.title = `${otherPage.title} changed`;
+    await expectShapeRejected(
+      "save_page_layout",
+      base as unknown as Json,
+      otherPageCandidate as unknown as Json,
+      [validOperation] as Json,
+    );
+
+    const unrelatedCandidate = structuredClone(validCandidate);
+    (unrelatedCandidate.object_definitions as unknown[]).push({
+      marker: "unrelated change",
+    });
+    await expectShapeRejected(
+      "save_page_layout",
+      base as unknown as Json,
+      unrelatedCandidate as unknown as Json,
+      [validOperation] as Json,
+    );
+
+    const before = await configurationCounts();
+    const malformed = await owner.client.rpc(
+      "apply_direct_page_configuration_change",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        expected_base_version_id: state.currentness.expectedBaseVersionId,
+        expected_head_revision: state.currentness.expectedHeadRevision,
+        requested_action_kind: "save_page_layout",
+        requested_operations: [{ ...validOperation, status: "published" }],
+      },
+    );
+    expect(malformed.error?.message).toContain(
+      "direct_page_action_shape_invalid",
+    );
+    expect(await configurationCounts()).toEqual(before);
   });
 
   it("rejects stale, unauthorized, and invalid actions without advancing the head", async () => {

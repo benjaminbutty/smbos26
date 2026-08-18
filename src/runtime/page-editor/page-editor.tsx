@@ -68,6 +68,7 @@ export interface PageEditorProps {
   >;
   previewForms?: Readonly<Record<string, { bundle: ExperienceFormBundle }>>;
   siteMode?: boolean;
+  publishedSite?: boolean;
 }
 
 type EditorSaveStatus = "saved" | "saving" | "stale" | "error";
@@ -478,6 +479,7 @@ export function PageEditor({
   pageKey,
   previewBookings = {},
   previewForms = {},
+  publishedSite = false,
   renamePageAction,
   siteMode = false,
   title: initialTitle,
@@ -1062,7 +1064,9 @@ export function PageEditor({
 
       <p className="page-editor-footer">
         {siteMode
-          ? "Site edits use the same Page structure as the customer preview. Publishing remains a separate reviewed action."
+          ? publishedSite
+            ? "Changes to this published Site go live when you save."
+            : "Site edits use the same Page structure as the customer preview. Publish Site remains a separate owner action."
           : "Pages bring guidance and live saved Views together. Record edits remain operational and use the same Table workspace."}
       </p>
     </section>

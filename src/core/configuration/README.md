@@ -96,6 +96,14 @@ grammar. The service calls the single authenticated
 `apply_direct_page_configuration_change` RPC, which reuses the M5
 propose/validate/apply engine atomically.
 
+Existing active internal and public Pages share those rename and layout-save
+actions. The trusted action-shape check requires audience, status, identity,
+slug, activation and every unrelated snapshot collection to remain unchanged.
+Direct Page creation remains internal and draft-only. A draft Site therefore
+stays draft when edited; a published Site stays published and its saved content
+is immediately served by the existing public runtime. Initial Site publication
+continues to use the separate owner-facing `Publish Site` action.
+
 Page editor state is transient Tiptap JSON. It is translated to and from the
 canonical `pages.layout_json` grammar at the client boundary; raw editor JSON
 never becomes a second configuration truth model. Unsupported historical blocks

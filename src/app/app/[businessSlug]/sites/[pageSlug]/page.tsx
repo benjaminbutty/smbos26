@@ -246,6 +246,11 @@ export default async function SitePage({
           <div className="site-owner-canvas-label">
             Edit Site — the preview below uses the customer-facing runtime.
           </div>
+          {page.definition.status === "published" ? (
+            <Notice kind="message">
+              Changes to this published Site go live when you save.
+            </Notice>
+          ) : null}
           <PageEditor
             key={`${page.definition.key}-${currentness.expectedHeadRevision}-${page.definition.title}`}
             applyPageBlockAction={applyPageBlockAction.bind(
@@ -260,6 +265,7 @@ export default async function SitePage({
             pageKey={page.definition.key}
             previewBookings={bookings}
             previewForms={forms}
+            publishedSite={page.definition.status === "published"}
             renamePageAction={renamePageAction.bind(
               null,
               businessSlug,
