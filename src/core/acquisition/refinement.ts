@@ -771,6 +771,114 @@ function includeRequiredFieldsInRetainedForms(
   return { operations: reconciled, updatedFormKeys };
 }
 
+function includeSelectedFieldsInRetainedViews(
+  operations: readonly ConfigurationOperation[],
+  selectedNewFields: ReadonlySet<string>,
+): {
+  operations: ConfigurationOperation[];
+  updatedViewKeys: Set<string>;
+} {
+  const fieldsByObject = new Map<string, Set<string>>();
+  for (const field of selectedNewFields) {
+    const separator = field.indexOf(":");
+    if (separator < 0) continue;
+    const objectKey = field.slice(0, separator);
+    const fieldKey = field.slice(separator + 1);
+    const fields = fieldsByObject.get(objectKey) ?? new Set<string>();
+    fields.add(fieldKey);
+    fieldsByObject.set(objectKey, fields);
+  }
+
+  const updatedViewKeys = new Set<string>();
+  const reconciled = operations.map((operation) => {
+    if (operation.op !== "set_view" || !operation.is_active) {
+      return operation;
+    }
+    const fieldKeys = fieldsByObject.get(operation.object_key);
+    if (!fieldKeys || fieldKeys.size === 0) return operation;
+
+    const config = parseViewConfig(operation.view_type, operation.config_json);
+    let nextConfig = config;
+
+    if (operation.view_type === "table" && "columns" in config) {
+      const visibleFields = new Set(
+        config.columns.flatMap((column) =>
+          column.kind === "field" ? [column.field_key] : [],
+        ),
+      );
+      const additions = [...fieldKeys].filter(
+        (fieldKey) => !visibleFields.has(fieldKey),
+      );
+      if (additions.length > 0) {
+        nextConfig = {
+          ...config,
+          fields: [...config.fields, ...additions],
+          columns: [
+            ...config.columns,
+            ...additions.map((field_key) => ({
+              kind: "field" as const,
+              field_key,
+            })),
+          ],
+        };
+      }
+    } else if (
+      operation.view_type === "list" &&
+      "primary_field" in config &&
+      "secondary_fields" in config
+    ) {
+      const additions = [...fieldKeys].filter(
+        (fieldKey) =>
+          fieldKey !== config.primary_field &&
+          !config.secondary_fields.includes(fieldKey),
+      );
+      if (additions.length > 0) {
+        nextConfig = {
+          ...config,
+          secondary_fields: [...config.secondary_fields, ...additions],
+        };
+      }
+    } else if (
+      operation.view_type === "cards" &&
+      "title_field" in config &&
+      "supporting_fields" in config
+    ) {
+      const additions = [...fieldKeys].filter(
+        (fieldKey) =>
+          fieldKey !== config.title_field &&
+          fieldKey !== config.subtitle_field &&
+          fieldKey !== config.image_field &&
+          !config.supporting_fields.includes(fieldKey),
+      );
+      if (additions.length > 0) {
+        nextConfig = {
+          ...config,
+          supporting_fields: [...config.supporting_fields, ...additions],
+        };
+      }
+    } else if (operation.view_type === "detail" && "fields" in config) {
+      const additions = [...fieldKeys].filter(
+        (fieldKey) => !config.fields.includes(fieldKey),
+      );
+      if (additions.length > 0) {
+        nextConfig = {
+          ...config,
+          fields: [...config.fields, ...additions],
+        };
+      }
+    }
+
+    if (nextConfig === config) return operation;
+    updatedViewKeys.add(operationKey(operation));
+    return setViewOperationSchema.parse({
+      ...operation,
+      config_json: nextConfig,
+    });
+  });
+
+  return { operations: reconciled, updatedViewKeys };
+}
+
 function mergeOperations(
   current: readonly ConfigurationOperation[],
   suggested: readonly ConfigurationOperation[],
@@ -868,6 +976,34 @@ function mergeOperations(
   );
   merged = requiredFieldReconciliation.operations;
   for (const key of requiredFieldReconciliation.updatedFormKeys) {
+    updatedKeys.add(key);
+  }
+
+  const currentFieldKeys = new Set(
+    current
+      .filter(
+        (operation): operation is FieldOperation =>
+          operation.op === "set_field" && operation.is_active,
+      )
+      .map((operation) => `${operation.object_key}:${operation.key}`),
+  );
+  const selectedNewFieldKeys = new Set(
+    suggested
+      .filter(
+        (operation): operation is FieldOperation =>
+          operation.op === "set_field" &&
+          operation.is_active &&
+          selectedAdditions.has(operationKey(operation)) &&
+          !currentFieldKeys.has(`${operation.object_key}:${operation.key}`),
+      )
+      .map((operation) => `${operation.object_key}:${operation.key}`),
+  );
+  const selectedFieldViewReconciliation = includeSelectedFieldsInRetainedViews(
+    merged,
+    selectedNewFieldKeys,
+  );
+  merged = selectedFieldViewReconciliation.operations;
+  for (const key of selectedFieldViewReconciliation.updatedViewKeys) {
     updatedKeys.add(key);
   }
 

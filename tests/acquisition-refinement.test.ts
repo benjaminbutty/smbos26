@@ -252,6 +252,50 @@ describe("bounded acquisition refinement", () => {
     expect(() => validateAcquisitionCandidate(result)).not.toThrow();
   });
 
+  it("surfaces a selected new Field in retained Views for the same Object", () => {
+    const current = currentPayload();
+    const suggested = {
+      ...current,
+      operations: [
+        ...current.operations,
+        {
+          op: "set_field",
+          object_key: "job",
+          key: "priority",
+          label: "Priority",
+          field_type: "short_text",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: 4,
+          is_active: true,
+        } satisfies ConfigurationOperation,
+      ],
+    };
+
+    const result = reconcileAcquisitionRefinement(
+      current,
+      suggested,
+      "Also add a priority to each job.",
+    );
+    const jobView = result.operations.find(
+      (
+        operation,
+      ): operation is Extract<ConfigurationOperation, { op: "set_view" }> =>
+        operation.op === "set_view" && operation.key === "job_view",
+    );
+
+    expect(jobView).toBeDefined();
+    expect(jobView?.config_json).toMatchObject({
+      fields: expect.arrayContaining(["priority"]),
+      columns: expect.arrayContaining([
+        { kind: "field", field_key: "priority" },
+      ]),
+    });
+    expect(result.proposal.refinement_summary?.updated).toContain("View: Jobs");
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
   it("adds a bounded Connection between existing concepts for the repair-job request", () => {
     const current = currentPayload();
     const repairJob: ConfigurationOperation = {
