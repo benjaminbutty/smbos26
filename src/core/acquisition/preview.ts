@@ -422,6 +422,13 @@ function bookingCatalogue(
     page: { title: page.title, slug: page.slug },
     booking: {
       key: "booking",
+      customer_label:
+        objects.get(config.customer_object_key)?.operation.singular_label ??
+        "Customer",
+      subject_label: config.subject_object_key
+        ? (objects.get(config.subject_object_key)?.operation.singular_label ??
+          "Subject")
+        : null,
       timezone: PREVIEW_TIMEZONE,
       schedule: config.schedule,
       slots: makeSlots(config.schedule),

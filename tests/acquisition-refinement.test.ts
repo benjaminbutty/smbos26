@@ -325,6 +325,78 @@ describe("bounded acquisition refinement", () => {
     expect(() => validateAcquisitionCandidate(result)).not.toThrow();
   });
 
+  it("replaces a retained scalar endpoint duplicate when a refinement adds a Connection", () => {
+    const current = composeStarterComposition(
+      "enquiries",
+      "I need customers and enquiries organised.",
+    );
+    const repairJob: ConfigurationOperation = {
+      op: "set_object",
+      key: "repair_job",
+      singular_label: "Repair job",
+      plural_label: "Repair jobs",
+      description: "The repair work customers ask the business to complete.",
+      icon: null,
+      is_active: true,
+    };
+    const scalarEndpoint = {
+      op: "set_field",
+      object_key: "customer",
+      key: "repair_job_id",
+      label: "Repair job",
+      field_type: "short_text",
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 3,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+    const relationship = {
+      op: "set_relationship",
+      key: "customer_has_repair_job",
+      source_object_key: "customer",
+      target_object_key: "repair_job",
+      source_label: "has repair jobs",
+      target_label: "customer",
+      cardinality: "one_to_many",
+      is_required: false,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+    const currentWithScalar = {
+      ...current,
+      operations: [...current.operations, repairJob, scalarEndpoint],
+    };
+    const suggestedWithConnection = {
+      ...current,
+      operations: [...current.operations, repairJob, relationship],
+    };
+
+    expect(() => validateAcquisitionCandidate(currentWithScalar)).not.toThrow();
+    expect(() =>
+      validateAcquisitionCandidate(suggestedWithConnection),
+    ).not.toThrow();
+    const result = reconcileAcquisitionRefinement(
+      currentWithScalar,
+      suggestedWithConnection,
+      "Customers should also be linked directly to repair jobs.",
+    );
+
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_field" && operation.key === "repair_job_id",
+      ),
+    ).toBe(false);
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_relationship" &&
+          operation.key === "customer_has_repair_job",
+      ),
+    ).toBe(true);
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
   it("includes a re-keyed Object required by a selected Connection", () => {
     const current = currentPayload();
     const suggested = {

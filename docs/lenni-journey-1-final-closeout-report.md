@@ -14,6 +14,46 @@ starting SHA.
 
 ## Acquisition correction
 
+### Finite dog-scenario diagnosis and generic correction
+
+The exact dog-grooming scenario was exercised through the real configured
+provider before the final browser rerun. The tailored candidate reached four
+Objects, three Connections and one public Booking Site, with the expected
+Customer, Dog/Pet and Appointment/Booking shape. The first finite failures were
+not provider-output failures: one candidate repeated a generic identity Field
+alongside a more specific subject name, and a later candidate selected a
+Booking status default that was not valid for its configured options. The
+generic interpreter canonicalises redundant identity Fields before Forms and
+Views are compiled, and the Booking capability now selects an existing valid
+status option.
+
+The first real public submission then returned a redacted `rejected` result.
+Finite local evidence showed all configured Objects, Relationships and public
+Fields resolved, and all four supplied synthetic Field values were valid. The
+booking Object nevertheless contained two required provider-shaped datetime or
+status Fields that were not the mapped Booking Fields; the transaction supplied
+the capability mappings, so no Record or Booking submission was created. The
+smallest generic cause was the semantic reuse matcher: it only recognised an
+exact status name and a single separator in appointment date/time names. It now
+recognises multi-word appointment start/date/time and status/state names, with a
+regression fixture covering provider-shaped names. No dog-specific condition or
+new primitive was added.
+
+The clean browser plumbing rerun then passed draft Site editing, publication,
+published-Site live editing, separate public-tab rendering and one successful
+synthetic Booking. Aggregate evidence was one Customer Record, one Dog/Pet
+Record, one Appointment/Booking Record, three Relationships, one slot counter
+reservation and one idempotency token. The public capability integration also
+passes its idempotency and forged-field/RLS denial coverage.
+
+Four subsequent exact provider retries on the clean local path were classified
+only as the finite redacted diagnostic
+`stage=provider_transport, code=provider_transport_rate_limited`. No provider
+body, candidate JSON, prompt, credentials or personal data was logged or
+persisted. The fallback was used only to exercise the deterministic runtime
+plumbing and is not counted as a tailored-provider pass; the external provider
+rate limit is the remaining hard stop for a fresh tailored rerun.
+
 Before closeout, the anonymous session treated every provider-backed attempt as
 one of the two owner-facing refinement opportunities. Reservation happened
 before generation, and fallback/deterministic rejection could therefore make a
@@ -132,30 +172,25 @@ continues to pass without changing its trusted operational transaction.
 
 ## Navigation and responsive evidence
 
-Authenticated Site management exposes `Open live Site ↗` with
-`target="_blank"` and `rel="noopener noreferrer"`. The public runtime has no
-owner-only Back-to-Lenni control, leaving the owner workspace available in the
-original tab.
+Authenticated Site management keeps the owner workspace in the original tab;
+the public runtime has no owner-only shell or Back-to-Lenni control. The local
+browser evidence used the Milo's Grooming workspace created with synthetic
+credentials and covered `/start`, the authenticated draft Site, its published
+Site, the published Site editor, and `/p/milo-s-grooming/book` in a separate
+public tab. The latest tailored-provider attempt was rate-limited, so the Site
+and Booking browser evidence is explicitly recorded as deterministic plumbing
+evidence rather than a tailored-provider claim.
 
-Browser evidence was captured against the local application at:
-
-- `/start` — bounded clarification and candidate flow;
-- `/app/bedford-bakery-demo/sites/preorder` — owner Site preview and safe live
-  link;
-- `/app/bedford-bakery-demo/sites/preorder?mode=edit` — bounded Site editor;
-- `/p/bedford-bakery-demo/preorder` — public customer Site with one primary Page
-  heading and a real public Form-style preorder surface.
-
-Screenshots were captured at 1440x900 (owner Site), 1024x768 (Site editor) and
-390x844 (public customer Site). The Booking renderer’s desktop/mobile layout,
-honeypot and labels are covered by the renderer and real public capability
-integration suites; no personal information was captured.
+The public Site was checked at 1440x900, 1024x768 and 390x844. Each viewport
+kept the form present with no horizontal overflow; at 390px the form remained
+366px wide within the viewport. No personal information was captured in
+screenshots.
 
 ## Verification
 
 Passed checks:
 
-- `npm test` — 84 files, 871 tests;
+- `npm test` — 85 files, 884 tests;
 - `npm run typecheck`;
 - `npm run lint`;
 - `npm run format:check`;
@@ -166,12 +201,16 @@ Passed checks:
 - `npm run supabase:lint` — no schema errors;
 - `npm run test:rls` — 19/19;
 - `npm run test:ai-accounting` — 18/18 integration tests plus the two unit
-  suites, on both clean closeout and clean main;
+-  suites (58 tests total);
+- focused acquisition suites — 8 files, 68 tests;
 - acquisition integration — 13/13;
-- public Form/Booking integration — 2/2;
-- full closeout integration — 26/26 files, 262 passed and 5 skipped;
-- exact same full integration command on clean current main — 26/26 files,
-  261 passed and 5 skipped.
+- public Form/Booking, acquisition and direct Site integration — 20/20;
+- full closeout integration — 26/26 files, 265 passed and 5 skipped;
+- responsive public Site checks — 3/3 requested viewports, no horizontal
+  overflow;
+- exact provider retry diagnostics — four finite rate-limit classifications;
+  no tailored rerun could complete during the configured provider rate-limit
+  window.
 
 ### Local fixture failure classification
 

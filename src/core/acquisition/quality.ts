@@ -138,13 +138,23 @@ function semanticTokens(value: string): Set<string> {
   );
 }
 
-function objectSemanticTokens(object: ObjectOperation): Set<string> {
+type SemanticIdentityObject = Pick<
+  ObjectOperation,
+  "key" | "singular_label" | "plural_label"
+>;
+
+type SemanticIdentityField = {
+  key?: string;
+  label: string;
+};
+
+function objectSemanticTokens(object: SemanticIdentityObject): Set<string> {
   return semanticTokens(
     [object.key, object.singular_label, object.plural_label].join(" "),
   );
 }
 
-function fieldSemanticTokens(field: FieldOperation): Set<string> {
+function fieldSemanticTokens(field: SemanticIdentityField): Set<string> {
   return semanticTokens([field.key, field.label].join(" "));
 }
 
@@ -306,7 +316,7 @@ function activeRelationships(
   return relationships;
 }
 
-function isScalarConnectionDuplicate(
+export function isScalarConnectionDuplicate(
   field: FieldOperation,
   target: ObjectOperation,
 ): boolean {
@@ -326,9 +336,9 @@ function isScalarConnectionDuplicate(
 }
 
 function isSemanticallyRedundantField(
-  left: FieldOperation,
-  right: FieldOperation,
-  object: ObjectOperation,
+  left: SemanticIdentityField,
+  right: SemanticIdentityField,
+  object: SemanticIdentityObject,
 ): boolean {
   const leftTokens = fieldSemanticTokens(left);
   const rightTokens = fieldSemanticTokens(right);
@@ -347,27 +357,48 @@ function isSemanticallyRedundantField(
   );
 }
 
+/**
+ * AI plans may repeat a generic identity label alongside a more specific one
+ * (for example, "Name" and "Pet name").  Remove only the less-specific
+ * identity field before the draft compiler creates dependent Forms and Views.
+ */
+export function removeSemanticallyRedundantIdentityFields<
+  T extends SemanticIdentityField,
+>(object: SemanticIdentityObject, fields: readonly T[]): T[] {
+  const redundantIndexes = new Set<number>();
+  for (let leftIndex = 0; leftIndex < fields.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < fields.length;
+      rightIndex += 1
+    ) {
+      const left = fields[leftIndex]!;
+      const right = fields[rightIndex]!;
+      if (!isSemanticallyRedundantField(left, right, object)) continue;
+
+      const leftSize = fieldSemanticTokens(left).size;
+      const rightSize = fieldSemanticTokens(right).size;
+      if (leftSize <= rightSize) redundantIndexes.add(leftIndex);
+      else redundantIndexes.add(rightIndex);
+    }
+  }
+  return fields.filter((_, index) => !redundantIndexes.has(index));
+}
+
 function validateSemanticallyRedundantFields(
   objects: ReadonlyMap<string, ObjectOperation>,
   fields: ReadonlyMap<string, Map<string, FieldOperation>>,
 ): void {
   for (const [objectKey, object] of objects) {
     const objectFields = [...(fields.get(objectKey)?.values() ?? [])];
-    for (let leftIndex = 0; leftIndex < objectFields.length; leftIndex += 1) {
-      for (
-        let rightIndex = leftIndex + 1;
-        rightIndex < objectFields.length;
-        rightIndex += 1
-      ) {
-        const left = objectFields[leftIndex]!;
-        const right = objectFields[rightIndex]!;
-        if (isSemanticallyRedundantField(left, right, object)) {
-          fail(
-            "semantically_redundant_field",
-            `Object ${object.plural_label} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
-          );
-        }
-      }
+    if (
+      removeSemanticallyRedundantIdentityFields(object, objectFields).length !==
+      objectFields.length
+    ) {
+      fail(
+        "semantically_redundant_field",
+        `Object ${object.plural_label} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
+      );
     }
   }
 }

@@ -7,7 +7,11 @@ import {
   setViewOperationSchema,
   type ConfigurationOperation,
 } from "../configuration/schemas";
-import { validateAcquisitionCandidate } from "./quality";
+import {
+  isScalarConnectionDuplicate,
+  removeSemanticallyRedundantIdentityFields,
+  validateAcquisitionCandidate,
+} from "./quality";
 import {
   acquisitionBuildPayloadSchema,
   type AcquisitionBuildPayload,
@@ -373,6 +377,7 @@ function removeExplicitOperations(
 function addDependencies(
   selected: Set<string>,
   operations: readonly ConfigurationOperation[],
+  existingObjectKeys: ReadonlySet<string> = new Set(),
 ): void {
   let changed = true;
   while (changed) {
@@ -382,6 +387,7 @@ function addDependencies(
     );
     const selectedObjects = new Set<string>();
     const selectedFields = new Set<string>();
+    const requiredFields = new Set<string>();
     const selectedRelationships = new Set<string>();
     const selectedForms = new Set<string>();
     const selectedViews = new Set<string>();
@@ -400,10 +406,32 @@ function addDependencies(
       if (operation.op === "set_form") {
         selectedForms.add(operation.key);
         requiredObjects.add(operation.object_key);
+        for (const field of operation.config_json.fields) {
+          requiredFields.add(`${operation.object_key}:${field.field}`);
+        }
       }
       if (operation.op === "set_view") {
         selectedViews.add(operation.key);
         requiredObjects.add(operation.object_key);
+        const config = parseViewConfig(
+          operation.view_type,
+          operation.config_json,
+        );
+        if ("fields" in config) {
+          for (const field of config.fields) {
+            requiredFields.add(`${operation.object_key}:${field}`);
+          }
+        }
+        if ("title_field" in config && config.title_field) {
+          requiredFields.add(`${operation.object_key}:${config.title_field}`);
+        }
+        if ("columns" in config) {
+          for (const column of config.columns) {
+            if (column.kind === "field") {
+              requiredFields.add(`${operation.object_key}:${column.field_key}`);
+            }
+          }
+        }
       }
       if (operation.op === "set_page") {
         for (const block of operation.layout_json.blocks) {
@@ -420,9 +448,12 @@ function addDependencies(
     for (const operation of operations) {
       if (selected.has(operationKey(operation))) continue;
       const depends =
-        (operation.op === "set_object" && requiredObjects.has(operation.key)) ||
+        (operation.op === "set_object" &&
+          requiredObjects.has(operation.key) &&
+          !existingObjectKeys.has(operation.key)) ||
         (operation.op === "set_field" &&
-          selectedObjects.has(operation.object_key)) ||
+          (selectedObjects.has(operation.object_key) ||
+            requiredFields.has(`${operation.object_key}:${operation.key}`))) ||
         ((operation.op === "set_form" || operation.op === "set_view") &&
           selectedObjects.has(operation.object_key)) ||
         (operation.op === "set_relationship" &&
@@ -452,6 +483,233 @@ function addDependencies(
       }
     }
   }
+}
+
+function pruneRedundantSuggestedFields(
+  current: readonly ConfigurationOperation[],
+  suggested: readonly ConfigurationOperation[],
+  selected: Set<string>,
+): void {
+  const currentObjects = operationObjects(current);
+  const currentFields = new Map<string, FieldOperation[]>();
+  for (const operation of current) {
+    if (operation.op !== "set_field" || !operation.is_active) continue;
+    const fields = currentFields.get(operation.object_key) ?? [];
+    fields.push(operation);
+    currentFields.set(operation.object_key, fields);
+  }
+
+  const redundantFieldKeys = new Set<string>();
+  const retainedFields = new Map(
+    [...currentFields].map(([objectKey, fields]) => [objectKey, [...fields]]),
+  );
+  for (const operation of suggested) {
+    if (
+      operation.op !== "set_field" ||
+      !operation.is_active ||
+      !selected.has(operationKey(operation)) ||
+      current.some(
+        (currentOperation) =>
+          operationKey(currentOperation) === operationKey(operation),
+      )
+    ) {
+      continue;
+    }
+    const object = currentObjects.get(operation.object_key);
+    if (!object) continue;
+    const fields = retainedFields.get(operation.object_key) ?? [];
+    const nextFields = [...fields, operation];
+    if (
+      removeSemanticallyRedundantIdentityFields(object, nextFields).length <
+      nextFields.length
+    ) {
+      redundantFieldKeys.add(operationKey(operation));
+      continue;
+    }
+    fields.push(operation);
+    retainedFields.set(operation.object_key, fields);
+  }
+
+  if (redundantFieldKeys.size === 0) return;
+  for (const key of redundantFieldKeys) selected.delete(key);
+
+  const removedFields = new Set(
+    [...redundantFieldKeys].map((key) => key.slice("field:".length)),
+  );
+  const surfacesToDrop = new Set<string>();
+  for (const operation of suggested) {
+    const operationKeyValue = operationKey(operation);
+    if (!selected.has(operationKeyValue)) continue;
+    if (operation.op === "set_form") {
+      const referencesRemovedField = operation.config_json.fields.some(
+        (field) => removedFields.has(`${operation.object_key}:${field.field}`),
+      );
+      if (referencesRemovedField) {
+        selected.delete(operationKeyValue);
+        surfacesToDrop.add(operationKeyValue);
+      }
+    } else if (operation.op === "set_view") {
+      const config = parseViewConfig(
+        operation.view_type,
+        operation.config_json,
+      );
+      const referencesRemovedField =
+        ("fields" in config &&
+          config.fields.some((field) =>
+            removedFields.has(`${operation.object_key}:${field}`),
+          )) ||
+        ("title_field" in config &&
+          config.title_field !== null &&
+          removedFields.has(`${operation.object_key}:${config.title_field}`)) ||
+        ("columns" in config &&
+          config.columns.some(
+            (column) =>
+              column.kind === "field" &&
+              removedFields.has(`${operation.object_key}:${column.field_key}`),
+          ));
+      if (referencesRemovedField) {
+        selected.delete(operationKeyValue);
+        surfacesToDrop.add(operationKeyValue);
+      }
+    }
+  }
+  for (const operation of suggested) {
+    const operationKeyValue = operationKey(operation);
+    if (
+      operation.op === "set_page" &&
+      selected.has(operationKeyValue) &&
+      operationReferences(operation, surfacesToDrop)
+    ) {
+      selected.delete(operationKeyValue);
+    }
+  }
+}
+
+function removeRelationshipScalarDuplicates(
+  operations: readonly ConfigurationOperation[],
+  relationshipKeysToCheck: ReadonlySet<string>,
+): ConfigurationOperation[] {
+  const objects = operationObjects(operations);
+  const relationships = operations.filter(
+    (operation): operation is RelationshipOperation =>
+      operation.op === "set_relationship" && operation.is_active,
+  );
+  const duplicateFieldKeys = new Set<string>();
+  for (const relationship of relationships) {
+    if (!relationshipKeysToCheck.has(operationKey(relationship))) continue;
+    const source = objects.get(relationship.source_object_key);
+    const target = objects.get(relationship.target_object_key);
+    if (!source || !target) continue;
+    for (const operation of operations) {
+      if (operation.op !== "set_field" || !operation.is_active) continue;
+      if (
+        (operation.object_key === source.key &&
+          isScalarConnectionDuplicate(operation, target)) ||
+        (operation.object_key === target.key &&
+          isScalarConnectionDuplicate(operation, source))
+      ) {
+        duplicateFieldKeys.add(operationKey(operation));
+      }
+    }
+  }
+  if (duplicateFieldKeys.size === 0) return [...operations];
+
+  const removedFormKeys = new Set<string>();
+  const removedViewKeys = new Set<string>();
+  const firstPass: ConfigurationOperation[] = [];
+  for (const operation of operations) {
+    if (operation.op === "set_field") {
+      if (!duplicateFieldKeys.has(operationKey(operation))) {
+        firstPass.push(operation);
+      }
+      continue;
+    }
+    if (operation.op === "set_form") {
+      const remainingFields = operation.config_json.fields.filter(
+        (field) =>
+          !duplicateFieldKeys.has(
+            operationKey({
+              op: "set_field",
+              object_key: operation.object_key,
+              key: field.field,
+              label: "",
+              field_type: "short_text",
+              required: false,
+              default_value: null,
+              settings_json: {},
+              position: 0,
+              is_active: true,
+            }),
+          ),
+      );
+      if (remainingFields.length === 0) {
+        removedFormKeys.add(operation.key);
+        continue;
+      }
+      if (remainingFields.length !== operation.config_json.fields.length) {
+        firstPass.push(
+          setFormOperationSchema.parse({
+            ...operation,
+            config_json: {
+              ...operation.config_json,
+              fields: remainingFields,
+            },
+          }),
+        );
+      } else {
+        firstPass.push(operation);
+      }
+      continue;
+    }
+    if (operation.op === "set_view") {
+      const config = parseViewConfig(
+        operation.view_type,
+        operation.config_json,
+      );
+      const referencesDuplicate =
+        ("fields" in config &&
+          config.fields.some((field) =>
+            duplicateFieldKeys.has(`field:${operation.object_key}:${field}`),
+          )) ||
+        ("title_field" in config &&
+          duplicateFieldKeys.has(
+            `field:${operation.object_key}:${config.title_field}`,
+          )) ||
+        ("columns" in config &&
+          config.columns.some(
+            (column) =>
+              column.kind === "field" &&
+              duplicateFieldKeys.has(
+                `field:${operation.object_key}:${column.field_key}`,
+              ),
+          ));
+      if (referencesDuplicate) {
+        removedViewKeys.add(operation.key);
+        continue;
+      }
+    }
+    firstPass.push(operation);
+  }
+
+  return firstPass.flatMap<ConfigurationOperation>((operation) => {
+    if (operation.op !== "set_page") return [operation];
+    const blocks = operation.layout_json.blocks.filter((block) => {
+      if (block.type === "view") return !removedViewKeys.has(block.view_key);
+      if (block.type === "form" || block.type === "public_form") {
+        return !removedFormKeys.has(block.form_key);
+      }
+      return true;
+    });
+    if (blocks.length === 0) return [];
+    if (blocks.length === operation.layout_json.blocks.length)
+      return [operation];
+    return [
+      setPageOperationSchema.parse({
+        ...operation,
+        layout_json: pageLayoutSchema.parse({ blocks }),
+      }),
+    ];
+  });
 }
 
 function includeRequiredFieldsInRetainedForms(
@@ -530,14 +788,34 @@ function mergeOperations(
   const refinementTerms = new Set(tokens(refinement));
   const selectedAdditions = new Set<string>();
   for (const operation of suggested) {
+    const key = operationKey(operation);
+    const selectedByRefinement = operationMatchesTerms(
+      operation,
+      refinementTerms,
+      suggestedObjects,
+    );
     if (
-      !currentByKey.has(operationKey(operation)) &&
-      operationMatchesTerms(operation, refinementTerms, suggestedObjects)
+      selectedByRefinement &&
+      (!currentByKey.has(key) ||
+        (operation.op !== "set_relationship" &&
+          allowsDirectObjectUpdate(operation, refinement)))
     ) {
-      selectedAdditions.add(operationKey(operation));
+      selectedAdditions.add(key);
     }
   }
-  addDependencies(selectedAdditions, suggested);
+  addDependencies(
+    selectedAdditions,
+    suggested,
+    new Set(
+      current
+        .filter(
+          (operation): operation is ObjectOperation =>
+            operation.op === "set_object" && operation.is_active,
+        )
+        .map((operation) => operation.key),
+    ),
+  );
+  pruneRedundantSuggestedFields(current, suggested, selectedAdditions);
 
   const removedKeys = removed.removedKeys;
   const suggestedByKey = new Map(
@@ -550,6 +828,7 @@ function mergeOperations(
     const next = suggestedByKey.get(key);
     const directUpdate =
       next !== undefined &&
+      next.op !== "set_relationship" &&
       operationMatchesTerms(next, refinementTerms, suggestedObjects) &&
       allowsDirectObjectUpdate(next, refinement);
     const dependentUpdate = selectedAdditions.has(key);
@@ -575,6 +854,13 @@ function mergeOperations(
       merged.push(operation);
     }
   }
+
+  merged = removeRelationshipScalarDuplicates(
+    merged,
+    new Set(
+      [...selectedAdditions].filter((key) => key.startsWith("relationship:")),
+    ),
+  );
 
   const requiredFieldReconciliation = includeRequiredFieldsInRetainedForms(
     merged,

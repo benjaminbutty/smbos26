@@ -19,6 +19,7 @@ import {
 import { enhanceAcquisitionPayload } from "./capabilities";
 import { candidateChecksum } from "./preview";
 import { composeStarterComposition } from "./composer";
+import { emitAcquisitionCandidateDiagnostic } from "./diagnostics";
 import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
 import { validateAcquisitionCandidate } from "./quality";
@@ -453,6 +454,10 @@ async function generateCandidate(
   try {
     payload = await interpretAcquisitionRequest(category, enrichedRequest);
   } catch (error) {
+    emitAcquisitionCandidateDiagnostic(error, "candidate_generation", {
+      category,
+      source: "tailored",
+    });
     emitAcquisitionEvent("proposal_failed", {
       category,
       reason:
@@ -466,9 +471,25 @@ async function generateCandidate(
     payload = composeStarterComposition(category, request);
   }
   try {
-    return validateAcquisitionCandidate(
-      enhanceAcquisitionPayload(payload, decisions, request),
-    );
+    let enhancedPayload: AcquisitionBuildPayload;
+    try {
+      enhancedPayload = enhanceAcquisitionPayload(payload, decisions, request);
+    } catch (error) {
+      emitAcquisitionCandidateDiagnostic(error, "capability_enhancement", {
+        category,
+        source: payload.proposal.source,
+      });
+      throw error;
+    }
+    try {
+      return validateAcquisitionCandidate(enhancedPayload);
+    } catch (error) {
+      emitAcquisitionCandidateDiagnostic(error, "candidate_quality", {
+        category,
+        source: payload.proposal.source,
+      });
+      throw error;
+    }
   } catch (error) {
     emitAcquisitionEvent("proposal_failed", {
       category,
@@ -476,9 +497,20 @@ async function generateCandidate(
     });
     if (!allowFallback) throw error;
     const fallback = composeStarterComposition(category, request);
-    return validateAcquisitionCandidate(
-      enhanceAcquisitionPayload(fallback, decisions, request),
-    );
+    try {
+      const enhancedFallback = enhanceAcquisitionPayload(
+        fallback,
+        decisions,
+        request,
+      );
+      return validateAcquisitionCandidate(enhancedFallback);
+    } catch (fallbackError) {
+      emitAcquisitionCandidateDiagnostic(fallbackError, "candidate_quality", {
+        category,
+        source: "fallback",
+      });
+      throw fallbackError;
+    }
   }
 }
 

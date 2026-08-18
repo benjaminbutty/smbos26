@@ -29,7 +29,10 @@ import {
   acquisitionProposalSchema,
   acquisitionRequestSchema,
 } from "./schemas";
-import { validateAcquisitionCandidate } from "./quality";
+import {
+  removeSemanticallyRedundantIdentityFields,
+  validateAcquisitionCandidate,
+} from "./quality";
 
 export const ACQUISITION_MAX_OBJECTS = 6;
 export const ACQUISITION_MAX_FIELDS_PER_OBJECT = 12;
@@ -253,6 +256,25 @@ function composeDraft(plan: AcquisitionReadyPlan) {
   return { readyPlan, draft };
 }
 
+function canonicaliseAcquisitionPlan(
+  plan: AcquisitionReadyPlan,
+): AcquisitionReadyPlan {
+  return {
+    ...plan,
+    tables: plan.tables.map((table) => ({
+      ...table,
+      fields: removeSemanticallyRedundantIdentityFields(
+        {
+          key: table.reference,
+          singular_label: table.singular_name,
+          plural_label: table.plural_name,
+        },
+        table.fields,
+      ),
+    })),
+  };
+}
+
 function addAcquisitionConnectionColumns(
   operations: readonly ConfigurationOperation[],
   plan: AcquisitionReadyPlan,
@@ -377,12 +399,13 @@ export async function interpretAcquisitionRequest(
     "acquisition_workspace_plan_v1",
     planningInput,
   );
-  const plan = acquisitionPlanningOutputSchema.parse(result.output);
-  if (plan.state === "needs_more_detail")
+  const parsedPlan = acquisitionPlanningOutputSchema.parse(result.output);
+  if (parsedPlan.state === "needs_more_detail")
     throw new AcquisitionInterpretationError(
       "needs_more_detail",
-      plan.revision_prompt,
+      parsedPlan.revision_prompt,
     );
+  const plan = canonicaliseAcquisitionPlan(parsedPlan);
   const { readyPlan, draft } = composeDraft(plan);
   const taskInput = {
     schema_version: 1 as const,
