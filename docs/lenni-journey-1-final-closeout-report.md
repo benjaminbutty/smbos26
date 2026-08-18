@@ -5,7 +5,9 @@
 - Starting `main`: `babd0b6f66d1f9f107767c466f83199a351b0e1d`
 - Branch: `journey1/final-closeout`
 - Feature implementation commit: `f1418f10c112f23075ea5dbd5ea44938dfe081bd`
-- Changed files in the closeout commit: 25
+- Public-Site editing checkpoint: `e542f7152a360e1f48be80776237b9000e14cdd5`
+- Acquisition/public-booking hardening commit: `ca988bc`
+- Changed files in the Site checkpoint: seven; hardening commit: 13
 - Scope: Journey 1 only. Journey 2 and Journey 4 were not started.
 
 The branch was created from clean current `origin/main`; the final fetch before
