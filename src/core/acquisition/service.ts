@@ -23,6 +23,7 @@ import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
 import { validateAcquisitionCandidate } from "./quality";
 import { reconcileAcquisitionRefinement } from "./refinement";
+import { emitAcquisitionRefinementDiagnostic } from "./refinement-diagnostics";
 import {
   acquisitionBuildPayloadSchema,
   acquisitionCategorySchema,
@@ -377,34 +378,52 @@ ${refinement}`
     request,
     session.clarification,
   );
-  let payload: AcquisitionBuildPayload;
+  let suggestedPayload: AcquisitionBuildPayload;
   try {
-    const suggestedPayload = await generateCandidate(
+    suggestedPayload = await generateCandidate(
       category,
       request,
       refinementAssessment.decisions,
       { allowFallback: false },
     );
-    payload = reconcileAcquisitionRefinement(
-      session.payload,
-      suggestedPayload,
-      refinement,
-    );
-    const summary = payload.proposal.refinement_summary;
-    if (
-      !summary ||
-      (summary.added.length === 0 &&
-        summary.updated.length === 0 &&
-        summary.removed.length === 0)
-    ) {
-      throw new Error("The requested refinement produced no safe change.");
-    }
   } catch (error) {
+    emitAcquisitionRefinementDiagnostic(error, "candidate_generation");
     emitAcquisitionEvent("proposal_failed", {
       category,
       reason: "candidate_quality_rejected",
     });
     throw new AcquisitionServiceError("refinement_failed", error);
+  }
+  let payload: AcquisitionBuildPayload;
+  try {
+    payload = reconcileAcquisitionRefinement(
+      session.payload,
+      suggestedPayload,
+      refinement,
+    );
+  } catch (error) {
+    emitAcquisitionRefinementDiagnostic(error, "reconciliation");
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    throw new AcquisitionServiceError("refinement_failed", error);
+  }
+  const summary = payload.proposal.refinement_summary;
+  if (
+    !summary ||
+    (summary.added.length === 0 &&
+      summary.updated.length === 0 &&
+      summary.removed.length === 0)
+  ) {
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    throw new AcquisitionServiceError(
+      "refinement_failed",
+      new Error("The requested refinement produced no safe change."),
+    );
   }
   await writeProposal({
     sessionId: reservation.session_id,
@@ -450,16 +469,12 @@ async function generateCandidate(
     return validateAcquisitionCandidate(
       enhanceAcquisitionPayload(payload, decisions, request),
     );
-  } catch {
+  } catch (error) {
     emitAcquisitionEvent("proposal_failed", {
       category,
       reason: "candidate_quality_rejected",
     });
-    if (!allowFallback) {
-      throw new Error(
-        "The generated candidate did not pass deterministic validation.",
-      );
-    }
+    if (!allowFallback) throw error;
     const fallback = composeStarterComposition(category, request);
     return validateAcquisitionCandidate(
       enhanceAcquisitionPayload(fallback, decisions, request),

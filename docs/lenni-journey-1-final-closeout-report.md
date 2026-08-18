@@ -41,12 +41,47 @@ objects remain unchanged. The service path disables fallback for refinements,
 so a provider failure is reported as a safe refinement failure rather than a
 synthetic success.
 
-The local browser reached the real bounded musical-repair clarification and
-candidate flow at `/start`; local provider configuration was unavailable, so
-that browser run honestly displayed the reliable starter fallback. The exact
-provider-backed refinement was not sent to an external model. Its supported
-additive composition and allowance semantics are covered by deterministic and
-Supabase integration tests.
+### Real provider-backed refinement closeout
+
+The first exact provider-backed owner-acceptance run reached a tailored musical
+instrument repair candidate, then safely rejected `Customers should also be
+linked directly to repair jobs.` The candidate and both successful-refinement
+allowances remained available.
+
+A narrow internal-only diagnostic classified the deterministic failures without
+logging or persisting the owner request, provider output, candidate JSON, model
+prose, PII, credentials or arbitrary error bodies. The finite diagnostics were:
+
+1. `stage=reconciliation`, `code=quality_required_form_field_missing`;
+2. after closing that invariant, `stage=reconciliation`,
+   `code=quality_object_reference_missing`.
+
+The generic reconciliation correction now keeps retained Forms valid when a
+selected required Field arrives through a regenerated/re-keyed Form set, and
+includes endpoint Objects required by selected Connections and other
+object-bound surfaces. The architecture remains unchanged:
+
+```text
+current reviewed candidate
++ model suggestion
++ owner refinement
+→ conservative deterministic reconciliation
+→ full candidate-quality validation
+→ updated candidate
+```
+
+The clean real-provider rerun passed. The initial candidate contained Customers,
+Instruments and Repair jobs. The exact first refinement added a direct Customer
+↔ Repair job Connection, retained all three concepts, displayed an owner-readable
+delta and opened the updated preview. The UI then showed one successful
+refinement remaining, proving the earlier failed attempts had not consumed the
+product allowance.
+
+The same session accepted `Also add a priority to each repair job.` The updated
+preview exposed Priority on a Repair job while the first direct Customer ↔ Repair
+job result remained in the candidate. The session then showed zero refinements
+remaining: two successful refinements used, failed attempts not counted. No AI
+task, prompt, model, schema or policy was changed for this acceptance.
 
 ## Site editor correction
 
@@ -120,7 +155,7 @@ integration suites; no personal information was captured.
 
 Passed checks:
 
-- `npm test` — 84 files, 867 tests;
+- `npm test` — 84 files, 871 tests;
 - `npm run typecheck`;
 - `npm run lint`;
 - `npm run format:check`;

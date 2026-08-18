@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 
 import { pageLayoutSchema, parseViewConfig } from "../experience/schemas";
 import {
+  setFormOperationSchema,
   setPageOperationSchema,
   setViewOperationSchema,
   type ConfigurationOperation,
@@ -384,18 +385,42 @@ function addDependencies(
     const selectedRelationships = new Set<string>();
     const selectedForms = new Set<string>();
     const selectedViews = new Set<string>();
+    const requiredObjects = new Set<string>();
     for (const operation of selectedOperations) {
       if (operation.op === "set_object") selectedObjects.add(operation.key);
-      if (operation.op === "set_field")
+      if (operation.op === "set_field") {
         selectedFields.add(`${operation.object_key}:${operation.key}`);
-      if (operation.op === "set_relationship")
+        requiredObjects.add(operation.object_key);
+      }
+      if (operation.op === "set_relationship") {
         selectedRelationships.add(operation.key);
-      if (operation.op === "set_form") selectedForms.add(operation.key);
-      if (operation.op === "set_view") selectedViews.add(operation.key);
+        requiredObjects.add(operation.source_object_key);
+        requiredObjects.add(operation.target_object_key);
+      }
+      if (operation.op === "set_form") {
+        selectedForms.add(operation.key);
+        requiredObjects.add(operation.object_key);
+      }
+      if (operation.op === "set_view") {
+        selectedViews.add(operation.key);
+        requiredObjects.add(operation.object_key);
+      }
+      if (operation.op === "set_page") {
+        for (const block of operation.layout_json.blocks) {
+          if (block.type !== "booking") continue;
+          requiredObjects.add(block.config.booking_object_key);
+          requiredObjects.add(block.config.customer_object_key);
+          if (block.config.subject_object_key)
+            requiredObjects.add(block.config.subject_object_key);
+          if (block.config.service_object_key)
+            requiredObjects.add(block.config.service_object_key);
+        }
+      }
     }
     for (const operation of operations) {
       if (selected.has(operationKey(operation))) continue;
       const depends =
+        (operation.op === "set_object" && requiredObjects.has(operation.key)) ||
         (operation.op === "set_field" &&
           selectedObjects.has(operation.object_key)) ||
         ((operation.op === "set_form" || operation.op === "set_view") &&
@@ -429,6 +454,65 @@ function addDependencies(
   }
 }
 
+function includeRequiredFieldsInRetainedForms(
+  operations: readonly ConfigurationOperation[],
+  suggested: readonly ConfigurationOperation[],
+): {
+  operations: ConfigurationOperation[];
+  updatedFormKeys: Set<string>;
+} {
+  const requiredFieldsByObject = new Map<string, FieldOperation[]>();
+  for (const operation of operations) {
+    if (
+      operation.op !== "set_field" ||
+      !operation.is_active ||
+      !operation.required
+    ) {
+      continue;
+    }
+    const fields = requiredFieldsByObject.get(operation.object_key) ?? [];
+    fields.push(operation);
+    requiredFieldsByObject.set(operation.object_key, fields);
+  }
+
+  const suggestedForms = suggested.filter(
+    (operation): operation is FormOperation =>
+      operation.op === "set_form" && operation.is_active,
+  );
+  const updatedFormKeys = new Set<string>();
+  const reconciled = operations.map((operation) => {
+    if (operation.op !== "set_form" || !operation.is_active) return operation;
+    const requiredFields = requiredFieldsByObject.get(operation.object_key);
+    if (!requiredFields) return operation;
+
+    const presentFields = new Set(
+      operation.config_json.fields.map((entry) => entry.field),
+    );
+    const missingFields = requiredFields.filter(
+      (field) => !presentFields.has(field.key),
+    );
+    if (missingFields.length === 0) return operation;
+
+    const matchingSuggestedForms = suggestedForms.filter(
+      (form) => form.object_key === operation.object_key,
+    );
+    const fields = [...operation.config_json.fields];
+    for (const field of missingFields) {
+      const suggestedEntry = matchingSuggestedForms
+        .flatMap((form) => form.config_json.fields)
+        .find((entry) => entry.field === field.key);
+      fields.push(suggestedEntry ?? { field: field.key, hidden: false });
+    }
+    updatedFormKeys.add(operationKey(operation));
+    return setFormOperationSchema.parse({
+      ...operation,
+      config_json: { ...operation.config_json, fields },
+    });
+  });
+
+  return { operations: reconciled, updatedFormKeys };
+}
+
 function mergeOperations(
   current: readonly ConfigurationOperation[],
   suggested: readonly ConfigurationOperation[],
@@ -459,7 +543,7 @@ function mergeOperations(
   const suggestedByKey = new Map(
     suggested.map((operation) => [operationKey(operation), operation]),
   );
-  const merged: ConfigurationOperation[] = [];
+  let merged: ConfigurationOperation[] = [];
   const updatedKeys = new Set<string>();
   for (const operation of removed.operations) {
     const key = operationKey(operation);
@@ -490,6 +574,15 @@ function mergeOperations(
     ) {
       merged.push(operation);
     }
+  }
+
+  const requiredFieldReconciliation = includeRequiredFieldsInRetainedForms(
+    merged,
+    suggested,
+  );
+  merged = requiredFieldReconciliation.operations;
+  for (const key of requiredFieldReconciliation.updatedFormKeys) {
+    updatedKeys.add(key);
   }
 
   const currentKeys = new Set(current.map(operationKey));
