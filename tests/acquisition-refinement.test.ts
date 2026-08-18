@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { composeStarterComposition } from "../src/core/acquisition/composer";
-import { validateAcquisitionCandidate } from "../src/core/acquisition/quality";
+import {
+  AcquisitionCandidateQualityError,
+  validateAcquisitionCandidate,
+} from "../src/core/acquisition/quality";
 import { reconcileAcquisitionRefinement } from "../src/core/acquisition/refinement";
+import {
+  classifyAcquisitionRefinementDiagnostic,
+  emitAcquisitionRefinementDiagnostic,
+} from "../src/core/acquisition/refinement-diagnostics";
 import type { ConfigurationOperation } from "../src/core/configuration/schemas";
 
 function currentPayload() {
@@ -13,6 +20,62 @@ function currentPayload() {
 }
 
 describe("bounded acquisition refinement", () => {
+  it("classifies deterministic quality failures without retaining their detail", () => {
+    const markers = [
+      "owner-request-marker",
+      "raw-provider-output-marker",
+      "candidate-json-marker",
+      "pii-marker@example.test",
+      "credential-marker",
+    ];
+    const diagnostic = classifyAcquisitionRefinementDiagnostic(
+      new AcquisitionCandidateQualityError(
+        "duplicate_relationship",
+        markers.join(" "),
+      ),
+      "reconciliation",
+    );
+
+    expect(diagnostic).toEqual({
+      stage: "reconciliation",
+      code: "quality_duplicate_relationship",
+    });
+    expect(JSON.stringify(diagnostic)).not.toContain(markers.join(" "));
+  });
+
+  it("emits only the allow-listed diagnostic stage and code", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      emitAcquisitionRefinementDiagnostic(
+        new Error(
+          "owner-request-marker raw-provider-output-marker candidate-json-marker pii@example.test credential-marker",
+        ),
+        "reconciliation",
+      );
+      emitAcquisitionRefinementDiagnostic(
+        new AcquisitionCandidateQualityError(
+          "relationship_scalar_duplication",
+          "arbitrary error body",
+        ),
+        "reconciliation",
+      );
+
+      expect(info).toHaveBeenCalledTimes(1);
+      expect(info).toHaveBeenCalledWith(
+        JSON.stringify({
+          event: "acquisition_refinement_diagnostic",
+          stage: "reconciliation",
+          code: "quality_relationship_scalar_duplication",
+        }),
+      );
+      expect(JSON.stringify(info.mock.calls)).not.toMatch(
+        /owner-request-marker|raw-provider-output-marker|candidate-json-marker|pii@example\.test|credential-marker|arbitrary error body/,
+      );
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it("adds the requested Field and updates only dependent surfaces", () => {
     const current = currentPayload();
     const suggested = {
@@ -93,6 +156,341 @@ describe("bounded acquisition refinement", () => {
       "Customer: Preferred contact",
     );
     expect(JSON.stringify(result)).not.toContain("Owner refinement:");
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
+  it("keeps retained Forms valid when a regenerated candidate re-keys Forms around a new required Field", () => {
+    const current = currentPayload();
+    const suggested = {
+      ...current,
+      operations: current.operations
+        .map((operation) => {
+          if (operation.op === "set_form" && operation.object_key === "job") {
+            return {
+              ...operation,
+              key: `regenerated_${operation.key}`,
+              config_json: {
+                ...operation.config_json,
+                fields: [
+                  ...operation.config_json.fields,
+                  { field: "priority", hidden: false },
+                ],
+              },
+            } satisfies ConfigurationOperation;
+          }
+          if (
+            operation.op === "set_view" &&
+            operation.key === "job_view" &&
+            operation.view_type === "table"
+          ) {
+            const config = operation.config_json as {
+              fields: string[];
+              columns: Array<{
+                kind: "field" | "connection";
+                field_key?: string;
+                relationship_key?: string;
+                direction?: "source" | "target";
+                label?: string;
+              }>;
+              create_form_key: string | null;
+              edit_form_key: string | null;
+            };
+            return {
+              ...operation,
+              config_json: {
+                ...config,
+                fields: [...config.fields, "priority"],
+                columns: [
+                  ...config.columns,
+                  { kind: "field", field_key: "priority" },
+                ],
+                create_form_key: "regenerated_job_create",
+                edit_form_key: "regenerated_job_edit",
+              },
+            } satisfies ConfigurationOperation;
+          }
+          return operation;
+        })
+        .concat([
+          {
+            op: "set_field",
+            object_key: "job",
+            key: "priority",
+            label: "Priority",
+            field_type: "short_text",
+            required: true,
+            default_value: null,
+            settings_json: {},
+            position: 4,
+            is_active: true,
+          } satisfies ConfigurationOperation,
+        ]),
+    };
+
+    expect(() => validateAcquisitionCandidate(suggested)).not.toThrow();
+
+    const result = reconcileAcquisitionRefinement(
+      current,
+      suggested,
+      "Also add a priority to each job.",
+    );
+
+    const retainedJobForms = result.operations.filter(
+      (
+        operation,
+      ): operation is Extract<ConfigurationOperation, { op: "set_form" }> =>
+        operation.op === "set_form" &&
+        operation.object_key === "job" &&
+        ["job_create", "job_edit"].includes(operation.key),
+    );
+    expect(retainedJobForms).toHaveLength(2);
+    expect(
+      retainedJobForms.every((form) =>
+        form.config_json.fields.some((entry) => entry.field === "priority"),
+      ),
+    ).toBe(true);
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
+  it("surfaces a selected new Field in retained Views for the same Object", () => {
+    const current = currentPayload();
+    const suggested = {
+      ...current,
+      operations: [
+        ...current.operations,
+        {
+          op: "set_field",
+          object_key: "job",
+          key: "priority",
+          label: "Priority",
+          field_type: "short_text",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: 4,
+          is_active: true,
+        } satisfies ConfigurationOperation,
+      ],
+    };
+
+    const result = reconcileAcquisitionRefinement(
+      current,
+      suggested,
+      "Also add a priority to each job.",
+    );
+    const jobView = result.operations.find(
+      (
+        operation,
+      ): operation is Extract<ConfigurationOperation, { op: "set_view" }> =>
+        operation.op === "set_view" && operation.key === "job_view",
+    );
+
+    expect(jobView).toBeDefined();
+    expect(jobView?.config_json).toMatchObject({
+      fields: expect.arrayContaining(["priority"]),
+      columns: expect.arrayContaining([
+        { kind: "field", field_key: "priority" },
+      ]),
+    });
+    expect(result.proposal.refinement_summary?.updated).toContain("View: Jobs");
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
+  it("adds a bounded Connection between existing concepts for the repair-job request", () => {
+    const current = currentPayload();
+    const repairJob: ConfigurationOperation = {
+      op: "set_object",
+      key: "repair_job",
+      singular_label: "Repair job",
+      plural_label: "Repair jobs",
+      description: "The repair work customers ask the business to complete.",
+      icon: null,
+      is_active: true,
+    };
+    const currentWithRepairJobs = {
+      ...current,
+      operations: [...current.operations, repairJob],
+      proposal: {
+        ...current.proposal,
+        concepts: [
+          ...current.proposal.concepts,
+          {
+            name: "Repair jobs",
+            description: repairJob.description,
+            tracked_information: [],
+          },
+        ],
+      },
+    };
+    const suggested = {
+      ...currentWithRepairJobs,
+      operations: [
+        ...currentWithRepairJobs.operations,
+        {
+          op: "set_relationship",
+          key: "customer_has_repair_job",
+          source_object_key: "customer",
+          target_object_key: "repair_job",
+          source_label: "has repair jobs",
+          target_label: "customer",
+          cardinality: "one_to_many",
+          is_required: false,
+          is_active: true,
+        } satisfies ConfigurationOperation,
+      ],
+      proposal: {
+        ...currentWithRepairJobs.proposal,
+        connections: [
+          ...currentWithRepairJobs.proposal.connections,
+          { text: "Customers link directly to repair jobs." },
+        ],
+      },
+    };
+
+    const result = reconcileAcquisitionRefinement(
+      currentWithRepairJobs,
+      suggested,
+      "Customers should also be linked directly to repair jobs.",
+    );
+
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_relationship" &&
+          operation.key === "customer_has_repair_job",
+      ),
+    ).toBe(true);
+    expect(result.proposal.refinement_summary?.added).toContain(
+      "Customer ↔ Repair job",
+    );
+    expect(
+      result.operations.filter((operation) => operation.op === "set_object"),
+    ).toHaveLength(5);
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
+  it("replaces a retained scalar endpoint duplicate when a refinement adds a Connection", () => {
+    const current = composeStarterComposition(
+      "enquiries",
+      "I need customers and enquiries organised.",
+    );
+    const repairJob: ConfigurationOperation = {
+      op: "set_object",
+      key: "repair_job",
+      singular_label: "Repair job",
+      plural_label: "Repair jobs",
+      description: "The repair work customers ask the business to complete.",
+      icon: null,
+      is_active: true,
+    };
+    const scalarEndpoint = {
+      op: "set_field",
+      object_key: "customer",
+      key: "repair_job_id",
+      label: "Repair job",
+      field_type: "short_text",
+      required: false,
+      default_value: null,
+      settings_json: {},
+      position: 3,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+    const relationship = {
+      op: "set_relationship",
+      key: "customer_has_repair_job",
+      source_object_key: "customer",
+      target_object_key: "repair_job",
+      source_label: "has repair jobs",
+      target_label: "customer",
+      cardinality: "one_to_many",
+      is_required: false,
+      is_active: true,
+    } satisfies ConfigurationOperation;
+    const currentWithScalar = {
+      ...current,
+      operations: [...current.operations, repairJob, scalarEndpoint],
+    };
+    const suggestedWithConnection = {
+      ...current,
+      operations: [...current.operations, repairJob, relationship],
+    };
+
+    expect(() => validateAcquisitionCandidate(currentWithScalar)).not.toThrow();
+    expect(() =>
+      validateAcquisitionCandidate(suggestedWithConnection),
+    ).not.toThrow();
+    const result = reconcileAcquisitionRefinement(
+      currentWithScalar,
+      suggestedWithConnection,
+      "Customers should also be linked directly to repair jobs.",
+    );
+
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_field" && operation.key === "repair_job_id",
+      ),
+    ).toBe(false);
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_relationship" &&
+          operation.key === "customer_has_repair_job",
+      ),
+    ).toBe(true);
+    expect(() => validateAcquisitionCandidate(result)).not.toThrow();
+  });
+
+  it("includes a re-keyed Object required by a selected Connection", () => {
+    const current = currentPayload();
+    const suggested = {
+      ...current,
+      operations: [
+        ...current.operations,
+        {
+          op: "set_object",
+          key: "work_item",
+          singular_label: "Work item",
+          plural_label: "Work items",
+          description: "A unit of work connected to a customer.",
+          icon: null,
+          is_active: true,
+        } satisfies ConfigurationOperation,
+        {
+          op: "set_relationship",
+          key: "customer_has_repair_job",
+          source_object_key: "customer",
+          target_object_key: "work_item",
+          source_label: "has work items",
+          target_label: "customer",
+          cardinality: "one_to_many",
+          is_required: false,
+          is_active: true,
+        } satisfies ConfigurationOperation,
+      ],
+    };
+
+    expect(() => validateAcquisitionCandidate(suggested)).not.toThrow();
+
+    const result = reconcileAcquisitionRefinement(
+      current,
+      suggested,
+      "Customers should also be linked directly to repair jobs.",
+    );
+
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_object" && operation.key === "work_item",
+      ),
+    ).toBe(true);
+    expect(
+      result.operations.some(
+        (operation) =>
+          operation.op === "set_relationship" &&
+          operation.key === "customer_has_repair_job",
+      ),
+    ).toBe(true);
     expect(() => validateAcquisitionCandidate(result)).not.toThrow();
   });
 

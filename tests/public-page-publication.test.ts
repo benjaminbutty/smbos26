@@ -8,8 +8,10 @@ import {
 } from "../src/core/configuration/definition-source";
 import {
   composePublicPagePublicationOperation,
+  publishPublicPage,
   PublicPagePublicationError,
 } from "../src/core/configuration/publication/page-service";
+import type { ConfigurationChangeService } from "../src/core/configuration/service";
 import { publicPagePublicationFormSchema } from "../src/core/configuration/publication/schemas";
 
 const pageId = "00000000-0000-4000-8000-000000000101";
@@ -95,5 +97,65 @@ describe("Journey 1 public Site publication", () => {
         expectedHeadRevision: 2,
       }).success,
     ).toBe(false);
+  });
+
+  it("reloads currentness and publishes through the existing lifecycle", async () => {
+    const proposed = { id: "00000000-0000-4000-8000-000000000103" };
+    const configuration = {
+      getActiveHead: vi.fn().mockResolvedValue({
+        active_version_id: "00000000-0000-4000-8000-000000000102",
+        head_revision: 7,
+      }),
+      getVersion: vi.fn().mockResolvedValue({
+        id: "00000000-0000-4000-8000-000000000102",
+        snapshot_json: snapshot(),
+      }),
+      proposeChangeSet: vi.fn().mockResolvedValue(proposed),
+      validateChangeSet: vi.fn().mockResolvedValue({ status: "validated" }),
+      applyChangeSet: vi.fn().mockResolvedValue({ status: "applied" }),
+    } as unknown as ConfigurationChangeService;
+
+    await publishPublicPage(configuration, { pageKey: "booking_site" });
+
+    expect(configuration.proposeChangeSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedBaseVersionId: "00000000-0000-4000-8000-000000000102",
+        expectedHeadRevision: 7,
+        operations: [
+          expect.objectContaining({
+            op: "set_page",
+            key: "booking_site",
+            status: "published",
+          }),
+        ],
+      }),
+    );
+    expect(configuration.validateChangeSet).toHaveBeenCalledWith(proposed.id);
+    expect(configuration.applyChangeSet).toHaveBeenCalledWith(proposed.id);
+  });
+
+  it("fails closed when validation does not return a validated proposal", async () => {
+    const configuration = {
+      getActiveHead: vi.fn().mockResolvedValue({
+        active_version_id: "00000000-0000-4000-8000-000000000102",
+        head_revision: 7,
+      }),
+      getVersion: vi.fn().mockResolvedValue({
+        id: "00000000-0000-4000-8000-000000000102",
+        snapshot_json: snapshot(),
+      }),
+      proposeChangeSet: vi
+        .fn()
+        .mockResolvedValue({ id: "00000000-0000-4000-8000-000000000103" }),
+      validateChangeSet: vi.fn().mockResolvedValue({ status: "rejected" }),
+      applyChangeSet: vi.fn(),
+    } as unknown as ConfigurationChangeService;
+
+    await expect(
+      publishPublicPage(configuration, { pageKey: "booking_site" }),
+    ).rejects.toThrowError(
+      expect.objectContaining({ code: "public_page_validation_failed" }),
+    );
+    expect(configuration.applyChangeSet).not.toHaveBeenCalled();
   });
 });

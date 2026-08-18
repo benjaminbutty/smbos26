@@ -62,6 +62,12 @@ describe("Journey 1 candidate preview model", () => {
       "Full groom",
       "Wash and tidy",
     ]);
+    expect(booking?.booking.subject_label).toBe("Pet");
+    expect(
+      booking?.booking.public_fields.some(
+        (field) => field.target === "subject" && field.required,
+      ),
+    ).toBe(true);
     expect(
       booking?.booking.public_fields.some(
         (field) => field.target === "booking" && field.derived,

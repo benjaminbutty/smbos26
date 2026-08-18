@@ -9,10 +9,12 @@ import {
   ConfigurationChangeServiceError,
 } from "../../../../core/configuration/service";
 import {
+  publishPublicPage,
   preparePublicPagePublicationProposal,
   PublicPagePublicationError,
 } from "../../../../core/configuration/publication/page-service";
 import { publicPagePublicationFormSchema } from "../../../../core/configuration/publication/schemas";
+import { graphKeySchema } from "../../../../core/graph/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
 
 const routeSlugSchema = z
@@ -36,9 +38,66 @@ function integerValue(formData: FormData, name: string): number {
 function redirectWithNotice(
   path: string,
   notice:
-    "input_invalid" | "stale" | "publication_unavailable" | "already_published",
+    | "input_invalid"
+    | "stale"
+    | "publication_unavailable"
+    | "already_published"
+    | "published"
+    | "publication_failed",
 ): never {
   redirect(`${path}?${new URLSearchParams({ notice }).toString()}`);
+}
+
+export async function publishPublicPageAction(
+  businessSlugInput: string,
+  formData: FormData,
+): Promise<never> {
+  const parsedSlug = routeSlugSchema.safeParse(businessSlugInput);
+  if (!parsedSlug.success) notFound();
+
+  const pageSlug = routeSlugSchema.safeParse(stringValue(formData, "pageSlug"));
+  const pageKey = graphKeySchema.safeParse(stringValue(formData, "pageKey"));
+  if (!pageSlug.success || !pageKey.success) {
+    redirectWithNotice(
+      `/app/${encodeURIComponent(parsedSlug.data)}/sites/${encodeURIComponent(
+        pageSlug.success ? pageSlug.data : "",
+      )}`,
+      "input_invalid",
+    );
+  }
+
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(parsedSlug.data, supabase);
+  if (!hasCapability(tenant.membership.role, "manage_configuration")) {
+    notFound();
+  }
+
+  const path = `/app/${encodeURIComponent(parsedSlug.data)}/sites/${encodeURIComponent(pageSlug.data)}`;
+  const configuration = new ConfigurationChangeService(supabase, {
+    businessId: tenant.business.id,
+    actorId: tenant.user.id,
+  });
+  try {
+    await publishPublicPage(configuration, { pageKey: pageKey.data });
+    redirectWithNotice(path, "published");
+  } catch (error) {
+    if (error instanceof PublicPagePublicationError) {
+      const notice =
+        error.code === "public_page_stale"
+          ? "stale"
+          : error.code === "public_page_already_published"
+            ? "already_published"
+            : error.code === "public_page_validation_failed" ||
+                error.code === "public_page_application_failed"
+              ? "publication_failed"
+              : "publication_unavailable";
+      redirectWithNotice(path, notice);
+    }
+    if (error instanceof ConfigurationChangeServiceError) {
+      redirectWithNotice(path, "publication_failed");
+    }
+    throw error;
+  }
 }
 
 export async function preparePublicPagePublicationAction(

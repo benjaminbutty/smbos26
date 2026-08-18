@@ -16,6 +16,48 @@ type ViewOperation = Extract<ConfigurationOperation, { op: "set_view" }>;
 type FormOperation = Extract<ConfigurationOperation, { op: "set_form" }>;
 type PageOperation = Extract<ConfigurationOperation, { op: "set_page" }>;
 
+export const acquisitionCandidateQualityCodes = [
+  "duplicate_object_key",
+  "duplicate_object_label",
+  "candidate_without_objects",
+  "field_object_mismatch",
+  "duplicate_field_key",
+  "duplicate_field_label",
+  "choice_field_without_options",
+  "duplicate_choice_option",
+  "object_reference_missing",
+  "relationship_self_reference",
+  "duplicate_relationship",
+  "semantically_redundant_field",
+  "cross_object_field_leakage",
+  "relationship_scalar_duplication",
+  "duplicate_form_field",
+  "public_form_field_unsupported",
+  "required_form_field_missing",
+  "public_form_not_create",
+  "view_connection_missing",
+  "view_connection_object_mismatch",
+  "view_form_object_mismatch",
+  "view_without_fields",
+  "booking_start_field_invalid",
+  "booking_status_field_invalid",
+  "booking_default_status_invalid",
+  "booking_date_field_invalid",
+  "booking_time_field_invalid",
+  "booking_relationship_mismatch",
+  "booking_public_target_missing",
+  "booking_derived_field_target_invalid",
+  "page_without_blocks",
+  "page_view_missing",
+  "page_form_missing",
+  "page_public_form_invalid",
+  "duplicate_form_key",
+  "duplicate_view_key",
+] as const;
+
+export type AcquisitionCandidateQualityCode =
+  (typeof acquisitionCandidateQualityCodes)[number];
+
 const choiceFieldTypes = new Set(["select", "multi_select", "status"]);
 const publicFieldTypes = new Set([
   "short_text",
@@ -68,7 +110,7 @@ const semanticStopWords = new Set([
 
 export class AcquisitionCandidateQualityError extends Error {
   constructor(
-    readonly code: string,
+    readonly code: AcquisitionCandidateQualityCode,
     message: string,
   ) {
     super(message);
@@ -96,17 +138,27 @@ function semanticTokens(value: string): Set<string> {
   );
 }
 
-function objectSemanticTokens(object: ObjectOperation): Set<string> {
+type SemanticIdentityObject = Pick<
+  ObjectOperation,
+  "key" | "singular_label" | "plural_label"
+>;
+
+type SemanticIdentityField = {
+  key?: string;
+  label: string;
+};
+
+function objectSemanticTokens(object: SemanticIdentityObject): Set<string> {
   return semanticTokens(
     [object.key, object.singular_label, object.plural_label].join(" "),
   );
 }
 
-function fieldSemanticTokens(field: FieldOperation): Set<string> {
+function fieldSemanticTokens(field: SemanticIdentityField): Set<string> {
   return semanticTokens([field.key, field.label].join(" "));
 }
 
-function fail(code: string, message: string): never {
+function fail(code: AcquisitionCandidateQualityCode, message: string): never {
   throw new AcquisitionCandidateQualityError(code, message);
 }
 
@@ -264,7 +316,7 @@ function activeRelationships(
   return relationships;
 }
 
-function isScalarConnectionDuplicate(
+export function isScalarConnectionDuplicate(
   field: FieldOperation,
   target: ObjectOperation,
 ): boolean {
@@ -284,9 +336,9 @@ function isScalarConnectionDuplicate(
 }
 
 function isSemanticallyRedundantField(
-  left: FieldOperation,
-  right: FieldOperation,
-  object: ObjectOperation,
+  left: SemanticIdentityField,
+  right: SemanticIdentityField,
+  object: SemanticIdentityObject,
 ): boolean {
   const leftTokens = fieldSemanticTokens(left);
   const rightTokens = fieldSemanticTokens(right);
@@ -305,27 +357,48 @@ function isSemanticallyRedundantField(
   );
 }
 
+/**
+ * AI plans may repeat a generic identity label alongside a more specific one
+ * (for example, "Name" and "Pet name").  Remove only the less-specific
+ * identity field before the draft compiler creates dependent Forms and Views.
+ */
+export function removeSemanticallyRedundantIdentityFields<
+  T extends SemanticIdentityField,
+>(object: SemanticIdentityObject, fields: readonly T[]): T[] {
+  const redundantIndexes = new Set<number>();
+  for (let leftIndex = 0; leftIndex < fields.length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < fields.length;
+      rightIndex += 1
+    ) {
+      const left = fields[leftIndex]!;
+      const right = fields[rightIndex]!;
+      if (!isSemanticallyRedundantField(left, right, object)) continue;
+
+      const leftSize = fieldSemanticTokens(left).size;
+      const rightSize = fieldSemanticTokens(right).size;
+      if (leftSize <= rightSize) redundantIndexes.add(leftIndex);
+      else redundantIndexes.add(rightIndex);
+    }
+  }
+  return fields.filter((_, index) => !redundantIndexes.has(index));
+}
+
 function validateSemanticallyRedundantFields(
   objects: ReadonlyMap<string, ObjectOperation>,
   fields: ReadonlyMap<string, Map<string, FieldOperation>>,
 ): void {
   for (const [objectKey, object] of objects) {
     const objectFields = [...(fields.get(objectKey)?.values() ?? [])];
-    for (let leftIndex = 0; leftIndex < objectFields.length; leftIndex += 1) {
-      for (
-        let rightIndex = leftIndex + 1;
-        rightIndex < objectFields.length;
-        rightIndex += 1
-      ) {
-        const left = objectFields[leftIndex]!;
-        const right = objectFields[rightIndex]!;
-        if (isSemanticallyRedundantField(left, right, object)) {
-          fail(
-            "semantically_redundant_field",
-            `Object ${object.plural_label} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
-          );
-        }
-      }
+    if (
+      removeSemanticallyRedundantIdentityFields(object, objectFields).length !==
+      objectFields.length
+    ) {
+      fail(
+        "semantically_redundant_field",
+        `Object ${object.plural_label} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
+      );
     }
   }
 }

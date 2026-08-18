@@ -19,10 +19,12 @@ import {
 import { enhanceAcquisitionPayload } from "./capabilities";
 import { candidateChecksum } from "./preview";
 import { composeStarterComposition } from "./composer";
+import { emitAcquisitionCandidateDiagnostic } from "./diagnostics";
 import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
 import { validateAcquisitionCandidate } from "./quality";
 import { reconcileAcquisitionRefinement } from "./refinement";
+import { emitAcquisitionRefinementDiagnostic } from "./refinement-diagnostics";
 import {
   acquisitionBuildPayloadSchema,
   acquisitionCategorySchema,
@@ -34,6 +36,8 @@ import {
 export const ACQUISITION_COOKIE_NAME = "smbos_acquisition_session";
 export const ACQUISITION_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24;
 export const ACQUISITION_DAILY_ATTEMPT_LIMIT = 6;
+export const ACQUISITION_SESSION_ATTEMPT_LIMIT = 6;
+export const ACQUISITION_SUCCESSFUL_REFINEMENT_LIMIT = 2;
 
 type AcquisitionSessionRow = Tables<"anonymous_build_sessions">;
 
@@ -50,7 +54,11 @@ const reservationSchema = z.discriminatedUnion("ok", [
     .object({
       ok: z.literal(true),
       session_id: z.uuid(),
-      attempt_number: z.number().int().min(1).max(2),
+      attempt_number: z
+        .number()
+        .int()
+        .min(1)
+        .max(ACQUISITION_SESSION_ATTEMPT_LIMIT),
       daily_attempt_number: z.number().int().min(1).max(6),
     })
     .strict(),
@@ -70,7 +78,10 @@ export class AcquisitionServiceError extends Error {
   readonly code:
     | "session_unavailable"
     | "session_invalid"
+    | "session_limit_reached"
     | "proposal_limit_reached"
+    | "refinement_limit_reached"
+    | "refinement_failed"
     | "needs_more_detail"
     | "proposal_write_failed";
 
@@ -83,9 +94,15 @@ export class AcquisitionServiceError extends Error {
       ownerMessage ??
         (code === "proposal_limit_reached"
           ? "You’ve used your free Lenni builds for today."
-          : code === "needs_more_detail"
-            ? "Add a little more detail about the work you want to organise, then try once more."
-            : "Lenni could not prepare that starting point. Please try again."),
+          : code === "session_limit_reached"
+            ? "This Lenni session has reached its retry limit. Start a fresh starting point to continue."
+            : code === "refinement_limit_reached"
+              ? "You’ve used the two successful refinements available in this starting session."
+              : code === "refinement_failed"
+                ? "Lenni couldn’t apply that change safely. Your refinement allowance is still available; try a smaller change."
+                : code === "needs_more_detail"
+                  ? "Add a little more detail about the work you want to organise, then try once more."
+                  : "Lenni could not prepare that starting point. Please try again."),
       { cause },
     );
     this.name = "AcquisitionServiceError";
@@ -232,7 +249,9 @@ async function reserveAttempt(category: AcquisitionCategory) {
     throw new AcquisitionServiceError(
       reservation.data.code === "session_unavailable"
         ? "session_unavailable"
-        : "proposal_limit_reached",
+        : reservation.data.code === "session_limit_reached"
+          ? "session_limit_reached"
+          : "proposal_limit_reached",
     );
   }
   await setCookieToken(token);
@@ -343,10 +362,16 @@ export async function refineAcquisitionProposal(
   const originalRequest = acquisitionRequestSchema.parse(
     session.row.request_text,
   );
+  if (
+    session.row.successful_refinement_count >=
+    ACQUISITION_SUCCESSFUL_REFINEMENT_LIMIT
+  ) {
+    throw new AcquisitionServiceError("refinement_limit_reached");
+  }
   const reservation = await reserveAttempt(category);
   const request = `${originalRequest.slice(0, 3_400)}
 
-Owner-requested adjustment: ${refinement}`
+${refinement}`
     .replace(/\s+/g, " ")
     .slice(0, 4_000);
   const refinementAssessment = assessAcquisitionClarifications(
@@ -354,16 +379,53 @@ Owner-requested adjustment: ${refinement}`
     request,
     session.clarification,
   );
-  const suggestedPayload = await generateCandidate(
-    category,
-    request,
-    refinementAssessment.decisions,
-  );
-  const payload = reconcileAcquisitionRefinement(
-    session.payload,
-    suggestedPayload,
-    refinement,
-  );
+  let suggestedPayload: AcquisitionBuildPayload;
+  try {
+    suggestedPayload = await generateCandidate(
+      category,
+      request,
+      refinementAssessment.decisions,
+      { allowFallback: false },
+    );
+  } catch (error) {
+    emitAcquisitionRefinementDiagnostic(error, "candidate_generation");
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    throw new AcquisitionServiceError("refinement_failed", error);
+  }
+  let payload: AcquisitionBuildPayload;
+  try {
+    payload = reconcileAcquisitionRefinement(
+      session.payload,
+      suggestedPayload,
+      refinement,
+    );
+  } catch (error) {
+    emitAcquisitionRefinementDiagnostic(error, "reconciliation");
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    throw new AcquisitionServiceError("refinement_failed", error);
+  }
+  const summary = payload.proposal.refinement_summary;
+  if (
+    !summary ||
+    (summary.added.length === 0 &&
+      summary.updated.length === 0 &&
+      summary.removed.length === 0)
+  ) {
+    emitAcquisitionEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    throw new AcquisitionServiceError(
+      "refinement_failed",
+      new Error("The requested refinement produced no safe change."),
+    );
+  }
   await writeProposal({
     sessionId: reservation.session_id,
     attemptNumber: reservation.attempt_number,
@@ -371,6 +433,8 @@ Owner-requested adjustment: ${refinement}`
     request: originalRequest,
     payload,
     clarification: refinementAssessment.state,
+    isRefinement: true,
+    previousSuccessfulRefinementCount: session.row.successful_refinement_count,
   });
   emitAcquisitionEvent("proposal_regenerated", {
     category,
@@ -382,12 +446,18 @@ async function generateCandidate(
   category: AcquisitionCategory,
   request: string,
   decisions: Parameters<typeof enhanceAcquisitionPayload>[1],
+  options: { allowFallback?: boolean } = {},
 ): Promise<AcquisitionBuildPayload> {
+  const allowFallback = options.allowFallback ?? true;
   const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
   let payload: AcquisitionBuildPayload;
   try {
     payload = await interpretAcquisitionRequest(category, enrichedRequest);
   } catch (error) {
+    emitAcquisitionCandidateDiagnostic(error, "candidate_generation", {
+      category,
+      source: "tailored",
+    });
     emitAcquisitionEvent("proposal_failed", {
       category,
       reason:
@@ -397,21 +467,50 @@ async function generateCandidate(
           ? "discovery_needs_detail"
           : "tailoring_unavailable",
     });
+    if (!allowFallback) throw error;
     payload = composeStarterComposition(category, request);
   }
   try {
-    return validateAcquisitionCandidate(
-      enhanceAcquisitionPayload(payload, decisions, request),
-    );
-  } catch {
+    let enhancedPayload: AcquisitionBuildPayload;
+    try {
+      enhancedPayload = enhanceAcquisitionPayload(payload, decisions, request);
+    } catch (error) {
+      emitAcquisitionCandidateDiagnostic(error, "capability_enhancement", {
+        category,
+        source: payload.proposal.source,
+      });
+      throw error;
+    }
+    try {
+      return validateAcquisitionCandidate(enhancedPayload);
+    } catch (error) {
+      emitAcquisitionCandidateDiagnostic(error, "candidate_quality", {
+        category,
+        source: payload.proposal.source,
+      });
+      throw error;
+    }
+  } catch (error) {
     emitAcquisitionEvent("proposal_failed", {
       category,
       reason: "candidate_quality_rejected",
     });
+    if (!allowFallback) throw error;
     const fallback = composeStarterComposition(category, request);
-    return validateAcquisitionCandidate(
-      enhanceAcquisitionPayload(fallback, decisions, request),
-    );
+    try {
+      const enhancedFallback = enhanceAcquisitionPayload(
+        fallback,
+        decisions,
+        request,
+      );
+      return validateAcquisitionCandidate(enhancedFallback);
+    } catch (fallbackError) {
+      emitAcquisitionCandidateDiagnostic(fallbackError, "candidate_quality", {
+        category,
+        source: "fallback",
+      });
+      throw fallbackError;
+    }
   }
 }
 
@@ -453,23 +552,37 @@ async function writeProposal(input: {
   request: string;
   payload: AcquisitionBuildPayload;
   clarification: AcquisitionClarificationState;
+  isRefinement?: boolean;
+  previousSuccessfulRefinementCount?: number;
 }): Promise<void> {
   const admin = createAdminClient();
-  const { data, error } = await admin
+  const update = {
+    proposal_count: input.attemptNumber,
+    regeneration_count: input.attemptNumber > 1 ? 1 : 0,
+    proposal_json: input.payload as unknown as Json,
+    request_text: input.request,
+    requested_category: input.category,
+    clarification_json: input.clarification as unknown as Json,
+    ...(input.isRefinement
+      ? {
+          successful_refinement_count:
+            (input.previousSuccessfulRefinementCount ?? 0) + 1,
+        }
+      : {}),
+  };
+  let proposalUpdate = admin
     .from("anonymous_build_sessions")
-    .update({
-      proposal_count: input.attemptNumber,
-      regeneration_count: input.attemptNumber > 1 ? 1 : 0,
-      proposal_json: input.payload as unknown as Json,
-      request_text: input.request,
-      requested_category: input.category,
-      clarification_json: input.clarification as unknown as Json,
-    })
+    .update(update)
     .eq("id", input.sessionId)
     .eq("claim_status", "active")
-    .eq("attempt_count", input.attemptNumber)
-    .select("id")
-    .maybeSingle();
+    .eq("attempt_count", input.attemptNumber);
+  if (input.isRefinement) {
+    proposalUpdate = proposalUpdate.eq(
+      "successful_refinement_count",
+      input.previousSuccessfulRefinementCount ?? 0,
+    );
+  }
+  const { data, error } = await proposalUpdate.select("id").maybeSingle();
   if (error || !data) {
     emitAcquisitionEvent("proposal_failed", {
       category: input.category,

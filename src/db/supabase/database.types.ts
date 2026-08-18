@@ -183,6 +183,7 @@ export type Database = {
           regeneration_count: number;
           request_text: string | null;
           requested_category: string;
+          successful_refinement_count: number;
           session_token_hash: string;
           updated_at: string;
         };
@@ -203,6 +204,7 @@ export type Database = {
           regeneration_count?: number;
           request_text?: string | null;
           requested_category: string;
+          successful_refinement_count?: number;
           session_token_hash: string;
           updated_at?: string;
         };
@@ -223,6 +225,7 @@ export type Database = {
           regeneration_count?: number;
           request_text?: string | null;
           requested_category?: string;
+          successful_refinement_count?: number;
           session_token_hash?: string;
           updated_at?: string;
         };

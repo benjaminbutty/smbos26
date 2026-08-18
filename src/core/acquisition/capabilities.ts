@@ -691,7 +691,7 @@ function addBookingSurface(
   const bookingStart =
     findField(
       booking,
-      [/start|date.?time|scheduled|appointment.?time/i],
+      [/start|date.*time|scheduled|appointment.*(?:date|time)/i],
       ["datetime"],
     ) ??
     appendField(operations, booking, {
@@ -706,7 +706,7 @@ function addBookingSurface(
     });
   addFieldToInternalForms(operations, booking.object.key, bookingStart.key);
   const bookingStatus =
-    findField(booking, [/^status$|state/i], ["status", "select"]) ??
+    findField(booking, [/status|state/i], ["status", "select"]) ??
     appendField(operations, booking, {
       object_key: booking.object.key,
       key: nextFieldKey(booking, "status"),
@@ -726,7 +726,7 @@ function addBookingSurface(
   const subjectName = subject
     ? (findField(
         subject,
-        [/^name$|pet.?name|animal.?name/i],
+        [/^name$|pet.?name|animal.?name/i, /\b(?:name|title|label)\b/i],
         ["short_text", "long_text"],
       ) ??
       appendField(operations, subject, {
@@ -831,10 +831,7 @@ function addBookingSurface(
       booking: {
         start_at: bookingStart.key,
         status: bookingStatus.key,
-        default_status:
-          typeof bookingStatus.default_value === "string"
-            ? bookingStatus.default_value
-            : "Requested",
+        default_status: bookingDefaultStatus(bookingStatus),
         date: bookingDate?.key ?? null,
         time: bookingTime?.key ?? null,
       },
@@ -968,12 +965,30 @@ function nextFieldKey(state: ObjectState, base: string): string {
   throw new Error("Unable to create a free Field key.");
 }
 
+function bookingDefaultStatus(field: FieldOperation): string {
+  const options = Array.isArray(field.settings_json.options)
+    ? field.settings_json.options.filter(
+        (option): option is string => typeof option === "string",
+      )
+    : [];
+  if (
+    typeof field.default_value === "string" &&
+    options.includes(field.default_value)
+  ) {
+    return field.default_value;
+  }
+  return options[0] ?? "Requested";
+}
+
 function updateProposal(
   payload: AcquisitionBuildPayload,
   decisions: AcquisitionClarificationDecisions,
 ): AcquisitionBuildPayload["proposal"] {
   const notIncluded = payload.proposal.not_included.filter((item) => {
-    if (decisions.onlineBooking === true && /public\s+booking/i.test(item)) {
+    if (
+      decisions.onlineBooking === true &&
+      /(?:public|customer)\s+online\s+booking|public\s+booking/i.test(item)
+    ) {
       return false;
     }
     if (decisions.publicEnquiry === true && /public\s+forms?/i.test(item)) {

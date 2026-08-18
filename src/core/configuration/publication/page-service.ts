@@ -13,7 +13,10 @@ import {
   loadActiveManualAmendmentSnapshot,
   type ActiveManualAmendmentSnapshot,
 } from "../manual-amendments/service";
-import type { ConfigurationChangeService } from "../service";
+import {
+  ConfigurationChangeServiceError,
+  type ConfigurationChangeService,
+} from "../service";
 import {
   publicPagePublicationFormSchema,
   type PublicPagePublicationForm,
@@ -28,6 +31,8 @@ export const publicPagePublicationErrorCodes = [
   "public_page_ineligible",
   "public_page_already_published",
   "public_page_stale",
+  "public_page_validation_failed",
+  "public_page_application_failed",
 ] as const;
 
 export type PublicPagePublicationErrorCode =
@@ -43,6 +48,10 @@ const ownerMessages: Readonly<Record<PublicPagePublicationErrorCode, string>> =
       "This Site is already available to customers.",
     public_page_stale:
       "Workspace setup changed after this Site was loaded. Reload and try again.",
+    public_page_validation_failed:
+      "This Site could not be validated safely. No changes were applied.",
+    public_page_application_failed:
+      "This Site could not be published safely. No incomplete publication was left behind.",
   };
 
 export class PublicPagePublicationError extends Error {
@@ -122,4 +131,82 @@ export async function preparePublicPagePublicationProposal(
       "Make this public Site available to customers at its current public URL.",
     operations: [operation],
   });
+}
+
+export async function publishPublicPage(
+  configuration: ConfigurationChangeService,
+  input: { pageKey: string },
+): Promise<ConfigurationChangeSet> {
+  const pageKey = publicPagePublicationFormSchema.shape.pageKey.parse(
+    input.pageKey,
+  );
+  let active: ActiveManualAmendmentSnapshot;
+  try {
+    active = await loadActiveManualAmendmentSnapshot(configuration);
+  } catch (error) {
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      throw new PublicPagePublicationError("public_page_stale");
+    }
+    throw error;
+  }
+  const operation = composePublicPagePublicationOperation(
+    active.snapshot,
+    pageKey,
+  );
+
+  let proposal: ConfigurationChangeSet;
+  try {
+    proposal = await configuration.proposeChangeSet({
+      expectedBaseVersionId: active.baseVersionId,
+      expectedHeadRevision: active.headRevision,
+      title: `Publish ${operation.title}`,
+      description:
+        "Make this public Site available to customers at its current public URL.",
+      operations: [operation],
+    });
+  } catch (error) {
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      throw new PublicPagePublicationError("public_page_stale");
+    }
+    throw error;
+  }
+
+  let validated: ConfigurationChangeSet;
+  try {
+    validated = await configuration.validateChangeSet(proposal.id);
+  } catch (error) {
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      throw new PublicPagePublicationError("public_page_stale");
+    }
+    throw new PublicPagePublicationError("public_page_validation_failed");
+  }
+  if (validated.status !== "validated") {
+    throw new PublicPagePublicationError("public_page_validation_failed");
+  }
+
+  let applied: ConfigurationChangeSet;
+  try {
+    applied = await configuration.applyChangeSet(proposal.id);
+  } catch (error) {
+    if (
+      error instanceof ConfigurationChangeServiceError &&
+      error.code === "configuration_proposal_stale"
+    ) {
+      throw new PublicPagePublicationError("public_page_stale");
+    }
+    throw new PublicPagePublicationError("public_page_application_failed");
+  }
+  if (applied.status !== "applied") {
+    throw new PublicPagePublicationError("public_page_application_failed");
+  }
+  return applied;
 }

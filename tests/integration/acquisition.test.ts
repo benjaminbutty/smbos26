@@ -727,7 +727,7 @@ describe("Phase 5 anonymous acquisition boundary", () => {
     expect(quota.error).toBeTruthy();
   });
 
-  it("atomically limits one session to two attempts before provider work", async () => {
+  it("atomically limits one session to six bounded provider attempts", async () => {
     const sessionHash = tokenHash(`attempt-session-${crypto.randomUUID()}`);
     const rateKey = tokenHash(`attempt-rate-${crypto.randomUUID()}`);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1_000).toISOString();
@@ -739,11 +739,19 @@ describe("Phase 5 anonymous acquisition boundary", () => {
         requested_session_token_hash: sessionHash,
       });
 
-    const results = await Promise.all([reserve(), reserve(), reserve()]);
+    const results = await Promise.all([
+      reserve(),
+      reserve(),
+      reserve(),
+      reserve(),
+      reserve(),
+      reserve(),
+      reserve(),
+    ]);
     const allowed = results.filter(
       (result) => reservationResult(result.data)?.ok === true,
     );
-    expect(allowed).toHaveLength(2);
+    expect(allowed).toHaveLength(6);
     expect(
       results.some(
         (result) =>
@@ -757,7 +765,7 @@ describe("Phase 5 anonymous acquisition boundary", () => {
       .select("attempt_count")
       .eq("session_token_hash", sessionHash)
       .single();
-    expect(row.data?.attempt_count).toBe(2);
+    expect(row.data?.attempt_count).toBe(6);
   });
 
   it("enforces the daily ceiling across replacement session tokens", async () => {
@@ -786,6 +794,47 @@ describe("Phase 5 anonymous acquisition boundary", () => {
       ok: false,
       code: "daily_limit_reached",
     });
+  });
+
+  it("keeps the current candidate available while reserving a bounded retry", async () => {
+    const token = `preserve-${crypto.randomUUID()}`;
+    const payload = composeStarterComposition(
+      "jobs",
+      "I need customers and repair jobs together in one workspace.",
+    );
+    const clarification = {
+      schema_version: 1,
+      round: 1,
+      asked_keys: ["online_booking"],
+      answers: [{ key: "online_booking", answer: "internal only" }],
+      status: "ready",
+    };
+    const sessionId = await insertSession(
+      token,
+      payload as unknown as Json,
+      new Date(Date.now() + 60 * 60 * 1_000).toISOString(),
+      clarification,
+    );
+    const reservation = await admin.rpc("reserve_anonymous_build_attempt", {
+      requested_category_value: "jobs",
+      requested_expires_at: new Date(
+        Date.now() + 60 * 60 * 1_000,
+      ).toISOString(),
+      requested_rate_key: tokenHash(`preserve-rate-${crypto.randomUUID()}`),
+      requested_session_token_hash: tokenHash(token),
+    });
+    expect(reservationResult(reservation.data)?.ok).toBe(true);
+    const row = await admin
+      .from("anonymous_build_sessions")
+      .select("attempt_count, proposal_json, clarification_json, request_text")
+      .eq("id", sessionId)
+      .single();
+    expect(row.data?.attempt_count).toBe(1);
+    expect(row.data?.proposal_json).toEqual(payload);
+    expect(row.data?.clarification_json).toEqual(clarification);
+    expect(row.data?.request_text).toBe(
+      "I need a clear starting workspace for my business.",
+    );
   });
 
   it("scrubs expired prompt material opportunistically", async () => {

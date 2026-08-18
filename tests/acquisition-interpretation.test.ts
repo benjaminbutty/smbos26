@@ -5,6 +5,7 @@ import {
   detectGroundedCurrency,
   interpretAcquisitionRequest,
 } from "../src/core/acquisition/interpreter";
+import { validateAcquisitionCandidate } from "../src/core/acquisition/quality";
 import type { AcquisitionCategory } from "../src/core/acquisition/schemas";
 
 const scenarios: ReadonlyArray<
@@ -119,6 +120,63 @@ function execution(names: readonly string[]): AcquisitionExecutionCore {
     },
   };
 }
+
+function executionForIdentityFields(
+  singularName: string,
+  pluralName: string,
+  fieldLabels: readonly string[],
+): AcquisitionExecutionCore {
+  return {
+    async execute() {
+      return {
+        output: {
+          schema_version: 1,
+          state: "ready",
+          understanding:
+            "You need one clear place to keep this work organised.",
+          why: "This keeps the requested business area simple and reusable.",
+          tables: [
+            {
+              reference: "table_1",
+              singular_name: singularName,
+              plural_name: pluralName,
+              purpose: `Keep ${pluralName.toLocaleLowerCase("en")} organised.`,
+              fields: fieldLabels.map((label) => ({
+                label,
+                field_type: "short_text" as const,
+                required: false,
+                options: null,
+                currency: null,
+              })),
+            },
+          ],
+          connections: [],
+          primary_table_reference: "table_1",
+          unsupported_requirements: [],
+        },
+        metadata: {
+          taskKey: "acquisition_workspace_plan_v1",
+          taskVersion: 1,
+          purposeLabel: "test",
+          providerKey: "test",
+          modelKey: "test",
+          attempts: 1,
+          usage: { inputTokens: 1, outputTokens: 1, complete: true },
+        },
+        accounting: {
+          attemptsStarted: 1,
+          inputTokens: 1,
+          outputTokens: 1,
+          usageReported: true,
+          usageComplete: true,
+          providerInvocationStarted: true,
+          failureBeforeProviderInvocation: false,
+        },
+      };
+    },
+  };
+}
+
 describe("Phase 5 tailored acquisition composition", () => {
   it.each(scenarios)(
     "passes the %s production composition",
@@ -184,4 +242,53 @@ describe("Phase 5 tailored acquisition composition", () => {
     );
     expect(payload.operations.some(({ op }) => op === "set_page")).toBe(false);
   });
+
+  it.each([
+    ["Pet", "Pets", ["Name", "Pet name", "Age"], ["Pet name", "Age"]],
+    [
+      "Instrument",
+      "Instruments",
+      ["Name", "Instrument name", "Condition"],
+      ["Instrument name", "Condition"],
+    ],
+    [
+      "Vehicle",
+      "Vehicles",
+      ["Name", "Vehicle name", "Registration"],
+      ["Vehicle name", "Registration"],
+    ],
+    [
+      "Participant",
+      "Participants",
+      ["Name", "Participant name", "Email"],
+      ["Participant name", "Email"],
+    ],
+  ] as const)(
+    "canonicalises redundant identity fields for generic subject %s",
+    async (singularName, pluralName, fieldLabels, retainedLabels) => {
+      const payload = await interpretAcquisitionRequest(
+        "other",
+        `I need to keep ${pluralName.toLocaleLowerCase("en")} organised.`,
+        executionForIdentityFields(singularName, pluralName, fieldLabels),
+      );
+      const object = payload.operations.find(
+        (operation) => operation.op === "set_object",
+      );
+      expect(object).toBeDefined();
+      if (!object || object.op !== "set_object") return;
+      const fieldLabelsAfterCompilation = payload.operations
+        .filter(
+          (operation) =>
+            operation.op === "set_field" && operation.object_key === object.key,
+        )
+        .map((operation) =>
+          operation.op === "set_field" ? operation.label : null,
+        );
+      expect(fieldLabelsAfterCompilation).toHaveLength(retainedLabels.length);
+      expect(new Set(fieldLabelsAfterCompilation)).toEqual(
+        new Set(retainedLabels),
+      );
+      expect(() => validateAcquisitionCandidate(payload)).not.toThrow();
+    },
+  );
 });

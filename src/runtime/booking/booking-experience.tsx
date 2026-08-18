@@ -18,6 +18,18 @@ interface BookingExperienceProps {
   mode?: "live" | "preview";
 }
 
+type BookingFieldTarget = "customer" | "subject" | "booking";
+
+function displayFieldLabel(
+  field: PublicBookingCatalogue["booking"]["public_fields"][number],
+  targetLabel: string,
+): string {
+  return field.label.trim().toLocaleLowerCase("en") === "name" &&
+    field.target !== "booking"
+    ? `${targetLabel} name`
+    : field.label;
+}
+
 function errorMessage(code: string): string {
   switch (code) {
     case "invalid_slot":
@@ -67,6 +79,32 @@ export function BookingExperience(
   const visibleFields = props.catalogue.booking.public_fields.filter(
     (field) => !field.derived,
   );
+  const fieldGroups: Array<{
+    label: string;
+    target: BookingFieldTarget;
+    fields: typeof visibleFields;
+  }> = [
+    {
+      label: `${props.catalogue.booking.customer_label} details`,
+      target: "customer" as const,
+      fields: visibleFields.filter((field) => field.target === "customer"),
+    },
+    ...(props.catalogue.booking.subject_label
+      ? [
+          {
+            label: `${props.catalogue.booking.subject_label} details`,
+            target: "subject" as const,
+            fields: visibleFields.filter((field) => field.target === "subject"),
+          },
+        ]
+      : []),
+    {
+      label: "Booking details",
+      target: "booking" as const,
+      fields: visibleFields.filter((field) => field.target === "booking"),
+    },
+  ].filter((group) => group.fields.length > 0);
+  const headingId = `booking-experience-title-${props.catalogue.booking.key}`;
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -153,114 +191,141 @@ export function BookingExperience(
   }
 
   return (
-    <form className="booking-flow" onSubmit={submit}>
-      {preview ? (
-        <aside className="booking-preview-notice" role="status">
-          <strong>Explore this Booking Site — submission is disabled.</strong>
-          <p>
-            Choose a service, date and example slot. Your choices stay in this
-            preview and nothing will be created.
-          </p>
-        </aside>
-      ) : null}
-      {props.catalogue.booking.services.length > 0 ? (
+    <section aria-labelledby={headingId} className="booking-experience">
+      <header className="booking-experience-heading">
+        <p className="eyebrow">Booking</p>
+        <h2 id={headingId}>Request a booking</h2>
+      </header>
+      <form className="booking-flow" onSubmit={submit}>
+        {preview ? (
+          <aside className="booking-preview-notice" role="status">
+            <strong>Explore this Booking Site — submission is disabled.</strong>
+            <p>
+              Choose a service, date and example slot. Your choices stay in this
+              preview and nothing will be created.
+            </p>
+          </aside>
+        ) : null}
+        {props.catalogue.booking.services.length > 0 ? (
+          <label>
+            Service
+            <select
+              onChange={(event) => setSelectedService(event.target.value)}
+              value={selectedService}
+            >
+              <option value="">Choose a service…</option>
+              {props.catalogue.booking.services.map((service) => (
+                <option key={service.id} value={service.id}>
+                  {service.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
-          Service
+          Date
           <select
-            disabled={preview && props.catalogue.booking.services.length === 0}
-            onChange={(event) => setSelectedService(event.target.value)}
-            value={selectedService}
+            onChange={(event) => {
+              setSelectedDate(event.target.value);
+              setSelectedStart("");
+            }}
+            value={selectedDate}
           >
-            <option value="">Choose a service…</option>
-            {props.catalogue.booking.services.map((service) => (
-              <option key={service.id} value={service.id}>
-                {service.name}
+            <option value="">Choose a date…</option>
+            {dates.map((date) => (
+              <option key={date} value={date}>
+                {new Intl.DateTimeFormat("en-GB", {
+                  dateStyle: "full",
+                  timeZone: "UTC",
+                }).format(new Date(`${date}T12:00:00Z`))}
               </option>
             ))}
           </select>
         </label>
-      ) : null}
-      <label>
-        Date
-        <select
-          onChange={(event) => {
-            setSelectedDate(event.target.value);
-            setSelectedStart("");
-          }}
-          value={selectedDate}
-        >
-          <option value="">Choose a date…</option>
-          {dates.map((date) => (
-            <option key={date} value={date}>
-              {new Intl.DateTimeFormat("en-GB", {
-                dateStyle: "full",
-                timeZone: "UTC",
-              }).format(new Date(`${date}T12:00:00Z`))}
-            </option>
+        {selectedDate ? (
+          <fieldset className="booking-slot-picker">
+            <legend>Choose a time</legend>
+            <div>
+              {slots.map((slot) => {
+                const selected = selectedStart === slot.start_at;
+                const availability =
+                  slot.remaining === 0 ? "Full" : "Available";
+                return (
+                  <label
+                    className={selected ? "booking-slot-selected" : undefined}
+                    key={slot.start_at}
+                  >
+                    <input
+                      aria-label={`${slot.local_time}, ${availability}`}
+                      checked={selected}
+                      disabled={slot.remaining === 0}
+                      name="booking-slot"
+                      onChange={() => setSelectedStart(slot.start_at)}
+                      type="radio"
+                      value={slot.start_at}
+                    />
+                    <span>{slot.local_time}</span>
+                    <small>{availability}</small>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ) : null}
+        <div className="booking-fields">
+          {fieldGroups.map((group) => (
+            <fieldset className="booking-field-group" key={group.target}>
+              <legend>{group.label}</legend>
+              <div>
+                {group.fields.map((field) => (
+                  <label key={`${field.target}.${field.field}`}>
+                    <span>
+                      {displayFieldLabel(
+                        field,
+                        field.target === "customer"
+                          ? props.catalogue.booking.customer_label
+                          : (props.catalogue.booking.subject_label ??
+                              "Subject"),
+                      )}
+                      {field.required ? " *" : ""}
+                    </span>
+                    <input
+                      autoComplete={field.autocomplete}
+                      name={`${field.target}.${field.field}`}
+                      required={field.required && !preview}
+                      type={field.autocomplete === "email" ? "email" : "text"}
+                    />
+                    {field.help_text ? <small>{field.help_text}</small> : null}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           ))}
-        </select>
-      </label>
-      {selectedDate ? (
-        <fieldset className="booking-slot-picker">
-          <legend>Time</legend>
-          <div>
-            {slots.map((slot) => (
-              <label key={slot.start_at}>
-                <input
-                  checked={selectedStart === slot.start_at}
-                  disabled={slot.remaining === 0}
-                  name="booking-slot"
-                  onChange={() => setSelectedStart(slot.start_at)}
-                  type="radio"
-                  value={slot.start_at}
-                />
-                <span>{slot.local_time}</span>
-                <small>{slot.remaining} left</small>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      ) : null}
-      <div className="booking-fields">
-        {visibleFields.map((field) => (
-          <label key={`${field.target}.${field.field}`}>
-            <span>
-              {field.label}
-              {field.required ? " *" : ""}
-            </span>
-            <input
-              autoComplete={field.autocomplete}
-              name={`${field.target}.${field.field}`}
-              required={field.required && !preview}
-              type={field.autocomplete === "email" ? "email" : "text"}
-            />
-            {field.help_text ? <small>{field.help_text}</small> : null}
-          </label>
-        ))}
-      </div>
-      <div aria-hidden="true" className="booking-honeypot">
-        <label htmlFor="booking-website">Website</label>
-        <input
-          aria-hidden="true"
-          autoComplete="off"
-          id="booking-website"
-          name="website"
-          tabIndex={-1}
-          type="text"
-        />
-      </div>
-      {error ? (
-        <p className="booking-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button disabled={preview || submitting} type="submit">
-        {preview
-          ? "Disabled in preview"
-          : submitting
-            ? "Booking…"
-            : "Request booking"}
-      </button>
-    </form>
+        </div>
+        <div aria-hidden="true" className="booking-honeypot">
+          <label htmlFor="booking-website">Website</label>
+          <input
+            aria-hidden="true"
+            autoComplete="off"
+            id="booking-website"
+            name="website"
+            tabIndex={-1}
+            type="text"
+          />
+        </div>
+        {error ? (
+          <p className="booking-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <button disabled={preview || submitting} type="submit">
+          {preview
+            ? "Disabled in preview"
+            : submitting
+              ? "Booking…"
+              : "Request booking"}
+        </button>
+      </form>
+    </section>
   );
 }

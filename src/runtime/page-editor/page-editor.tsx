@@ -68,6 +68,7 @@ export interface PageEditorProps {
   >;
   previewForms?: Readonly<Record<string, { bundle: ExperienceFormBundle }>>;
   siteMode?: boolean;
+  publishedSite?: boolean;
 }
 
 type EditorSaveStatus = "saved" | "saving" | "stale" | "error";
@@ -94,8 +95,9 @@ function statusText(status: EditorSaveStatus): string {
   }
 }
 
-function blockId(block: PageBlock): string | null {
-  return "id" in block && block.id ? block.id : null;
+function blockId(block: PageBlock, fallbackIndex?: number): string | null {
+  if ("id" in block && block.id) return block.id;
+  return fallbackIndex === undefined ? null : `legacy:${fallbackIndex}`;
 }
 
 function blockLabel(block: PageBlock): string {
@@ -258,8 +260,39 @@ function SavedViewBlock({
   );
 }
 
+function CapabilityBlockFrame({
+  businessSlug,
+  children,
+  label,
+}: Readonly<{
+  businessSlug: string;
+  children: ReactNode;
+  label: string;
+}>): ReactNode {
+  return (
+    <section aria-label={label} className="page-editor-capability-block">
+      <header className="page-editor-capability-header">
+        <div>
+          <p className="eyebrow">{label}</p>
+          <span className="page-editor-view-source">
+            Customer-facing settings are managed in Tell Lenni.
+          </span>
+        </div>
+        <Link
+          className="button button-secondary button-small"
+          href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+        >
+          Edit settings
+        </Link>
+      </header>
+      {children}
+    </section>
+  );
+}
+
 function PageBlockView({
   block,
+  blockIdentifier,
   businessSlug,
   editing,
   embed,
@@ -271,6 +304,7 @@ function PageBlockView({
   onSave,
 }: Readonly<{
   block: PageBlock;
+  blockIdentifier: string | null;
   businessSlug: string;
   editing: BlockDraft | null;
   embed: PageEditorViewEmbed | undefined;
@@ -283,7 +317,7 @@ function PageBlockView({
   onEdit: () => void;
   onSave: () => void;
 }>): ReactNode {
-  const id = blockId(block);
+  const id = blockIdentifier;
   const editingThisBlock = id !== null && editing?.id === id;
   const editable = editableBlock(block);
 
@@ -402,22 +436,29 @@ function PageBlockView({
     case "public_form": {
       const publicMode = block.type === "public_form";
       return (
-        <PageRenderer
-          forms={previewForms}
-          layout={{ blocks: [block] }}
-          previewMode
-          publicMode={publicMode}
-        />
+        <CapabilityBlockFrame
+          businessSlug={businessSlug}
+          label={block.type === "public_form" ? "Public Form" : "Form"}
+        >
+          <PageRenderer
+            forms={previewForms}
+            layout={{ blocks: [block] }}
+            previewMode
+            publicMode={publicMode}
+          />
+        </CapabilityBlockFrame>
       );
     }
     case "booking":
       return (
-        <PageRenderer
-          bookings={previewBookings}
-          layout={{ blocks: [block] }}
-          previewMode
-          publicMode
-        />
+        <CapabilityBlockFrame businessSlug={businessSlug} label="Booking">
+          <PageRenderer
+            bookings={previewBookings}
+            layout={{ blocks: [block] }}
+            previewMode
+            publicMode
+          />
+        </CapabilityBlockFrame>
       );
     case "preorder":
       return (
@@ -438,6 +479,7 @@ export function PageEditor({
   pageKey,
   previewBookings = {},
   previewForms = {},
+  publishedSite = false,
   renamePageAction,
   siteMode = false,
   title: initialTitle,
@@ -599,8 +641,8 @@ export function PageEditor({
     setStatusMessage(result.message);
   };
 
-  const startEditing = (block: PageBlock): void => {
-    const id = blockId(block);
+  const startEditing = (block: PageBlock, identifier?: string | null): void => {
+    const id = identifier ?? blockId(block);
     const editable = editableBlock(block);
     if (!id || !editable) return;
     setEditing({
@@ -886,7 +928,7 @@ export function PageEditor({
           </div>
         ) : null}
         {layout.blocks.map((block, index) => {
-          const id = blockId(block);
+          const id = blockId(block, index);
           return (
             <article
               className={`page-editor-block${
@@ -921,6 +963,7 @@ export function PageEditor({
               <div className="page-editor-block-content">
                 <PageBlockView
                   block={block}
+                  blockIdentifier={id}
                   businessSlug={businessSlug}
                   editing={editing}
                   embed={
@@ -928,7 +971,7 @@ export function PageEditor({
                   }
                   previewBookings={previewBookings}
                   previewForms={previewForms}
-                  onEdit={() => startEditing(block)}
+                  onEdit={() => startEditing(block, id)}
                   onCancel={() => setEditing(null)}
                   onChange={(text) =>
                     setEditing((value) => (value ? { ...value, text } : value))
@@ -953,7 +996,7 @@ export function PageEditor({
                   <button
                     aria-label={`Edit ${blockLabel(block)}`}
                     className="page-editor-block-action"
-                    onClick={() => startEditing(block)}
+                    onClick={() => startEditing(block, id)}
                     type="button"
                   >
                     Edit
@@ -1021,7 +1064,9 @@ export function PageEditor({
 
       <p className="page-editor-footer">
         {siteMode
-          ? "Site edits use the same Page structure as the customer preview. Publishing remains a separate reviewed action."
+          ? publishedSite
+            ? "Changes to this published Site go live when you save."
+            : "Site edits use the same Page structure as the customer preview. Publish Site remains a separate owner action."
           : "Pages bring guidance and live saved Views together. Record edits remain operational and use the same Table workspace."}
       </p>
     </section>

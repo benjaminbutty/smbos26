@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -244,6 +246,46 @@ describe("Page grammar and direct Workspace composer", () => {
     ]);
   });
 
+  it("supports bounded mutations for historical blocks without IDs", () => {
+    const updated = composeDirectPageAction(snapshot, {
+      action: "update_page_block",
+      pageKey: "workspace",
+      blockId: "legacy:0",
+      block: { type: "heading", text: "Daily work", level: 1 },
+    });
+    const updatedLayout = (updated.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(updatedLayout.blocks[0]).toMatchObject({
+      type: "heading",
+      text: "Daily work",
+      level: 1,
+    });
+    expect(updatedLayout.blocks[0]).toHaveProperty("id");
+
+    const moved = composeDirectPageAction(snapshot, {
+      action: "move_page_block",
+      pageKey: "workspace",
+      blockId: "legacy:1",
+      direction: "up",
+    });
+    const movedLayout = (moved.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(movedLayout.blocks.map((block) => block.type)).toEqual([
+      "view",
+      "heading",
+    ]);
+
+    const removed = composeDirectPageAction(snapshot, {
+      action: "remove_page_block",
+      pageKey: "workspace",
+      blockId: "legacy:1",
+    });
+    const removedLayout = (removed.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(removedLayout.blocks).toHaveLength(1);
+    expect(removedLayout.blocks[0]?.type).toBe("heading");
+  });
+
   it("fails closed when a Page block references an unavailable View", () => {
     expect(() =>
       composeDirectPageAction(snapshot, {
@@ -272,33 +314,70 @@ describe("Page grammar and direct Workspace composer", () => {
     ).toThrowError(DirectPageComposerError);
   });
 
-  it("applies the bounded Page mutation boundary to public Sites", () => {
-    const publicSnapshot: ConfigurationSnapshotV1 = {
-      ...snapshot,
-      pages: [
-        {
-          ...snapshot.pages[0]!,
-          key: "public_site",
-          title: "Public site",
-          slug: "public-site",
-          audience: "public",
-        },
-      ],
-    };
+  it.each(["draft", "published"] as const)(
+    "preserves public Site identity and %s lifecycle on rename and layout save",
+    (status) => {
+      const publicSnapshot: ConfigurationSnapshotV1 = {
+        ...snapshot,
+        pages: [
+          {
+            ...snapshot.pages[0]!,
+            key: "public_site",
+            title: "Public site",
+            slug: "public-site",
+            audience: "public",
+            status,
+          },
+        ],
+      };
 
-    const result = composeDirectPageAction(publicSnapshot, {
-      action: "rename_page",
-      pageKey: "public_site",
-      title: "Book with us",
-    });
-
-    expect(result.operations).toEqual([
-      expect.objectContaining({
-        op: "set_page",
-        key: "public_site",
-        audience: "public",
+      const renamed = composeDirectPageAction(publicSnapshot, {
+        action: "rename_page",
+        pageKey: "public_site",
         title: "Book with us",
-      }),
-    ]);
+      });
+      const saved = composeDirectPageAction(publicSnapshot, {
+        action: "save_page_layout",
+        pageKey: "public_site",
+        layout: { blocks: [{ type: "text", text: "Updated Site" }] },
+      });
+
+      for (const result of [renamed, saved]) {
+        expect(result.operations).toEqual([
+          expect.objectContaining({
+            op: "set_page",
+            key: "public_site",
+            slug: "public-site",
+            audience: "public",
+            status,
+            is_active: true,
+          }),
+        ]);
+      }
+      expect(renamed.operations[0]).toMatchObject({ title: "Book with us" });
+      expect(saved.operations[0]).toMatchObject({ title: "Public site" });
+    },
+  );
+
+  it("explains the distinct draft and published Site save behavior", () => {
+    const siteRoute = readFileSync(
+      new URL(
+        "../src/app/app/[businessSlug]/sites/[pageSlug]/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const editor = readFileSync(
+      new URL("../src/runtime/page-editor/page-editor.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(siteRoute).toContain(
+      "Changes to this published Site go live when you save.",
+    );
+    expect(editor).toContain(
+      "Changes to this published Site go live when you save.",
+    );
+    expect(editor).toContain("Publish Site remains a separate owner action.");
   });
 });

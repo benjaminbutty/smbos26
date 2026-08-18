@@ -48,6 +48,7 @@ interface ResolvedPreorderBlock {
 
 interface PageRendererProps {
   layout: PageLayout;
+  pageTitle?: string;
   businessSlug?: string;
   views?: Readonly<Record<string, ExperienceViewBundle>>;
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
@@ -92,6 +93,7 @@ function MissingBlock({ message }: Readonly<{ message: string }>): ReactNode {
 
 export function PageRenderer({
   layout,
+  pageTitle,
   businessSlug,
   views = {},
   forms = {},
@@ -110,8 +112,21 @@ export function PageRenderer({
 
         switch (block.type) {
           case "heading":
+            if (
+              publicMode &&
+              block.level === 1 &&
+              pageTitle !== undefined &&
+              block.text.trim().toLocaleLowerCase("en") ===
+                pageTitle.trim().toLocaleLowerCase("en")
+            ) {
+              return null;
+            }
             if (block.level === 1) {
-              return <h1 key={key}>{block.text}</h1>;
+              return publicMode ? (
+                <h2 key={key}>{block.text}</h2>
+              ) : (
+                <h1 key={key}>{block.text}</h1>
+              );
             }
             if (block.level === 3) {
               return <h3 key={key}>{block.text}</h3>;
