@@ -7,9 +7,9 @@ import { candidateChecksum } from "../../../core/acquisition/preview";
 import { loadAcquisitionSession } from "../../../core/acquisition/service";
 import { requireAuthenticatedUser } from "../../../auth/authorization";
 import { createServerClient } from "../../../db/supabase/server";
+import { AcquisitionSetupSummary } from "../../../components/acquisition-setup-summary";
 import { Notice } from "../../../components/notice";
-import { TimezoneConfirmation } from "../../../components/timezone-confirmation";
-import { PendingSubmitButton } from "../../../components/pending-submit-button";
+import { WorkspaceClaimForm } from "../../../components/workspace-claim-form";
 import { emitAcquisitionEvent } from "../../../core/acquisition/events";
 import { readSearchParam, type SearchParams } from "../../../lib/search-params";
 import { claimWorkspaceAction } from "../actions";
@@ -62,49 +62,38 @@ export default async function BusinessSetupPage({
   });
   return (
     <main className="narrow-page acquisition-business-page">
-      <section className="panel">
-        <p className="eyebrow">Your plan is ready</p>
-        <h1 className="page-title">Save this workspace and start using it</h1>
-        <p className="muted">
-          Signed in as {user.email ?? "your account"}. Lenni will create the
-          starting workspace you just reviewed for{" "}
-          {acquisitionCategoryLabel(proposal.category).toLocaleLowerCase("en")}.
-        </p>
+      <div className="acquisition-business-layout">
+        <AcquisitionSetupSummary proposal={proposal} status="Accepted setup" />
+        <section className="panel acquisition-business-panel">
+          <p className="eyebrow">Business basics</p>
+          <h1 className="page-title">Create your real workspace</h1>
+          <p className="muted">
+            Signed in as {user.email ?? "your account"}. Add the details needed
+            to create this{" "}
+            {acquisitionCategoryLabel(proposal.category).toLocaleLowerCase(
+              "en",
+            )}{" "}
+            workspace.
+          </p>
 
-        <div className="acquisition-business-summary">
-          <strong>{proposal.title}</strong>
-          <span>
-            {proposal.concepts.map((concept) => concept.name).join(" · ")}
-          </span>
-        </div>
+          {error ? (
+            <div className="acquisition-claim-error">
+              <strong>Your Business was not created.</strong>
+              <Notice kind="error">{error}</Notice>
+            </div>
+          ) : null}
 
-        {error ? <Notice kind="error">{error}</Notice> : null}
+          <WorkspaceClaimForm action={claimWorkspaceAction} />
 
-        <form action={claimWorkspaceAction} className="stack-form">
-          <label>
-            Business name
-            <input
-              autoComplete="organization"
-              maxLength={120}
-              name="businessName"
-              required
-            />
-          </label>
-          <TimezoneConfirmation />
-          <PendingSubmitButton
-            label="Create workspace"
-            pendingLabel="Checking how the parts fit together…"
-            statusId="workspace-create-progress"
-          />
-        </form>
-
-        <p className="form-footer">
-          No payment details, team setup or fake business records are added.
-        </p>
-        <p className="form-footer">
-          <Link href="/start/preview/home">Back to preview</Link>
-        </p>
-      </section>
+          <p className="form-footer">
+            Preview Records, customer details and bookings are not copied. No
+            payment or team setup is added.
+          </p>
+          <p className="form-footer">
+            <Link href="/start/preview/home">Back to preview</Link>
+          </p>
+        </section>
+      </div>
     </main>
   );
 }

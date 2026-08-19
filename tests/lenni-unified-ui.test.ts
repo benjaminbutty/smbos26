@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
 import { WorkspaceHome } from "../src/components/workspace-home";
 import { WorkspaceMobileNav } from "../src/components/workspace-mobile-nav";
 import { AcquisitionProposalCard } from "../src/components/acquisition-proposal";
+import { AcquisitionSetupSummary } from "../src/components/acquisition-setup-summary";
 import { BuilderResultPanel } from "../src/components/builder-ui";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
@@ -90,6 +91,14 @@ describe("Lenni unified workspace presentation", () => {
       new URL("../src/app/sign-up/page.tsx", import.meta.url),
       "utf8",
     );
+    const businessSource = readFileSync(
+      new URL("../src/app/start/business/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const claimFormSource = readFileSync(
+      new URL("../src/components/workspace-claim-form.tsx", import.meta.url),
+      "utf8",
+    );
     const publicSource = readFileSync(
       new URL(
         "../src/app/p/[businessSlug]/[pageSlug]/page.tsx",
@@ -122,8 +131,18 @@ describe("Lenni unified workspace presentation", () => {
 
     expect(signInSource).toContain("c7-auth-page");
     expect(signInSource).toContain("c7-auth-panel");
+    expect(signInSource).toContain("Sign in and continue");
+    expect(signInSource).toContain("loadAcquisitionSession");
     expect(signUpSource).toContain("c7-auth-page");
     expect(signUpSource).toContain("c7-auth-panel");
+    expect(signUpSource).toContain("Save workspace and continue");
+    expect(signUpSource).toContain("accepted_candidate_checksum");
+    expect(businessSource).toContain("Your Business was not created.");
+    expect(businessSource).toContain("WorkspaceClaimForm");
+    expect(claimFormSource).toContain("useFormStatus");
+    expect(claimFormSource).toContain("Creating your workspace");
+    expect(claimFormSource).not.toContain("setTimeout");
+    expect(claimFormSource).not.toContain("percentage");
     expect(publicSource).toContain("c7-public-experience-header");
     expect(publicSource).toContain("Powered by Lenni");
     expect(publicSource).toContain("c7-public-preorder");
@@ -401,6 +420,46 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).not.toContain("source/target");
     expect(html).not.toContain("Print");
     expect(html).not.toContain("Archive");
+  });
+
+  it("keeps the accepted candidate visible without implying creation", () => {
+    const html = renderToStaticMarkup(
+      createElement(AcquisitionSetupSummary, {
+        proposal: {
+          category: "appointments",
+          concepts: [
+            {
+              description: "People who book",
+              name: "Customers",
+              tracked_information: ["Name"],
+            },
+            {
+              description: "Work in the diary",
+              name: "Appointments",
+              tracked_information: ["Date"],
+            },
+          ],
+          connections: [{ text: "Each Customer has Appointments" }],
+          first_step: "Review the diary.",
+          landing_page_key: "today",
+          not_included: [],
+          pages: [],
+          schema_version: 1,
+          source: "tailored",
+          title: "A calmer booking workspace",
+          understanding: "You need customers and appointments kept together.",
+          views: [{ description: "Today", name: "Today" }],
+          why: "It keeps the day clear.",
+        },
+      } as never),
+    );
+
+    expect(html).toContain("Setup ready to save");
+    expect(html).toContain("A calmer booking workspace");
+    expect(html).toContain("Customers");
+    expect(html).toContain("Appointments");
+    expect(html).toContain("temporary");
+    expect(html).not.toContain("created successfully");
   });
 
   it("keeps acquisition availability and account continuity explicit", () => {

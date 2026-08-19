@@ -13030,3 +13030,346 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Journey 1 visual convergence — VC3 authentication and trusted claim. */
+.acquisition-auth-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, 27rem);
+  gap: clamp(var(--space-6), 5vw, var(--space-12));
+  align-items: center;
+  width: min(calc(100% - 2rem), 68rem);
+  max-width: 68rem;
+  padding-block: clamp(var(--space-8), 6vw, var(--space-16));
+}
+
+.acquisition-auth-page .c7-auth-panel {
+  width: 100%;
+  margin: 0;
+}
+
+.acquisition-setup-summary {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  padding: clamp(var(--space-5), 3vw, var(--space-8));
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.acquisition-setup-status {
+  display: inline-flex;
+  min-height: 1.8rem;
+  width: max-content;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  color: var(--trust-checked-text);
+  background: var(--trust-checked-surface);
+  border: var(--border-width-thin) solid
+    color-mix(in srgb, var(--trust-checked-text) 18%, transparent);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.acquisition-setup-summary .eyebrow {
+  margin: 0 0 var(--space-2);
+}
+
+.acquisition-setup-summary h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(1.55rem, 3vw, 2.2rem);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.1;
+}
+
+.acquisition-setup-summary > div > p:last-child {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.acquisition-setup-summary ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.acquisition-setup-summary li {
+  padding: 0.35rem 0.6rem;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.acquisition-setup-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  overflow: hidden;
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.acquisition-setup-summary dl div {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-right: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.acquisition-setup-summary dl div:last-child {
+  border-right: 0;
+}
+
+.acquisition-setup-summary dt,
+.acquisition-setup-summary dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+}
+
+.acquisition-setup-summary dd {
+  order: -1;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.acquisition-setup-summary-note {
+  margin: 0;
+  padding-top: var(--space-4);
+  color: var(--text-tertiary);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.c7-auth-panel {
+  padding: clamp(var(--space-5), 3vw, var(--space-8));
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.c7-auth-panel .page-title {
+  font-size: clamp(1.85rem, 4vw, 2.7rem);
+  font-weight: 650;
+  letter-spacing: -0.05em;
+  line-height: 1.08;
+}
+
+.c7-auth-panel .c7-auth-note {
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border-color: var(--border-subtle);
+}
+
+.c7-auth-panel .stack-form {
+  margin-top: var(--space-6);
+}
+
+.c7-auth-panel .stack-form input {
+  min-height: 2.75rem;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.c7-auth-panel .stack-form button {
+  min-height: 2.9rem;
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+}
+
+.acquisition-business-page {
+  width: min(calc(100% - 2rem), 68rem);
+  max-width: 68rem;
+  padding-block: clamp(var(--space-8), 6vw, var(--space-16));
+}
+
+.acquisition-business-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(22rem, 27rem);
+  gap: clamp(var(--space-6), 5vw, var(--space-12));
+  align-items: start;
+}
+
+.acquisition-business-panel {
+  min-width: 0;
+  padding: clamp(var(--space-5), 3vw, var(--space-8));
+  background: var(--surface-base);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.acquisition-business-panel .page-title {
+  margin-top: var(--space-1);
+  font-size: clamp(1.85rem, 4vw, 2.7rem);
+  font-weight: 650;
+  letter-spacing: -0.05em;
+  line-height: 1.08;
+}
+
+.workspace-claim-form {
+  position: relative;
+  margin-top: var(--space-6);
+}
+
+.workspace-claim-form input,
+.workspace-claim-form select {
+  min-height: 2.75rem;
+  border-color: var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.workspace-claim-form > button {
+  min-height: 2.9rem;
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+}
+
+.acquisition-claim-error {
+  display: grid;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  color: var(--trust-destructive-error-text);
+  background: var(--trust-destructive-error-surface);
+  border: var(--border-width-thin) solid
+    color-mix(in srgb, var(--trust-destructive-error-text) 20%, transparent);
+  border-radius: var(--radius-md);
+}
+
+.acquisition-claim-error .notice {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.workspace-claim-pending {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6);
+  color: var(--text-primary);
+  background: var(--surface-canvas);
+}
+
+.workspace-claim-pending-content {
+  display: grid;
+  justify-items: center;
+  width: min(100%, 34rem);
+  text-align: center;
+}
+
+.workspace-claim-pending-mark {
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-bottom: var(--space-5);
+  background: var(--coral-600);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 0.45rem var(--coral-100);
+}
+
+.workspace-claim-pending .eyebrow {
+  margin: 0 0 var(--space-2);
+}
+
+.workspace-claim-pending h2 {
+  max-width: 15ch;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: clamp(2rem, 5vw, 3.25rem);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1.05;
+}
+
+.workspace-claim-pending-content > p:not(.eyebrow) {
+  max-width: 31rem;
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.workspace-claim-indeterminate {
+  position: relative;
+  width: min(100%, 24rem);
+  height: 0.3rem;
+  margin-top: var(--space-8);
+  overflow: hidden;
+  background: var(--coral-100);
+  border-radius: var(--radius-full);
+}
+
+.workspace-claim-indeterminate::after {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 34%;
+  background: var(--coral-600);
+  border-radius: inherit;
+  content: "";
+  animation: lenni-claim-indeterminate 1.25s ease-in-out infinite;
+}
+
+@keyframes lenni-claim-indeterminate {
+  from {
+    transform: translateX(-125%);
+  }
+
+  to {
+    transform: translateX(395%);
+  }
+}
+
+@media (max-width: 48rem) {
+  .acquisition-auth-page,
+  .acquisition-business-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .acquisition-auth-page,
+  .acquisition-business-page {
+    width: min(calc(100% - 1.25rem), 68rem);
+    padding-block: var(--space-6) var(--space-10);
+  }
+
+  .acquisition-auth-page .acquisition-setup-summary,
+  .acquisition-business-page .acquisition-setup-summary {
+    padding: var(--space-5);
+  }
+
+  .acquisition-setup-summary > div > p:last-child {
+    display: none;
+  }
+
+  .workspace-claim-pending {
+    padding: var(--space-5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-claim-indeterminate::after {
+    display: none;
+    animation: none;
+  }
+}
