@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { Json, Tables } from "../../db/supabase/database.types";
 import { createAdminClient } from "../../db/supabase/admin";
 import { getEnvironment } from "../../env";
+import type { AcquisitionExecutionCore } from "../../ai/acquisition-planning/runtime";
 import {
   addClarificationAnswer,
   assessAcquisitionClarifications,
@@ -22,7 +23,15 @@ import { composeStarterComposition } from "./composer";
 import { emitAcquisitionCandidateDiagnostic } from "./diagnostics";
 import { emitAcquisitionEvent } from "./events";
 import { interpretAcquisitionRequest } from "./interpreter";
-import { validateAcquisitionCandidate } from "./quality";
+import {
+  AcquisitionCandidateQualityError,
+  validateAcquisitionCandidate,
+} from "./quality";
+import {
+  isAcquisitionRecoveryQualityCode,
+  recoverAcquisitionCandidate,
+} from "./recovery";
+import type { AcquisitionRecoveryResult } from "./recovery";
 import { reconcileAcquisitionRefinement } from "./refinement";
 import { emitAcquisitionRefinementDiagnostic } from "./refinement-diagnostics";
 import {
@@ -385,7 +394,11 @@ ${refinement}`
       category,
       request,
       refinementAssessment.decisions,
-      { allowFallback: false },
+      {
+        allowFallback: false,
+        allowRecovery: false,
+        emitFirstPassSuccess: false,
+      },
     );
   } catch (error) {
     emitAcquisitionRefinementDiagnostic(error, "candidate_generation");
@@ -442,23 +455,136 @@ ${refinement}`
   });
 }
 
-async function generateCandidate(
+export async function generateCandidate(
   category: AcquisitionCategory,
   request: string,
   decisions: Parameters<typeof enhanceAcquisitionPayload>[1],
-  options: { allowFallback?: boolean } = {},
+  options: {
+    allowFallback?: boolean;
+    allowRecovery?: boolean;
+    emitFirstPassSuccess?: boolean;
+    execution?: AcquisitionExecutionCore;
+    emitEvent?: typeof emitAcquisitionEvent;
+    emitDiagnostic?: typeof emitAcquisitionCandidateDiagnostic;
+  } = {},
 ): Promise<AcquisitionBuildPayload> {
   const allowFallback = options.allowFallback ?? true;
+  const allowRecovery = options.allowRecovery ?? true;
+  const emitFirstPassSuccess = options.emitFirstPassSuccess ?? true;
+  const emitEvent = options.emitEvent ?? emitAcquisitionEvent;
+  const emitDiagnostic =
+    options.emitDiagnostic ?? emitAcquisitionCandidateDiagnostic;
   const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
+
+  const fallback = (): AcquisitionBuildPayload => {
+    const starter = composeStarterComposition(category, request);
+    const enhancedFallback = enhanceAcquisitionPayload(
+      starter,
+      decisions,
+      request,
+    );
+    const validatedFallback = validateAcquisitionCandidate(enhancedFallback);
+    emitEvent("final_fallback", { category, source: "fallback" });
+    return validatedFallback;
+  };
+  const fallbackOrThrow = (): AcquisitionBuildPayload => {
+    try {
+      return fallback();
+    } catch (fallbackError) {
+      emitDiagnostic(fallbackError, "candidate_quality", {
+        category,
+        source: "fallback",
+      });
+      throw fallbackError;
+    }
+  };
+  let successfulRecovery: AcquisitionRecoveryResult | null = null;
+
+  const finalizeRecoveryFailure = (): void => {
+    if (!successfulRecovery) return;
+    emitEvent("repair_failed", {
+      category,
+      recovery_code: `quality_${successfulRecovery.code}`,
+    });
+    successfulRecovery = null;
+  };
+
+  const validateTailoredCandidate = (
+    candidate: AcquisitionBuildPayload,
+  ): Readonly<{
+    payload: AcquisitionBuildPayload;
+    recovery: AcquisitionRecoveryResult | null;
+  }> => {
+    try {
+      return {
+        payload: validateAcquisitionCandidate(candidate),
+        recovery: null,
+      };
+    } catch (error) {
+      emitDiagnostic(error, "candidate_quality", {
+        category,
+        source: candidate.proposal.source,
+      });
+
+      const canRecover =
+        allowRecovery &&
+        candidate.proposal.source === "tailored" &&
+        error instanceof AcquisitionCandidateQualityError &&
+        isAcquisitionRecoveryQualityCode(error.code);
+      if (canRecover) {
+        emitEvent("repair_attempted", {
+          category,
+          recovery_code: `quality_${error.code}`,
+        });
+        try {
+          const recovery = recoverAcquisitionCandidate(candidate, error);
+          if (recovery) {
+            try {
+              const validatedRecovery = validateAcquisitionCandidate(
+                recovery.payload,
+              );
+              return { payload: validatedRecovery, recovery };
+            } catch (recoveryError) {
+              emitDiagnostic(recoveryError, "candidate_quality", {
+                category,
+                source: "tailored",
+              });
+            }
+          }
+        } catch (recoveryError) {
+          emitDiagnostic(recoveryError, "candidate_quality", {
+            category,
+            source: "tailored",
+          });
+        }
+        emitEvent("repair_failed", {
+          category,
+          recovery_code: `quality_${error.code}`,
+        });
+      }
+
+      emitEvent("proposal_failed", {
+        category,
+        reason: "candidate_quality_rejected",
+      });
+      throw error;
+    }
+  };
+
   let payload: AcquisitionBuildPayload;
   try {
-    payload = await interpretAcquisitionRequest(category, enrichedRequest);
+    payload = await interpretAcquisitionRequest(
+      category,
+      enrichedRequest,
+      options.execution,
+      { validate: false },
+    );
   } catch (error) {
-    emitAcquisitionCandidateDiagnostic(error, "candidate_generation", {
+    emitDiagnostic(error, "candidate_generation", {
       category,
       source: "tailored",
     });
-    emitAcquisitionEvent("proposal_failed", {
+    emitEvent("proposal_failed", {
       category,
       reason:
         error instanceof Error &&
@@ -468,49 +594,63 @@ async function generateCandidate(
           : "tailoring_unavailable",
     });
     if (!allowFallback) throw error;
-    payload = composeStarterComposition(category, request);
+    return fallbackOrThrow();
   }
+
   try {
-    let enhancedPayload: AcquisitionBuildPayload;
-    try {
-      enhancedPayload = enhanceAcquisitionPayload(payload, decisions, request);
-    } catch (error) {
-      emitAcquisitionCandidateDiagnostic(error, "capability_enhancement", {
-        category,
-        source: payload.proposal.source,
-      });
-      throw error;
-    }
-    try {
-      return validateAcquisitionCandidate(enhancedPayload);
-    } catch (error) {
-      emitAcquisitionCandidateDiagnostic(error, "candidate_quality", {
-        category,
-        source: payload.proposal.source,
-      });
-      throw error;
-    }
+    const validatedCandidate = validateTailoredCandidate(payload);
+    payload = validatedCandidate.payload;
+    successfulRecovery = validatedCandidate.recovery;
   } catch (error) {
-    emitAcquisitionEvent("proposal_failed", {
+    if (!allowFallback) throw error;
+    return fallbackOrThrow();
+  }
+
+  let enhancedPayload: AcquisitionBuildPayload;
+  try {
+    enhancedPayload = enhanceAcquisitionPayload(payload, decisions, request);
+  } catch (error) {
+    emitDiagnostic(error, "capability_enhancement", {
+      category,
+      source: payload.proposal.source,
+    });
+    emitEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    finalizeRecoveryFailure();
+    if (!allowFallback) throw error;
+    return fallbackOrThrow();
+  }
+
+  try {
+    const validated = validateAcquisitionCandidate(enhancedPayload);
+    if (successfulRecovery) {
+      emitEvent("repair_succeeded", {
+        category,
+        recovery_code: `quality_${successfulRecovery.code}`,
+        removed_field_count: successfulRecovery.removed_field_count,
+      });
+      successfulRecovery = null;
+    } else if (
+      emitFirstPassSuccess &&
+      validated.proposal.source === "tailored"
+    ) {
+      emitEvent("first_pass_tailored_success", { category });
+    }
+    return validated;
+  } catch (error) {
+    emitDiagnostic(error, "candidate_quality", {
+      category,
+      source: enhancedPayload.proposal.source,
+    });
+    finalizeRecoveryFailure();
+    emitEvent("proposal_failed", {
       category,
       reason: "candidate_quality_rejected",
     });
     if (!allowFallback) throw error;
-    const fallback = composeStarterComposition(category, request);
-    try {
-      const enhancedFallback = enhanceAcquisitionPayload(
-        fallback,
-        decisions,
-        request,
-      );
-      return validateAcquisitionCandidate(enhancedFallback);
-    } catch (fallbackError) {
-      emitAcquisitionCandidateDiagnostic(fallbackError, "candidate_quality", {
-        category,
-        source: "fallback",
-      });
-      throw fallbackError;
-    }
+    return fallbackOrThrow();
   }
 }
 

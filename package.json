@@ -86,6 +86,7 @@
     "eval:builder-record-location-link-terra-reliability-live": "vite-node --config vitest.builder-evaluation-live.config.ts evaluations/builder-record-location-link.terra-reliability.live.eval.ts",
     "eval:acquisition-terra-qualification-live": "vite-node --config vitest.builder-evaluation-live.config.ts evaluations/acquisition.terra-qualification.live.eval.ts",
     "eval:acquisition-terra-reliability-live": "vite-node --config vitest.builder-evaluation-live.config.ts evaluations/acquisition.terra-reliability.live.eval.ts",
+    "eval:acquisition-product-reliability-live": "vite-node --config vitest.builder-evaluation-live.config.ts evaluations/acquisition-product-reliability.live.eval.ts",
     "test:manual-amendments": "vitest run --config vitest.manual-amendments.config.ts",
     "test:manual-questions": "vitest run --config vitest.manual-questions.config.ts",
     "test:changes": "vitest run --config vitest.changes.config.ts",

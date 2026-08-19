@@ -52,6 +52,10 @@ export class AcquisitionInterpretationError extends Error {
   }
 }
 
+export type AcquisitionInterpretationOptions = Readonly<{
+  validate?: boolean;
+}>;
+
 function connectionLabelsForPlan(
   plan: AcquisitionReadyPlan,
   connection: AcquisitionReadyPlan["connections"][number],
@@ -384,6 +388,7 @@ export async function interpretAcquisitionRequest(
   categoryInput: unknown,
   requestInput: unknown,
   execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
+  options: AcquisitionInterpretationOptions = {},
 ) {
   const category = acquisitionCategorySchema.parse(categoryInput);
   const request = acquisitionRequestSchema
@@ -452,7 +457,8 @@ export async function interpretAcquisitionRequest(
       ]),
     ].slice(0, 8),
   });
-  return validateAcquisitionCandidate(
-    acquisitionBuildPayloadSchema.parse({ proposal, operations }),
-  );
+  const payload = acquisitionBuildPayloadSchema.parse({ proposal, operations });
+  return options.validate === false
+    ? payload
+    : validateAcquisitionCandidate(payload);
 }

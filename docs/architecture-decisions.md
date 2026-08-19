@@ -2920,3 +2920,57 @@ server-derived; the trusted transaction fills those Fields from the
 revalidated slot and never accepts them as browser authority. The derived
 Fields remain hidden from the public form. This is an additive constructability
 hardening and does not change the reusable graph or publication decision.
+
+## ADR-042 — Journey 1 acquisition uses one bounded deterministic quality recovery cycle
+
+**Status:** Accepted for Journey 1 maintenance
+**Date:** 19 August 2026
+
+### Context
+
+The real-provider acquisition planner can occasionally return a structurally
+valid graph whose scalar Fields repeat identity already represented by a
+Connection. The deterministic candidate quality boundary correctly rejects
+that output, but the one-shot orchestration previously fell directly to the
+reliable starter composition even when the defect was mechanically removable.
+
+### Decision
+
+Journey 1 acquisition keeps deterministic quality validation authoritative and
+allows one in-memory recovery pass for exactly these quality codes:
+
+- `cross_object_field_leakage`
+- `relationship_scalar_duplication`
+- `semantically_redundant_field`
+
+The recovery removes only Fields identified by the existing code-owned quality
+rules when the removal is mechanically safe. It refuses required Fields and
+refuses any candidate whose Forms or Views cannot remain valid. It updates the
+dependent owner-readable tracked information, preserves Objects,
+Relationships, and all other operations, then runs the complete
+`validateAcquisitionCandidate()` boundary again. A failed or unclassified
+repair uses the existing deterministic fallback.
+
+No model repair task, generic retry loop, new AI authority, new persistent
+state, database table, migration, quota reservation, or automatic configuration
+application is introduced. One owner submission reserves one public
+acquisition attempt and the maximum provider-call count remains one. Provider
+authentication, transport, refusal, malformed output, `needs_more_detail`,
+unsupported capabilities, and all other quality codes do not enter semantic
+recovery. Refinement keeps its existing no-automatic-recovery contract.
+
+The first-pass instruction now gives generic guidance to keep identity/contact
+information on its owning business area and use a Connection for relationships.
+This materially changes the acquisition subject, so prior live qualification
+and reliability evidence remains historical and must be rerun. The separate
+30-plus-request product-reliability corpus is launch-quality evidence only; it
+does not replace the frozen eight-scenario hard contract.
+
+### Consequences
+
+Successful normal requests remain one provider call and present the same
+tailored proposal. A mechanically recoverable defect can produce the same
+tailored proposal without a second owner submission or a second quota/build
+attempt. The recovery is bounded to one pass and cannot retry recursively; the
+deterministic starter remains the final safety net. No tenant, RLS, AI context,
+operational data, preview, claim, accept, or publish boundary changes.

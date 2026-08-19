@@ -1141,3 +1141,37 @@ history:
 None of those SHAs was merged or pushed as a production PR. No production
 schema, graph/runtime, primitive, tenant data, fallback subsystem or PR #38
 Connection-label rule was changed by this closeout.
+
+## Journey 1 acquisition reliability maintenance
+
+The Journey 1 acquisition instruction now includes generic graph guidance for
+keeping identity/contact information on the business area it belongs to and
+using a Connection for the relationship. That is a material change to the
+frozen acquisition subject, so the existing live qualification and reliability
+gates must be rerun at the final exact SHA; historical 8/8 and 24/24 results
+must not be reused as evidence for this subject.
+
+The public orchestration has one deterministic in-memory recovery pass for the
+allow-listed quality codes `cross_object_field_leakage`,
+`relationship_scalar_duplication`, and `semantically_redundant_field`. It
+removes only mechanically redundant non-required Fields, revalidates the full
+candidate, and otherwise uses the existing fallback. No second provider call,
+repair task, quota reservation, migration, or persistent telemetry is added.
+
+The engineering-only product-reliability corpus is intentionally separate from
+the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
+descriptions, including the exact carpenter regression fixture, and runs three
+repetitions (96 executions) when explicitly enabled:
+
+```bash
+RUN_LIVE_OPENAI_ACQUISITION_PRODUCT_RELIABILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:acquisition-product-reliability-live
+```
+
+Its redacted report includes scenario/execution counts, first-pass tailored
+successes, recovered tailored successes, final fallbacks, hard-contract
+failures, diagnostic-code distribution, attempts, token usage, estimated cost,
+and elapsed time. It does not print owner prompts, model prose, model output,
+provider bodies, or business data. Product targets are reported as evidence,
+not used to weaken deterministic validation or to replace the hard gates.

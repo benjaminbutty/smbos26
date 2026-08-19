@@ -96,6 +96,18 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     );
   });
 
+  it("guides generic graph identity modelling without adding a vertical rule", () => {
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "keep identity and contact information on the business area it belongs to",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "use the Connection to represent the relationship",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).not.toMatch(
+      /carpenter|trades|worker|quote/i,
+    );
+  });
+
   it("drops prompt, customer and authoritative payload metadata", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     emitAcquisitionEvent("prompt_submitted", {
@@ -115,6 +127,29 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(event).not.toHaveProperty("customer");
     expect(event).not.toHaveProperty("operations");
     expect(event).not.toHaveProperty("business_slug");
+    info.mockRestore();
+  });
+
+  it("keeps recovery telemetry finite and redacted", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    emitAcquisitionEvent("repair_succeeded", {
+      category: "jobs",
+      recovery_code: "quality_cross_object_field_leakage",
+      removed_field_count: 1,
+      prompt: "owner-request-marker",
+      model_output: "raw-output-marker",
+    });
+    const event = JSON.parse(String(info.mock.calls[0]?.[0]));
+    expect(event).toMatchObject({
+      event: "repair_succeeded",
+      category: "jobs",
+      recovery_code: "quality_cross_object_field_leakage",
+      removed_field_count: 1,
+    });
+    expect(JSON.stringify(event)).not.toMatch(
+      /owner-request-marker|raw-output-marker/,
+    );
+    expect(Object.keys(event)).toHaveLength(5);
     info.mockRestore();
   });
 });
