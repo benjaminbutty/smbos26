@@ -65,6 +65,7 @@ export interface CandidatePreviewTableEmbed {
   table: EditorTable;
   name: string;
   objectLabel: string;
+  recordTypeLabel: string;
 }
 
 export interface PageRendererTableEmbed {
@@ -208,7 +209,10 @@ export function PageRenderer({
                       <span>Example {candidateTable.objectLabel}</span>
                     </div>
                   </header>
-                  <CandidateTableWorkspace table={candidateTable.table} />
+                  <CandidateTableWorkspace
+                    recordTypeLabel={candidateTable.recordTypeLabel}
+                    table={candidateTable.table}
+                  />
                 </section>
               );
             }

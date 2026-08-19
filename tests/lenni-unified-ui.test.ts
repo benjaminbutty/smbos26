@@ -700,4 +700,63 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain(">Beth Smith</button>");
     expect(html).not.toContain("/app/bakery/workspace/customers/");
   });
+
+  it("uses owner-readable, read-only language in preview Record context", () => {
+    const html = renderToStaticMarkup(
+      createElement(RecordPanel, {
+        columns: [
+          {
+            key: "name",
+            label: "Name",
+            kind: "text",
+            primary: true,
+            editable: false,
+            width: 180,
+          },
+          {
+            key: "customer",
+            label: "Customer",
+            kind: "connection",
+            editable: false,
+            width: 180,
+            connection: {
+              relationshipKey: "customer",
+              direction: "source",
+              multiple: false,
+              targetObjectKey: "customer",
+              targetViewKey: "customers",
+            },
+          },
+        ],
+        onClose: () => undefined,
+        onCommitCell: () => undefined,
+        recordTypeLabel: "Appointment",
+        row: {
+          id: "30000000-0000-4000-8000-000000000001",
+          values: {
+            name: "Milo · Full groom",
+            customer: ["40000000-0000-4000-8000-000000000001"],
+          },
+          connectionValues: {
+            customer: [
+              {
+                id: "40000000-0000-4000-8000-000000000001",
+                label: "Sarah Evans",
+              },
+            ],
+          },
+        },
+        statusLabel: "Read-only preview",
+        tableName: "Appointments",
+      } as never),
+    );
+
+    expect(html).toContain("Read-only preview");
+    expect(html).toContain("Also shows on");
+    expect(html).toContain("Connected example information");
+    expect(html).toContain("Related information");
+    expect(html).toContain("Sarah Evans");
+    expect(html).not.toContain("Several records");
+    expect(html).not.toContain("Remove Sarah Evans");
+  });
 });

@@ -1,9 +1,11 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import type {
   CandidatePreviewModel,
   CandidatePreviewPage as CandidatePage,
 } from "../core/acquisition/preview";
+import { candidateTablePageKey } from "../core/acquisition/preview";
 import { CandidateTableWorkspace } from "./candidate-table-workspace";
 import { PageRenderer } from "../runtime/pages/page-renderer";
 
@@ -43,31 +45,55 @@ export function CandidatePreviewPage({
 }
 
 export function CandidatePreviewTable({
+  model,
   table,
 }: Readonly<{
+  model: CandidatePreviewModel;
   table: CandidatePreviewModel["tables"][string];
 }>): ReactNode {
+  const savedViews = Object.values(model.tables).filter(
+    (candidate) => candidate.objectKey === table.objectKey,
+  );
   return (
-    <section className="tenant-content runtime-page candidate-preview-content">
+    <section className="tenant-content runtime-page candidate-preview-content candidate-table-preview">
       <header className="page-preview-header">
         <div>
           <p className="eyebrow">Work · Table</p>
-          <h1 className="runtime-title">{table.name}</h1>
+          <h1 className="runtime-title">{table.objectLabel}</h1>
           <p className="candidate-preview-page-note">
-            Example Records and Connections are shown so you can understand this
-            saved View. Nothing can be edited in preview.
+            Explore temporary example Records and see how this information
+            connects. Nothing here can be edited or saved.
           </p>
         </div>
       </header>
-      <section className="page-view-block">
-        <header className="page-view-block-header">
-          <div>
-            <p className="eyebrow">Saved View</p>
-            <strong>{table.name}</strong>
-            <span>Example {table.objectLabel}</span>
-          </div>
+      <section
+        aria-label={`${table.objectLabel} preview`}
+        className="candidate-table-surface"
+      >
+        <header className="candidate-table-surface-header">
+          <span>Saved views</span>
+          <span className="candidate-read-only-status">
+            Preview · Read-only
+          </span>
         </header>
-        <CandidateTableWorkspace table={table.table} />
+        <nav
+          aria-label={`${table.objectLabel} saved views`}
+          className="candidate-saved-view-tabs"
+        >
+          {savedViews.map((view) => (
+            <Link
+              aria-current={view.viewKey === table.viewKey ? "page" : undefined}
+              href={`/start/preview/${encodeURIComponent(candidateTablePageKey(view.viewKey))}?candidate=${encodeURIComponent(model.checksum)}`}
+              key={view.viewKey}
+            >
+              {view.name}
+            </Link>
+          ))}
+        </nav>
+        <CandidateTableWorkspace
+          recordTypeLabel={table.recordTypeLabel}
+          table={table.table}
+        />
       </section>
     </section>
   );

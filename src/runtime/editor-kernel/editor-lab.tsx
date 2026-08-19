@@ -83,6 +83,7 @@ export interface EditorKernelProps {
   ) => Promise<boolean>;
   recordCountLabel?: string;
   recordTypeLabel?: string;
+  panelStatusLabel?: string;
   fullRecordPath?: string;
   loadConnectedRecord?:
     | ((
@@ -721,6 +722,7 @@ export function EditorKernel({
   connectionSource,
   connectionTargets,
   onCreateConnection,
+  panelStatusLabel,
   recordCountLabel,
   recordTypeLabel,
   fullRecordPath,
@@ -2026,6 +2028,9 @@ export function EditorKernel({
                       ? adapter.searchConnectionTargets(columnKey, search)
                       : Promise.resolve([])
             }
+            {...(panelStatusLabel !== undefined
+              ? { statusLabel: panelStatusLabel }
+              : {})}
             {...(connectedPanel
               ? createConnectedRecordTarget
                 ? { onCreateConnectionTarget: createPanelConnectionTarget }

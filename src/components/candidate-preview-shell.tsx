@@ -7,6 +7,7 @@ import {
   type CandidatePreviewPage,
   type CandidatePreviewTable,
 } from "../core/acquisition/preview";
+import { PendingSubmitButton } from "./pending-submit-button";
 
 interface CandidatePreviewShellProps {
   candidateChecksum: string;
@@ -37,10 +38,11 @@ export function CandidatePreviewShell({
       <header className="candidate-preview-topbar">
         <div className="candidate-preview-brand">
           <Link href="/start">Lenni</Link>
-          <span>Previewing {title}</span>
+          <span className="candidate-preview-title">{title}</span>
+          <span className="candidate-preview-badge">Preview</span>
         </div>
         <Link className="candidate-preview-tell" href="/start?from=preview">
-          Tell Lenni
+          Refine setup
         </Link>
       </header>
 
@@ -122,25 +124,28 @@ export function CandidatePreviewShell({
         <main className="candidate-preview-main">{children}</main>
       </div>
 
-      <aside
-        aria-label="Preview mode"
-        className="candidate-preview-overlay"
-        role="status"
-      >
-        <p className="eyebrow">Preview mode</p>
-        <h2>See how this setup works</h2>
-        <p>
-          Example information is shown so you can explore the workspace. Nothing
-          has been created yet.
-        </p>
+      <aside aria-label="Preview actions" className="candidate-preview-overlay">
+        <div className="candidate-preview-overlay-copy">
+          <p className="candidate-preview-overlay-status">Preview mode</p>
+          <div>
+            <h2>See how this setup works</h2>
+            <p>
+              Example information is temporary and nothing has been created.
+              Using this setup keeps it ready for signup; Business creation
+              comes later.
+            </p>
+          </div>
+        </div>
         <div className="candidate-preview-overlay-actions">
           <Link className="button-secondary" href="/start?from=preview">
             Back to Lenni
           </Link>
           <form action={useAcquisitionSetupAction}>
-            <button className="button" type="submit">
-              Use this setup
-            </button>
+            <PendingSubmitButton
+              label="Use this setup"
+              pendingLabel="Keeping this setup…"
+              statusId="candidate-accept-progress"
+            />
           </form>
         </div>
       </aside>
