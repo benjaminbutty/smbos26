@@ -354,7 +354,7 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("/app/milkwomanfran/pages/overview");
   });
 
-  it("renders the proposal hierarchy without inventing capabilities", () => {
+  it("renders the owner-readable Workspace Map without inventing capabilities", () => {
     const html = renderToStaticMarkup(
       createElement(AcquisitionProposalCard, {
         proposal: {
@@ -387,14 +387,18 @@ describe("Lenni unified workspace presentation", () => {
       }),
     );
 
-    expect(html).toContain("Your plan");
-    expect(html).toContain("What Lenni will create");
-    expect(html).toContain("How it fits together");
-    expect(html).toContain("What you&#x27;ll see");
-    expect(html).toContain("Why this starting point");
-    expect(html).toContain("Not included yet");
+    expect(html).toContain("Your workspace map");
+    expect(html).toContain("The parts you&#x27;ll work with");
+    expect(html).toContain("How the work connects");
+    expect(html).toContain("This setup includes");
+    expect(html).toContain("Why this shape");
+    expect(html).toContain("Not included");
     expect(html).toContain("Reliable starting point");
-    expect(html).toContain("Create this workspace");
+    expect(html).toContain("Preview workspace");
+    expect(html).toContain("Something&#x27;s missing");
+    expect(html).toContain('aria-label="Journey orientation"');
+    expect(html).not.toContain("cardinality");
+    expect(html).not.toContain("source/target");
     expect(html).not.toContain("Print");
     expect(html).not.toContain("Archive");
   });
@@ -413,8 +417,11 @@ describe("Lenni unified workspace presentation", () => {
       "utf8",
     );
 
-    expect(startSource).toContain("Tell Lenni about your business");
-    expect(startSource).toContain("What best describes the work?");
+    expect(startSource).toContain(
+      "Build the system your business actually needs",
+    );
+    expect(startSource).toContain("What kind of work is closest?");
+    expect(startSource).toContain('submitLabel="Start with Lenni"');
     expect(startSource).toContain("state");
     expect(startSource).toContain("Start again");
     expect(actionSource).toContain('"proposal_limit_reached"');

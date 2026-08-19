@@ -28,9 +28,6 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
       <div className="app-frame lenni-public-frame">
         <header className="site-header">
           <Link className="brand" href="/start" aria-label="Lenni home">
-            <span className="brand-mark" aria-hidden="true">
-              L
-            </span>
             Lenni
           </Link>
 
@@ -38,17 +35,10 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
             <Link className="header-link" href="/sign-in">
               Sign in
             </Link>
-            <Link className="button button-small" href="/sign-up">
-              Get started
-            </Link>
           </nav>
         </header>
 
         {children}
-
-        <footer className="site-footer">
-          Lenni · Business software shaped around your work
-        </footer>
       </div>
     );
   }
