@@ -12,7 +12,10 @@ import type { AcquisitionExecutionCore } from "../src/ai/acquisition-planning/ru
 import { runAcquisitionHardGateScenario } from "../src/ai/evaluation/acquisition/live";
 import { generateCandidate } from "../src/core/acquisition/service";
 import { acquisitionBuildPayloadSchema } from "../src/core/acquisition/schemas";
-import { recoverAcquisitionCandidate } from "../src/core/acquisition/recovery";
+import {
+  attemptAcquisitionCandidateRecovery,
+  recoverAcquisitionCandidate,
+} from "../src/core/acquisition/recovery";
 import { composeStarterComposition } from "../src/core/acquisition/composer";
 import {
   AcquisitionCandidateQualityError,
@@ -76,6 +79,7 @@ function executionForPlan(
 function carpenterPlan(
   options: {
     crossObjectLeakage?: boolean;
+    crossObjectLeakageRequired?: boolean;
     relationshipScalarDuplicate?: boolean;
   } = {},
 ): AcquisitionPlanningOutput {
@@ -92,7 +96,7 @@ function carpenterPlan(
           {
             label: "Customer name",
             field_type: "short_text" as const,
-            required: false,
+            required: options.crossObjectLeakageRequired ?? false,
             options: null,
             currency: null,
           },
@@ -229,6 +233,30 @@ function loggedEvents(
 }
 
 describe("bounded acquisition quality recovery", () => {
+  it("surfaces a finite required-field refusal when post-composition recovery cannot remove the leakage", async () => {
+    const execution = executionForPlan(
+      carpenterPlan({
+        crossObjectLeakage: true,
+        crossObjectLeakageRequired: true,
+      }),
+    );
+
+    const result = await runAcquisitionHardGateScenario(
+      carpenterScenario,
+      execution,
+    );
+
+    expect(result).toMatchObject({
+      hard_passed: false,
+      hard_findings: [
+        "production_composition_failed:quality_cross_object_field_leakage",
+      ],
+      diagnostic_code: "quality_cross_object_field_leakage",
+      recovery_failure_code: "required_field",
+    });
+    expect(execution.calls).toBe(1);
+  });
+
   it("fails the hard gate when recovery fails instead of accepting fallback", async () => {
     const execution = executionForPlan(
       carpenterPlan({
@@ -249,6 +277,8 @@ describe("bounded acquisition quality recovery", () => {
         "production_composition_failed:quality_relationship_scalar_duplication",
       ],
       diagnostic_code: "quality_relationship_scalar_duplication",
+      recovery_failure_code:
+        "second_quality_failure:cross_object_field_leakage",
     });
     expect(execution.calls).toBe(1);
   });
@@ -341,11 +371,21 @@ describe("bounded acquisition quality recovery", () => {
 
     expect(payload.proposal.source).toBe("fallback");
     expect(execution.calls).toBe(1);
-    const eventNames = loggedEvents(info).map((event) => event.event);
+    const events = loggedEvents(info);
+    const eventNames = events.map((event) => event.event);
     expect(eventNames).toContain("repair_attempted");
     expect(eventNames).toContain("repair_failed");
     expect(eventNames).toContain("final_fallback");
     expect(eventNames).toContain("proposal_failed");
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "repair_failed",
+          recovery_failure_code:
+            "second_quality_failure:cross_object_field_leakage",
+        }),
+      ]),
+    );
     info.mockRestore();
   });
 
@@ -408,6 +448,10 @@ describe("bounded acquisition quality recovery", () => {
     );
     const repaired = recoverAcquisitionCandidate(starter, badError);
     expect(repaired).toBeNull();
+    expect(attemptAcquisitionCandidateRecovery(starter, badError)).toEqual({
+      status: "refused",
+      failure_code: "no_mechanical_repair_fields",
+    });
 
     const semanticError = new AcquisitionCandidateQualityError(
       "semantically_redundant_field",

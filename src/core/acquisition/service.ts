@@ -28,10 +28,13 @@ import {
   validateAcquisitionCandidate,
 } from "./quality";
 import {
+  attemptAcquisitionCandidateRecovery,
   isAcquisitionRecoveryQualityCode,
-  recoverAcquisitionCandidate,
 } from "./recovery";
-import type { AcquisitionRecoveryResult } from "./recovery";
+import type {
+  AcquisitionRecoveryFailureCode,
+  AcquisitionRecoveryResult,
+} from "./recovery";
 import { reconcileAcquisitionRefinement } from "./refinement";
 import { emitAcquisitionRefinementDiagnostic } from "./refinement-diagnostics";
 import {
@@ -500,11 +503,14 @@ export async function generateCandidate(
   };
   let successfulRecovery: AcquisitionRecoveryResult | null = null;
 
-  const finalizeRecoveryFailure = (): void => {
+  const finalizeRecoveryFailure = (
+    failureCode: AcquisitionRecoveryFailureCode = "repaired_candidate_invalid",
+  ): void => {
     if (!successfulRecovery) return;
     emitEvent("repair_failed", {
       category,
       recovery_code: `quality_${successfulRecovery.code}`,
+      recovery_failure_code: failureCode,
     });
     successfulRecovery = null;
   };
@@ -536,19 +542,30 @@ export async function generateCandidate(
           category,
           recovery_code: `quality_${error.code}`,
         });
+        let recoveryFailureCode: AcquisitionRecoveryFailureCode =
+          "repaired_candidate_invalid";
         try {
-          const recovery = recoverAcquisitionCandidate(candidate, error);
-          if (recovery) {
+          const attempt = attemptAcquisitionCandidateRecovery(candidate, error);
+          if (attempt.status === "refused") {
+            recoveryFailureCode = attempt.failure_code;
+          } else if (attempt.status === "recovered") {
             try {
               const validatedRecovery = validateAcquisitionCandidate(
-                recovery.payload,
+                attempt.recovery.payload,
               );
-              return { payload: validatedRecovery, recovery };
+              return {
+                payload: validatedRecovery,
+                recovery: attempt.recovery,
+              };
             } catch (recoveryError) {
               emitDiagnostic(recoveryError, "candidate_quality", {
                 category,
                 source: "tailored",
               });
+              recoveryFailureCode =
+                recoveryError instanceof AcquisitionCandidateQualityError
+                  ? `second_quality_failure:${recoveryError.code}`
+                  : "repaired_candidate_invalid";
             }
           }
         } catch (recoveryError) {
@@ -560,6 +577,7 @@ export async function generateCandidate(
         emitEvent("repair_failed", {
           category,
           recovery_code: `quality_${error.code}`,
+          recovery_failure_code: recoveryFailureCode,
         });
       }
 
@@ -644,7 +662,11 @@ export async function generateCandidate(
       category,
       source: enhancedPayload.proposal.source,
     });
-    finalizeRecoveryFailure();
+    finalizeRecoveryFailure(
+      error instanceof AcquisitionCandidateQualityError
+        ? `second_quality_failure:${error.code}`
+        : "repaired_candidate_invalid",
+    );
     emitEvent("proposal_failed", {
       category,
       reason: "candidate_quality_rejected",

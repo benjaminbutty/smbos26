@@ -7,7 +7,11 @@ import {
   classifyAcquisitionCandidateDiagnostic,
   type AcquisitionCandidateDiagnostic,
 } from "../../../core/acquisition/diagnostics";
-import { type AcquisitionEventName } from "../../../core/acquisition/events";
+import type {
+  AcquisitionEventMetadata,
+  AcquisitionEventName,
+} from "../../../core/acquisition/events";
+import { isAcquisitionRecoveryFailureCode } from "../../../core/acquisition/recovery";
 import { generateCandidate } from "../../../core/acquisition/service";
 import { ACQUISITION_MAX_WORKFLOW_COST_MICROUSD } from "../../../core/acquisition/interpreter";
 import { evaluateAcquisitionScenario } from "./evaluator";
@@ -185,8 +189,19 @@ export async function runLiveAcquisitionProductReliability(
         },
       };
 
-      const emitEvent = (name: AcquisitionEventName) => {
+      const emitEvent = (
+        name: AcquisitionEventName,
+        metadata: AcquisitionEventMetadata = {},
+      ) => {
         eventNames.push(name);
+        const failureCode = metadata.recovery_failure_code;
+        if (
+          name === "repair_failed" &&
+          typeof failureCode === "string" &&
+          isAcquisitionRecoveryFailureCode(failureCode)
+        ) {
+          diagnostics.push(failureCode);
+        }
       };
       const emitDiagnostic = (
         error: unknown,

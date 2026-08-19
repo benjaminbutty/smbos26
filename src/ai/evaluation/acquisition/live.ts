@@ -7,6 +7,10 @@ import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
 import { openAiAcquisitionPlanningPolicy } from "../../policies";
 import { ACQUISITION_MAX_WORKFLOW_COST_MICROUSD } from "../../../core/acquisition/interpreter";
 import type { AcquisitionCandidateDiagnosticCode } from "../../../core/acquisition/diagnostics";
+import {
+  isAcquisitionRecoveryFailureCode,
+  type AcquisitionRecoveryFailureCode,
+} from "../../../core/acquisition/recovery";
 import { generateCandidate } from "../../../core/acquisition/service";
 import { composeStarterComposition } from "../../../core/acquisition/composer";
 import {
@@ -19,6 +23,7 @@ import {
 import {
   evaluateAcquisitionScenario,
   productionCompositionFailureResult,
+  type AcquisitionEvaluationResult,
 } from "./evaluator";
 
 type Environment = {
@@ -45,7 +50,12 @@ function activated(environment: Environment, gate: Gate): boolean {
 export async function runAcquisitionHardGateScenario(
   scenario: AcquisitionEvaluationScenario,
   execution: AcquisitionExecutionCore,
-) {
+): Promise<
+  AcquisitionEvaluationResult & {
+    recovery_failure_code: AcquisitionRecoveryFailureCode | null;
+  }
+> {
+  let recoveryFailureCode: AcquisitionRecoveryFailureCode | null = null;
   try {
     const payload = await generateCandidate(
       scenario.category,
@@ -60,13 +70,28 @@ export async function runAcquisitionHardGateScenario(
         execution,
         allowFallback: false,
         allowRecovery: true,
-        emitEvent: () => undefined,
+        emitEvent: (name, metadata = {}) => {
+          const failureCode = metadata.recovery_failure_code;
+          if (
+            name === "repair_failed" &&
+            typeof failureCode === "string" &&
+            isAcquisitionRecoveryFailureCode(failureCode)
+          ) {
+            recoveryFailureCode = failureCode;
+          }
+        },
         emitDiagnostic: () => undefined,
       },
     );
-    return evaluateAcquisitionScenario(scenario, payload);
+    return {
+      ...evaluateAcquisitionScenario(scenario, payload),
+      recovery_failure_code: null,
+    };
   } catch (error) {
-    return productionCompositionFailureResult(error);
+    return {
+      ...productionCompositionFailureResult(error),
+      recovery_failure_code: recoveryFailureCode,
+    };
   }
 }
 
@@ -108,6 +133,7 @@ export async function runLiveAcquisitionGate(
     quality_passed: boolean;
     quality_findings: string[];
     diagnostic_code: AcquisitionCandidateDiagnosticCode | null;
+    recovery_failure_code: AcquisitionRecoveryFailureCode | null;
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
@@ -145,6 +171,7 @@ export async function runLiveAcquisitionGate(
         quality_passed: result.quality_passed,
         quality_findings: result.quality_findings,
         diagnostic_code: result.diagnostic_code ?? null,
+        recovery_failure_code: result.recovery_failure_code,
       });
     }
   }

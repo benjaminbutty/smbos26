@@ -6,7 +6,9 @@ import {
 import { formConfigSchema, parseViewConfig } from "../experience/schemas";
 import {
   AcquisitionCandidateQualityError,
+  acquisitionCandidateQualityCodes,
   findAcquisitionCandidateMechanicalRepairFields,
+  type AcquisitionCandidateQualityCode,
 } from "./quality";
 import {
   acquisitionBuildPayloadSchema,
@@ -27,6 +29,26 @@ export type AcquisitionRecoveryResult = Readonly<{
   code: AcquisitionRecoverableQualityCode;
   removed_field_count: number;
 }>;
+
+export const acquisitionRecoveryFailureCodes = [
+  "no_mechanical_repair_fields",
+  "required_field",
+  "form_would_be_invalid",
+  "view_would_be_invalid",
+  "repaired_candidate_invalid",
+] as const;
+
+export type AcquisitionRecoveryFailureCode =
+  | (typeof acquisitionRecoveryFailureCodes)[number]
+  | `second_quality_failure:${AcquisitionCandidateQualityCode}`;
+
+export type AcquisitionRecoveryAttempt =
+  | Readonly<{ status: "not_applicable" }>
+  | Readonly<{
+      status: "refused";
+      failure_code: (typeof acquisitionRecoveryFailureCodes)[number];
+    }>
+  | Readonly<{ status: "recovered"; recovery: AcquisitionRecoveryResult }>;
 
 const recoverableQualityCodeSet = new Set<string>(
   acquisitionRecoverableQualityCodes,
@@ -309,7 +331,9 @@ function updateTrackedInformation(
 function removeRedundantFields(
   payload: AcquisitionBuildPayload,
   removedFields: ReadonlySet<string>,
-): AcquisitionBuildPayload | null {
+):
+  | Readonly<{ status: "repaired"; payload: AcquisitionBuildPayload }>
+  | Extract<AcquisitionRecoveryAttempt, { status: "refused" }> {
   const remainingObjects = new Set(
     payload.operations
       .filter(
@@ -322,65 +346,121 @@ function removeRedundantFields(
   );
   const nextOperations: ConfigurationOperation[] = [];
 
-  for (const operation of payload.operations) {
-    if (
-      operation.op === "set_field" &&
-      removedFields.has(fieldIdentity(operation.object_key, operation.key))
-    ) {
-      if (operation.required) return null;
-      continue;
+  try {
+    for (const operation of payload.operations) {
+      if (
+        operation.op === "set_field" &&
+        removedFields.has(fieldIdentity(operation.object_key, operation.key))
+      ) {
+        if (operation.required) {
+          return { status: "refused", failure_code: "required_field" };
+        }
+        continue;
+      }
+      if (operation.op === "set_form") {
+        const next = removeFieldsFromForm(operation, removedFields);
+        if (!next) {
+          return {
+            status: "refused",
+            failure_code: "form_would_be_invalid",
+          };
+        }
+        nextOperations.push(next);
+        continue;
+      }
+      if (operation.op === "set_view") {
+        const next = removeFieldsFromView(
+          operation,
+          payload.operations,
+          removedFields,
+        );
+        if (!next) {
+          return {
+            status: "refused",
+            failure_code: "view_would_be_invalid",
+          };
+        }
+        nextOperations.push(next);
+        continue;
+      }
+      nextOperations.push(operation);
     }
-    if (operation.op === "set_form") {
-      const next = removeFieldsFromForm(operation, removedFields);
-      if (!next) return null;
-      nextOperations.push(next);
-      continue;
+
+    if (remainingObjects.size === 0) {
+      return {
+        status: "refused",
+        failure_code: "repaired_candidate_invalid",
+      };
     }
-    if (operation.op === "set_view") {
-      const next = removeFieldsFromView(
-        operation,
-        payload.operations,
-        removedFields,
-      );
-      if (!next) return null;
-      nextOperations.push(next);
-      continue;
-    }
-    nextOperations.push(operation);
+    return {
+      status: "repaired",
+      payload: acquisitionBuildPayloadSchema.parse({
+        proposal: updateTrackedInformation(payload, removedFields),
+        operations: nextOperations,
+      }),
+    };
+  } catch {
+    return {
+      status: "refused",
+      failure_code: "repaired_candidate_invalid",
+    };
+  }
+}
+
+export function attemptAcquisitionCandidateRecovery(
+  payloadInput: unknown,
+  error: unknown,
+): AcquisitionRecoveryAttempt {
+  if (!(error instanceof AcquisitionCandidateQualityError)) {
+    return { status: "not_applicable" };
+  }
+  if (!recoverableQualityCodeSet.has(error.code)) {
+    return { status: "not_applicable" };
   }
 
-  if (remainingObjects.size === 0) return null;
-  return acquisitionBuildPayloadSchema.parse({
-    proposal: updateTrackedInformation(payload, removedFields),
-    operations: nextOperations,
-  });
+  const code = error.code as AcquisitionRecoverableQualityCode;
+  const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
+  const fields = findAcquisitionCandidateMechanicalRepairFields(payload, code);
+  if (fields.length === 0) {
+    return {
+      status: "refused",
+      failure_code: "no_mechanical_repair_fields",
+    };
+  }
+  const removedFields = new Set(
+    fields.map(({ object_key, key }) => fieldIdentity(object_key, key)),
+  );
+  const repaired = removeRedundantFields(payload, removedFields);
+  if (repaired.status === "refused") return repaired;
+  return {
+    status: "recovered",
+    recovery: Object.freeze({
+      payload: repaired.payload,
+      code,
+      removed_field_count: fields.length,
+    }),
+  };
 }
 
 export function recoverAcquisitionCandidate(
   payloadInput: unknown,
   error: unknown,
 ): AcquisitionRecoveryResult | null {
-  if (!(error instanceof AcquisitionCandidateQualityError)) return null;
-  if (!recoverableQualityCodeSet.has(error.code)) return null;
-
-  const code = error.code as AcquisitionRecoverableQualityCode;
-  const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
-  const fields = findAcquisitionCandidateMechanicalRepairFields(payload, code);
-  if (fields.length === 0) return null;
-  const removedFields = new Set(
-    fields.map(({ object_key, key }) => fieldIdentity(object_key, key)),
-  );
-  const repaired = removeRedundantFields(payload, removedFields);
-  if (!repaired) return null;
-  return Object.freeze({
-    payload: repaired,
-    code,
-    removed_field_count: fields.length,
-  });
+  const attempt = attemptAcquisitionCandidateRecovery(payloadInput, error);
+  return attempt.status === "recovered" ? attempt.recovery : null;
 }
 
 export function isAcquisitionRecoveryQualityCode(
   value: string,
 ): value is AcquisitionRecoverableQualityCode {
   return recoverableQualityCodeSet.has(value);
+}
+
+export function isAcquisitionRecoveryFailureCode(
+  value: string,
+): value is AcquisitionRecoveryFailureCode {
+  if (acquisitionRecoveryFailureCodes.includes(value as never)) return true;
+  if (!value.startsWith("second_quality_failure:")) return false;
+  const qualityCode = value.slice("second_quality_failure:".length);
+  return acquisitionCandidateQualityCodes.includes(qualityCode as never);
 }
