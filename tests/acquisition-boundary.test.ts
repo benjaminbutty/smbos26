@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -8,9 +10,18 @@ import {
   type AcquisitionPlanningOutput,
 } from "../src/ai/acquisition-planning/schemas";
 import { validateAcquisitionPlanningOutput } from "../src/ai/acquisition-planning/validation";
-import { ACQUISITION_PLANNING_INSTRUCTION } from "../src/ai/acquisition-planning/task";
+import {
+  ACQUISITION_PLANNING_INSTRUCTION,
+  ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION,
+  acquisitionPlanningTaskV1,
+} from "../src/ai/acquisition-planning/task";
 import { acquisitionEvaluationScenarios } from "../src/ai/evaluation/acquisition/scenarios";
 import { emitAcquisitionEvent } from "../src/core/acquisition/events";
+import {
+  ACQUISITION_MAX_PLANNING_EXECUTIONS,
+  ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD,
+  ACQUISITION_MAX_WORKFLOW_COST_MICROUSD,
+} from "../src/core/acquisition/interpreter";
 
 describe("Phase 5 public AI and telemetry boundary", () => {
   it.each([
@@ -72,6 +83,52 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       maxAttempts: 1,
       retryableFailureKinds: [],
     });
+    expect(ACQUISITION_MAX_PLANNING_EXECUTIONS).toBe(2);
+    expect(ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD).toBe(47_500);
+    expect(ACQUISITION_MAX_WORKFLOW_COST_MICROUSD).toBe(95_000);
+  });
+
+  it("uses the same task and policy for a finite server-owned correction", () => {
+    const first = acquisitionPlanningTaskV1.buildInstruction({
+      schema_version: 1,
+      category: "jobs",
+      owner_request: "Keep customers and jobs organised.",
+      grounded_currency: null,
+    });
+    const second = acquisitionPlanningTaskV1.buildInstruction({
+      schema_version: 1,
+      category: "jobs",
+      owner_request: "Keep customers and jobs organised.",
+      grounded_currency: null,
+      correction_reason: "required_cross_object_identity_must_use_connection",
+    });
+
+    expect(first).toBe(ACQUISITION_PLANNING_INSTRUCTION);
+    expect(second).toBe(
+      `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`,
+    );
+    expect(second).toContain("preserve the same requested scope");
+    expect(second).toContain("through Connections");
+  });
+
+  it("keeps one owner build reservation around both bounded planning executions", () => {
+    const source = readFileSync(
+      new URL("../src/core/acquisition/service.ts", import.meta.url),
+      "utf8",
+    );
+    const submission = source.slice(
+      source.indexOf("export async function createOrRegenerateProposal"),
+      source.indexOf("export async function acceptAcquisitionSetup"),
+    );
+    const candidate = source.slice(
+      source.indexOf("export async function generateCandidate"),
+      source.indexOf("async function writeClarificationState"),
+    );
+
+    expect(submission.match(/reserveAttempt\(category\)/g)).toHaveLength(1);
+    expect(submission.match(/generateCandidate\(/g)).toHaveLength(1);
+    expect(candidate).not.toContain("reserveAttempt(");
+    expect(candidate).toContain("second_plan_attempted");
   });
 
   it("fixes the production acceptance set at exactly eight scenarios", () => {

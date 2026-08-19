@@ -9,6 +9,7 @@ import type { Json, Tables } from "../../db/supabase/database.types";
 import { createAdminClient } from "../../db/supabase/admin";
 import { getEnvironment } from "../../env";
 import type { AcquisitionExecutionCore } from "../../ai/acquisition-planning/runtime";
+import type { AcquisitionPlanningCorrectionReason } from "../../ai/acquisition-planning/schemas";
 import {
   addClarificationAnswer,
   assessAcquisitionClarifications,
@@ -22,7 +23,10 @@ import { candidateChecksum } from "./preview";
 import { composeStarterComposition } from "./composer";
 import { emitAcquisitionCandidateDiagnostic } from "./diagnostics";
 import { emitAcquisitionEvent } from "./events";
-import { interpretAcquisitionRequest } from "./interpreter";
+import {
+  ACQUISITION_MAX_PLANNING_EXECUTIONS,
+  interpretAcquisitionRequest,
+} from "./interpreter";
 import {
   AcquisitionCandidateQualityError,
   validateAcquisitionCandidate,
@@ -50,6 +54,16 @@ export const ACQUISITION_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24;
 export const ACQUISITION_DAILY_ATTEMPT_LIMIT = 6;
 export const ACQUISITION_SESSION_ATTEMPT_LIMIT = 6;
 export const ACQUISITION_SUCCESSFUL_REFINEMENT_LIMIT = 2;
+
+const REQUIRED_IDENTITY_REPLAN_REASON =
+  "required_cross_object_identity_must_use_connection" as const satisfies AcquisitionPlanningCorrectionReason;
+
+class AcquisitionRequiredIdentityReplanSignal extends Error {
+  constructor(override readonly cause: AcquisitionCandidateQualityError) {
+    super("The first acquisition plan requires one bounded correction pass.");
+    this.name = "AcquisitionRequiredIdentityReplanSignal";
+  }
+}
 
 type AcquisitionSessionRow = Tables<"anonymous_build_sessions">;
 
@@ -465,6 +479,7 @@ export async function generateCandidate(
   options: {
     allowFallback?: boolean;
     allowRecovery?: boolean;
+    allowReplan?: boolean;
     emitFirstPassSuccess?: boolean;
     execution?: AcquisitionExecutionCore;
     emitEvent?: typeof emitAcquisitionEvent;
@@ -473,12 +488,15 @@ export async function generateCandidate(
 ): Promise<AcquisitionBuildPayload> {
   const allowFallback = options.allowFallback ?? true;
   const allowRecovery = options.allowRecovery ?? true;
+  const allowReplan = options.allowReplan ?? allowRecovery;
   const emitFirstPassSuccess = options.emitFirstPassSuccess ?? true;
   const emitEvent = options.emitEvent ?? emitAcquisitionEvent;
   const emitDiagnostic =
     options.emitDiagnostic ?? emitAcquisitionCandidateDiagnostic;
   const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
   let precompositionCanonicalisedFieldCount = 0;
+  let usedSecondPlan = false;
+  let planningExecutionCount = 0;
 
   const fallback = (): AcquisitionBuildPayload => {
     const starter = composeStarterComposition(category, request);
@@ -518,6 +536,7 @@ export async function generateCandidate(
 
   const validateTailoredCandidate = (
     candidate: AcquisitionBuildPayload,
+    permitRequiredIdentityReplan: boolean,
   ): Readonly<{
     payload: AcquisitionBuildPayload;
     recovery: AcquisitionRecoveryResult | null;
@@ -545,10 +564,15 @@ export async function generateCandidate(
         });
         let recoveryFailureCode: AcquisitionRecoveryFailureCode =
           "repaired_candidate_invalid";
+        let shouldReplan = false;
         try {
           const attempt = attemptAcquisitionCandidateRecovery(candidate, error);
           if (attempt.status === "refused") {
             recoveryFailureCode = attempt.failure_code;
+            shouldReplan =
+              permitRequiredIdentityReplan &&
+              error.code === "cross_object_field_leakage" &&
+              attempt.failure_code === "required_field";
           } else if (attempt.status === "recovered") {
             try {
               const validatedRecovery = validateAcquisitionCandidate(
@@ -580,6 +604,9 @@ export async function generateCandidate(
           recovery_code: `quality_${error.code}`,
           recovery_failure_code: recoveryFailureCode,
         });
+        if (shouldReplan) {
+          throw new AcquisitionRequiredIdentityReplanSignal(error);
+        }
       }
 
       emitEvent("proposal_failed", {
@@ -590,14 +617,20 @@ export async function generateCandidate(
     }
   };
 
-  let payload: AcquisitionBuildPayload;
-  try {
-    payload = await interpretAcquisitionRequest(
+  const interpretPlan = (
+    correctionReason?: AcquisitionPlanningCorrectionReason,
+  ) => {
+    if (planningExecutionCount >= ACQUISITION_MAX_PLANNING_EXECUTIONS) {
+      throw new Error("The acquisition planning execution limit was reached.");
+    }
+    planningExecutionCount += 1;
+    return interpretAcquisitionRequest(
       category,
       enrichedRequest,
       options.execution,
       {
         validate: false,
+        ...(correctionReason ? { correctionReason } : {}),
         onCanonicalisation: ({ removedFieldCount }) => {
           precompositionCanonicalisedFieldCount = removedFieldCount;
           if (emitFirstPassSuccess) {
@@ -609,6 +642,11 @@ export async function generateCandidate(
         },
       },
     );
+  };
+
+  let payload: AcquisitionBuildPayload;
+  try {
+    payload = await interpretPlan();
   } catch (error) {
     emitDiagnostic(error, "candidate_generation", {
       category,
@@ -628,12 +666,54 @@ export async function generateCandidate(
   }
 
   try {
-    const validatedCandidate = validateTailoredCandidate(payload);
+    const validatedCandidate = validateTailoredCandidate(payload, allowReplan);
     payload = validatedCandidate.payload;
     successfulRecovery = validatedCandidate.recovery;
   } catch (error) {
-    if (!allowFallback) throw error;
-    return fallbackOrThrow();
+    if (!(error instanceof AcquisitionRequiredIdentityReplanSignal)) {
+      if (!allowFallback) throw error;
+      return fallbackOrThrow();
+    }
+
+    emitEvent("second_plan_attempted", {
+      category,
+      correction_reason: REQUIRED_IDENTITY_REPLAN_REASON,
+    });
+    let secondPlanPayload: AcquisitionBuildPayload;
+    try {
+      secondPlanPayload = await interpretPlan(REQUIRED_IDENTITY_REPLAN_REASON);
+    } catch (secondPlanError) {
+      emitDiagnostic(secondPlanError, "candidate_generation", {
+        category,
+        source: "tailored",
+      });
+      emitEvent("proposal_failed", {
+        category,
+        reason: "tailoring_unavailable",
+      });
+      emitEvent("second_plan_failed", {
+        category,
+        reason: "planning_unavailable",
+      });
+      if (!allowFallback) throw secondPlanError;
+      return fallbackOrThrow();
+    }
+    try {
+      const validatedCandidate = validateTailoredCandidate(
+        secondPlanPayload,
+        false,
+      );
+      payload = validatedCandidate.payload;
+      successfulRecovery = validatedCandidate.recovery;
+      usedSecondPlan = true;
+    } catch (secondPlanError) {
+      emitEvent("second_plan_failed", {
+        category,
+        reason: "candidate_rejected",
+      });
+      if (!allowFallback) throw secondPlanError;
+      return fallbackOrThrow();
+    }
   }
 
   let enhancedPayload: AcquisitionBuildPayload;
@@ -649,6 +729,12 @@ export async function generateCandidate(
       reason: "candidate_quality_rejected",
     });
     finalizeRecoveryFailure();
+    if (usedSecondPlan) {
+      emitEvent("second_plan_failed", {
+        category,
+        reason: "capability_enhancement_rejected",
+      });
+    }
     if (!allowFallback) throw error;
     return fallbackOrThrow();
   }
@@ -662,6 +748,12 @@ export async function generateCandidate(
         removed_field_count: successfulRecovery.removed_field_count,
       });
       successfulRecovery = null;
+    }
+    if (usedSecondPlan) {
+      emitEvent("second_plan_tailored_success", {
+        category,
+        correction_reason: REQUIRED_IDENTITY_REPLAN_REASON,
+      });
     } else if (
       emitFirstPassSuccess &&
       precompositionCanonicalisedFieldCount === 0 &&
@@ -684,6 +776,12 @@ export async function generateCandidate(
       category,
       reason: "candidate_quality_rejected",
     });
+    if (usedSecondPlan) {
+      emitEvent("second_plan_failed", {
+        category,
+        reason: "candidate_rejected",
+      });
+    }
     if (!allowFallback) throw error;
     return fallbackOrThrow();
   }

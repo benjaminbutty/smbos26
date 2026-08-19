@@ -1,4 +1,5 @@
 import type { AiExecutionResult } from "../../execution";
+import { AiExecutionError } from "../../errors";
 import {
   createAcquisitionAiRuntime,
   type AcquisitionExecutionCore,
@@ -53,9 +54,13 @@ export async function runAcquisitionHardGateScenario(
 ): Promise<
   AcquisitionEvaluationResult & {
     recovery_failure_code: AcquisitionRecoveryFailureCode | null;
+    second_plan_attempted: boolean;
+    second_plan_succeeded: boolean;
   }
 > {
   let recoveryFailureCode: AcquisitionRecoveryFailureCode | null = null;
+  let secondPlanAttempted = false;
+  let secondPlanSucceeded = false;
   try {
     const payload = await generateCandidate(
       scenario.category,
@@ -71,6 +76,10 @@ export async function runAcquisitionHardGateScenario(
         allowFallback: false,
         allowRecovery: true,
         emitEvent: (name, metadata = {}) => {
+          if (name === "second_plan_attempted") secondPlanAttempted = true;
+          if (name === "second_plan_tailored_success") {
+            secondPlanSucceeded = true;
+          }
           const failureCode = metadata.recovery_failure_code;
           if (
             name === "repair_failed" &&
@@ -86,11 +95,15 @@ export async function runAcquisitionHardGateScenario(
     return {
       ...evaluateAcquisitionScenario(scenario, payload),
       recovery_failure_code: null,
+      second_plan_attempted: secondPlanAttempted,
+      second_plan_succeeded: secondPlanSucceeded,
     };
   } catch (error) {
     return {
       ...productionCompositionFailureResult(error),
       recovery_failure_code: recoveryFailureCode,
+      second_plan_attempted: secondPlanAttempted,
+      second_plan_succeeded: false,
     };
   }
 }
@@ -123,6 +136,14 @@ export async function runLiveAcquisitionGate(
     OPENAI_API_KEY: environment.OPENAI_API_KEY!,
   });
   let estimatedCostMicrousd = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let planningExecutions = 0;
+  let secondPlanExecutions = 0;
+  let secondPlanInputTokens = 0;
+  let secondPlanOutputTokens = 0;
+  let secondPlanCostMicrousd = 0;
+  let secondPlanElapsedMs = 0;
   const reports: Array<{
     scenario_id: string;
     repetition: number;
@@ -134,30 +155,77 @@ export async function runLiveAcquisitionGate(
     quality_findings: string[];
     diagnostic_code: AcquisitionCandidateDiagnosticCode | null;
     recovery_failure_code: AcquisitionRecoveryFailureCode | null;
+    planning_executions: number;
+    second_plan_attempted: boolean;
+    second_plan_succeeded: boolean;
+    second_plan_elapsed_ms: number;
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
     for (const scenario of acquisitionEvaluationScenarios) {
+      let scenarioPlanningExecutions = 0;
+      let scenarioSecondPlanElapsedMs = 0;
       const tracked = {
         async execute(
           taskKey: Parameters<typeof runtime.execution.execute>[0],
           input: unknown,
         ) {
-          const execution: AiExecutionResult = await runtime.execution.execute(
-            taskKey,
-            input,
-          );
-          const policy = openAiAcquisitionPlanningPolicy;
-          estimatedCostMicrousd += calculateAiTokenCostMicrousd({
-            inputTokens: execution.metadata.usage.inputTokens,
-            outputTokens: execution.metadata.usage.outputTokens,
-            inputMicrousdPerMillion: policy.inputMicrousdPerMillion,
-            outputMicrousdPerMillion: policy.outputMicrousdPerMillion,
-          });
-          if (estimatedCostMicrousd > hardCeiling) {
-            throw new Error("Acquisition evaluation cost ceiling exceeded.");
+          scenarioPlanningExecutions += 1;
+          planningExecutions += 1;
+          const isSecondPlan = scenarioPlanningExecutions === 2;
+          const startedAt = performance.now();
+          if (isSecondPlan) secondPlanExecutions += 1;
+          try {
+            const execution: AiExecutionResult =
+              await runtime.execution.execute(taskKey, input);
+            const policy = openAiAcquisitionPlanningPolicy;
+            const cost = calculateAiTokenCostMicrousd({
+              inputTokens: execution.metadata.usage.inputTokens,
+              outputTokens: execution.metadata.usage.outputTokens,
+              inputMicrousdPerMillion: policy.inputMicrousdPerMillion,
+              outputMicrousdPerMillion: policy.outputMicrousdPerMillion,
+            });
+            estimatedCostMicrousd += cost;
+            inputTokens += execution.metadata.usage.inputTokens;
+            outputTokens += execution.metadata.usage.outputTokens;
+            if (isSecondPlan) {
+              secondPlanInputTokens += execution.metadata.usage.inputTokens;
+              secondPlanOutputTokens += execution.metadata.usage.outputTokens;
+              secondPlanCostMicrousd += cost;
+            }
+            if (estimatedCostMicrousd > hardCeiling) {
+              throw new Error("Acquisition evaluation cost ceiling exceeded.");
+            }
+            return execution;
+          } catch (error) {
+            if (error instanceof AiExecutionError && error.accounting) {
+              const policy = openAiAcquisitionPlanningPolicy;
+              const cost = calculateAiTokenCostMicrousd({
+                inputTokens: error.accounting.inputTokens,
+                outputTokens: error.accounting.outputTokens,
+                inputMicrousdPerMillion: policy.inputMicrousdPerMillion,
+                outputMicrousdPerMillion: policy.outputMicrousdPerMillion,
+              });
+              estimatedCostMicrousd += cost;
+              inputTokens += error.accounting.inputTokens;
+              outputTokens += error.accounting.outputTokens;
+              if (isSecondPlan) {
+                secondPlanInputTokens += error.accounting.inputTokens;
+                secondPlanOutputTokens += error.accounting.outputTokens;
+                secondPlanCostMicrousd += cost;
+              }
+            }
+            throw error;
+          } finally {
+            if (isSecondPlan) {
+              const elapsed = Math.max(
+                0,
+                Math.round(performance.now() - startedAt),
+              );
+              scenarioSecondPlanElapsedMs += elapsed;
+              secondPlanElapsedMs += elapsed;
+            }
           }
-          return execution;
         },
       };
       const result = await runAcquisitionHardGateScenario(scenario, tracked);
@@ -172,6 +240,10 @@ export async function runLiveAcquisitionGate(
         quality_findings: result.quality_findings,
         diagnostic_code: result.diagnostic_code ?? null,
         recovery_failure_code: result.recovery_failure_code,
+        planning_executions: scenarioPlanningExecutions,
+        second_plan_attempted: result.second_plan_attempted,
+        second_plan_succeeded: result.second_plan_succeeded,
+        second_plan_elapsed_ms: scenarioSecondPlanElapsedMs,
       });
     }
   }
@@ -188,6 +260,25 @@ export async function runLiveAcquisitionGate(
       .length,
     quality_total_executions: reports.length,
     estimated_cost_microusd: estimatedCostMicrousd,
+    planning_execution_count: planningExecutions,
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    second_plan_execution_count: secondPlanExecutions,
+    second_plan_success_count: reports.filter(
+      (report) => report.second_plan_succeeded,
+    ).length,
+    second_plan_execution_rate:
+      reports.length === 0
+        ? 0
+        : Number((secondPlanExecutions / reports.length).toFixed(6)),
+    second_plan_input_tokens: secondPlanInputTokens,
+    second_plan_output_tokens: secondPlanOutputTokens,
+    second_plan_estimated_cost_microusd: secondPlanCostMicrousd,
+    second_plan_elapsed_ms: secondPlanElapsedMs,
+    second_plan_average_elapsed_ms:
+      secondPlanExecutions === 0
+        ? 0
+        : Math.round(secondPlanElapsedMs / secondPlanExecutions),
     reports,
   };
   console.log(JSON.stringify(summary));

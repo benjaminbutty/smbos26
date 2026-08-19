@@ -12,6 +12,13 @@ request metadata caps replacement-cookie attempts at six per day. Those rows
 are retained for no more than the current day plus two prior days through
 bounded opportunistic acquisition cleanup; no raw IP address is stored.
 
+One reserved owner submission normally executes the acquisition planner once.
+It may execute the same task one second time only after the exact deterministic
+`cross_object_field_leakage` plus `required_field` refusal. That correction uses
+the original grounded request without the invalid output and does not reserve
+another owner-facing attempt. No other failure triggers semantic replanning,
+and there is no third execution.
+
 Raw descriptions and proposal operations are retained only while an active
 session can be reviewed, regenerated or claimed. Successful claim immediately
 sets both values to null. Expired sessions are scrubbed when they are read and

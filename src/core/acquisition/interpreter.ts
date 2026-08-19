@@ -5,6 +5,7 @@ import { validateConfigurationDraftOutput } from "../../ai/configuration-draftin
 import {
   acquisitionPlanningOutputSchema,
   type AcquisitionPlanningInput,
+  type AcquisitionPlanningCorrectionReason,
   type AcquisitionReadyPlan,
 } from "../../ai/acquisition-planning/schemas";
 import {
@@ -41,7 +42,11 @@ export const ACQUISITION_MAX_RELATIONSHIPS = 10;
 export const ACQUISITION_MAX_VIEWS = 8;
 export const ACQUISITION_MAX_PAGES = 3;
 export const ACQUISITION_MAX_EMBEDDED_VIEWS_PER_PAGE = 4;
-export const ACQUISITION_MAX_WORKFLOW_COST_MICROUSD = 47_500;
+export const ACQUISITION_MAX_PLANNING_EXECUTIONS = 2;
+export const ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD = 47_500;
+export const ACQUISITION_MAX_WORKFLOW_COST_MICROUSD =
+  ACQUISITION_MAX_PLANNING_EXECUTIONS *
+  ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD;
 
 export class AcquisitionInterpretationError extends Error {
   constructor(
@@ -55,6 +60,7 @@ export class AcquisitionInterpretationError extends Error {
 
 export type AcquisitionInterpretationOptions = Readonly<{
   validate?: boolean;
+  correctionReason?: AcquisitionPlanningCorrectionReason;
   onCanonicalisation?: (
     metadata: Readonly<{ removedFieldCount: number }>,
   ) => void;
@@ -461,6 +467,9 @@ export async function interpretAcquisitionRequest(
     category,
     owner_request: request,
     grounded_currency: detectGroundedCurrency(request),
+    ...(options.correctionReason
+      ? { correction_reason: options.correctionReason }
+      : {}),
   };
   const result = await execution.execute(
     "acquisition_workspace_plan_v1",

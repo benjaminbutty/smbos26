@@ -45,6 +45,7 @@ export type AcquisitionProductOutcome =
   | "precomposition_canonicalised_tailored"
   | "postcomposition_recovered_tailored"
   | "precomposition_canonicalised_and_postcomposition_recovered_tailored"
+  | "second_plan_tailored"
   | "final_fallback"
   | "execution_failed";
 
@@ -60,6 +61,10 @@ type ProductReport = Readonly<{
   output_tokens: number;
   estimated_cost_microusd: number;
   elapsed_ms: number;
+  second_plan_input_tokens: number;
+  second_plan_output_tokens: number;
+  second_plan_estimated_cost_microusd: number;
+  second_plan_elapsed_ms: number;
 }>;
 
 function activated(
@@ -161,6 +166,9 @@ export function acquisitionProductOutcome(
   eventNames: readonly AcquisitionEventName[],
 ): Exclude<AcquisitionProductOutcome, "execution_failed"> {
   if (source === "fallback") return "final_fallback";
+  if (eventNames.includes("second_plan_tailored_success")) {
+    return "second_plan_tailored";
+  }
   const canonicalised = eventNames.includes(
     "precomposition_canonicalisation_applied",
   );
@@ -198,6 +206,11 @@ export async function runLiveAcquisitionProductReliability(
   let totalAttempts = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  let secondPlanExecutions = 0;
+  let secondPlanInputTokens = 0;
+  let secondPlanOutputTokens = 0;
+  let secondPlanCost = 0;
+  let secondPlanElapsed = 0;
   const counts = new Map<string, number>();
   const diagnosticCounts = new Map<string, number>();
   const reports: ProductReport[] = [];
@@ -215,12 +228,19 @@ export async function runLiveAcquisitionProductReliability(
       let scenarioInputTokens = 0;
       let scenarioOutputTokens = 0;
       let scenarioCost = 0;
+      let scenarioSecondPlanInputTokens = 0;
+      let scenarioSecondPlanOutputTokens = 0;
+      let scenarioSecondPlanCost = 0;
+      let scenarioSecondPlanElapsed = 0;
       const trackedExecution = {
         async execute(
           taskKey: Parameters<typeof runtime.execution.execute>[0],
           input: unknown,
         ): Promise<AiExecutionResult> {
           providerAttempts += 1;
+          const isSecondPlan = providerAttempts === 2;
+          const executionStartedAt = performance.now();
+          if (isSecondPlan) secondPlanExecutions += 1;
           totalAttempts += 1;
           try {
             const result = await runtime.execution.execute(taskKey, input);
@@ -234,6 +254,16 @@ export async function runLiveAcquisitionProductReliability(
             inputTokens += result.metadata.usage.inputTokens;
             outputTokens += result.metadata.usage.outputTokens;
             totalCost += cost;
+            if (isSecondPlan) {
+              scenarioSecondPlanInputTokens +=
+                result.metadata.usage.inputTokens;
+              scenarioSecondPlanOutputTokens +=
+                result.metadata.usage.outputTokens;
+              scenarioSecondPlanCost += cost;
+              secondPlanInputTokens += result.metadata.usage.inputTokens;
+              secondPlanOutputTokens += result.metadata.usage.outputTokens;
+              secondPlanCost += cost;
+            }
             if (totalCost > hardCeiling) {
               throw new Error(
                 "Acquisition product-reliability cost ceiling exceeded.",
@@ -249,7 +279,24 @@ export async function runLiveAcquisitionProductReliability(
             inputTokens += usage.inputTokens;
             outputTokens += usage.outputTokens;
             totalCost += cost;
+            if (isSecondPlan) {
+              scenarioSecondPlanInputTokens += usage.inputTokens;
+              scenarioSecondPlanOutputTokens += usage.outputTokens;
+              scenarioSecondPlanCost += cost;
+              secondPlanInputTokens += usage.inputTokens;
+              secondPlanOutputTokens += usage.outputTokens;
+              secondPlanCost += cost;
+            }
             throw error;
+          } finally {
+            if (isSecondPlan) {
+              const executionElapsed = Math.max(
+                0,
+                Math.round(performance.now() - executionStartedAt),
+              );
+              scenarioSecondPlanElapsed += executionElapsed;
+              secondPlanElapsed += executionElapsed;
+            }
           }
         },
       };
@@ -343,6 +390,10 @@ export async function runLiveAcquisitionProductReliability(
         output_tokens: scenarioOutputTokens,
         estimated_cost_microusd: scenarioCost,
         elapsed_ms: elapsed,
+        second_plan_input_tokens: scenarioSecondPlanInputTokens,
+        second_plan_output_tokens: scenarioSecondPlanOutputTokens,
+        second_plan_estimated_cost_microusd: scenarioSecondPlanCost,
+        second_plan_elapsed_ms: scenarioSecondPlanElapsed,
       });
     }
   }
@@ -351,21 +402,29 @@ export async function runLiveAcquisitionProductReliability(
     (report) => !report.hard_contract_passed,
   ).length;
   const rawFirstPassTailoredCount = counts.get("raw_first_pass_tailored") ?? 0;
-  const precompositionCanonicalisedTailoredCount =
+  const precompositionCanonicalisedOnlyTailoredCount =
     counts.get("precomposition_canonicalised_tailored") ?? 0;
-  const postcompositionRecoveredTailoredCount =
+  const postcompositionRecoveredOnlyTailoredCount =
     counts.get("postcomposition_recovered_tailored") ?? 0;
   const combinedCanonicalisedAndRecoveredTailoredCount =
     counts.get(
       "precomposition_canonicalised_and_postcomposition_recovered_tailored",
     ) ?? 0;
+  const secondPlanTailoredCount = counts.get("second_plan_tailored") ?? 0;
+  const precompositionCanonicalisedTailoredCount =
+    precompositionCanonicalisedOnlyTailoredCount +
+    combinedCanonicalisedAndRecoveredTailoredCount;
+  const postcompositionRecoveredTailoredCount =
+    postcompositionRecoveredOnlyTailoredCount +
+    combinedCanonicalisedAndRecoveredTailoredCount;
   const finalFallbackCount = counts.get("final_fallback") ?? 0;
   const executionFailureCount = counts.get("execution_failed") ?? 0;
   const tailoredCount =
     rawFirstPassTailoredCount +
-    precompositionCanonicalisedTailoredCount +
-    postcompositionRecoveredTailoredCount +
-    combinedCanonicalisedAndRecoveredTailoredCount;
+    precompositionCanonicalisedOnlyTailoredCount +
+    postcompositionRecoveredOnlyTailoredCount +
+    combinedCanonicalisedAndRecoveredTailoredCount +
+    secondPlanTailoredCount;
   const systematicFailureScenarioIds = acquisitionProductReliabilityScenarios
     .filter((scenario) => {
       const scenarioReports = reports.filter(
@@ -406,10 +465,22 @@ export async function runLiveAcquisitionProductReliability(
       precompositionCanonicalisedTailoredCount,
       reports.length,
     ),
+    precomposition_canonicalised_only_tailored_success_count:
+      precompositionCanonicalisedOnlyTailoredCount,
+    precomposition_canonicalised_only_tailored_success_rate: rate(
+      precompositionCanonicalisedOnlyTailoredCount,
+      reports.length,
+    ),
     postcomposition_recovered_tailored_success_count:
       postcompositionRecoveredTailoredCount,
     postcomposition_recovered_tailored_success_rate: rate(
       postcompositionRecoveredTailoredCount,
+      reports.length,
+    ),
+    postcomposition_recovered_only_tailored_success_count:
+      postcompositionRecoveredOnlyTailoredCount,
+    postcomposition_recovered_only_tailored_success_rate: rate(
+      postcompositionRecoveredOnlyTailoredCount,
       reports.length,
     ),
     combined_canonicalised_and_recovered_tailored_success_count:
@@ -418,6 +489,21 @@ export async function runLiveAcquisitionProductReliability(
       combinedCanonicalisedAndRecoveredTailoredCount,
       reports.length,
     ),
+    second_plan_tailored_success_count: secondPlanTailoredCount,
+    second_plan_tailored_success_rate: rate(
+      secondPlanTailoredCount,
+      reports.length,
+    ),
+    second_plan_execution_count: secondPlanExecutions,
+    second_plan_execution_rate: rate(secondPlanExecutions, reports.length),
+    second_plan_input_tokens: secondPlanInputTokens,
+    second_plan_output_tokens: secondPlanOutputTokens,
+    second_plan_estimated_cost_microusd: secondPlanCost,
+    second_plan_elapsed_ms: secondPlanElapsed,
+    second_plan_average_elapsed_ms:
+      secondPlanExecutions === 0
+        ? 0
+        : Math.round(secondPlanElapsed / secondPlanExecutions),
     final_tailored_success_count: tailoredCount,
     final_tailored_success_rate: rate(tailoredCount, reports.length),
     final_fallback_count: finalFallbackCount,

@@ -43,14 +43,27 @@ const decisions = {
 
 function executionForPlan(
   output: AcquisitionPlanningOutput | Error,
-): AcquisitionExecutionCore & { calls: number } {
-  const state = { calls: 0 };
+): AcquisitionExecutionCore & { calls: number; inputs: readonly unknown[] } {
+  return executionForPlans([output]);
+}
+
+function executionForPlans(
+  outputs: readonly (AcquisitionPlanningOutput | Error)[],
+): AcquisitionExecutionCore & { calls: number; inputs: readonly unknown[] } {
+  const state: { calls: number; inputs: unknown[] } = { calls: 0, inputs: [] };
   return {
     get calls() {
       return state.calls;
     },
-    async execute() {
+    get inputs() {
+      return state.inputs;
+    },
+    async execute(_taskKey, input) {
       state.calls += 1;
+      state.inputs.push(input);
+      const output = outputs[state.calls - 1];
+      if (!output)
+        throw new Error("Unexpected acquisition planning execution.");
       if (output instanceof Error) throw output;
       return {
         output,
@@ -358,41 +371,59 @@ describe("bounded acquisition quality recovery", () => {
     ).toMatchObject({ required: true });
     expect(canonicalisations).toEqual([]);
 
-    const hardExecution = executionForPlan(
+    const hardExecution = executionForPlans([
       carpenterPlan({
         crossObjectLeakage: true,
         crossObjectLeakageRequired: true,
       }),
-    );
+      carpenterPlan(),
+    ]);
     await expect(
       runAcquisitionHardGateScenario(carpenterScenario, hardExecution),
     ).resolves.toMatchObject({
-      hard_passed: false,
-      diagnostic_code: "quality_cross_object_field_leakage",
-      recovery_failure_code: "required_field",
+      hard_passed: true,
+      second_plan_attempted: true,
+      second_plan_succeeded: true,
     });
-    expect(hardExecution.calls).toBe(1);
+    expect(hardExecution.calls).toBe(2);
+    expect(hardExecution.inputs).toHaveLength(2);
+    expect(hardExecution.inputs[1]).toEqual({
+      ...(hardExecution.inputs[0] as Record<string, unknown>),
+      correction_reason: "required_cross_object_identity_must_use_connection",
+    });
+    expect(Object.keys(hardExecution.inputs[1] as object).sort()).toEqual([
+      "category",
+      "correction_reason",
+      "grounded_currency",
+      "owner_request",
+      "schema_version",
+    ]);
+    expect(JSON.stringify(hardExecution.inputs[1])).not.toMatch(
+      /tables|connections|primary_table_reference|unsupported_requirements/,
+    );
 
-    const productionExecution = executionForPlan(
+    const productionExecution = executionForPlans([
       carpenterPlan({
         crossObjectLeakage: true,
         crossObjectLeakageRequired: true,
       }),
-    );
+      carpenterPlan(),
+    ]);
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await expect(
       generateCandidate("jobs", carpenterRequest, decisions, {
         execution: productionExecution,
       }),
-    ).resolves.toMatchObject({ proposal: { source: "fallback" } });
-    expect(productionExecution.calls).toBe(1);
+    ).resolves.toMatchObject({ proposal: { source: "tailored" } });
+    expect(productionExecution.calls).toBe(2);
     expect(loggedEvents(info)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           event: "repair_failed",
           recovery_failure_code: "required_field",
         }),
-        expect.objectContaining({ event: "final_fallback" }),
+        expect.objectContaining({ event: "second_plan_attempted" }),
+        expect.objectContaining({ event: "second_plan_tailored_success" }),
       ]),
     );
     info.mockRestore();
@@ -483,7 +514,7 @@ describe("bounded acquisition quality recovery", () => {
     info.mockRestore();
   });
 
-  it("falls back after one failed recovery pass and cannot execute a third provider call", async () => {
+  it("falls back after one failed recovery pass without replanning for another failure class", async () => {
     const execution = executionForPlan(
       carpenterPlan({
         crossObjectLeakage: true,
@@ -520,10 +551,80 @@ describe("bounded acquisition quality recovery", () => {
     info.mockRestore();
   });
 
-  it("does not enter semantic recovery for provider failures", async () => {
-    const execution = executionForPlan(
-      new AiExecutionError("ai_provider_unavailable"),
+  it("fails closed after an invalid second plan and cannot execute a third provider call", async () => {
+    const requiredLeak = carpenterPlan({
+      crossObjectLeakage: true,
+      crossObjectLeakageRequired: true,
+    });
+    const execution = executionForPlans([requiredLeak, requiredLeak]);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    const payload = await generateCandidate(
+      "jobs",
+      carpenterRequest,
+      decisions,
+      { execution },
     );
+
+    expect(payload.proposal.source).toBe("fallback");
+    expect(execution.calls).toBe(2);
+    expect(loggedEvents(info)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event: "second_plan_attempted" }),
+        expect.objectContaining({ event: "second_plan_failed" }),
+        expect.objectContaining({ event: "final_fallback" }),
+      ]),
+    );
+
+    const hardExecution = executionForPlans([requiredLeak, requiredLeak]);
+    await expect(
+      runAcquisitionHardGateScenario(carpenterScenario, hardExecution),
+    ).resolves.toMatchObject({
+      hard_passed: false,
+      second_plan_attempted: true,
+      second_plan_succeeded: false,
+      recovery_failure_code: "required_field",
+    });
+    expect(hardExecution.calls).toBe(2);
+    info.mockRestore();
+  });
+
+  it("falls back after a second-plan provider failure without a third execution", async () => {
+    const execution = executionForPlans([
+      carpenterPlan({
+        crossObjectLeakage: true,
+        crossObjectLeakageRequired: true,
+      }),
+      new AiExecutionError("ai_provider_unavailable"),
+    ]);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    await expect(
+      generateCandidate("jobs", carpenterRequest, decisions, { execution }),
+    ).resolves.toMatchObject({ proposal: { source: "fallback" } });
+    expect(execution.calls).toBe(2);
+    expect(loggedEvents(info)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "second_plan_failed",
+          reason: "planning_unavailable",
+        }),
+        expect.objectContaining({ event: "final_fallback" }),
+      ]),
+    );
+    info.mockRestore();
+  });
+
+  it.each([
+    "ai_disabled",
+    "ai_provider_unavailable",
+    "ai_rate_limited",
+    "ai_timeout",
+    "ai_output_invalid",
+    "ai_refused",
+    "ai_content_filtered",
+  ] as const)("does not replan for provider failure %s", async (code) => {
+    const execution = executionForPlan(new AiExecutionError(code));
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     const payload = await generateCandidate(
@@ -537,6 +638,7 @@ describe("bounded acquisition quality recovery", () => {
     expect(execution.calls).toBe(1);
     const eventNames = loggedEvents(info).map((event) => event.event);
     expect(eventNames).not.toContain("repair_attempted");
+    expect(eventNames).not.toContain("second_plan_attempted");
     expect(eventNames).toContain("final_fallback");
     info.mockRestore();
   });

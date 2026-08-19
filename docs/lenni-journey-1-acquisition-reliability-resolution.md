@@ -1,6 +1,6 @@
 # Lenni Journey 1 acquisition reliability resolution
 
-**Status:** Implementation decision for Journey 1 maintenance
+**Status:** J1-R2 implementation decision
 **Date:** 19 August 2026
 
 ## Repository resolution
@@ -63,9 +63,15 @@ first-pass, pre-composition canonicalised, post-composition recovered, combined
 canonicalised-and-recovered, fallback and execution-failure outcomes
 separately.
 
-No dedicated model repair task is introduced. That avoids a second acquisition
-subject, a second live qualification/reliability evidence track, and a second
-provider call for a correction that is mechanical under the current validator.
+The later exact-SHA qualification at
+`9c1c969ac01165371676c84149f1452dea14e40b` again passed only 7/8 because an
+`unusual_other` plan reached the same `cross_object_field_leakage` plus
+`required_field` boundary. That result established a stochastic semantic
+planning error rather than missing owner information. J1-R2 therefore permits
+one second execution of the same acquisition planning task only for that exact
+code pair. It receives the original enriched owner request, category and
+grounded currency plus one finite server-owned correction reason. It never
+receives the rejected model output.
 
 ## Bounds and lifecycle
 
@@ -73,16 +79,19 @@ One owner submission still calls `reserve_anonymous_build_attempt()` exactly
 once. Recovery runs synchronously in memory after that reservation and never
 calls the reservation RPC, creates persistent state, or increments
 `attempt_count`, `proposal_count`, `regeneration_count`, or the successful
-refinement allowance. The maximum provider-call count remains one; the
-deterministic recovery itself is one bounded pass and cannot recurse. The
-existing Terra-medium acquisition policy therefore remains the cost and
-latency envelope: at most 25 seconds of provider time and at most 47,500
-microusd of worst-case provider token cost for one execution. Successful first
-pass requests remain one-call requests.
+refinement allowance. The maximum semantic planning execution count is two;
+deterministic recovery remains one bounded pass per composed candidate and
+cannot recurse. Each execution uses the existing Terra policy with one provider
+attempt, so the workflow ceiling is 50 seconds of provider time and 95,000
+microusd of worst-case provider token cost. Successful first-pass requests
+remain one-call requests.
 
-Recovery is enabled only for first acquisition/regeneration orchestration. The
-existing refinement path continues to use `allowFallback: false` semantics
-without automatic recovery, so successful refinement counting, failed repair
+Recovery and the exact J1-R2 trigger are enabled only for first
+acquisition/regeneration orchestration. Provider authentication, transport,
+rate-limit, timeout and refusal failures, other quality codes, and other
+recovery refusal codes do not trigger the second plan. The existing refinement
+path continues to use `allowFallback: false` semantics without automatic
+recovery or replanning, so successful refinement counting, failed repair
 behaviour, and previous-candidate preservation remain unchanged.
 
 The complete `validateAcquisitionCandidate()` boundary runs again after every
@@ -96,10 +105,11 @@ Recovery refusal is reported only through a safe finite diagnostic code:
 `second_quality_failure:<allow-listed quality code>`. Model prose, prompts,
 provider bodies, and raw errors are not emitted.
 
-The first-pass instruction is strengthened with generic graph guidance about
+The first-pass instruction keeps its generic graph guidance about
 keeping identity/contact data on the business area it belongs to and using a
-Connection for the relationship. That instruction change invalidates prior
-live acquisition subject evidence; the existing qualification and reliability
-gates must be rerun against the frozen implementation before launch claims are
-made. A broader redacted product-reliability corpus is separate evidence and
-does not replace the eight-scenario hard contract.
+Connection for the relationship. The second execution appends only a finite
+server-owned correction instruction to preserve scope and use Connections for
+connected identity. This material orchestration change invalidates prior live
+evidence; qualification and reliability must be rerun against the frozen
+implementation before the 32 × 3 product corpus. The product corpus remains
+separate evidence and does not replace the eight-scenario hard contract.

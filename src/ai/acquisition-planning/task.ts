@@ -5,6 +5,7 @@ import { ACQUISITION_PLANNING_POLICY_KEY } from "../policies";
 import {
   acquisitionPlanningInputSchema,
   acquisitionPlanningOutputSchema,
+  type AcquisitionPlanningInput,
 } from "./schemas";
 import { validateAcquisitionPlanningOutput } from "./validation";
 
@@ -33,6 +34,13 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
   "Never output SQL, code, tools, IDs, database access, configuration operations, Apply, Publish or mutation instructions.",
 ].join(" ");
 
+export const ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION = [
+  "This is the one permitted correction pass for a plan that represented connected identity as a duplicated required scalar.",
+  "Plan again from only the original owner request and grounded context in the task input; preserve the same requested scope.",
+  "Represent identity shared between connected business areas through Connections, not a duplicated required name, identity, contact or address scalar on the related business area.",
+  "Do not weaken or omit a genuine requirement, broaden the workspace, invent owner information or return needs_more_detail merely because this correction was requested.",
+].join(" ");
+
 export const acquisitionPlanningTaskV1 = Object.freeze({
   key: "acquisition_workspace_plan_v1",
   version: 1,
@@ -40,7 +48,11 @@ export const acquisitionPlanningTaskV1 = Object.freeze({
   policyKey: ACQUISITION_PLANNING_POLICY_KEY,
   inputSchema: acquisitionPlanningInputSchema,
   outputSchema: acquisitionPlanningOutputSchema,
-  buildInstruction: () => ACQUISITION_PLANNING_INSTRUCTION,
+  buildInstruction: (input: AcquisitionPlanningInput) =>
+    input.correction_reason ===
+    "required_cross_object_identity_must_use_connection"
+      ? `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`
+      : ACQUISITION_PLANNING_INSTRUCTION,
   validateOutput: validateAcquisitionPlanningOutput,
 }) satisfies RegisteredAiTask<
   typeof acquisitionPlanningInputSchema,

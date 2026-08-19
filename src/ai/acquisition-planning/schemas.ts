@@ -59,6 +59,9 @@ export const acquisitionPlanningInputSchema = z
     category: acquisitionCategorySchema,
     owner_request: acquisitionRequestSchema,
     grounded_currency: z.enum(["GBP", "USD", "EUR"]).nullable(),
+    correction_reason: z
+      .literal("required_cross_object_identity_must_use_connection")
+      .optional(),
   })
   .strict();
 const needs = z
@@ -90,6 +93,9 @@ export type AcquisitionPlanningInput = z.infer<
 >;
 export type AcquisitionPlanningOutput = z.infer<
   typeof acquisitionPlanningOutputSchema
+>;
+export type AcquisitionPlanningCorrectionReason = NonNullable<
+  AcquisitionPlanningInput["correction_reason"]
 >;
 export type AcquisitionReadyPlan = Extract<
   AcquisitionPlanningOutput,

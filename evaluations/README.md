@@ -1155,11 +1155,20 @@ The public orchestration has one deterministic in-memory recovery pass for the
 allow-listed quality codes `cross_object_field_leakage`,
 `relationship_scalar_duplication`, and `semantically_redundant_field`. It
 removes only mechanically redundant non-required Fields, revalidates the full
-candidate, and otherwise uses the existing fallback. No second provider call,
-repair task, quota reservation, migration, or persistent telemetry is added.
+candidate, and otherwise uses the existing fallback. No repair task, second
+owner-facing quota reservation, migration, or persistent telemetry is added.
 Pre-composition canonicalisation likewise removes only optional exact
 cross-object identity Fields. Required leakage reaches validation and fails
 closed when recovery refuses it.
+
+J1-R2 permits one second execution of the same planning task only when the
+first candidate fails `cross_object_field_leakage` and deterministic recovery
+refuses `required_field`. The second input contains the original enriched
+request and grounded context plus the finite correction reason
+`required_cross_object_identity_must_use_connection`; it never contains the
+invalid first output. Every other failure class keeps the one-call/fallback
+path. One owner submission still consumes one anonymous build reservation, and
+the hard maximum is two semantic planning executions.
 
 The engineering-only product-reliability corpus is intentionally separate from
 the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
@@ -1174,13 +1183,14 @@ npm run eval:acquisition-product-reliability-live
 
 Its redacted report includes scenario/execution counts, raw first-pass tailored
 successes, pre-composition canonicalised tailored successes, post-composition
-recovered tailored successes, combined correction outcomes, final fallbacks,
-hard-contract failures, diagnostic-code distribution, attempts, token usage,
-estimated cost, and elapsed time. It does not print owner prompts, model prose,
-model output, provider bodies, or business data. Product targets are reported
-as evidence, not used to weaken deterministic validation or to replace the hard
-gates. Preflight requires both unique scenario IDs and unique normalised request
-text.
+recovered tailored successes, combined deterministic correction outcomes,
+second-plan tailored successes, final fallbacks, hard-contract failures,
+diagnostic-code distribution, attempts, token usage, estimated cost, and
+elapsed time. Second-plan execution rate, latency, tokens and cost are separate
+fields. It does not print owner prompts, model prose, model output, provider
+bodies, or business data. Product targets are reported as evidence, not used to
+weaken deterministic validation or to replace the hard gates. Preflight
+requires both unique scenario IDs and unique normalised request text.
 
 ### Journey 1 product-corpus alignment evidence
 

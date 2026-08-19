@@ -2923,7 +2923,7 @@ hardening and does not change the reusable graph or publication decision.
 
 ## ADR-042 — Journey 1 acquisition uses one bounded deterministic quality recovery cycle
 
-**Status:** Accepted for Journey 1 maintenance
+**Status:** Accepted for deterministic recovery; provider-call bound superseded by ADR-043
 **Date:** 19 August 2026
 
 ### Context
@@ -2998,3 +2998,66 @@ tailored proposal without a second owner submission or a second quota/build
 attempt. The recovery is bounded to one pass and cannot retry recursively; the
 deterministic starter remains the final safety net. No tenant, RLS, AI context,
 operational data, preview, claim, accept, or publish boundary changes.
+
+## ADR-043 — Journey 1 acquisition permits one narrowly triggered semantic replan
+
+**Status:** Accepted for J1-R2
+**Date:** 19 August 2026
+
+### Context
+
+Exact-SHA qualification at
+`9c1c969ac01165371676c84149f1452dea14e40b` failed 7/8 when one otherwise
+eligible plan duplicated connected identity as a required scalar. The
+authoritative validator correctly returned `cross_object_field_leakage`, and
+deterministic recovery correctly refused with `required_field`. Removing or
+weakening that requirement, making the Connection required, changing the hard
+gate, or asking the owner for information already present would violate the
+accepted trust boundary. The remaining defect is a stochastic planning error.
+
+### Decision
+
+One owner submission may execute the existing acquisition planning task a
+second time only when the first composed candidate fails with
+`cross_object_field_leakage` and the existing deterministic recovery attempt
+refuses with `required_field`. The second execution uses the same registered
+task, Terra model, execution policy, original enriched owner request, category
+and grounded currency. Its only additional input is the finite server-owned
+reason `required_cross_object_identity_must_use_connection`. The rejected plan
+is never included in the second task input.
+
+The correction instruction preserves the requested scope and directs the
+planner to represent connected identity through Connections instead of a
+duplicated required scalar. The result passes through the same deterministic
+interpretation, composition, full candidate validator, capability enhancement
+and final validation. If it remains invalid or its provider execution fails,
+the existing truthful fallback is used. There is no third execution, recursion,
+retry-until-pass, model self-validation, requiredness change or validator
+weakening.
+
+Provider authentication, transport, rate-limit, timeout, refusal, malformed
+output, `needs_more_detail`, other quality codes and other recovery refusal
+reasons do not initiate semantic replanning. Refinement retains its existing
+no-automatic-recovery and no-replan contract.
+
+One submission still calls `reserve_anonymous_build_attempt()` once and
+consumes one owner-facing build attempt. The second provider execution is
+inside that reserved orchestration and does not increment proposal,
+regeneration or refinement allowances. Each provider execution retains the
+approved one-attempt policy; the workflow maximum is two semantic executions,
+50 seconds of provider time and 95,000 microusd of worst-case token cost.
+
+Finite events distinguish second-plan attempt, success and failure without
+prompts or model output. Product evidence reports raw first-pass,
+pre-composition canonicalised, post-composition recovered, second-plan,
+fallback and execution-failure outcomes, with second-plan execution rate,
+latency, tokens and cost reported separately.
+
+### Consequences
+
+Most successful requests remain one provider execution. Only the exact unsafe
+required-identity case can pay the latency and cost of a second plan. Safety is
+unchanged because deterministic validation remains authoritative and fallback
+remains the final result for an invalid second plan. No migration, primitive,
+table, persistent AI context, operational Record access, automatic Apply or
+Publish, tenant boundary or vertical-specific rule is added.
