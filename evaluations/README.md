@@ -1175,3 +1175,30 @@ failures, diagnostic-code distribution, attempts, token usage, estimated cost,
 and elapsed time. It does not print owner prompts, model prose, model output,
 provider bodies, or business data. Product targets are reported as evidence,
 not used to weaken deterministic validation or to replace the hard gates.
+
+### Journey 1 product-corpus alignment evidence
+
+The first attempted maintenance corpus at exact SHA
+`af40403a2c3e83188401db59c8b1e77273ba67e9` exposed that the supposedly
+32-scenario fixture contained only 31 entries because its preflight and unit
+test required merely 30 or more. It therefore ran 93 executions, not 96: 92
+were first-pass tailored, one ended in fallback after an `ai_timeout`, none
+used recovery, and there were no execution failures. This is incomplete
+historical evidence and was not accepted. The corpus now preflights exactly 32
+unique scenarios, exactly three repetitions, and exactly 96 executions.
+
+The first exact 96-execution run at SHA
+`b2de4eadbc90e2a294c6a2051f968fe6b6c7204f` produced 95 first-pass tailored
+results, one recovered tailored result, no fallback, and no execution failure.
+Its sole reported hard finding was `location_added` on one carpenter
+repetition. Investigation showed an evaluation mismatch: production's
+accepted `location_table_forbidden` invariant rejects an exact custom
+Location/Locations business area after NFKC and case normalization, while the
+evaluator searched every serialized operation for the substring `location`.
+That broader shortcut also classified ordinary Field wording and even words
+such as `relocation` as creation of the Location platform primitive. The
+evaluator now uses the same exact code-owned Location identity predicate as the
+production planning validator. The real custom-Location hard test remains;
+production validation, instructions, model policy, recovery and fallback are
+unchanged. The SHA's corpus is retained as historical failed evaluator
+evidence, not accepted launch evidence.

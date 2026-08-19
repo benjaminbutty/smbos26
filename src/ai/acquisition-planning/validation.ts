@@ -17,7 +17,7 @@ function normaliseBusinessIdentity(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase("en");
 }
 
-function isLocationIdentity(value: string): boolean {
+export function isAcquisitionLocationIdentity(value: string): boolean {
   const normalised = normaliseBusinessIdentity(value);
   return normalised === "location" || normalised === "locations";
 }
@@ -31,8 +31,8 @@ export function validateAcquisitionPlanningOutput(
   if (
     output.tables.some(
       (table) =>
-        isLocationIdentity(table.singular_name) ||
-        isLocationIdentity(table.plural_name),
+        isAcquisitionLocationIdentity(table.singular_name) ||
+        isAcquisitionLocationIdentity(table.plural_name),
     )
   )
     fail("location_table_forbidden");

@@ -210,6 +210,26 @@ describe("acquisition hard-contract and product-quality policy", () => {
     expect(result.hard_findings).toContain(finding);
   });
 
+  it.each(["Job location", "Relocation notes"])(
+    "does not mistake ordinary %s field wording for a Location business area",
+    (label) => {
+      const result = evaluateAcquisitionScenario(
+        scenario(customerJob),
+        payload(
+          [
+            { key: "customer", singular: "Customer", plural: "Customers" },
+            { key: "job", singular: "Job", plural: "Jobs" },
+          ],
+          [{ source: "customer", target: "job", cardinality: "one_to_many" }],
+          [{ objectKey: "job", label, fieldType: "short_text" }],
+        ),
+      );
+
+      expect(result.hard_passed).toBe(true);
+      expect(result.hard_findings).not.toContain("location_added");
+    },
+  );
+
   it("keeps unsupported-capability truthfulness hard", () => {
     const result = evaluateAcquisitionScenario(
       {

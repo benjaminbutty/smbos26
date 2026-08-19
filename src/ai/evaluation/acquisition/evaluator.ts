@@ -1,4 +1,5 @@
 import type { AcquisitionBuildPayload } from "../../../core/acquisition/schemas";
+import { isAcquisitionLocationIdentity } from "../../acquisition-planning/validation";
 import {
   classifyAcquisitionCandidateDiagnostic,
   type AcquisitionCandidateDiagnosticCode,
@@ -174,8 +175,11 @@ export function evaluateAcquisitionScenario(
     hard_findings.push("landing_page_without_page");
   }
   if (
-    payload.operations.some((operation) =>
-      JSON.stringify(operation).toLocaleLowerCase("en").includes("location"),
+    payload.operations.some(
+      (operation) =>
+        operation.op === "set_object" &&
+        (isAcquisitionLocationIdentity(operation.singular_label) ||
+          isAcquisitionLocationIdentity(operation.plural_label)),
     )
   ) {
     hard_findings.push("location_added");
