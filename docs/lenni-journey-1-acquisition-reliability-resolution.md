@@ -23,11 +23,36 @@ For these failures, the validator already identifies the exact scalar Fields
 that mechanically duplicate a connected business area's identity. The chosen
 implementation is **A: deterministic normalization for mechanically redundant
 graph output**. It removes only the Fields identified by the existing quality
-rules and updates dependent Forms, Views, and owner-readable tracked
-information. It never changes a Relationship, invents a replacement Field,
-changes a required Field, or broadens the request. If the dependent candidate
-cannot remain valid after that exact removal, recovery stops and the existing
-deterministic fallback is used.
+rules. Exact cross-object identity Fields are canonicalised at the ready-plan
+boundary, before dependent Forms and Views are compiled; this is the earliest
+point where a model-marked required Field can be removed without mutating
+requiredness or repairing an already-composed surface. The existing
+post-composition recovery remains responsible for the other allow-listed
+mechanical defects and updates dependent Forms, Views, and owner-readable
+tracked information. Neither path changes a Relationship, invents a
+replacement Field, changes a required Field, or broadens the request. If the
+candidate cannot remain valid after the exact removal, recovery stops and the
+existing deterministic fallback is used.
+
+## Evidence-backed correction
+
+The diagnostic-only subject at
+`cffc584b570f300bc35e30234d31f860bc0ae649` preserved production behaviour and
+added a finite recovery-refusal code to the hard-gate report. Its single live
+qualification run passed 7/8. The `milk_round` failure remained
+`quality_cross_object_field_leakage`, and the recovery refusal was precisely
+`required_field`.
+
+That result rules out an absent mechanical match, a broken Form/View rewrite,
+and a second quality failure for this case. The planner had produced an exact
+connected-object identity scalar but marked it required. Composition then
+compiled dependent surfaces, after which the deliberately conservative
+recovery could not remove the required Field. The smallest generic correction
+is therefore earlier plan canonicalisation using the same mechanical predicate
+as recovery. Richer related information such as a preferred contact name is
+not mechanically exact, remains in the candidate, and is still rejected by the
+unchanged authoritative validator. The canonicaliser also preserves the
+original Fields if removal would leave a business area with no Fields.
 
 No dedicated model repair task is introduced. That avoids a second acquisition
 subject, a second live qualification/reliability evidence track, and a second
@@ -55,6 +80,12 @@ The complete `validateAcquisitionCandidate()` boundary runs again after every
 successful normalization. Non-quality errors, unclassified quality errors,
 provider failures, `needs_more_detail`, unsupported-capability handling,
 currency grounding, and Location exclusion retain their current behavior.
+
+Recovery refusal is reported only through a safe finite diagnostic code:
+`no_mechanical_repair_fields`, `required_field`, `form_would_be_invalid`,
+`view_would_be_invalid`, `repaired_candidate_invalid`, or
+`second_quality_failure:<allow-listed quality code>`. Model prose, prompts,
+provider bodies, and raw errors are not emitted.
 
 The first-pass instruction is strengthened with generic graph guidance about
 keeping identity/contact data on the business area it belongs to and using a

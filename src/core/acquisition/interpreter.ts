@@ -30,6 +30,7 @@ import {
   acquisitionRequestSchema,
 } from "./schemas";
 import {
+  isMechanicallyRedundantCrossObjectIdentityField,
   removeSemanticallyRedundantIdentityFields,
   validateAcquisitionCandidate,
 } from "./quality";
@@ -263,19 +264,63 @@ function composeDraft(plan: AcquisitionReadyPlan) {
 function canonicaliseAcquisitionPlan(
   plan: AcquisitionReadyPlan,
 ): AcquisitionReadyPlan {
+  const tables = plan.tables.map((table) => ({
+    ...table,
+    fields: removeSemanticallyRedundantIdentityFields(
+      {
+        key: table.reference,
+        singular_label: table.singular_name,
+        plural_label: table.plural_name,
+      },
+      table.fields,
+    ),
+  }));
+  const tablesByReference = new Map(
+    tables.map((table) => [table.reference, table]),
+  );
+  const relatedTablesByReference = new Map<
+    string,
+    Set<(typeof tables)[number]>
+  >();
+  for (const connection of plan.connections) {
+    if (
+      connection.source_table_reference === connection.target_table_reference
+    ) {
+      continue;
+    }
+    const source = tablesByReference.get(connection.source_table_reference);
+    const target = tablesByReference.get(connection.target_table_reference);
+    if (!source || !target) continue;
+    const sourceRelated =
+      relatedTablesByReference.get(source.reference) ?? new Set();
+    sourceRelated.add(target);
+    relatedTablesByReference.set(source.reference, sourceRelated);
+    const targetRelated =
+      relatedTablesByReference.get(target.reference) ?? new Set();
+    targetRelated.add(source);
+    relatedTablesByReference.set(target.reference, targetRelated);
+  }
+
   return {
     ...plan,
-    tables: plan.tables.map((table) => ({
-      ...table,
-      fields: removeSemanticallyRedundantIdentityFields(
-        {
-          key: table.reference,
-          singular_label: table.singular_name,
-          plural_label: table.plural_name,
-        },
-        table.fields,
-      ),
-    })),
+    tables: tables.map((table) => {
+      const relatedTables = relatedTablesByReference.get(table.reference);
+      if (!relatedTables?.size) return table;
+      const retainedFields = table.fields.filter(
+        (field) =>
+          ![...relatedTables].some((related) =>
+            isMechanicallyRedundantCrossObjectIdentityField(field, {
+              key: related.reference,
+              singular_label: related.singular_name,
+              plural_label: related.plural_name,
+            }),
+          ),
+      );
+      return {
+        ...table,
+        fields: retainedFields.length > 0 ? retainedFields : table.fields,
+      };
+    }),
   };
 }
 

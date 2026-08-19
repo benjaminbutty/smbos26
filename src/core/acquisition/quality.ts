@@ -481,9 +481,9 @@ function findCrossObjectFieldLeakageFields(
   return uniqueFieldReferences(leaking);
 }
 
-function isMechanicallyRedundantCrossObjectField(
-  field: FieldOperation,
-  related: ObjectOperation,
+export function isMechanicallyRedundantCrossObjectIdentityField(
+  field: SemanticIdentityField,
+  related: SemanticIdentityObject,
 ): boolean {
   const fieldTokens = fieldSemanticTokens(field);
   const relatedTokens = objectSemanticTokens(related);
@@ -521,7 +521,7 @@ function findMechanicallyRedundantCrossObjectFields(
       [target, source],
     ] as const) {
       for (const field of fields.get(owner.key)?.values() ?? []) {
-        if (isMechanicallyRedundantCrossObjectField(field, related)) {
+        if (isMechanicallyRedundantCrossObjectIdentityField(field, related)) {
           redundant.push(field);
         }
       }

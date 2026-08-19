@@ -2951,6 +2951,19 @@ Relationships, and all other operations, then runs the complete
 `validateAcquisitionCandidate()` boundary again. A failed or unclassified
 repair uses the existing deterministic fallback.
 
+A diagnostic-only qualification at exact SHA
+`cffc584b570f300bc35e30234d31f860bc0ae649` demonstrated that the remaining
+milk-round cross-object identity Field was mechanically recognisable but had
+been marked required: the hard failure was
+`quality_cross_object_field_leakage` and the finite recovery refusal was
+`required_field`. Because post-composition recovery must not delete a required
+Field or rewrite its compiled Forms and Views, the ready-plan canonicaliser now
+removes only an exact connected-object identity scalar before those dependent
+surfaces are compiled. It uses the same narrow mechanical predicate as
+recovery, leaves richer related information for the unchanged validator to
+reject, and preserves the original Fields rather than creating an empty
+business area. This is an ordering correction, not a broader repair rule.
+
 No model repair task, generic retry loop, new AI authority, new persistent
 state, database table, migration, quota reservation, or automatic configuration
 application is introduced. One owner submission reserves one public
@@ -2958,6 +2971,8 @@ acquisition attempt and the maximum provider-call count remains one. Provider
 authentication, transport, refusal, malformed output, `needs_more_detail`,
 unsupported capabilities, and all other quality codes do not enter semantic
 recovery. Refinement keeps its existing no-automatic-recovery contract.
+Hard-gate recovery refusal reporting is limited to finite code-owned reasons;
+it does not expose prompts, model output, provider bodies, or raw errors.
 
 The first-pass instruction now gives generic guidance to keep identity/contact
 information on its owning business area and use a Connection for relationships.

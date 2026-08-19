@@ -79,6 +79,7 @@ function executionForPlan(
 function carpenterPlan(
   options: {
     crossObjectLeakage?: boolean;
+    crossObjectLeakageLabel?: string;
     crossObjectLeakageRequired?: boolean;
     relationshipScalarDuplicate?: boolean;
   } = {},
@@ -94,7 +95,7 @@ function carpenterPlan(
     ...(options.crossObjectLeakage
       ? [
           {
-            label: "Customer name",
+            label: options.crossObjectLeakageLabel ?? "Customer name",
             field_type: "short_text" as const,
             required: options.crossObjectLeakageRequired ?? false,
             options: null,
@@ -233,34 +234,45 @@ function loggedEvents(
 }
 
 describe("bounded acquisition quality recovery", () => {
-  it("surfaces a finite required-field refusal when post-composition recovery cannot remove the leakage", async () => {
-    const execution = executionForPlan(
-      carpenterPlan({
-        crossObjectLeakage: true,
-        crossObjectLeakageRequired: true,
-      }),
-    );
-
-    const result = await runAcquisitionHardGateScenario(
-      carpenterScenario,
-      execution,
-    );
-
-    expect(result).toMatchObject({
-      hard_passed: false,
-      hard_findings: [
-        "production_composition_failed:quality_cross_object_field_leakage",
-      ],
-      diagnostic_code: "quality_cross_object_field_leakage",
-      recovery_failure_code: "required_field",
+  it("surfaces a finite required-field refusal for an already-composed candidate", () => {
+    const starter = composeStarterComposition("jobs", carpenterRequest);
+    const requiredLeak = {
+      ...starter.operations.find(
+        (operation) =>
+          operation.op === "set_field" &&
+          operation.object_key === "job" &&
+          operation.key === "title",
+      )!,
+      key: "customer_name",
+      label: "Customer name",
+      required: true,
+      position: 10,
+    };
+    const candidate = acquisitionBuildPayloadSchema.parse({
+      ...starter,
+      proposal: { ...starter.proposal, source: "tailored" },
+      operations: [...starter.operations, requiredLeak],
     });
-    expect(execution.calls).toBe(1);
+    let qualityError: unknown;
+    try {
+      validateAcquisitionCandidate(candidate);
+    } catch (error) {
+      qualityError = error;
+    }
+
+    expect(qualityError).toMatchObject({
+      code: "cross_object_field_leakage",
+    });
+    expect(
+      attemptAcquisitionCandidateRecovery(candidate, qualityError),
+    ).toEqual({ status: "refused", failure_code: "required_field" });
   });
 
   it("fails the hard gate when recovery fails instead of accepting fallback", async () => {
     const execution = executionForPlan(
       carpenterPlan({
         crossObjectLeakage: true,
+        crossObjectLeakageLabel: "Customer preferred contact name",
         relationshipScalarDuplicate: true,
       }),
     );
@@ -285,7 +297,7 @@ describe("bounded acquisition quality recovery", () => {
 
   it("passes the hard gate only after recovery produces a fully valid tailored candidate", async () => {
     const execution = executionForPlan(
-      carpenterPlan({ crossObjectLeakage: true }),
+      carpenterPlan({ relationshipScalarDuplicate: true }),
     );
 
     const result = await runAcquisitionHardGateScenario(
@@ -303,9 +315,12 @@ describe("bounded acquisition quality recovery", () => {
     expect(execution.calls).toBe(1);
   });
 
-  it("repairs the carpenter cross-object identity leak and keeps one provider execution", async () => {
+  it("canonicalises a required cross-object identity leak before dependent surfaces are compiled", async () => {
     const execution = executionForPlan(
-      carpenterPlan({ crossObjectLeakage: true }),
+      carpenterPlan({
+        crossObjectLeakage: true,
+        crossObjectLeakageRequired: true,
+      }),
     );
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
@@ -326,12 +341,33 @@ describe("bounded acquisition quality recovery", () => {
       ),
     ).toBe(false);
     const events = loggedEvents(info);
-    expect(events.map((event) => event.event)).toEqual(
-      expect.arrayContaining(["repair_attempted", "repair_succeeded"]),
+    expect(events.map((event) => event.event)).toContain(
+      "first_pass_tailored_success",
+    );
+    expect(events.map((event) => event.event)).not.toContain(
+      "repair_attempted",
     );
     expect(events.map((event) => event.event)).not.toContain("final_fallback");
     expect(events.map((event) => event.event)).not.toContain("proposal_failed");
     info.mockRestore();
+  });
+
+  it("preserves richer related information and lets the validator reject it", async () => {
+    const result = await runAcquisitionHardGateScenario(
+      carpenterScenario,
+      executionForPlan(
+        carpenterPlan({
+          crossObjectLeakage: true,
+          crossObjectLeakageLabel: "Customer preferred contact name",
+        }),
+      ),
+    );
+
+    expect(result).toMatchObject({
+      hard_passed: false,
+      diagnostic_code: "quality_cross_object_field_leakage",
+      recovery_failure_code: "no_mechanical_repair_fields",
+    });
   });
 
   it("returns a valid first-pass tailored candidate without recovery", async () => {
@@ -357,6 +393,7 @@ describe("bounded acquisition quality recovery", () => {
     const execution = executionForPlan(
       carpenterPlan({
         crossObjectLeakage: true,
+        crossObjectLeakageLabel: "Customer preferred contact name",
         relationshipScalarDuplicate: true,
       }),
     );
@@ -480,7 +517,10 @@ describe("bounded acquisition quality recovery", () => {
     await expect(
       generateCandidate("jobs", carpenterRequest, decisions, {
         execution: executionForPlan(
-          carpenterPlan({ crossObjectLeakage: true }),
+          carpenterPlan({
+            crossObjectLeakage: true,
+            crossObjectLeakageLabel: "Customer preferred contact name",
+          }),
         ),
         allowFallback: false,
         allowRecovery: false,
