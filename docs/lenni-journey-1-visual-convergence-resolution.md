@@ -1,7 +1,7 @@
 # Lenni Journey 1 visual convergence
 
-Status: in progress  
-Base: `4f3637c3ac08cd0b8aeb09db327bf519fce26665` (PR #57 merge)  
+Status: implementation and local verification complete; exact-head CI pending
+Base: `4f3637c3ac08cd0b8aeb09db327bf519fce26665` (PR #57 merge)
 Branch: `journey1/visual-convergence`
 
 ## VC0 mapping
@@ -45,3 +45,40 @@ components and CSS. Acquisition planning/refinement behaviour, AI policy and
 accounting, acceptance/current-candidate checks, claim, configuration lifecycle,
 permissions, RLS, public capability and persistence are not implementation seams
 for this phase.
+
+## Responsive browser evidence
+
+The Journey 1 flow was exercised in the in-app browser against the local
+AI-disabled fallback runtime. No live-provider call was made and no account or
+Business was created.
+
+- `1440 × 900`: public Start and candidate Home retain the desktop hierarchy,
+  one preview shell, a visible approval boundary and no page-level horizontal
+  overflow.
+- `1024 × 768`: clarification/Workspace Map and preview Table remain usable;
+  Record context opens as a right-side panel without page-level horizontal
+  overflow.
+- `390 × 844`: orientation collapses to a four-part progress line, the Workspace
+  Map becomes a vertical sequence, preview navigation scrolls within its own
+  region, actions remain visible, and Record context fills the dynamic viewport
+  with focus placed on its 44 × 44 close control.
+- The accepted candidate remains visible at signup with the same four Tables,
+  four Saved Views and one draft Page shown in preview. Preview examples are
+  explicitly excluded from the Business.
+
+## Local verification
+
+- `npm run check`: formatting, type generation, TypeScript, lint and 888 unit
+  tests passed.
+- `npm run test:acquisition`: 33 acquisition composition/boundary tests passed.
+- Focused Journey 1 integration: 38 acquisition/claim, Experience, public
+  capability and initial-preorder tests passed.
+- Clean-stack `npm run test:integration`: 265 passed, 5 intentionally skipped.
+- Dedicated `npm run test:rls`: 19 passed.
+- Injected-client `npm run test:openai-provider`: 57 passed; no live-provider
+  qualification was run.
+- Production build, 41-migration immutability check, clean database reset,
+  Supabase schema lint and production dependency audit passed.
+
+No migration, AI task/model/policy/prompt, provider, claim/publication semantic,
+new primitive, Journey 2 behaviour or Journey 4 redesign is included.
