@@ -10,7 +10,7 @@ export function AcquisitionRequestInput({
   const [value, setValue] = useState(defaultValue);
   return (
     <label className="acquisition-request-label">
-      <span>Describe how the work runs</span>
+      <span>Describe your business</span>
       <textarea
         maxLength={4_000}
         name="request"
@@ -21,11 +21,10 @@ export function AcquisitionRequestInput({
         value={value}
       />
       <small>
-        Tell Lenni what you run, what you need to keep track of, and what feels
-        messy today. Don&apos;t include customer names, email addresses, phone
-        numbers or other personal information.
+        Tell Lenni what you run, what you keep track of, and what feels messy.
+        Real customer names, numbers and other personal details are not needed.
       </small>
-      <span className="acquisition-example-label">Need a starting point?</span>
+      <span className="acquisition-example-label">Try a real example</span>
       <span className="acquisition-example-list">
         {acquisitionPromptExamples.map((example) => (
           <button key={example} onClick={() => setValue(example)} type="button">

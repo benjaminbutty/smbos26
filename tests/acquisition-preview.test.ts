@@ -42,6 +42,13 @@ describe("Journey 1 candidate preview model", () => {
 
     const customerTable = first.tables.customer_view?.table;
     const appointmentTable = first.tables.appointment_view?.table;
+    expect(first.tables.customer_view).toEqual(
+      expect.objectContaining({
+        objectKey: "customer",
+        objectLabel: "Customers",
+        recordTypeLabel: "Customer",
+      }),
+    );
     expect(customerTable?.rows[0]?.values.name).toBe("Sarah Evans");
     expect(appointmentTable?.rows[0]?.connectionValues).toEqual(
       expect.objectContaining({
@@ -105,7 +112,7 @@ describe("Journey 1 candidate preview model", () => {
 });
 
 describe("Journey 1 candidate preview shell", () => {
-  it("keeps Work, Sites, Tell Lenni and the persistent overlay in one anatomy", () => {
+  it("keeps Work, Sites, refinement and the persistent approval bar in one anatomy", () => {
     const model = buildCandidatePreviewModel(dogGroomingPayload());
     const html = renderToStaticMarkup(
       createElement(CandidatePreviewShell, {
@@ -119,10 +126,12 @@ describe("Journey 1 candidate preview shell", () => {
     );
 
     expect(html).toContain("Preview mode");
-    expect(html).toContain("Nothing has been created yet");
+    expect(html).toContain("nothing has been created");
     expect(html).toContain("Back to Lenni");
     expect(html).toContain("Use this setup");
-    expect(html).toContain("Tell Lenni");
+    expect(html).toContain("Refine setup");
+    expect(html).toContain('aria-label="Preview actions"');
+    expect(html).toContain("Business creation comes later");
     expect(html).toContain("Draft");
     expect(html).toContain("Tables");
     expect(html).toContain("<form");

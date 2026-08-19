@@ -40,6 +40,7 @@ export interface ProductionTableWorkspaceProps {
   newRecordLabel?: string;
   recordTypeLabel?: string;
   recordCountLabel?: string;
+  panelStatusLabel?: string;
   fullRecordPath?: string;
   readConnectedRecord?: ProductionRecordPanelContextAction;
   updateConnectedRecordCell?: ProductionScopedCellEditAction;
@@ -63,6 +64,7 @@ export function ProductionTableWorkspace({
   currentness,
   headerContent,
   newRecordLabel,
+  panelStatusLabel,
   recordTypeLabel,
   readOnly = false,
   recordCountLabel,
@@ -246,6 +248,7 @@ export function ProductionTableWorkspace({
       {...(createConnection ? { onCreateConnection: createConnection } : {})}
       {...(recordCountLabel !== undefined ? { recordCountLabel } : {})}
       {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
+      {...(panelStatusLabel !== undefined ? { panelStatusLabel } : {})}
       {...(fullRecordPath !== undefined ? { fullRecordPath } : {})}
       {...(readConnectedRecordContext
         ? { loadConnectedRecord: readConnectedRecordContext }

@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({
 import { WorkspaceHome } from "../src/components/workspace-home";
 import { WorkspaceMobileNav } from "../src/components/workspace-mobile-nav";
 import { AcquisitionProposalCard } from "../src/components/acquisition-proposal";
+import { AcquisitionSetupSummary } from "../src/components/acquisition-setup-summary";
 import { BuilderResultPanel } from "../src/components/builder-ui";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
@@ -90,6 +91,14 @@ describe("Lenni unified workspace presentation", () => {
       new URL("../src/app/sign-up/page.tsx", import.meta.url),
       "utf8",
     );
+    const businessSource = readFileSync(
+      new URL("../src/app/start/business/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const claimFormSource = readFileSync(
+      new URL("../src/components/workspace-claim-form.tsx", import.meta.url),
+      "utf8",
+    );
     const publicSource = readFileSync(
       new URL(
         "../src/app/p/[businessSlug]/[pageSlug]/page.tsx",
@@ -122,8 +131,18 @@ describe("Lenni unified workspace presentation", () => {
 
     expect(signInSource).toContain("c7-auth-page");
     expect(signInSource).toContain("c7-auth-panel");
+    expect(signInSource).toContain("Sign in and continue");
+    expect(signInSource).toContain("loadAcquisitionSession");
     expect(signUpSource).toContain("c7-auth-page");
     expect(signUpSource).toContain("c7-auth-panel");
+    expect(signUpSource).toContain("Save workspace and continue");
+    expect(signUpSource).toContain("accepted_candidate_checksum");
+    expect(businessSource).toContain("Your Business was not created.");
+    expect(businessSource).toContain("WorkspaceClaimForm");
+    expect(claimFormSource).toContain("useFormStatus");
+    expect(claimFormSource).toContain("Creating your workspace");
+    expect(claimFormSource).not.toContain("setTimeout");
+    expect(claimFormSource).not.toContain("percentage");
     expect(publicSource).toContain("c7-public-experience-header");
     expect(publicSource).toContain("Powered by Lenni");
     expect(publicSource).toContain("c7-public-preorder");
@@ -321,6 +340,9 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("Equipment");
     expect(html).toContain("Start here");
     expect(html).toContain("Open Equipment");
+    expect(html).toContain("Live workspace");
+    expect(html).toContain("This is your real workspace");
+    expect(html).not.toContain("needs your attention");
     expect(html).not.toContain("Customers");
   });
 
@@ -354,7 +376,7 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("/app/milkwomanfran/pages/overview");
   });
 
-  it("renders the proposal hierarchy without inventing capabilities", () => {
+  it("renders the owner-readable Workspace Map without inventing capabilities", () => {
     const html = renderToStaticMarkup(
       createElement(AcquisitionProposalCard, {
         proposal: {
@@ -387,16 +409,96 @@ describe("Lenni unified workspace presentation", () => {
       }),
     );
 
-    expect(html).toContain("Your plan");
-    expect(html).toContain("What Lenni will create");
-    expect(html).toContain("How it fits together");
-    expect(html).toContain("What you&#x27;ll see");
-    expect(html).toContain("Why this starting point");
-    expect(html).toContain("Not included yet");
+    expect(html).toContain("Your workspace map");
+    expect(html).toContain("The parts you&#x27;ll work with");
+    expect(html).toContain("How the work connects");
+    expect(html).toContain("This setup includes");
+    expect(html).toContain("Why this shape");
+    expect(html).toContain("Not included");
     expect(html).toContain("Reliable starting point");
-    expect(html).toContain("Create this workspace");
+    expect(html).toContain("Preview workspace");
+    expect(html).toContain("Something&#x27;s missing");
+    expect(html).toContain('aria-label="Journey orientation"');
+    expect(html).not.toContain("cardinality");
+    expect(html).not.toContain("source/target");
     expect(html).not.toContain("Print");
     expect(html).not.toContain("Archive");
+  });
+
+  it("keeps the accepted candidate visible without implying creation", () => {
+    const html = renderToStaticMarkup(
+      createElement(AcquisitionSetupSummary, {
+        model: {
+          checksum: "candidate-checksum",
+          pages: [{ key: "booking", title: "Book online" }],
+          tables: {
+            appointments: {
+              objectKey: "appointment",
+              objectLabel: "Appointments",
+            },
+            customers: {
+              objectKey: "customer",
+              objectLabel: "Customers",
+            },
+            pets: {
+              objectKey: "pet",
+              objectLabel: "Pets",
+            },
+          },
+          title: "A calmer booking workspace",
+        },
+        proposal: {
+          category: "appointments",
+          concepts: [
+            {
+              description: "People who book",
+              name: "Customers",
+              tracked_information: ["Name"],
+            },
+            {
+              description: "Work in the diary",
+              name: "Appointments",
+              tracked_information: ["Date"],
+            },
+          ],
+          connections: [{ text: "Each Customer has Appointments" }],
+          first_step: "Review the diary.",
+          landing_page_key: "today",
+          not_included: [],
+          pages: [],
+          schema_version: 1,
+          source: "tailored",
+          title: "A calmer booking workspace",
+          understanding: "You need customers and appointments kept together.",
+          views: [{ description: "Today", name: "Today" }],
+          why: "It keeps the day clear.",
+        },
+      } as never),
+    );
+
+    expect(html).toContain("Setup ready to save");
+    expect(html).toContain("A calmer booking workspace");
+    expect(html).toContain("Customers");
+    expect(html).toContain("Appointments");
+    expect(html).toContain("Pets");
+    expect(html).toContain("temporary");
+    expect(html).not.toContain("created successfully");
+  });
+
+  it("keeps preview routes in one shell and fills mobile Record context", () => {
+    const shellSource = readFileSync(
+      new URL("../src/components/app-shell.tsx", import.meta.url),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(shellSource).toContain('pathname.startsWith("/start/preview/")');
+    expect(shellSource).toContain("app-frame candidate-frame");
+    expect(cssSource).toContain(".candidate-preview-page .editor-record-panel");
+    expect(cssSource).toContain("height: 100dvh");
   });
 
   it("keeps acquisition availability and account continuity explicit", () => {
@@ -413,8 +515,11 @@ describe("Lenni unified workspace presentation", () => {
       "utf8",
     );
 
-    expect(startSource).toContain("Tell Lenni about your business");
-    expect(startSource).toContain("What best describes the work?");
+    expect(startSource).toContain(
+      "Build the system your business actually needs",
+    );
+    expect(startSource).toContain("What kind of work is closest?");
+    expect(startSource).toContain('submitLabel="Start with Lenni"');
     expect(startSource).toContain("state");
     expect(startSource).toContain("Start again");
     expect(actionSource).toContain('"proposal_limit_reached"');
@@ -692,5 +797,64 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("← Back");
     expect(html).toContain(">Beth Smith</button>");
     expect(html).not.toContain("/app/bakery/workspace/customers/");
+  });
+
+  it("uses owner-readable, read-only language in preview Record context", () => {
+    const html = renderToStaticMarkup(
+      createElement(RecordPanel, {
+        columns: [
+          {
+            key: "name",
+            label: "Name",
+            kind: "text",
+            primary: true,
+            editable: false,
+            width: 180,
+          },
+          {
+            key: "customer",
+            label: "Customer",
+            kind: "connection",
+            editable: false,
+            width: 180,
+            connection: {
+              relationshipKey: "customer",
+              direction: "source",
+              multiple: false,
+              targetObjectKey: "customer",
+              targetViewKey: "customers",
+            },
+          },
+        ],
+        onClose: () => undefined,
+        onCommitCell: () => undefined,
+        recordTypeLabel: "Appointment",
+        row: {
+          id: "30000000-0000-4000-8000-000000000001",
+          values: {
+            name: "Milo · Full groom",
+            customer: ["40000000-0000-4000-8000-000000000001"],
+          },
+          connectionValues: {
+            customer: [
+              {
+                id: "40000000-0000-4000-8000-000000000001",
+                label: "Sarah Evans",
+              },
+            ],
+          },
+        },
+        statusLabel: "Read-only preview",
+        tableName: "Appointments",
+      } as never),
+    );
+
+    expect(html).toContain("Read-only preview");
+    expect(html).toContain("Also shows on");
+    expect(html).toContain("Connected example information");
+    expect(html).toContain("Related information");
+    expect(html).toContain("Sarah Evans");
+    expect(html).not.toContain("Several records");
+    expect(html).not.toContain("Remove Sarah Evans");
   });
 });

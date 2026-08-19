@@ -36,8 +36,9 @@ const capabilities: EditorCapabilities = {
 };
 
 export function CandidateTableWorkspace({
+  recordTypeLabel,
   table,
-}: Readonly<{ table: EditorTable }>): ReactNode {
+}: Readonly<{ recordTypeLabel: string; table: EditorTable }>): ReactNode {
   const actions = useMemo<ProductionTableAdapterActions>(() => {
     const openRecord: ProductionRecordReadAction = async ({ recordId }) => ({
       status: "success",
@@ -68,9 +69,10 @@ export function CandidateTableWorkspace({
     <ProductionTableWorkspace
       actions={actions}
       capabilities={capabilities}
+      panelStatusLabel="Read-only preview"
       readOnly
       recordCountLabel={`${table.rows.length} example Records`}
-      recordTypeLabel="Record"
+      recordTypeLabel={recordTypeLabel}
       surface="embedded"
       table={table}
     />

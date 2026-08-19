@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   displayEditorValue,
@@ -15,6 +15,7 @@ interface RecordPanelProps {
   columns: readonly EditorColumn[];
   fullRecordPath?: string;
   recordTypeLabel?: string;
+  statusLabel?: string;
   row: EditorRow;
   tableName: string;
   onBack?: (() => void) | undefined;
@@ -217,6 +218,7 @@ export function RecordPanel({
   fullRecordPath,
   recordTypeLabel,
   row,
+  statusLabel,
   tableName,
   onBack,
   onClose,
@@ -227,6 +229,7 @@ export function RecordPanel({
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
   const propertyColumns = columns.filter(
     (column) => column.kind !== "connection",
@@ -240,6 +243,14 @@ export function RecordPanel({
   const fullRecordHref = fullRecordPath
     ? `${fullRecordPath}/${encodeURIComponent(row.id)}`
     : undefined;
+
+  useEffect(() => {
+    if (!statusLabel) return;
+    const frame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [row.id, statusLabel]);
 
   const updateDraft = (columnKey: string, value: EditorValue): void => {
     setDraftValues((current) => ({ ...current, [columnKey]: value }));
@@ -279,6 +290,9 @@ export function RecordPanel({
               ← Back
             </button>
           ) : null}
+          {statusLabel ? (
+            <span className="editor-record-preview-status">{statusLabel}</span>
+          ) : null}
           <h2>{recordTitle}</h2>
           <p className="editor-panel-table-name">
             {recordTypeLabel ?? tableName} record
@@ -288,6 +302,7 @@ export function RecordPanel({
           aria-label="Close record panel"
           className="editor-panel-close"
           onClick={onClose}
+          ref={closeButtonRef}
           type="button"
         >
           ×
@@ -351,14 +366,19 @@ export function RecordPanel({
         })}
       </div>
       {connectionColumns.length > 0 ? (
-        <section aria-label="Connections" className="editor-record-connections">
+        <section
+          aria-label={statusLabel ? "Also shows on" : "Connections"}
+          className="editor-record-connections"
+        >
           <div className="editor-record-connections-heading">
             <div>
               <p className="editor-record-section-eyebrow">Related work</p>
-              <h3>Connections</h3>
+              <h3>{statusLabel ? "Also shows on" : "Connections"}</h3>
             </div>
             <p className="editor-record-connections-help">
-              Link related records and keep them in context.
+              {statusLabel
+                ? "Connected example information is shown here for context."
+                : "Link related records and keep them in context."}
             </p>
           </div>
           <div className="editor-record-connection-list" role="list">
@@ -382,9 +402,11 @@ export function RecordPanel({
                       {column.label}
                     </span>
                     <span className="editor-record-connection-mode">
-                      {column.connection?.multiple
-                        ? "Several records"
-                        : "One record"}
+                      {statusLabel
+                        ? "Related information"
+                        : column.connection?.multiple
+                          ? "Several records"
+                          : "One record"}
                     </span>
                     {labels.length > 0 ? (
                       <div

@@ -2,7 +2,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { signIn } from "../../auth/actions";
+import { AcquisitionSetupSummary } from "../../components/acquisition-setup-summary";
 import { Notice } from "../../components/notice";
+import {
+  buildCandidatePreviewModel,
+  candidateChecksum,
+} from "../../core/acquisition/preview";
+import { loadAcquisitionSession } from "../../core/acquisition/service";
 import { readSearchParam, type SearchParams } from "../../lib/search-params";
 
 interface SignInPageProps {
@@ -21,19 +27,50 @@ export default async function SignInPage({
     ? `/sign-up?returnTo=${encodeURIComponent(returnTo)}`
     : "/sign-up";
   const isAcquisitionClaim = returnTo === "/start/business";
+  const acquisitionSession = isAcquisitionClaim
+    ? await loadAcquisitionSession()
+    : null;
+  const candidateRevision = Math.max(
+    1,
+    acquisitionSession?.row.proposal_count ?? 1,
+  );
+  const acceptedPayload =
+    acquisitionSession?.payload &&
+    !acquisitionSession.expired &&
+    acquisitionSession.row.accepted_at &&
+    acquisitionSession.row.accepted_candidate_checksum ===
+      candidateChecksum(acquisitionSession.payload, candidateRevision)
+      ? acquisitionSession.payload
+      : null;
+  const acceptedProposal = acceptedPayload?.proposal ?? null;
+  const acceptedModel = acceptedPayload
+    ? buildCandidatePreviewModel(acceptedPayload, candidateRevision)
+    : null;
 
   return (
-    <main className="narrow-page c7-auth-page">
+    <main
+      className={`narrow-page c7-auth-page${acceptedProposal ? " acquisition-auth-page" : ""}`}
+    >
+      {acceptedProposal && acceptedModel ? (
+        <AcquisitionSetupSummary
+          model={acceptedModel}
+          proposal={acceptedProposal}
+        />
+      ) : null}
       <section className="panel c7-auth-panel">
         <p className="eyebrow">Welcome back</p>
-        <h1 className="page-title">Sign in</h1>
+        <h1 className="page-title">
+          {isAcquisitionClaim ? "Sign in to save your setup" : "Sign in"}
+        </h1>
         <p className="muted">
           {isAcquisitionClaim
-            ? "Sign in to save the workspace you just reviewed."
+            ? "Your accepted workspace is ready to continue after sign-in."
             : "Access the businesses you work with."}
         </p>
         <p className="c7-auth-note">
-          Your access follows your account and each business role you hold.
+          {isAcquisitionClaim
+            ? "Signing in does not create the Business. You will confirm Business basics next."
+            : "Your access follows your account and each business role you hold."}
         </p>
 
         {error ? <Notice kind="error">{error}</Notice> : null}
@@ -58,12 +95,12 @@ export default async function SignInPage({
             />
           </label>
           <button type="submit">
-            {isAcquisitionClaim ? "Save workspace and sign in" : "Sign in"}
+            {isAcquisitionClaim ? "Sign in and continue" : "Sign in"}
           </button>
         </form>
 
         <p className="form-footer">
-          New to SMBOS? <Link href={signUpHref}>Create an account</Link>
+          New to Lenni? <Link href={signUpHref}>Create an account</Link>
         </p>
       </section>
     </main>

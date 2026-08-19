@@ -60,20 +60,34 @@ export default async function StartPage({
   const activeSession = session && !session.expired ? session : null;
   const activeProposal = activeSession?.payload?.proposal ?? null;
   const selectedCategory = categoryValue(activeProposal?.category);
+  const isClarifying =
+    activeSession?.clarification?.status === "awaiting_answer" &&
+    !activeProposal;
+  const isRefining = Boolean(
+    activeSession &&
+    activeProposal &&
+    fromPreview &&
+    activeSession.clarification,
+  );
+  const isPublicStart = !isClarifying && !activeProposal;
   emitAcquisitionEvent("public_build_viewed", {
     has_proposal: Boolean(activeProposal),
   });
 
   return (
     <main className="acquisition-page">
-      <section className="acquisition-hero" aria-labelledby="start-title">
-        <p className="eyebrow">Start with Lenni</p>
-        <h1 id="start-title">Tell Lenni about your business</h1>
-        <p>
-          Describe the work you run and Lenni will suggest a setup to get you
-          started
-        </p>
-      </section>
+      {isPublicStart ? (
+        <section className="acquisition-hero" aria-labelledby="start-title">
+          <p className="eyebrow">Start with Lenni</p>
+          <h1 id="start-title">
+            Build the system your business actually needs
+          </h1>
+          <p>
+            Describe your business in ordinary language. Lenni will shape a
+            workspace you can explore before you sign up.
+          </p>
+        </section>
+      ) : null}
 
       {error ? (
         <section
@@ -98,15 +112,14 @@ export default async function StartPage({
         </Notice>
       ) : null}
 
-      {activeSession?.clarification?.status === "awaiting_answer" &&
-      !activeProposal ? (
+      {isClarifying && activeSession?.clarification ? (
         <AcquisitionConversation
           request={activeSession.row.request_text ?? ""}
           state={activeSession.clarification}
         />
-      ) : activeSession &&
+      ) : isRefining &&
+        activeSession &&
         activeProposal &&
-        fromPreview &&
         activeSession.clarification ? (
         <AcquisitionRefinement
           request={activeSession.row.request_text ?? ""}
@@ -116,39 +129,36 @@ export default async function StartPage({
       ) : activeProposal ? (
         <>
           <AcquisitionProposalCard proposal={activeProposal} />
-          <section
-            id="revise"
-            className="acquisition-revise"
-            aria-labelledby="revise-title"
-          >
-            <div>
-              <p className="acquisition-section-label" id="revise-title">
-                Want to change the starting point?
-              </p>
+          <details className="acquisition-restart" id="revise">
+            <summary>Start again with a different description</summary>
+            <div className="acquisition-restart-content">
               <p>
-                Update your description and Lenni will prepare one more version.
+                This prepares a new starting point. To adjust this candidate,
+                choose Something&apos;s missing above instead.
               </p>
+              <ProposalForm
+                defaultCategory={selectedCategory}
+                defaultRequest={activeSession?.row.request_text ?? ""}
+                formKey="revise"
+                submitLabel="Prepare new starting point"
+              />
             </div>
-            <ProposalForm
-              defaultCategory={selectedCategory}
-              defaultRequest={activeSession?.row.request_text ?? ""}
-              formKey="revise"
-              submitLabel="Regenerate proposal"
-            />
-          </section>
+          </details>
         </>
       ) : (
         <ProposalForm
           defaultCategory="appointments"
           formKey="initial"
-          submitLabel="Start building"
+          submitLabel="Start with Lenni"
         />
       )}
 
-      <p className="acquisition-manual-route">
-        Prefer to shape things yourself?{" "}
-        <Link href="/sign-up">Build manually</Link>
-      </p>
+      {isPublicStart ? (
+        <p className="acquisition-manual-route">
+          Prefer to shape things yourself?{" "}
+          <Link href="/sign-up">Build manually</Link>
+        </p>
+      ) : null}
     </main>
   );
 }
@@ -165,9 +175,16 @@ function ProposalForm({
   submitLabel: string;
 }>): ReactNode {
   return (
-    <form action={createProposalAction} className="acquisition-form">
+    <form
+      action={createProposalAction}
+      className={`acquisition-form acquisition-form-${formKey}`}
+    >
       <fieldset>
-        <legend>What best describes the work?</legend>
+        <legend>What kind of work is closest?</legend>
+        <p className="acquisition-field-intro">
+          This cue helps Lenni choose a useful starting point. Your description
+          does the important work.
+        </p>
         <div className="acquisition-category-grid">
           {acquisitionCategoryOptions.map((option) => (
             <label className="acquisition-category-option" key={option.value}>
@@ -190,7 +207,7 @@ function ProposalForm({
 
       <PendingSubmitButton
         label={submitLabel}
-        pendingLabel="Preparing your starting point…"
+        pendingLabel="Shaping your workspace…"
         statusId={`acquisition-${formKey}-progress`}
       />
     </form>

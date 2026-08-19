@@ -58,7 +58,9 @@ export interface CandidatePreviewPage {
 export interface CandidatePreviewTable {
   viewKey: string;
   name: string;
+  objectKey: string;
   objectLabel: string;
+  recordTypeLabel: string;
   table: EditorTable;
 }
 
@@ -651,7 +653,9 @@ export function buildCandidatePreviewModel(
     tables[view.key] = {
       viewKey: view.key,
       name: view.name,
+      objectKey: object.operation.key,
       objectLabel: object.operation.plural_label,
+      recordTypeLabel: object.operation.singular_label,
       table,
     };
   }

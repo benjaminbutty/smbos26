@@ -37,11 +37,16 @@ const cssSource = readFileSync(
 describe("pre-reset Lenni UX hygiene contracts", () => {
   it("uses the approved public acquisition copy and token-backed option layout", () => {
     const normalizedStartSource = startSource.replace(/\s+/g, " ");
-    expect(startSource).toContain("Tell Lenni about your business");
-    expect(normalizedStartSource).toContain(
-      "Describe the work you run and Lenni will suggest a setup to get you started",
+    expect(startSource).toContain(
+      "Build the system your business actually needs",
     );
-    expect(startSource).toContain('submitLabel="Start building"');
+    expect(normalizedStartSource).toContain(
+      "Describe your business in ordinary language. Lenni will shape a workspace you can explore before you sign up.",
+    );
+    expect(startSource).toContain('submitLabel="Start with Lenni"');
+    expect(startSource).toContain(
+      "This cue helps Lenni choose a useful starting point",
+    );
     expect(startSource).toContain("Prefer to shape things yourself?");
     expect(acquisitionSource).toContain(
       "Track products and manually maintain stock information.",
