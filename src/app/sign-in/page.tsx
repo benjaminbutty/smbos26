@@ -4,7 +4,10 @@ import type { ReactNode } from "react";
 import { signIn } from "../../auth/actions";
 import { AcquisitionSetupSummary } from "../../components/acquisition-setup-summary";
 import { Notice } from "../../components/notice";
-import { candidateChecksum } from "../../core/acquisition/preview";
+import {
+  buildCandidatePreviewModel,
+  candidateChecksum,
+} from "../../core/acquisition/preview";
 import { loadAcquisitionSession } from "../../core/acquisition/service";
 import { readSearchParam, type SearchParams } from "../../lib/search-params";
 
@@ -27,24 +30,32 @@ export default async function SignInPage({
   const acquisitionSession = isAcquisitionClaim
     ? await loadAcquisitionSession()
     : null;
-  const acceptedProposal =
+  const candidateRevision = Math.max(
+    1,
+    acquisitionSession?.row.proposal_count ?? 1,
+  );
+  const acceptedPayload =
     acquisitionSession?.payload &&
     !acquisitionSession.expired &&
     acquisitionSession.row.accepted_at &&
     acquisitionSession.row.accepted_candidate_checksum ===
-      candidateChecksum(
-        acquisitionSession.payload,
-        Math.max(1, acquisitionSession.row.proposal_count),
-      )
-      ? acquisitionSession.payload.proposal
+      candidateChecksum(acquisitionSession.payload, candidateRevision)
+      ? acquisitionSession.payload
       : null;
+  const acceptedProposal = acceptedPayload?.proposal ?? null;
+  const acceptedModel = acceptedPayload
+    ? buildCandidatePreviewModel(acceptedPayload, candidateRevision)
+    : null;
 
   return (
     <main
       className={`narrow-page c7-auth-page${acceptedProposal ? " acquisition-auth-page" : ""}`}
     >
-      {acceptedProposal ? (
-        <AcquisitionSetupSummary proposal={acceptedProposal} />
+      {acceptedProposal && acceptedModel ? (
+        <AcquisitionSetupSummary
+          model={acceptedModel}
+          proposal={acceptedProposal}
+        />
       ) : null}
       <section className="panel c7-auth-panel">
         <p className="eyebrow">Welcome back</p>

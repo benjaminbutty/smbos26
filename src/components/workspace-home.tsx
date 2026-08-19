@@ -89,7 +89,7 @@ function EmptyWorkspaceHome({
 
         <div className="home-start-route home-start-ai">
           <p className="home-route-kicker">
-            <span aria-hidden="true">✦</span> Build with Lenni
+            <span aria-hidden="true">→</span> Build with Lenni
           </p>
           <h2>Tell Lenni what you need</h2>
           <p>
@@ -173,14 +173,19 @@ export function WorkspaceHome({
       aria-labelledby="workspace-home-title"
       className="tenant-content workspace-home-populated"
     >
-      <p className="eyebrow">Home</p>
-      <p className="home-greeting">Good morning, {greetingName}</p>
-      <h1 className="runtime-title" id="workspace-home-title">
-        {businessName}
-      </h1>
+      <header className="workspace-home-heading">
+        <div>
+          <p className="eyebrow">Home</p>
+          <p className="home-greeting">Good morning, {greetingName}</p>
+          <h1 className="runtime-title" id="workspace-home-title">
+            {businessName}
+          </h1>
+        </div>
+        <span className="workspace-live-status">Live workspace</span>
+      </header>
       <p className="home-lede">
-        Start with the work that needs your attention, then move through the
-        rest of your workspace.
+        This is your real workspace. Open a configured destination below to
+        review the setup and begin using it.
       </p>
 
       <section

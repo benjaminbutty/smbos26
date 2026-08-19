@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { acquisitionCategoryLabel } from "../../../core/acquisition/schemas";
-import { candidateChecksum } from "../../../core/acquisition/preview";
+import {
+  buildCandidatePreviewModel,
+  candidateChecksum,
+} from "../../../core/acquisition/preview";
 import { loadAcquisitionSession } from "../../../core/acquisition/service";
 import { requireAuthenticatedUser } from "../../../auth/authorization";
 import { createServerClient } from "../../../db/supabase/server";
@@ -38,16 +41,15 @@ export default async function BusinessSetupPage({
     );
   }
 
-  const proposal = session.payload?.proposal;
-  if (!proposal) {
+  const payload = session.payload;
+  const proposal = payload?.proposal;
+  if (!payload || !proposal) {
     redirect(
       "/start?error=Answer+Lenni%27s+questions+before+creating+a+workspace.&state=detail",
     );
   }
-  const currentChecksum = candidateChecksum(
-    session.payload,
-    Math.max(1, session.row.proposal_count),
-  );
+  const candidateRevision = Math.max(1, session.row.proposal_count);
+  const currentChecksum = candidateChecksum(payload, candidateRevision);
   if (
     session.row.accepted_candidate_checksum !== currentChecksum ||
     !session.row.accepted_at
@@ -56,6 +58,7 @@ export default async function BusinessSetupPage({
       "/start?from=preview&error=Choose+Use+this+setup+in+the+preview+before+creating+the+workspace.&state=detail",
     );
   }
+  const acceptedModel = buildCandidatePreviewModel(payload, candidateRevision);
   emitAcquisitionEvent("create_workspace_clicked", {
     category: proposal.category,
     source: proposal.source,
@@ -63,7 +66,11 @@ export default async function BusinessSetupPage({
   return (
     <main className="narrow-page acquisition-business-page">
       <div className="acquisition-business-layout">
-        <AcquisitionSetupSummary proposal={proposal} status="Accepted setup" />
+        <AcquisitionSetupSummary
+          model={acceptedModel}
+          proposal={proposal}
+          status="Accepted setup"
+        />
         <section className="panel acquisition-business-panel">
           <p className="eyebrow">Business basics</p>
           <h1 className="page-title">Create your real workspace</h1>

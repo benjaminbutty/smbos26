@@ -340,6 +340,9 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("Equipment");
     expect(html).toContain("Start here");
     expect(html).toContain("Open Equipment");
+    expect(html).toContain("Live workspace");
+    expect(html).toContain("This is your real workspace");
+    expect(html).not.toContain("needs your attention");
     expect(html).not.toContain("Customers");
   });
 
@@ -425,6 +428,25 @@ describe("Lenni unified workspace presentation", () => {
   it("keeps the accepted candidate visible without implying creation", () => {
     const html = renderToStaticMarkup(
       createElement(AcquisitionSetupSummary, {
+        model: {
+          checksum: "candidate-checksum",
+          pages: [{ key: "booking", title: "Book online" }],
+          tables: {
+            appointments: {
+              objectKey: "appointment",
+              objectLabel: "Appointments",
+            },
+            customers: {
+              objectKey: "customer",
+              objectLabel: "Customers",
+            },
+            pets: {
+              objectKey: "pet",
+              objectLabel: "Pets",
+            },
+          },
+          title: "A calmer booking workspace",
+        },
         proposal: {
           category: "appointments",
           concepts: [
@@ -458,8 +480,25 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("A calmer booking workspace");
     expect(html).toContain("Customers");
     expect(html).toContain("Appointments");
+    expect(html).toContain("Pets");
     expect(html).toContain("temporary");
     expect(html).not.toContain("created successfully");
+  });
+
+  it("keeps preview routes in one shell and fills mobile Record context", () => {
+    const shellSource = readFileSync(
+      new URL("../src/components/app-shell.tsx", import.meta.url),
+      "utf8",
+    );
+    const cssSource = readFileSync(
+      new URL("../src/app/globals.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(shellSource).toContain('pathname.startsWith("/start/preview/")');
+    expect(shellSource).toContain("app-frame candidate-frame");
+    expect(cssSource).toContain(".candidate-preview-page .editor-record-panel");
+    expect(cssSource).toContain("height: 100dvh");
   });
 
   it("keeps acquisition availability and account continuity explicit", () => {

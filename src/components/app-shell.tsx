@@ -19,6 +19,10 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
     return <div className="app-frame customer-frame">{children}</div>;
   }
 
+  if (pathname.startsWith("/start/preview/")) {
+    return <div className="app-frame candidate-frame">{children}</div>;
+  }
+
   const isLenniJourney = ["/start", "/sign-in", "/sign-up", "/onboarding"].some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );

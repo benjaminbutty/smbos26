@@ -11630,6 +11630,44 @@ textarea {
   background: var(--surface-canvas);
 }
 
+.candidate-preview-page .eyebrow {
+  color: var(--coral-700);
+}
+
+.candidate-preview-page .button,
+.candidate-preview-page button.button {
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+}
+
+.candidate-preview-page .button:hover,
+.candidate-preview-page button.button:hover {
+  color: var(--surface-base);
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+  filter: none;
+}
+
+.candidate-preview-page .button-secondary {
+  color: var(--text-secondary);
+  background: var(--surface-base);
+  border-color: var(--border-strong);
+}
+
+.candidate-preview-page .button-secondary:hover {
+  color: var(--coral-800);
+  background: var(--coral-50);
+  border-color: var(--coral-300);
+  filter: none;
+}
+
+.candidate-preview-page
+  :where(a, button, input, textarea, select, summary):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--coral-500) 55%, transparent);
+  outline-offset: 3px;
+}
+
 .lenni-public-frame .site-header {
   width: 100%;
   min-height: 4.5rem;
@@ -11640,6 +11678,9 @@ textarea {
 }
 
 .lenni-public-frame .brand {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
   font-size: 1.4rem;
   font-weight: 750;
   letter-spacing: -0.025em;
@@ -11705,7 +11746,7 @@ textarea {
 }
 
 .acquisition-field-intro {
-  margin: calc(-1 * var(--space-3)) 0 0;
+  margin: 0;
   color: var(--text-secondary);
   font-size: 0.82rem;
   line-height: 1.45;
@@ -11780,6 +11821,9 @@ textarea {
 }
 
 .acquisition-manual-route a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
   color: var(--coral-700);
 }
 
@@ -12318,7 +12362,7 @@ textarea {
   }
 }
 
-@media (max-width: 26rem) {
+@media (max-width: 22rem) {
   .acquisition-category-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -12993,6 +13037,7 @@ textarea {
     inset: 0;
     display: block;
     width: 100%;
+    height: 100dvh;
     min-width: 0;
     max-width: none;
     max-height: 100dvh;
@@ -13371,5 +13416,83 @@ textarea {
   .workspace-claim-indeterminate::after {
     display: none;
     animation: none;
+  }
+}
+
+/* Journey 1 visual convergence — VC4 real-workspace continuity. */
+.lenni-public-frame,
+.candidate-preview-page,
+.workspace-shell {
+  overflow-x: clip;
+}
+
+.workspace-home-heading {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.workspace-home-heading .eyebrow {
+  margin-bottom: var(--space-3);
+}
+
+.workspace-home-heading .home-greeting {
+  margin-bottom: var(--space-1);
+}
+
+.workspace-live-status {
+  display: inline-flex;
+  min-height: 1.8rem;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  color: var(--trust-live-applied-text);
+  background: var(--trust-live-applied-surface);
+  border: var(--border-width-thin) solid
+    color-mix(in srgb, var(--trust-live-applied-text) 18%, transparent);
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.workspace-home-populated > .home-lede {
+  max-width: 42rem;
+}
+
+.workspace-home-next {
+  border-color: var(--border-subtle);
+  border-top-color: var(--coral-600);
+  box-shadow: var(--elevation-subtle);
+}
+
+.workspace-home-card {
+  border-color: var(--border-subtle);
+  box-shadow: none;
+}
+
+.workspace-home-card:hover {
+  border-color: var(--coral-200);
+  box-shadow: var(--elevation-subtle);
+}
+
+.workspace-topbar .workspace-tell-lenni,
+.workspace-topbar .workspace-account {
+  min-height: 2.75rem;
+}
+
+.workspace-topbar .workspace-account {
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+@media (max-width: 48rem) {
+  .workspace-home-heading {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .workspace-live-status {
+    justify-self: start;
   }
 }

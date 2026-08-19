@@ -82,7 +82,7 @@ export function WorkspaceTopbar({
             className="workspace-tell-lenni"
             href={`/app/${encodeURIComponent(businessSlug)}/builder`}
           >
-            <span aria-hidden="true">✦</span>
+            <span aria-hidden="true">→</span>
             Tell Lenni
           </Link>
         ) : null}
