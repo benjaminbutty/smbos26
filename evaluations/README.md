@@ -1202,3 +1202,24 @@ production planning validator. The real custom-Location hard test remains;
 production validation, instructions, model policy, recovery and fallback are
 unchanged. The SHA's corpus is retained as historical failed evaluator
 evidence, not accepted launch evidence.
+
+The next exact 96-execution run at SHA
+`c0bcc8ab59336ef904e663de88290ce4ae990762` produced 94 first-pass tailored
+results, one recovered tailored result, one deterministic fallback, and no
+execution failure. The fallback occurred once in three electrician executions
+after `quality_cross_object_field_leakage` was correctly rejected and recovery
+returned `no_mechanical_repair_fields`; there was no systematic scenario
+failure. The aggregate nevertheless counted one hard failure solely because
+the shared eight-scenario evaluator marks every fallback `not_tailored`. That
+contradicted the product-corpus contract, which separately permits at most two
+fallbacks while requiring zero other hard-contract failures.
+
+Product-corpus accounting now removes only `not_tailored` from its hard-finding
+lane and retains every other hard invariant. Qualification and reliability
+remain unchanged: fallback is disabled there and cannot pass either hard gate.
+The product-corpus result itself now enforces at least 94 tailored executions
+after recovery, no more than two fallbacks, zero execution failures, zero other
+hard-contract failures, and no scenario failing all three repetitions. It also
+reports the requested first-pass, recovered, tailored-after-recovery and
+fallback rates directly. No production instruction, validator, model policy,
+recovery, quota, or fallback behaviour changed.

@@ -26,6 +26,8 @@ export const ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT =
 export const ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS =
   ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT *
   ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS;
+export const ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED = 94;
+export const ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK = 2;
 
 const productQualityScenario = {
   requiredConcepts: [],
@@ -103,6 +105,32 @@ function actualCost(inputTokens: number, outputTokens: number): number {
 
 function addCount(counts: Map<string, number>, key: string, amount = 1): void {
   counts.set(key, (counts.get(key) ?? 0) + amount);
+}
+
+export function acquisitionProductHardFindings(
+  findings: readonly string[],
+): string[] {
+  return findings.filter((finding) => finding !== "not_tailored");
+}
+
+export function acquisitionProductReliabilityPassed(input: {
+  tailored: number;
+  fallback: number;
+  executionFailures: number;
+  hardContractFailures: number;
+  systematicFailureScenarios: number;
+}): boolean {
+  return (
+    input.tailored >= ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED &&
+    input.fallback <= ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK &&
+    input.executionFailures === 0 &&
+    input.hardContractFailures === 0 &&
+    input.systematicFailureScenarios === 0
+  );
+}
+
+function rate(count: number, total: number): number {
+  return total === 0 ? 0 : Number((count / total).toFixed(6));
 }
 
 export async function runLiveAcquisitionProductReliability(
@@ -245,8 +273,8 @@ export async function runLiveAcquisitionProductReliability(
           } as AcquisitionEvaluationScenario,
           payload,
         );
-        hardPassed = evaluated.hard_passed;
-        hardFindings = evaluated.hard_findings;
+        hardFindings = acquisitionProductHardFindings(evaluated.hard_findings);
+        hardPassed = hardFindings.length === 0;
         outcome =
           payload.proposal.source === "fallback"
             ? "final_fallback"
@@ -288,16 +316,57 @@ export async function runLiveAcquisitionProductReliability(
   const hardContractFailureCount = reports.filter(
     (report) => !report.hard_contract_passed,
   ).length;
+  const firstPassTailoredCount = counts.get("first_pass_tailored") ?? 0;
+  const recoveredTailoredCount = counts.get("recovered_tailored") ?? 0;
+  const finalFallbackCount = counts.get("final_fallback") ?? 0;
+  const executionFailureCount = counts.get("execution_failed") ?? 0;
+  const tailoredCount = firstPassTailoredCount + recoveredTailoredCount;
+  const systematicFailureScenarioIds = acquisitionProductReliabilityScenarios
+    .filter((scenario) => {
+      const scenarioReports = reports.filter(
+        (report) => report.scenario_id === scenario.id,
+      );
+      return (
+        scenarioReports.length ===
+          ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS &&
+        scenarioReports.every(
+          (report) =>
+            !report.hard_contract_passed ||
+            report.outcome === "final_fallback" ||
+            report.outcome === "execution_failed",
+        )
+      );
+    })
+    .map(({ id }) => id);
+  const passed = acquisitionProductReliabilityPassed({
+    tailored: tailoredCount,
+    fallback: finalFallbackCount,
+    executionFailures: executionFailureCount,
+    hardContractFailures: hardContractFailureCount,
+    systematicFailureScenarios: systematicFailureScenarioIds.length,
+  });
   const summary = {
     gate: "product_reliability",
-    passed: hardContractFailureCount === 0,
+    passed,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,
-    first_pass_tailored_success_count: counts.get("first_pass_tailored") ?? 0,
-    recovered_tailored_success_count: counts.get("recovered_tailored") ?? 0,
-    final_fallback_count: counts.get("final_fallback") ?? 0,
-    execution_failure_count: counts.get("execution_failed") ?? 0,
+    first_pass_tailored_success_count: firstPassTailoredCount,
+    first_pass_tailored_success_rate: rate(
+      firstPassTailoredCount,
+      reports.length,
+    ),
+    recovered_tailored_success_count: recoveredTailoredCount,
+    recovered_tailored_success_rate: rate(
+      recoveredTailoredCount,
+      reports.length,
+    ),
+    tailored_after_recovery_count: tailoredCount,
+    tailored_after_recovery_rate: rate(tailoredCount, reports.length),
+    final_fallback_count: finalFallbackCount,
+    final_fallback_rate: rate(finalFallbackCount, reports.length),
+    execution_failure_count: executionFailureCount,
     hard_contract_failure_count: hardContractFailureCount,
+    systematic_failure_scenario_ids: systematicFailureScenarioIds,
     diagnostic_code_distribution: Object.fromEntries(
       [...diagnosticCounts.entries()].sort(([left], [right]) =>
         left.localeCompare(right),
