@@ -235,12 +235,11 @@ describe("acquisition hard-contract and product-quality policy", () => {
       code: "composition_invalid",
     });
     expect(result).toEqual({
-      hard_findings: [
-        "production_composition_failed:unknown:composition_invalid",
-      ],
+      hard_findings: ["production_composition_failed:unclassified"],
       quality_findings: [],
       hard_passed: false,
       quality_passed: true,
+      diagnostic_code: "unclassified",
     });
   });
 

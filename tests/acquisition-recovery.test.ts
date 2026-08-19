@@ -9,6 +9,7 @@ afterEach(() => {
 import type { AiExecutionResult } from "../src/ai/execution";
 import { AiExecutionError } from "../src/ai/errors";
 import type { AcquisitionExecutionCore } from "../src/ai/acquisition-planning/runtime";
+import { runAcquisitionHardGateScenario } from "../src/ai/evaluation/acquisition/live";
 import { generateCandidate } from "../src/core/acquisition/service";
 import { acquisitionBuildPayloadSchema } from "../src/core/acquisition/schemas";
 import { recoverAcquisitionCandidate } from "../src/core/acquisition/recovery";
@@ -21,6 +22,13 @@ import type { AcquisitionPlanningOutput } from "../src/ai/acquisition-planning/s
 
 const carpenterRequest =
   "I’m a carpenter who needs to be able to track ongoing jobs, quotes handed to customers, which quotes need following up and which workers are working on which job";
+
+const carpenterScenario = {
+  id: "deterministic_carpenter_hard_gate",
+  category: "jobs",
+  request: carpenterRequest,
+  requiredConcepts: [],
+} as const;
 
 const decisions = {
   onlineBooking: null,
@@ -221,6 +229,50 @@ function loggedEvents(
 }
 
 describe("bounded acquisition quality recovery", () => {
+  it("fails the hard gate when recovery fails instead of accepting fallback", async () => {
+    const execution = executionForPlan(
+      carpenterPlan({
+        crossObjectLeakage: true,
+        relationshipScalarDuplicate: true,
+      }),
+    );
+
+    const result = await runAcquisitionHardGateScenario(
+      carpenterScenario,
+      execution,
+    );
+
+    expect(result).toMatchObject({
+      hard_passed: false,
+      quality_passed: true,
+      hard_findings: [
+        "production_composition_failed:quality_relationship_scalar_duplication",
+      ],
+      diagnostic_code: "quality_relationship_scalar_duplication",
+    });
+    expect(execution.calls).toBe(1);
+  });
+
+  it("passes the hard gate only after recovery produces a fully valid tailored candidate", async () => {
+    const execution = executionForPlan(
+      carpenterPlan({ crossObjectLeakage: true }),
+    );
+
+    const result = await runAcquisitionHardGateScenario(
+      carpenterScenario,
+      execution,
+    );
+
+    expect(result).toMatchObject({
+      hard_passed: true,
+      quality_passed: true,
+      hard_findings: [],
+      quality_findings: [],
+    });
+    expect(result.diagnostic_code).toBeUndefined();
+    expect(execution.calls).toBe(1);
+  });
+
   it("repairs the carpenter cross-object identity leak and keeps one provider execution", async () => {
     const execution = executionForPlan(
       carpenterPlan({ crossObjectLeakage: true }),

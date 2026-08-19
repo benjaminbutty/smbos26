@@ -1,17 +1,20 @@
 import type { AiExecutionResult } from "../../execution";
-import { createAcquisitionAiRuntime } from "../../acquisition-planning/runtime";
+import {
+  createAcquisitionAiRuntime,
+  type AcquisitionExecutionCore,
+} from "../../acquisition-planning/runtime";
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
 import { openAiAcquisitionPlanningPolicy } from "../../policies";
-import {
-  ACQUISITION_MAX_WORKFLOW_COST_MICROUSD,
-  interpretAcquisitionRequest,
-} from "../../../core/acquisition/interpreter";
+import { ACQUISITION_MAX_WORKFLOW_COST_MICROUSD } from "../../../core/acquisition/interpreter";
+import type { AcquisitionCandidateDiagnosticCode } from "../../../core/acquisition/diagnostics";
+import { generateCandidate } from "../../../core/acquisition/service";
 import { composeStarterComposition } from "../../../core/acquisition/composer";
 import {
   ACQUISITION_EVALUATION_SCENARIO_COUNT,
   ACQUISITION_RELIABILITY_EXECUTIONS,
   ACQUISITION_RELIABILITY_REPETITIONS,
   acquisitionEvaluationScenarios,
+  type AcquisitionEvaluationScenario,
 } from "./scenarios";
 import {
   evaluateAcquisitionScenario,
@@ -37,6 +40,34 @@ function activated(environment: Environment, gate: Gate): boolean {
     environment.AI_PROVIDER === "openai" &&
     Boolean(environment.OPENAI_API_KEY?.trim())
   );
+}
+
+export async function runAcquisitionHardGateScenario(
+  scenario: AcquisitionEvaluationScenario,
+  execution: AcquisitionExecutionCore,
+) {
+  try {
+    const payload = await generateCandidate(
+      scenario.category,
+      scenario.request,
+      {
+        onlineBooking: null,
+        usesServices: null,
+        capacityPerSlot: 1,
+        publicEnquiry: null,
+      },
+      {
+        execution,
+        allowFallback: false,
+        allowRecovery: true,
+        emitEvent: () => undefined,
+        emitDiagnostic: () => undefined,
+      },
+    );
+    return evaluateAcquisitionScenario(scenario, payload);
+  } catch (error) {
+    return productionCompositionFailureResult(error);
+  }
 }
 
 export async function runLiveAcquisitionGate(
@@ -76,6 +107,7 @@ export async function runLiveAcquisitionGate(
     hard_findings: string[];
     quality_passed: boolean;
     quality_findings: string[];
+    diagnostic_code: AcquisitionCandidateDiagnosticCode | null;
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
@@ -102,17 +134,7 @@ export async function runLiveAcquisitionGate(
           return execution;
         },
       };
-      let result: ReturnType<typeof evaluateAcquisitionScenario>;
-      try {
-        const payload = await interpretAcquisitionRequest(
-          scenario.category,
-          scenario.request,
-          tracked,
-        );
-        result = evaluateAcquisitionScenario(scenario, payload);
-      } catch (error) {
-        result = productionCompositionFailureResult(error);
-      }
+      const result = await runAcquisitionHardGateScenario(scenario, tracked);
       reports.push({
         scenario_id: scenario.id,
         repetition,
@@ -122,6 +144,7 @@ export async function runLiveAcquisitionGate(
         hard_findings: result.hard_findings,
         quality_passed: result.quality_passed,
         quality_findings: result.quality_findings,
+        diagnostic_code: result.diagnostic_code ?? null,
       });
     }
   }
