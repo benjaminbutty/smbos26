@@ -14,19 +14,12 @@ import {
 
 describe("acquisition product-reliability corpus", () => {
   it("keeps a broad frozen corpus separate from the eight-scenario contract", () => {
-    expect(
-      ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
-    ).toBeGreaterThanOrEqual(30);
+    expect(ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT).toBe(32);
     expect(
       new Set(acquisitionProductReliabilityScenarios.map(({ id }) => id)).size,
     ).toBe(acquisitionProductReliabilityScenarios.length);
-    expect(ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS).toBeGreaterThanOrEqual(
-      2,
-    );
-    expect(ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS).toBe(
-      ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT *
-        ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS,
-    );
+    expect(ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS).toBe(3);
+    expect(ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS).toBe(96);
     expect(acquisitionProductReliabilityScenarios).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

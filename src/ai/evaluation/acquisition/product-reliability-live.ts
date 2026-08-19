@@ -113,10 +113,11 @@ export async function runLiveAcquisitionProductReliability(
   }
 
   if (
-    ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT < 30 ||
+    ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT !== 32 ||
     new Set(acquisitionProductReliabilityScenarios.map(({ id }) => id)).size !==
       ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT ||
-    ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS < 2
+    ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS !== 3 ||
+    ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS !== 96
   ) {
     throw new Error("Acquisition product-reliability corpus preflight failed.");
   }

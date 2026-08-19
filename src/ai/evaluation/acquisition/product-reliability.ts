@@ -121,6 +121,12 @@ export const acquisitionProductReliabilityScenarios = Object.freeze([
       "I make pottery to order and need customers, pieces, custom requests, prices and the work still to be finished kept together.",
   },
   {
+    id: "local_food_wholesaler",
+    category: "products",
+    request:
+      "I run a small food wholesaler and need products, suppliers, trade customers, orders and stock that needs replenishing organised.",
+  },
+  {
     id: "bike_repair_workshop",
     category: "jobs",
     request:
