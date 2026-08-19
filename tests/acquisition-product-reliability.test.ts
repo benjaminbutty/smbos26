@@ -7,8 +7,10 @@ import {
   ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS,
 } from "../src/ai/evaluation/acquisition/product-reliability";
 import {
+  acquisitionProductOutcome,
   acquisitionProductHardFindings,
   acquisitionProductReliabilityPassed,
+  assertAcquisitionProductReliabilityCorpus,
   ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS,
   ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK,
   ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED,
@@ -35,6 +37,59 @@ describe("acquisition product-reliability corpus", () => {
         }),
       ]),
     );
+    expect(() => assertAcquisitionProductReliabilityCorpus()).not.toThrow();
+  });
+
+  it("rejects duplicate request text as well as duplicate scenario IDs", () => {
+    const duplicateRequest = acquisitionProductReliabilityScenarios.map(
+      (scenario, index) =>
+        index === 1
+          ? {
+              ...scenario,
+              request: acquisitionProductReliabilityScenarios[0].request,
+            }
+          : scenario,
+    );
+    expect(() =>
+      assertAcquisitionProductReliabilityCorpus(duplicateRequest),
+    ).toThrow("Acquisition product-reliability corpus preflight failed.");
+
+    const duplicateId = acquisitionProductReliabilityScenarios.map(
+      (scenario, index) =>
+        index === 1
+          ? { ...scenario, id: acquisitionProductReliabilityScenarios[0].id }
+          : scenario,
+    );
+    expect(() =>
+      assertAcquisitionProductReliabilityCorpus(duplicateId),
+    ).toThrow("Acquisition product-reliability corpus preflight failed.");
+  });
+
+  it("never classifies canonicalised tailored output as raw first-pass", () => {
+    expect(acquisitionProductOutcome("tailored", [])).toBe(
+      "raw_first_pass_tailored",
+    );
+    expect(
+      acquisitionProductOutcome("tailored", [
+        "precomposition_canonicalisation_applied",
+      ]),
+    ).toBe("precomposition_canonicalised_tailored");
+    expect(acquisitionProductOutcome("tailored", ["repair_succeeded"])).toBe(
+      "postcomposition_recovered_tailored",
+    );
+    expect(
+      acquisitionProductOutcome("tailored", [
+        "precomposition_canonicalisation_applied",
+        "repair_succeeded",
+      ]),
+    ).toBe(
+      "precomposition_canonicalised_and_postcomposition_recovered_tailored",
+    );
+    expect(
+      acquisitionProductOutcome("fallback", [
+        "precomposition_canonicalisation_applied",
+      ]),
+    ).toBe("final_fallback");
   });
 
   it("keeps fallback separate from other product-corpus hard findings", () => {

@@ -478,6 +478,7 @@ export async function generateCandidate(
   const emitDiagnostic =
     options.emitDiagnostic ?? emitAcquisitionCandidateDiagnostic;
   const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
+  let precompositionCanonicalisedFieldCount = 0;
 
   const fallback = (): AcquisitionBuildPayload => {
     const starter = composeStarterComposition(category, request);
@@ -595,7 +596,18 @@ export async function generateCandidate(
       category,
       enrichedRequest,
       options.execution,
-      { validate: false },
+      {
+        validate: false,
+        onCanonicalisation: ({ removedFieldCount }) => {
+          precompositionCanonicalisedFieldCount = removedFieldCount;
+          if (emitFirstPassSuccess) {
+            emitEvent("precomposition_canonicalisation_applied", {
+              category,
+              removed_field_count: removedFieldCount,
+            });
+          }
+        },
+      },
     );
   } catch (error) {
     emitDiagnostic(error, "candidate_generation", {
@@ -652,6 +664,7 @@ export async function generateCandidate(
       successfulRecovery = null;
     } else if (
       emitFirstPassSuccess &&
+      precompositionCanonicalisedFieldCount === 0 &&
       validated.proposal.source === "tailored"
     ) {
       emitEvent("first_pass_tailored_success", { category });

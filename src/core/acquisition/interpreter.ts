@@ -55,6 +55,9 @@ export class AcquisitionInterpretationError extends Error {
 
 export type AcquisitionInterpretationOptions = Readonly<{
   validate?: boolean;
+  onCanonicalisation?: (
+    metadata: Readonly<{ removedFieldCount: number }>,
+  ) => void;
 }>;
 
 function connectionLabelsForPlan(
@@ -261,9 +264,10 @@ function composeDraft(plan: AcquisitionReadyPlan) {
   return { readyPlan, draft };
 }
 
-function canonicaliseAcquisitionPlan(
-  plan: AcquisitionReadyPlan,
-): AcquisitionReadyPlan {
+function canonicaliseAcquisitionPlan(plan: AcquisitionReadyPlan): Readonly<{
+  plan: AcquisitionReadyPlan;
+  removedFieldCount: number;
+}> {
   const tables = plan.tables.map((table) => ({
     ...table,
     fields: removeSemanticallyRedundantIdentityFields(
@@ -301,13 +305,14 @@ function canonicaliseAcquisitionPlan(
     relatedTablesByReference.set(target.reference, targetRelated);
   }
 
-  return {
+  const canonicalisedPlan = {
     ...plan,
     tables: tables.map((table) => {
       const relatedTables = relatedTablesByReference.get(table.reference);
       if (!relatedTables?.size) return table;
       const retainedFields = table.fields.filter(
         (field) =>
+          field.required ||
           ![...relatedTables].some((related) =>
             isMechanicallyRedundantCrossObjectIdentityField(field, {
               key: related.reference,
@@ -321,6 +326,18 @@ function canonicaliseAcquisitionPlan(
         fields: retainedFields.length > 0 ? retainedFields : table.fields,
       };
     }),
+  };
+  const originalFieldCount = plan.tables.reduce(
+    (total, table) => total + table.fields.length,
+    0,
+  );
+  const canonicalFieldCount = canonicalisedPlan.tables.reduce(
+    (total, table) => total + table.fields.length,
+    0,
+  );
+  return {
+    plan: canonicalisedPlan,
+    removedFieldCount: originalFieldCount - canonicalFieldCount,
   };
 }
 
@@ -455,7 +472,13 @@ export async function interpretAcquisitionRequest(
       "needs_more_detail",
       parsedPlan.revision_prompt,
     );
-  const plan = canonicaliseAcquisitionPlan(parsedPlan);
+  const canonicalisation = canonicaliseAcquisitionPlan(parsedPlan);
+  const plan = canonicalisation.plan;
+  if (canonicalisation.removedFieldCount > 0) {
+    options.onCanonicalisation?.({
+      removedFieldCount: canonicalisation.removedFieldCount,
+    });
+  }
   const { readyPlan, draft } = composeDraft(plan);
   const taskInput = {
     schema_version: 1 as const,

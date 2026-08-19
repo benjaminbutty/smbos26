@@ -19,6 +19,7 @@ import type { AcquisitionEvaluationScenario } from "./scenarios";
 import {
   acquisitionProductReliabilityScenarios,
   ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS,
+  type AcquisitionProductReliabilityScenario,
 } from "./product-reliability";
 
 export const ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT =
@@ -39,16 +40,18 @@ export type AcquisitionProductReliabilityEnvironment = Readonly<{
   OPENAI_API_KEY?: string | undefined;
 }>;
 
-type ProductOutcome =
-  | "first_pass_tailored"
-  | "recovered_tailored"
+export type AcquisitionProductOutcome =
+  | "raw_first_pass_tailored"
+  | "precomposition_canonicalised_tailored"
+  | "postcomposition_recovered_tailored"
+  | "precomposition_canonicalised_and_postcomposition_recovered_tailored"
   | "final_fallback"
   | "execution_failed";
 
 type ProductReport = Readonly<{
   scenario_id: string;
   repetition: number;
-  outcome: ProductOutcome;
+  outcome: AcquisitionProductOutcome;
   hard_contract_passed: boolean;
   hard_findings: readonly string[];
   diagnostic_codes: readonly string[];
@@ -129,6 +132,47 @@ export function acquisitionProductReliabilityPassed(input: {
   );
 }
 
+function normaliseCorpusRequest(value: string): string {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("en");
+}
+
+export function assertAcquisitionProductReliabilityCorpus(
+  scenarios: readonly AcquisitionProductReliabilityScenario[] = acquisitionProductReliabilityScenarios,
+  repetitions: number = ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS,
+): void {
+  if (
+    scenarios.length !== 32 ||
+    new Set(scenarios.map(({ id }) => id)).size !== scenarios.length ||
+    new Set(scenarios.map(({ request }) => normaliseCorpusRequest(request)))
+      .size !== scenarios.length ||
+    repetitions !== 3 ||
+    scenarios.length * repetitions !== 96
+  ) {
+    throw new Error("Acquisition product-reliability corpus preflight failed.");
+  }
+}
+
+export function acquisitionProductOutcome(
+  source: "tailored" | "fallback",
+  eventNames: readonly AcquisitionEventName[],
+): Exclude<AcquisitionProductOutcome, "execution_failed"> {
+  if (source === "fallback") return "final_fallback";
+  const canonicalised = eventNames.includes(
+    "precomposition_canonicalisation_applied",
+  );
+  const recovered = eventNames.includes("repair_succeeded");
+  if (canonicalised && recovered) {
+    return "precomposition_canonicalised_and_postcomposition_recovered_tailored";
+  }
+  if (canonicalised) return "precomposition_canonicalised_tailored";
+  if (recovered) return "postcomposition_recovered_tailored";
+  return "raw_first_pass_tailored";
+}
+
 function rate(count: number, total: number): number {
   return total === 0 ? 0 : Number((count / total).toFixed(6));
 }
@@ -140,15 +184,7 @@ export async function runLiveAcquisitionProductReliability(
     return { ran: false, passed: false } as const;
   }
 
-  if (
-    ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT !== 32 ||
-    new Set(acquisitionProductReliabilityScenarios.map(({ id }) => id)).size !==
-      ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT ||
-    ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS !== 3 ||
-    ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS !== 96
-  ) {
-    throw new Error("Acquisition product-reliability corpus preflight failed.");
-  }
+  assertAcquisitionProductReliabilityCorpus();
 
   const runtime = createAcquisitionAiRuntime({
     AI_PROVIDER: "openai",
@@ -247,7 +283,7 @@ export async function runLiveAcquisitionProductReliability(
         );
       };
 
-      let outcome: ProductOutcome;
+      let outcome: AcquisitionProductOutcome;
       let hardPassed: boolean;
       let hardFindings: readonly string[];
       try {
@@ -275,12 +311,10 @@ export async function runLiveAcquisitionProductReliability(
         );
         hardFindings = acquisitionProductHardFindings(evaluated.hard_findings);
         hardPassed = hardFindings.length === 0;
-        outcome =
-          payload.proposal.source === "fallback"
-            ? "final_fallback"
-            : eventNames.includes("repair_succeeded")
-              ? "recovered_tailored"
-              : "first_pass_tailored";
+        outcome = acquisitionProductOutcome(
+          payload.proposal.source,
+          eventNames,
+        );
       } catch (error) {
         const usage = failureUsage(error);
         outcome = "execution_failed";
@@ -316,11 +350,22 @@ export async function runLiveAcquisitionProductReliability(
   const hardContractFailureCount = reports.filter(
     (report) => !report.hard_contract_passed,
   ).length;
-  const firstPassTailoredCount = counts.get("first_pass_tailored") ?? 0;
-  const recoveredTailoredCount = counts.get("recovered_tailored") ?? 0;
+  const rawFirstPassTailoredCount = counts.get("raw_first_pass_tailored") ?? 0;
+  const precompositionCanonicalisedTailoredCount =
+    counts.get("precomposition_canonicalised_tailored") ?? 0;
+  const postcompositionRecoveredTailoredCount =
+    counts.get("postcomposition_recovered_tailored") ?? 0;
+  const combinedCanonicalisedAndRecoveredTailoredCount =
+    counts.get(
+      "precomposition_canonicalised_and_postcomposition_recovered_tailored",
+    ) ?? 0;
   const finalFallbackCount = counts.get("final_fallback") ?? 0;
   const executionFailureCount = counts.get("execution_failed") ?? 0;
-  const tailoredCount = firstPassTailoredCount + recoveredTailoredCount;
+  const tailoredCount =
+    rawFirstPassTailoredCount +
+    precompositionCanonicalisedTailoredCount +
+    postcompositionRecoveredTailoredCount +
+    combinedCanonicalisedAndRecoveredTailoredCount;
   const systematicFailureScenarioIds = acquisitionProductReliabilityScenarios
     .filter((scenario) => {
       const scenarioReports = reports.filter(
@@ -350,18 +395,31 @@ export async function runLiveAcquisitionProductReliability(
     passed,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,
-    first_pass_tailored_success_count: firstPassTailoredCount,
-    first_pass_tailored_success_rate: rate(
-      firstPassTailoredCount,
+    raw_first_pass_tailored_success_count: rawFirstPassTailoredCount,
+    raw_first_pass_tailored_success_rate: rate(
+      rawFirstPassTailoredCount,
       reports.length,
     ),
-    recovered_tailored_success_count: recoveredTailoredCount,
-    recovered_tailored_success_rate: rate(
-      recoveredTailoredCount,
+    precomposition_canonicalised_tailored_success_count:
+      precompositionCanonicalisedTailoredCount,
+    precomposition_canonicalised_tailored_success_rate: rate(
+      precompositionCanonicalisedTailoredCount,
       reports.length,
     ),
-    tailored_after_recovery_count: tailoredCount,
-    tailored_after_recovery_rate: rate(tailoredCount, reports.length),
+    postcomposition_recovered_tailored_success_count:
+      postcompositionRecoveredTailoredCount,
+    postcomposition_recovered_tailored_success_rate: rate(
+      postcompositionRecoveredTailoredCount,
+      reports.length,
+    ),
+    combined_canonicalised_and_recovered_tailored_success_count:
+      combinedCanonicalisedAndRecoveredTailoredCount,
+    combined_canonicalised_and_recovered_tailored_success_rate: rate(
+      combinedCanonicalisedAndRecoveredTailoredCount,
+      reports.length,
+    ),
+    final_tailored_success_count: tailoredCount,
+    final_tailored_success_rate: rate(tailoredCount, reports.length),
     final_fallback_count: finalFallbackCount,
     final_fallback_rate: rate(finalFallbackCount, reports.length),
     execution_failure_count: executionFailureCount,

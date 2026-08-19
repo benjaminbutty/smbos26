@@ -24,9 +24,10 @@ that mechanically duplicate a connected business area's identity. The chosen
 implementation is **A: deterministic normalization for mechanically redundant
 graph output**. It removes only the Fields identified by the existing quality
 rules. Exact cross-object identity Fields are canonicalised at the ready-plan
-boundary, before dependent Forms and Views are compiled; this is the earliest
-point where a model-marked required Field can be removed without mutating
-requiredness or repairing an already-composed surface. The existing
+boundary, before dependent Forms and Views are compiled, only when the Field is
+optional. A required Field is not pre-deleted: it continues to the authoritative
+validator and the existing recovery boundary, which refuses to remove it. The
+existing
 post-composition recovery remains responsible for the other allow-listed
 mechanical defects and updates dependent Forms, Views, and owner-readable
 tracked information. Neither path changes a Relationship, invents a
@@ -48,11 +49,19 @@ and a second quality failure for this case. The planner had produced an exact
 connected-object identity scalar but marked it required. Composition then
 compiled dependent surfaces, after which the deliberately conservative
 recovery could not remove the required Field. The smallest generic correction
-is therefore earlier plan canonicalisation using the same mechanical predicate
-as recovery. Richer related information such as a preferred contact name is
-not mechanically exact, remains in the candidate, and is still rejected by the
-unchanged authoritative validator. The canonicaliser also preserves the
+is earlier plan canonicalisation using the same mechanical predicate as
+recovery only for optional Fields. Required leakage must still fail closed; it
+cannot be made safe by silently discarding its requirement or making the
+Connection required. Richer related information such as a preferred contact
+name is not mechanically exact, remains in the candidate, and is still rejected
+by the unchanged authoritative validator. The canonicaliser also preserves the
 original Fields if removal would leave a business area with no Fields.
+
+Every actual pre-composition removal is surfaced as a bounded internal event
+containing only the removed-Field count. Product evidence reports raw
+first-pass, pre-composition canonicalised, post-composition recovered, combined
+canonicalised-and-recovered, fallback and execution-failure outcomes
+separately.
 
 No dedicated model repair task is introduced. That avoids a second acquisition
 subject, a second live qualification/reliability evidence track, and a second

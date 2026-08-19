@@ -1157,6 +1157,9 @@ allow-listed quality codes `cross_object_field_leakage`,
 removes only mechanically redundant non-required Fields, revalidates the full
 candidate, and otherwise uses the existing fallback. No second provider call,
 repair task, quota reservation, migration, or persistent telemetry is added.
+Pre-composition canonicalisation likewise removes only optional exact
+cross-object identity Fields. Required leakage reaches validation and fails
+closed when recovery refuses it.
 
 The engineering-only product-reliability corpus is intentionally separate from
 the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
@@ -1169,12 +1172,15 @@ AI_PROVIDER=openai OPENAI_API_KEY=... \
 npm run eval:acquisition-product-reliability-live
 ```
 
-Its redacted report includes scenario/execution counts, first-pass tailored
-successes, recovered tailored successes, final fallbacks, hard-contract
-failures, diagnostic-code distribution, attempts, token usage, estimated cost,
-and elapsed time. It does not print owner prompts, model prose, model output,
-provider bodies, or business data. Product targets are reported as evidence,
-not used to weaken deterministic validation or to replace the hard gates.
+Its redacted report includes scenario/execution counts, raw first-pass tailored
+successes, pre-composition canonicalised tailored successes, post-composition
+recovered tailored successes, combined correction outcomes, final fallbacks,
+hard-contract failures, diagnostic-code distribution, attempts, token usage,
+estimated cost, and elapsed time. It does not print owner prompts, model prose,
+model output, provider bodies, or business data. Product targets are reported
+as evidence, not used to weaken deterministic validation or to replace the hard
+gates. Preflight requires both unique scenario IDs and unique normalised request
+text.
 
 ### Journey 1 product-corpus alignment evidence
 
@@ -1218,8 +1224,8 @@ Product-corpus accounting now removes only `not_tailored` from its hard-finding
 lane and retains every other hard invariant. Qualification and reliability
 remain unchanged: fallback is disabled there and cannot pass either hard gate.
 The product-corpus result itself now enforces at least 94 tailored executions
-after recovery, no more than two fallbacks, zero execution failures, zero other
-hard-contract failures, and no scenario failing all three repetitions. It also
-reports the requested first-pass, recovered, tailored-after-recovery and
-fallback rates directly. No production instruction, validator, model policy,
-recovery, quota, or fallback behaviour changed.
+after deterministic correction, no more than two fallbacks, zero execution
+failures, zero other hard-contract failures, and no scenario failing all three
+repetitions. It reports raw first-pass, canonicalised, recovered, combined,
+final-tailored and fallback rates directly. No production instruction,
+validator, model policy, recovery, quota, or fallback behaviour changed.

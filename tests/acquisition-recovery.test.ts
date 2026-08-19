@@ -11,6 +11,7 @@ import { AiExecutionError } from "../src/ai/errors";
 import type { AcquisitionExecutionCore } from "../src/ai/acquisition-planning/runtime";
 import { runAcquisitionHardGateScenario } from "../src/ai/evaluation/acquisition/live";
 import { generateCandidate } from "../src/core/acquisition/service";
+import { interpretAcquisitionRequest } from "../src/core/acquisition/interpreter";
 import { acquisitionBuildPayloadSchema } from "../src/core/acquisition/schemas";
 import {
   attemptAcquisitionCandidateRecovery,
@@ -82,6 +83,7 @@ function carpenterPlan(
     crossObjectLeakageLabel?: string;
     crossObjectLeakageRequired?: boolean;
     relationshipScalarDuplicate?: boolean;
+    workerRoleOnJob?: boolean;
   } = {},
 ): AcquisitionPlanningOutput {
   const jobFields = [
@@ -98,6 +100,17 @@ function carpenterPlan(
             label: options.crossObjectLeakageLabel ?? "Customer name",
             field_type: "short_text" as const,
             required: options.crossObjectLeakageRequired ?? false,
+            options: null,
+            currency: null,
+          },
+        ]
+      : []),
+    ...(options.workerRoleOnJob
+      ? [
+          {
+            label: "Worker role",
+            field_type: "short_text" as const,
+            required: false,
             options: null,
             currency: null,
           },
@@ -315,12 +328,79 @@ describe("bounded acquisition quality recovery", () => {
     expect(execution.calls).toBe(1);
   });
 
-  it("canonicalises a required cross-object identity leak before dependent surfaces are compiled", async () => {
+  it("does not pre-delete a required exact cross-object identity Field", async () => {
     const execution = executionForPlan(
       carpenterPlan({
         crossObjectLeakage: true,
         crossObjectLeakageRequired: true,
       }),
+    );
+    const canonicalisations: number[] = [];
+
+    const payload = await interpretAcquisitionRequest(
+      "jobs",
+      carpenterRequest,
+      execution,
+      {
+        validate: false,
+        onCanonicalisation: ({ removedFieldCount }) => {
+          canonicalisations.push(removedFieldCount);
+        },
+      },
+    );
+
+    expect(execution.calls).toBe(1);
+    expect(
+      payload.operations.find(
+        (operation) =>
+          operation.op === "set_field" && operation.label === "Customer name",
+      ),
+    ).toMatchObject({ required: true });
+    expect(canonicalisations).toEqual([]);
+
+    const hardExecution = executionForPlan(
+      carpenterPlan({
+        crossObjectLeakage: true,
+        crossObjectLeakageRequired: true,
+      }),
+    );
+    await expect(
+      runAcquisitionHardGateScenario(carpenterScenario, hardExecution),
+    ).resolves.toMatchObject({
+      hard_passed: false,
+      diagnostic_code: "quality_cross_object_field_leakage",
+      recovery_failure_code: "required_field",
+    });
+    expect(hardExecution.calls).toBe(1);
+
+    const productionExecution = executionForPlan(
+      carpenterPlan({
+        crossObjectLeakage: true,
+        crossObjectLeakageRequired: true,
+      }),
+    );
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    await expect(
+      generateCandidate("jobs", carpenterRequest, decisions, {
+        execution: productionExecution,
+      }),
+    ).resolves.toMatchObject({ proposal: { source: "fallback" } });
+    expect(productionExecution.calls).toBe(1);
+    expect(loggedEvents(info)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "repair_failed",
+          recovery_failure_code: "required_field",
+        }),
+        expect.objectContaining({ event: "final_fallback" }),
+      ]),
+    );
+    info.mockRestore();
+  });
+
+  it("canonicalises an optional exact identity without reporting raw first-pass success", async () => {
+    const execution = executionForPlan(
+      carpenterPlan({ crossObjectLeakage: true }),
     );
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
@@ -340,25 +420,21 @@ describe("bounded acquisition quality recovery", () => {
           operation.op === "set_field" && operation.label === "Customer name",
       ),
     ).toBe(false);
-    const events = loggedEvents(info);
-    expect(events.map((event) => event.event)).toContain(
-      "first_pass_tailored_success",
-    );
-    expect(events.map((event) => event.event)).not.toContain(
-      "repair_attempted",
-    );
-    expect(events.map((event) => event.event)).not.toContain("final_fallback");
-    expect(events.map((event) => event.event)).not.toContain("proposal_failed");
+    const eventNames = loggedEvents(info).map((event) => event.event);
+    expect(eventNames).toContain("precomposition_canonicalisation_applied");
+    expect(eventNames).not.toContain("first_pass_tailored_success");
+    expect(eventNames).not.toContain("repair_attempted");
+    expect(eventNames).not.toContain("final_fallback");
     info.mockRestore();
   });
 
-  it("preserves richer related information and lets the validator reject it", async () => {
+  it("preserves richer related information for the authoritative validator", async () => {
     const result = await runAcquisitionHardGateScenario(
       carpenterScenario,
       executionForPlan(
         carpenterPlan({
           crossObjectLeakage: true,
-          crossObjectLeakageLabel: "Customer preferred contact name",
+          crossObjectLeakageLabel: "Customer site address",
         }),
       ),
     );
@@ -368,6 +444,24 @@ describe("bounded acquisition quality recovery", () => {
       diagnostic_code: "quality_cross_object_field_leakage",
       recovery_failure_code: "no_mechanical_repair_fields",
     });
+
+    const workerExecution = executionForPlan(
+      carpenterPlan({ workerRoleOnJob: true }),
+    );
+    const workerPayload = await generateCandidate(
+      "jobs",
+      carpenterRequest,
+      decisions,
+      { execution: workerExecution },
+    );
+    expect(workerPayload.proposal.source).toBe("tailored");
+    expect(
+      workerPayload.operations.some(
+        (operation) =>
+          operation.op === "set_field" && operation.label === "Worker role",
+      ),
+    ).toBe(true);
+    expect(workerExecution.calls).toBe(1);
   });
 
   it("returns a valid first-pass tailored candidate without recovery", async () => {
@@ -489,6 +583,15 @@ describe("bounded acquisition quality recovery", () => {
       status: "refused",
       failure_code: "no_mechanical_repair_fields",
     });
+    expect(
+      attemptAcquisitionCandidateRecovery(
+        starter,
+        new AcquisitionCandidateQualityError(
+          "duplicate_object_label",
+          "non-allow-listed test failure",
+        ),
+      ),
+    ).toEqual({ status: "not_applicable" });
 
     const semanticError = new AcquisitionCandidateQualityError(
       "semantically_redundant_field",

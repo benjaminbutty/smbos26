@@ -2957,12 +2957,21 @@ milk-round cross-object identity Field was mechanically recognisable but had
 been marked required: the hard failure was
 `quality_cross_object_field_leakage` and the finite recovery refusal was
 `required_field`. Because post-composition recovery must not delete a required
-Field or rewrite its compiled Forms and Views, the ready-plan canonicaliser now
-removes only an exact connected-object identity scalar before those dependent
-surfaces are compiled. It uses the same narrow mechanical predicate as
-recovery, leaves richer related information for the unchanged validator to
-reject, and preserves the original Fields rather than creating an empty
-business area. This is an ordering correction, not a broader repair rule.
+Field or rewrite its compiled Forms and Views, the ready-plan canonicaliser
+removes only an **optional** exact connected-object identity scalar before those
+dependent surfaces are compiled. A required scalar remains in the plan, reaches
+the unchanged validator and is refused by recovery, so normal orchestration
+fails closed to fallback. The canonicaliser uses the same narrow mechanical
+predicate as recovery, leaves richer related information for the unchanged
+validator to reject, and preserves the original Fields rather than creating an
+empty business area. It never makes a Connection required or treats an
+optional Connection as a substitute for a required scalar.
+
+Pre-composition removal emits only a finite event name and bounded removed-Field
+count. Evaluation distinguishes raw first-pass tailored output from
+pre-composition canonicalised output, post-composition recovered output, output
+using both deterministic corrections, fallback and execution failure. A
+canonicalised plan is never reported as raw first-pass.
 
 No model repair task, generic retry loop, new AI authority, new persistent
 state, database table, migration, quota reservation, or automatic configuration
