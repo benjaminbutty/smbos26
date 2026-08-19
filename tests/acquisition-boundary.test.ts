@@ -108,6 +108,18 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     );
   });
 
+  it("treats clear operational requests as enough for a minimal workspace", () => {
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "A clear business type plus a clear operational problem",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "Do not return needs_more_detail merely because the owner has not specified exact Fields",
+    );
+    expect(ACQUISITION_PLANNING_INSTRUCTION).toContain(
+      "Keep uncertain extras out and propose the smallest useful internal starting point.",
+    );
+  });
+
   it("drops prompt, customer and authoritative payload metadata", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     emitAcquisitionEvent("prompt_submitted", {
