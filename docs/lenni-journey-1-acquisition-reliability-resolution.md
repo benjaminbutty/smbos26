@@ -283,7 +283,7 @@ Trusted Luna pricing is used for both stages. No active J1 acquisition path
 uses Sol; the older Sol diagnostic profile is historical evidence only.
 
 The frozen code subject is
-`fbe079f3a0a0e6a4d6af6f3b3cb43f4cc9e736b0`. Focused policy tests and full
+`fbe079fec90d65c4d4aa7decaaefb5fff6ac0541`. Focused policy tests and full
 deterministic verification passed: format, typecheck, lint, 931 unit tests,
 build, migration immutability, clean reset, schema lint and the real
 integration suite (265 passed, 5 expected skips).

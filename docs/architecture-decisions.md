@@ -3327,7 +3327,7 @@ their existing profile. Deterministic verification passed format, typecheck,
 lint, 931 unit tests, build, migration immutability, clean migration reset,
 schema lint and the real integration suite (265 passed, 5 expected skips).
 The code/evaluation freeze for this subject is
-`fbe079f3a0a0e6a4d6af6f3b3cb43f4cc9e736b0`.
+`fbe079fec90d65c4d4aa7decaaefb5fff6ac0541`.
 
 The one authorised Luna/Luna acquisition qualification then ran once against
 the unchanged eight scenarios. All eight initial provider executions returned
