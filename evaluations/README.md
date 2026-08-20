@@ -1202,6 +1202,19 @@ business areas, while unavailable actions remain unsupported requirements. No
 scenario-specific rule, evaluator relaxation or unchanged-subject rerun was
 used.
 
+The next changed subject at exact SHA
+`7284491c42aad26b8fb0e2875add5444b74077ae` was also run once and not rerun.
+The unusual-business fixture then passed 3/3, but all three milk-round
+executions omitted the minimal inferred recurring-order/item structure: the
+hard boundary again passed 24/24 while the combined qualification passed
+21/24. Usage was 30,843 input tokens and 13,999 output tokens, estimated cost
+was 287,100 microusd, and elapsed time was 120,784 ms. The evidence showed that
+“explicitly named” had been treated as a ceiling. The final instruction
+clarification therefore states generically that explicit naming is a floor and
+that minimal inferred linking structures required for quantities, repeated
+activity and coherent Connections remain in scope. The unchanged subject was
+not rerun.
+
 The engineering-only product-reliability corpus is intentionally separate from
 the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
 descriptions, including the exact carpenter regression fixture, and runs three

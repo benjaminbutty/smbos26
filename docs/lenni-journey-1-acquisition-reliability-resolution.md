@@ -129,3 +129,14 @@ generically so each distinct reusable person or organisation, resource and
 operational event explicitly named by the owner remains a connected business
 area, while an unavailable action remains unsupported. This changes neither the
 scenario set nor any production validator or business-specific rule.
+
+The next changed subject at
+`7284491c42aad26b8fb0e2875add5444b74077ae` resolved the unusual-business
+finding 3/3 but passed the combined qualification only 21/24 because every
+milk-round correction omitted the minimal inferred recurring-order/item
+structure. Deterministic safety again passed 24/24, and the subject was not
+rerun. The instruction was clarified once more, generically: explicitly named
+concepts are a floor rather than a ceiling, and minimal inferred linking
+structures required for quantities, repeated activity and coherent Connections
+remain in scope. Failure of that changed subject requires a further product
+decision rather than continued prompt iteration.

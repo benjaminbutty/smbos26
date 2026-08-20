@@ -127,6 +127,8 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(correction).toContain(
       "each distinct reusable person or organisation",
     );
+    expect(correction).toContain("explicit naming is a floor, not a ceiling");
+    expect(correction).toContain("minimal inferred linking structure");
     expect(correction).toContain("through Connections");
     expect(acquisitionPlanningTaskV1.key).toBe("acquisition_workspace_plan_v1");
     expect(acquisitionRequiredIdentityCorrectionTaskV1).toMatchObject({
