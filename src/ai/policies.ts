@@ -76,11 +76,12 @@ export const ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY =
 
 // The active acquisition candidate is server-owned. Changing this profile is
 // an evaluated release decision, never an owner- or environment-controlled
-// setting.
-export const OPENAI_ACQUISITION_MODEL_KEY = OPENAI_LUNA_MODEL_KEY;
-export const OPENAI_ACQUISITION_REASONING_EFFORT = "max" as const;
-export const OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION = 200_000;
-export const OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION = 1_200_000;
+// setting. Candidate B is selected only after Candidate A's required gate
+// failed; all acquisition subjects remain unchanged.
+export const OPENAI_ACQUISITION_MODEL_KEY = OPENAI_SOL_MODEL_KEY;
+export const OPENAI_ACQUISITION_REASONING_EFFORT = "medium" as const;
+export const OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION = 5_000_000;
+export const OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION = 30_000_000;
 
 export const disabledExecutionPolicies = Object.freeze({
   bounded_structured_v1: Object.freeze({
