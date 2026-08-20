@@ -1161,14 +1161,33 @@ Pre-composition canonicalisation likewise removes only optional exact
 cross-object identity Fields. Required leakage reaches validation and fails
 closed when recovery refuses it.
 
-J1-R2 permits one second execution of the same planning task only when the
-first candidate fails `cross_object_field_leakage` and deterministic recovery
-refuses `required_field`. The second input contains the original enriched
-request and grounded context plus the finite correction reason
+J1-R2 permits one dedicated correction execution only when the first candidate
+fails `cross_object_field_leakage` and deterministic recovery refuses
+`required_field`. The first subject remains `acquisition_workspace_plan_v1`;
+correction uses `acquisition_required_identity_correction_v1` with its own
+`acquisition_required_identity_correction_terra_medium_v1` policy. The input
+contains the original enriched request and grounded context plus the finite reason
 `required_cross_object_identity_must_use_connection`; it never contains the
 invalid first output. Every other failure class keeps the one-call/fallback
 path. One owner submission still consumes one anonymous build reservation, and
 the hard maximum is two semantic planning executions.
+
+Before the full acquisition subject is rerun, the engineering-only correction
+qualification executes the frozen eight generic scenarios three times through
+the real correction task, composition, capability enhancement, deterministic
+validator and hard/product checks. It requires 24/24 and exactly 24 provider
+executions:
+
+```bash
+RUN_LIVE_OPENAI_ACQUISITION_CORRECTION_QUALIFICATION=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:acquisition-correction-qualification-live
+```
+
+The provider currently enforces `gpt-5.6-terra` with explicit medium reasoning
+for all structured tasks and does not expose per-task reasoning in the policy
+contract. Correction therefore retains that strongest already-supported safe
+profile rather than changing the provider abstraction for this phase.
 
 The engineering-only product-reliability corpus is intentionally separate from
 the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
@@ -1184,9 +1203,9 @@ npm run eval:acquisition-product-reliability-live
 Its redacted report includes scenario/execution counts, raw first-pass tailored
 successes, pre-composition canonicalised tailored successes, post-composition
 recovered tailored successes, combined deterministic correction outcomes,
-second-plan tailored successes, final fallbacks, hard-contract failures,
+correction-plan tailored successes, final fallbacks, hard-contract failures,
 diagnostic-code distribution, attempts, token usage, estimated cost, and
-elapsed time. Second-plan execution rate, latency, tokens and cost are separate
+elapsed time. Correction-plan execution rate, latency, tokens and cost are separate
 fields. It does not print owner prompts, model prose, model output, provider
 bodies, or business data. Product targets are reported as evidence, not used to
 weaken deterministic validation or to replace the hard gates. Preflight

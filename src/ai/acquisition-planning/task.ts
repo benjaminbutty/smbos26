@@ -1,11 +1,14 @@
 import "server-only";
 
 import type { RegisteredAiTask } from "../contracts";
-import { ACQUISITION_PLANNING_POLICY_KEY } from "../policies";
+import {
+  ACQUISITION_PLANNING_POLICY_KEY,
+  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+} from "../policies";
 import {
   acquisitionPlanningInputSchema,
   acquisitionPlanningOutputSchema,
-  type AcquisitionPlanningInput,
+  acquisitionRequiredIdentityCorrectionInputSchema,
 } from "./schemas";
 import { validateAcquisitionPlanningOutput } from "./validation";
 
@@ -35,10 +38,11 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
 ].join(" ");
 
 export const ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION = [
-  "This is the one permitted correction pass for a plan that represented connected identity as a duplicated required scalar.",
-  "Plan again from only the original owner request and grounded context in the task input; preserve the same requested scope.",
-  "Represent identity shared between connected business areas through Connections, not a duplicated required name, identity, contact or address scalar on the related business area.",
-  "Do not weaken or omit a genuine requirement, broaden the workspace, invent owner information or return needs_more_detail merely because this correction was requested.",
+  "This dedicated task is the one permitted fresh correction plan after connected identity was represented as a duplicated required scalar.",
+  "Use only the original owner request and grounded context in this task input; preserve every requested business area, connection need and unsupported requirement without broadening the workspace.",
+  "Keep an identity scalar on the business area it identifies, where it may remain required, and represent that area's participation in other connected business areas only through Connections.",
+  "Never duplicate that name, identity, email, phone, address, contact detail or an equivalent replacement scalar on the related business area, whether required or optional.",
+  "Do not weaken or omit a genuine local requirement, invent owner information, ask another owner question or return needs_more_detail merely because this correction was requested.",
 ].join(" ");
 
 export const acquisitionPlanningTaskV1 = Object.freeze({
@@ -48,13 +52,25 @@ export const acquisitionPlanningTaskV1 = Object.freeze({
   policyKey: ACQUISITION_PLANNING_POLICY_KEY,
   inputSchema: acquisitionPlanningInputSchema,
   outputSchema: acquisitionPlanningOutputSchema,
-  buildInstruction: (input: AcquisitionPlanningInput) =>
-    input.correction_reason ===
-    "required_cross_object_identity_must_use_connection"
-      ? `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`
-      : ACQUISITION_PLANNING_INSTRUCTION,
+  buildInstruction: () => ACQUISITION_PLANNING_INSTRUCTION,
   validateOutput: validateAcquisitionPlanningOutput,
 }) satisfies RegisteredAiTask<
   typeof acquisitionPlanningInputSchema,
+  typeof acquisitionPlanningOutputSchema
+>;
+
+export const acquisitionRequiredIdentityCorrectionTaskV1 = Object.freeze({
+  key: "acquisition_required_identity_correction_v1",
+  version: 1,
+  purposeLabel:
+    "Correct required identity representation in an acquisition plan",
+  policyKey: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+  inputSchema: acquisitionRequiredIdentityCorrectionInputSchema,
+  outputSchema: acquisitionPlanningOutputSchema,
+  buildInstruction: () =>
+    `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`,
+  validateOutput: validateAcquisitionPlanningOutput,
+}) satisfies RegisteredAiTask<
+  typeof acquisitionRequiredIdentityCorrectionInputSchema,
   typeof acquisitionPlanningOutputSchema
 >;

@@ -5,7 +5,10 @@ import {
   type AcquisitionExecutionCore,
 } from "../../acquisition-planning/runtime";
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
-import { openAiAcquisitionPlanningPolicy } from "../../policies";
+import {
+  openAiAcquisitionPlanningPolicy,
+  openAiAcquisitionRequiredIdentityCorrectionPolicy,
+} from "../../policies";
 import { ACQUISITION_MAX_WORKFLOW_COST_MICROUSD } from "../../../core/acquisition/interpreter";
 import type { AcquisitionCandidateDiagnosticCode } from "../../../core/acquisition/diagnostics";
 import {
@@ -54,8 +57,8 @@ export async function runAcquisitionHardGateScenario(
 ): Promise<
   AcquisitionEvaluationResult & {
     recovery_failure_code: AcquisitionRecoveryFailureCode | null;
-    second_plan_attempted: boolean;
-    second_plan_succeeded: boolean;
+    correction_plan_attempted: boolean;
+    correction_plan_succeeded: boolean;
   }
 > {
   let recoveryFailureCode: AcquisitionRecoveryFailureCode | null = null;
@@ -76,8 +79,8 @@ export async function runAcquisitionHardGateScenario(
         allowFallback: false,
         allowRecovery: true,
         emitEvent: (name, metadata = {}) => {
-          if (name === "second_plan_attempted") secondPlanAttempted = true;
-          if (name === "second_plan_tailored_success") {
+          if (name === "correction_plan_attempted") secondPlanAttempted = true;
+          if (name === "correction_plan_tailored_success") {
             secondPlanSucceeded = true;
           }
           const failureCode = metadata.recovery_failure_code;
@@ -95,15 +98,15 @@ export async function runAcquisitionHardGateScenario(
     return {
       ...evaluateAcquisitionScenario(scenario, payload),
       recovery_failure_code: null,
-      second_plan_attempted: secondPlanAttempted,
-      second_plan_succeeded: secondPlanSucceeded,
+      correction_plan_attempted: secondPlanAttempted,
+      correction_plan_succeeded: secondPlanSucceeded,
     };
   } catch (error) {
     return {
       ...productionCompositionFailureResult(error),
       recovery_failure_code: recoveryFailureCode,
-      second_plan_attempted: secondPlanAttempted,
-      second_plan_succeeded: false,
+      correction_plan_attempted: secondPlanAttempted,
+      correction_plan_succeeded: false,
     };
   }
 }
@@ -156,9 +159,9 @@ export async function runLiveAcquisitionGate(
     diagnostic_code: AcquisitionCandidateDiagnosticCode | null;
     recovery_failure_code: AcquisitionRecoveryFailureCode | null;
     planning_executions: number;
-    second_plan_attempted: boolean;
-    second_plan_succeeded: boolean;
-    second_plan_elapsed_ms: number;
+    correction_plan_attempted: boolean;
+    correction_plan_succeeded: boolean;
+    correction_plan_elapsed_ms: number;
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
@@ -172,13 +175,16 @@ export async function runLiveAcquisitionGate(
         ) {
           scenarioPlanningExecutions += 1;
           planningExecutions += 1;
-          const isSecondPlan = scenarioPlanningExecutions === 2;
+          const isSecondPlan =
+            taskKey === "acquisition_required_identity_correction_v1";
           const startedAt = performance.now();
           if (isSecondPlan) secondPlanExecutions += 1;
           try {
             const execution: AiExecutionResult =
               await runtime.execution.execute(taskKey, input);
-            const policy = openAiAcquisitionPlanningPolicy;
+            const policy = isSecondPlan
+              ? openAiAcquisitionRequiredIdentityCorrectionPolicy
+              : openAiAcquisitionPlanningPolicy;
             const cost = calculateAiTokenCostMicrousd({
               inputTokens: execution.metadata.usage.inputTokens,
               outputTokens: execution.metadata.usage.outputTokens,
@@ -199,7 +205,9 @@ export async function runLiveAcquisitionGate(
             return execution;
           } catch (error) {
             if (error instanceof AiExecutionError && error.accounting) {
-              const policy = openAiAcquisitionPlanningPolicy;
+              const policy = isSecondPlan
+                ? openAiAcquisitionRequiredIdentityCorrectionPolicy
+                : openAiAcquisitionPlanningPolicy;
               const cost = calculateAiTokenCostMicrousd({
                 inputTokens: error.accounting.inputTokens,
                 outputTokens: error.accounting.outputTokens,
@@ -241,9 +249,9 @@ export async function runLiveAcquisitionGate(
         diagnostic_code: result.diagnostic_code ?? null,
         recovery_failure_code: result.recovery_failure_code,
         planning_executions: scenarioPlanningExecutions,
-        second_plan_attempted: result.second_plan_attempted,
-        second_plan_succeeded: result.second_plan_succeeded,
-        second_plan_elapsed_ms: scenarioSecondPlanElapsedMs,
+        correction_plan_attempted: result.correction_plan_attempted,
+        correction_plan_succeeded: result.correction_plan_succeeded,
+        correction_plan_elapsed_ms: scenarioSecondPlanElapsedMs,
       });
     }
   }
@@ -263,19 +271,19 @@ export async function runLiveAcquisitionGate(
     planning_execution_count: planningExecutions,
     input_tokens: inputTokens,
     output_tokens: outputTokens,
-    second_plan_execution_count: secondPlanExecutions,
-    second_plan_success_count: reports.filter(
-      (report) => report.second_plan_succeeded,
+    correction_plan_execution_count: secondPlanExecutions,
+    correction_plan_success_count: reports.filter(
+      (report) => report.correction_plan_succeeded,
     ).length,
-    second_plan_execution_rate:
+    correction_plan_execution_rate:
       reports.length === 0
         ? 0
         : Number((secondPlanExecutions / reports.length).toFixed(6)),
-    second_plan_input_tokens: secondPlanInputTokens,
-    second_plan_output_tokens: secondPlanOutputTokens,
-    second_plan_estimated_cost_microusd: secondPlanCostMicrousd,
-    second_plan_elapsed_ms: secondPlanElapsedMs,
-    second_plan_average_elapsed_ms:
+    correction_plan_input_tokens: secondPlanInputTokens,
+    correction_plan_output_tokens: secondPlanOutputTokens,
+    correction_plan_estimated_cost_microusd: secondPlanCostMicrousd,
+    correction_plan_elapsed_ms: secondPlanElapsedMs,
+    correction_plan_average_elapsed_ms:
       secondPlanExecutions === 0
         ? 0
         : Math.round(secondPlanElapsedMs / secondPlanExecutions),

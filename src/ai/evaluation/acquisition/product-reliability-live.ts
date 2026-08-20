@@ -1,8 +1,14 @@
 import type { AiExecutionResult } from "../../execution";
 import { AiExecutionError } from "../../errors";
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
-import { openAiAcquisitionPlanningPolicy } from "../../policies";
-import { createAcquisitionAiRuntime } from "../../acquisition-planning/runtime";
+import {
+  openAiAcquisitionPlanningPolicy,
+  openAiAcquisitionRequiredIdentityCorrectionPolicy,
+} from "../../policies";
+import {
+  createAcquisitionAiRuntime,
+  type AcquisitionExecutionCore,
+} from "../../acquisition-planning/runtime";
 import {
   classifyAcquisitionCandidateDiagnostic,
   type AcquisitionCandidateDiagnostic,
@@ -45,7 +51,7 @@ export type AcquisitionProductOutcome =
   | "precomposition_canonicalised_tailored"
   | "postcomposition_recovered_tailored"
   | "precomposition_canonicalised_and_postcomposition_recovered_tailored"
-  | "second_plan_tailored"
+  | "correction_plan_tailored"
   | "final_fallback"
   | "execution_failed";
 
@@ -61,10 +67,10 @@ type ProductReport = Readonly<{
   output_tokens: number;
   estimated_cost_microusd: number;
   elapsed_ms: number;
-  second_plan_input_tokens: number;
-  second_plan_output_tokens: number;
-  second_plan_estimated_cost_microusd: number;
-  second_plan_elapsed_ms: number;
+  correction_plan_input_tokens: number;
+  correction_plan_output_tokens: number;
+  correction_plan_estimated_cost_microusd: number;
+  correction_plan_elapsed_ms: number;
 }>;
 
 function activated(
@@ -100,14 +106,20 @@ function diagnosticCode(diagnostic: AcquisitionCandidateDiagnostic): string {
   return diagnostic.code;
 }
 
-function actualCost(inputTokens: number, outputTokens: number): number {
+function actualCost(
+  taskKey: Parameters<AcquisitionExecutionCore["execute"]>[0],
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const policy =
+    taskKey === "acquisition_required_identity_correction_v1"
+      ? openAiAcquisitionRequiredIdentityCorrectionPolicy
+      : openAiAcquisitionPlanningPolicy;
   return calculateAiTokenCostMicrousd({
     inputTokens,
     outputTokens,
-    inputMicrousdPerMillion:
-      openAiAcquisitionPlanningPolicy.inputMicrousdPerMillion,
-    outputMicrousdPerMillion:
-      openAiAcquisitionPlanningPolicy.outputMicrousdPerMillion,
+    inputMicrousdPerMillion: policy.inputMicrousdPerMillion,
+    outputMicrousdPerMillion: policy.outputMicrousdPerMillion,
   });
 }
 
@@ -166,8 +178,8 @@ export function acquisitionProductOutcome(
   eventNames: readonly AcquisitionEventName[],
 ): Exclude<AcquisitionProductOutcome, "execution_failed"> {
   if (source === "fallback") return "final_fallback";
-  if (eventNames.includes("second_plan_tailored_success")) {
-    return "second_plan_tailored";
+  if (eventNames.includes("correction_plan_tailored_success")) {
+    return "correction_plan_tailored";
   }
   const canonicalised = eventNames.includes(
     "precomposition_canonicalisation_applied",
@@ -238,13 +250,15 @@ export async function runLiveAcquisitionProductReliability(
           input: unknown,
         ): Promise<AiExecutionResult> {
           providerAttempts += 1;
-          const isSecondPlan = providerAttempts === 2;
+          const isSecondPlan =
+            taskKey === "acquisition_required_identity_correction_v1";
           const executionStartedAt = performance.now();
           if (isSecondPlan) secondPlanExecutions += 1;
           totalAttempts += 1;
           try {
             const result = await runtime.execution.execute(taskKey, input);
             const cost = actualCost(
+              taskKey,
               result.metadata.usage.inputTokens,
               result.metadata.usage.outputTokens,
             );
@@ -274,7 +288,11 @@ export async function runLiveAcquisitionProductReliability(
             const usage = failureUsage(error);
             scenarioInputTokens += usage.inputTokens;
             scenarioOutputTokens += usage.outputTokens;
-            const cost = actualCost(usage.inputTokens, usage.outputTokens);
+            const cost = actualCost(
+              taskKey,
+              usage.inputTokens,
+              usage.outputTokens,
+            );
             scenarioCost += cost;
             inputTokens += usage.inputTokens;
             outputTokens += usage.outputTokens;
@@ -390,10 +408,10 @@ export async function runLiveAcquisitionProductReliability(
         output_tokens: scenarioOutputTokens,
         estimated_cost_microusd: scenarioCost,
         elapsed_ms: elapsed,
-        second_plan_input_tokens: scenarioSecondPlanInputTokens,
-        second_plan_output_tokens: scenarioSecondPlanOutputTokens,
-        second_plan_estimated_cost_microusd: scenarioSecondPlanCost,
-        second_plan_elapsed_ms: scenarioSecondPlanElapsed,
+        correction_plan_input_tokens: scenarioSecondPlanInputTokens,
+        correction_plan_output_tokens: scenarioSecondPlanOutputTokens,
+        correction_plan_estimated_cost_microusd: scenarioSecondPlanCost,
+        correction_plan_elapsed_ms: scenarioSecondPlanElapsed,
       });
     }
   }
@@ -410,7 +428,7 @@ export async function runLiveAcquisitionProductReliability(
     counts.get(
       "precomposition_canonicalised_and_postcomposition_recovered_tailored",
     ) ?? 0;
-  const secondPlanTailoredCount = counts.get("second_plan_tailored") ?? 0;
+  const secondPlanTailoredCount = counts.get("correction_plan_tailored") ?? 0;
   const precompositionCanonicalisedTailoredCount =
     precompositionCanonicalisedOnlyTailoredCount +
     combinedCanonicalisedAndRecoveredTailoredCount;
@@ -489,18 +507,18 @@ export async function runLiveAcquisitionProductReliability(
       combinedCanonicalisedAndRecoveredTailoredCount,
       reports.length,
     ),
-    second_plan_tailored_success_count: secondPlanTailoredCount,
-    second_plan_tailored_success_rate: rate(
+    correction_plan_tailored_success_count: secondPlanTailoredCount,
+    correction_plan_tailored_success_rate: rate(
       secondPlanTailoredCount,
       reports.length,
     ),
-    second_plan_execution_count: secondPlanExecutions,
-    second_plan_execution_rate: rate(secondPlanExecutions, reports.length),
-    second_plan_input_tokens: secondPlanInputTokens,
-    second_plan_output_tokens: secondPlanOutputTokens,
-    second_plan_estimated_cost_microusd: secondPlanCost,
-    second_plan_elapsed_ms: secondPlanElapsed,
-    second_plan_average_elapsed_ms:
+    correction_plan_execution_count: secondPlanExecutions,
+    correction_plan_execution_rate: rate(secondPlanExecutions, reports.length),
+    correction_plan_input_tokens: secondPlanInputTokens,
+    correction_plan_output_tokens: secondPlanOutputTokens,
+    correction_plan_estimated_cost_microusd: secondPlanCost,
+    correction_plan_elapsed_ms: secondPlanElapsed,
+    correction_plan_average_elapsed_ms:
       secondPlanExecutions === 0
         ? 0
         : Math.round(secondPlanElapsed / secondPlanExecutions),

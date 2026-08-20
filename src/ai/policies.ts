@@ -64,6 +64,8 @@ export const BUILDER_RECORD_LOCATION_LINK_INTENT_TERRA_MEDIUM_POLICY_KEY =
   "builder_record_location_link_intent_terra_medium_v1" as const;
 export const ACQUISITION_PLANNING_POLICY_KEY =
   "acquisition_planning_terra_medium_v1" as const;
+export const ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY =
+  "acquisition_required_identity_correction_terra_medium_v1" as const;
 
 export const disabledExecutionPolicies = Object.freeze({
   bounded_structured_v1: Object.freeze({
@@ -216,10 +218,34 @@ export const disabledExecutionPolicies = Object.freeze({
     inputMicrousdPerMillion: 0,
     outputMicrousdPerMillion: 0,
   }),
+  [ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY]: Object.freeze({
+    key: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+    providerKey: "disabled",
+    modelKey: "unconfigured",
+    maxInputBytes: 8 * 1024,
+    maxBillableInputTokens: 4_000,
+    maxOutputTokens: 2_500,
+    timeoutMs: 25_000,
+    maxAttempts: 1,
+    retryDelayMs: 0,
+    retryableFailureKinds: Object.freeze([]),
+    inputMicrousdPerMillion: 0,
+    outputMicrousdPerMillion: 0,
+  }),
 }) satisfies AiExecutionPolicyRegistry;
 
 export const openAiAcquisitionPlanningPolicy = Object.freeze({
   ...disabledExecutionPolicies[ACQUISITION_PLANNING_POLICY_KEY],
+  providerKey: "openai",
+  modelKey: OPENAI_BUILDER_PLANNING_MODEL_KEY,
+  inputMicrousdPerMillion: 2_500_000,
+  outputMicrousdPerMillion: 15_000_000,
+});
+
+export const openAiAcquisitionRequiredIdentityCorrectionPolicy = Object.freeze({
+  ...disabledExecutionPolicies[
+    ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY
+  ],
   providerKey: "openai",
   modelKey: OPENAI_BUILDER_PLANNING_MODEL_KEY,
   inputMicrousdPerMillion: 2_500_000,

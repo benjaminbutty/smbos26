@@ -9,7 +9,7 @@ import type { Json, Tables } from "../../db/supabase/database.types";
 import { createAdminClient } from "../../db/supabase/admin";
 import { getEnvironment } from "../../env";
 import type { AcquisitionExecutionCore } from "../../ai/acquisition-planning/runtime";
-import type { AcquisitionPlanningCorrectionReason } from "../../ai/acquisition-planning/schemas";
+import { ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON } from "../../ai/acquisition-planning/schemas";
 import {
   addClarificationAnswer,
   assessAcquisitionClarifications,
@@ -26,6 +26,7 @@ import { emitAcquisitionEvent } from "./events";
 import {
   ACQUISITION_MAX_PLANNING_EXECUTIONS,
   interpretAcquisitionRequest,
+  interpretAcquisitionRequiredIdentityCorrection,
 } from "./interpreter";
 import {
   AcquisitionCandidateQualityError,
@@ -56,7 +57,7 @@ export const ACQUISITION_SESSION_ATTEMPT_LIMIT = 6;
 export const ACQUISITION_SUCCESSFUL_REFINEMENT_LIMIT = 2;
 
 const REQUIRED_IDENTITY_REPLAN_REASON =
-  "required_cross_object_identity_must_use_connection" as const satisfies AcquisitionPlanningCorrectionReason;
+  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON;
 
 class AcquisitionRequiredIdentityReplanSignal extends Error {
   constructor(override readonly cause: AcquisitionCandidateQualityError) {
@@ -495,7 +496,7 @@ export async function generateCandidate(
     options.emitDiagnostic ?? emitAcquisitionCandidateDiagnostic;
   const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
   let precompositionCanonicalisedFieldCount = 0;
-  let usedSecondPlan = false;
+  let usedCorrectionPlan = false;
   let planningExecutionCount = 0;
 
   const fallback = (): AcquisitionBuildPayload => {
@@ -617,20 +618,42 @@ export async function generateCandidate(
     }
   };
 
-  const interpretPlan = (
-    correctionReason?: AcquisitionPlanningCorrectionReason,
-  ) => {
+  const reservePlanningExecution = () => {
     if (planningExecutionCount >= ACQUISITION_MAX_PLANNING_EXECUTIONS) {
       throw new Error("The acquisition planning execution limit was reached.");
     }
     planningExecutionCount += 1;
+  };
+
+  const interpretPlan = () => {
+    reservePlanningExecution();
     return interpretAcquisitionRequest(
       category,
       enrichedRequest,
       options.execution,
       {
         validate: false,
-        ...(correctionReason ? { correctionReason } : {}),
+        onCanonicalisation: ({ removedFieldCount }) => {
+          precompositionCanonicalisedFieldCount = removedFieldCount;
+          if (emitFirstPassSuccess) {
+            emitEvent("precomposition_canonicalisation_applied", {
+              category,
+              removed_field_count: removedFieldCount,
+            });
+          }
+        },
+      },
+    );
+  };
+
+  const interpretCorrectionPlan = () => {
+    reservePlanningExecution();
+    return interpretAcquisitionRequiredIdentityCorrection(
+      category,
+      enrichedRequest,
+      options.execution,
+      {
+        validate: false,
         onCanonicalisation: ({ removedFieldCount }) => {
           precompositionCanonicalisedFieldCount = removedFieldCount;
           if (emitFirstPassSuccess) {
@@ -675,15 +698,15 @@ export async function generateCandidate(
       return fallbackOrThrow();
     }
 
-    emitEvent("second_plan_attempted", {
+    emitEvent("correction_plan_attempted", {
       category,
       correction_reason: REQUIRED_IDENTITY_REPLAN_REASON,
     });
-    let secondPlanPayload: AcquisitionBuildPayload;
+    let correctionPlanPayload: AcquisitionBuildPayload;
     try {
-      secondPlanPayload = await interpretPlan(REQUIRED_IDENTITY_REPLAN_REASON);
-    } catch (secondPlanError) {
-      emitDiagnostic(secondPlanError, "candidate_generation", {
+      correctionPlanPayload = await interpretCorrectionPlan();
+    } catch (correctionPlanError) {
+      emitDiagnostic(correctionPlanError, "candidate_generation", {
         category,
         source: "tailored",
       });
@@ -691,27 +714,27 @@ export async function generateCandidate(
         category,
         reason: "tailoring_unavailable",
       });
-      emitEvent("second_plan_failed", {
+      emitEvent("correction_plan_failed", {
         category,
         reason: "planning_unavailable",
       });
-      if (!allowFallback) throw secondPlanError;
+      if (!allowFallback) throw correctionPlanError;
       return fallbackOrThrow();
     }
     try {
       const validatedCandidate = validateTailoredCandidate(
-        secondPlanPayload,
+        correctionPlanPayload,
         false,
       );
       payload = validatedCandidate.payload;
       successfulRecovery = validatedCandidate.recovery;
-      usedSecondPlan = true;
-    } catch (secondPlanError) {
-      emitEvent("second_plan_failed", {
+      usedCorrectionPlan = true;
+    } catch (correctionPlanError) {
+      emitEvent("correction_plan_failed", {
         category,
         reason: "candidate_rejected",
       });
-      if (!allowFallback) throw secondPlanError;
+      if (!allowFallback) throw correctionPlanError;
       return fallbackOrThrow();
     }
   }
@@ -729,8 +752,8 @@ export async function generateCandidate(
       reason: "candidate_quality_rejected",
     });
     finalizeRecoveryFailure();
-    if (usedSecondPlan) {
-      emitEvent("second_plan_failed", {
+    if (usedCorrectionPlan) {
+      emitEvent("correction_plan_failed", {
         category,
         reason: "capability_enhancement_rejected",
       });
@@ -749,8 +772,8 @@ export async function generateCandidate(
       });
       successfulRecovery = null;
     }
-    if (usedSecondPlan) {
-      emitEvent("second_plan_tailored_success", {
+    if (usedCorrectionPlan) {
+      emitEvent("correction_plan_tailored_success", {
         category,
         correction_reason: REQUIRED_IDENTITY_REPLAN_REASON,
       });
@@ -776,8 +799,8 @@ export async function generateCandidate(
       category,
       reason: "candidate_quality_rejected",
     });
-    if (usedSecondPlan) {
-      emitEvent("second_plan_failed", {
+    if (usedCorrectionPlan) {
+      emitEvent("correction_plan_failed", {
         category,
         reason: "candidate_rejected",
       });

@@ -3,9 +3,10 @@ import "server-only";
 import { builderConfigurationDraftOutputSchema } from "../../ai/configuration-drafting/schemas";
 import { validateConfigurationDraftOutput } from "../../ai/configuration-drafting/validation";
 import {
+  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON,
   acquisitionPlanningOutputSchema,
   type AcquisitionPlanningInput,
-  type AcquisitionPlanningCorrectionReason,
+  type AcquisitionRequiredIdentityCorrectionInput,
   type AcquisitionReadyPlan,
 } from "../../ai/acquisition-planning/schemas";
 import {
@@ -60,7 +61,6 @@ export class AcquisitionInterpretationError extends Error {
 
 export type AcquisitionInterpretationOptions = Readonly<{
   validate?: boolean;
-  correctionReason?: AcquisitionPlanningCorrectionReason;
   onCanonicalisation?: (
     metadata: Readonly<{ removedFieldCount: number }>,
   ) => void;
@@ -452,29 +452,37 @@ function addAcquisitionConnectionColumns(
     }),
   );
 }
-export async function interpretAcquisitionRequest(
+async function interpretAcquisitionPlan(
   categoryInput: unknown,
   requestInput: unknown,
-  execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
-  options: AcquisitionInterpretationOptions = {},
+  taskKey:
+    | "acquisition_workspace_plan_v1"
+    | "acquisition_required_identity_correction_v1",
+  execution: AcquisitionExecutionCore,
+  options: AcquisitionInterpretationOptions,
 ) {
   const category = acquisitionCategorySchema.parse(categoryInput);
   const request = acquisitionRequestSchema
     .parse(requestInput)
     .replace(/\s+/g, " ");
-  const planningInput: AcquisitionPlanningInput = {
-    schema_version: 1,
-    category,
-    owner_request: request,
-    grounded_currency: detectGroundedCurrency(request),
-    ...(options.correctionReason
-      ? { correction_reason: options.correctionReason }
-      : {}),
-  };
-  const result = await execution.execute(
-    "acquisition_workspace_plan_v1",
-    planningInput,
-  );
+  const groundedCurrency = detectGroundedCurrency(request);
+  const planningInput:
+    AcquisitionPlanningInput | AcquisitionRequiredIdentityCorrectionInput =
+    taskKey === "acquisition_required_identity_correction_v1"
+      ? {
+          schema_version: 1,
+          category,
+          owner_request: request,
+          grounded_currency: groundedCurrency,
+          correction_reason: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON,
+        }
+      : {
+          schema_version: 1,
+          category,
+          owner_request: request,
+          grounded_currency: groundedCurrency,
+        };
+  const result = await execution.execute(taskKey, planningInput);
   const parsedPlan = acquisitionPlanningOutputSchema.parse(result.output);
   if (parsedPlan.state === "needs_more_detail")
     throw new AcquisitionInterpretationError(
@@ -538,4 +546,34 @@ export async function interpretAcquisitionRequest(
   return options.validate === false
     ? payload
     : validateAcquisitionCandidate(payload);
+}
+
+export function interpretAcquisitionRequest(
+  categoryInput: unknown,
+  requestInput: unknown,
+  execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
+  options: AcquisitionInterpretationOptions = {},
+) {
+  return interpretAcquisitionPlan(
+    categoryInput,
+    requestInput,
+    "acquisition_workspace_plan_v1",
+    execution,
+    options,
+  );
+}
+
+export function interpretAcquisitionRequiredIdentityCorrection(
+  categoryInput: unknown,
+  requestInput: unknown,
+  execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
+  options: AcquisitionInterpretationOptions = {},
+) {
+  return interpretAcquisitionPlan(
+    categoryInput,
+    requestInput,
+    "acquisition_required_identity_correction_v1",
+    execution,
+    options,
+  );
 }

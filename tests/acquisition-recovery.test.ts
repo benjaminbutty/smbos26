@@ -10,6 +10,7 @@ import type { AiExecutionResult } from "../src/ai/execution";
 import { AiExecutionError } from "../src/ai/errors";
 import type { AcquisitionExecutionCore } from "../src/ai/acquisition-planning/runtime";
 import { runAcquisitionHardGateScenario } from "../src/ai/evaluation/acquisition/live";
+import { runAcquisitionCorrectionQualificationScenario } from "../src/ai/evaluation/acquisition/correction-qualification-live";
 import { generateCandidate } from "../src/core/acquisition/service";
 import { interpretAcquisitionRequest } from "../src/core/acquisition/interpreter";
 import { acquisitionBuildPayloadSchema } from "../src/core/acquisition/schemas";
@@ -43,14 +44,26 @@ const decisions = {
 
 function executionForPlan(
   output: AcquisitionPlanningOutput | Error,
-): AcquisitionExecutionCore & { calls: number; inputs: readonly unknown[] } {
+): AcquisitionExecutionCore & {
+  calls: number;
+  inputs: readonly unknown[];
+  taskKeys: readonly string[];
+} {
   return executionForPlans([output]);
 }
 
 function executionForPlans(
   outputs: readonly (AcquisitionPlanningOutput | Error)[],
-): AcquisitionExecutionCore & { calls: number; inputs: readonly unknown[] } {
-  const state: { calls: number; inputs: unknown[] } = { calls: 0, inputs: [] };
+): AcquisitionExecutionCore & {
+  calls: number;
+  inputs: readonly unknown[];
+  taskKeys: readonly string[];
+} {
+  const state: { calls: number; inputs: unknown[]; taskKeys: string[] } = {
+    calls: 0,
+    inputs: [],
+    taskKeys: [],
+  };
   return {
     get calls() {
       return state.calls;
@@ -58,9 +71,13 @@ function executionForPlans(
     get inputs() {
       return state.inputs;
     },
-    async execute(_taskKey, input) {
+    get taskKeys() {
+      return state.taskKeys;
+    },
+    async execute(taskKey, input) {
       state.calls += 1;
       state.inputs.push(input);
+      state.taskKeys.push(taskKey);
       const output = outputs[state.calls - 1];
       if (!output)
         throw new Error("Unexpected acquisition planning execution.");
@@ -382,10 +399,14 @@ describe("bounded acquisition quality recovery", () => {
       runAcquisitionHardGateScenario(carpenterScenario, hardExecution),
     ).resolves.toMatchObject({
       hard_passed: true,
-      second_plan_attempted: true,
-      second_plan_succeeded: true,
+      correction_plan_attempted: true,
+      correction_plan_succeeded: true,
     });
     expect(hardExecution.calls).toBe(2);
+    expect(hardExecution.taskKeys).toEqual([
+      "acquisition_workspace_plan_v1",
+      "acquisition_required_identity_correction_v1",
+    ]);
     expect(hardExecution.inputs).toHaveLength(2);
     expect(hardExecution.inputs[1]).toEqual({
       ...(hardExecution.inputs[0] as Record<string, unknown>),
@@ -422,11 +443,31 @@ describe("bounded acquisition quality recovery", () => {
           event: "repair_failed",
           recovery_failure_code: "required_field",
         }),
-        expect.objectContaining({ event: "second_plan_attempted" }),
-        expect.objectContaining({ event: "second_plan_tailored_success" }),
+        expect.objectContaining({ event: "correction_plan_attempted" }),
+        expect.objectContaining({ event: "correction_plan_tailored_success" }),
       ]),
     );
     info.mockRestore();
+  });
+
+  it("runs correction qualification through the dedicated task and full deterministic gates", async () => {
+    const execution = executionForPlan(carpenterPlan());
+
+    await expect(
+      runAcquisitionCorrectionQualificationScenario(
+        carpenterScenario,
+        execution,
+      ),
+    ).resolves.toMatchObject({
+      hard_passed: true,
+      quality_passed: true,
+      hard_findings: [],
+      quality_findings: [],
+    });
+    expect(execution.calls).toBe(1);
+    expect(execution.taskKeys).toEqual([
+      "acquisition_required_identity_correction_v1",
+    ]);
   });
 
   it("canonicalises an optional exact identity without reporting raw first-pass success", async () => {
@@ -551,7 +592,7 @@ describe("bounded acquisition quality recovery", () => {
     info.mockRestore();
   });
 
-  it("fails closed after an invalid second plan and cannot execute a third provider call", async () => {
+  it("fails closed after an invalid correction plan and cannot execute a third provider call", async () => {
     const requiredLeak = carpenterPlan({
       crossObjectLeakage: true,
       crossObjectLeakageRequired: true,
@@ -570,8 +611,8 @@ describe("bounded acquisition quality recovery", () => {
     expect(execution.calls).toBe(2);
     expect(loggedEvents(info)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ event: "second_plan_attempted" }),
-        expect.objectContaining({ event: "second_plan_failed" }),
+        expect.objectContaining({ event: "correction_plan_attempted" }),
+        expect.objectContaining({ event: "correction_plan_failed" }),
         expect.objectContaining({ event: "final_fallback" }),
       ]),
     );
@@ -581,15 +622,15 @@ describe("bounded acquisition quality recovery", () => {
       runAcquisitionHardGateScenario(carpenterScenario, hardExecution),
     ).resolves.toMatchObject({
       hard_passed: false,
-      second_plan_attempted: true,
-      second_plan_succeeded: false,
+      correction_plan_attempted: true,
+      correction_plan_succeeded: false,
       recovery_failure_code: "required_field",
     });
     expect(hardExecution.calls).toBe(2);
     info.mockRestore();
   });
 
-  it("falls back after a second-plan provider failure without a third execution", async () => {
+  it("falls back after a correction-plan provider failure without a third execution", async () => {
     const execution = executionForPlans([
       carpenterPlan({
         crossObjectLeakage: true,
@@ -606,7 +647,7 @@ describe("bounded acquisition quality recovery", () => {
     expect(loggedEvents(info)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          event: "second_plan_failed",
+          event: "correction_plan_failed",
           reason: "planning_unavailable",
         }),
         expect.objectContaining({ event: "final_fallback" }),
@@ -638,7 +679,7 @@ describe("bounded acquisition quality recovery", () => {
     expect(execution.calls).toBe(1);
     const eventNames = loggedEvents(info).map((event) => event.event);
     expect(eventNames).not.toContain("repair_attempted");
-    expect(eventNames).not.toContain("second_plan_attempted");
+    expect(eventNames).not.toContain("correction_plan_attempted");
     expect(eventNames).toContain("final_fallback");
     info.mockRestore();
   });

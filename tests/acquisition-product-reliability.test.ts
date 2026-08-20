@@ -87,7 +87,7 @@ describe("acquisition product-reliability corpus", () => {
     );
     expect(
       acquisitionProductOutcome("fallback", [
-        "second_plan_tailored_success",
+        "correction_plan_tailored_success",
         "precomposition_canonicalisation_applied",
       ]),
     ).toBe("final_fallback");
@@ -95,9 +95,9 @@ describe("acquisition product-reliability corpus", () => {
       acquisitionProductOutcome("tailored", [
         "precomposition_canonicalisation_applied",
         "repair_succeeded",
-        "second_plan_tailored_success",
+        "correction_plan_tailored_success",
       ]),
-    ).toBe("second_plan_tailored");
+    ).toBe("correction_plan_tailored");
   });
 
   it("keeps fallback separate from other product-corpus hard findings", () => {

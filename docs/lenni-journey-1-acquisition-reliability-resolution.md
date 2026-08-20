@@ -68,10 +68,13 @@ The later exact-SHA qualification at
 `unusual_other` plan reached the same `cross_object_field_leakage` plus
 `required_field` boundary. That result established a stochastic semantic
 planning error rather than missing owner information. J1-R2 therefore permits
-one second execution of the same acquisition planning task only for that exact
-code pair. It receives the original enriched owner request, category and
-grounded currency plus one finite server-owned correction reason. It never
-receives the rejected model output.
+one correction execution only for that exact code pair. After later reliability
+evidence showed the general task could repeat the defect, correction now uses
+the dedicated `acquisition_required_identity_correction_v1` subject and policy
+`acquisition_required_identity_correction_terra_medium_v1`. It receives the
+original enriched owner request, category and grounded currency plus one finite
+server-owned correction reason. It never receives the rejected model output.
+The first acquisition task and instruction are unchanged.
 
 ## Bounds and lifecycle
 
@@ -89,7 +92,7 @@ remain one-call requests.
 Recovery and the exact J1-R2 trigger are enabled only for first
 acquisition/regeneration orchestration. Provider authentication, transport,
 rate-limit, timeout and refusal failures, other quality codes, and other
-recovery refusal codes do not trigger the second plan. The existing refinement
+recovery refusal codes do not trigger the correction plan. The existing refinement
 path continues to use `allowFallback: false` semantics without automatic
 recovery or replanning, so successful refinement counting, failed repair
 behaviour, and previous-candidate preservation remain unchanged.
@@ -107,9 +110,12 @@ provider bodies, and raw errors are not emitted.
 
 The first-pass instruction keeps its generic graph guidance about
 keeping identity/contact data on the business area it belongs to and using a
-Connection for the relationship. The second execution appends only a finite
-server-owned correction instruction to preserve scope and use Connections for
-connected identity. This material orchestration change invalidates prior live
+Connection for the relationship. The dedicated correction task combines that
+general bounded planning contract with a finite server-owned instruction to
+preserve scope and use Connections for connected identity. The current provider
+contract fixes Terra medium reasoning across tasks, so no provider abstraction
+change was made solely to request a stronger correction profile. This material
+orchestration change invalidates prior live
 evidence; qualification and reliability must be rerun against the frozen
 implementation before the 32 × 3 product corpus. The product corpus remains
 separate evidence and does not replace the eight-scenario hard contract.

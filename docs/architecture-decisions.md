@@ -3001,8 +3001,8 @@ operational data, preview, claim, accept, or publish boundary changes.
 
 ## ADR-043 — Journey 1 acquisition permits one narrowly triggered semantic replan
 
-**Status:** Accepted for J1-R2
-**Date:** 19 August 2026
+**Status:** Accepted for J1-R2; correction-task identity amended 20 August 2026
+**Date:** 19–20 August 2026
 
 ### Context
 
@@ -3017,14 +3017,24 @@ accepted trust boundary. The remaining defect is a stochastic planning error.
 
 ### Decision
 
-One owner submission may execute the existing acquisition planning task a
-second time only when the first composed candidate fails with
+One owner submission may execute acquisition planning a second time only when
+the first composed candidate fails with
 `cross_object_field_leakage` and the existing deterministic recovery attempt
-refuses with `required_field`. The second execution uses the same registered
-task, Terra model, execution policy, original enriched owner request, category
-and grounded currency. Its only additional input is the finite server-owned
-reason `required_cross_object_identity_must_use_connection`. The rejected plan
-is never included in the second task input.
+refuses with `required_field`. The first execution remains the unchanged
+`acquisition_workspace_plan_v1` subject. The second execution uses the
+dedicated registered task `acquisition_required_identity_correction_v1` and
+its own policy identity
+`acquisition_required_identity_correction_terra_medium_v1`. It retains the
+approved `gpt-5.6-terra` model and the provider's existing explicit medium
+reasoning profile; the provider contract does not expose a task-selectable
+reasoning effort, and this decision does not add one merely for correction.
+
+The correction input contains only the original enriched owner request,
+category, grounded currency and finite server-owned reason
+`required_cross_object_identity_must_use_connection`. The rejected plan is
+never included in that input. This dedicated-task amendment supersedes only
+ADR-043's original same-task/same-policy choice; the trigger and all other
+bounds remain unchanged.
 
 The correction instruction preserves the requested scope and directs the
 planner to represent connected identity through Connections instead of a
@@ -3047,17 +3057,17 @@ regeneration or refinement allowances. Each provider execution retains the
 approved one-attempt policy; the workflow maximum is two semantic executions,
 50 seconds of provider time and 95,000 microusd of worst-case token cost.
 
-Finite events distinguish second-plan attempt, success and failure without
+Finite events distinguish correction-plan attempt, success and failure without
 prompts or model output. Product evidence reports raw first-pass,
-pre-composition canonicalised, post-composition recovered, second-plan,
-fallback and execution-failure outcomes, with second-plan execution rate,
+pre-composition canonicalised, post-composition recovered, correction-plan,
+fallback and execution-failure outcomes, with correction-plan execution rate,
 latency, tokens and cost reported separately.
 
 ### Consequences
 
 Most successful requests remain one provider execution. Only the exact unsafe
-required-identity case can pay the latency and cost of a second plan. Safety is
-unchanged because deterministic validation remains authoritative and fallback
-remains the final result for an invalid second plan. No migration, primitive,
+required-identity case can pay the latency and cost of the correction plan.
+Safety is unchanged because deterministic validation remains authoritative and
+fallback remains the final result for invalid correction output. No migration, primitive,
 table, persistent AI context, operational Record access, automatic Apply or
 Publish, tenant boundary or vertical-specific rule is added.

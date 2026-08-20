@@ -4,9 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { openAiAcquisitionPlanningPolicy } from "../src/ai/policies";
+import {
+  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+  openAiAcquisitionPlanningPolicy,
+  openAiAcquisitionRequiredIdentityCorrectionPolicy,
+} from "../src/ai/policies";
 import {
   acquisitionPlanningInputSchema,
+  acquisitionRequiredIdentityCorrectionInputSchema,
   type AcquisitionPlanningOutput,
 } from "../src/ai/acquisition-planning/schemas";
 import { validateAcquisitionPlanningOutput } from "../src/ai/acquisition-planning/validation";
@@ -14,7 +19,14 @@ import {
   ACQUISITION_PLANNING_INSTRUCTION,
   ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION,
   acquisitionPlanningTaskV1,
+  acquisitionRequiredIdentityCorrectionTaskV1,
 } from "../src/ai/acquisition-planning/task";
+import {
+  ACQUISITION_CORRECTION_QUALIFICATION_EXECUTIONS,
+  ACQUISITION_CORRECTION_QUALIFICATION_REPETITIONS,
+  assertAcquisitionCorrectionQualificationSubject,
+  runLiveAcquisitionCorrectionQualification,
+} from "../src/ai/evaluation/acquisition/correction-qualification-live";
 import { acquisitionEvaluationScenarios } from "../src/ai/evaluation/acquisition/scenarios";
 import { emitAcquisitionEvent } from "../src/core/acquisition/events";
 import {
@@ -88,27 +100,63 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(ACQUISITION_MAX_WORKFLOW_COST_MICROUSD).toBe(95_000);
   });
 
-  it("uses the same task and policy for a finite server-owned correction", () => {
-    const first = acquisitionPlanningTaskV1.buildInstruction({
+  it("uses a dedicated correction task and policy for the finite server-owned correction", () => {
+    const first = acquisitionPlanningTaskV1.buildInstruction();
+    const correction =
+      acquisitionRequiredIdentityCorrectionTaskV1.buildInstruction();
+    const firstInput = acquisitionPlanningInputSchema.parse({
       schema_version: 1,
       category: "jobs",
       owner_request: "Keep customers and jobs organised.",
       grounded_currency: null,
     });
-    const second = acquisitionPlanningTaskV1.buildInstruction({
-      schema_version: 1,
-      category: "jobs",
-      owner_request: "Keep customers and jobs organised.",
-      grounded_currency: null,
-      correction_reason: "required_cross_object_identity_must_use_connection",
-    });
+    const correctionInput =
+      acquisitionRequiredIdentityCorrectionInputSchema.parse({
+        schema_version: 1,
+        category: "jobs",
+        owner_request: "Keep customers and jobs organised.",
+        grounded_currency: null,
+        correction_reason: "required_cross_object_identity_must_use_connection",
+      });
 
     expect(first).toBe(ACQUISITION_PLANNING_INSTRUCTION);
-    expect(second).toBe(
+    expect(correction).toBe(
       `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`,
     );
-    expect(second).toContain("preserve the same requested scope");
-    expect(second).toContain("through Connections");
+    expect(correction).toContain("preserve every requested business area");
+    expect(correction).toContain("through Connections");
+    expect(acquisitionPlanningTaskV1.key).toBe("acquisition_workspace_plan_v1");
+    expect(acquisitionRequiredIdentityCorrectionTaskV1).toMatchObject({
+      key: "acquisition_required_identity_correction_v1",
+      policyKey: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+    });
+    expect(openAiAcquisitionRequiredIdentityCorrectionPolicy).toMatchObject({
+      key: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+      providerKey: "openai",
+      modelKey: "gpt-5.6-terra",
+      maxAttempts: 1,
+    });
+    expect(firstInput).not.toHaveProperty("correction_reason");
+    expect(() =>
+      acquisitionPlanningInputSchema.parse({
+        ...firstInput,
+        correction_reason: "required_cross_object_identity_must_use_connection",
+      }),
+    ).toThrow();
+    expect(correctionInput.correction_reason).toBe(
+      "required_cross_object_identity_must_use_connection",
+    );
+  });
+
+  it("fixes correction qualification at eight scenarios and three repetitions", async () => {
+    expect(ACQUISITION_CORRECTION_QUALIFICATION_REPETITIONS).toBe(3);
+    expect(ACQUISITION_CORRECTION_QUALIFICATION_EXECUTIONS).toBe(24);
+    expect(() =>
+      assertAcquisitionCorrectionQualificationSubject(),
+    ).not.toThrow();
+    await expect(
+      runLiveAcquisitionCorrectionQualification({ AI_PROVIDER: "disabled" }),
+    ).resolves.toEqual({ ran: false, passed: false });
   });
 
   it("keeps one owner build reservation around both bounded planning executions", () => {
@@ -128,7 +176,7 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(submission.match(/reserveAttempt\(category\)/g)).toHaveLength(1);
     expect(submission.match(/generateCandidate\(/g)).toHaveLength(1);
     expect(candidate).not.toContain("reserveAttempt(");
-    expect(candidate).toContain("second_plan_attempted");
+    expect(candidate).toContain("correction_plan_attempted");
   });
 
   it("fixes the production acceptance set at exactly eight scenarios", () => {
