@@ -140,3 +140,14 @@ concepts are a floor rather than a ceiling, and minimal inferred linking
 structures required for quantities, repeated activity and coherent Connections
 remain in scope. Failure of that changed subject requires a further product
 decision rather than continued prompt iteration.
+
+The final changed subject at
+`babf8855044905e1670b3848e4911ec9b554ea95` improved to 23/24 combined passes
+while deterministic safety remained 24/24. Its one miss was `milk_round`,
+repetition 1, with `required_concepts` and the missing Product-to-Item
+one-to-many relationship. The subject was not rerun. Under the accepted stop
+condition, the full acquisition qualification, reliability, 96-execution corpus
+and exact-head CI were not started. Further work requires a product decision;
+this branch does not add provider reasoning controls, a third execution,
+validator or requiredness changes, required-Connection semantics, model changes
+or broader deterministic production rules.

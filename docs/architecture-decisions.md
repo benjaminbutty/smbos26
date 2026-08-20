@@ -3071,3 +3071,16 @@ Safety is unchanged because deterministic validation remains authoritative and
 fallback remains the final result for invalid correction output. No migration, primitive,
 table, persistent AI context, operational Record access, automatic Apply or
 Publish, tenant boundary or vertical-specific rule is added.
+
+### Correction qualification evidence
+
+Three distinct dedicated correction instruction subjects were evaluated once
+each and were not rerun unchanged. Their combined hard/product results were
+21/24 at `f8645eff5362de4b1e788826cb2fda20811bea25`, 21/24 at
+`7284491c42aad26b8fb0e2875add5444b74077ae`, and 23/24 at
+`babf8855044905e1670b3848e4911ec9b554ea95`; deterministic safety was 24/24 in
+all three. The final miss was one milk-round scope/relationship omission. This
+does not justify weakening validation or adding retries. The implementation
+therefore stops before the full acquisition gates pending a deliberate product
+decision about provider reasoning control, broader deterministic architecture,
+or the correction qualification gate.

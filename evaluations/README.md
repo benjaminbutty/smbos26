@@ -1215,6 +1215,20 @@ that minimal inferred linking structures required for quantities, repeated
 activity and coherent Connections remain in scope. The unchanged subject was
 not rerun.
 
+The final changed correction subject at exact SHA
+`babf8855044905e1670b3848e4911ec9b554ea95` was run once and not rerun. It
+improved to 23/24 combined passes and retained 24/24 deterministic hard passes.
+The sole miss was `milk_round`, repetition 1: `required_concepts` and
+`required_relationship_semantics:product_to_item_one_to_many`. Usage was 31,683
+input tokens and 15,299 output tokens, estimated cost was 308,697 microusd, and
+elapsed time was 131,243 ms. Because the correction qualification did not reach
+24/24 after bounded evidence-driven instruction work, full acquisition
+qualification, reliability, the 96-execution product corpus and exact-head CI
+were not run. The subject was not rerun to seek a luckier result. Progress now
+requires a deliberate product decision about a provider reasoning-control
+change, a broader deterministic architecture, or the gate itself; none is made
+in this implementation.
+
 The engineering-only product-reliability corpus is intentionally separate from
 the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
 descriptions, including the exact carpenter regression fixture, and runs three
