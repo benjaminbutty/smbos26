@@ -3134,3 +3134,33 @@ bounded candidate/architecture change with explicit acceptance criteria, or
 accept the current correction-gate failure and defer the acquisition profile
 change. No third provider execution, prompt tuning, validator weakening,
 requiredness change or timeout/output-bound change was made.
+
+### J1-R4a latency characterisation — diagnostic only
+
+The current Luna Max Fast and Sol Medium profiles were each run exactly once
+over the unchanged correction workload of eight scenarios × three repetitions,
+using a temporary 45-second diagnostic ceiling. This was not a qualification
+run: it did not change the production 25-second policy, correction gate,
+prompts, schemas, validators, scenarios or output cap. The diagnostic emitted
+only candidate/profile identity, bounded provider elapsed time, finite failure
+code, effective tier when returned, token usage and estimated cost.
+
+Neither candidate reached a completed provider response. Every Luna execution
+returned the finite `provider_transport_rate_limited` result (24/24), with no
+timeout, no effective tier, zero tokens and zero cost. The elapsed response
+times for those rate-limit failures were min/median/p90/p95/max/average
+`455/565/906/1,638/1,969/720 ms`.
+
+Every Sol execution likewise returned `provider_transport_rate_limited`
+(24/24), with no timeout, no effective tier, zero tokens and zero cost. The
+elapsed response times for those rate-limit failures were
+`448/579/815/921/1,025/610 ms`. The requested `auto` tier was therefore not
+observed; Luna's requested `fast` tier could not be verified in this run.
+
+Successful-provider latency percentiles and maximum successful latency are
+**N/A** for both candidates. Consequently no evidence-based timeout can be
+recommended, no candidate can be selected, and no production timeout or
+qualification gate is changed. These results characterize an account/provider
+rate-limit condition, not model quality or model latency. Initial-planning p95
+and the complete two-call owner path remain unmeasured. No Luna or Sol
+diagnostic subject was rerun.

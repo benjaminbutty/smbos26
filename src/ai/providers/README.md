@@ -114,6 +114,23 @@ reliability, product corpus and exact-head CI were consequently not run. No
 current acquisition winner is approved; further profile work is
 PRODUCT DECISION REQUIRED.
 
+## Journey 1 R4a latency diagnostic — 20 August 2026
+
+Luna Max Fast and Sol Medium were each run once over the unchanged eight
+scenario × three repetition correction workload with a temporary 45-second
+diagnostic ceiling. This evidence is diagnostic only; the production 25-second
+timeout and all qualification thresholds remain unchanged.
+
+All 24 Luna calls and all 24 Sol calls returned the finite
+`provider_transport_rate_limited` failure before a provider response. Luna's
+rate-limit response times were min/median/p90/p95/max/average
+`455/565/906/1,638/1,969/720 ms`; Sol's were
+`448/579/815/921/1,025/610 ms`. Both candidates therefore have zero completed
+responses, zero observed effective tiers, zero tokens and zero cost in this
+diagnostic. Successful latency percentiles, maximum successful latency and a
+timeout recommendation are unavailable. The run was not repeated and does not
+constitute correction qualification evidence.
+
 ## Phase 12B Record-update provider boundary
 
 The Record-update task uses this same strict OpenAI Responses adapter with

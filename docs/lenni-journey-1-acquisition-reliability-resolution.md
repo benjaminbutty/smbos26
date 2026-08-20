@@ -156,3 +156,15 @@ and one timeout. No candidate cleared 24/24, so further work is
 **PRODUCT DECISION REQUIRED**. This branch adds no third execution, validator
 or requiredness change, required-Connection semantics, prompt tuning or
 timeout/output-bound change.
+
+J1-R4a then characterised Luna Max Fast and Sol Medium once each with the
+unchanged correction workload and a temporary 45-second diagnostic ceiling.
+All 48 calls returned the finite `provider_transport_rate_limited` failure;
+none reached a provider completion, timeout, effective tier, token usage or
+cost sample. Luna's rate-limit response times were
+`455/565/906/1,638/1,969/720 ms` (min/median/p90/p95/max/average), and Sol's
+were `448/579/815/921/1,025/610 ms`. These are operational failure-response
+times, not model-latency evidence. Successful latency statistics and an
+evidence-based timeout are unavailable, so production timeout and all
+qualification gates remain unchanged. The diagnostic subjects were not
+rerun.
