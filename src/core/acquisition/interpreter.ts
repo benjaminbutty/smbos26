@@ -3,10 +3,9 @@ import "server-only";
 import { builderConfigurationDraftOutputSchema } from "../../ai/configuration-drafting/schemas";
 import { validateConfigurationDraftOutput } from "../../ai/configuration-drafting/validation";
 import {
-  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON,
+  acquisitionRequiredIdentityCorrectionInputSchema,
   acquisitionPlanningOutputSchema,
   type AcquisitionPlanningInput,
-  type AcquisitionRequiredIdentityCorrectionInput,
   type AcquisitionReadyPlan,
 } from "../../ai/acquisition-planning/schemas";
 import {
@@ -36,6 +35,7 @@ import {
   removeSemanticallyRedundantIdentityFields,
   validateAcquisitionCandidate,
 } from "./quality";
+import { applyAcquisitionScopedFieldRepair } from "./recovery";
 
 export const ACQUISITION_MAX_OBJECTS = 6;
 export const ACQUISITION_MAX_FIELDS_PER_OBJECT = 12;
@@ -455,9 +455,6 @@ function addAcquisitionConnectionColumns(
 async function interpretAcquisitionPlan(
   categoryInput: unknown,
   requestInput: unknown,
-  taskKey:
-    | "acquisition_workspace_plan_v1"
-    | "acquisition_required_identity_correction_v1",
   execution: AcquisitionExecutionCore,
   options: AcquisitionInterpretationOptions,
 ) {
@@ -466,23 +463,16 @@ async function interpretAcquisitionPlan(
     .parse(requestInput)
     .replace(/\s+/g, " ");
   const groundedCurrency = detectGroundedCurrency(request);
-  const planningInput:
-    AcquisitionPlanningInput | AcquisitionRequiredIdentityCorrectionInput =
-    taskKey === "acquisition_required_identity_correction_v1"
-      ? {
-          schema_version: 1,
-          category,
-          owner_request: request,
-          grounded_currency: groundedCurrency,
-          correction_reason: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON,
-        }
-      : {
-          schema_version: 1,
-          category,
-          owner_request: request,
-          grounded_currency: groundedCurrency,
-        };
-  const result = await execution.execute(taskKey, planningInput);
+  const planningInput: AcquisitionPlanningInput = {
+    schema_version: 1,
+    category,
+    owner_request: request,
+    grounded_currency: groundedCurrency,
+  };
+  const result = await execution.execute(
+    "acquisition_workspace_plan_v1",
+    planningInput,
+  );
   const parsedPlan = acquisitionPlanningOutputSchema.parse(result.output);
   if (parsedPlan.state === "needs_more_detail")
     throw new AcquisitionInterpretationError(
@@ -557,23 +547,22 @@ export function interpretAcquisitionRequest(
   return interpretAcquisitionPlan(
     categoryInput,
     requestInput,
-    "acquisition_workspace_plan_v1",
     execution,
     options,
   );
 }
 
 export function interpretAcquisitionRequiredIdentityCorrection(
-  categoryInput: unknown,
-  requestInput: unknown,
+  manifestInput: unknown,
+  candidateInput: unknown,
   execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
-  options: AcquisitionInterpretationOptions = {},
 ) {
-  return interpretAcquisitionPlan(
-    categoryInput,
-    requestInput,
-    "acquisition_required_identity_correction_v1",
-    execution,
-    options,
-  );
+  const manifest =
+    acquisitionRequiredIdentityCorrectionInputSchema.parse(manifestInput);
+  const candidate = acquisitionBuildPayloadSchema.parse(candidateInput);
+  return execution
+    .execute("acquisition_required_identity_correction_v1", manifest)
+    .then((result) =>
+      applyAcquisitionScopedFieldRepair(candidate, manifest, result.output),
+    );
 }

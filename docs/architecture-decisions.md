@@ -3164,3 +3164,98 @@ qualification gate is changed. These results characterize an account/provider
 rate-limit condition, not model quality or model latency. Initial-planning p95
 and the complete two-call owner path remain unmeasured. No Luna or Sol
 diagnostic subject was rerun.
+
+### J1-R4a quota-cleared rerun and evidence-based correction timeout
+
+After the provider credit allowance was restored, the frozen diagnostic
+subject at `dc3ff31b96007417f52d4a8b8ae87a0753f41cd3` was legitimately rerun
+once per candidate. The original correction task, instruction, schemas,
+validators, scenarios and 2,500-token output cap were unchanged. Each run used
+the temporary 45-second diagnostic ceiling and exactly 24 provider executions.
+
+Luna Max Fast used `gpt-5.6-luna`, `reasoning.effort=max` and requested
+`service_tier=fast`. All 24 responses reported effective `priority`, verifying
+Fast mode. One response completed and 23 returned `provider_incomplete` at the
+unchanged output cap. Successful latency was min/median/p90/p95/max
+`21,124/21,124/21,124/21,124/21,124 ms`; observed-response latency was
+`12,623/14,153/21,124/21,659/24,582 ms`, with a 15,031 ms average. The
+diagnostic cost was 78,042 microusd from 31,683 input and 59,747 output
+tokens. The mechanical timeout rule gives 30 seconds from the single completed
+response, but the 1/24 completion rate makes Luna non-viable for the next gate.
+
+Sol Medium used `gpt-5.6-sol`, `reasoning.effort=medium` and `service_tier=auto`.
+All 24 responses completed at effective `default`. Successful latency was
+min/median/p90/p95/max `4,002/14,308/19,690/20,704/26,733 ms`, with a 14,203
+ms average. The diagnostic cost was 931,455 microusd from 31,683 input and
+25,768 output tokens. Two `unusual_other` repetitions returned the existing
+authoritative `quality_cross_object_field_leakage` finding; this diagnostic is
+not a qualification gate, but it is recorded as quality viability evidence.
+The mechanical timeout rule gives 35 seconds (`26,733 + 5,000`, rounded up).
+
+Sol is therefore the only completion-viable provisional candidate. The new
+frozen subject at `f0dd3a82c652cbf092d1a382abdd26ac9ffa1182` changes only the
+code-owned correction policy timeout to 35 seconds. Initial acquisition
+planning remains at 25 seconds because this correction-only measurement did
+not establish initial-planning latency. The one authorised correction
+qualification then ran 24/24 with effective `default` on all calls, no
+provider timeouts, 24/24 quality passes, but only 21/24 hard passes: all three
+`unusual_other` repetitions repeated
+`quality_cross_object_field_leakage`. It used 31,683 input and 26,276 output
+tokens, cost 946,695 microusd and took 343,257 ms in total. The correction gate
+therefore failed and the acquisition 8/8, reliability 24/24 and 96-case
+corpus were not started.
+
+This remains **PRODUCT DECISION REQUIRED**. No third execution, prompt or
+schema change, validator weakening, requiredness change, output-cap change,
+owner-question workaround or automatic retry is justified by these results.
+
+### J1-R5 structured acquisition guardrails and scoped correction
+
+The J1-R4a correction subject regenerated a complete workspace from owner
+context after one required identity defect. That broad stochastic surface is
+superseded by a bounded repair contract; the owner request and initial
+acquisition task remain unchanged.
+
+The initial planner now receives a separate server-owned planning contract.
+It preserves explicit reusable concepts, keeps connected identity on its owning
+business area, represents reusable concepts through Connections, uses an
+item/line structure when transaction quantity varies from a reusable Product,
+keeps unsupported actions unsupported, and returns the smallest coherent
+workspace. These rules are Lenni-owned and are never attributed to the owner.
+
+After, and only after, the exact `cross_object_field_leakage` plus
+`required_field` recovery refusal, the server derives a sanitised repair
+manifest from the composed candidate. The manifest contains only category,
+bounded business-area references/labels, existing Connection references and
+cardinalities, unsupported requirement labels, affected business areas and
+the finite validator/recovery reason. It contains no owner request, raw model
+output or reasoning, operational Records, customer data, credentials or
+unrestricted configuration payload. The correction task receives only that
+manifest and returns `{ schema_version: 1, action: "remove_fields", fields:
+[{ object_key, field_key }] }`.
+
+The server rejects manifest drift and applies only listed existing Field
+references. Business areas, Connections, cardinalities, unsupported
+requirements, owner scope, richer Fields and requiredness are locked. The
+complete existing deterministic composition/validator and capability
+enhancement pipeline runs after the in-memory repair. Invalid repair output,
+provider failures and all non-authorised failure classes use the existing
+truthful fallback. The workflow remains one owner reservation, at most two
+semantic provider executions and no recursion, third call, model self-
+validation, automatic Apply/Publish or operational AI context.
+
+The dedicated correction task keeps its own policy identity and is qualified
+as `gpt-5.6-luna`, reasoning `xhigh`, requested `service_tier=fast`, effective
+`priority`, 8,192 output tokens and a 45-second bounded timeout. The initial
+planner remains the previously selected Sol Medium/auto profile; no unrelated
+Terra-medium policy changes.
+
+The new correction-only qualification used the unchanged eight scenarios ×
+three repetitions once (24 executions) against the new manifest and
+field-reference-only schema. Luna completed 24/24 provider executions with
+24/24 hard and 24/24 quality passes and no provider failures or timeouts;
+effective `priority` was reported on all 24. Latency was
+min/median/p90/p95/max/average `1,074/1,314/1,951/2,214/2,247/1,429 ms`.
+It used 15,390 input and 2,413 output tokens and cost 5,991 microusd. This is
+the correction qualification evidence for the frozen J1-R5 subject, not a
+replacement of the separate acquisition hard gates.

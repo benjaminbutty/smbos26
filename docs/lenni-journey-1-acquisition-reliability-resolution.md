@@ -167,4 +167,65 @@ were `448/579/815/921/1,025/610 ms`. These are operational failure-response
 times, not model-latency evidence. Successful latency statistics and an
 evidence-based timeout are unavailable, so production timeout and all
 qualification gates remain unchanged. The diagnostic subjects were not
-rerun.
+rerun in the rate-limited run.
+
+## J1-R4a quota-cleared rerun and correction qualification
+
+The provider allowance was restored, so the invalidated rate-limit diagnostic
+was rerun once per candidate at `dc3ff31b96007417f52d4a8b8ae87a0753f41cd3`.
+The same eight scenarios, three repetitions, tasks, instructions, schemas,
+validators, 2,500-token output cap and temporary 45-second ceiling were used.
+
+Luna Max Fast verified effective `priority` on 24/24 requests, but only 1/24
+responses completed; 23 were `provider_incomplete`. Its one successful latency
+was 21,124 ms, giving the mechanical 30-second recommendation, but it is not
+completion-viable. It used 31,683 input and 59,747 output tokens and cost
+78,042 microusd.
+
+Sol Medium completed 24/24 at effective `default`. Its latency was
+min/median/p90/p95/max `4,002/14,308/19,690/20,704/26,733 ms`, average 14,203
+ms, giving the evidence-based 35-second recommendation. It used 31,683 input
+and 25,768 output tokens and cost 931,455 microusd. Two diagnostic executions
+on `unusual_other` showed `quality_cross_object_field_leakage`.
+
+The provisional Sol correction-timeout subject was frozen at
+`f0dd3a82c652cbf092d1a382abdd26ac9ffa1182`; only the correction policy moved
+to 35 seconds, while initial planning remains 25 seconds. Its one correction
+qualification ran all 24 provider executions with effective `default` and no
+timeouts, but passed only 21/24 hard executions. All three `unusual_other`
+repetitions repeated `quality_cross_object_field_leakage`, so the gate failed.
+The 8/8 acquisition gate, 24/24 reliability gate and 96-case corpus were not
+run. Further work is **PRODUCT DECISION REQUIRED**.
+
+## J1-R5 structured acquisition guardrails and scoped correction
+
+J1-R5 replaces the previous complete-correction replan with a sanitised,
+server-owned repair manifest. The owner request and initial acquisition task
+remain unchanged. A separate Lenni planning contract now requires explicit
+reusable concepts to be preserved, connected identity to stay on its owning
+business area, reusable concepts to use Connections, varying transaction
+quantity to use an item/line structure, unsupported actions to remain
+unsupported, and the smallest coherent workspace to be returned. The contract
+is not owner text.
+
+Only the exact `cross_object_field_leakage` plus `required_field` refusal can
+construct a correction manifest. It is derived from the composed candidate and
+contains bounded business-area, Connection/cardinality, unsupported-requirement
+and affected-Field metadata plus finite server-owned reason codes. It excludes
+the owner request, rejected model output/reasoning, operational data,
+credentials and unrestricted configuration. The dedicated correction model
+returns only existing Field references to remove. The deterministic server
+locks business areas, Connections/cardinality, unsupported requirements, owner
+scope, richer Fields and requiredness; applies only an allow-listed Field-layer
+repair; and runs the complete authoritative validator and capability pipeline.
+Invalid output remains a truthful fallback. The two-execution maximum and one
+owner-facing reservation are unchanged.
+
+The new correction subject is Luna xhigh/Fast with an 8,192 output cap and
+45-second timeout. Its one correction qualification ran 24 executions (eight
+scenarios × three repetitions): 24/24 provider complete, 24/24 hard-valid,
+24/24 quality-valid, no timeout/provider failure, and effective `priority` on
+24/24. Latency min/median/p90/p95/max/average was
+`1,074/1,314/1,951/2,214/2,247/1,429 ms`; usage was 15,390 input and 2,413
+output tokens at 5,991 microusd. The initial planner remains Sol Medium/auto;
+this correction qualification does not claim the later acquisition gates.

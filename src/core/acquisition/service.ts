@@ -49,6 +49,7 @@ import {
   type AcquisitionBuildPayload,
   type AcquisitionCategory,
 } from "./schemas";
+import { buildAcquisitionRequiredIdentityRepairManifest } from "./scoped-repair";
 
 export const ACQUISITION_COOKIE_NAME = "smbos_acquisition_session";
 export const ACQUISITION_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24;
@@ -60,7 +61,10 @@ const REQUIRED_IDENTITY_REPLAN_REASON =
   ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON;
 
 class AcquisitionRequiredIdentityReplanSignal extends Error {
-  constructor(override readonly cause: AcquisitionCandidateQualityError) {
+  constructor(
+    override readonly cause: AcquisitionCandidateQualityError,
+    readonly candidate: AcquisitionBuildPayload,
+  ) {
     super("The first acquisition plan requires one bounded correction pass.");
     this.name = "AcquisitionRequiredIdentityReplanSignal";
   }
@@ -606,7 +610,7 @@ export async function generateCandidate(
           recovery_failure_code: recoveryFailureCode,
         });
         if (shouldReplan) {
-          throw new AcquisitionRequiredIdentityReplanSignal(error);
+          throw new AcquisitionRequiredIdentityReplanSignal(error, candidate);
         }
       }
 
@@ -646,24 +650,19 @@ export async function generateCandidate(
     );
   };
 
-  const interpretCorrectionPlan = () => {
+  const interpretCorrectionPlan = (
+    signal: AcquisitionRequiredIdentityReplanSignal,
+  ) => {
     reservePlanningExecution();
+    const manifest = buildAcquisitionRequiredIdentityRepairManifest(
+      signal.candidate,
+      signal.cause.code,
+      "required_field",
+    );
     return interpretAcquisitionRequiredIdentityCorrection(
-      category,
-      enrichedRequest,
+      manifest,
+      signal.candidate,
       options.execution,
-      {
-        validate: false,
-        onCanonicalisation: ({ removedFieldCount }) => {
-          precompositionCanonicalisedFieldCount = removedFieldCount;
-          if (emitFirstPassSuccess) {
-            emitEvent("precomposition_canonicalisation_applied", {
-              category,
-              removed_field_count: removedFieldCount,
-            });
-          }
-        },
-      },
     );
   };
 
@@ -704,7 +703,7 @@ export async function generateCandidate(
     });
     let correctionPlanPayload: AcquisitionBuildPayload;
     try {
-      correctionPlanPayload = await interpretCorrectionPlan();
+      correctionPlanPayload = await interpretCorrectionPlan(error);
     } catch (correctionPlanError) {
       emitDiagnostic(correctionPlanError, "candidate_generation", {
         category,

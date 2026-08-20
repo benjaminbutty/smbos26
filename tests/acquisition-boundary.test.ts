@@ -119,23 +119,52 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     const correctionInput =
       acquisitionRequiredIdentityCorrectionInputSchema.parse({
         schema_version: 1,
-        category: "jobs",
-        owner_request: "Keep customers and jobs organised.",
-        grounded_currency: null,
         correction_reason: "required_cross_object_identity_must_use_connection",
+        validator_code: "cross_object_field_leakage",
+        recovery_failure_code: "required_field",
+        allowed_correction_scope: "remove_only_listed_identity_fields",
+        owner_scope: {
+          category: "jobs",
+          business_areas: [
+            {
+              object_key: "customer",
+              singular_label: "Customer",
+              plural_label: "Customers",
+            },
+            {
+              object_key: "job",
+              singular_label: "Job",
+              plural_label: "Jobs",
+            },
+          ],
+          connections: [],
+          unsupported_requirements: [],
+        },
+        affected_business_areas: [
+          {
+            object_key: "job",
+            singular_label: "Job",
+            plural_label: "Jobs",
+          },
+        ],
+        affected_fields: [
+          {
+            object_key: "job",
+            field_key: "customer_name",
+            label: "Customer name",
+            field_type: "short_text",
+            required: true,
+          },
+        ],
       });
 
     expect(first).toBe(ACQUISITION_PLANNING_INSTRUCTION);
-    expect(correction).toBe(
-      `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`,
-    );
-    expect(correction).toContain("preserve every requested business area");
-    expect(correction).toContain(
-      "each distinct reusable person or organisation",
-    );
-    expect(correction).toContain("explicit naming is a floor, not a ceiling");
-    expect(correction).toContain("minimal inferred linking structure");
-    expect(correction).toContain("through Connections");
+    expect(correction).toBe(ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION);
+    expect(correction).toContain("server-owned repair manifest");
+    expect(correction).toContain("Field-layer repair");
+    expect(correction).toContain("Do not add, rename or edit Fields");
+    expect(correction).toContain("do not change cardinality");
+    expect(correction).toContain("legitimate richer Fields");
     expect(acquisitionPlanningTaskV1.key).toBe("acquisition_workspace_plan_v1");
     expect(acquisitionRequiredIdentityCorrectionTaskV1).toMatchObject({
       key: "acquisition_required_identity_correction_v1",
@@ -144,12 +173,13 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(openAiAcquisitionRequiredIdentityCorrectionPolicy).toMatchObject({
       key: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
       providerKey: "openai",
-      modelKey: "gpt-5.6-sol",
-      reasoningEffort: "medium",
-      serviceTier: "auto",
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "xhigh",
+      serviceTier: "fast",
       timeoutMs: OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
-      inputMicrousdPerMillion: 5_000_000,
-      outputMicrousdPerMillion: 30_000_000,
+      inputMicrousdPerMillion: 200_000,
+      outputMicrousdPerMillion: 1_200_000,
+      maxOutputTokens: 8_192,
       maxAttempts: 1,
     });
     expect(firstInput).not.toHaveProperty("correction_reason");
@@ -162,6 +192,7 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(correctionInput.correction_reason).toBe(
       "required_cross_object_identity_must_use_connection",
     );
+    expect(correctionInput).not.toHaveProperty("owner_request");
   });
 
   it("fixes correction qualification at eight scenarios and three repetitions", async () => {

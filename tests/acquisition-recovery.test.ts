@@ -11,19 +11,26 @@ import { AiExecutionError } from "../src/ai/errors";
 import type { AcquisitionExecutionCore } from "../src/ai/acquisition-planning/runtime";
 import { runAcquisitionHardGateScenario } from "../src/ai/evaluation/acquisition/live";
 import { runAcquisitionCorrectionQualificationScenario } from "../src/ai/evaluation/acquisition/correction-qualification-live";
+import { acquisitionEvaluationScenarios } from "../src/ai/evaluation/acquisition/scenarios";
 import { generateCandidate } from "../src/core/acquisition/service";
 import { interpretAcquisitionRequest } from "../src/core/acquisition/interpreter";
 import { acquisitionBuildPayloadSchema } from "../src/core/acquisition/schemas";
 import {
   attemptAcquisitionCandidateRecovery,
+  applyAcquisitionScopedFieldRepair,
   recoverAcquisitionCandidate,
 } from "../src/core/acquisition/recovery";
+import { buildAcquisitionRequiredIdentityRepairManifest } from "../src/core/acquisition/scoped-repair";
+import { createScopedCorrectionQualificationFixture } from "../src/ai/evaluation/acquisition/scoped-correction-fixture";
 import { composeStarterComposition } from "../src/core/acquisition/composer";
 import {
   AcquisitionCandidateQualityError,
   validateAcquisitionCandidate,
 } from "../src/core/acquisition/quality";
-import type { AcquisitionPlanningOutput } from "../src/ai/acquisition-planning/schemas";
+import type {
+  AcquisitionPlanningOutput,
+  AcquisitionRequiredIdentityCorrectionOutput,
+} from "../src/ai/acquisition-planning/schemas";
 
 const carpenterRequest =
   "I’m a carpenter who needs to be able to track ongoing jobs, quotes handed to customers, which quotes need following up and which workers are working on which job";
@@ -43,7 +50,10 @@ const decisions = {
 } as const;
 
 function executionForPlan(
-  output: AcquisitionPlanningOutput | Error,
+  output:
+    | AcquisitionPlanningOutput
+    | AcquisitionRequiredIdentityCorrectionOutput
+    | Error,
 ): AcquisitionExecutionCore & {
   calls: number;
   inputs: readonly unknown[];
@@ -53,7 +63,11 @@ function executionForPlan(
 }
 
 function executionForPlans(
-  outputs: readonly (AcquisitionPlanningOutput | Error)[],
+  outputs: readonly (
+    | AcquisitionPlanningOutput
+    | AcquisitionRequiredIdentityCorrectionOutput
+    | Error
+  )[],
 ): AcquisitionExecutionCore & {
   calls: number;
   inputs: readonly unknown[];
@@ -105,6 +119,14 @@ function executionForPlans(
       } satisfies AiExecutionResult;
     },
   };
+}
+
+function scopedRepair(fieldKey = "customer_name") {
+  return {
+    schema_version: 1 as const,
+    action: "remove_fields" as const,
+    fields: [{ object_key: "job", field_key: fieldKey }],
+  } satisfies AcquisitionRequiredIdentityCorrectionOutput;
 }
 
 function carpenterPlan(
@@ -277,6 +299,175 @@ function loggedEvents(
 }
 
 describe("bounded acquisition quality recovery", () => {
+  it("builds a sanitized locked manifest and applies only an allow-listed Field repair", () => {
+    const starter = composeStarterComposition("jobs", carpenterRequest);
+    const jobTitle = starter.operations.find(
+      (operation) =>
+        operation.op === "set_field" &&
+        operation.object_key === "job" &&
+        operation.key === "title",
+    );
+    if (!jobTitle || jobTitle.op !== "set_field") {
+      throw new Error("The jobs starter must expose a job title field.");
+    }
+    const candidate = acquisitionBuildPayloadSchema.parse({
+      proposal: { ...starter.proposal, source: "tailored" },
+      operations: [
+        ...starter.operations,
+        {
+          ...jobTitle,
+          key: "customer_name",
+          label: "Customer name",
+          required: true,
+        },
+        {
+          ...jobTitle,
+          key: "worker_role",
+          label: "Worker role",
+          required: false,
+        },
+      ],
+    });
+    const manifest = buildAcquisitionRequiredIdentityRepairManifest(
+      candidate,
+      "cross_object_field_leakage",
+      "required_field",
+    );
+
+    expect(manifest).not.toHaveProperty("owner_request");
+    expect(manifest).not.toHaveProperty("raw_model_output");
+    expect(JSON.stringify(manifest)).not.toMatch(
+      /record|credential|reasoning/i,
+    );
+    expect(
+      manifest.owner_scope.business_areas.map(({ object_key }) => object_key),
+    ).toEqual(["customer", "job", "quote", "task"]);
+    expect(manifest.affected_fields).toEqual([
+      expect.objectContaining({
+        object_key: "job",
+        field_key: "customer_name",
+        required: true,
+      }),
+    ]);
+    expect(manifest.owner_scope.connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source_object_key: "customer",
+          target_object_key: "job",
+          cardinality: "one_to_many",
+        }),
+      ]),
+    );
+    expect(manifest.owner_scope.unsupported_requirements).toEqual(
+      starter.proposal.not_included,
+    );
+
+    const repaired = applyAcquisitionScopedFieldRepair(candidate, manifest, {
+      schema_version: 1,
+      action: "remove_fields",
+      fields: [{ object_key: "job", field_key: "customer_name" }],
+    });
+    expect(() => validateAcquisitionCandidate(repaired)).not.toThrow();
+    expect(
+      repaired.operations.some(
+        (operation) =>
+          operation.op === "set_field" &&
+          operation.object_key === "job" &&
+          operation.key === "worker_role",
+      ),
+    ).toBe(true);
+    expect(
+      repaired.operations.some(
+        (operation) =>
+          operation.op === "set_field" &&
+          operation.object_key === "job" &&
+          operation.key === "customer_name",
+      ),
+    ).toBe(false);
+    expect(
+      repaired.operations.find(
+        (operation) =>
+          operation.op === "set_field" &&
+          operation.object_key === "job" &&
+          operation.key === "title",
+      ),
+    ).toMatchObject({ required: true });
+
+    expect(() =>
+      applyAcquisitionScopedFieldRepair(candidate, manifest, {
+        schema_version: 1,
+        action: "remove_fields",
+        fields: [{ object_key: "job", field_key: "title" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      applyAcquisitionScopedFieldRepair(
+        candidate,
+        {
+          ...manifest,
+          owner_scope: {
+            ...manifest.owner_scope,
+            connections: manifest.owner_scope.connections.map((connection) => ({
+              ...connection,
+              cardinality: "many_to_many",
+            })),
+          },
+        },
+        {
+          schema_version: 1,
+          action: "remove_fields",
+          fields: [{ object_key: "job", field_key: "customer_name" }],
+        },
+      ),
+    ).toThrow();
+    expect(() =>
+      applyAcquisitionScopedFieldRepair(
+        candidate,
+        {
+          ...manifest,
+          owner_scope: {
+            ...manifest.owner_scope,
+            business_areas: manifest.owner_scope.business_areas.filter(
+              ({ object_key }) => object_key !== "quote",
+            ),
+          },
+        },
+        {
+          schema_version: 1,
+          action: "remove_fields",
+          fields: [{ object_key: "job", field_key: "customer_name" }],
+        },
+      ),
+    ).toThrow();
+    expect(() =>
+      applyAcquisitionScopedFieldRepair(
+        candidate,
+        {
+          ...manifest,
+          owner_scope: {
+            ...manifest.owner_scope,
+            unsupported_requirements: [
+              ...manifest.owner_scope.unsupported_requirements,
+              "Unexpected unsupported requirement",
+            ],
+          },
+        },
+        {
+          schema_version: 1,
+          action: "remove_fields",
+          fields: [{ object_key: "job", field_key: "customer_name" }],
+        },
+      ),
+    ).toThrow();
+    expect(() =>
+      buildAcquisitionRequiredIdentityRepairManifest(
+        candidate,
+        "relationship_scalar_duplication",
+        "required_field",
+      ),
+    ).toThrow();
+  });
+
   it("surfaces a finite required-field refusal for an already-composed candidate", () => {
     const starter = composeStarterComposition("jobs", carpenterRequest);
     const requiredLeak = {
@@ -393,7 +584,7 @@ describe("bounded acquisition quality recovery", () => {
         crossObjectLeakage: true,
         crossObjectLeakageRequired: true,
       }),
-      carpenterPlan(),
+      scopedRepair(),
     ]);
     await expect(
       runAcquisitionHardGateScenario(carpenterScenario, hardExecution),
@@ -408,19 +599,24 @@ describe("bounded acquisition quality recovery", () => {
       "acquisition_required_identity_correction_v1",
     ]);
     expect(hardExecution.inputs).toHaveLength(2);
-    expect(hardExecution.inputs[1]).toEqual({
-      ...(hardExecution.inputs[0] as Record<string, unknown>),
+    expect(hardExecution.inputs[1]).toMatchObject({
+      schema_version: 1,
       correction_reason: "required_cross_object_identity_must_use_connection",
+      validator_code: "cross_object_field_leakage",
+      recovery_failure_code: "required_field",
+      allowed_correction_scope: "remove_only_listed_identity_fields",
+      affected_fields: [
+        expect.objectContaining({
+          object_key: "job",
+          field_key: "customer_name",
+          required: true,
+        }),
+      ],
     });
-    expect(Object.keys(hardExecution.inputs[1] as object).sort()).toEqual([
-      "category",
-      "correction_reason",
-      "grounded_currency",
-      "owner_request",
-      "schema_version",
-    ]);
+    expect(hardExecution.inputs[1]).not.toHaveProperty("owner_request");
+    expect(hardExecution.inputs[1]).not.toHaveProperty("tables");
     expect(JSON.stringify(hardExecution.inputs[1])).not.toMatch(
-      /tables|connections|primary_table_reference|unsupported_requirements/,
+      /operational|record|raw_output|reasoning|credential/i,
     );
 
     const productionExecution = executionForPlans([
@@ -428,7 +624,7 @@ describe("bounded acquisition quality recovery", () => {
         crossObjectLeakage: true,
         crossObjectLeakageRequired: true,
       }),
-      carpenterPlan(),
+      scopedRepair(),
     ]);
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     await expect(
@@ -451,7 +647,7 @@ describe("bounded acquisition quality recovery", () => {
   });
 
   it("runs correction qualification through the dedicated task and full deterministic gates", async () => {
-    const execution = executionForPlan(carpenterPlan());
+    const execution = executionForPlan(scopedRepair());
 
     await expect(
       runAcquisitionCorrectionQualificationScenario(
@@ -468,6 +664,37 @@ describe("bounded acquisition quality recovery", () => {
     expect(execution.taskKeys).toEqual([
       "acquisition_required_identity_correction_v1",
     ]);
+  });
+
+  it("keeps every correction qualification scenario inside its locked fixture scope", async () => {
+    for (const scenario of acquisitionEvaluationScenarios) {
+      const candidate = createScopedCorrectionQualificationFixture(scenario);
+      const manifest = buildAcquisitionRequiredIdentityRepairManifest(
+        candidate,
+        "cross_object_field_leakage",
+        "required_field",
+      );
+      const execution = executionForPlan({
+        schema_version: 1,
+        action: "remove_fields",
+        fields: manifest.affected_fields.map(({ object_key, field_key }) => ({
+          object_key,
+          field_key,
+        })),
+      });
+      const result = await runAcquisitionCorrectionQualificationScenario(
+        scenario,
+        execution,
+      );
+      expect(result).toMatchObject({
+        hard_passed: true,
+        quality_passed: true,
+        hard_findings: [],
+        quality_findings: [],
+      });
+      expect(execution.inputs[0]).not.toHaveProperty("owner_request");
+      expect(execution.inputs[0]).not.toHaveProperty("tables");
+    }
   });
 
   it("canonicalises an optional exact identity without reporting raw first-pass success", async () => {

@@ -9,8 +9,19 @@ import {
   acquisitionPlanningInputSchema,
   acquisitionPlanningOutputSchema,
   acquisitionRequiredIdentityCorrectionInputSchema,
+  acquisitionRequiredIdentityCorrectionOutputSchema,
 } from "./schemas";
 import { validateAcquisitionPlanningOutput } from "./validation";
+
+/** Rules owned by Lenni and never attributed to the owner request. */
+export const ACQUISITION_SERVER_OWNED_PLANNING_CONTRACT = [
+  "Server-owned planning contract: preserve every explicit reusable business concept in the owner request.",
+  "Connected identity belongs on the business area that owns it; do not duplicate connected identity or contact information as scalar Fields on a related area.",
+  "Represent reusable business concepts through Connections.",
+  "When quantity varies between a reusable Product or item and a transaction, use an item or line structure rather than putting quantity on the reusable concept.",
+  "Keep unsupported actions as unsupported requirements.",
+  "Return the smallest coherent workspace satisfying both the owner request and this server-owned contract.",
+].join(" ");
 
 export const ACQUISITION_PLANNING_INSTRUCTION = [
   "Interpret one anonymous owner's business description into the smallest coherent internal operating workspace.",
@@ -35,18 +46,23 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
   "Use table_N references only to connect business areas and choose one primary business area; do not invent an Overview Page or generic schema documentation.",
   "Every business area needs useful information. Choice and status properties require options; other properties use null options. Currency is null unless grounded_currency supplies the exact currency.",
   "Never output SQL, code, tools, IDs, database access, configuration operations, Apply, Publish or mutation instructions.",
+  ACQUISITION_SERVER_OWNED_PLANNING_CONTRACT,
 ].join(" ");
 
-export const ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION = [
-  "This dedicated task is the one permitted fresh correction plan after connected identity was represented as a duplicated required scalar.",
-  "Use only the original owner request and grounded context in this task input; preserve every requested business area, connection need and unsupported requirement without broadening the workspace.",
-  "Preserving scope means each distinct reusable person or organisation, resource, and operational event explicitly named by the owner remains its own connected business area; explicit naming is a floor, not a ceiling.",
-  "Also retain every minimal inferred linking structure required by the general planning contract to represent quantities, repeated activity and coherent Connections; do not collapse one business area into a scalar Field on another area.",
-  "An unavailable action remains an unsupported requirement rather than a new business area.",
-  "Keep an identity scalar on the business area it identifies, where it may remain required, and represent that area's participation in other connected business areas only through Connections.",
-  "Never duplicate that name, identity, email, phone, address, contact detail or an equivalent replacement scalar on the related business area, whether required or optional.",
-  "Do not weaken or omit a genuine local requirement, invent owner information, ask another owner question or return needs_more_detail merely because this correction was requested.",
+export const ACQUISITION_REQUIRED_IDENTITY_REPAIR_INSTRUCTION = [
+  "This dedicated task is the one permitted scoped correction after the exact server-side trigger: cross_object_field_leakage plus recovery refusal required_field.",
+  "The input is a server-owned repair manifest, not an owner request and not a rejected model response.",
+  "Return only the smallest Field-layer repair: choose one or more existing Field references from affected_fields to remove.",
+  "Do not add, rename or edit Fields; do not change requiredness; do not add or remove business areas, Connections or unsupported requirements; do not change cardinality; do not broaden scope.",
+  "Keep legitimate richer Fields that are not listed in affected_fields.",
+  "Never return a complete plan, needs_more_detail, operational Records, sample data, configuration operations, Apply or Publish instructions.",
+  ACQUISITION_SERVER_OWNED_PLANNING_CONTRACT,
 ].join(" ");
+
+// Compatibility export for existing boundary fixtures; the correction task
+// now uses the scoped repair contract above rather than a complete replan.
+export const ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION =
+  ACQUISITION_REQUIRED_IDENTITY_REPAIR_INSTRUCTION;
 
 export const acquisitionPlanningTaskV1 = Object.freeze({
   key: "acquisition_workspace_plan_v1",
@@ -65,15 +81,12 @@ export const acquisitionPlanningTaskV1 = Object.freeze({
 export const acquisitionRequiredIdentityCorrectionTaskV1 = Object.freeze({
   key: "acquisition_required_identity_correction_v1",
   version: 1,
-  purposeLabel:
-    "Correct required identity representation in an acquisition plan",
+  purposeLabel: "Repair one bounded required identity Field representation",
   policyKey: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
   inputSchema: acquisitionRequiredIdentityCorrectionInputSchema,
-  outputSchema: acquisitionPlanningOutputSchema,
-  buildInstruction: () =>
-    `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`,
-  validateOutput: validateAcquisitionPlanningOutput,
+  outputSchema: acquisitionRequiredIdentityCorrectionOutputSchema,
+  buildInstruction: () => ACQUISITION_REQUIRED_IDENTITY_REPAIR_INSTRUCTION,
 }) satisfies RegisteredAiTask<
   typeof acquisitionRequiredIdentityCorrectionInputSchema,
-  typeof acquisitionPlanningOutputSchema
+  typeof acquisitionRequiredIdentityCorrectionOutputSchema
 >;

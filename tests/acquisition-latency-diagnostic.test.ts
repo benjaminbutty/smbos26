@@ -57,6 +57,12 @@ describe("acquisition correction latency diagnostic", () => {
     expect(openAiAcquisitionRequiredIdentityCorrectionPolicy.timeoutMs).toBe(
       OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
     );
+    expect(openAiAcquisitionRequiredIdentityCorrectionPolicy).toMatchObject({
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "xhigh",
+      serviceTier: "fast",
+      maxOutputTokens: 8_192,
+    });
     expect(acquisitionCorrectionLatencyDiagnosticPolicy(luna).timeoutMs).toBe(
       ACQUISITION_CORRECTION_LATENCY_DIAGNOSTIC_TIMEOUT_MS,
     );

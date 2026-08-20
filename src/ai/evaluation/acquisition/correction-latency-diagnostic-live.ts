@@ -158,6 +158,10 @@ export function acquisitionCorrectionLatencyDiagnosticPolicy(
     modelKey: profile.modelKey,
     reasoningEffort: profile.reasoningEffort,
     serviceTier: profile.serviceTier,
+    // The frozen latency subjects intentionally retain the historical
+    // 2,500-token diagnostic cap. Production scoped correction owns its
+    // separate 8,192-token cap in the active policy.
+    maxOutputTokens: 2_500,
     timeoutMs: ACQUISITION_CORRECTION_LATENCY_DIAGNOSTIC_TIMEOUT_MS,
     inputMicrousdPerMillion: profile.inputMicrousdPerMillion,
     outputMicrousdPerMillion: profile.outputMicrousdPerMillion,

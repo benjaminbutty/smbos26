@@ -14,6 +14,12 @@ import {
   acquisitionBuildPayloadSchema,
   type AcquisitionBuildPayload,
 } from "./schemas";
+import {
+  acquisitionRequiredIdentityRepairManifestSchema,
+  acquisitionScopedFieldRepairOutputSchema,
+  type AcquisitionRequiredIdentityRepairManifest,
+  AcquisitionScopedRepairManifestError,
+} from "./scoped-repair";
 
 export const acquisitionRecoverableQualityCodes = [
   "cross_object_field_leakage",
@@ -331,6 +337,7 @@ function updateTrackedInformation(
 function removeRedundantFields(
   payload: AcquisitionBuildPayload,
   removedFields: ReadonlySet<string>,
+  options: Readonly<{ allowRequiredFields?: boolean }> = {},
 ):
   | Readonly<{ status: "repaired"; payload: AcquisitionBuildPayload }>
   | Extract<AcquisitionRecoveryAttempt, { status: "refused" }> {
@@ -352,7 +359,7 @@ function removeRedundantFields(
         operation.op === "set_field" &&
         removedFields.has(fieldIdentity(operation.object_key, operation.key))
       ) {
-        if (operation.required) {
+        if (operation.required && !options.allowRequiredFields) {
           return { status: "refused", failure_code: "required_field" };
         }
         continue;
@@ -448,6 +455,112 @@ export function recoverAcquisitionCandidate(
 ): AcquisitionRecoveryResult | null {
   const attempt = attemptAcquisitionCandidateRecovery(payloadInput, error);
   return attempt.status === "recovered" ? attempt.recovery : null;
+}
+
+function assertManifestMatchesPayload(
+  payload: AcquisitionBuildPayload,
+  manifest: AcquisitionRequiredIdentityRepairManifest,
+): void {
+  if (manifest.owner_scope.category !== payload.proposal.category) {
+    throw new AcquisitionScopedRepairManifestError("scope_invalid");
+  }
+
+  const objects = payload.operations
+    .filter(
+      (
+        operation,
+      ): operation is Extract<ConfigurationOperation, { op: "set_object" }> =>
+        operation.op === "set_object" && operation.is_active,
+    )
+    .map(({ key, singular_label, plural_label }) => ({
+      object_key: key,
+      singular_label,
+      plural_label,
+    }));
+  if (
+    JSON.stringify(objects) !==
+    JSON.stringify(manifest.owner_scope.business_areas)
+  ) {
+    throw new AcquisitionScopedRepairManifestError("scope_invalid");
+  }
+
+  const relationships = payload.operations
+    .filter(
+      (
+        operation,
+      ): operation is Extract<
+        ConfigurationOperation,
+        { op: "set_relationship" }
+      > => operation.op === "set_relationship" && operation.is_active,
+    )
+    .map(
+      ({
+        key,
+        source_object_key,
+        target_object_key,
+        source_label,
+        target_label,
+        cardinality,
+      }) => ({
+        relationship_key: key,
+        source_object_key,
+        target_object_key,
+        source_label,
+        target_label,
+        cardinality,
+      }),
+    );
+  if (
+    JSON.stringify(relationships) !==
+    JSON.stringify(manifest.owner_scope.connections)
+  ) {
+    throw new AcquisitionScopedRepairManifestError("scope_invalid");
+  }
+  if (
+    JSON.stringify(payload.proposal.not_included) !==
+    JSON.stringify(manifest.owner_scope.unsupported_requirements)
+  ) {
+    throw new AcquisitionScopedRepairManifestError("scope_invalid");
+  }
+}
+
+/**
+ * Apply only the model's allow-listed Field removals, then return the
+ * candidate for the caller's complete authoritative validation pass.
+ */
+export function applyAcquisitionScopedFieldRepair(
+  payloadInput: unknown,
+  manifestInput: unknown,
+  outputInput: unknown,
+): AcquisitionBuildPayload {
+  const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
+  const manifest =
+    acquisitionRequiredIdentityRepairManifestSchema.parse(manifestInput);
+  const output = acquisitionScopedFieldRepairOutputSchema.parse(outputInput);
+  assertManifestMatchesPayload(payload, manifest);
+
+  const allowedFields = new Map(
+    manifest.affected_fields.map((field) => [
+      fieldIdentity(field.object_key, field.field_key),
+      field,
+    ]),
+  );
+  const removedFields = new Set<string>();
+  for (const field of output.fields) {
+    const identity = fieldIdentity(field.object_key, field.field_key);
+    if (!allowedFields.has(identity)) {
+      throw new AcquisitionScopedRepairManifestError("scope_invalid");
+    }
+    removedFields.add(identity);
+  }
+
+  const repaired = removeRedundantFields(payload, removedFields, {
+    allowRequiredFields: true,
+  });
+  if (repaired.status === "refused") {
+    throw new AcquisitionScopedRepairManifestError("scope_invalid");
+  }
+  return acquisitionBuildPayloadSchema.parse(repaired.payload);
 }
 
 export function isAcquisitionRecoveryQualityCode(

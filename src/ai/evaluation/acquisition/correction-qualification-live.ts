@@ -15,6 +15,7 @@ import {
   ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD,
   interpretAcquisitionRequiredIdentityCorrection,
 } from "../../../core/acquisition/interpreter";
+import { buildAcquisitionRequiredIdentityRepairManifest } from "../../../core/acquisition/scoped-repair";
 import { validateAcquisitionCandidate } from "../../../core/acquisition/quality";
 import {
   ACQUISITION_EVALUATION_SCENARIO_COUNT,
@@ -27,6 +28,7 @@ import {
   evaluateAcquisitionScenario,
   productionCompositionFailureResult,
 } from "./evaluator";
+import { createScopedCorrectionQualificationFixture } from "./scoped-correction-fixture";
 
 export const ACQUISITION_CORRECTION_TASK_KEY =
   "acquisition_required_identity_correction_v1" as const;
@@ -69,11 +71,16 @@ export async function runAcquisitionCorrectionQualificationScenario(
   execution: AcquisitionExecutionCore,
 ) {
   try {
+    const candidate = createScopedCorrectionQualificationFixture(scenario);
+    const manifest = buildAcquisitionRequiredIdentityRepairManifest(
+      candidate,
+      "cross_object_field_leakage",
+      "required_field",
+    );
     const composed = await interpretAcquisitionRequiredIdentityCorrection(
-      scenario.category,
-      scenario.request,
+      manifest,
+      candidate,
       execution,
-      { validate: false },
     );
     const enhanced = enhanceAcquisitionPayload(
       composed,
