@@ -292,7 +292,7 @@ describe("configuration drafting Terra medium evaluation profile", () => {
       "5f2c29d5df8dccb1dac49fd19201b87cf3db21934c0be320f3f97c204ec27d80",
     );
     expect(hashFile("src/ai/providers/openai.ts")).toBe(
-      "6871a6ac8001f55b00e2808c805e7bb96f2ab527d6e2d2b30da27df55c81ce4f",
+      "7ea487e0eff5cdff0d415bdc812505377cb4f59475aabf039be770ccd49ce3c6",
     );
     expect(hashFile("src/ai/providers/openai-schema.ts")).toBe(
       "9c6a7a9aa787ba284741758c387500acd5a9d2527781083a561d668a27ed36fd",

@@ -3,6 +3,7 @@ import "server-only";
 import OpenAI from "openai";
 
 import {
+  aiReasoningEffortSchema,
   StructuredAiProviderError,
   type StructuredAiProvider,
   type StructuredAiProviderRequest,
@@ -12,6 +13,7 @@ import {
 import {
   OPENAI_BUILDER_PLANNING_MODEL_KEY,
   OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+  OPENAI_SUPPORTED_MODEL_KEYS,
 } from "../policies";
 import {
   adaptRegisteredSchemaForOpenAi,
@@ -357,15 +359,23 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
     try {
       if (
         request.providerKey !== OPENAI_PROVIDER_KEY ||
-        request.modelKey !== OPENAI_MODEL_KEY
+        !OPENAI_SUPPORTED_MODEL_KEYS.includes(
+          request.modelKey as (typeof OPENAI_SUPPORTED_MODEL_KEYS)[number],
+        )
       ) {
+        throw providerError("invalid_request");
+      }
+      const reasoningEffort = aiReasoningEffortSchema.safeParse(
+        request.reasoningEffort ?? OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+      );
+      if (!reasoningEffort.success) {
         throw providerError("invalid_request");
       }
       const schema = adaptRegisteredSchemaForOpenAi(
         request.outputContract.jsonSchema,
       );
       const body = Object.freeze({
-        model: OPENAI_MODEL_KEY,
+        model: request.modelKey,
         instructions: request.instruction,
         input: Object.freeze([
           Object.freeze({
@@ -381,7 +391,7 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
         max_output_tokens: request.maxOutputTokens,
         store: false,
         reasoning: Object.freeze({
-          effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+          effort: reasoningEffort.data,
         }),
         prompt_cache_options: Object.freeze({
           mode: "explicit",

@@ -16,6 +16,22 @@ export const aiProviderFailureKindSchema = z.enum([
 
 export type AiProviderFailureKind = z.infer<typeof aiProviderFailureKindSchema>;
 
+/**
+ * Server-owned reasoning profiles. The allow-list is intentionally closed so
+ * callers cannot select provider effort through owner input, environment
+ * configuration, or model output.
+ */
+export const aiReasoningEffortSchema = z.enum([
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
+export type AiReasoningEffort = z.infer<typeof aiReasoningEffortSchema>;
+
 export const structuredAiUsageSchema = z
   .object({
     inputTokens: z.number().int().nonnegative().max(1_000_000_000),
@@ -79,6 +95,8 @@ export const structuredAiProviderResponseSchema = z
 export interface StructuredAiProviderRequest {
   providerKey: string;
   modelKey: string;
+  /** Optional for direct provider callers; execution always supplies policy value. */
+  reasoningEffort?: AiReasoningEffort;
   instruction: string;
   input: unknown;
   outputContract: {
@@ -131,6 +149,7 @@ export interface AiExecutionPolicy {
   key: string;
   providerKey: string;
   modelKey: string;
+  reasoningEffort: AiReasoningEffort;
   maxInputBytes: number;
   maxBillableInputTokens: number;
   maxOutputTokens: number;

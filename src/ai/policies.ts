@@ -4,6 +4,13 @@ import type { AiExecutionPolicyRegistry } from "./contracts";
 
 export const OPENAI_BUILDER_PLANNING_MODEL_KEY = "gpt-5.6-terra" as const;
 export const OPENAI_BUILDER_PLANNING_REASONING_EFFORT = "medium" as const;
+export const OPENAI_LUNA_MODEL_KEY = "gpt-5.6-luna" as const;
+export const OPENAI_SOL_MODEL_KEY = "gpt-5.6-sol" as const;
+export const OPENAI_SUPPORTED_MODEL_KEYS = Object.freeze([
+  OPENAI_BUILDER_PLANNING_MODEL_KEY,
+  OPENAI_LUNA_MODEL_KEY,
+  OPENAI_SOL_MODEL_KEY,
+] as const);
 export const BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY =
   "builder_planning_terra_medium_v1" as const;
 export const OPENAI_BUILDER_CONFIGURATION_DRAFTING_MODEL_KEY =
@@ -63,15 +70,24 @@ export const OPENAI_BUILDER_RECORD_LOCATION_LINK_INTENT_REASONING_EFFORT =
 export const BUILDER_RECORD_LOCATION_LINK_INTENT_TERRA_MEDIUM_POLICY_KEY =
   "builder_record_location_link_intent_terra_medium_v1" as const;
 export const ACQUISITION_PLANNING_POLICY_KEY =
-  "acquisition_planning_terra_medium_v1" as const;
+  "acquisition_planning_v1" as const;
 export const ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY =
-  "acquisition_required_identity_correction_terra_medium_v1" as const;
+  "acquisition_required_identity_correction_v1" as const;
+
+// The active acquisition candidate is server-owned. Changing this profile is
+// an evaluated release decision, never an owner- or environment-controlled
+// setting.
+export const OPENAI_ACQUISITION_MODEL_KEY = OPENAI_LUNA_MODEL_KEY;
+export const OPENAI_ACQUISITION_REASONING_EFFORT = "max" as const;
+export const OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION = 200_000;
+export const OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION = 1_200_000;
 
 export const disabledExecutionPolicies = Object.freeze({
   bounded_structured_v1: Object.freeze({
     key: "bounded_structured_v1",
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 2_048,
     maxBillableInputTokens: 1_024,
     maxOutputTokens: 256,
@@ -89,6 +105,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_PLANNING_TERRA_MEDIUM_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 160 * 1024,
     maxBillableInputTokens: 64_000,
     maxOutputTokens: 4_096,
@@ -106,6 +123,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_CONFIGURATION_DRAFTING_DISABLED_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 256 * 1024,
     maxBillableInputTokens: 96_000,
     maxOutputTokens: 8_192,
@@ -123,6 +141,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_PREORDER_AMENDMENT_DISABLED_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 256 * 1024,
     maxBillableInputTokens: 80_000,
     maxOutputTokens: 4_096,
@@ -140,6 +159,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_LOCATION_CREATION_DISABLED_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 256 * 1024,
     maxBillableInputTokens: 80_000,
     maxOutputTokens: 2_048,
@@ -157,6 +177,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_RECORD_CREATION_INTENT_DISABLED_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 256 * 1024,
     maxBillableInputTokens: 80_000,
     maxOutputTokens: 4_096,
@@ -174,6 +195,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_RECORD_UPDATE_INTENT_DISABLED_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 256 * 1024,
     maxBillableInputTokens: 80_000,
     maxOutputTokens: 4_096,
@@ -191,6 +213,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: BUILDER_RECORD_LOCATION_LINK_INTENT_DISABLED_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 256 * 1024,
     maxBillableInputTokens: 80_000,
     maxOutputTokens: 2_048,
@@ -208,6 +231,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: ACQUISITION_PLANNING_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 8 * 1024,
     maxBillableInputTokens: 4_000,
     maxOutputTokens: 2_500,
@@ -222,6 +246,7 @@ export const disabledExecutionPolicies = Object.freeze({
     key: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
     providerKey: "disabled",
     modelKey: "unconfigured",
+    reasoningEffort: "medium",
     maxInputBytes: 8 * 1024,
     maxBillableInputTokens: 4_000,
     maxOutputTokens: 2_500,
@@ -237,9 +262,10 @@ export const disabledExecutionPolicies = Object.freeze({
 export const openAiAcquisitionPlanningPolicy = Object.freeze({
   ...disabledExecutionPolicies[ACQUISITION_PLANNING_POLICY_KEY],
   providerKey: "openai",
-  modelKey: OPENAI_BUILDER_PLANNING_MODEL_KEY,
-  inputMicrousdPerMillion: 2_500_000,
-  outputMicrousdPerMillion: 15_000_000,
+  modelKey: OPENAI_ACQUISITION_MODEL_KEY,
+  reasoningEffort: OPENAI_ACQUISITION_REASONING_EFFORT,
+  inputMicrousdPerMillion: OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION,
+  outputMicrousdPerMillion: OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION,
 });
 
 export const openAiAcquisitionRequiredIdentityCorrectionPolicy = Object.freeze({
@@ -247,9 +273,10 @@ export const openAiAcquisitionRequiredIdentityCorrectionPolicy = Object.freeze({
     ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY
   ],
   providerKey: "openai",
-  modelKey: OPENAI_BUILDER_PLANNING_MODEL_KEY,
-  inputMicrousdPerMillion: 2_500_000,
-  outputMicrousdPerMillion: 15_000_000,
+  modelKey: OPENAI_ACQUISITION_MODEL_KEY,
+  reasoningEffort: OPENAI_ACQUISITION_REASONING_EFFORT,
+  inputMicrousdPerMillion: OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION,
+  outputMicrousdPerMillion: OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION,
 });
 
 export const openAiBuilderPlanningPolicy = Object.freeze({

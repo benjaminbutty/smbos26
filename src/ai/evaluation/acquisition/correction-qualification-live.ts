@@ -7,8 +7,6 @@ import {
 } from "../../acquisition-planning/runtime";
 import {
   ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
-  OPENAI_BUILDER_PLANNING_MODEL_KEY,
-  OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
   openAiAcquisitionRequiredIdentityCorrectionPolicy,
 } from "../../policies";
 import { enhanceAcquisitionPayload } from "../../../core/acquisition/capabilities";
@@ -208,8 +206,9 @@ export async function runLiveAcquisitionCorrectionQualification(
     passed,
     task_key: ACQUISITION_CORRECTION_TASK_KEY,
     policy_key: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
-    model_key: OPENAI_BUILDER_PLANNING_MODEL_KEY,
-    reasoning_effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+    model_key: openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
+    reasoning_effort:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
     scenario_count: ACQUISITION_EVALUATION_SCENARIO_COUNT,
     repetitions: ACQUISITION_CORRECTION_QUALIFICATION_REPETITIONS,
     execution_count: reports.length,

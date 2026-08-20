@@ -258,6 +258,15 @@ export async function runLiveAcquisitionGate(
   const passed = reports.every((report) => report.passed);
   const summary = {
     gate,
+    planning_policy_key: openAiAcquisitionPlanningPolicy.key,
+    planning_model_key: openAiAcquisitionPlanningPolicy.modelKey,
+    planning_reasoning_effort: openAiAcquisitionPlanningPolicy.reasoningEffort,
+    correction_policy_key:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.key,
+    correction_model_key:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
+    correction_reasoning_effort:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
     passed,
     passed_executions: reports.filter((report) => report.passed).length,
     total_executions: reports.length,

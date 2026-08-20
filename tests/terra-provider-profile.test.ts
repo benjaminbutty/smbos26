@@ -16,6 +16,12 @@ import {
   OPENAI_BUILDER_PLANNING_MODEL_KEY,
   OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
   disabledExecutionPolicies,
+  openAiBuilderConfigurationDraftingPolicy,
+  openAiBuilderLocationCreationPolicy,
+  openAiBuilderPreorderAmendmentPolicy,
+  openAiBuilderRecordCreationIntentPolicy,
+  openAiBuilderRecordLocationLinkIntentPolicy,
+  openAiBuilderRecordUpdateIntentPolicy,
   openAiBuilderPlanningPolicy,
 } from "../src/ai/policies";
 import {
@@ -143,6 +149,7 @@ describe("GPT-5.6 Terra medium production profile", () => {
       maxAttempts: 2,
       retryDelayMs: 250,
       retryableFailureKinds: ["rate_limited", "transient"],
+      reasoningEffort: "medium",
     });
     expect(deriveAiReservationEnvelope(openAiBuilderPlanningPolicy)).toEqual({
       reservedRequestCount: 1,
@@ -226,6 +233,61 @@ describe("GPT-5.6 Terra medium production profile", () => {
       "prompt_cache_retention",
     ]) {
       expect(body).not.toHaveProperty(forbidden);
+    }
+  });
+
+  it("keeps the model and reasoning profile policy-owned for approved candidates", async () => {
+    const create = vi.fn().mockResolvedValue(completedResponse());
+    const provider = new OpenAiResponsesStructuredProvider({
+      client: { responses: { create } } as OpenAiResponsesClient,
+    });
+
+    await provider.generateStructured({
+      ...request(),
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "max",
+    });
+
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      model: "gpt-5.6-luna",
+      reasoning: { effort: "max" },
+    });
+  });
+
+  it("rejects models and reasoning efforts outside the closed provider allow-lists", async () => {
+    const provider = new OpenAiResponsesStructuredProvider({
+      client: {
+        responses: { create: vi.fn().mockResolvedValue(completedResponse()) },
+      } as OpenAiResponsesClient,
+    });
+
+    await expect(
+      provider.generateStructured({
+        ...request(),
+        modelKey: "untrusted-model",
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_request" });
+    await expect(
+      provider.generateStructured({
+        ...request(),
+        reasoningEffort: "unsupported" as never,
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_request" });
+  });
+
+  it("keeps unrelated qualified Builder policies on Terra medium", () => {
+    const unrelatedPolicies = [
+      openAiBuilderPlanningPolicy,
+      openAiBuilderConfigurationDraftingPolicy,
+      openAiBuilderPreorderAmendmentPolicy,
+      openAiBuilderLocationCreationPolicy,
+      openAiBuilderRecordCreationIntentPolicy,
+      openAiBuilderRecordUpdateIntentPolicy,
+      openAiBuilderRecordLocationLinkIntentPolicy,
+    ];
+    for (const policy of unrelatedPolicies) {
+      expect(policy.modelKey).toBe("gpt-5.6-terra");
+      expect(policy.reasoningEffort).toBe("medium");
     }
   });
 

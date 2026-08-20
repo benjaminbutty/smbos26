@@ -469,6 +469,15 @@ export async function runLiveAcquisitionProductReliability(
   });
   const summary = {
     gate: "product_reliability",
+    planning_policy_key: openAiAcquisitionPlanningPolicy.key,
+    planning_model_key: openAiAcquisitionPlanningPolicy.modelKey,
+    planning_reasoning_effort: openAiAcquisitionPlanningPolicy.reasoningEffort,
+    correction_policy_key:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.key,
+    correction_model_key:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
+    correction_reasoning_effort:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
     passed,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,
