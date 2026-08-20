@@ -3309,36 +3309,66 @@ and both hard gates are retained, but no final acquisition profile is proposed;
 addressing the initial-path timeout/cost trade-off is **PRODUCT DECISION
 REQUIRED**.
 
-### J1-R5 final Luna/Luna profile qualification stop
+### J1-R5 final Luna/Luna evidence and stop
 
-The next frozen subject changed only the initial acquisition policy from Sol
-Medium/auto to the already-qualified Luna profile: `gpt-5.6-luna`, `xhigh`,
-requested `service_tier=fast`, 8,192 output tokens and a 45-second timeout.
-The dedicated scoped correction policy, task, instruction, manifest, output
-schema, validator and effective Luna `priority` behaviour were unchanged, so
-the recorded 24/24 correction qualification is reused rather than rerun.
-Trusted Luna pricing is used for both code-owned policies. No active J1
-acquisition policy uses Sol; historical diagnostic subjects remain historical
-evaluation evidence only.
+The final frozen subject changed only the initial acquisition policy to the
+already-qualified Luna profile: `gpt-5.6-luna`, `xhigh`, requested
+`service_tier=fast`, 8,192 output tokens and a 45-second timeout. The dedicated
+scoped correction policy, task, instruction, manifest, output schema,
+validator and effective Luna `priority` behaviour were unchanged, so the
+recorded 24/24 correction qualification is reused. Trusted Luna pricing is
+used for both code-owned policies. No active J1 acquisition policy uses Sol;
+historical diagnostic subjects remain historical evaluation evidence only.
 
-Focused policy tests proved the initial and correction profiles match, the
-two-execution ceiling remains two, and unrelated Terra-medium policies retain
-their existing profile. Deterministic verification passed format, typecheck,
-lint, 931 unit tests, build, migration immutability, clean migration reset,
-schema lint and the real integration suite (265 passed, 5 expected skips).
-The code/evaluation freeze for this subject is
-`fbe079fec90d65c4d4aa7decaaefb5fff6ac0541`.
+Focused policy tests proved both stages match, the two-execution ceiling
+remains two, and unrelated Terra-medium policies retain their existing
+profile. Deterministic verification passed format, typecheck, lint, 931 unit
+tests, build, migration immutability, clean migration reset, schema lint and
+the real integration suite (265 passed, 5 expected skips). The exact code and
+evaluation SHA was `f229b50bc9462392d9e3fcbbe390a06eb865f5f7`.
 
-The one authorised Luna/Luna acquisition qualification then ran once against
-the unchanged eight scenarios. All eight initial provider executions returned
-the finite `provider_transport_rate_limited` failure before a model response:
-0/8 hard, 0/8 completed, 0 correction executions, no effective-tier reports,
-zero input/output tokens and zero estimated cost. This is a provider access or
-quota failure, not model-quality evidence. Reliability and the 96-case corpus
-were not started. No retry, Sol/Terra fallback, prompt/timing/cap change,
-third execution or gate weakening is authorised.
+The first qualification attempt at that SHA returned
+`provider_transport_rate_limited` for all eight calls with no model response.
+After the provider credit allowance was restored, the same frozen subject was
+run once more; this was an external quota invalidation, not a stochastic
+model rerun. Qualification then passed 8/8 hard and 8/8 quality, with nine
+provider executions (one exact-trigger correction), effective `priority` on
+all nine, 10,166 input and 16,067 output tokens, and 21,321 microusd cost.
+The correction succeeded 1/1 and used 669 input/159 output tokens, 325
+microusd and 1,627 ms.
 
-The exact Luna/Luna profile is therefore **not accepted**. PR #59 is kept
-unmerged and closed as not accepted, with Journey 2 recommended unless a new
-product decision supplies a reliable provider allowance and authorises a new
-frozen evaluation subject.
+Reliability passed 24/24 hard with effective `priority` on all 24 calls. It
+had 21/24 non-hard quality passes, no correction executions, 28,491 input and
+47,812 output tokens, and 63,091 microusd cost.
+
+The required 32 × 3 corpus then ran once against the same SHA. It failed the
+unchanged acceptance thresholds (at least 94/96 final tailored, at most 2/96
+fallbacks, zero execution failures, zero hard-contract failures):
+
+- raw first-pass tailored: 78/96 (81.25%);
+- pre-composition canonicalised tailored: 1/96 (1.0417%);
+- post-composition recovered tailored: 0/96;
+- scoped correction-plan tailored: 13/96 (13.5417%), all 13 valid and
+  successful;
+- final tailored: 92/96 (95.8333%);
+- truthful fallback: 4/96 (4.1667%);
+- execution failures: 0/96;
+- hard-contract failures: 0/96;
+- systematic failure scenarios: none.
+
+The corpus used 123,489 input and 323,072 output tokens, cost 412,463
+microusd (initial 408,713; correction 3,750), and took 1,933,502 ms. The
+blended cost was about 4,296 microusd ($0.004296) per submission. Effective
+tiers were `priority` 108; one initial timeout had no effective-tier report.
+Initial-path latency min/median/p90/p95/max/average was
+`6,998/18,019/29,328/34,867/45,028/19,770 ms`; total two-call latency was
+`8,309/18,200/31,221/35,290/45,028/20,141 ms`; correction latency was
+`1,453/1,806/4,945/8,550/8,550/2,740 ms`.
+
+The four fallbacks were three `no_mechanical_repair_fields` refusals and one
+`ai_timeout`; the 13 authorised corrections all succeeded. This is not a
+validator or trust-boundary failure, but the final-tailored and fallback
+thresholds are missed. Per the stop rule, no prompt, timeout, cap, reasoning,
+model, third call, validator or gate change is authorised. Luna/Luna is not
+accepted; PR #59 remains unmerged and closed as not accepted, and Journey 2
+is recommended.

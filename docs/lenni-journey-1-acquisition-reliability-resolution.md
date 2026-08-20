@@ -271,33 +271,63 @@ trust boundaries remain intact, but the acquisition profile cannot be called
 fully qualified; resolving the initial-path reliability/cost trade-off is
 **PRODUCT DECISION REQUIRED**.
 
-## J1-R5 final Luna/Luna profile qualification stop
+## J1-R5 final Luna/Luna evidence and stop
 
-The final candidate changed only the initial acquisition policy to the
+The final frozen subject changed only the initial acquisition policy to the
 server-owned Luna xhigh/Fast profile: `gpt-5.6-luna`, `reasoning.effort=xhigh`,
 requested `service_tier=fast`, 8,192 output tokens and a 45-second timeout.
 The scoped correction policy and all correction architecture remained exactly
-unchanged, so the existing Luna correction qualification evidence is reused:
-24/24 hard and quality-valid with effective `priority` on every execution.
+unchanged, so the existing 24/24 Luna correction qualification is reused.
 Trusted Luna pricing is used for both stages. No active J1 acquisition path
 uses Sol; the older Sol diagnostic profile is historical evidence only.
 
-The frozen code subject is
-`fbe079fec90d65c4d4aa7decaaefb5fff6ac0541`. Focused policy tests and full
+The exact code and evaluation SHA was
+`f229b50bc9462392d9e3fcbbe390a06eb865f5f7`. Focused policy tests and full
 deterministic verification passed: format, typecheck, lint, 931 unit tests,
 build, migration immutability, clean reset, schema lint and the real
 integration suite (265 passed, 5 expected skips).
 
-The one authorised eight-case Luna/Luna acquisition qualification did not
-reach model evaluation. All eight initial calls returned the finite
-`provider_transport_rate_limited` failure. The result was 0/8 hard-valid, no
-completed responses, zero correction executions, no effective service-tier
-reports, zero tokens and zero estimated cost. Reliability and the 96-case
-corpus were not run. This is provider access/quota evidence, not model-quality
-evidence, but the required gate was missed.
+The first qualification attempt returned `provider_transport_rate_limited`
+for all eight calls with no model response. After the provider credit
+allowance was restored, the identical frozen subject was run once more; this
+was an external quota invalidation, not a stochastic model rerun. Qualification
+then passed 8/8 hard and 8/8 quality, with nine provider executions (one exact
+trigger correction), effective `priority` on all nine, 10,166 input and
+16,067 output tokens, and 21,321 microusd cost. The correction succeeded 1/1
+and used 669 input/159 output tokens, 325 microusd and 1,627 ms.
 
-Per the stop rule, there is no retry, Sol/Terra reintroduction, prompt or
-timeout tuning, third execution or weakened gate. The Luna/Luna profile is not
-accepted; PR #59 remains unmerged and is closed as not accepted. Journey 2 is
-the recommendation unless a deliberate product decision authorises a new
-provider allowance and a new frozen evaluation subject.
+Reliability passed 24/24 hard with effective `priority` on all 24 calls. It
+had 21/24 non-hard quality passes, no correction executions, 28,491 input and
+47,812 output tokens, and 63,091 microusd cost.
+
+The required 96-case corpus then ran once against the same SHA and failed the
+unchanged thresholds (≥94/96 final tailored, ≤2/96 fallback, zero execution
+failures, zero hard-contract failures):
+
+| outcome | count |
+| --- | ---: |
+| raw first-pass tailored | 78 |
+| pre-composition canonicalised tailored | 1 |
+| post-composition recovered tailored | 0 |
+| scoped correction-plan tailored | 13 |
+| final tailored | 92 |
+| fallback | 4 |
+| execution failure | 0 |
+| hard-contract failure | 0 |
+
+All 13 corrections were valid and successful; the four fallbacks were three
+`no_mechanical_repair_fields` refusals and one `ai_timeout`. No systematic
+failure scenario was reported. Corpus usage was 123,489 input and 323,072
+output tokens at 412,463 microusd total (initial 408,713; correction 3,750),
+with a blended cost of about 4,296 microusd per submission. Effective tiers
+were `priority` 108; one timed-out initial call had no tier report. Initial
+latency min/median/p90/p95/max/average was
+`6,998/18,019/29,328/34,867/45,028/19,770 ms`; total two-call latency was
+`8,309/18,200/31,221/35,290/45,028/20,141 ms`; correction latency was
+`1,453/1,806/4,945/8,550/8,550/2,740 ms`.
+
+The profile therefore misses the final tailored and fallback thresholds even
+though hard-contract failures are zero. Per the stop rule, no prompt, timeout,
+cap, reasoning, model, third call, validator or gate change is authorised.
+Luna/Luna is not accepted; PR #59 remains unmerged and is closed as not
+accepted, and Journey 2 is recommended.
