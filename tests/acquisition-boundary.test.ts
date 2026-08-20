@@ -6,6 +6,11 @@ vi.mock("server-only", () => ({}));
 
 import {
   ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+  OPENAI_ACQUISITION_MODEL_KEY,
+  OPENAI_ACQUISITION_REASONING_EFFORT,
+  OPENAI_ACQUISITION_SERVICE_TIER,
+  OPENAI_ACQUISITION_TIMEOUT_MS,
+  OPENAI_ACQUISITION_MAX_OUTPUT_TOKENS,
   OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
   openAiAcquisitionPlanningPolicy,
   openAiAcquisitionRequiredIdentityCorrectionPolicy,
@@ -89,15 +94,15 @@ describe("Phase 5 public AI and telemetry boundary", () => {
 
   it("keeps the public interpretation inside the acquisition cost envelope", () => {
     expect(openAiAcquisitionPlanningPolicy).toMatchObject({
-      modelKey: "gpt-5.6-sol",
-      reasoningEffort: "medium",
-      serviceTier: "auto",
-      inputMicrousdPerMillion: 5_000_000,
-      outputMicrousdPerMillion: 30_000_000,
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "xhigh",
+      serviceTier: "fast",
+      inputMicrousdPerMillion: 200_000,
+      outputMicrousdPerMillion: 1_200_000,
       maxInputBytes: 8 * 1024,
       maxBillableInputTokens: 4_000,
-      maxOutputTokens: 2_500,
-      timeoutMs: 25_000,
+      maxOutputTokens: 8_192,
+      timeoutMs: 45_000,
       maxAttempts: 1,
       retryableFailureKinds: [],
     });
@@ -193,6 +198,36 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       "required_cross_object_identity_must_use_connection",
     );
     expect(correctionInput).not.toHaveProperty("owner_request");
+  });
+
+  it("keeps both acquisition stages on the fixed Luna xhigh/Fast profile", () => {
+    expect({
+      modelKey: OPENAI_ACQUISITION_MODEL_KEY,
+      reasoningEffort: OPENAI_ACQUISITION_REASONING_EFFORT,
+      serviceTier: OPENAI_ACQUISITION_SERVICE_TIER,
+      maxOutputTokens: OPENAI_ACQUISITION_MAX_OUTPUT_TOKENS,
+      timeoutMs: OPENAI_ACQUISITION_TIMEOUT_MS,
+    }).toEqual({
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "xhigh",
+      serviceTier: "fast",
+      maxOutputTokens: 8_192,
+      timeoutMs: 45_000,
+    });
+    expect(openAiAcquisitionPlanningPolicy.modelKey).not.toBe("gpt-5.6-sol");
+    expect(openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey).not.toBe(
+      "gpt-5.6-sol",
+    );
+    expect(openAiAcquisitionPlanningPolicy).toMatchObject({
+      modelKey: openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
+      reasoningEffort:
+        openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
+      serviceTier:
+        openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
+      maxOutputTokens:
+        openAiAcquisitionRequiredIdentityCorrectionPolicy.maxOutputTokens,
+      timeoutMs: openAiAcquisitionRequiredIdentityCorrectionPolicy.timeoutMs,
+    });
   });
 
   it("fixes correction qualification at eight scenarios and three repetitions", async () => {

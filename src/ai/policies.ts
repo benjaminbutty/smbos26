@@ -74,23 +74,20 @@ export const ACQUISITION_PLANNING_POLICY_KEY =
 export const ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY =
   "acquisition_required_identity_correction_v1" as const;
 
-// The active acquisition candidate is server-owned. Changing this profile is
-// an evaluated release decision, never an owner- or environment-controlled
-// setting. The initial planner remains the previously selected Sol Medium
-// profile; the dedicated correction task has its own separately qualified Luna
-// xhigh/Fast profile after the scoped-repair architecture change.
-export const OPENAI_ACQUISITION_MODEL_KEY = OPENAI_SOL_MODEL_KEY;
-export const OPENAI_ACQUISITION_REASONING_EFFORT = "medium" as const;
-export const OPENAI_ACQUISITION_SERVICE_TIER: AiServiceTier = "auto";
+// The active acquisition candidates are server-owned. Changing either profile
+// is an evaluated release decision, never an owner- or environment-controlled
+// setting. Both stages use the separately qualified Luna xhigh/Fast profile.
+export const OPENAI_ACQUISITION_MODEL_KEY = OPENAI_LUNA_MODEL_KEY;
+export const OPENAI_ACQUISITION_REASONING_EFFORT = "xhigh" as const;
+export const OPENAI_ACQUISITION_SERVICE_TIER: AiServiceTier = "fast";
 export const OPENAI_ACQUISITION_CORRECTION_MODEL_KEY = OPENAI_LUNA_MODEL_KEY;
 export const OPENAI_ACQUISITION_CORRECTION_REASONING_EFFORT = "xhigh" as const;
 export const OPENAI_ACQUISITION_CORRECTION_SERVICE_TIER: AiServiceTier = "fast";
-// Scoped-correction qualification observed a 2.247s maximum successful
-// provider response. The production ceiling remains the bounded diagnostic
-// ceiling while the new correction profile is released.
+export const OPENAI_ACQUISITION_TIMEOUT_MS = 45_000 as const;
+export const OPENAI_ACQUISITION_MAX_OUTPUT_TOKENS = 8_192 as const;
 export const OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS = 45_000 as const;
-export const OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION = 5_000_000;
-export const OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION = 30_000_000;
+export const OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION = 200_000;
+export const OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION = 1_200_000;
 export const OPENAI_ACQUISITION_CORRECTION_INPUT_MICROUSD_PER_MILLION = 200_000;
 export const OPENAI_ACQUISITION_CORRECTION_OUTPUT_MICROUSD_PER_MILLION = 1_200_000;
 
@@ -287,6 +284,8 @@ export const openAiAcquisitionPlanningPolicy = Object.freeze({
   modelKey: OPENAI_ACQUISITION_MODEL_KEY,
   reasoningEffort: OPENAI_ACQUISITION_REASONING_EFFORT,
   serviceTier: OPENAI_ACQUISITION_SERVICE_TIER,
+  maxOutputTokens: OPENAI_ACQUISITION_MAX_OUTPUT_TOKENS,
+  timeoutMs: OPENAI_ACQUISITION_TIMEOUT_MS,
   inputMicrousdPerMillion: OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION,
   outputMicrousdPerMillion: OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION,
 });
