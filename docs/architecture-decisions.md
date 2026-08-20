@@ -3259,3 +3259,52 @@ min/median/p90/p95/max/average `1,074/1,314/1,951/2,214/2,247/1,429 ms`.
 It used 15,390 input and 2,413 output tokens and cost 5,991 microusd. This is
 the correction qualification evidence for the frozen J1-R5 subject, not a
 replacement of the separate acquisition hard gates.
+
+### J1-R5 frozen hard gates and product corpus
+
+After full deterministic verification, the exact frozen implementation was
+`4ee7fdd88023b0cc4b303bae036ada72be8e5043`. Acquisition qualification passed
+the required 8/8 hard gate. It used the Sol Medium/auto initial planner for
+all eight first calls; one exact-trigger correction ran and succeeded with
+Luna xhigh/Fast (`priority`). The qualification summary was 8/8 hard, 7/8
+quality, one correction execution, 10,162 input tokens, 8,461 output tokens,
+298,338 microusd and 8/8 effective-tier verification.
+
+Acquisition reliability then passed the required 24/24 hard gate. Two exact-
+trigger corrections ran and both succeeded with Luna effective `priority`;
+the correction rate was 2/24 (8.3333%). It used 29,817 input and 24,414
+output tokens, cost 869,007 microusd, and the correction portion used 1,326
+input/213 output tokens, 522 microusd and 3,718 ms. Quality findings were
+non-hard (20/24 quality passes) and are reported separately.
+
+The required 32 × 3 product corpus was run once against the same SHA. Existing
+thresholds were unchanged (at least 94/96 final tailored, at most 2/96
+fallbacks, zero execution failures). The corpus failed those thresholds:
+
+- raw first-pass tailored: 58/96 (60.4167%);
+- pre-composition canonicalised tailored: 2/96 (2.0833%);
+- post-composition recovered tailored: 0/96;
+- scoped correction-plan tailored: 18/96 (18.75%), all 18 corrections valid;
+- final tailored: 78/96 (81.25%);
+- truthful fallback: 18/96 (18.75%);
+- execution failures: 0/96;
+- correction diagnostics: 18 exact `cross_object_field_leakage` plus
+  `required_field` triggers, all repaired successfully;
+- provider timeout diagnostics: 18 initial Sol Medium calls at the inherited
+  25-second ceiling, accounting for all 18 fallbacks.
+
+The corpus used 106,728 input and 121,935 output tokens, estimated cost
+4,028,851 microusd (Sol initial 4,022,050; Luna correction 6,801), and
+1,993,665 ms total elapsed time. Effective tiers were `default` 78 and
+`priority` 18. Initial-path latency was min/median/p90/p95/max/average
+`9,966/19,761/24,137/24,734/30,330/19,783 ms`; correction latency was
+`1,244/1,549/3,887/6,569/6,569/2,062 ms`.
+
+This corpus failure is not a validator or scoped-correction failure. It is
+evidence that the unchanged Sol Medium initial profile and 25-second ceiling
+are commercially unreliable on the broader corpus. No timeout increase,
+prompt tuning, model switch, third call, validator weakening, requiredness
+change or corpus rerun is authorised by J1-R5. The scoped repair architecture
+and both hard gates are retained, but no final acquisition profile is proposed;
+addressing the initial-path timeout/cost trade-off is **PRODUCT DECISION
+REQUIRED**.

@@ -229,3 +229,44 @@ scenarios × three repetitions): 24/24 provider complete, 24/24 hard-valid,
 `1,074/1,314/1,951/2,214/2,247/1,429 ms`; usage was 15,390 input and 2,413
 output tokens at 5,991 microusd. The initial planner remains Sol Medium/auto;
 this correction qualification does not claim the later acquisition gates.
+
+## J1-R5 frozen hard gates and product corpus
+
+The exact frozen implementation after deterministic verification is
+`4ee7fdd88023b0cc4b303bae036ada72be8e5043`. Acquisition qualification passed
+8/8 hard and reliability passed 24/24 hard. One qualification and two
+reliability submissions used the exact trigger; all three Luna xhigh/Fast
+corrections completed with effective `priority`. The correction rate was 1/8
+and 2/24 respectively. Non-hard quality results are retained separately:
+7/8 qualification and 20/24 reliability quality passes.
+
+The required 96-case product corpus ran once with its existing acceptance
+thresholds (≥94 final tailored, ≤2 fallback, zero execution failures). It
+produced:
+
+| outcome | count |
+| --- | ---: |
+| raw first-pass tailored | 58 |
+| pre-composition canonicalised tailored | 2 |
+| post-composition recovered tailored | 0 |
+| scoped correction-plan tailored | 18 |
+| final tailored | 78 |
+| fallback | 18 |
+| execution failure | 0 |
+
+All 18 correction plans were valid and used Luna effective `priority`. The 18
+fallbacks were initial Sol Medium calls that hit the unchanged 25-second
+provider timeout. Total usage was 106,728 input and 121,935 output tokens at
+4,028,851 microusd (Sol initial 4,022,050; Luna correction 6,801). Initial
+latency min/median/p90/p95/max/average was
+`9,966/19,761/24,137/24,734/30,330/19,783 ms`; correction latency was
+`1,244/1,549/3,887/6,569/6,569/2,062 ms`. Effective tiers were default 78
+and priority 18.
+
+The product corpus therefore failed its unchanged threshold (78/96 tailored,
+18/96 fallback). This is an initial Sol timeout/profile issue, not a scoped
+repair, requiredness or validator failure. No timeout, prompt, model, schema,
+validator, third-call or corpus rerun is being introduced. The hard gates and
+trust boundaries remain intact, but the acquisition profile cannot be called
+fully qualified; resolving the initial-path reliability/cost trade-off is
+**PRODUCT DECISION REQUIRED**.
