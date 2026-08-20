@@ -40,6 +40,8 @@ export const ACQUISITION_PLANNING_INSTRUCTION = [
 export const ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION = [
   "This dedicated task is the one permitted fresh correction plan after connected identity was represented as a duplicated required scalar.",
   "Use only the original owner request and grounded context in this task input; preserve every requested business area, connection need and unsupported requirement without broadening the workspace.",
+  "Preserving scope means each distinct reusable person or organisation, resource, and operational event explicitly named by the owner remains its own connected business area; do not collapse one into a scalar Field on another area.",
+  "An unavailable action remains an unsupported requirement rather than a new business area.",
   "Keep an identity scalar on the business area it identifies, where it may remain required, and represent that area's participation in other connected business areas only through Connections.",
   "Never duplicate that name, identity, email, phone, address, contact detail or an equivalent replacement scalar on the related business area, whether required or optional.",
   "Do not weaken or omit a genuine local requirement, invent owner information, ask another owner question or return needs_more_detail merely because this correction was requested.",

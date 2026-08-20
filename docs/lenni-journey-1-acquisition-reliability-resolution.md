@@ -119,3 +119,13 @@ orchestration change invalidates prior live
 evidence; qualification and reliability must be rerun against the frozen
 implementation before the 32 × 3 product corpus. The product corpus remains
 separate evidence and does not replace the eight-scenario hard contract.
+
+The first dedicated correction subject at
+`f8645eff5362de4b1e788826cb2fda20811bea25` passed deterministic safety 24/24
+but passed the combined correction qualification only 21/24. Every miss was the
+same scope-retention finding on the unusual-business fixture, across all three
+repetitions. The subject was not rerun. The correction instruction was clarified
+generically so each distinct reusable person or organisation, resource and
+operational event explicitly named by the owner remains a connected business
+area, while an unavailable action remains unsupported. This changes neither the
+scenario set nor any production validator or business-specific rule.

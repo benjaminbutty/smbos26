@@ -124,6 +124,9 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       `${ACQUISITION_PLANNING_INSTRUCTION} ${ACQUISITION_REQUIRED_IDENTITY_REPLAN_INSTRUCTION}`,
     );
     expect(correction).toContain("preserve every requested business area");
+    expect(correction).toContain(
+      "each distinct reusable person or organisation",
+    );
     expect(correction).toContain("through Connections");
     expect(acquisitionPlanningTaskV1.key).toBe("acquisition_workspace_plan_v1");
     expect(acquisitionRequiredIdentityCorrectionTaskV1).toMatchObject({

@@ -1189,6 +1189,19 @@ for all structured tasks and does not expose per-task reasoning in the policy
 contract. Correction therefore retains that strongest already-supported safe
 profile rather than changing the provider abstraction for this phase.
 
+The first dedicated correction subject at exact SHA
+`f8645eff5362de4b1e788826cb2fda20811bea25` ran once and was not rerun. Its
+deterministic hard boundary passed 24/24, but the combined correction
+qualification passed only 21/24 because all three `unusual_other` repetitions
+missed a required owner-named concept. Usage was 29,547 input tokens and 15,088
+output tokens, estimated cost was 300,195 microusd, and elapsed time was 129,377
+ms. This systematic scope-retention evidence led to one generic instruction
+clarification: distinct reusable people or organisations, resources and
+operational events explicitly named by the owner remain separate connected
+business areas, while unavailable actions remain unsupported requirements. No
+scenario-specific rule, evaluator relaxation or unchanged-subject rerun was
+used.
+
 The engineering-only product-reliability corpus is intentionally separate from
 the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
 descriptions, including the exact carpenter regression fixture, and runs three
