@@ -1,4 +1,5 @@
 import type { AiExecutionResult } from "../../execution";
+import { aiServiceTierRequiresPriority } from "../../contracts";
 import { AiExecutionError } from "../../errors";
 import {
   createAcquisitionAiRuntime,
@@ -269,8 +270,9 @@ export async function runLiveAcquisitionGate(
     }
   }
   const effectiveServiceTierVerified =
-    openAiAcquisitionPlanningPolicy.serviceTier !== "fast" ||
-    effectiveServiceTierCounts.get("priority") === planningExecutions;
+    !aiServiceTierRequiresPriority(
+      openAiAcquisitionPlanningPolicy.serviceTier,
+    ) || effectiveServiceTierCounts.get("priority") === planningExecutions;
   const passed =
     reports.every((report) => report.passed) && effectiveServiceTierVerified;
   const summary = {

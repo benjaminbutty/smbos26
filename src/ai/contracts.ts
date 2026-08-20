@@ -47,6 +47,12 @@ export const aiServiceTierSchema = z.enum([
 
 export type AiServiceTier = z.infer<typeof aiServiceTierSchema>;
 
+export function aiServiceTierRequiresPriority(
+  serviceTier: AiServiceTier,
+): boolean {
+  return serviceTier === "fast" || serviceTier === "priority";
+}
+
 export const structuredAiUsageSchema = z
   .object({
     inputTokens: z.number().int().nonnegative().max(1_000_000_000),

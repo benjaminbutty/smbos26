@@ -1,3 +1,4 @@
+import { aiServiceTierRequiresPriority } from "../../contracts";
 import type { AiExecutionResult } from "../../execution";
 import { AiExecutionError } from "../../errors";
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
@@ -216,8 +217,9 @@ export async function runLiveAcquisitionCorrectionQualification(
     reports.every(
       (report) =>
         report.passed &&
-        (openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier !==
-          "fast" ||
+        (!aiServiceTierRequiresPriority(
+          openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
+        ) ||
           report.effective_service_tier === "priority"),
     );
   const summary = {
@@ -236,8 +238,9 @@ export async function runLiveAcquisitionCorrectionQualification(
       ),
     ),
     effective_service_tier_verified:
-      openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier !==
-        "fast" ||
+      !aiServiceTierRequiresPriority(
+        openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
+      ) ||
       reports.every((report) => report.effective_service_tier === "priority"),
     scenario_count: ACQUISITION_EVALUATION_SCENARIO_COUNT,
     repetitions: ACQUISITION_CORRECTION_QUALIFICATION_REPETITIONS,

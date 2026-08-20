@@ -1,4 +1,5 @@
 import type { AiExecutionResult } from "../../execution";
+import { aiServiceTierRequiresPriority } from "../../contracts";
 import { AiExecutionError } from "../../errors";
 import { calculateAiTokenCostMicrousd } from "../../accounting/cost";
 import {
@@ -481,7 +482,9 @@ export async function runLiveAcquisitionProductReliability(
       hardContractFailures: hardContractFailureCount,
       systematicFailureScenarios: systematicFailureScenarioIds.length,
     }) &&
-    (openAiAcquisitionPlanningPolicy.serviceTier !== "fast" ||
+    (!aiServiceTierRequiresPriority(
+      openAiAcquisitionPlanningPolicy.serviceTier,
+    ) ||
       effectiveServiceTierCounts.get("priority") === totalAttempts);
   const summary = {
     gate: "product_reliability",
@@ -504,8 +507,9 @@ export async function runLiveAcquisitionProductReliability(
       ),
     ),
     effective_service_tier_verified:
-      openAiAcquisitionPlanningPolicy.serviceTier !== "fast" ||
-      effectiveServiceTierCounts.get("priority") === totalAttempts,
+      !aiServiceTierRequiresPriority(
+        openAiAcquisitionPlanningPolicy.serviceTier,
+      ) || effectiveServiceTierCounts.get("priority") === totalAttempts,
     passed,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,
