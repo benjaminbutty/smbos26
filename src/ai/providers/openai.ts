@@ -4,10 +4,12 @@ import OpenAI from "openai";
 
 import {
   aiReasoningEffortSchema,
+  aiServiceTierSchema,
   StructuredAiProviderError,
   type StructuredAiProvider,
   type StructuredAiProviderRequest,
   type StructuredAiProviderResponse,
+  type AiServiceTier,
   type StructuredAiUsage,
 } from "../contracts";
 import {
@@ -160,6 +162,7 @@ const OPENAI_REQUEST_PARAMETER_NAMES = new Set([
   "prompt_cache_options",
   "reasoning",
   "reasoning.effort",
+  "service_tier",
   "store",
   "text.format.name",
   "text.format.strict",
@@ -280,6 +283,7 @@ function mapSdkFailure(cause: unknown): StructuredAiProviderError {
 
 function parseCompletedResponse(
   rawResponse: unknown,
+  requestedServiceTier: AiServiceTier,
 ): StructuredAiProviderResponse {
   if (!isRecord(rawResponse)) {
     throw providerError("invalid_response");
@@ -295,6 +299,25 @@ function parseCompletedResponse(
   }
   if (rawResponse.status !== "completed" || rawResponse.error !== null) {
     throw providerError("unavailable", usage);
+  }
+  const effectiveServiceTier = aiServiceTierSchema.safeParse(
+    rawResponse.service_tier,
+  );
+  if (
+    rawResponse.service_tier !== undefined &&
+    rawResponse.service_tier !== null &&
+    !effectiveServiceTier.success
+  ) {
+    throw providerError("invalid_response", usage);
+  }
+  const effectiveTier = effectiveServiceTier.success
+    ? effectiveServiceTier.data
+    : undefined;
+  if (
+    (requestedServiceTier === "fast" || requestedServiceTier === "priority") &&
+    effectiveTier !== "priority"
+  ) {
+    throw providerError("invalid_response", usage);
   }
   if (!Array.isArray(rawResponse.output)) {
     throw providerError("invalid_response", usage);
@@ -335,6 +358,9 @@ function parseCompletedResponse(
   return {
     output: transport.result,
     ...(usage ? { usage } : {}),
+    ...(effectiveTier
+      ? { requestMetadata: { service_tier: effectiveTier } }
+      : {}),
   };
 }
 
@@ -371,6 +397,12 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
       if (!reasoningEffort.success) {
         throw providerError("invalid_request");
       }
+      const serviceTier = aiServiceTierSchema.safeParse(
+        request.serviceTier ?? "auto",
+      );
+      if (!serviceTier.success) {
+        throw providerError("invalid_request");
+      }
       const schema = adaptRegisteredSchemaForOpenAi(
         request.outputContract.jsonSchema,
       );
@@ -393,6 +425,7 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
         reasoning: Object.freeze({
           effort: reasoningEffort.data,
         }),
+        service_tier: serviceTier.data,
         prompt_cache_options: Object.freeze({
           mode: "explicit",
         }),
@@ -408,7 +441,7 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
       const response = await this.#client.responses.create(body, {
         signal: request.signal,
       });
-      return parseCompletedResponse(response);
+      return parseCompletedResponse(response, serviceTier.data);
     } catch (cause) {
       throw mapSdkFailure(cause);
     }

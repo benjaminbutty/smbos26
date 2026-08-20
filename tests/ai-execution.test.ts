@@ -408,6 +408,7 @@ describe("provider-neutral structured AI execution", () => {
       providerKey: "disabled",
       modelKey: "server-model",
       reasoningEffort: "medium",
+      serviceTier: "auto",
       input: { subject: "Readiness" },
       maxOutputTokens: 77,
       outputContract: {

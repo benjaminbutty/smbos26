@@ -142,6 +142,7 @@ describe("GPT-5.6 Terra medium production profile", () => {
       modelKey: "gpt-5.6-terra",
       inputMicrousdPerMillion: 2_500_000,
       outputMicrousdPerMillion: 15_000_000,
+      serviceTier: "auto",
       maxInputBytes: 160 * 1024,
       maxBillableInputTokens: 64_000,
       maxOutputTokens: 4_096,
@@ -237,7 +238,9 @@ describe("GPT-5.6 Terra medium production profile", () => {
   });
 
   it("keeps the model and reasoning profile policy-owned for approved candidates", async () => {
-    const create = vi.fn().mockResolvedValue(completedResponse());
+    const create = vi
+      .fn()
+      .mockResolvedValue({ ...completedResponse(), service_tier: "priority" });
     const provider = new OpenAiResponsesStructuredProvider({
       client: { responses: { create } } as OpenAiResponsesClient,
     });
@@ -246,12 +249,24 @@ describe("GPT-5.6 Terra medium production profile", () => {
       ...request(),
       modelKey: "gpt-5.6-luna",
       reasoningEffort: "max",
+      serviceTier: "fast",
     });
 
     expect(create.mock.calls[0]?.[0]).toMatchObject({
       model: "gpt-5.6-luna",
       reasoning: { effort: "max" },
+      service_tier: "fast",
     });
+    expect(
+      (
+        await provider.generateStructured({
+          ...request(),
+          modelKey: "gpt-5.6-luna",
+          reasoningEffort: "max",
+          serviceTier: "fast",
+        })
+      ).requestMetadata,
+    ).toEqual({ service_tier: "priority" });
   });
 
   it("rejects models and reasoning efforts outside the closed provider allow-lists", async () => {
@@ -273,6 +288,12 @@ describe("GPT-5.6 Terra medium production profile", () => {
         reasoningEffort: "unsupported" as never,
       }),
     ).rejects.toMatchObject({ kind: "invalid_request" });
+    await expect(
+      provider.generateStructured({
+        ...request(),
+        serviceTier: "fast",
+      }),
+    ).rejects.toMatchObject({ kind: "invalid_response" });
   });
 
   it("keeps unrelated qualified Builder policies on Terra medium", () => {
@@ -288,6 +309,7 @@ describe("GPT-5.6 Terra medium production profile", () => {
     for (const policy of unrelatedPolicies) {
       expect(policy.modelKey).toBe("gpt-5.6-terra");
       expect(policy.reasoningEffort).toBe("medium");
+      expect(policy.serviceTier).toBe("auto");
     }
   });
 

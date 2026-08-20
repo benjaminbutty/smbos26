@@ -559,6 +559,7 @@ describe("OpenAI Responses structured provider", () => {
       instructions: selectedRequest.instruction,
       max_output_tokens: 256,
       store: false,
+      service_tier: "auto",
       text: {
         format: {
           type: "json_schema",

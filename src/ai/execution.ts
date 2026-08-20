@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   aiProviderFailureKindSchema,
   aiReasoningEffortSchema,
+  aiServiceTierSchema,
   structuredAiProviderResponseSchema,
   StructuredAiProviderError,
   structuredAiUsageSchema,
@@ -48,6 +49,7 @@ const executionPolicySchema = z
       .max(120)
       .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/),
     reasoningEffort: aiReasoningEffortSchema,
+    serviceTier: aiServiceTierSchema,
     maxInputBytes: z.number().int().positive().max(1_048_576),
     maxBillableInputTokens: z.number().int().positive().max(10_000_000),
     maxOutputTokens: z.number().int().positive().max(1_000_000),
@@ -402,6 +404,7 @@ export function createAiExecutionService(
         providerKey: policy.providerKey,
         modelKey: policy.modelKey,
         reasoningEffort: policy.reasoningEffort,
+        serviceTier: policy.serviceTier,
         instruction,
         input: parsedInput.data,
         outputContract: Object.freeze({

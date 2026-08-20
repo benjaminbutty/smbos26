@@ -88,10 +88,11 @@ describe("Phase 5 public AI and telemetry boundary", () => {
 
   it("keeps the public interpretation inside the acquisition cost envelope", () => {
     expect(openAiAcquisitionPlanningPolicy).toMatchObject({
-      modelKey: "gpt-5.6-sol",
-      reasoningEffort: "medium",
-      inputMicrousdPerMillion: 5_000_000,
-      outputMicrousdPerMillion: 30_000_000,
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "max",
+      serviceTier: "fast",
+      inputMicrousdPerMillion: 200_000,
+      outputMicrousdPerMillion: 1_200_000,
       maxInputBytes: 8 * 1024,
       maxBillableInputTokens: 4_000,
       maxOutputTokens: 2_500,
@@ -142,10 +143,11 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(openAiAcquisitionRequiredIdentityCorrectionPolicy).toMatchObject({
       key: ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
       providerKey: "openai",
-      modelKey: "gpt-5.6-sol",
-      reasoningEffort: "medium",
-      inputMicrousdPerMillion: 5_000_000,
-      outputMicrousdPerMillion: 30_000_000,
+      modelKey: "gpt-5.6-luna",
+      reasoningEffort: "max",
+      serviceTier: "fast",
+      inputMicrousdPerMillion: 200_000,
+      outputMicrousdPerMillion: 1_200_000,
       maxAttempts: 1,
     });
     expect(firstInput).not.toHaveProperty("correction_reason");

@@ -32,6 +32,21 @@ export const aiReasoningEffortSchema = z.enum([
 
 export type AiReasoningEffort = z.infer<typeof aiReasoningEffortSchema>;
 
+/**
+ * Server-owned OpenAI processing tiers. `fast` is a request tier whose
+ * effective response tier is expected to be `priority`.
+ */
+export const aiServiceTierSchema = z.enum([
+  "auto",
+  "default",
+  "flex",
+  "scale",
+  "priority",
+  "fast",
+]);
+
+export type AiServiceTier = z.infer<typeof aiServiceTierSchema>;
+
 export const structuredAiUsageSchema = z
   .object({
     inputTokens: z.number().int().nonnegative().max(1_000_000_000),
@@ -97,6 +112,8 @@ export interface StructuredAiProviderRequest {
   modelKey: string;
   /** Optional for direct provider callers; execution always supplies policy value. */
   reasoningEffort?: AiReasoningEffort;
+  /** Optional for direct provider callers; execution always supplies policy value. */
+  serviceTier?: AiServiceTier;
   instruction: string;
   input: unknown;
   outputContract: {
@@ -150,6 +167,7 @@ export interface AiExecutionPolicy {
   providerKey: string;
   modelKey: string;
   reasoningEffort: AiReasoningEffort;
+  serviceTier: AiServiceTier;
   maxInputBytes: number;
   maxBillableInputTokens: number;
   maxOutputTokens: number;

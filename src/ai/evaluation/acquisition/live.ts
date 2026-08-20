@@ -147,6 +147,7 @@ export async function runLiveAcquisitionGate(
   let secondPlanOutputTokens = 0;
   let secondPlanCostMicrousd = 0;
   let secondPlanElapsedMs = 0;
+  const effectiveServiceTierCounts = new Map<string, number>();
   const reports: Array<{
     scenario_id: string;
     repetition: number;
@@ -162,12 +163,14 @@ export async function runLiveAcquisitionGate(
     correction_plan_attempted: boolean;
     correction_plan_succeeded: boolean;
     correction_plan_elapsed_ms: number;
+    effective_service_tiers: string[];
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
     for (const scenario of acquisitionEvaluationScenarios) {
       let scenarioPlanningExecutions = 0;
       let scenarioSecondPlanElapsedMs = 0;
+      const scenarioEffectiveServiceTiers: string[] = [];
       const tracked = {
         async execute(
           taskKey: Parameters<typeof runtime.execution.execute>[0],
@@ -182,6 +185,15 @@ export async function runLiveAcquisitionGate(
           try {
             const execution: AiExecutionResult =
               await runtime.execution.execute(taskKey, input);
+            const effectiveServiceTier =
+              execution.metadata.requestMetadata?.service_tier;
+            if (typeof effectiveServiceTier === "string") {
+              scenarioEffectiveServiceTiers.push(effectiveServiceTier);
+              effectiveServiceTierCounts.set(
+                effectiveServiceTier,
+                (effectiveServiceTierCounts.get(effectiveServiceTier) ?? 0) + 1,
+              );
+            }
             const policy = isSecondPlan
               ? openAiAcquisitionRequiredIdentityCorrectionPolicy
               : openAiAcquisitionPlanningPolicy;
@@ -252,21 +264,36 @@ export async function runLiveAcquisitionGate(
         correction_plan_attempted: result.correction_plan_attempted,
         correction_plan_succeeded: result.correction_plan_succeeded,
         correction_plan_elapsed_ms: scenarioSecondPlanElapsedMs,
+        effective_service_tiers: scenarioEffectiveServiceTiers,
       });
     }
   }
-  const passed = reports.every((report) => report.passed);
+  const effectiveServiceTierVerified =
+    openAiAcquisitionPlanningPolicy.serviceTier !== "fast" ||
+    effectiveServiceTierCounts.get("priority") === planningExecutions;
+  const passed =
+    reports.every((report) => report.passed) && effectiveServiceTierVerified;
   const summary = {
     gate,
     planning_policy_key: openAiAcquisitionPlanningPolicy.key,
     planning_model_key: openAiAcquisitionPlanningPolicy.modelKey,
     planning_reasoning_effort: openAiAcquisitionPlanningPolicy.reasoningEffort,
+    planning_requested_service_tier:
+      openAiAcquisitionPlanningPolicy.serviceTier,
     correction_policy_key:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.key,
     correction_model_key:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
     correction_reasoning_effort:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
+    correction_requested_service_tier:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
+    effective_service_tier_distribution: Object.fromEntries(
+      [...effectiveServiceTierCounts.entries()].sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+    effective_service_tier_verified: effectiveServiceTierVerified,
     passed,
     passed_executions: reports.filter((report) => report.passed).length,
     total_executions: reports.length,

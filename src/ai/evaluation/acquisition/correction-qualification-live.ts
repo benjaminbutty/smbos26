@@ -111,6 +111,7 @@ export async function runLiveAcquisitionCorrectionQualification(
   let estimatedCostMicrousd = 0;
   let elapsedMs = 0;
   let providerExecutions = 0;
+  const effectiveServiceTierCounts = new Map<string, number>();
   const reports: Array<{
     scenario_id: string;
     repetition: number;
@@ -124,6 +125,7 @@ export async function runLiveAcquisitionCorrectionQualification(
     output_tokens: number;
     estimated_cost_microusd: number;
     elapsed_ms: number;
+    effective_service_tier: string | null;
   }> = [];
 
   for (
@@ -134,6 +136,7 @@ export async function runLiveAcquisitionCorrectionQualification(
     for (const scenario of acquisitionEvaluationScenarios) {
       let scenarioInputTokens = 0;
       let scenarioOutputTokens = 0;
+      let scenarioEffectiveServiceTier: string | null = null;
       const startedAt = performance.now();
       const tracked: AcquisitionExecutionCore = {
         async execute(taskKey, input): Promise<AiExecutionResult> {
@@ -145,6 +148,15 @@ export async function runLiveAcquisitionCorrectionQualification(
             const result = await runtime.execution.execute(taskKey, input);
             scenarioInputTokens += result.metadata.usage.inputTokens;
             scenarioOutputTokens += result.metadata.usage.outputTokens;
+            const effectiveServiceTier =
+              result.metadata.requestMetadata?.service_tier;
+            if (typeof effectiveServiceTier === "string") {
+              scenarioEffectiveServiceTier = effectiveServiceTier;
+              effectiveServiceTierCounts.set(
+                effectiveServiceTier,
+                (effectiveServiceTierCounts.get(effectiveServiceTier) ?? 0) + 1,
+              );
+            }
             return result;
           } catch (error) {
             if (error instanceof AiExecutionError && error.accounting) {
@@ -193,6 +205,7 @@ export async function runLiveAcquisitionCorrectionQualification(
         output_tokens: scenarioOutputTokens,
         estimated_cost_microusd: scenarioCost,
         elapsed_ms: scenarioElapsedMs,
+        effective_service_tier: scenarioEffectiveServiceTier,
       });
     }
   }
@@ -200,7 +213,13 @@ export async function runLiveAcquisitionCorrectionQualification(
   const passed =
     providerExecutions === ACQUISITION_CORRECTION_QUALIFICATION_EXECUTIONS &&
     reports.length === ACQUISITION_CORRECTION_QUALIFICATION_EXECUTIONS &&
-    reports.every((report) => report.passed);
+    reports.every(
+      (report) =>
+        report.passed &&
+        (openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier !==
+          "fast" ||
+          report.effective_service_tier === "priority"),
+    );
   const summary = {
     gate: "acquisition_required_identity_correction_qualification",
     passed,
@@ -209,6 +228,17 @@ export async function runLiveAcquisitionCorrectionQualification(
     model_key: openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
     reasoning_effort:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
+    requested_service_tier:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
+    effective_service_tier_distribution: Object.fromEntries(
+      [...effectiveServiceTierCounts.entries()].sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+    effective_service_tier_verified:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier !==
+        "fast" ||
+      reports.every((report) => report.effective_service_tier === "priority"),
     scenario_count: ACQUISITION_EVALUATION_SCENARIO_COUNT,
     repetitions: ACQUISITION_CORRECTION_QUALIFICATION_REPETITIONS,
     execution_count: reports.length,

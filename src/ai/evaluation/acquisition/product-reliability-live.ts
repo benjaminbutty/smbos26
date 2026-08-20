@@ -71,6 +71,7 @@ type ProductReport = Readonly<{
   correction_plan_output_tokens: number;
   correction_plan_estimated_cost_microusd: number;
   correction_plan_elapsed_ms: number;
+  effective_service_tiers: readonly string[];
 }>;
 
 function activated(
@@ -223,6 +224,7 @@ export async function runLiveAcquisitionProductReliability(
   let secondPlanOutputTokens = 0;
   let secondPlanCost = 0;
   let secondPlanElapsed = 0;
+  const effectiveServiceTierCounts = new Map<string, number>();
   const counts = new Map<string, number>();
   const diagnosticCounts = new Map<string, number>();
   const reports: ProductReport[] = [];
@@ -244,6 +246,7 @@ export async function runLiveAcquisitionProductReliability(
       let scenarioSecondPlanOutputTokens = 0;
       let scenarioSecondPlanCost = 0;
       let scenarioSecondPlanElapsed = 0;
+      const scenarioEffectiveServiceTiers: string[] = [];
       const trackedExecution = {
         async execute(
           taskKey: Parameters<typeof runtime.execution.execute>[0],
@@ -257,6 +260,15 @@ export async function runLiveAcquisitionProductReliability(
           totalAttempts += 1;
           try {
             const result = await runtime.execution.execute(taskKey, input);
+            const effectiveServiceTier =
+              result.metadata.requestMetadata?.service_tier;
+            if (typeof effectiveServiceTier === "string") {
+              scenarioEffectiveServiceTiers.push(effectiveServiceTier);
+              effectiveServiceTierCounts.set(
+                effectiveServiceTier,
+                (effectiveServiceTierCounts.get(effectiveServiceTier) ?? 0) + 1,
+              );
+            }
             const cost = actualCost(
               taskKey,
               result.metadata.usage.inputTokens,
@@ -412,6 +424,7 @@ export async function runLiveAcquisitionProductReliability(
         correction_plan_output_tokens: scenarioSecondPlanOutputTokens,
         correction_plan_estimated_cost_microusd: scenarioSecondPlanCost,
         correction_plan_elapsed_ms: scenarioSecondPlanElapsed,
+        effective_service_tiers: scenarioEffectiveServiceTiers,
       });
     }
   }
@@ -460,24 +473,39 @@ export async function runLiveAcquisitionProductReliability(
       );
     })
     .map(({ id }) => id);
-  const passed = acquisitionProductReliabilityPassed({
-    tailored: tailoredCount,
-    fallback: finalFallbackCount,
-    executionFailures: executionFailureCount,
-    hardContractFailures: hardContractFailureCount,
-    systematicFailureScenarios: systematicFailureScenarioIds.length,
-  });
+  const passed =
+    acquisitionProductReliabilityPassed({
+      tailored: tailoredCount,
+      fallback: finalFallbackCount,
+      executionFailures: executionFailureCount,
+      hardContractFailures: hardContractFailureCount,
+      systematicFailureScenarios: systematicFailureScenarioIds.length,
+    }) &&
+    (openAiAcquisitionPlanningPolicy.serviceTier !== "fast" ||
+      effectiveServiceTierCounts.get("priority") === totalAttempts);
   const summary = {
     gate: "product_reliability",
     planning_policy_key: openAiAcquisitionPlanningPolicy.key,
     planning_model_key: openAiAcquisitionPlanningPolicy.modelKey,
     planning_reasoning_effort: openAiAcquisitionPlanningPolicy.reasoningEffort,
+    planning_requested_service_tier:
+      openAiAcquisitionPlanningPolicy.serviceTier,
     correction_policy_key:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.key,
     correction_model_key:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey,
     correction_reasoning_effort:
       openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
+    correction_requested_service_tier:
+      openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
+    effective_service_tier_distribution: Object.fromEntries(
+      [...effectiveServiceTierCounts.entries()].sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
+    ),
+    effective_service_tier_verified:
+      openAiAcquisitionPlanningPolicy.serviceTier !== "fast" ||
+      effectiveServiceTierCounts.get("priority") === totalAttempts,
     passed,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,
