@@ -6,6 +6,7 @@ vi.mock("server-only", () => ({}));
 
 import {
   ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
+  OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
   openAiAcquisitionPlanningPolicy,
   openAiAcquisitionRequiredIdentityCorrectionPolicy,
 } from "../src/ai/policies";
@@ -146,6 +147,7 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       modelKey: "gpt-5.6-sol",
       reasoningEffort: "medium",
       serviceTier: "auto",
+      timeoutMs: OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
       inputMicrousdPerMillion: 5_000_000,
       outputMicrousdPerMillion: 30_000_000,
       maxAttempts: 1,

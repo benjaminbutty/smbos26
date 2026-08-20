@@ -82,6 +82,9 @@ export const ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY =
 export const OPENAI_ACQUISITION_MODEL_KEY = OPENAI_SOL_MODEL_KEY;
 export const OPENAI_ACQUISITION_REASONING_EFFORT = "medium" as const;
 export const OPENAI_ACQUISITION_SERVICE_TIER: AiServiceTier = "auto";
+// Evidence-based correction-only timeout. Initial acquisition planning keeps
+// its existing 25-second bound because this measurement covered correction.
+export const OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS = 35_000 as const;
 export const OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION = 5_000_000;
 export const OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION = 30_000_000;
 
@@ -290,6 +293,7 @@ export const openAiAcquisitionRequiredIdentityCorrectionPolicy = Object.freeze({
   modelKey: OPENAI_ACQUISITION_MODEL_KEY,
   reasoningEffort: OPENAI_ACQUISITION_REASONING_EFFORT,
   serviceTier: OPENAI_ACQUISITION_SERVICE_TIER,
+  timeoutMs: OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
   inputMicrousdPerMillion: OPENAI_ACQUISITION_INPUT_MICROUSD_PER_MILLION,
   outputMicrousdPerMillion: OPENAI_ACQUISITION_OUTPUT_MICROUSD_PER_MILLION,
 });

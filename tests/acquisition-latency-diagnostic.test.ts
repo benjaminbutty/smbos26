@@ -9,7 +9,10 @@ import {
   recommendedAcquisitionTimeoutMs,
   summariseAcquisitionCorrectionLatency,
 } from "../src/ai/evaluation/acquisition/correction-latency-diagnostic-live";
-import { openAiAcquisitionRequiredIdentityCorrectionPolicy } from "../src/ai/policies";
+import {
+  OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
+  openAiAcquisitionRequiredIdentityCorrectionPolicy,
+} from "../src/ai/policies";
 import type { AcquisitionCorrectionLatencyDiagnosticReport } from "../src/ai/evaluation/acquisition/correction-latency-diagnostic-live";
 
 function report(
@@ -52,7 +55,7 @@ describe("acquisition correction latency diagnostic", () => {
     });
 
     expect(openAiAcquisitionRequiredIdentityCorrectionPolicy.timeoutMs).toBe(
-      25_000,
+      OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
     );
     expect(acquisitionCorrectionLatencyDiagnosticPolicy(luna).timeoutMs).toBe(
       ACQUISITION_CORRECTION_LATENCY_DIAGNOSTIC_TIMEOUT_MS,
@@ -65,7 +68,7 @@ describe("acquisition correction latency diagnostic", () => {
       maxOutputTokens: 2_500,
     });
     expect(openAiAcquisitionRequiredIdentityCorrectionPolicy.timeoutMs).toBe(
-      25_000,
+      OPENAI_ACQUISITION_CORRECTION_TIMEOUT_MS,
     );
   });
 
