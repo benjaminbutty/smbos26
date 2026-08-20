@@ -3308,3 +3308,37 @@ change or corpus rerun is authorised by J1-R5. The scoped repair architecture
 and both hard gates are retained, but no final acquisition profile is proposed;
 addressing the initial-path timeout/cost trade-off is **PRODUCT DECISION
 REQUIRED**.
+
+### J1-R5 final Luna/Luna profile qualification stop
+
+The next frozen subject changed only the initial acquisition policy from Sol
+Medium/auto to the already-qualified Luna profile: `gpt-5.6-luna`, `xhigh`,
+requested `service_tier=fast`, 8,192 output tokens and a 45-second timeout.
+The dedicated scoped correction policy, task, instruction, manifest, output
+schema, validator and effective Luna `priority` behaviour were unchanged, so
+the recorded 24/24 correction qualification is reused rather than rerun.
+Trusted Luna pricing is used for both code-owned policies. No active J1
+acquisition policy uses Sol; historical diagnostic subjects remain historical
+evaluation evidence only.
+
+Focused policy tests proved the initial and correction profiles match, the
+two-execution ceiling remains two, and unrelated Terra-medium policies retain
+their existing profile. Deterministic verification passed format, typecheck,
+lint, 931 unit tests, build, migration immutability, clean migration reset,
+schema lint and the real integration suite (265 passed, 5 expected skips).
+The code/evaluation freeze for this subject is
+`fbe079f3a0a0e6a4d6af6f3b3cb43f4cc9e736b0`.
+
+The one authorised Luna/Luna acquisition qualification then ran once against
+the unchanged eight scenarios. All eight initial provider executions returned
+the finite `provider_transport_rate_limited` failure before a model response:
+0/8 hard, 0/8 completed, 0 correction executions, no effective-tier reports,
+zero input/output tokens and zero estimated cost. This is a provider access or
+quota failure, not model-quality evidence. Reliability and the 96-case corpus
+were not started. No retry, Sol/Terra fallback, prompt/timing/cap change,
+third execution or gate weakening is authorised.
+
+The exact Luna/Luna profile is therefore **not accepted**. PR #59 is kept
+unmerged and closed as not accepted, with Journey 2 recommended unless a new
+product decision supplies a reliable provider allowance and authorises a new
+frozen evaluation subject.

@@ -270,3 +270,34 @@ validator, third-call or corpus rerun is being introduced. The hard gates and
 trust boundaries remain intact, but the acquisition profile cannot be called
 fully qualified; resolving the initial-path reliability/cost trade-off is
 **PRODUCT DECISION REQUIRED**.
+
+## J1-R5 final Luna/Luna profile qualification stop
+
+The final candidate changed only the initial acquisition policy to the
+server-owned Luna xhigh/Fast profile: `gpt-5.6-luna`, `reasoning.effort=xhigh`,
+requested `service_tier=fast`, 8,192 output tokens and a 45-second timeout.
+The scoped correction policy and all correction architecture remained exactly
+unchanged, so the existing Luna correction qualification evidence is reused:
+24/24 hard and quality-valid with effective `priority` on every execution.
+Trusted Luna pricing is used for both stages. No active J1 acquisition path
+uses Sol; the older Sol diagnostic profile is historical evidence only.
+
+The frozen code subject is
+`fbe079f3a0a0e6a4d6af6f3b3cb43f4cc9e736b0`. Focused policy tests and full
+deterministic verification passed: format, typecheck, lint, 931 unit tests,
+build, migration immutability, clean reset, schema lint and the real
+integration suite (265 passed, 5 expected skips).
+
+The one authorised eight-case Luna/Luna acquisition qualification did not
+reach model evaluation. All eight initial calls returned the finite
+`provider_transport_rate_limited` failure. The result was 0/8 hard-valid, no
+completed responses, zero correction executions, no effective service-tier
+reports, zero tokens and zero estimated cost. Reliability and the 96-case
+corpus were not run. This is provider access/quota evidence, not model-quality
+evidence, but the required gate was missed.
+
+Per the stop rule, there is no retry, Sol/Terra reintroduction, prompt or
+timeout tuning, third execution or weakened gate. The Luna/Luna profile is not
+accepted; PR #59 remains unmerged and is closed as not accepted. Journey 2 is
+the recommendation unless a deliberate product decision authorises a new
+provider allowance and a new frozen evaluation subject.
