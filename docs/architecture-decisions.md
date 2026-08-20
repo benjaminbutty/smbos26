@@ -3001,7 +3001,8 @@ operational data, preview, claim, accept, or publish boundary changes.
 
 ## ADR-043 — Journey 1 acquisition permits one narrowly triggered semantic replan
 
-**Status:** Accepted for J1-R2; correction-task identity amended 20 August 2026
+**Status:** Accepted for J1-R2; candidate profile evaluation stopped pending
+product decision 20 August 2026
 **Date:** 19–20 August 2026
 
 ### Context
@@ -3024,10 +3025,11 @@ refuses with `required_field`. The first execution remains the unchanged
 `acquisition_workspace_plan_v1` subject. The second execution uses the
 dedicated registered task `acquisition_required_identity_correction_v1` and
 its own policy identity
-`acquisition_required_identity_correction_terra_medium_v1`. It retains the
-approved `gpt-5.6-terra` model and the provider's existing explicit medium
-reasoning profile; the provider contract does not expose a task-selectable
-reasoning effort, and this decision does not add one merely for correction.
+`acquisition_required_identity_correction_v1`. The original accepted profile
+was `gpt-5.6-terra` with medium reasoning; that Terra evidence is historical
+for this candidate comparison. The current policy boundary can carry the
+server-owned model, reasoning and service-tier profile without exposing any
+task-selectable or owner-selectable control.
 
 The correction input contains only the original enriched owner request,
 category, grounded currency and finite server-owned reason
@@ -3035,6 +3037,13 @@ category, grounded currency and finite server-owned reason
 never included in that input. This dedicated-task amendment supersedes only
 ADR-043's original same-task/same-policy choice; the trigger and all other
 bounds remain unchanged.
+
+The provider policy boundary now carries a closed server-owned model key,
+reasoning effort and service tier. Existing qualified Terra-medium Builder
+policies retain Terra, medium reasoning and the `auto` service tier. No owner,
+environment, prompt or model-output value can select any of these fields. The
+OpenAI adapter accepts only the code-owned model and tier allow-lists and
+exposes the bounded effective response tier as metadata.
 
 The correction instruction preserves the requested scope and directs the
 planner to represent connected identity through Connections instead of a
@@ -3082,5 +3091,46 @@ each and were not rerun unchanged. Their combined hard/product results were
 all three. The final miss was one milk-round scope/relationship omission. This
 does not justify weakening validation or adding retries. The implementation
 therefore stops before the full acquisition gates pending a deliberate product
-decision about provider reasoning control, broader deterministic architecture,
-or the correction qualification gate.
+decision about provider profile selection or broader deterministic architecture.
+
+### Candidate profile evidence
+
+The first candidate evaluation tested one frozen subject per profile; no
+unchanged subject was rerun. The original Luna Max standard profile was frozen
+at `5007b895fce026d6b4838250e09eee3bdf8161e5`. Its correction qualification
+produced 2/24 hard passes and 24/24 quality passes: 22 executions reached the
+unchanged 25-second timeout, with 2,636 input and 1,370 output tokens, 2,173
+estimated microusd and 567,362 ms elapsed.
+
+The service-tier capability was then added without changing the task,
+instruction, schemas, validator, scenarios, timeout or acceptance thresholds.
+Luna Max Fast was frozen at
+`d4ac56cc28aa420402ee333bef8188055e0b6f79` with
+`gpt-5.6-luna`, `reasoning.effort=max` and request
+`service_tier=fast`. The provider required the effective response tier to be
+`priority` and reported it only through bounded metadata. The correction gate
+produced 2/24 hard passes and 24/24 quality passes: 22 executions returned
+`provider_incomplete` at the unchanged 2,500-token output cap, while both
+successful responses reported effective `priority`. It used 31,683 input and
+56,296 output tokens, 73,901 estimated microusd and 328,529 ms elapsed.
+
+Under the authorised fallback order, Sol Medium was then frozen at
+`77e318b40ebe71c5c938042b29148f2bec98e405` with
+`gpt-5.6-sol`, `reasoning.effort=medium` and the standard `auto` service tier.
+Its correction gate produced 20/24 hard passes and 24/24 quality passes: all
+three `unusual_other` repetitions repeated
+`quality_cross_object_field_leakage`, and one `milk_round` execution timed out.
+Twenty-three successful responses reported effective `default`. It used
+30,360 input and 24,372 output tokens, 882,960 estimated microusd and
+393,480 ms elapsed.
+
+Neither Luna Max Standard, Luna Max Fast nor Sol Medium cleared the required
+24/24 correction gate. The 8/8 acquisition qualification, 24/24 reliability
+gate, 96-case product corpus and exact-head CI were therefore not run for
+these candidate profiles. No winning J1 acquisition profile is proposed.
+Further progress is **PRODUCT DECISION REQUIRED**. Options are to retain the
+historical Terra evidence as the current qualified profile, approve a new
+bounded candidate/architecture change with explicit acceptance criteria, or
+accept the current correction-gate failure and defer the acquisition profile
+change. No third provider execution, prompt tuning, validator weakening,
+requiredness change or timeout/output-bound change was made.

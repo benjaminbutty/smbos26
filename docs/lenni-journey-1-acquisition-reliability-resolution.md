@@ -70,8 +70,8 @@ The later exact-SHA qualification at
 planning error rather than missing owner information. J1-R2 therefore permits
 one correction execution only for that exact code pair. After later reliability
 evidence showed the general task could repeat the defect, correction now uses
-the dedicated `acquisition_required_identity_correction_v1` subject and policy
-`acquisition_required_identity_correction_terra_medium_v1`. It receives the
+the dedicated `acquisition_required_identity_correction_v1` subject and its
+separate `acquisition_required_identity_correction_v1` policy identity. It receives the
 original enriched owner request, category and grounded currency plus one finite
 server-owned correction reason. It never receives the rejected model output.
 The first acquisition task and instruction are unchanged.
@@ -84,7 +84,7 @@ calls the reservation RPC, creates persistent state, or increments
 `attempt_count`, `proposal_count`, `regeneration_count`, or the successful
 refinement allowance. The maximum semantic planning execution count is two;
 deterministic recovery remains one bounded pass per composed candidate and
-cannot recurse. Each execution uses the existing Terra policy with one provider
+cannot recurse. Each execution uses the selected one-attempt policy with one provider
 attempt, so the workflow ceiling is 50 seconds of provider time and 95,000
 microusd of worst-case provider token cost. Successful first-pass requests
 remain one-call requests.
@@ -112,10 +112,10 @@ The first-pass instruction keeps its generic graph guidance about
 keeping identity/contact data on the business area it belongs to and using a
 Connection for the relationship. The dedicated correction task combines that
 general bounded planning contract with a finite server-owned instruction to
-preserve scope and use Connections for connected identity. The current provider
-contract fixes Terra medium reasoning across tasks, so no provider abstraction
-change was made solely to request a stronger correction profile. This material
-orchestration change invalidates prior live
+preserve scope and use Connections for connected identity. The provider policy
+boundary now carries closed server-owned model, reasoning-effort and service-tier
+fields; unrelated Terra-medium Builder policies retain their effective profile.
+This material orchestration change invalidates prior live
 evidence; qualification and reliability must be rerun against the frozen
 implementation before the 32 × 3 product corpus. The product corpus remains
 separate evidence and does not replace the eight-scenario hard contract.
@@ -147,7 +147,12 @@ while deterministic safety remained 24/24. Its one miss was `milk_round`,
 repetition 1, with `required_concepts` and the missing Product-to-Item
 one-to-many relationship. The subject was not rerun. Under the accepted stop
 condition, the full acquisition qualification, reliability, 96-execution corpus
-and exact-head CI were not started. Further work requires a product decision;
-this branch does not add provider reasoning controls, a third execution,
-validator or requiredness changes, required-Connection semantics, model changes
-or broader deterministic production rules.
+and exact-head CI were not started. The subsequent candidate-profile evaluation
+also stopped at the correction gate: Luna Max Standard reached 2/24 hard passes
+with 22 timeouts; Luna Max Fast reached 2/24 with 22 provider-incomplete
+responses while its two successes reported effective `priority`; and Sol Medium
+reached 20/24 with three repeated `quality_cross_object_field_leakage` results
+and one timeout. No candidate cleared 24/24, so further work is
+**PRODUCT DECISION REQUIRED**. This branch adds no third execution, validator
+or requiredness change, required-Connection semantics, prompt tuning or
+timeout/output-bound change.

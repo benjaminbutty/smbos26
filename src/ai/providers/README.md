@@ -6,10 +6,11 @@ external adapter is OpenAI Responses and is registered only when
 `AI_PROVIDER=openai` has a server-only `OPENAI_API_KEY`.
 
 Future adapters must receive only the trusted request assembled by the
-execution service: fixed provider/model identity, server-owned instruction,
-validated structured input, the registered output contract, output-token
-limit and `AbortSignal`. They must not accept arbitrary tools, URLs, headers,
-credentials, database clients or mutation capabilities.
+execution service: fixed provider/model identity, server-owned reasoning effort
+and service tier, server-owned instruction, validated structured input, the
+registered output contract, output-token limit and `AbortSignal`. They must not
+accept arbitrary tools, URLs, headers, credentials, database clients or
+mutation capabilities.
 
 The execution service validates the provider's unknown output with the task's
 strict Zod schema. The deterministic SMBOS runtime and both configuration and
@@ -22,7 +23,8 @@ accounting/orchestration layer. Providers receive none of those concerns, and
 arbitrary provider metadata is not persisted.
 
 `builder_plan_v1` uses the fixed code-owned `gpt-5.6-terra` alias in OpenAI
-mode with explicit, non-overridable `reasoning: { effort: "medium" }`. The
+mode with explicit, non-overridable `reasoning: { effort: "medium" }` and
+`service_tier: "auto"`. The
 alias may advance independently, so its live qualification must be rerun after
 a material alias advance or a change to the execution/planning subject. The
 OpenAI runtime also retains the disabled provider for
@@ -42,8 +44,11 @@ authoritative. Unsafe schemas fail before an
 SDK request.
 
 Responses receive one server instruction and one deterministically serialized
-user input, `store: false`, the fixed output limit, `medium` reasoning,
-`prompt_cache_options: { mode: "explicit" }` and an abort signal. They
+user input, `store: false`, the policy-owned output limit, reasoning effort and
+service tier, `prompt_cache_options: { mode: "explicit" }` and an abort signal.
+For a code-owned Fast profile, the request uses `service_tier: "fast"` and the
+adapter requires the response's effective `service_tier: "priority"`; the
+effective tier is exposed only as bounded metadata. They
 receive no tools, previous response, conversation, background mode, arbitrary
 metadata, identity, headers or endpoint. SMBOS stores no request or response.
 The SDK client is explicitly constructed with `logLevel: "off"`; ambient
@@ -93,6 +98,21 @@ This clears the planning gate for the frozen provider profile as bounded
 engineering evidence, not universal model perfection. Operation generation and
 mutation authority remain unimplemented; future profile or frozen-subject
 changes invalidate the evidence and require both gates to be rerun.
+
+## Journey 1 acquisition profile comparison — 20 August 2026
+
+The dedicated correction subject was evaluated once for each candidate, with
+the original tasks, prompts, schemas, validators, scenarios, 25-second timeout
+and 24/24 correction gate unchanged. Luna Max Standard (`5007b895`) passed
+2/24 hard executions because 22 timed out. Luna Max Fast (`d4ac56cc`) also
+passed 2/24: 22 reached the unchanged output cap, while both successful
+responses verified effective `priority`. Sol Medium (`77e318b`) passed 20/24:
+three `unusual_other` runs repeated the authoritative cross-object leakage
+failure and one run timed out. All three candidates passed quality validation
+24/24, but none cleared the hard correction gate. Acquisition qualification,
+reliability, product corpus and exact-head CI were consequently not run. No
+current acquisition winner is approved; further profile work is
+PRODUCT DECISION REQUIRED.
 
 ## Phase 12B Record-update provider boundary
 
