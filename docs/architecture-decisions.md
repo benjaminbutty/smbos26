@@ -3375,7 +3375,7 @@ is recommended.
 
 ## ADR-044 — Acquisition completion resilience addresses measured provider tails without weakening validation
 
-**Status:** Accepted as one bounded J1-R7 experiment
+**Status:** Accepted; experiment passed and independent evidence lineage accepted
 
 **Date:** 21 August 2026
 
@@ -3425,3 +3425,70 @@ zero `ai_timeout` and zero `provider_incomplete_max_output_tokens`. The owner
 authorised one 96-execution corpus only; qualification and reliability will
 not be rerun. Failure stops J1-R7 without tuning or a second corpus. Success
 requires fresh independent review before any merge decision.
+
+### Outcome and independent merge-readiness review
+
+The exact runtime and evaluation subject was
+`dfb6aeb4b5151d52ab68363c035c01f1c2262784`. Its sole parent is the authorised
+pre-R6 evidence head `0126c355b2efc949aef132739f49823ebbd44823`.
+The failed R6 commit `66e580b3b9a7fda5d027871aeeb339e4ebe35ac2`
+is a sibling, not an ancestor. R7 leaves acquisition quality, recovery,
+service, interpreter, planning instruction, schemas and validation unchanged;
+it contains no related-Field equivalence machinery or scenario-specific
+production branch.
+
+Deterministic verification passed format, typecheck, lint, 946 unit tests,
+production build, migration immutability, clean migration reset, schema lint
+and the complete integration suite (265 passed, 5 expected skips). Exact-head
+CI run `32458149392` passed before the one authorised live corpus.
+
+The single 32 × 3 corpus passed every unchanged and additional gate:
+
+- raw first-pass tailored: 81/96;
+- scoped correction-plan tailored: 13/96, with 13/13 corrections successful;
+- final tailored: 94/96 (97.9167%);
+- truthful fallback: 2/96 (2.0833%);
+- execution failures: 0/96;
+- hard-contract failures: 0/96;
+- systematic failure scenarios: none;
+- `ai_timeout`: 0;
+- `provider_incomplete_max_output_tokens`: 0;
+- effective service tier: `priority` for all 109 provider executions.
+
+Both fallback rows passed the hard contract and failed closed without a
+correction attempt: `florist_event_orders` repetition 1 at 12,214 ms and
+`electrician_work_orders` repetition 2 at 10,761 ms. Each retained only the
+finite sequence `quality_cross_object_field_leakage` then
+`no_mechanical_repair_fields`.
+
+The preceding R6 qualification passed 8/8 hard (7/8 non-hard quality) and its
+reliability gate passed 24/24 hard (22/24 non-hard quality), including two
+successful existing R5 scoped corrections. The R6 equivalence matcher
+recorded zero match rows and zero recoveries in qualification 0/8,
+reliability 0/24 and corpus 0/96: 0/128 in total. These gates are accepted as
+carried-forward hard-boundary evidence, not described as exact-R7 live
+reruns. Removing a path inactive in every retained execution cannot alter
+those observed results; R7 otherwise changes only the initial completion
+envelope, while the model, reasoning, tier, prompt, schemas, validator,
+one-attempt policy and correction subject remain fixed. The larger cap is a
+provider parameter and can affect stochastic generation, so the exact-R7
+live evidence remains the passing 96-execution corpus.
+
+Using the existing nearest-rank convention, the initial-path proxy
+(`elapsed_ms` minus correction-provider elapsed) had p50/p95/max
+`15,300/29,239/38,235 ms`; whole-operation owner elapsed had
+`15,792/29,239/38,235 ms`. The initial proxy includes separately rounded
+deterministic overhead and is not independently instrumented provider
+latency. No execution exceeded 45 seconds in this corpus. One successful
+initial response used 8,563 output tokens, above the former 8,192 ceiling.
+Total cost was 420,589 microusd: 416,858 initial and 3,731 correction, or
+4,381.135 microusd (about $0.004381) per submission.
+
+The private bounded artifact
+`smbos26-r7-product-corpus-dfb6aeb4-20260821.jsonl` is outside the repository,
+mode `0600`, with SHA-256
+`b945fa569a39b38bde3c06e2e87eaf97fff06360046f51aba8b27d2f729174f2`.
+A fresh read-only independent review recomputed the evidence and returned
+`ACCEPT EVIDENCE LINEAGE`. J1-R7 is therefore merge-ready after final
+documentation-only exact-head CI and explicit owner review; PR #61 remains
+draft and no runtime change or further live run is authorised.

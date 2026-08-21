@@ -358,4 +358,43 @@ After deterministic verification and exact-head CI, exactly one product
 corpus is authorised. Qualification and reliability are deliberately not
 rerun. Existing 94/96 and fallback gates remain unchanged, with additional
 requirements of zero timeout and zero max-output incomplete outcomes. The
-corpus result is pending at the code-freeze point.
+runtime and evaluation subject was frozen at
+`dfb6aeb4b5151d52ab68363c035c01f1c2262784`; exact-head CI run `32458149392`
+passed before the corpus.
+
+The one authorised 32 × 3 corpus passed: 81 raw first-pass tailored plus 13
+successful scoped corrections produced 94/96 final tailored, with 2/96
+truthful fallback, zero execution failures, zero hard-contract failures, no
+systematic scenario, zero `ai_timeout` and zero
+`provider_incomplete_max_output_tokens`. Effective service tier was
+`priority` for all 109 calls. The two fallbacks were
+`florist_event_orders` repetition 1 and `electrician_work_orders` repetition
+2; both passed the hard contract and retained only
+`quality_cross_object_field_leakage` followed by
+`no_mechanical_repair_fields`, with no correction attempt.
+
+Nearest-rank initial-path proxy p50/p95/max was
+`15,300/29,239/38,235 ms`; whole-operation owner elapsed was
+`15,792/29,239/38,235 ms`. The initial proxy is derived as total row elapsed
+minus separately rounded correction-provider elapsed, so it is not direct
+provider instrumentation. No row exceeded 45 seconds. One successful initial
+response used 8,563 output tokens, above the former 8,192 cap. Total cost was
+420,589 microusd, or about $0.004381 per submission.
+
+Fresh independent review confirmed that R7's sole parent is the pre-R6 head
+`0126c355b2efc949aef132739f49823ebbd44823`; failed R6 commit
+`66e580b3b9a7fda5d027871aeeb339e4ebe35ac2` is not an ancestor. R6 recorded
+zero related-Field equivalence matches and recoveries across qualification,
+reliability and corpus: 0/128. Its 8/8 qualification and 24/24 reliability
+hard gates remain carried-forward evidence, not exact-R7 reruns; their
+non-hard quality subcounts were 7/8 and 22/24. The reviewer accepted that
+lineage because the inactive R6 path is absent, R7 restores the R5 semantic
+engine exactly, and only the initial completion envelope changes while model,
+prompt, schemas, validators and correction remain fixed.
+
+The independent verdict is `ACCEPT EVIDENCE LINEAGE`. The release candidate
+is the demonstrated architecture: R5 scoped correction, Luna xhigh/Fast and
+the evidence-backed initial provider envelope, plus bounded diagnostics and
+truthful owner waiting/retry UX. No R6 classification machinery is carried.
+PR #61 remains draft pending explicit owner review; no further runtime change
+or live evaluation is warranted.
