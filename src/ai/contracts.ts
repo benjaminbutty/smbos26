@@ -16,6 +16,43 @@ export const aiProviderFailureKindSchema = z.enum([
 
 export type AiProviderFailureKind = z.infer<typeof aiProviderFailureKindSchema>;
 
+/**
+ * Server-owned reasoning profiles. The allow-list is intentionally closed so
+ * callers cannot select provider effort through owner input, environment
+ * configuration, or model output.
+ */
+export const aiReasoningEffortSchema = z.enum([
+  "none",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+]);
+
+export type AiReasoningEffort = z.infer<typeof aiReasoningEffortSchema>;
+
+/**
+ * Server-owned OpenAI processing tiers. `fast` is a request tier whose
+ * effective response tier is expected to be `priority`.
+ */
+export const aiServiceTierSchema = z.enum([
+  "auto",
+  "default",
+  "flex",
+  "scale",
+  "priority",
+  "fast",
+]);
+
+export type AiServiceTier = z.infer<typeof aiServiceTierSchema>;
+
+export function aiServiceTierRequiresPriority(
+  serviceTier: AiServiceTier,
+): boolean {
+  return serviceTier === "fast" || serviceTier === "priority";
+}
+
 export const structuredAiUsageSchema = z
   .object({
     inputTokens: z.number().int().nonnegative().max(1_000_000_000),
@@ -79,6 +116,10 @@ export const structuredAiProviderResponseSchema = z
 export interface StructuredAiProviderRequest {
   providerKey: string;
   modelKey: string;
+  /** Optional for direct provider callers; execution always supplies policy value. */
+  reasoningEffort?: AiReasoningEffort;
+  /** Optional for direct provider callers; execution always supplies policy value. */
+  serviceTier?: AiServiceTier;
   instruction: string;
   input: unknown;
   outputContract: {
@@ -131,6 +172,8 @@ export interface AiExecutionPolicy {
   key: string;
   providerKey: string;
   modelKey: string;
+  reasoningEffort: AiReasoningEffort;
+  serviceTier: AiServiceTier;
   maxInputBytes: number;
   maxBillableInputTokens: number;
   maxOutputTokens: number;

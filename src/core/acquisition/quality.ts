@@ -118,6 +118,11 @@ export class AcquisitionCandidateQualityError extends Error {
   }
 }
 
+export type AcquisitionCandidateFieldReference = Readonly<{
+  object_key: string;
+  key: string;
+}>;
+
 function normalise(value: string): string {
   return value
     .normalize("NFKC")
@@ -389,25 +394,60 @@ function validateSemanticallyRedundantFields(
   objects: ReadonlyMap<string, ObjectOperation>,
   fields: ReadonlyMap<string, Map<string, FieldOperation>>,
 ): void {
-  for (const [objectKey, object] of objects) {
-    const objectFields = [...(fields.get(objectKey)?.values() ?? [])];
-    if (
-      removeSemanticallyRedundantIdentityFields(object, objectFields).length !==
-      objectFields.length
-    ) {
-      fail(
-        "semantically_redundant_field",
-        `Object ${object.plural_label} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
-      );
-    }
+  const redundantFields = findSemanticallyRedundantFields(objects, fields);
+  if (redundantFields.length > 0) {
+    const object = objects.get(redundantFields[0]!.object_key);
+    fail(
+      "semantically_redundant_field",
+      `Object ${object?.plural_label ?? redundantFields[0]!.object_key} has semantically redundant identity Fields; a generic identity label repeats a more specific label.`,
+    );
   }
 }
 
-function validateCrossObjectFieldLeakage(
+function fieldReference(
+  field: FieldOperation,
+): AcquisitionCandidateFieldReference {
+  return { object_key: field.object_key, key: field.key };
+}
+
+function uniqueFieldReferences(
+  fields: readonly FieldOperation[],
+): AcquisitionCandidateFieldReference[] {
+  const seen = new Set<string>();
+  const result: AcquisitionCandidateFieldReference[] = [];
+  for (const field of fields) {
+    const reference = fieldReference(field);
+    const identity = `${reference.object_key}:${reference.key}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    result.push(reference);
+  }
+  return result;
+}
+
+function findSemanticallyRedundantFields(
+  objects: ReadonlyMap<string, ObjectOperation>,
+  fields: ReadonlyMap<string, Map<string, FieldOperation>>,
+): AcquisitionCandidateFieldReference[] {
+  const redundant: FieldOperation[] = [];
+  for (const [objectKey, object] of objects) {
+    const objectFields = [...(fields.get(objectKey)?.values() ?? [])];
+    const retained = new Set(
+      removeSemanticallyRedundantIdentityFields(object, objectFields).map(
+        (field) => field.key,
+      ),
+    );
+    redundant.push(...objectFields.filter((field) => !retained.has(field.key)));
+  }
+  return uniqueFieldReferences(redundant);
+}
+
+function findCrossObjectFieldLeakageFields(
   relationships: ReadonlyMap<string, RelationshipOperation>,
   objects: ReadonlyMap<string, ObjectOperation>,
   fields: ReadonlyMap<string, Map<string, FieldOperation>>,
-): void {
+): AcquisitionCandidateFieldReference[] {
+  const leaking: FieldOperation[] = [];
   for (const relationship of relationships.values()) {
     const source = requireObject(
       objects,
@@ -433,21 +473,69 @@ function validateCrossObjectFieldLeakage(
           identityFieldTokens.has(token),
         );
         if (mentionsRelated && carriesIdentity) {
-          fail(
-            "cross_object_field_leakage",
-            `Cross-object field leakage: ${owner.plural_label} / ${field.label} duplicates values from related ${related.singular_label}.`,
-          );
+          leaking.push(field);
         }
       }
     }
   }
+  return uniqueFieldReferences(leaking);
 }
 
-function validateRelationshipScalarDuplication(
+export function isMechanicallyRedundantCrossObjectIdentityField(
+  field: SemanticIdentityField,
+  related: SemanticIdentityObject,
+): boolean {
+  const fieldTokens = fieldSemanticTokens(field);
+  const relatedTokens = objectSemanticTokens(related);
+  const carriesIdentity = [...fieldTokens].some((token) =>
+    identityFieldTokens.has(token),
+  );
+  const mentionsRelated = [...relatedTokens].some((token) =>
+    fieldTokens.has(token),
+  );
+  const hasOtherMeaning = [...fieldTokens].some(
+    (token) => !relatedTokens.has(token) && !identityFieldTokens.has(token),
+  );
+  return mentionsRelated && carriesIdentity && !hasOtherMeaning;
+}
+
+function findMechanicallyRedundantCrossObjectFields(
   relationships: ReadonlyMap<string, RelationshipOperation>,
   objects: ReadonlyMap<string, ObjectOperation>,
   fields: ReadonlyMap<string, Map<string, FieldOperation>>,
-): void {
+): AcquisitionCandidateFieldReference[] {
+  const redundant: FieldOperation[] = [];
+  for (const relationship of relationships.values()) {
+    const source = requireObject(
+      objects,
+      relationship.source_object_key,
+      relationship.key,
+    );
+    const target = requireObject(
+      objects,
+      relationship.target_object_key,
+      relationship.key,
+    );
+    for (const [owner, related] of [
+      [source, target],
+      [target, source],
+    ] as const) {
+      for (const field of fields.get(owner.key)?.values() ?? []) {
+        if (isMechanicallyRedundantCrossObjectIdentityField(field, related)) {
+          redundant.push(field);
+        }
+      }
+    }
+  }
+  return uniqueFieldReferences(redundant);
+}
+
+function findRelationshipScalarDuplicationFields(
+  relationships: ReadonlyMap<string, RelationshipOperation>,
+  objects: ReadonlyMap<string, ObjectOperation>,
+  fields: ReadonlyMap<string, Map<string, FieldOperation>>,
+): AcquisitionCandidateFieldReference[] {
+  const duplicates: FieldOperation[] = [];
   for (const relationship of relationships.values()) {
     const source = requireObject(
       objects,
@@ -465,12 +553,106 @@ function validateRelationshipScalarDuplication(
     const targetDuplicate = [...(fields.get(target.key)?.values() ?? [])].find(
       (field) => isScalarConnectionDuplicate(field, source),
     );
-    if (sourceDuplicate || targetDuplicate) {
-      fail(
-        "relationship_scalar_duplication",
-        `Connection ${relationship.key} is duplicated by a scalar field.`,
+    if (sourceDuplicate) duplicates.push(sourceDuplicate);
+    if (targetDuplicate) duplicates.push(targetDuplicate);
+  }
+  return uniqueFieldReferences(duplicates);
+}
+
+export function findAcquisitionCandidateQualityFields(
+  payloadInput: unknown,
+  code: Extract<
+    AcquisitionCandidateQualityCode,
+    | "cross_object_field_leakage"
+    | "relationship_scalar_duplication"
+    | "semantically_redundant_field"
+  >,
+): AcquisitionCandidateFieldReference[] {
+  const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
+  const objects = activeObjects(payload.operations);
+  const fields = activeFields(payload.operations, objects);
+  const relationships = activeRelationships(payload.operations, objects);
+  switch (code) {
+    case "cross_object_field_leakage":
+      return findCrossObjectFieldLeakageFields(relationships, objects, fields);
+    case "relationship_scalar_duplication":
+      return findRelationshipScalarDuplicationFields(
+        relationships,
+        objects,
+        fields,
       );
-    }
+    case "semantically_redundant_field":
+      return findSemanticallyRedundantFields(objects, fields);
+  }
+}
+
+export function findAcquisitionCandidateMechanicalRepairFields(
+  payloadInput: unknown,
+  code: Extract<
+    AcquisitionCandidateQualityCode,
+    | "cross_object_field_leakage"
+    | "relationship_scalar_duplication"
+    | "semantically_redundant_field"
+  >,
+): AcquisitionCandidateFieldReference[] {
+  const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
+  const objects = activeObjects(payload.operations);
+  const fields = activeFields(payload.operations, objects);
+  const relationships = activeRelationships(payload.operations, objects);
+  if (code === "cross_object_field_leakage") {
+    return findMechanicallyRedundantCrossObjectFields(
+      relationships,
+      objects,
+      fields,
+    );
+  }
+  if (code === "relationship_scalar_duplication") {
+    return findRelationshipScalarDuplicationFields(
+      relationships,
+      objects,
+      fields,
+    );
+  }
+  return findSemanticallyRedundantFields(objects, fields);
+}
+
+function validateCrossObjectFieldLeakage(
+  relationships: ReadonlyMap<string, RelationshipOperation>,
+  objects: ReadonlyMap<string, ObjectOperation>,
+  fields: ReadonlyMap<string, Map<string, FieldOperation>>,
+): void {
+  const leakingFields = findCrossObjectFieldLeakageFields(
+    relationships,
+    objects,
+    fields,
+  );
+  if (leakingFields.length > 0) {
+    const field = fields
+      .get(leakingFields[0]!.object_key)
+      ?.get(leakingFields[0]!.key);
+    const owner = objects.get(leakingFields[0]!.object_key);
+    fail(
+      "cross_object_field_leakage",
+      `Cross-object field leakage: ${owner?.plural_label ?? leakingFields[0]!.object_key} / ${field?.label ?? leakingFields[0]!.key} duplicates values from a related business area.`,
+    );
+  }
+}
+
+function validateRelationshipScalarDuplication(
+  relationships: ReadonlyMap<string, RelationshipOperation>,
+  objects: ReadonlyMap<string, ObjectOperation>,
+  fields: ReadonlyMap<string, Map<string, FieldOperation>>,
+): void {
+  const duplicates = findRelationshipScalarDuplicationFields(
+    relationships,
+    objects,
+    fields,
+  );
+  if (duplicates.length > 0) {
+    fail(
+      "relationship_scalar_duplication",
+      "A Connection is duplicated by a scalar field.",
+    );
   }
 }
 

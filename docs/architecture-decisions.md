@@ -2920,3 +2920,575 @@ server-derived; the trusted transaction fills those Fields from the
 revalidated slot and never accepts them as browser authority. The derived
 Fields remain hidden from the public form. This is an additive constructability
 hardening and does not change the reusable graph or publication decision.
+
+## ADR-042 — Journey 1 acquisition uses one bounded deterministic quality recovery cycle
+
+**Status:** Accepted for deterministic recovery; provider-call bound superseded by ADR-043
+**Date:** 19 August 2026
+
+### Context
+
+The real-provider acquisition planner can occasionally return a structurally
+valid graph whose scalar Fields repeat identity already represented by a
+Connection. The deterministic candidate quality boundary correctly rejects
+that output, but the one-shot orchestration previously fell directly to the
+reliable starter composition even when the defect was mechanically removable.
+
+### Decision
+
+Journey 1 acquisition keeps deterministic quality validation authoritative and
+allows one in-memory recovery pass for exactly these quality codes:
+
+- `cross_object_field_leakage`
+- `relationship_scalar_duplication`
+- `semantically_redundant_field`
+
+The recovery removes only Fields identified by the existing code-owned quality
+rules when the removal is mechanically safe. It refuses required Fields and
+refuses any candidate whose Forms or Views cannot remain valid. It updates the
+dependent owner-readable tracked information, preserves Objects,
+Relationships, and all other operations, then runs the complete
+`validateAcquisitionCandidate()` boundary again. A failed or unclassified
+repair uses the existing deterministic fallback.
+
+A diagnostic-only qualification at exact SHA
+`cffc584b570f300bc35e30234d31f860bc0ae649` demonstrated that the remaining
+milk-round cross-object identity Field was mechanically recognisable but had
+been marked required: the hard failure was
+`quality_cross_object_field_leakage` and the finite recovery refusal was
+`required_field`. Because post-composition recovery must not delete a required
+Field or rewrite its compiled Forms and Views, the ready-plan canonicaliser
+removes only an **optional** exact connected-object identity scalar before those
+dependent surfaces are compiled. A required scalar remains in the plan, reaches
+the unchanged validator and is refused by recovery, so normal orchestration
+fails closed to fallback. The canonicaliser uses the same narrow mechanical
+predicate as recovery, leaves richer related information for the unchanged
+validator to reject, and preserves the original Fields rather than creating an
+empty business area. It never makes a Connection required or treats an
+optional Connection as a substitute for a required scalar.
+
+Pre-composition removal emits only a finite event name and bounded removed-Field
+count. Evaluation distinguishes raw first-pass tailored output from
+pre-composition canonicalised output, post-composition recovered output, output
+using both deterministic corrections, fallback and execution failure. A
+canonicalised plan is never reported as raw first-pass.
+
+No model repair task, generic retry loop, new AI authority, new persistent
+state, database table, migration, quota reservation, or automatic configuration
+application is introduced. One owner submission reserves one public
+acquisition attempt and the maximum provider-call count remains one. Provider
+authentication, transport, refusal, malformed output, `needs_more_detail`,
+unsupported capabilities, and all other quality codes do not enter semantic
+recovery. Refinement keeps its existing no-automatic-recovery contract.
+Hard-gate recovery refusal reporting is limited to finite code-owned reasons;
+it does not expose prompts, model output, provider bodies, or raw errors.
+
+The first-pass instruction now gives generic guidance to keep identity/contact
+information on its owning business area and use a Connection for relationships.
+This materially changes the acquisition subject, so prior live qualification
+and reliability evidence remains historical and must be rerun. The separate
+30-plus-request product-reliability corpus is launch-quality evidence only; it
+does not replace the frozen eight-scenario hard contract.
+
+### Consequences
+
+Successful normal requests remain one provider call and present the same
+tailored proposal. A mechanically recoverable defect can produce the same
+tailored proposal without a second owner submission or a second quota/build
+attempt. The recovery is bounded to one pass and cannot retry recursively; the
+deterministic starter remains the final safety net. No tenant, RLS, AI context,
+operational data, preview, claim, accept, or publish boundary changes.
+
+## ADR-043 — Journey 1 acquisition permits one narrowly triggered semantic replan
+
+**Status:** Accepted for J1-R2; candidate profile evaluation stopped pending
+product decision 20 August 2026
+**Date:** 19–20 August 2026
+
+### Context
+
+Exact-SHA qualification at
+`9c1c969ac01165371676c84149f1452dea14e40b` failed 7/8 when one otherwise
+eligible plan duplicated connected identity as a required scalar. The
+authoritative validator correctly returned `cross_object_field_leakage`, and
+deterministic recovery correctly refused with `required_field`. Removing or
+weakening that requirement, making the Connection required, changing the hard
+gate, or asking the owner for information already present would violate the
+accepted trust boundary. The remaining defect is a stochastic planning error.
+
+### Decision
+
+One owner submission may execute acquisition planning a second time only when
+the first composed candidate fails with
+`cross_object_field_leakage` and the existing deterministic recovery attempt
+refuses with `required_field`. The first execution remains the unchanged
+`acquisition_workspace_plan_v1` subject. The second execution uses the
+dedicated registered task `acquisition_required_identity_correction_v1` and
+its own policy identity
+`acquisition_required_identity_correction_v1`. The original accepted profile
+was `gpt-5.6-terra` with medium reasoning; that Terra evidence is historical
+for this candidate comparison. The current policy boundary can carry the
+server-owned model, reasoning and service-tier profile without exposing any
+task-selectable or owner-selectable control.
+
+The correction input contains only the original enriched owner request,
+category, grounded currency and finite server-owned reason
+`required_cross_object_identity_must_use_connection`. The rejected plan is
+never included in that input. This dedicated-task amendment supersedes only
+ADR-043's original same-task/same-policy choice; the trigger and all other
+bounds remain unchanged.
+
+The provider policy boundary now carries a closed server-owned model key,
+reasoning effort and service tier. Existing qualified Terra-medium Builder
+policies retain Terra, medium reasoning and the `auto` service tier. No owner,
+environment, prompt or model-output value can select any of these fields. The
+OpenAI adapter accepts only the code-owned model and tier allow-lists and
+exposes the bounded effective response tier as metadata.
+
+The correction instruction preserves the requested scope and directs the
+planner to represent connected identity through Connections instead of a
+duplicated required scalar. The result passes through the same deterministic
+interpretation, composition, full candidate validator, capability enhancement
+and final validation. If it remains invalid or its provider execution fails,
+the existing truthful fallback is used. There is no third execution, recursion,
+retry-until-pass, model self-validation, requiredness change or validator
+weakening.
+
+Provider authentication, transport, rate-limit, timeout, refusal, malformed
+output, `needs_more_detail`, other quality codes and other recovery refusal
+reasons do not initiate semantic replanning. Refinement retains its existing
+no-automatic-recovery and no-replan contract.
+
+One submission still calls `reserve_anonymous_build_attempt()` once and
+consumes one owner-facing build attempt. The second provider execution is
+inside that reserved orchestration and does not increment proposal,
+regeneration or refinement allowances. Each provider execution retains the
+approved one-attempt policy; the workflow maximum is two semantic executions,
+50 seconds of provider time and 95,000 microusd of worst-case token cost.
+
+Finite events distinguish correction-plan attempt, success and failure without
+prompts or model output. Product evidence reports raw first-pass,
+pre-composition canonicalised, post-composition recovered, correction-plan,
+fallback and execution-failure outcomes, with correction-plan execution rate,
+latency, tokens and cost reported separately.
+
+### Consequences
+
+Most successful requests remain one provider execution. Only the exact unsafe
+required-identity case can pay the latency and cost of the correction plan.
+Safety is unchanged because deterministic validation remains authoritative and
+fallback remains the final result for invalid correction output. No migration, primitive,
+table, persistent AI context, operational Record access, automatic Apply or
+Publish, tenant boundary or vertical-specific rule is added.
+
+### Correction qualification evidence
+
+Three distinct dedicated correction instruction subjects were evaluated once
+each and were not rerun unchanged. Their combined hard/product results were
+21/24 at `f8645eff5362de4b1e788826cb2fda20811bea25`, 21/24 at
+`7284491c42aad26b8fb0e2875add5444b74077ae`, and 23/24 at
+`babf8855044905e1670b3848e4911ec9b554ea95`; deterministic safety was 24/24 in
+all three. The final miss was one milk-round scope/relationship omission. This
+does not justify weakening validation or adding retries. The implementation
+therefore stops before the full acquisition gates pending a deliberate product
+decision about provider profile selection or broader deterministic architecture.
+
+### Candidate profile evidence
+
+The first candidate evaluation tested one frozen subject per profile; no
+unchanged subject was rerun. The original Luna Max standard profile was frozen
+at `5007b895fce026d6b4838250e09eee3bdf8161e5`. Its correction qualification
+produced 2/24 hard passes and 24/24 quality passes: 22 executions reached the
+unchanged 25-second timeout, with 2,636 input and 1,370 output tokens, 2,173
+estimated microusd and 567,362 ms elapsed.
+
+The service-tier capability was then added without changing the task,
+instruction, schemas, validator, scenarios, timeout or acceptance thresholds.
+Luna Max Fast was frozen at
+`d4ac56cc28aa420402ee333bef8188055e0b6f79` with
+`gpt-5.6-luna`, `reasoning.effort=max` and request
+`service_tier=fast`. The provider required the effective response tier to be
+`priority` and reported it only through bounded metadata. The correction gate
+produced 2/24 hard passes and 24/24 quality passes: 22 executions returned
+`provider_incomplete` at the unchanged 2,500-token output cap, while both
+successful responses reported effective `priority`. It used 31,683 input and
+56,296 output tokens, 73,901 estimated microusd and 328,529 ms elapsed.
+
+Under the authorised fallback order, Sol Medium was then frozen at
+`77e318b40ebe71c5c938042b29148f2bec98e405` with
+`gpt-5.6-sol`, `reasoning.effort=medium` and the standard `auto` service tier.
+Its correction gate produced 20/24 hard passes and 24/24 quality passes: all
+three `unusual_other` repetitions repeated
+`quality_cross_object_field_leakage`, and one `milk_round` execution timed out.
+Twenty-three successful responses reported effective `default`. It used
+30,360 input and 24,372 output tokens, 882,960 estimated microusd and
+393,480 ms elapsed.
+
+Neither Luna Max Standard, Luna Max Fast nor Sol Medium cleared the required
+24/24 correction gate. The 8/8 acquisition qualification, 24/24 reliability
+gate, 96-case product corpus and exact-head CI were therefore not run for
+these candidate profiles. No winning J1 acquisition profile is proposed.
+Further progress is **PRODUCT DECISION REQUIRED**. Options are to retain the
+historical Terra evidence as the current qualified profile, approve a new
+bounded candidate/architecture change with explicit acceptance criteria, or
+accept the current correction-gate failure and defer the acquisition profile
+change. No third provider execution, prompt tuning, validator weakening,
+requiredness change or timeout/output-bound change was made.
+
+### J1-R4a latency characterisation — diagnostic only
+
+The current Luna Max Fast and Sol Medium profiles were each run exactly once
+over the unchanged correction workload of eight scenarios × three repetitions,
+using a temporary 45-second diagnostic ceiling. This was not a qualification
+run: it did not change the production 25-second policy, correction gate,
+prompts, schemas, validators, scenarios or output cap. The diagnostic emitted
+only candidate/profile identity, bounded provider elapsed time, finite failure
+code, effective tier when returned, token usage and estimated cost.
+
+Neither candidate reached a completed provider response. Every Luna execution
+returned the finite `provider_transport_rate_limited` result (24/24), with no
+timeout, no effective tier, zero tokens and zero cost. The elapsed response
+times for those rate-limit failures were min/median/p90/p95/max/average
+`455/565/906/1,638/1,969/720 ms`.
+
+Every Sol execution likewise returned `provider_transport_rate_limited`
+(24/24), with no timeout, no effective tier, zero tokens and zero cost. The
+elapsed response times for those rate-limit failures were
+`448/579/815/921/1,025/610 ms`. The requested `auto` tier was therefore not
+observed; Luna's requested `fast` tier could not be verified in this run.
+
+Successful-provider latency percentiles and maximum successful latency are
+**N/A** for both candidates. Consequently no evidence-based timeout can be
+recommended, no candidate can be selected, and no production timeout or
+qualification gate is changed. These results characterize an account/provider
+rate-limit condition, not model quality or model latency. Initial-planning p95
+and the complete two-call owner path remain unmeasured. No Luna or Sol
+diagnostic subject was rerun.
+
+### J1-R4a quota-cleared rerun and evidence-based correction timeout
+
+After the provider credit allowance was restored, the frozen diagnostic
+subject at `dc3ff31b96007417f52d4a8b8ae87a0753f41cd3` was legitimately rerun
+once per candidate. The original correction task, instruction, schemas,
+validators, scenarios and 2,500-token output cap were unchanged. Each run used
+the temporary 45-second diagnostic ceiling and exactly 24 provider executions.
+
+Luna Max Fast used `gpt-5.6-luna`, `reasoning.effort=max` and requested
+`service_tier=fast`. All 24 responses reported effective `priority`, verifying
+Fast mode. One response completed and 23 returned `provider_incomplete` at the
+unchanged output cap. Successful latency was min/median/p90/p95/max
+`21,124/21,124/21,124/21,124/21,124 ms`; observed-response latency was
+`12,623/14,153/21,124/21,659/24,582 ms`, with a 15,031 ms average. The
+diagnostic cost was 78,042 microusd from 31,683 input and 59,747 output
+tokens. The mechanical timeout rule gives 30 seconds from the single completed
+response, but the 1/24 completion rate makes Luna non-viable for the next gate.
+
+Sol Medium used `gpt-5.6-sol`, `reasoning.effort=medium` and `service_tier=auto`.
+All 24 responses completed at effective `default`. Successful latency was
+min/median/p90/p95/max `4,002/14,308/19,690/20,704/26,733 ms`, with a 14,203
+ms average. The diagnostic cost was 931,455 microusd from 31,683 input and
+25,768 output tokens. Two `unusual_other` repetitions returned the existing
+authoritative `quality_cross_object_field_leakage` finding; this diagnostic is
+not a qualification gate, but it is recorded as quality viability evidence.
+The mechanical timeout rule gives 35 seconds (`26,733 + 5,000`, rounded up).
+
+Sol is therefore the only completion-viable provisional candidate. The new
+frozen subject at `f0dd3a82c652cbf092d1a382abdd26ac9ffa1182` changes only the
+code-owned correction policy timeout to 35 seconds. Initial acquisition
+planning remains at 25 seconds because this correction-only measurement did
+not establish initial-planning latency. The one authorised correction
+qualification then ran 24/24 with effective `default` on all calls, no
+provider timeouts, 24/24 quality passes, but only 21/24 hard passes: all three
+`unusual_other` repetitions repeated
+`quality_cross_object_field_leakage`. It used 31,683 input and 26,276 output
+tokens, cost 946,695 microusd and took 343,257 ms in total. The correction gate
+therefore failed and the acquisition 8/8, reliability 24/24 and 96-case
+corpus were not started.
+
+This remains **PRODUCT DECISION REQUIRED**. No third execution, prompt or
+schema change, validator weakening, requiredness change, output-cap change,
+owner-question workaround or automatic retry is justified by these results.
+
+### J1-R5 structured acquisition guardrails and scoped correction
+
+The J1-R4a correction subject regenerated a complete workspace from owner
+context after one required identity defect. That broad stochastic surface is
+superseded by a bounded repair contract; the owner request and initial
+acquisition task remain unchanged.
+
+The initial planner now receives a separate server-owned planning contract.
+It preserves explicit reusable concepts, keeps connected identity on its owning
+business area, represents reusable concepts through Connections, uses an
+item/line structure when transaction quantity varies from a reusable Product,
+keeps unsupported actions unsupported, and returns the smallest coherent
+workspace. These rules are Lenni-owned and are never attributed to the owner.
+
+After, and only after, the exact `cross_object_field_leakage` plus
+`required_field` recovery refusal, the server derives a sanitised repair
+manifest from the composed candidate. The manifest contains only category,
+bounded business-area references/labels, existing Connection references and
+cardinalities, unsupported requirement labels, affected business areas and
+the finite validator/recovery reason. It contains no owner request, raw model
+output or reasoning, operational Records, customer data, credentials or
+unrestricted configuration payload. The correction task receives only that
+manifest and returns `{ schema_version: 1, action: "remove_fields", fields:
+[{ object_key, field_key }] }`.
+
+The server rejects manifest drift and applies only listed existing Field
+references. Business areas, Connections, cardinalities, unsupported
+requirements, owner scope, richer Fields and requiredness are locked. The
+complete existing deterministic composition/validator and capability
+enhancement pipeline runs after the in-memory repair. Invalid repair output,
+provider failures and all non-authorised failure classes use the existing
+truthful fallback. The workflow remains one owner reservation, at most two
+semantic provider executions and no recursion, third call, model self-
+validation, automatic Apply/Publish or operational AI context.
+
+The dedicated correction task keeps its own policy identity and is qualified
+as `gpt-5.6-luna`, reasoning `xhigh`, requested `service_tier=fast`, effective
+`priority`, 8,192 output tokens and a 45-second bounded timeout. The initial
+planner remains the previously selected Sol Medium/auto profile; no unrelated
+Terra-medium policy changes.
+
+The new correction-only qualification used the unchanged eight scenarios ×
+three repetitions once (24 executions) against the new manifest and
+field-reference-only schema. Luna completed 24/24 provider executions with
+24/24 hard and 24/24 quality passes and no provider failures or timeouts;
+effective `priority` was reported on all 24. Latency was
+min/median/p90/p95/max/average `1,074/1,314/1,951/2,214/2,247/1,429 ms`.
+It used 15,390 input and 2,413 output tokens and cost 5,991 microusd. This is
+the correction qualification evidence for the frozen J1-R5 subject, not a
+replacement of the separate acquisition hard gates.
+
+### J1-R5 frozen hard gates and product corpus
+
+After full deterministic verification, the exact frozen implementation was
+`4ee7fdd88023b0cc4b303bae036ada72be8e5043`. Acquisition qualification passed
+the required 8/8 hard gate. It used the Sol Medium/auto initial planner for
+all eight first calls; one exact-trigger correction ran and succeeded with
+Luna xhigh/Fast (`priority`). The qualification summary was 8/8 hard, 7/8
+quality, one correction execution, 10,162 input tokens, 8,461 output tokens,
+298,338 microusd and 8/8 effective-tier verification.
+
+Acquisition reliability then passed the required 24/24 hard gate. Two exact-
+trigger corrections ran and both succeeded with Luna effective `priority`;
+the correction rate was 2/24 (8.3333%). It used 29,817 input and 24,414
+output tokens, cost 869,007 microusd, and the correction portion used 1,326
+input/213 output tokens, 522 microusd and 3,718 ms. Quality findings were
+non-hard (20/24 quality passes) and are reported separately.
+
+The required 32 × 3 product corpus was run once against the same SHA. Existing
+thresholds were unchanged (at least 94/96 final tailored, at most 2/96
+fallbacks, zero execution failures). The corpus failed those thresholds:
+
+- raw first-pass tailored: 58/96 (60.4167%);
+- pre-composition canonicalised tailored: 2/96 (2.0833%);
+- post-composition recovered tailored: 0/96;
+- scoped correction-plan tailored: 18/96 (18.75%), all 18 corrections valid;
+- final tailored: 78/96 (81.25%);
+- truthful fallback: 18/96 (18.75%);
+- execution failures: 0/96;
+- correction diagnostics: 18 exact `cross_object_field_leakage` plus
+  `required_field` triggers, all repaired successfully;
+- provider timeout diagnostics: 18 initial Sol Medium calls at the inherited
+  25-second ceiling, accounting for all 18 fallbacks.
+
+The corpus used 106,728 input and 121,935 output tokens, estimated cost
+4,028,851 microusd (Sol initial 4,022,050; Luna correction 6,801), and
+1,993,665 ms total elapsed time. Effective tiers were `default` 78 and
+`priority` 18. Initial-path latency was min/median/p90/p95/max/average
+`9,966/19,761/24,137/24,734/30,330/19,783 ms`; correction latency was
+`1,244/1,549/3,887/6,569/6,569/2,062 ms`.
+
+This corpus failure is not a validator or scoped-correction failure. It is
+evidence that the unchanged Sol Medium initial profile and 25-second ceiling
+are commercially unreliable on the broader corpus. No timeout increase,
+prompt tuning, model switch, third call, validator weakening, requiredness
+change or corpus rerun is authorised by J1-R5. The scoped repair architecture
+and both hard gates are retained, but no final acquisition profile is proposed;
+addressing the initial-path timeout/cost trade-off is **PRODUCT DECISION
+REQUIRED**.
+
+### J1-R5 final Luna/Luna evidence and stop
+
+The final frozen subject changed only the initial acquisition policy to the
+already-qualified Luna profile: `gpt-5.6-luna`, `xhigh`, requested
+`service_tier=fast`, 8,192 output tokens and a 45-second timeout. The dedicated
+scoped correction policy, task, instruction, manifest, output schema,
+validator and effective Luna `priority` behaviour were unchanged, so the
+recorded 24/24 correction qualification is reused. Trusted Luna pricing is
+used for both code-owned policies. No active J1 acquisition policy uses Sol;
+historical diagnostic subjects remain historical evaluation evidence only.
+
+Focused policy tests proved both stages match, the two-execution ceiling
+remains two, and unrelated Terra-medium policies retain their existing
+profile. Deterministic verification passed format, typecheck, lint, 931 unit
+tests, build, migration immutability, clean migration reset, schema lint and
+the real integration suite (265 passed, 5 expected skips). The exact code and
+evaluation SHA was `f229b50bc9462392d9e3fcbbe390a06eb865f5f7`.
+
+The first qualification attempt at that SHA returned
+`provider_transport_rate_limited` for all eight calls with no model response.
+After the provider credit allowance was restored, the same frozen subject was
+run once more; this was an external quota invalidation, not a stochastic
+model rerun. Qualification then passed 8/8 hard and 8/8 quality, with nine
+provider executions (one exact-trigger correction), effective `priority` on
+all nine, 10,166 input and 16,067 output tokens, and 21,321 microusd cost.
+The correction succeeded 1/1 and used 669 input/159 output tokens, 325
+microusd and 1,627 ms.
+
+Reliability passed 24/24 hard with effective `priority` on all 24 calls. It
+had 21/24 non-hard quality passes, no correction executions, 28,491 input and
+47,812 output tokens, and 63,091 microusd cost.
+
+The required 32 × 3 corpus then ran once against the same SHA. It failed the
+unchanged acceptance thresholds (at least 94/96 final tailored, at most 2/96
+fallbacks, zero execution failures, zero hard-contract failures):
+
+- raw first-pass tailored: 78/96 (81.25%);
+- pre-composition canonicalised tailored: 1/96 (1.0417%);
+- post-composition recovered tailored: 0/96;
+- scoped correction-plan tailored: 13/96 (13.5417%), all 13 valid and
+  successful;
+- final tailored: 92/96 (95.8333%);
+- truthful fallback: 4/96 (4.1667%);
+- execution failures: 0/96;
+- hard-contract failures: 0/96;
+- systematic failure scenarios: none.
+
+The corpus used 123,489 input and 323,072 output tokens, cost 412,463
+microusd (initial 408,713; correction 3,750), and took 1,933,502 ms. The
+blended cost was about 4,296 microusd ($0.004296) per submission. Effective
+tiers were `priority` 108; one initial timeout had no effective-tier report.
+Initial-path latency min/median/p90/p95/max/average was
+`6,998/18,019/29,328/34,867/45,028/19,770 ms`; total two-call latency was
+`8,309/18,200/31,221/35,290/45,028/20,141 ms`; correction latency was
+`1,453/1,806/4,945/8,550/8,550/2,740 ms`.
+
+The four fallbacks were three `no_mechanical_repair_fields` refusals and one
+`ai_timeout`; the 13 authorised corrections all succeeded. This is not a
+validator or trust-boundary failure, but the final-tailored and fallback
+thresholds are missed. Per the stop rule, no prompt, timeout, cap, reasoning,
+model, third call, validator or gate change is authorised. Luna/Luna is not
+accepted; PR #59 remains unmerged and closed as not accepted, and Journey 2
+is recommended.
+
+## ADR-044 — Acquisition completion resilience addresses measured provider tails without weakening validation
+
+**Status:** Accepted; experiment passed and independent evidence lineage accepted
+
+**Date:** 21 August 2026
+
+### Context
+
+The closed J1-R6 related-Field equivalence experiment at
+`66e580b3b9a7fda5d027871aeeb339e4ebe35ac2` passed deterministic verification
+and exact-head CI but failed its one product corpus: 93/96 were final tailored,
+three were truthful fallback, no execution or hard-contract failure occurred,
+and the proposed equivalence path activated zero times. The three fallbacks
+were two initial `ai_timeout` calls at the 45-second client boundary and one
+`provider_incomplete` call at exactly the 8,192 output-token ceiling. The same
+three scenarios completed in their other repetitions. R6 therefore supplied
+no causal evidence for its Field matcher and its production changes remain
+excluded.
+
+OpenAI Responses counts reasoning and visible output inside
+`max_output_tokens`. The provider response also exposes a finite incomplete
+reason. The retained evidence therefore supports one completion-resilience
+experiment rather than another validator or semantic-recovery change.
+
+### Decision
+
+- J1-R7 branches from `0126c355b2efc949aef132739f49823ebbd44823`,
+  not the failed R6 implementation.
+- Initial Luna xhigh/Fast planning receives a 60-second client timeout and a
+  12,288-token output ceiling. Its model, reasoning, service tier, instruction,
+  schema, one-attempt policy and trusted validator remain unchanged.
+- The already-fast scoped correction remains Luna xhigh/Fast with 45 seconds,
+  8,192 output tokens and one attempt. The workflow remains one reservation
+  and at most one initial plan plus one exact-trigger correction.
+- OpenAI `max_output_tokens` incompleteness is retained only as the finite
+  `provider_incomplete_max_output_tokens` diagnostic. Unknown incomplete
+  detail stays generic; raw provider text and payloads are never retained.
+- The public form shows truthful staged waiting copy at 0, 10, 30 and 45
+  seconds. A fallback proposal remains immediately usable and may expose one
+  owner-triggered retry through the existing reservation and proposal limits.
+  There is no automatic retry, background mode or hidden loop.
+- `store:false`, prompt and schema boundaries, deterministic fallback,
+  requiredness, Connections, cardinalities, Apply/Publish separation and
+  manual editability remain unchanged. No migration or primitive is added.
+
+The existing corpus acceptance remains at least 94/96 final tailored, at most
+2/96 fallback, zero execution failures, zero hard-contract failures and no
+systematic repeated scenario failure. This experiment additionally requires
+zero `ai_timeout` and zero `provider_incomplete_max_output_tokens`. The owner
+authorised one 96-execution corpus only; qualification and reliability will
+not be rerun. Failure stops J1-R7 without tuning or a second corpus. Success
+requires fresh independent review before any merge decision.
+
+### Outcome and independent merge-readiness review
+
+The exact runtime and evaluation subject was
+`dfb6aeb4b5151d52ab68363c035c01f1c2262784`. Its sole parent is the authorised
+pre-R6 evidence head `0126c355b2efc949aef132739f49823ebbd44823`.
+The failed R6 commit `66e580b3b9a7fda5d027871aeeb339e4ebe35ac2`
+is a sibling, not an ancestor. R7 leaves acquisition quality, recovery,
+service, interpreter, planning instruction, schemas and validation unchanged;
+it contains no related-Field equivalence machinery or scenario-specific
+production branch.
+
+Deterministic verification passed format, typecheck, lint, 946 unit tests,
+production build, migration immutability, clean migration reset, schema lint
+and the complete integration suite (265 passed, 5 expected skips). Exact-head
+CI run `32458149392` passed before the one authorised live corpus.
+
+The single 32 × 3 corpus passed every unchanged and additional gate:
+
+- raw first-pass tailored: 81/96;
+- scoped correction-plan tailored: 13/96, with 13/13 corrections successful;
+- final tailored: 94/96 (97.9167%);
+- truthful fallback: 2/96 (2.0833%);
+- execution failures: 0/96;
+- hard-contract failures: 0/96;
+- systematic failure scenarios: none;
+- `ai_timeout`: 0;
+- `provider_incomplete_max_output_tokens`: 0;
+- effective service tier: `priority` for all 109 provider executions.
+
+Both fallback rows passed the hard contract and failed closed without a
+correction attempt: `florist_event_orders` repetition 1 at 12,214 ms and
+`electrician_work_orders` repetition 2 at 10,761 ms. Each retained only the
+finite sequence `quality_cross_object_field_leakage` then
+`no_mechanical_repair_fields`.
+
+The preceding R6 qualification passed 8/8 hard (7/8 non-hard quality) and its
+reliability gate passed 24/24 hard (22/24 non-hard quality), including two
+successful existing R5 scoped corrections. The R6 equivalence matcher
+recorded zero match rows and zero recoveries in qualification 0/8,
+reliability 0/24 and corpus 0/96: 0/128 in total. These gates are accepted as
+carried-forward hard-boundary evidence, not described as exact-R7 live
+reruns. Removing a path inactive in every retained execution cannot alter
+those observed results; R7 otherwise changes only the initial completion
+envelope, while the model, reasoning, tier, prompt, schemas, validator,
+one-attempt policy and correction subject remain fixed. The larger cap is a
+provider parameter and can affect stochastic generation, so the exact-R7
+live evidence remains the passing 96-execution corpus.
+
+Using the existing nearest-rank convention, the initial-path proxy
+(`elapsed_ms` minus correction-provider elapsed) had p50/p95/max
+`15,300/29,239/38,235 ms`; whole-operation owner elapsed had
+`15,792/29,239/38,235 ms`. The initial proxy includes separately rounded
+deterministic overhead and is not independently instrumented provider
+latency. No execution exceeded 45 seconds in this corpus. One successful
+initial response used 8,563 output tokens, above the former 8,192 ceiling.
+Total cost was 420,589 microusd: 416,858 initial and 3,731 correction, or
+4,381.135 microusd (about $0.004381) per submission.
+
+The private bounded artifact
+`smbos26-r7-product-corpus-dfb6aeb4-20260821.jsonl` is outside the repository,
+mode `0600`, with SHA-256
+`b945fa569a39b38bde3c06e2e87eaf97fff06360046f51aba8b27d2f729174f2`.
+A fresh read-only independent review recomputed the evidence and returned
+`ACCEPT EVIDENCE LINEAGE`. J1-R7 is therefore merge-ready after final
+documentation-only exact-head CI and explicit owner review; PR #61 remains
+draft and no runtime change or further live run is authorised.

@@ -3,6 +3,7 @@ import "server-only";
 import { builderConfigurationDraftOutputSchema } from "../../ai/configuration-drafting/schemas";
 import { validateConfigurationDraftOutput } from "../../ai/configuration-drafting/validation";
 import {
+  acquisitionRequiredIdentityCorrectionInputSchema,
   acquisitionPlanningOutputSchema,
   type AcquisitionPlanningInput,
   type AcquisitionReadyPlan,
@@ -30,9 +31,11 @@ import {
   acquisitionRequestSchema,
 } from "./schemas";
 import {
+  isMechanicallyRedundantCrossObjectIdentityField,
   removeSemanticallyRedundantIdentityFields,
   validateAcquisitionCandidate,
 } from "./quality";
+import { applyAcquisitionScopedFieldRepair } from "./recovery";
 
 export const ACQUISITION_MAX_OBJECTS = 6;
 export const ACQUISITION_MAX_FIELDS_PER_OBJECT = 12;
@@ -40,7 +43,11 @@ export const ACQUISITION_MAX_RELATIONSHIPS = 10;
 export const ACQUISITION_MAX_VIEWS = 8;
 export const ACQUISITION_MAX_PAGES = 3;
 export const ACQUISITION_MAX_EMBEDDED_VIEWS_PER_PAGE = 4;
-export const ACQUISITION_MAX_WORKFLOW_COST_MICROUSD = 47_500;
+export const ACQUISITION_MAX_PLANNING_EXECUTIONS = 2;
+export const ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD = 47_500;
+export const ACQUISITION_MAX_WORKFLOW_COST_MICROUSD =
+  ACQUISITION_MAX_PLANNING_EXECUTIONS *
+  ACQUISITION_MAX_PLANNING_EXECUTION_COST_MICROUSD;
 
 export class AcquisitionInterpretationError extends Error {
   constructor(
@@ -51,6 +58,13 @@ export class AcquisitionInterpretationError extends Error {
     this.name = "AcquisitionInterpretationError";
   }
 }
+
+export type AcquisitionInterpretationOptions = Readonly<{
+  validate?: boolean;
+  onCanonicalisation?: (
+    metadata: Readonly<{ removedFieldCount: number }>,
+  ) => void;
+}>;
 
 function connectionLabelsForPlan(
   plan: AcquisitionReadyPlan,
@@ -256,22 +270,80 @@ function composeDraft(plan: AcquisitionReadyPlan) {
   return { readyPlan, draft };
 }
 
-function canonicaliseAcquisitionPlan(
-  plan: AcquisitionReadyPlan,
-): AcquisitionReadyPlan {
-  return {
+function canonicaliseAcquisitionPlan(plan: AcquisitionReadyPlan): Readonly<{
+  plan: AcquisitionReadyPlan;
+  removedFieldCount: number;
+}> {
+  const tables = plan.tables.map((table) => ({
+    ...table,
+    fields: removeSemanticallyRedundantIdentityFields(
+      {
+        key: table.reference,
+        singular_label: table.singular_name,
+        plural_label: table.plural_name,
+      },
+      table.fields,
+    ),
+  }));
+  const tablesByReference = new Map(
+    tables.map((table) => [table.reference, table]),
+  );
+  const relatedTablesByReference = new Map<
+    string,
+    Set<(typeof tables)[number]>
+  >();
+  for (const connection of plan.connections) {
+    if (
+      connection.source_table_reference === connection.target_table_reference
+    ) {
+      continue;
+    }
+    const source = tablesByReference.get(connection.source_table_reference);
+    const target = tablesByReference.get(connection.target_table_reference);
+    if (!source || !target) continue;
+    const sourceRelated =
+      relatedTablesByReference.get(source.reference) ?? new Set();
+    sourceRelated.add(target);
+    relatedTablesByReference.set(source.reference, sourceRelated);
+    const targetRelated =
+      relatedTablesByReference.get(target.reference) ?? new Set();
+    targetRelated.add(source);
+    relatedTablesByReference.set(target.reference, targetRelated);
+  }
+
+  const canonicalisedPlan = {
     ...plan,
-    tables: plan.tables.map((table) => ({
-      ...table,
-      fields: removeSemanticallyRedundantIdentityFields(
-        {
-          key: table.reference,
-          singular_label: table.singular_name,
-          plural_label: table.plural_name,
-        },
-        table.fields,
-      ),
-    })),
+    tables: tables.map((table) => {
+      const relatedTables = relatedTablesByReference.get(table.reference);
+      if (!relatedTables?.size) return table;
+      const retainedFields = table.fields.filter(
+        (field) =>
+          field.required ||
+          ![...relatedTables].some((related) =>
+            isMechanicallyRedundantCrossObjectIdentityField(field, {
+              key: related.reference,
+              singular_label: related.singular_name,
+              plural_label: related.plural_name,
+            }),
+          ),
+      );
+      return {
+        ...table,
+        fields: retainedFields.length > 0 ? retainedFields : table.fields,
+      };
+    }),
+  };
+  const originalFieldCount = plan.tables.reduce(
+    (total, table) => total + table.fields.length,
+    0,
+  );
+  const canonicalFieldCount = canonicalisedPlan.tables.reduce(
+    (total, table) => total + table.fields.length,
+    0,
+  );
+  return {
+    plan: canonicalisedPlan,
+    removedFieldCount: originalFieldCount - canonicalFieldCount,
   };
 }
 
@@ -380,20 +452,22 @@ function addAcquisitionConnectionColumns(
     }),
   );
 }
-export async function interpretAcquisitionRequest(
+async function interpretAcquisitionPlan(
   categoryInput: unknown,
   requestInput: unknown,
-  execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
+  execution: AcquisitionExecutionCore,
+  options: AcquisitionInterpretationOptions,
 ) {
   const category = acquisitionCategorySchema.parse(categoryInput);
   const request = acquisitionRequestSchema
     .parse(requestInput)
     .replace(/\s+/g, " ");
+  const groundedCurrency = detectGroundedCurrency(request);
   const planningInput: AcquisitionPlanningInput = {
     schema_version: 1,
     category,
     owner_request: request,
-    grounded_currency: detectGroundedCurrency(request),
+    grounded_currency: groundedCurrency,
   };
   const result = await execution.execute(
     "acquisition_workspace_plan_v1",
@@ -405,7 +479,13 @@ export async function interpretAcquisitionRequest(
       "needs_more_detail",
       parsedPlan.revision_prompt,
     );
-  const plan = canonicaliseAcquisitionPlan(parsedPlan);
+  const canonicalisation = canonicaliseAcquisitionPlan(parsedPlan);
+  const plan = canonicalisation.plan;
+  if (canonicalisation.removedFieldCount > 0) {
+    options.onCanonicalisation?.({
+      removedFieldCount: canonicalisation.removedFieldCount,
+    });
+  }
   const { readyPlan, draft } = composeDraft(plan);
   const taskInput = {
     schema_version: 1 as const,
@@ -452,7 +532,37 @@ export async function interpretAcquisitionRequest(
       ]),
     ].slice(0, 8),
   });
-  return validateAcquisitionCandidate(
-    acquisitionBuildPayloadSchema.parse({ proposal, operations }),
+  const payload = acquisitionBuildPayloadSchema.parse({ proposal, operations });
+  return options.validate === false
+    ? payload
+    : validateAcquisitionCandidate(payload);
+}
+
+export function interpretAcquisitionRequest(
+  categoryInput: unknown,
+  requestInput: unknown,
+  execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
+  options: AcquisitionInterpretationOptions = {},
+) {
+  return interpretAcquisitionPlan(
+    categoryInput,
+    requestInput,
+    execution,
+    options,
   );
+}
+
+export function interpretAcquisitionRequiredIdentityCorrection(
+  manifestInput: unknown,
+  candidateInput: unknown,
+  execution: AcquisitionExecutionCore = acquisitionAiRuntime.execution,
+) {
+  const manifest =
+    acquisitionRequiredIdentityCorrectionInputSchema.parse(manifestInput);
+  const candidate = acquisitionBuildPayloadSchema.parse(candidateInput);
+  return execution
+    .execute("acquisition_required_identity_correction_v1", manifest)
+    .then((result) =>
+      applyAcquisitionScopedFieldRepair(candidate, manifest, result.output),
+    );
 }

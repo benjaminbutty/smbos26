@@ -8,6 +8,15 @@ export const acquisitionEventNameSchema = z.enum([
   "clarification_question_shown",
   "clarification_answered",
   "clarification_completed",
+  "first_pass_tailored_success",
+  "precomposition_canonicalisation_applied",
+  "repair_attempted",
+  "repair_succeeded",
+  "repair_failed",
+  "correction_plan_attempted",
+  "correction_plan_tailored_success",
+  "correction_plan_failed",
+  "final_fallback",
   "candidate_accepted",
   "proposal_ready",
   "proposal_failed",
@@ -24,9 +33,13 @@ export const acquisitionEventNameSchema = z.enum([
 
 export type AcquisitionEventName = z.infer<typeof acquisitionEventNameSchema>;
 
+export type AcquisitionEventMetadata = Readonly<
+  Record<string, string | number | boolean | null>
+>;
+
 export function emitAcquisitionEvent(
   name: AcquisitionEventName,
-  metadata: Readonly<Record<string, string | number | boolean | null>> = {},
+  metadata: AcquisitionEventMetadata = {},
 ): void {
   const deniedMetadataKeys = new Set([
     "request",

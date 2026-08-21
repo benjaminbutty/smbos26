@@ -1,4 +1,9 @@
 import type { AcquisitionBuildPayload } from "../../../core/acquisition/schemas";
+import { isAcquisitionLocationIdentity } from "../../acquisition-planning/validation";
+import {
+  classifyAcquisitionCandidateDiagnostic,
+  type AcquisitionCandidateDiagnosticCode,
+} from "../../../core/acquisition/diagnostics";
 import type {
   AcquisitionEvaluationScenario,
   AcquisitionRelationshipExpectation,
@@ -9,6 +14,7 @@ export type AcquisitionEvaluationResult = {
   quality_findings: string[];
   hard_passed: boolean;
   quality_passed: boolean;
+  diagnostic_code?: AcquisitionCandidateDiagnosticCode;
 };
 
 function normaliseIdentity(value: string): string {
@@ -169,8 +175,11 @@ export function evaluateAcquisitionScenario(
     hard_findings.push("landing_page_without_page");
   }
   if (
-    payload.operations.some((operation) =>
-      JSON.stringify(operation).toLocaleLowerCase("en").includes("location"),
+    payload.operations.some(
+      (operation) =>
+        operation.op === "set_object" &&
+        (isAcquisitionLocationIdentity(operation.singular_label) ||
+          isAcquisitionLocationIdentity(operation.plural_label)),
     )
   ) {
     hard_findings.push("location_added");
@@ -196,19 +205,17 @@ export function evaluateAcquisitionScenario(
 export function productionCompositionFailureResult(
   error: unknown,
 ): AcquisitionEvaluationResult {
-  const name = error instanceof Error ? error.name : "unknown";
-  const code =
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    typeof error.code === "string"
-      ? error.code
-      : "unclassified";
-  const hard_findings = [`production_composition_failed:${name}:${code}`];
+  const diagnostic = classifyAcquisitionCandidateDiagnostic(
+    error,
+    "candidate_generation",
+    { category: "other", source: "tailored" },
+  );
+  const hard_findings = [`production_composition_failed:${diagnostic.code}`];
   return {
     hard_findings,
     quality_findings: [],
     hard_passed: false,
     quality_passed: true,
+    diagnostic_code: diagnostic.code,
   };
 }

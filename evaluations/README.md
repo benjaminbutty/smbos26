@@ -1141,3 +1141,160 @@ history:
 None of those SHAs was merged or pushed as a production PR. No production
 schema, graph/runtime, primitive, tenant data, fallback subsystem or PR #38
 Connection-label rule was changed by this closeout.
+
+## Journey 1 acquisition reliability maintenance
+
+The Journey 1 acquisition instruction now includes generic graph guidance for
+keeping identity/contact information on the business area it belongs to and
+using a Connection for the relationship. That is a material change to the
+frozen acquisition subject, so the existing live qualification and reliability
+gates must be rerun at the final exact SHA; historical 8/8 and 24/24 results
+must not be reused as evidence for this subject.
+
+The public orchestration has one deterministic in-memory recovery pass for the
+allow-listed quality codes `cross_object_field_leakage`,
+`relationship_scalar_duplication`, and `semantically_redundant_field`. It
+removes only mechanically redundant non-required Fields, revalidates the full
+candidate, and otherwise uses the existing fallback. No repair task, second
+owner-facing quota reservation, migration, or persistent telemetry is added.
+Pre-composition canonicalisation likewise removes only optional exact
+cross-object identity Fields. Required leakage reaches validation and fails
+closed when recovery refuses it.
+
+J1-R2 permits one dedicated correction execution only when the first candidate
+fails `cross_object_field_leakage` and deterministic recovery refuses
+`required_field`. The first subject remains `acquisition_workspace_plan_v1`;
+correction uses `acquisition_required_identity_correction_v1` with its own
+`acquisition_required_identity_correction_terra_medium_v1` policy. The input
+contains the original enriched request and grounded context plus the finite reason
+`required_cross_object_identity_must_use_connection`; it never contains the
+invalid first output. Every other failure class keeps the one-call/fallback
+path. One owner submission still consumes one anonymous build reservation, and
+the hard maximum is two semantic planning executions.
+
+Before the full acquisition subject is rerun, the engineering-only correction
+qualification executes the frozen eight generic scenarios three times through
+the real correction task, composition, capability enhancement, deterministic
+validator and hard/product checks. It requires 24/24 and exactly 24 provider
+executions:
+
+```bash
+RUN_LIVE_OPENAI_ACQUISITION_CORRECTION_QUALIFICATION=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:acquisition-correction-qualification-live
+```
+
+The provider currently enforces `gpt-5.6-terra` with explicit medium reasoning
+for all structured tasks and does not expose per-task reasoning in the policy
+contract. Correction therefore retains that strongest already-supported safe
+profile rather than changing the provider abstraction for this phase.
+
+The first dedicated correction subject at exact SHA
+`f8645eff5362de4b1e788826cb2fda20811bea25` ran once and was not rerun. Its
+deterministic hard boundary passed 24/24, but the combined correction
+qualification passed only 21/24 because all three `unusual_other` repetitions
+missed a required owner-named concept. Usage was 29,547 input tokens and 15,088
+output tokens, estimated cost was 300,195 microusd, and elapsed time was 129,377
+ms. This systematic scope-retention evidence led to one generic instruction
+clarification: distinct reusable people or organisations, resources and
+operational events explicitly named by the owner remain separate connected
+business areas, while unavailable actions remain unsupported requirements. No
+scenario-specific rule, evaluator relaxation or unchanged-subject rerun was
+used.
+
+The next changed subject at exact SHA
+`7284491c42aad26b8fb0e2875add5444b74077ae` was also run once and not rerun.
+The unusual-business fixture then passed 3/3, but all three milk-round
+executions omitted the minimal inferred recurring-order/item structure: the
+hard boundary again passed 24/24 while the combined qualification passed
+21/24. Usage was 30,843 input tokens and 13,999 output tokens, estimated cost
+was 287,100 microusd, and elapsed time was 120,784 ms. The evidence showed that
+“explicitly named” had been treated as a ceiling. The final instruction
+clarification therefore states generically that explicit naming is a floor and
+that minimal inferred linking structures required for quantities, repeated
+activity and coherent Connections remain in scope. The unchanged subject was
+not rerun.
+
+The final changed correction subject at exact SHA
+`babf8855044905e1670b3848e4911ec9b554ea95` was run once and not rerun. It
+improved to 23/24 combined passes and retained 24/24 deterministic hard passes.
+The sole miss was `milk_round`, repetition 1: `required_concepts` and
+`required_relationship_semantics:product_to_item_one_to_many`. Usage was 31,683
+input tokens and 15,299 output tokens, estimated cost was 308,697 microusd, and
+elapsed time was 131,243 ms. Because the correction qualification did not reach
+24/24 after bounded evidence-driven instruction work, full acquisition
+qualification, reliability, the 96-execution product corpus and exact-head CI
+were not run. The subject was not rerun to seek a luckier result. Progress now
+requires a deliberate product decision about a provider reasoning-control
+change, a broader deterministic architecture, or the gate itself; none is made
+in this implementation.
+
+The engineering-only product-reliability corpus is intentionally separate from
+the frozen eight-scenario hard contract. It contains 32 distinct ordinary owner
+descriptions, including the exact carpenter regression fixture, and runs three
+repetitions (96 executions) when explicitly enabled:
+
+```bash
+RUN_LIVE_OPENAI_ACQUISITION_PRODUCT_RELIABILITY=1 \
+AI_PROVIDER=openai OPENAI_API_KEY=... \
+npm run eval:acquisition-product-reliability-live
+```
+
+Its redacted report includes scenario/execution counts, raw first-pass tailored
+successes, pre-composition canonicalised tailored successes, post-composition
+recovered tailored successes, combined deterministic correction outcomes,
+correction-plan tailored successes, final fallbacks, hard-contract failures,
+diagnostic-code distribution, attempts, token usage, estimated cost, and
+elapsed time. Correction-plan execution rate, latency, tokens and cost are separate
+fields. It does not print owner prompts, model prose, model output, provider
+bodies, or business data. Product targets are reported as evidence, not used to
+weaken deterministic validation or to replace the hard gates. Preflight
+requires both unique scenario IDs and unique normalised request text.
+
+### Journey 1 product-corpus alignment evidence
+
+The first attempted maintenance corpus at exact SHA
+`af40403a2c3e83188401db59c8b1e77273ba67e9` exposed that the supposedly
+32-scenario fixture contained only 31 entries because its preflight and unit
+test required merely 30 or more. It therefore ran 93 executions, not 96: 92
+were first-pass tailored, one ended in fallback after an `ai_timeout`, none
+used recovery, and there were no execution failures. This is incomplete
+historical evidence and was not accepted. The corpus now preflights exactly 32
+unique scenarios, exactly three repetitions, and exactly 96 executions.
+
+The first exact 96-execution run at SHA
+`b2de4eadbc90e2a294c6a2051f968fe6b6c7204f` produced 95 first-pass tailored
+results, one recovered tailored result, no fallback, and no execution failure.
+Its sole reported hard finding was `location_added` on one carpenter
+repetition. Investigation showed an evaluation mismatch: production's
+accepted `location_table_forbidden` invariant rejects an exact custom
+Location/Locations business area after NFKC and case normalization, while the
+evaluator searched every serialized operation for the substring `location`.
+That broader shortcut also classified ordinary Field wording and even words
+such as `relocation` as creation of the Location platform primitive. The
+evaluator now uses the same exact code-owned Location identity predicate as the
+production planning validator. The real custom-Location hard test remains;
+production validation, instructions, model policy, recovery and fallback are
+unchanged. The SHA's corpus is retained as historical failed evaluator
+evidence, not accepted launch evidence.
+
+The next exact 96-execution run at SHA
+`c0bcc8ab59336ef904e663de88290ce4ae990762` produced 94 first-pass tailored
+results, one recovered tailored result, one deterministic fallback, and no
+execution failure. The fallback occurred once in three electrician executions
+after `quality_cross_object_field_leakage` was correctly rejected and recovery
+returned `no_mechanical_repair_fields`; there was no systematic scenario
+failure. The aggregate nevertheless counted one hard failure solely because
+the shared eight-scenario evaluator marks every fallback `not_tailored`. That
+contradicted the product-corpus contract, which separately permits at most two
+fallbacks while requiring zero other hard-contract failures.
+
+Product-corpus accounting now removes only `not_tailored` from its hard-finding
+lane and retains every other hard invariant. Qualification and reliability
+remain unchanged: fallback is disabled there and cannot pass either hard gate.
+The product-corpus result itself now enforces at least 94 tailored executions
+after deterministic correction, no more than two fallbacks, zero execution
+failures, zero other hard-contract failures, and no scenario failing all three
+repetitions. It reports raw first-pass, canonicalised, recovered, combined,
+final-tailored and fallback rates directly. No production instruction,
+validator, model policy, recovery, quota, or fallback behaviour changed.

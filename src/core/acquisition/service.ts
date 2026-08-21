@@ -8,6 +8,8 @@ import { z } from "zod";
 import type { Json, Tables } from "../../db/supabase/database.types";
 import { createAdminClient } from "../../db/supabase/admin";
 import { getEnvironment } from "../../env";
+import type { AcquisitionExecutionCore } from "../../ai/acquisition-planning/runtime";
+import { ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON } from "../../ai/acquisition-planning/schemas";
 import {
   addClarificationAnswer,
   assessAcquisitionClarifications,
@@ -21,8 +23,23 @@ import { candidateChecksum } from "./preview";
 import { composeStarterComposition } from "./composer";
 import { emitAcquisitionCandidateDiagnostic } from "./diagnostics";
 import { emitAcquisitionEvent } from "./events";
-import { interpretAcquisitionRequest } from "./interpreter";
-import { validateAcquisitionCandidate } from "./quality";
+import {
+  ACQUISITION_MAX_PLANNING_EXECUTIONS,
+  interpretAcquisitionRequest,
+  interpretAcquisitionRequiredIdentityCorrection,
+} from "./interpreter";
+import {
+  AcquisitionCandidateQualityError,
+  validateAcquisitionCandidate,
+} from "./quality";
+import {
+  attemptAcquisitionCandidateRecovery,
+  isAcquisitionRecoveryQualityCode,
+} from "./recovery";
+import type {
+  AcquisitionRecoveryFailureCode,
+  AcquisitionRecoveryResult,
+} from "./recovery";
 import { reconcileAcquisitionRefinement } from "./refinement";
 import { emitAcquisitionRefinementDiagnostic } from "./refinement-diagnostics";
 import {
@@ -32,12 +49,26 @@ import {
   type AcquisitionBuildPayload,
   type AcquisitionCategory,
 } from "./schemas";
+import { buildAcquisitionRequiredIdentityRepairManifest } from "./scoped-repair";
 
 export const ACQUISITION_COOKIE_NAME = "smbos_acquisition_session";
 export const ACQUISITION_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24;
 export const ACQUISITION_DAILY_ATTEMPT_LIMIT = 6;
 export const ACQUISITION_SESSION_ATTEMPT_LIMIT = 6;
 export const ACQUISITION_SUCCESSFUL_REFINEMENT_LIMIT = 2;
+
+const REQUIRED_IDENTITY_REPLAN_REASON =
+  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON;
+
+class AcquisitionRequiredIdentityReplanSignal extends Error {
+  constructor(
+    override readonly cause: AcquisitionCandidateQualityError,
+    readonly candidate: AcquisitionBuildPayload,
+  ) {
+    super("The first acquisition plan requires one bounded correction pass.");
+    this.name = "AcquisitionRequiredIdentityReplanSignal";
+  }
+}
 
 type AcquisitionSessionRow = Tables<"anonymous_build_sessions">;
 
@@ -385,7 +416,11 @@ ${refinement}`
       category,
       request,
       refinementAssessment.decisions,
-      { allowFallback: false },
+      {
+        allowFallback: false,
+        allowRecovery: false,
+        emitFirstPassSuccess: false,
+      },
     );
   } catch (error) {
     emitAcquisitionRefinementDiagnostic(error, "candidate_generation");
@@ -442,23 +477,204 @@ ${refinement}`
   });
 }
 
-async function generateCandidate(
+export async function generateCandidate(
   category: AcquisitionCategory,
   request: string,
   decisions: Parameters<typeof enhanceAcquisitionPayload>[1],
-  options: { allowFallback?: boolean } = {},
+  options: {
+    allowFallback?: boolean;
+    allowRecovery?: boolean;
+    allowReplan?: boolean;
+    emitFirstPassSuccess?: boolean;
+    execution?: AcquisitionExecutionCore;
+    emitEvent?: typeof emitAcquisitionEvent;
+    emitDiagnostic?: typeof emitAcquisitionCandidateDiagnostic;
+  } = {},
 ): Promise<AcquisitionBuildPayload> {
   const allowFallback = options.allowFallback ?? true;
+  const allowRecovery = options.allowRecovery ?? true;
+  const allowReplan = options.allowReplan ?? allowRecovery;
+  const emitFirstPassSuccess = options.emitFirstPassSuccess ?? true;
+  const emitEvent = options.emitEvent ?? emitAcquisitionEvent;
+  const emitDiagnostic =
+    options.emitDiagnostic ?? emitAcquisitionCandidateDiagnostic;
   const enrichedRequest = buildEnrichedAcquisitionRequest(request, decisions);
+  let precompositionCanonicalisedFieldCount = 0;
+  let usedCorrectionPlan = false;
+  let planningExecutionCount = 0;
+
+  const fallback = (): AcquisitionBuildPayload => {
+    const starter = composeStarterComposition(category, request);
+    const enhancedFallback = enhanceAcquisitionPayload(
+      starter,
+      decisions,
+      request,
+    );
+    const validatedFallback = validateAcquisitionCandidate(enhancedFallback);
+    emitEvent("final_fallback", { category, source: "fallback" });
+    return validatedFallback;
+  };
+  const fallbackOrThrow = (): AcquisitionBuildPayload => {
+    try {
+      return fallback();
+    } catch (fallbackError) {
+      emitDiagnostic(fallbackError, "candidate_quality", {
+        category,
+        source: "fallback",
+      });
+      throw fallbackError;
+    }
+  };
+  let successfulRecovery: AcquisitionRecoveryResult | null = null;
+
+  const finalizeRecoveryFailure = (
+    failureCode: AcquisitionRecoveryFailureCode = "repaired_candidate_invalid",
+  ): void => {
+    if (!successfulRecovery) return;
+    emitEvent("repair_failed", {
+      category,
+      recovery_code: `quality_${successfulRecovery.code}`,
+      recovery_failure_code: failureCode,
+    });
+    successfulRecovery = null;
+  };
+
+  const validateTailoredCandidate = (
+    candidate: AcquisitionBuildPayload,
+    permitRequiredIdentityReplan: boolean,
+  ): Readonly<{
+    payload: AcquisitionBuildPayload;
+    recovery: AcquisitionRecoveryResult | null;
+  }> => {
+    try {
+      return {
+        payload: validateAcquisitionCandidate(candidate),
+        recovery: null,
+      };
+    } catch (error) {
+      emitDiagnostic(error, "candidate_quality", {
+        category,
+        source: candidate.proposal.source,
+      });
+
+      const canRecover =
+        allowRecovery &&
+        candidate.proposal.source === "tailored" &&
+        error instanceof AcquisitionCandidateQualityError &&
+        isAcquisitionRecoveryQualityCode(error.code);
+      if (canRecover) {
+        emitEvent("repair_attempted", {
+          category,
+          recovery_code: `quality_${error.code}`,
+        });
+        let recoveryFailureCode: AcquisitionRecoveryFailureCode =
+          "repaired_candidate_invalid";
+        let shouldReplan = false;
+        try {
+          const attempt = attemptAcquisitionCandidateRecovery(candidate, error);
+          if (attempt.status === "refused") {
+            recoveryFailureCode = attempt.failure_code;
+            shouldReplan =
+              permitRequiredIdentityReplan &&
+              error.code === "cross_object_field_leakage" &&
+              attempt.failure_code === "required_field";
+          } else if (attempt.status === "recovered") {
+            try {
+              const validatedRecovery = validateAcquisitionCandidate(
+                attempt.recovery.payload,
+              );
+              return {
+                payload: validatedRecovery,
+                recovery: attempt.recovery,
+              };
+            } catch (recoveryError) {
+              emitDiagnostic(recoveryError, "candidate_quality", {
+                category,
+                source: "tailored",
+              });
+              recoveryFailureCode =
+                recoveryError instanceof AcquisitionCandidateQualityError
+                  ? `second_quality_failure:${recoveryError.code}`
+                  : "repaired_candidate_invalid";
+            }
+          }
+        } catch (recoveryError) {
+          emitDiagnostic(recoveryError, "candidate_quality", {
+            category,
+            source: "tailored",
+          });
+        }
+        emitEvent("repair_failed", {
+          category,
+          recovery_code: `quality_${error.code}`,
+          recovery_failure_code: recoveryFailureCode,
+        });
+        if (shouldReplan) {
+          throw new AcquisitionRequiredIdentityReplanSignal(error, candidate);
+        }
+      }
+
+      emitEvent("proposal_failed", {
+        category,
+        reason: "candidate_quality_rejected",
+      });
+      throw error;
+    }
+  };
+
+  const reservePlanningExecution = () => {
+    if (planningExecutionCount >= ACQUISITION_MAX_PLANNING_EXECUTIONS) {
+      throw new Error("The acquisition planning execution limit was reached.");
+    }
+    planningExecutionCount += 1;
+  };
+
+  const interpretPlan = () => {
+    reservePlanningExecution();
+    return interpretAcquisitionRequest(
+      category,
+      enrichedRequest,
+      options.execution,
+      {
+        validate: false,
+        onCanonicalisation: ({ removedFieldCount }) => {
+          precompositionCanonicalisedFieldCount = removedFieldCount;
+          if (emitFirstPassSuccess) {
+            emitEvent("precomposition_canonicalisation_applied", {
+              category,
+              removed_field_count: removedFieldCount,
+            });
+          }
+        },
+      },
+    );
+  };
+
+  const interpretCorrectionPlan = (
+    signal: AcquisitionRequiredIdentityReplanSignal,
+  ) => {
+    reservePlanningExecution();
+    const manifest = buildAcquisitionRequiredIdentityRepairManifest(
+      signal.candidate,
+      signal.cause.code,
+      "required_field",
+    );
+    return interpretAcquisitionRequiredIdentityCorrection(
+      manifest,
+      signal.candidate,
+      options.execution,
+    );
+  };
+
   let payload: AcquisitionBuildPayload;
   try {
-    payload = await interpretAcquisitionRequest(category, enrichedRequest);
+    payload = await interpretPlan();
   } catch (error) {
-    emitAcquisitionCandidateDiagnostic(error, "candidate_generation", {
+    emitDiagnostic(error, "candidate_generation", {
       category,
       source: "tailored",
     });
-    emitAcquisitionEvent("proposal_failed", {
+    emitEvent("proposal_failed", {
       category,
       reason:
         error instanceof Error &&
@@ -468,49 +684,128 @@ async function generateCandidate(
           : "tailoring_unavailable",
     });
     if (!allowFallback) throw error;
-    payload = composeStarterComposition(category, request);
+    return fallbackOrThrow();
   }
+
   try {
-    let enhancedPayload: AcquisitionBuildPayload;
-    try {
-      enhancedPayload = enhanceAcquisitionPayload(payload, decisions, request);
-    } catch (error) {
-      emitAcquisitionCandidateDiagnostic(error, "capability_enhancement", {
-        category,
-        source: payload.proposal.source,
-      });
-      throw error;
-    }
-    try {
-      return validateAcquisitionCandidate(enhancedPayload);
-    } catch (error) {
-      emitAcquisitionCandidateDiagnostic(error, "candidate_quality", {
-        category,
-        source: payload.proposal.source,
-      });
-      throw error;
-    }
+    const validatedCandidate = validateTailoredCandidate(payload, allowReplan);
+    payload = validatedCandidate.payload;
+    successfulRecovery = validatedCandidate.recovery;
   } catch (error) {
-    emitAcquisitionEvent("proposal_failed", {
+    if (!(error instanceof AcquisitionRequiredIdentityReplanSignal)) {
+      if (!allowFallback) throw error;
+      return fallbackOrThrow();
+    }
+
+    emitEvent("correction_plan_attempted", {
+      category,
+      correction_reason: REQUIRED_IDENTITY_REPLAN_REASON,
+    });
+    let correctionPlanPayload: AcquisitionBuildPayload;
+    try {
+      correctionPlanPayload = await interpretCorrectionPlan(error);
+    } catch (correctionPlanError) {
+      emitDiagnostic(correctionPlanError, "candidate_generation", {
+        category,
+        source: "tailored",
+      });
+      emitEvent("proposal_failed", {
+        category,
+        reason: "tailoring_unavailable",
+      });
+      emitEvent("correction_plan_failed", {
+        category,
+        reason: "planning_unavailable",
+      });
+      if (!allowFallback) throw correctionPlanError;
+      return fallbackOrThrow();
+    }
+    try {
+      const validatedCandidate = validateTailoredCandidate(
+        correctionPlanPayload,
+        false,
+      );
+      payload = validatedCandidate.payload;
+      successfulRecovery = validatedCandidate.recovery;
+      usedCorrectionPlan = true;
+    } catch (correctionPlanError) {
+      emitEvent("correction_plan_failed", {
+        category,
+        reason: "candidate_rejected",
+      });
+      if (!allowFallback) throw correctionPlanError;
+      return fallbackOrThrow();
+    }
+  }
+
+  let enhancedPayload: AcquisitionBuildPayload;
+  try {
+    enhancedPayload = enhanceAcquisitionPayload(payload, decisions, request);
+  } catch (error) {
+    emitDiagnostic(error, "capability_enhancement", {
+      category,
+      source: payload.proposal.source,
+    });
+    emitEvent("proposal_failed", {
       category,
       reason: "candidate_quality_rejected",
     });
-    if (!allowFallback) throw error;
-    const fallback = composeStarterComposition(category, request);
-    try {
-      const enhancedFallback = enhanceAcquisitionPayload(
-        fallback,
-        decisions,
-        request,
-      );
-      return validateAcquisitionCandidate(enhancedFallback);
-    } catch (fallbackError) {
-      emitAcquisitionCandidateDiagnostic(fallbackError, "candidate_quality", {
+    finalizeRecoveryFailure();
+    if (usedCorrectionPlan) {
+      emitEvent("correction_plan_failed", {
         category,
-        source: "fallback",
+        reason: "capability_enhancement_rejected",
       });
-      throw fallbackError;
     }
+    if (!allowFallback) throw error;
+    return fallbackOrThrow();
+  }
+
+  try {
+    const validated = validateAcquisitionCandidate(enhancedPayload);
+    if (successfulRecovery) {
+      emitEvent("repair_succeeded", {
+        category,
+        recovery_code: `quality_${successfulRecovery.code}`,
+        removed_field_count: successfulRecovery.removed_field_count,
+      });
+      successfulRecovery = null;
+    }
+    if (usedCorrectionPlan) {
+      emitEvent("correction_plan_tailored_success", {
+        category,
+        correction_reason: REQUIRED_IDENTITY_REPLAN_REASON,
+      });
+    } else if (
+      emitFirstPassSuccess &&
+      precompositionCanonicalisedFieldCount === 0 &&
+      validated.proposal.source === "tailored"
+    ) {
+      emitEvent("first_pass_tailored_success", { category });
+    }
+    return validated;
+  } catch (error) {
+    emitDiagnostic(error, "candidate_quality", {
+      category,
+      source: enhancedPayload.proposal.source,
+    });
+    finalizeRecoveryFailure(
+      error instanceof AcquisitionCandidateQualityError
+        ? `second_quality_failure:${error.code}`
+        : "repaired_candidate_invalid",
+    );
+    emitEvent("proposal_failed", {
+      category,
+      reason: "candidate_quality_rejected",
+    });
+    if (usedCorrectionPlan) {
+      emitEvent("correction_plan_failed", {
+        category,
+        reason: "candidate_rejected",
+      });
+    }
+    if (!allowFallback) throw error;
+    return fallbackOrThrow();
   }
 }
 

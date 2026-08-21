@@ -4,14 +4,21 @@ import type { StructuredAiProvider } from "../contracts";
 import { createAiExecutionService, type AiExecutionResult } from "../execution";
 import {
   ACQUISITION_PLANNING_POLICY_KEY,
+  ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY,
   disabledExecutionPolicies,
   openAiAcquisitionPlanningPolicy,
+  openAiAcquisitionRequiredIdentityCorrectionPolicy,
 } from "../policies";
 import { DisabledStructuredAiProvider } from "../providers/disabled";
 import { OpenAiResponsesStructuredProvider } from "../providers/openai";
-import { acquisitionPlanningTaskV1 } from "./task";
+import {
+  acquisitionPlanningTaskV1,
+  acquisitionRequiredIdentityCorrectionTaskV1,
+} from "./task";
 
-export type AcquisitionTaskKey = "acquisition_workspace_plan_v1";
+export type AcquisitionTaskKey =
+  | "acquisition_workspace_plan_v1"
+  | "acquisition_required_identity_correction_v1";
 
 export interface AcquisitionExecutionCore {
   execute(
@@ -52,12 +59,21 @@ export function createAcquisitionAiRuntime(
     mode === "openai"
       ? openAiAcquisitionPlanningPolicy
       : disabledExecutionPolicies[ACQUISITION_PLANNING_POLICY_KEY];
+  const correctionPolicy =
+    mode === "openai"
+      ? openAiAcquisitionRequiredIdentityCorrectionPolicy
+      : disabledExecutionPolicies[
+          ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY
+        ];
   const execution = createAiExecutionService({
     tasks: Object.freeze({
       acquisition_workspace_plan_v1: acquisitionPlanningTaskV1,
+      acquisition_required_identity_correction_v1:
+        acquisitionRequiredIdentityCorrectionTaskV1,
     }),
     policies: Object.freeze({
       [ACQUISITION_PLANNING_POLICY_KEY]: plannerPolicy,
+      [ACQUISITION_REQUIRED_IDENTITY_CORRECTION_POLICY_KEY]: correctionPolicy,
     }),
     providers: Object.freeze({ [provider.key]: provider }),
   });

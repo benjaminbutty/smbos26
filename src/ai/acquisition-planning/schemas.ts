@@ -3,6 +3,10 @@ import {
   acquisitionCategorySchema,
   acquisitionRequestSchema,
 } from "../../core/acquisition/schemas";
+import {
+  acquisitionRequiredIdentityRepairManifestSchema,
+  acquisitionScopedFieldRepairOutputSchema,
+} from "../../core/acquisition/scoped-repair";
 
 const text = z.string().trim().min(1).max(1_000);
 const ref = z.string().regex(/^table_[1-9][0-9]*$/);
@@ -61,6 +65,12 @@ export const acquisitionPlanningInputSchema = z
     grounded_currency: z.enum(["GBP", "USD", "EUR"]).nullable(),
   })
   .strict();
+export const ACQUISITION_REQUIRED_IDENTITY_CORRECTION_REASON =
+  "required_cross_object_identity_must_use_connection" as const;
+export const acquisitionRequiredIdentityCorrectionInputSchema =
+  acquisitionRequiredIdentityRepairManifestSchema;
+export const acquisitionRequiredIdentityCorrectionOutputSchema =
+  acquisitionScopedFieldRepairOutputSchema;
 const needs = z
   .object({
     schema_version: z.literal(1),
@@ -88,9 +98,17 @@ export const acquisitionPlanningOutputSchema = z.discriminatedUnion("state", [
 export type AcquisitionPlanningInput = z.infer<
   typeof acquisitionPlanningInputSchema
 >;
+export type AcquisitionRequiredIdentityCorrectionInput = z.infer<
+  typeof acquisitionRequiredIdentityCorrectionInputSchema
+>;
+export type AcquisitionRequiredIdentityCorrectionOutput = z.infer<
+  typeof acquisitionRequiredIdentityCorrectionOutputSchema
+>;
 export type AcquisitionPlanningOutput = z.infer<
   typeof acquisitionPlanningOutputSchema
 >;
+export type AcquisitionPlanningCorrectionReason =
+  AcquisitionRequiredIdentityCorrectionInput["correction_reason"];
 export type AcquisitionReadyPlan = Extract<
   AcquisitionPlanningOutput,
   { state: "ready" }

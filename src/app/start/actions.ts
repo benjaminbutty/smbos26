@@ -136,6 +136,37 @@ export async function createProposalAction(formData: FormData): Promise<never> {
   redirect("/start");
 }
 
+export async function retryAcquisitionTailoringAction(): Promise<never> {
+  const session = await loadAcquisitionSession();
+  const category = acquisitionCategorySchema.safeParse(
+    session?.row.requested_category,
+  );
+  const request = acquisitionRequestSchema.safeParse(session?.row.request_text);
+  if (
+    !session?.payload ||
+    session.payload.proposal.source !== "fallback" ||
+    !category.success ||
+    !request.success
+  ) {
+    redirectWithError(
+      "/start",
+      "This Lenni proposal is no longer available. Start again to prepare a new one.",
+      "expired",
+    );
+  }
+
+  try {
+    await createOrRegenerateProposal(category.data, request.data);
+  } catch (error) {
+    redirectWithError(
+      "/start",
+      acquisitionErrorMessage(error),
+      acquisitionErrorState(error),
+    );
+  }
+  redirect("/start");
+}
+
 export async function answerClarificationAction(
   formData: FormData,
 ): Promise<never> {

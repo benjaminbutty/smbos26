@@ -12,6 +12,11 @@ export const openAiInvalidRequestReasonCodes = [
 export type OpenAiInvalidRequestReasonCode =
   (typeof openAiInvalidRequestReasonCodes)[number];
 
+export const openAiIncompleteReasonCodes = ["max_output_tokens"] as const;
+
+export type OpenAiIncompleteReasonCode =
+  (typeof openAiIncompleteReasonCodes)[number];
+
 export const openAiSafeSchemaKeywords = [
   "$defs",
   "$ref",
@@ -184,5 +189,15 @@ export class OpenAiAuthenticationDiagnostic extends Error {
   constructor() {
     super("The OpenAI request was not authenticated.");
     this.name = "OpenAiAuthenticationDiagnostic";
+  }
+}
+
+export class OpenAiIncompleteDiagnostic extends Error {
+  readonly reasonCode: OpenAiIncompleteReasonCode;
+
+  constructor(reasonCode: OpenAiIncompleteReasonCode) {
+    super("The OpenAI incomplete-response reason was classified internally.");
+    this.name = "OpenAiIncompleteDiagnostic";
+    this.reasonCode = reasonCode;
   }
 }

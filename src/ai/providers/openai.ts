@@ -3,15 +3,19 @@ import "server-only";
 import OpenAI from "openai";
 
 import {
+  aiReasoningEffortSchema,
+  aiServiceTierSchema,
   StructuredAiProviderError,
   type StructuredAiProvider,
   type StructuredAiProviderRequest,
   type StructuredAiProviderResponse,
+  type AiServiceTier,
   type StructuredAiUsage,
 } from "../contracts";
 import {
   OPENAI_BUILDER_PLANNING_MODEL_KEY,
   OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+  OPENAI_SUPPORTED_MODEL_KEYS,
 } from "../policies";
 import {
   adaptRegisteredSchemaForOpenAi,
@@ -19,6 +23,7 @@ import {
 } from "./openai-schema";
 import {
   OpenAiAuthenticationDiagnostic,
+  OpenAiIncompleteDiagnostic,
   OpenAiInvalidRequestDiagnostic,
   parseOpenAiSafeSchemaContext,
   type OpenAiInvalidRequestReasonCode,
@@ -26,11 +31,14 @@ import {
 
 export {
   OpenAiAuthenticationDiagnostic,
+  OpenAiIncompleteDiagnostic,
   OpenAiInvalidRequestDiagnostic,
+  openAiIncompleteReasonCodes,
   openAiInvalidRequestReasonCodes,
   parseOpenAiSafeSchemaContext,
 } from "./openai-diagnostics";
 export type {
+  OpenAiIncompleteReasonCode,
   OpenAiInvalidRequestReasonCode,
   OpenAiSafeSchemaContext,
 } from "./openai-diagnostics";
@@ -158,6 +166,7 @@ const OPENAI_REQUEST_PARAMETER_NAMES = new Set([
   "prompt_cache_options",
   "reasoning",
   "reasoning.effort",
+  "service_tier",
   "store",
   "text.format.name",
   "text.format.strict",
@@ -278,6 +287,7 @@ function mapSdkFailure(cause: unknown): StructuredAiProviderError {
 
 function parseCompletedResponse(
   rawResponse: unknown,
+  requestedServiceTier: AiServiceTier,
 ): StructuredAiProviderResponse {
   if (!isRecord(rawResponse)) {
     throw providerError("invalid_response");
@@ -289,10 +299,36 @@ function parseCompletedResponse(
     if (reason === "content_filter") {
       throw providerError("content_filtered", usage);
     }
+    if (reason === "max_output_tokens") {
+      throw providerError(
+        "incomplete",
+        usage,
+        new OpenAiIncompleteDiagnostic("max_output_tokens"),
+      );
+    }
     throw providerError("incomplete", usage);
   }
   if (rawResponse.status !== "completed" || rawResponse.error !== null) {
     throw providerError("unavailable", usage);
+  }
+  const effectiveServiceTier = aiServiceTierSchema.safeParse(
+    rawResponse.service_tier,
+  );
+  if (
+    rawResponse.service_tier !== undefined &&
+    rawResponse.service_tier !== null &&
+    !effectiveServiceTier.success
+  ) {
+    throw providerError("invalid_response", usage);
+  }
+  const effectiveTier = effectiveServiceTier.success
+    ? effectiveServiceTier.data
+    : undefined;
+  if (
+    (requestedServiceTier === "fast" || requestedServiceTier === "priority") &&
+    effectiveTier !== "priority"
+  ) {
+    throw providerError("invalid_response", usage);
   }
   if (!Array.isArray(rawResponse.output)) {
     throw providerError("invalid_response", usage);
@@ -333,6 +369,9 @@ function parseCompletedResponse(
   return {
     output: transport.result,
     ...(usage ? { usage } : {}),
+    ...(effectiveTier
+      ? { requestMetadata: { service_tier: effectiveTier } }
+      : {}),
   };
 }
 
@@ -357,15 +396,29 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
     try {
       if (
         request.providerKey !== OPENAI_PROVIDER_KEY ||
-        request.modelKey !== OPENAI_MODEL_KEY
+        !OPENAI_SUPPORTED_MODEL_KEYS.includes(
+          request.modelKey as (typeof OPENAI_SUPPORTED_MODEL_KEYS)[number],
+        )
       ) {
+        throw providerError("invalid_request");
+      }
+      const reasoningEffort = aiReasoningEffortSchema.safeParse(
+        request.reasoningEffort ?? OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+      );
+      if (!reasoningEffort.success) {
+        throw providerError("invalid_request");
+      }
+      const serviceTier = aiServiceTierSchema.safeParse(
+        request.serviceTier ?? "auto",
+      );
+      if (!serviceTier.success) {
         throw providerError("invalid_request");
       }
       const schema = adaptRegisteredSchemaForOpenAi(
         request.outputContract.jsonSchema,
       );
       const body = Object.freeze({
-        model: OPENAI_MODEL_KEY,
+        model: request.modelKey,
         instructions: request.instruction,
         input: Object.freeze([
           Object.freeze({
@@ -381,8 +434,9 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
         max_output_tokens: request.maxOutputTokens,
         store: false,
         reasoning: Object.freeze({
-          effort: OPENAI_BUILDER_PLANNING_REASONING_EFFORT,
+          effort: reasoningEffort.data,
         }),
+        service_tier: serviceTier.data,
         prompt_cache_options: Object.freeze({
           mode: "explicit",
         }),
@@ -398,7 +452,7 @@ export class OpenAiResponsesStructuredProvider implements StructuredAiProvider {
       const response = await this.#client.responses.create(body, {
         signal: request.signal,
       });
-      return parseCompletedResponse(response);
+      return parseCompletedResponse(response, serviceTier.data);
     } catch (cause) {
       throw mapSdkFailure(cause);
     }

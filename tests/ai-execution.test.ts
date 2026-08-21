@@ -407,6 +407,8 @@ describe("provider-neutral structured AI execution", () => {
     expect(request).toMatchObject({
       providerKey: "disabled",
       modelKey: "server-model",
+      reasoningEffort: "medium",
+      serviceTier: "auto",
       input: { subject: "Readiness" },
       maxOutputTokens: 77,
       outputContract: {
