@@ -409,4 +409,98 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
         },
       ],
     },
+    {
+      concept: "Trades / jobs",
+      businessName: "Proof — Trades and jobs",
+      objectKey: "trades_jobs",
+      connectedObjectKey: "customer",
+      primaryField: "start_date",
+      tables: [
+        { key: "customers", title: "Customers" },
+        {
+          key: "jobs",
+          title: "Jobs",
+          fields: [
+            {
+              label: "Status",
+              columnType: "status",
+              options: ["Open", "Scheduled", "Complete"],
+            },
+            { label: "Start date", columnType: "date" },
+          ],
+        },
+        {
+          key: "tasks",
+          title: "Tasks",
+          fields: [
+            {
+              label: "Status",
+              columnType: "status",
+              options: ["Open", "Done"],
+            },
+            { label: "Due date", columnType: "date" },
+          ],
+        },
+      ],
+      connections: [
+        {
+          sourceTableKey: "jobs",
+          targetTableKey: "customers",
+          label: "Customer",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
+        },
+        {
+          sourceTableKey: "tasks",
+          targetTableKey: "jobs",
+          label: "Job",
+          currentMultiplicity: "several",
+          targetMultiplicity: "one",
+        },
+      ],
+      records: [
+        { tableKey: "customers", label: "Taylor Reed" },
+        {
+          tableKey: "jobs",
+          label: "Taylor kitchen refit",
+          fields: { Status: "Scheduled", "Start date": "2026-08-24" },
+        },
+        {
+          tableKey: "tasks",
+          label: "First fix",
+          fields: { Status: "Open", "Due date": "2026-08-20" },
+        },
+      ],
+      links: [
+        {
+          sourceTableKey: "jobs",
+          targetTableKey: "customers",
+          connectionLabel: "Customer",
+          sourceRecordLabel: "Taylor kitchen refit",
+          targetRecordLabels: ["Taylor Reed"],
+        },
+        {
+          sourceTableKey: "tasks",
+          targetTableKey: "jobs",
+          connectionLabel: "Job",
+          sourceRecordLabel: "First fix",
+          targetRecordLabels: ["Taylor kitchen refit"],
+        },
+      ],
+      queries: [
+        {
+          tableKey: "jobs",
+          name: "Scheduled Jobs",
+          filter: { fieldLabel: "Status", operator: "is", value: "Scheduled" },
+          sort: { fieldLabel: "Start date", direction: "ascending" },
+          groupFieldLabel: "Status",
+        },
+        {
+          tableKey: "tasks",
+          name: "Tasks by Job",
+          sort: { fieldLabel: "Job", direction: "ascending" },
+          groupFieldLabel: "Job",
+        },
+      ],
+    },
   ] as const;

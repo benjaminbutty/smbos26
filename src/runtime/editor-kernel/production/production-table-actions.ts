@@ -26,7 +26,10 @@ import { normalizeTableViewConfig } from "../../../core/experience/schemas";
 import { tableViewQuerySchema } from "../../../core/experience/schemas";
 import { createServerClient } from "../../../db/supabase/server";
 import type { Json } from "../../../db/supabase/database.types";
-import { ExperienceSubmissionError } from "../../forms/submission";
+import {
+  ExperienceSubmissionError,
+  submitExperienceForm,
+} from "../../forms/submission";
 import { experienceKeyToPath } from "../../routing";
 import {
   searchTableConnectionTargets,
@@ -1021,6 +1024,35 @@ export async function createProductionTableConnectionTargetAction(
     if (!targetView) {
       return resultError("The connected Table is not available.");
     }
+
+    const availability = await getDirectTableRowCreationAvailability(
+      supabase,
+      { businessId: tenant.business.id },
+      targetView.key,
+    );
+    if (availability.kind === "configured_form") {
+      const targetConfig = normalizeTableViewConfig(targetView.config_json);
+      const primaryFieldKey = targetConfig.title_field;
+      if (!primaryFieldKey) {
+        return resultError(
+          "The connected Table has no usable primary property.",
+        );
+      }
+
+      const formData = new FormData();
+      formData.set(primaryFieldKey, parsed.data.primaryValue);
+      const record = await submitExperienceForm(
+        supabase,
+        { businessId: tenant.business.id },
+        { formKey: availability.formKey, formData },
+      );
+      revalidatePath(routePath(businessSlug, targetView.key), "page");
+      return {
+        status: "success",
+        value: { id: record.id, label: parsed.data.primaryValue },
+      };
+    }
+
     const created = await createProductionTableRowAction(
       businessSlug,
       targetView.key,

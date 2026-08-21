@@ -277,6 +277,9 @@ describe("generic experience renderers", () => {
     expect(html).toContain("runtime-detail");
     expect(html).toContain("Lunch service");
     expect(html).toContain(">Edit<");
+    expect(html).toContain('aria-label="Record location"');
+    expect(html).toContain("Where this lives");
+    expect(html).toContain("Open Table");
   });
 
   it("renders generic connected Record groups without a second mutation surface", () => {

@@ -7233,8 +7233,7 @@ textarea {
   font-size: 0.68rem;
 }
 
-.workspace-table-page .editor-lab-meta > span:nth-child(2),
-.workspace-table-page .editor-lab-meta > span:nth-child(3) {
+.workspace-table-page .editor-lab-meta > span:nth-child(2) {
   display: none;
 }
 
@@ -7453,6 +7452,144 @@ textarea {
 
   .workspace-table-page .editor-grid {
     min-block-size: 19rem;
+  }
+}
+
+/* Lenni Unified Product Experience — I3 Record context, quick-create and touch forms. */
+.runtime-record-breadcrumb {
+  display: flex;
+  max-width: 76rem;
+  gap: var(--space-2);
+  align-items: center;
+  margin: 0 0 var(--space-4);
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.runtime-record-breadcrumb a {
+  min-height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--coral-700);
+  text-decoration: none;
+}
+
+.runtime-record-breadcrumb a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+.runtime-detail-rail {
+  display: grid;
+  align-self: start;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.runtime-detail-location {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-5);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-subtle);
+}
+
+.runtime-detail-location .eyebrow {
+  margin: 0;
+  color: var(--coral-700);
+}
+
+.runtime-detail-location h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.runtime-detail-location p:not(.eyebrow) {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.runtime-detail-location a {
+  width: fit-content;
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--coral-700);
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.runtime-detail-location a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+.editor-connection-created {
+  margin: var(--space-2) 0 0;
+  color: var(--trust-success-text);
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+@media (max-width: 48rem) {
+  .runtime-record-breadcrumb {
+    margin-bottom: var(--space-3);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .runtime-detail-rail {
+    gap: var(--space-3);
+  }
+
+  .runtime-detail-location {
+    padding: var(--space-4);
+  }
+
+  .runtime-form {
+    padding: var(--space-4);
+  }
+
+  .runtime-form-fields {
+    gap: var(--space-4);
+  }
+
+  .runtime-form input:not([type="checkbox"]),
+  .runtime-form select,
+  .runtime-form textarea {
+    min-height: 3rem;
+    font-size: 0.95rem;
+  }
+
+  .runtime-form textarea {
+    min-height: 7rem;
+  }
+
+  .form-actions {
+    position: sticky;
+    z-index: 2;
+    bottom: 0;
+    margin-inline: calc(-1 * var(--space-4));
+    margin-bottom: calc(-1 * var(--space-4));
+    padding: var(--space-3) var(--space-4)
+      calc(var(--space-3) + env(safe-area-inset-bottom));
+    background: var(--surface-base);
+    border-top: var(--border-width-thin) solid var(--border-subtle);
+  }
+
+  .form-actions > button,
+  .form-actions .form-cancel {
+    min-height: 3rem;
   }
 }
 
@@ -13519,5 +13656,527 @@ textarea {
 
   .workspace-live-status {
     justify-self: start;
+  }
+}
+
+/* Journey 2 shell and Home contract. */
+.workspace-shell {
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+}
+
+.workspace-sidebar {
+  background: var(--surface-base);
+}
+
+.workspace-navigation {
+  align-content: start;
+  gap: var(--space-2);
+}
+
+.workspace-navigation > .sidebar-section {
+  margin: var(--space-3) 0;
+}
+
+.workspace-navigation > .workspace-sites-group {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-home-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.workspace-home-section-heading h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+}
+
+.workspace-home-section-heading > span {
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+
+.workspace-home-destination-type {
+  display: block;
+  margin-top: var(--space-3);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.workspace-home-card .workspace-home-destination-type {
+  margin-top: 0;
+}
+
+@media (max-width: 48rem) {
+  .workspace-mobile-sheet {
+    inset: auto 0 0;
+    max-height: calc(100dvh - 1.25rem);
+    padding: var(--space-2) 1rem calc(1.5rem + env(safe-area-inset-bottom));
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow:
+      0 -12px 32px rgb(23 26 29 / 0.14),
+      0 0 0 100vmax rgb(23 26 29 / 0.32);
+  }
+
+  .workspace-mobile-sheet-header {
+    position: relative;
+    min-height: 4.2rem;
+  }
+
+  .workspace-mobile-sheet-header::before {
+    position: absolute;
+    top: var(--space-2);
+    left: 50%;
+    width: 2.25rem;
+    height: 0.25rem;
+    content: "";
+    background: var(--border-strong);
+    border-radius: var(--radius-full);
+    transform: translateX(-50%);
+  }
+
+  .workspace-mobile-sheet-header > div {
+    padding-top: var(--space-2);
+  }
+}
+
+/* Journey 2 Tables and Record context. */
+.editor-desktop-grid {
+  min-width: 0;
+  position: relative;
+}
+
+.editor-mobile-record-list {
+  display: none;
+}
+
+.workspace-table-page .editor-property-disclosure {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.workspace-table-page .editor-property-disclosure button {
+  min-height: 1.6rem;
+  padding: 0.12rem 0.35rem;
+  color: var(--coral-700);
+  background: transparent;
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-sm);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-property-disclosure button:hover {
+  color: var(--coral-800);
+  background: var(--coral-50);
+  filter: none;
+}
+
+.workspace-table-page .table-view-query-button {
+  max-width: 100%;
+  flex-wrap: wrap;
+  text-align: left;
+}
+
+.workspace-table-page
+  .table-view-query-button
+  > span:not(.table-view-controls-chevron) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-table-page .editor-table-search {
+  position: relative;
+  display: inline-flex;
+  min-width: min(18rem, 100%);
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-table-search > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.workspace-table-page .editor-table-search input {
+  width: min(18rem, 100%);
+  min-height: 2.25rem;
+  padding: 0.5rem 2.6rem 0.5rem 0.75rem;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 0.78rem;
+}
+
+.workspace-table-page .editor-table-search input:focus {
+  border-color: var(--coral-400);
+}
+
+.workspace-table-page .editor-table-search-clear {
+  position: absolute;
+  right: 0.35rem;
+  min-height: 1.75rem;
+  padding-inline: 0.4rem;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-table-search-clear:hover {
+  color: var(--coral-700);
+  background: var(--coral-50);
+  filter: none;
+}
+
+.workspace-table-page .editor-save-stale {
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border-color: var(--border-strong);
+}
+
+.workspace-table-page .editor-grid-no-matches {
+  pointer-events: auto;
+}
+
+.workspace-table-page .editor-grid-no-matches .button-secondary {
+  min-height: 2.25rem;
+}
+
+.workspace-table-page .editor-lab-workspace:has(.editor-record-panel) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-table-page
+  .editor-lab-workspace:has(.editor-record-panel)
+  .editor-grid-area {
+  grid-column: 1;
+}
+
+.workspace-table-page .editor-record-panel {
+  position: fixed;
+  z-index: 50;
+  top: 3.5rem;
+  right: 0;
+  bottom: 0;
+  width: min(30rem, calc(100vw - 1rem));
+  max-height: none;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-base);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+  border-left: var(--border-width-thin) solid var(--border-subtle);
+  box-shadow: var(--elevation-overlay);
+}
+
+@media (max-width: 48rem) {
+  .workspace-table-page .editor-desktop-grid {
+    display: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-list {
+    display: block;
+  }
+
+  .workspace-table-page .editor-property-disclosure {
+    display: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-items {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-card {
+    display: grid;
+    width: 100%;
+    gap: var(--space-3);
+    min-height: 5.25rem;
+    padding: var(--space-4);
+    color: var(--text-primary);
+    text-align: left;
+    background: var(--surface-base);
+    border: var(--border-width-thin) solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-card:hover {
+    background: var(--surface-base);
+    border-color: var(--border-strong);
+    filter: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-heading {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-heading > span {
+    flex: 0 0 auto;
+    color: var(--coral-700);
+    font-size: 1rem;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details > span {
+    display: grid;
+    min-width: 0;
+    gap: 0.18rem;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details small {
+    color: var(--text-tertiary);
+    font-size: 0.64rem;
+    font-weight: 750;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details > span > span {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-table-page .editor-mobile-record-empty {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: var(--space-2);
+    min-height: 20rem;
+    padding: var(--space-6);
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .workspace-table-page .editor-mobile-record-empty strong {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+  }
+
+  .workspace-table-page .editor-mobile-record-empty > span {
+    max-width: 28rem;
+    font-size: 0.72rem;
+    line-height: 1.45;
+  }
+
+  .workspace-table-page .editor-table-search {
+    width: 100%;
+  }
+
+  .workspace-table-page .editor-table-search input {
+    width: 100%;
+  }
+
+  .workspace-table-page .editor-record-panel {
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    padding: var(--space-5) var(--space-4)
+      calc(var(--space-8) + env(safe-area-inset-bottom));
+    border-left: 0;
+    border-radius: 0;
+  }
+}
+
+/* I3 final touch overrides: portal pickers become a deliberate mobile sheet. */
+@media (max-width: 48rem) {
+  .editor-connection-popover.is-portal {
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh;
+    max-height: none !important;
+    padding: calc(var(--space-5) + env(safe-area-inset-top)) var(--space-4)
+      calc(var(--space-5) + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .editor-connection-popover.is-portal .editor-choice-search,
+  .editor-connection-popover.is-portal .editor-connection-option,
+  .editor-connection-popover.is-portal .editor-connection-create,
+  .editor-connection-popover.is-portal .editor-choice-clear {
+    min-height: 2.75rem;
+  }
+
+  .editor-connection-popover.is-portal .editor-choice-search {
+    padding-block: 0.65rem;
+    font-size: 0.9rem;
+  }
+}
+
+/* I4 embedded Saved Views keep the same mobile Record-first interaction. */
+@media (max-width: 48rem) {
+  .editor-kernel-embedded .editor-desktop-grid {
+    display: none;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-list {
+    display: block;
+  }
+
+  .editor-kernel-embedded .editor-lab-workspace:has(.editor-record-panel) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editor-kernel-embedded
+    .editor-lab-workspace:has(.editor-record-panel)
+    .editor-grid-area {
+    grid-column: 1;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-items {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card {
+    display: grid;
+    width: 100%;
+    gap: var(--space-3);
+    min-height: 5.25rem;
+    padding: var(--space-4);
+    color: var(--text-primary);
+    text-align: left;
+    background: var(--surface-base);
+    border: var(--border-width-thin) solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-heading {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-heading > span {
+    flex: 0 0 auto;
+    color: var(--coral-700);
+    font-size: 1rem;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details > span {
+    display: grid;
+    min-width: 0;
+    gap: 0.18rem;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details small {
+    color: var(--text-tertiary);
+    font-size: 0.64rem;
+    font-weight: 750;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details > span > span {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-empty {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: var(--space-2);
+    min-height: 12rem;
+    padding: var(--space-6);
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-empty strong {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-empty > span {
+    max-width: 28rem;
+    font-size: 0.72rem;
+    line-height: 1.45;
+  }
+
+  .editor-kernel-embedded .editor-record-panel {
+    position: fixed;
+    z-index: 50;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    max-height: none;
+    padding: var(--space-5) var(--space-4)
+      calc(var(--space-8) + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    background: var(--surface-base);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--elevation-overlay);
   }
 }

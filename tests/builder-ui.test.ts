@@ -704,7 +704,9 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
       "href={`/app/${encodeURIComponent(businessSlug)}/builder`}",
     );
     expect(topbar).toContain('aria-label="Tell Lenni what you need"');
-    expect(layout).toContain("href={`/app/${businessSlug}/setup`}");
+    expect(layout).not.toContain("href={`/app/${businessSlug}/setup`}");
+    expect(layout).not.toContain(">Setup<");
+    expect(layout).toContain("Settings");
     expect(layout).toContain("href={`/app/${businessSlug}/changes`}");
 
     expect(

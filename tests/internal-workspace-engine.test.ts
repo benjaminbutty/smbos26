@@ -241,7 +241,12 @@ describe("Internal Workspace Engine", () => {
   it("keeps the proof concepts on the same generic primitive path", () => {
     expect(
       internalWorkspaceProofFixtures.map((fixture) => fixture.concept),
-    ).toEqual(["Milk round", "Dog groomer", "Catering Enquiry"]);
+    ).toEqual([
+      "Milk round",
+      "Dog groomer",
+      "Catering Enquiry",
+      "Trades / jobs",
+    ]);
     expect(
       internalWorkspaceProofFixtures.every(
         (fixture) =>

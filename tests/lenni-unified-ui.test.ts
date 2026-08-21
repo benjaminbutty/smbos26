@@ -22,7 +22,6 @@ describe("Lenni unified workspace presentation", () => {
         businessName: "Bakery",
         businessSlug: "bakery",
         canManageConfiguration: true,
-        otherViews: [],
         pages: [],
         tables: [],
       }),
@@ -32,21 +31,28 @@ describe("Lenni unified workspace presentation", () => {
         businessName: "Bakery",
         businessSlug: "bakery",
         canManageConfiguration: false,
-        otherViews: [],
         pages: [],
         tables: [],
       }),
     );
 
     expect(ownerHtml).toContain('aria-label="Mobile workspace navigation"');
-    expect(ownerHtml).toContain("Tell Lenni");
-    expect(ownerHtml).toContain("Work");
+    expect(ownerHtml).toContain("Tables");
+    expect(ownerHtml).toContain("Pages");
     expect(ownerHtml).toContain("More");
-    expect(staffHtml).not.toContain("Tell Lenni");
+    expect(ownerHtml).not.toContain("Work");
     expect(staffHtml).not.toContain("Changes");
     expect(staffHtml).not.toContain("Setup");
-    expect(staffHtml).toContain("Work");
+    expect(staffHtml).toContain("Tables");
+    expect(staffHtml).toContain("Pages");
     expect(staffHtml).toContain("More");
+
+    const source = readFileSync(
+      new URL("../src/components/workspace-mobile-nav.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("Tell Lenni");
+    expect(source).not.toContain('type SheetKind = "work"');
   });
 
   it("keeps the mobile sheet focus, escape, and overflow contract", () => {
@@ -69,6 +75,20 @@ describe("Lenni unified workspace presentation", () => {
     expect(source).toContain("trigger.focus()");
     expect(source).toContain('document.body.style.overflow = "hidden"');
     expect(source).toContain("document.body.style.overflow = previousOverflow");
+  });
+
+  it("keeps the desktop shell one-destination and capability-driven", () => {
+    const source = readFileSync(
+      new URL("../src/app/app/[businessSlug]/layout.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("<TablesSidebar");
+    expect(source).toContain("<PagesSidebar");
+    expect(source).toContain('aria-label="Sites"');
+    expect(source).not.toContain(">Work</");
+    expect(source).not.toContain("Other views");
+    expect(source).not.toContain("href={`/app/${businessSlug}/setup`}");
   });
 
   it("keeps C7 settings, auth and public preorder presentation bounded", () => {
@@ -172,6 +192,7 @@ describe("Lenni unified workspace presentation", () => {
 
     expect(editorSource).toContain('aria-keyshortcuts="/"');
     expect(editorSource).toContain("Press / to add");
+    expect(editorSource).toContain('void addBlock({ type: "divider" })');
     expect(editorSource).toContain('aria-controls="page-editor-add-menu"');
     expect(editorSource).toContain('aria-live="polite"');
     expect(editorSource).toContain("draggable={Boolean(id)}");
@@ -183,6 +204,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain("/* C5 Page canvas presentation.");
     expect(cssSource).toContain(".page-editor-inline-edit:focus-visible");
     expect(cssSource).toContain(".page-editor-view-block .editor-grid-shell");
+    expect(cssSource).toContain(
+      ".editor-kernel-embedded .editor-mobile-record-list",
+    );
+    expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
   });
@@ -571,6 +596,32 @@ describe("Lenni unified workspace presentation", () => {
       ),
       "utf8",
     );
+    const recordPanelSource = readFileSync(
+      new URL("../src/runtime/editor-kernel/record-panel.tsx", import.meta.url),
+      "utf8",
+    );
+    const viewControlsSource = readFileSync(
+      new URL("../src/runtime/views/table-view-controls.tsx", import.meta.url),
+      "utf8",
+    );
+    const productionActionsSource = readFileSync(
+      new URL(
+        "../src/runtime/editor-kernel/production/production-table-actions.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const connectionEditorSource = readFileSync(
+      new URL(
+        "../src/runtime/editor-kernel/cell-editors/index.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const detailRendererSource = readFileSync(
+      new URL("../src/runtime/views/view-renderer.tsx", import.meta.url),
+      "utf8",
+    );
     const cssSource = readFileSync(
       new URL("../src/app/globals.css", import.meta.url),
       "utf8",
@@ -581,7 +632,26 @@ describe("Lenni unified workspace presentation", () => {
     );
     expect(editorSource).toContain('className="editor-new-record-action"');
     expect(editorSource).toContain('data-testid="editor-grid-empty"');
+    expect(editorSource).toContain('aria-label="Search this Table"');
+    expect(editorSource).toContain('data-testid="editor-grid-no-matches"');
+    expect(editorSource).toContain('data-testid="editor-mobile-record-list"');
+    expect(editorSource).toContain('status: "stale"');
+    expect(editorSource).toContain("Needs reload");
     expect(editorSource).toContain("capabilities.rowCreationMessage");
+    expect(recordPanelSource).toContain('aria-modal="true"');
+    expect(recordPanelSource).toContain('role="dialog"');
+    expect(recordPanelSource).toContain("focusableSelector");
+    expect(viewControlsSource).toContain("Filtered by");
+    expect(viewControlsSource).toContain("Sorted by");
+    expect(viewControlsSource).toContain("Grouped by");
+    expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
+    expect(productionActionsSource).toContain("submitExperienceForm");
+    expect(productionActionsSource).toContain("availability.formKey");
+    expect(connectionEditorSource).toContain("creationNotice");
+    expect(connectionEditorSource).toContain("added to");
+    expect(detailRendererSource).toContain('aria-label="Record location"');
+    expect(detailRendererSource).toContain("Where this lives");
+    expect(detailRendererSource).toContain('aria-label="Record context"');
     expect(productionSource).toContain("creationFallbackHref");
     expect(productionSource).toContain('className="editor-lab-kicker">Table');
     expect(cssSource).toContain(
@@ -590,6 +660,19 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(
       ".workspace-table-page .editor-header-menu-button",
     );
+    expect(cssSource).toContain(
+      ".workspace-table-page .editor-mobile-record-list",
+    );
+    expect(cssSource).toContain(
+      ".workspace-table-page .editor-lab-meta > span:nth-child(2)",
+    );
+    expect(cssSource).not.toContain(
+      ".workspace-table-page .editor-lab-meta > span:nth-child(3)",
+    );
+    expect(cssSource).toContain(".runtime-detail-location");
+    expect(cssSource).toContain(".editor-connection-popover.is-portal");
+    expect(cssSource).toContain("position: sticky");
+    expect(cssSource).toContain("position: fixed");
   });
 
   it("keeps Builder trust states distinct and preserves manual continuity", () => {

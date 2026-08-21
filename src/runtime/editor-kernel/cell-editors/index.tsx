@@ -51,6 +51,7 @@ export function ConnectionPicker({
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [creationNotice, setCreationNotice] = useState<string | null>(null);
   const [searchAttempt, setSearchAttempt] = useState(0);
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [portalPosition, setPortalPosition] = useState<{
@@ -153,11 +154,13 @@ export function ConnectionPicker({
     if (!onCreate || !query.trim() || creating) return;
     setCreating(true);
     setCreateError(null);
+    setCreationNotice(null);
     try {
       const created = await onCreate(query.trim());
       commit(
         column.connection?.multiple ? [...selected, created.id] : [created.id],
       );
+      setCreationNotice(`${created.label} added to ${column.label}.`);
     } catch (error) {
       setCreateError(
         error instanceof Error && error.message
@@ -353,6 +356,16 @@ export function ConnectionPicker({
           ? createPortal(popover, document.body)
           : popover
         : null}
+      {creationNotice ? (
+        <p
+          aria-atomic="true"
+          aria-live="polite"
+          className="editor-connection-created"
+          role="status"
+        >
+          {creationNotice}
+        </p>
+      ) : null}
     </div>
   );
 }

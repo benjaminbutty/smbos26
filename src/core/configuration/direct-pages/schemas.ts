@@ -27,6 +27,12 @@ const directPageTextBlockSchema = z
   })
   .strict();
 
+const directPageDividerBlockSchema = z
+  .object({
+    type: z.literal("divider"),
+  })
+  .strict();
+
 const directPageViewBlockSchema = z
   .object({
     type: z.literal("view"),
@@ -38,6 +44,7 @@ const directPageViewBlockSchema = z
 export const directPageBlockInputSchema = z.discriminatedUnion("type", [
   directPageHeadingBlockSchema,
   directPageTextBlockSchema,
+  directPageDividerBlockSchema,
   directPageViewBlockSchema,
 ]);
 

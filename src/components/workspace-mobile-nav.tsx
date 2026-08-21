@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-type SheetKind = "work" | "more";
+type SheetKind = "tables" | "pages" | "more";
 
 interface WorkspaceTableDestination {
   key: string;
@@ -23,31 +23,24 @@ interface WorkspacePageDestination {
   title: string;
 }
 
-interface WorkspaceViewDestination {
-  key: string;
-  name: string;
-  path: string;
-}
-
 interface WorkspaceMobileNavProps {
   businessSlug: string;
   businessName: string;
   canManageConfiguration: boolean;
   tables: ReadonlyArray<WorkspaceTableDestination>;
   pages: ReadonlyArray<WorkspacePageDestination>;
-  otherViews: ReadonlyArray<WorkspaceViewDestination>;
   sites?: ReadonlyArray<WorkspacePageDestination>;
 }
 
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-function isWorkPath(pathname: string): boolean {
-  return (
-    pathname.includes("/workspace/") ||
-    pathname.includes("/pages/") ||
-    pathname.includes("/sites/")
-  );
+function isTablePath(pathname: string): boolean {
+  return pathname.includes("/workspace/");
+}
+
+function isPagePath(pathname: string): boolean {
+  return pathname.includes("/pages/") || pathname.includes("/sites/");
 }
 
 function closeOnNavigation(
@@ -57,11 +50,21 @@ function closeOnNavigation(
   if (!event.defaultPrevented) close();
 }
 
+function sheetTitle(sheet: SheetKind): string {
+  switch (sheet) {
+    case "tables":
+      return "Tables";
+    case "pages":
+      return "Pages";
+    case "more":
+      return "More";
+  }
+}
+
 export function WorkspaceMobileNav({
   businessName,
   businessSlug,
   canManageConfiguration,
-  otherViews,
   pages,
   sites = [],
   tables,
@@ -75,8 +78,13 @@ export function WorkspaceMobileNav({
   >({});
   const lastSheetRef = useRef<SheetKind | null>(null);
   const isHome = pathname === rootPath || pathname === `${rootPath}/`;
-  const isWork = isWorkPath(pathname);
-  const isTellLenni = pathname.includes("/builder");
+  const isTables = isTablePath(pathname);
+  const isPages = isPagePath(pathname);
+  const isMore =
+    pathname.includes("/builder") ||
+    pathname.includes("/changes") ||
+    pathname.includes("/locations") ||
+    pathname.includes("/setup");
 
   useEffect(() => {
     if (!sheet) {
@@ -141,16 +149,13 @@ export function WorkspaceMobileNav({
   };
 
   const closeSheet = (): void => setSheet(null);
+  const title = sheet ? sheetTitle(sheet) : "";
 
   return (
     <>
       <nav
         aria-label="Mobile workspace navigation"
-        className={`workspace-mobile-nav ${
-          canManageConfiguration
-            ? "workspace-mobile-nav-owner"
-            : "workspace-mobile-nav-staff"
-        }`}
+        className="workspace-mobile-nav"
       >
         <Link
           aria-current={isHome ? "page" : undefined}
@@ -162,30 +167,32 @@ export function WorkspaceMobileNav({
           Home
         </Link>
         <button
-          aria-current={isWork ? "page" : undefined}
-          aria-expanded={sheet === "work"}
+          aria-current={isTables ? "page" : undefined}
+          aria-expanded={sheet === "tables"}
           aria-haspopup="dialog"
-          className={isWork ? "selected" : undefined}
-          onClick={(event) => openSheet("work", event.currentTarget)}
+          className={isTables ? "selected" : undefined}
+          onClick={(event) => openSheet("tables", event.currentTarget)}
           type="button"
         >
           <span aria-hidden="true">▦</span>
-          Work
+          Tables
         </button>
-        {canManageConfiguration ? (
-          <Link
-            aria-current={isTellLenni ? "page" : undefined}
-            className={isTellLenni ? "selected" : undefined}
-            href={`${rootPath}/builder`}
-            onClick={(event) => closeOnNavigation(event, closeSheet)}
-          >
-            <span aria-hidden="true">✦</span>
-            Tell Lenni
-          </Link>
-        ) : null}
         <button
+          aria-current={isPages ? "page" : undefined}
+          aria-expanded={sheet === "pages"}
+          aria-haspopup="dialog"
+          className={isPages ? "selected" : undefined}
+          onClick={(event) => openSheet("pages", event.currentTarget)}
+          type="button"
+        >
+          <span aria-hidden="true">▤</span>
+          Pages
+        </button>
+        <button
+          aria-current={isMore ? "page" : undefined}
           aria-expanded={sheet === "more"}
           aria-haspopup="dialog"
+          className={isMore ? "selected" : undefined}
           onClick={(event) => openSheet("more", event.currentTarget)}
           type="button"
         >
@@ -196,7 +203,7 @@ export function WorkspaceMobileNav({
 
       {sheet ? (
         <div
-          aria-label={`${sheet === "work" ? "Work" : "More"} navigation`}
+          aria-label={`${title} navigation`}
           aria-modal="true"
           className="workspace-mobile-sheet"
           ref={sheetRef}
@@ -205,10 +212,10 @@ export function WorkspaceMobileNav({
           <div className="workspace-mobile-sheet-header">
             <div>
               <p className="workspace-mobile-sheet-kicker">{businessName}</p>
-              <h2>{sheet === "work" ? "Work" : "More"}</h2>
+              <h2>{title}</h2>
             </div>
             <button
-              aria-label={`Close ${sheet === "work" ? "Work" : "More"} navigation`}
+              aria-label={`Close ${title} navigation`}
               className="workspace-mobile-sheet-close"
               data-sheet-close
               onClick={closeSheet}
@@ -218,7 +225,7 @@ export function WorkspaceMobileNav({
             </button>
           </div>
 
-          {sheet === "work" ? (
+          {sheet === "tables" ? (
             <div className="workspace-mobile-sheet-body">
               <section aria-labelledby="mobile-tables-heading">
                 <h3 id="mobile-tables-heading">Tables</h3>
@@ -248,7 +255,11 @@ export function WorkspaceMobileNav({
                   )}
                 </div>
               </section>
+            </div>
+          ) : null}
 
+          {sheet === "pages" ? (
+            <div className="workspace-mobile-sheet-body">
               <section aria-labelledby="mobile-pages-heading">
                 <h3 id="mobile-pages-heading">Pages</h3>
                 <div className="workspace-mobile-sheet-links">
@@ -302,37 +313,23 @@ export function WorkspaceMobileNav({
                   </div>
                 </section>
               ) : null}
-
-              {otherViews.length > 0 ? (
-                <section aria-labelledby="mobile-other-views-heading">
-                  <h3 id="mobile-other-views-heading">Other views</h3>
-                  <div className="workspace-mobile-sheet-links">
-                    {otherViews.map((view) => (
-                      <Link
-                        aria-current={
-                          pathname === `${rootPath}/workspace/${view.path}`
-                            ? "page"
-                            : undefined
-                        }
-                        href={`${rootPath}/workspace/${view.path}`}
-                        key={view.key}
-                        onClick={(event) =>
-                          closeOnNavigation(event, closeSheet)
-                        }
-                      >
-                        <span aria-hidden="true">◌</span>
-                        {view.name}
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
             </div>
-          ) : (
+          ) : null}
+
+          {sheet === "more" ? (
             <div className="workspace-mobile-sheet-body">
               <section aria-labelledby="mobile-utilities-heading">
                 <h3 id="mobile-utilities-heading">Workspace</h3>
                 <div className="workspace-mobile-sheet-links">
+                  {canManageConfiguration ? (
+                    <Link
+                      href={`${rootPath}/builder`}
+                      onClick={(event) => closeOnNavigation(event, closeSheet)}
+                    >
+                      <span aria-hidden="true">→</span>
+                      Tell Lenni
+                    </Link>
+                  ) : null}
                   {canManageConfiguration ? (
                     <Link
                       href={`${rootPath}/changes`}
@@ -340,15 +337,6 @@ export function WorkspaceMobileNav({
                     >
                       <span aria-hidden="true">≋</span>
                       Changes
-                    </Link>
-                  ) : null}
-                  {canManageConfiguration ? (
-                    <Link
-                      href={`${rootPath}/setup`}
-                      onClick={(event) => closeOnNavigation(event, closeSheet)}
-                    >
-                      <span aria-hidden="true">◉</span>
-                      Setup
                     </Link>
                   ) : null}
                   <Link
@@ -368,7 +356,7 @@ export function WorkspaceMobileNav({
                 </div>
               </section>
             </div>
-          )}
+          ) : null}
         </div>
       ) : null}
     </>

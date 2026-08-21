@@ -20,6 +20,7 @@ import {
 
 import {
   defaultEditorCapabilities,
+  displayEditorValue,
   editorDraftRowId,
   editorInputValue,
   editorValueForColumn,
@@ -136,6 +137,7 @@ interface SaveRetry {
 type SaveState =
   | { status: "saved" }
   | { status: "saving" }
+  | { status: "stale"; message?: string }
   | { status: "error"; cellLabel?: string; message?: string };
 
 const addableColumnKinds: ReadonlyArray<{
@@ -158,6 +160,27 @@ function saveErrorMessage(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
     : "Could not save";
+}
+
+function saveStateForError(error: unknown): SaveState {
+  const message = saveErrorMessage(error);
+  return /reload|table changed|current/i.test(message)
+    ? { status: "stale", message: "Needs reload" }
+    : { status: "error", message };
+}
+
+function rowSearchText(
+  row: EditorRow,
+  columns: readonly EditorColumn[],
+): string {
+  const values = columns.flatMap((column) => {
+    const value = row.values[column.key];
+    const labels = row.connectionValues?.[column.key]?.map(
+      (item) => item.label,
+    );
+    return [editorInputValue(value ?? null), ...(labels ?? [])];
+  });
+  return values.join(" ").toLocaleLowerCase("en");
 }
 
 function optionsAreValid(options: readonly string[]): boolean {
@@ -320,11 +343,113 @@ function statusLabel(state: SaveState): string {
   switch (state.status) {
     case "saving":
       return "Saving…";
+    case "stale":
+      return "Needs reload";
     case "error":
       return "Could not save";
     case "saved":
       return "Saved";
   }
+}
+
+const compactPropertyLimit = 4;
+
+function mobileRecordValue(row: EditorRow, column: EditorColumn): string {
+  if (column.kind === "connection") {
+    return (row.connectionValues?.[column.key] ?? [])
+      .map((item) => item.label)
+      .join(", ");
+  }
+  return displayEditorValue(column, row.values[column.key] ?? null);
+}
+
+function EditorMobileRecordList({
+  columns,
+  emptyMessage,
+  emptyRecordLabel,
+  noMatches,
+  onClearSearch,
+  onOpenRecord,
+  rows,
+  tableName,
+}: Readonly<{
+  columns: readonly EditorColumn[];
+  emptyMessage: string;
+  emptyRecordLabel: string;
+  noMatches: boolean;
+  onClearSearch: () => void;
+  onOpenRecord: (rowId: string, columnKey: string) => void;
+  rows: readonly EditorRow[];
+  tableName: string;
+}>): ReactNode {
+  const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
+  if (!primaryColumn) {
+    return null;
+  }
+  const secondaryColumns = columns
+    .filter((column) => column.key !== primaryColumn.key)
+    .slice(0, 2);
+
+  return (
+    <div
+      aria-label={`${tableName} records`}
+      className="editor-mobile-record-list"
+      data-testid="editor-mobile-record-list"
+    >
+      {rows.length === 0 ? (
+        <div className="editor-mobile-record-empty" role="status">
+          <strong>
+            {noMatches ? "No matches" : `No ${emptyRecordLabel} yet`}
+          </strong>
+          <span>
+            {noMatches
+              ? "Try a different search or clear search."
+              : emptyMessage}
+          </span>
+          {noMatches ? (
+            <button
+              className="button-secondary button-small"
+              onClick={onClearSearch}
+              type="button"
+            >
+              Clear search
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <ul className="editor-mobile-record-items">
+          {rows.map((row) => {
+            const primaryValue = mobileRecordValue(row, primaryColumn);
+            return (
+              <li key={row.id}>
+                <button
+                  aria-label={`Open record ${primaryValue || "Unnamed record"}`}
+                  className="editor-mobile-record-card"
+                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
+                  type="button"
+                >
+                  <span className="editor-mobile-record-card-heading">
+                    <strong>{primaryValue || "Unnamed record"}</strong>
+                    <span aria-hidden="true">↗</span>
+                  </span>
+                  {secondaryColumns.length > 0 ? (
+                    <span className="editor-mobile-record-card-details">
+                      {secondaryColumns.map((column) => (
+                        <span key={column.key}>
+                          <small>{column.label}</small>
+                          <span>{mobileRecordValue(row, column) || "—"}</span>
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 export function ConnectionPropertyPopover({
@@ -756,8 +881,11 @@ export function EditorKernel({
     rowIdx: number;
     columnIdx: number;
   } | null>(null);
+  const [recordSearch, setRecordSearch] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved" });
   const [retry, setRetry] = useState<SaveRetry | null>(null);
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
+  const [showAllProperties, setShowAllProperties] = useState(false);
   const gridRef = useRef<DataGridHandle>(null);
   const operationVersions = useRef(new Map<string, number>());
   const pendingSaves = useRef(new Set<string>());
@@ -779,6 +907,62 @@ export function EditorKernel({
       }
     : null;
   const activePanel = connectedPanel ?? sourcePanel;
+  const normalizedRecordSearch = recordSearch.trim().toLocaleLowerCase("en");
+  const visibleRows = useMemo(
+    () =>
+      normalizedRecordSearch
+        ? table.rows.filter((row) =>
+            rowSearchText(row, recordColumns).includes(normalizedRecordSearch),
+          )
+        : table.rows,
+    [normalizedRecordSearch, recordColumns, table.rows],
+  );
+  useEffect(() => {
+    if (variant !== "workspace") {
+      return;
+    }
+    const mediaQuery = window.matchMedia("(max-width: 68.75rem)");
+    const updateViewport = (): void => setIsCompactViewport(mediaQuery.matches);
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, [variant]);
+
+  useEffect(() => {
+    setShowAllProperties(false);
+  }, [table.key]);
+
+  const compactColumns = useMemo(() => {
+    if (table.columns.length <= compactPropertyLimit) {
+      return table.columns;
+    }
+    const primaryColumn =
+      table.columns.find((column) => column.key === table.primaryColumnKey) ??
+      table.columns[0];
+    if (!primaryColumn) {
+      return table.columns.slice(0, compactPropertyLimit);
+    }
+    const prioritized = [
+      primaryColumn,
+      ...table.columns.filter((column) => column.key !== primaryColumn.key),
+    ].slice(0, compactPropertyLimit);
+    const keys = new Set(prioritized.map((column) => column.key));
+    return table.columns.filter((column) => keys.has(column.key));
+  }, [table.columns, table.primaryColumnKey]);
+  const visibleGridColumns = useMemo(
+    () =>
+      variant === "workspace" && isCompactViewport && !showAllProperties
+        ? compactColumns
+        : table.columns,
+    [
+      compactColumns,
+      isCompactViewport,
+      showAllProperties,
+      table.columns,
+      variant,
+    ],
+  );
+  const omittedPropertyCount = table.columns.length - visibleGridColumns.length;
   const columnForKey = useCallback(
     (columnKey: string) =>
       recordColumns.find((column) => column.key === columnKey) ?? null,
@@ -795,8 +979,8 @@ export function EditorKernel({
       return;
     }
     window.requestAnimationFrame(() => {
-      const rowIdx = table.rows.findIndex((row) => row.id === origin.rowId);
-      const columnIdx = table.columns.findIndex(
+      const rowIdx = visibleRows.findIndex((row) => row.id === origin.rowId);
+      const columnIdx = visibleGridColumns.findIndex(
         (column) => column.key === origin.columnKey,
       );
       if (rowIdx >= 0 && columnIdx >= 0) {
@@ -813,7 +997,12 @@ export function EditorKernel({
         });
       }
     });
-  }, [panelOrigin, table.columns, table.rows]);
+  }, [panelOrigin, visibleGridColumns, visibleRows]);
+
+  useEffect(() => {
+    setSelectionAnchor(null);
+    setSelectionEnd(null);
+  }, [normalizedRecordSearch]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -944,9 +1133,6 @@ export function EditorKernel({
             return;
           }
           pendingSaves.current.delete(operationKey);
-          setTable((current) =>
-            replaceCell(current, rowId, columnKey, previousValue),
-          );
           setRetry({ rowId, columnKey, value });
           setSaveState({ status: "error", cellLabel: column.label });
         });
@@ -965,10 +1151,7 @@ export function EditorKernel({
         onStructureChanged?.();
         return true;
       } catch (error) {
-        setSaveState({
-          status: "error",
-          message: saveErrorMessage(error),
-        });
+        setSaveState(saveStateForError(error));
         return false;
       }
     },
@@ -981,6 +1164,9 @@ export function EditorKernel({
     (rawName: unknown, focus: DraftCreateFocus = "new-draft"): void => {
       if (!hasDraftName(rawName)) {
         return;
+      }
+      if (normalizedRecordSearch) {
+        setRecordSearch("");
       }
       const name = rawName.trim();
       const createdRowIndex = table.rows.length;
@@ -1027,7 +1213,13 @@ export function EditorKernel({
         })
         .catch(() => setSaveState({ status: "error", cellLabel: "Name" }));
     },
-    [adapter, table.columns, table.primaryColumnKey, table.rows.length],
+    [
+      adapter,
+      normalizedRecordSearch,
+      table.columns,
+      table.primaryColumnKey,
+      table.rows.length,
+    ],
   );
 
   const handleRowsChange = useCallback(
@@ -1037,7 +1229,6 @@ export function EditorKernel({
         return;
       }
       const nextRow = nextRows[rowIndex];
-      const currentRow = table.rows[rowIndex];
       if (!nextRow) {
         return;
       }
@@ -1047,7 +1238,7 @@ export function EditorKernel({
         }
         return;
       }
-      if (!currentRow) {
+      if (!table.rows.some((row) => row.id === nextRow.id)) {
         return;
       }
       commitCell(nextRow.id, data.column.key, nextRow.values[data.column.key]);
@@ -1401,24 +1592,40 @@ export function EditorKernel({
 
   const activeGridPoint = useCallback((): GridPoint => {
     const rowIndex = activeCell
-      ? table.rows.findIndex((row) => row.id === activeCell.rowId)
+      ? visibleRows.findIndex((row) => row.id === activeCell.rowId)
       : 0;
     const columnIndex = activeCell
-      ? table.columns.findIndex((column) => column.key === activeCell.columnKey)
+      ? visibleGridColumns.findIndex(
+          (column) => column.key === activeCell.columnKey,
+        )
       : 0;
     return {
       rowIndex: Math.max(0, rowIndex),
       columnIndex: Math.max(0, columnIndex),
     };
-  }, [activeCell, table.columns, table.rows]);
+  }, [activeCell, visibleGridColumns, visibleRows]);
 
   const handleClipboardPaste = useCallback(
     (text: string): void => {
+      if (normalizedRecordSearch) {
+        setSaveState({
+          status: "error",
+          message: "Clear search before pasting into the Table.",
+        });
+        return;
+      }
+      if (omittedPropertyCount > 0) {
+        setSaveState({
+          status: "error",
+          message: "Show all properties before pasting into this Table.",
+        });
+        return;
+      }
       const point = selectionAnchor ?? activeGridPoint();
       const end = selectionEnd ?? point;
       const bounds = selectionBounds(point, end);
       try {
-        const columns = table.columns.slice(bounds.startColumn);
+        const columns = visibleGridColumns.slice(bounds.startColumn);
         const parsed = buildClipboardMatrix(text, columns);
         void applyPasteMatrix(
           bounds.startRow,
@@ -1432,9 +1639,11 @@ export function EditorKernel({
     [
       activeGridPoint,
       applyPasteMatrix,
+      normalizedRecordSearch,
+      omittedPropertyCount,
       selectionAnchor,
       selectionEnd,
-      table.columns,
+      visibleGridColumns,
     ],
   );
 
@@ -1444,10 +1653,10 @@ export function EditorKernel({
       const point = selectionAnchor ?? activeGridPoint();
       const end = selectionEnd ?? point;
       const bounds = selectionBounds(point, end);
-      const matrix = table.rows
+      const matrix = visibleRows
         .slice(bounds.startRow, bounds.endRow + 1)
         .map((row) =>
-          table.columns
+          visibleGridColumns
             .slice(bounds.startColumn, bounds.endColumn + 1)
             .map((column) => row.values[column.key] ?? null),
         );
@@ -1458,7 +1667,13 @@ export function EditorKernel({
         serializeClipboardMatrix(matrix),
       );
     },
-    [activeGridPoint, selectionAnchor, selectionEnd, table.columns, table.rows],
+    [
+      activeGridPoint,
+      selectionAnchor,
+      selectionEnd,
+      visibleGridColumns,
+      visibleRows,
+    ],
   );
 
   const handlePasteCapture = useCallback(
@@ -1496,7 +1711,10 @@ export function EditorKernel({
             columnIndex: args.column.idx,
           };
           const rowCount =
-            table.rows.length + (capabilities.rowCreation === "direct" ? 1 : 0);
+            visibleRows.length +
+            (capabilities.rowCreation === "direct" && !normalizedRecordSearch
+              ? 1
+              : 0);
           const next = {
             rowIndex: Math.max(
               0,
@@ -1505,7 +1723,7 @@ export function EditorKernel({
             columnIndex: Math.max(
               0,
               Math.min(
-                table.columns.length - 1,
+                visibleGridColumns.length - 1,
                 args.column.idx + delta.column,
               ),
             ),
@@ -1524,6 +1742,13 @@ export function EditorKernel({
           !readOnly
         ) {
           event.preventGridDefault();
+          if (omittedPropertyCount > 0) {
+            setSaveState({
+              status: "error",
+              message: "Show all properties before clearing cells.",
+            });
+            return;
+          }
           const point = selectionAnchor ?? {
             rowIndex: args.rowIdx,
             columnIndex: args.column.idx,
@@ -1554,7 +1779,7 @@ export function EditorKernel({
           event.preventGridDefault();
           args.onClose(false, true);
           const nextColumnIndex = args.column.idx + 1;
-          if (nextColumnIndex < table.columns.length) {
+          if (nextColumnIndex < visibleGridColumns.length) {
             createDraftRecord(args.row.values[column.key], {
               columnIdx: nextColumnIndex,
             });
@@ -1623,7 +1848,10 @@ export function EditorKernel({
       selectionAnchor,
       selectionEnd,
       table.columns,
-      table.rows.length,
+      visibleGridColumns,
+      normalizedRecordSearch,
+      omittedPropertyCount,
+      visibleRows.length,
     ],
   );
 
@@ -1686,10 +1914,10 @@ export function EditorKernel({
 
   const gridRows = useMemo(
     () =>
-      capabilities.rowCreation === "direct"
-        ? [...table.rows, draftRow]
-        : table.rows,
-    [capabilities.rowCreation, draftRow, table.rows],
+      capabilities.rowCreation === "direct" && !normalizedRecordSearch
+        ? [...visibleRows, draftRow]
+        : visibleRows,
+    [capabilities.rowCreation, draftRow, normalizedRecordSearch, visibleRows],
   );
 
   const activateDraft = useCallback((rowIdx: number, columnIdx: number) => {
@@ -1701,7 +1929,7 @@ export function EditorKernel({
     () =>
       createEditorColumns({
         columnMenuKey,
-        columns: table.columns,
+        columns: visibleGridColumns,
         newRecordLabel,
         onActivateDraft: activateDraft,
         onOpenColumnMenu: (columnKey) => {
@@ -1754,7 +1982,7 @@ export function EditorKernel({
       capabilities.canInsertColumns,
       capabilities.canReorderColumns,
       capabilities.canResizeColumns,
-      table.columns,
+      visibleGridColumns,
       adapter,
       newRecordLabel,
     ],
@@ -1775,10 +2003,21 @@ export function EditorKernel({
     (recordTypeLabel
       ? `${recordTypeLabel.toLocaleLowerCase("en")}s`
       : "records");
+  const displayedRecordCountLabel = normalizedRecordSearch
+    ? `${visibleRows.length} of ${table.rows.length} ${emptyRecordLabel}`
+    : (recordCountLabel ?? `${table.rows.length} ${emptyRecordLabel}`);
+  const emptyRecordMessage =
+    capabilities.rowCreation === "direct"
+      ? "Start with the first record using the row below or the button above."
+      : capabilities.rowCreation === "configured_form"
+        ? "Records added through the configured creation screen will appear here."
+        : (capabilities.rowCreationMessage ??
+          "Records will appear here when they are available.");
+  const noMatches = table.rows.length > 0 && visibleRows.length === 0;
 
   return (
     <section
-      className={`editor-kernel-page ${variant === "embedded" ? "editor-kernel-embedded" : ""}`}
+      className={`editor-kernel-page ${variant === "embedded" ? "editor-kernel-embedded" : "editor-kernel-workspace"}`}
       data-read-only={readOnly ? "true" : "false"}
       data-row-creation={capabilities.rowCreation}
     >
@@ -1847,7 +2086,46 @@ export function EditorKernel({
       ) : null}
 
       <div className="editor-lab-meta">
-        <span>{recordCountLabel ?? `${table.rows.length} records`}</span>
+        {variant === "workspace" ? (
+          <label className="editor-table-search">
+            <span>Search this Table</span>
+            <input
+              aria-label="Search this Table"
+              onChange={(event) => setRecordSearch(event.currentTarget.value)}
+              placeholder={`Search ${table.name}`}
+              type="search"
+              value={recordSearch}
+            />
+            {recordSearch ? (
+              <button
+                aria-label="Clear search"
+                className="editor-table-search-clear"
+                onClick={() => setRecordSearch("")}
+                type="button"
+              >
+                Clear
+              </button>
+            ) : null}
+          </label>
+        ) : null}
+        <span>{displayedRecordCountLabel}</span>
+        {omittedPropertyCount > 0 ? (
+          <span className="editor-property-disclosure">
+            Showing {visibleGridColumns.length} of {table.columns.length}{" "}
+            properties · Open a Record to see all{" "}
+            <button onClick={() => setShowAllProperties(true)} type="button">
+              Show all properties
+            </button>
+          </span>
+        ) : null}
+        {showAllProperties && isCompactViewport ? (
+          <span className="editor-property-disclosure">
+            Showing all {table.columns.length} properties{" "}
+            <button onClick={() => setShowAllProperties(false)} type="button">
+              Show fewer
+            </button>
+          </span>
+        ) : null}
         <span aria-hidden="true">·</span>
         <span>
           {activeCellLabel && activeValue
@@ -1864,6 +2142,7 @@ export function EditorKernel({
             <button
               className="editor-new-record-action"
               onClick={() => {
+                setRecordSearch("");
                 const primaryColumnIndex = table.columns.findIndex(
                   (column) => column.key === table.primaryColumnKey,
                 );
@@ -1895,74 +2174,98 @@ export function EditorKernel({
             onCopyCapture={handleCopyCapture}
             onPasteCapture={handlePasteCapture}
           >
-            <DataGrid
-              aria-label={`${table.name} editor`}
-              className="editor-grid"
-              columns={gridColumns}
-              data-testid="editor-grid"
-              headerRowHeight={36}
-              onCellClick={handleCellClick}
-              onCellMouseDown={handleCellMouseDown}
-              onCellDoubleClick={handleDoubleClick}
-              onCellKeyDown={handleCellKeyDown}
-              onColumnResize={
-                capabilities.canResizeColumns ? handleResizeColumn : undefined
-              }
-              onColumnsReorder={
-                capabilities.canReorderColumns
-                  ? handleReorderColumns
-                  : undefined
-              }
-              onRowsChange={handleRowsChange}
-              onSelectedCellChange={({ row, column }) => {
-                setPendingEdit(null);
-                if (row) {
-                  setActiveCell({ rowId: row.id, columnKey: column.key });
+            <div className="editor-desktop-grid">
+              <DataGrid
+                aria-label={`${table.name} editor`}
+                className="editor-grid"
+                columns={gridColumns}
+                data-testid="editor-grid"
+                headerRowHeight={36}
+                onCellClick={handleCellClick}
+                onCellMouseDown={handleCellMouseDown}
+                onCellDoubleClick={handleDoubleClick}
+                onCellKeyDown={handleCellKeyDown}
+                onColumnResize={
+                  capabilities.canResizeColumns ? handleResizeColumn : undefined
                 }
-                const point = {
-                  rowIndex: row
-                    ? row.isDraft
-                      ? table.rows.length
-                      : table.rows.findIndex(
-                          (candidate) => candidate.id === row.id,
-                        )
-                    : 0,
-                  columnIndex: column.idx,
-                };
-                if (rangeSelectionRef.current) {
-                  rangeSelectionRef.current = false;
-                  setSelectionEnd(point);
-                } else {
-                  setSelectionAnchor(point);
-                  setSelectionEnd(point);
+                onColumnsReorder={
+                  capabilities.canReorderColumns
+                    ? handleReorderColumns
+                    : undefined
                 }
-              }}
-              ref={gridRef}
-              rowClass={(row) => (row.isDraft ? "editor-draft-row" : undefined)}
-              rowHeight={38}
-              rowKeyGetter={(row) => row.id}
-              rows={gridRows}
+                onRowsChange={handleRowsChange}
+                onSelectedCellChange={({ row, column }) => {
+                  setPendingEdit(null);
+                  if (row) {
+                    setActiveCell({ rowId: row.id, columnKey: column.key });
+                  }
+                  const point = {
+                    rowIndex: row
+                      ? row.isDraft
+                        ? visibleRows.length
+                        : visibleRows.findIndex(
+                            (candidate) => candidate.id === row.id,
+                          )
+                      : 0,
+                    columnIndex: column.idx,
+                  };
+                  if (rangeSelectionRef.current) {
+                    rangeSelectionRef.current = false;
+                    setSelectionEnd(point);
+                  } else {
+                    setSelectionAnchor(point);
+                    setSelectionEnd(point);
+                  }
+                }}
+                ref={gridRef}
+                rowClass={(row) =>
+                  row.isDraft ? "editor-draft-row" : undefined
+                }
+                rowHeight={38}
+                rowKeyGetter={(row) => row.id}
+                rows={gridRows}
+              />
+              {table.rows.length === 0 ? (
+                <div
+                  className="editor-grid-empty"
+                  data-testid="editor-grid-empty"
+                  role="status"
+                >
+                  <span aria-hidden="true" className="editor-grid-empty-icon">
+                    □
+                  </span>
+                  <strong>No {emptyRecordLabel} yet</strong>
+                  <span>{emptyRecordMessage}</span>
+                </div>
+              ) : null}
+              {noMatches ? (
+                <div
+                  className="editor-grid-empty editor-grid-no-matches"
+                  data-testid="editor-grid-no-matches"
+                  role="status"
+                >
+                  <strong>No matches</strong>
+                  <span>Try a different search or clear search.</span>
+                  <button
+                    className="button-secondary button-small"
+                    onClick={() => setRecordSearch("")}
+                    type="button"
+                  >
+                    Clear search
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <EditorMobileRecordList
+              columns={recordColumns}
+              emptyMessage={emptyRecordMessage}
+              emptyRecordLabel={emptyRecordLabel}
+              noMatches={noMatches}
+              onClearSearch={() => setRecordSearch("")}
+              onOpenRecord={openRecord}
+              rows={visibleRows}
+              tableName={table.name}
             />
-            {table.rows.length === 0 ? (
-              <div
-                className="editor-grid-empty"
-                data-testid="editor-grid-empty"
-                role="status"
-              >
-                <span aria-hidden="true" className="editor-grid-empty-icon">
-                  □
-                </span>
-                <strong>No {emptyRecordLabel} yet</strong>
-                <span>
-                  {capabilities.rowCreation === "direct"
-                    ? "Start with the first record using the row below or the button above."
-                    : capabilities.rowCreation === "configured_form"
-                      ? "Records added through the configured creation screen will appear here."
-                      : (capabilities.rowCreationMessage ??
-                        "Records will appear here when they are available.")}
-                </span>
-              </div>
-            ) : null}
             {capabilities.canAddColumns ? (
               <>
                 <button

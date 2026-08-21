@@ -25,6 +25,20 @@ export default async function TenantHomePage({
     "manage_configuration",
   );
   const destinations = [
+    ...navigation.views
+      .filter((view) => view.view_type === "table")
+      .map((view) => ({
+        href: `/app/${businessSlug}/workspace/${experienceKeyToPath(view.key)}`,
+        kind: "table" as const,
+        label: view.name,
+        description: "Open this Table and its Saved Views",
+      })),
+    ...navigation.pages.map((page) => ({
+      href: `/app/${businessSlug}/pages/${page.slug}`,
+      kind: "page" as const,
+      label: page.title,
+      description: "Open this workspace Page",
+    })),
     ...navigation.publicPages.map((page) => ({
       href: `/app/${businessSlug}/sites/${page.slug}`,
       kind: "site" as const,
@@ -36,18 +50,6 @@ export default async function TenantHomePage({
         page.status === "published"
           ? "Review the customer-facing Site"
           : "Review the draft before publishing it",
-    })),
-    ...navigation.pages.map((page) => ({
-      href: `/app/${businessSlug}/pages/${page.slug}`,
-      kind: "page" as const,
-      label: page.title,
-      description: "Open this workspace page",
-    })),
-    ...navigation.views.map((view) => ({
-      href: `/app/${businessSlug}/workspace/${experienceKeyToPath(view.key)}`,
-      kind: "view" as const,
-      label: view.name,
-      description: "View and manage this work",
     })),
   ];
 

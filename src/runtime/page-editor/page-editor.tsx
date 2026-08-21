@@ -795,6 +795,12 @@ export function PageEditor({
                 >
                   Text
                 </button>
+                <button
+                  onClick={() => void addBlock({ type: "divider" })}
+                  type="button"
+                >
+                  Divider
+                </button>
                 {!siteMode ? (
                   <button
                     onClick={() => {
