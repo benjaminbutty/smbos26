@@ -399,105 +399,129 @@ export function DetailView({
     : fields[0];
 
   return (
-    <div className="runtime-detail-layout" data-record-surface="full">
-      <article className="runtime-detail">
-        <header className="detail-header">
-          <div className="runtime-detail-heading-copy">
-            <p className="eyebrow">Record</p>
-            <h1 className="runtime-title">
-              {titleField ? (
-                <FieldValue field={titleField} value={data[titleField.key]} />
-              ) : (
-                bundle.object.singular_label
-              )}
-            </h1>
-            <p className="runtime-detail-heading-context">
-              {bundle.object.singular_label} details
-            </p>
-          </div>
-          <div className="runtime-detail-heading-actions">
-            {locked ? (
-              <span className="runtime-detail-state">
-                {preview ? "Preview" : "Read-only"}
-              </span>
-            ) : null}
-            {config.edit_form_key && !locked ? (
-              <a
-                className="button"
-                href={`/app/${businessSlug}/workspace/${friendlyPathKey(
-                  navigationViewKey ?? bundle.definition.key,
-                )}/${selectedRecord.id}/edit`}
-              >
-                Edit
-              </a>
-            ) : null}
-          </div>
-        </header>
-
-        <section
-          aria-labelledby="runtime-detail-information-heading"
-          className="runtime-detail-information"
-        >
-          <div className="runtime-detail-section-heading">
-            <p className="eyebrow">Details</p>
-            <h2 id="runtime-detail-information-heading">Key information</h2>
-          </div>
-          <dl className="detail-grid">
-            {fields.map((field) => (
-              <div key={field.key}>
-                <dt>{field.label}</dt>
-                <dd>
-                  <FieldValue field={field} value={data[field.key]} />
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        {selectedRecord.record_status === "archived" ? (
-          <p className="archived-note">This item is archived.</p>
-        ) : null}
-        {!locked ? (
-          <a className="back-link" href={recordBasePath}>
-            ← Back to {bundle.object.plural_label}
-          </a>
-        ) : null}
-      </article>
-
-      {detailConnections && detailConnections.length > 0 ? (
-        <aside aria-label="Connections" className="runtime-detail-connections">
-          <div className="runtime-detail-connections-heading">
-            <p className="eyebrow">Related work</p>
-            <h2>Connections</h2>
-          </div>
-          <div className="runtime-detail-connection-groups">
-            {detailConnections.map((group) => (
-              <section
-                className="runtime-detail-connection-group"
-                key={group.key}
-              >
-                <h3>{group.label}</h3>
-                {group.items.length > 0 ? (
-                  <ul>
-                    {group.items.map((item) => (
-                      <li key={item.id}>
-                        {item.href ? (
-                          <a href={item.href}>{item.label}</a>
-                        ) : (
-                          <span>{item.label}</span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+    <>
+      <nav aria-label="Record location" className="runtime-record-breadcrumb">
+        <a href={recordBasePath}>← {bundle.object.plural_label}</a>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Record</span>
+      </nav>
+      <div className="runtime-detail-layout" data-record-surface="full">
+        <article className="runtime-detail">
+          <header className="detail-header">
+            <div className="runtime-detail-heading-copy">
+              <p className="eyebrow">Record</p>
+              <h1 className="runtime-title">
+                {titleField ? (
+                  <FieldValue field={titleField} value={data[titleField.key]} />
                 ) : (
-                  <p className="empty-value">None connected yet.</p>
+                  bundle.object.singular_label
                 )}
-              </section>
-            ))}
-          </div>
+              </h1>
+              <p className="runtime-detail-heading-context">
+                {bundle.object.singular_label} details
+              </p>
+            </div>
+            <div className="runtime-detail-heading-actions">
+              {locked ? (
+                <span className="runtime-detail-state">
+                  {preview ? "Preview" : "Read-only"}
+                </span>
+              ) : null}
+              {config.edit_form_key && !locked ? (
+                <a
+                  className="button"
+                  href={`/app/${businessSlug}/workspace/${friendlyPathKey(
+                    navigationViewKey ?? bundle.definition.key,
+                  )}/${selectedRecord.id}/edit`}
+                >
+                  Edit
+                </a>
+              ) : null}
+            </div>
+          </header>
+
+          <section
+            aria-labelledby="runtime-detail-information-heading"
+            className="runtime-detail-information"
+          >
+            <div className="runtime-detail-section-heading">
+              <p className="eyebrow">Details</p>
+              <h2 id="runtime-detail-information-heading">Key information</h2>
+            </div>
+            <dl className="detail-grid">
+              {fields.map((field) => (
+                <div key={field.key}>
+                  <dt>{field.label}</dt>
+                  <dd>
+                    <FieldValue field={field} value={data[field.key]} />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+
+          {selectedRecord.record_status === "archived" ? (
+            <p className="archived-note">This item is archived.</p>
+          ) : null}
+          {!locked ? (
+            <a className="back-link" href={recordBasePath}>
+              ← Back to {bundle.object.plural_label}
+            </a>
+          ) : null}
+        </article>
+
+        <aside aria-label="Record context" className="runtime-detail-rail">
+          <section
+            aria-labelledby="runtime-detail-location-heading"
+            className="runtime-detail-location"
+          >
+            <p className="eyebrow">Where this lives</p>
+            <h2 id="runtime-detail-location-heading">
+              {bundle.object.plural_label}
+            </h2>
+            <p>This Record is part of this Table.</p>
+            <a href={recordBasePath}>Open Table</a>
+          </section>
+
+          {detailConnections && detailConnections.length > 0 ? (
+            <section
+              aria-label="Connections"
+              className="runtime-detail-connections"
+            >
+              <div className="runtime-detail-connections-heading">
+                <p className="eyebrow">Related work</p>
+                <h2>Connections</h2>
+              </div>
+              <div className="runtime-detail-connection-groups">
+                {detailConnections.map((group) => (
+                  <section
+                    className="runtime-detail-connection-group"
+                    key={group.key}
+                  >
+                    <h3>{group.label}</h3>
+                    {group.items.length > 0 ? (
+                      <ul>
+                        {group.items.map((item) => (
+                          <li key={item.id}>
+                            {item.href ? (
+                              <a href={item.href}>{item.label}</a>
+                            ) : (
+                              <span>{item.label}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="empty-value">None connected yet.</p>
+                    )}
+                  </section>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </aside>
-      ) : null}
-    </div>
+      </div>
+    </>
   );
 }
 

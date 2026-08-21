@@ -599,6 +599,24 @@ describe("Lenni unified workspace presentation", () => {
       new URL("../src/runtime/views/table-view-controls.tsx", import.meta.url),
       "utf8",
     );
+    const productionActionsSource = readFileSync(
+      new URL(
+        "../src/runtime/editor-kernel/production/production-table-actions.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const connectionEditorSource = readFileSync(
+      new URL(
+        "../src/runtime/editor-kernel/cell-editors/index.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const detailRendererSource = readFileSync(
+      new URL("../src/runtime/views/view-renderer.tsx", import.meta.url),
+      "utf8",
+    );
     const cssSource = readFileSync(
       new URL("../src/app/globals.css", import.meta.url),
       "utf8",
@@ -622,6 +640,13 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).toContain("Sorted by");
     expect(viewControlsSource).toContain("Grouped by");
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
+    expect(productionActionsSource).toContain("submitExperienceForm");
+    expect(productionActionsSource).toContain("availability.formKey");
+    expect(connectionEditorSource).toContain("creationNotice");
+    expect(connectionEditorSource).toContain("added to");
+    expect(detailRendererSource).toContain('aria-label="Record location"');
+    expect(detailRendererSource).toContain("Where this lives");
+    expect(detailRendererSource).toContain('aria-label="Record context"');
     expect(productionSource).toContain("creationFallbackHref");
     expect(productionSource).toContain('className="editor-lab-kicker">Table');
     expect(cssSource).toContain(
@@ -633,6 +658,9 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(
       ".workspace-table-page .editor-mobile-record-list",
     );
+    expect(cssSource).toContain(".runtime-detail-location");
+    expect(cssSource).toContain(".editor-connection-popover.is-portal");
+    expect(cssSource).toContain("position: sticky");
     expect(cssSource).toContain("position: fixed");
   });
 
