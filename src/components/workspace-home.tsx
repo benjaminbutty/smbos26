@@ -5,7 +5,7 @@ export interface WorkspaceHomeDestination {
   href: string;
   label: string;
   description: string;
-  kind?: "page" | "site" | "view";
+  kind?: "table" | "page" | "site" | "view";
 }
 
 interface WorkspaceHomeProps {
@@ -14,6 +14,20 @@ interface WorkspaceHomeProps {
   destinations: readonly WorkspaceHomeDestination[];
   greetingName: string;
   businessName: string;
+}
+
+function destinationTypeLabel(destination: WorkspaceHomeDestination): string {
+  switch (destination.kind) {
+    case "table":
+    case "view":
+      return "Table";
+    case "page":
+      return "Page";
+    case "site":
+      return "Site";
+    default:
+      return "Workspace";
+  }
 }
 
 function EmptyWorkspaceHome({
@@ -30,6 +44,7 @@ function EmptyWorkspaceHome({
     return (
       <section className="tenant-content lenni-home lenni-home-empty">
         <p className="home-greeting">Good morning, {greetingName}</p>
+        <p className="eyebrow">Home</p>
         <h1>Your workspace is ready.</h1>
         <p className="home-lede">
           Your owner or admin will share the Tables and Pages you need to run
@@ -46,10 +61,11 @@ function EmptyWorkspaceHome({
   return (
     <section className="tenant-content lenni-home lenni-home-empty">
       <p className="home-greeting">Good morning, {greetingName}</p>
+      <p className="eyebrow">Home</p>
       <h1>Set up your workspace.</h1>
       <p className="home-lede">
-        Start with the work you already know you need, or describe it to Lenni
-        for a suggested starting point.
+        Start with a Table or Page for the work you already know you need. Add
+        more as the business grows.
       </p>
 
       <section aria-label="Choose how to start" className="home-start-panel">
@@ -59,8 +75,8 @@ function EmptyWorkspaceHome({
           </p>
           <h2>Create manually</h2>
           <p>
-            Start with the work you already know you need. Add more as your
-            business grows.
+            Tables hold business information. Pages bring guidance and live
+            Views together.
           </p>
           <div className="home-manual-actions">
             <Link
@@ -89,12 +105,12 @@ function EmptyWorkspaceHome({
 
         <div className="home-start-route home-start-ai">
           <p className="home-route-kicker">
-            <span aria-hidden="true">→</span> Build with Lenni
+            <span aria-hidden="true">→</span> Need a starting point?
           </p>
           <h2>Tell Lenni what you need</h2>
           <p>
-            Describe how your business works. Lenni will suggest the Tables,
-            Connections, Views and Pages to create.
+            Describe how the business works and review Lenni&apos;s suggested
+            setup before anything is created.
           </p>
           <Link
             className="button-secondary home-secondary-action"
@@ -102,38 +118,6 @@ function EmptyWorkspaceHome({
           >
             Describe your business
           </Link>
-          <p className="home-ai-note">
-            You&apos;ll review the plan before anything is created.
-          </p>
-        </div>
-      </section>
-
-      <section
-        aria-labelledby="home-workspace-heading"
-        className="home-education"
-      >
-        <h2 id="home-workspace-heading">Your Lenni workspace</h2>
-        <div className="home-education-grid">
-          <div className="home-education-item">
-            <span aria-hidden="true">▦</span>
-            <strong>Tables</strong>
-            <small>Hold what your business tracks</small>
-          </div>
-          <div className="home-education-item">
-            <span aria-hidden="true">⌘</span>
-            <strong>Connections</strong>
-            <small>Link related information</small>
-          </div>
-          <div className="home-education-item">
-            <span aria-hidden="true">◎</span>
-            <strong>Views</strong>
-            <small>Show work in useful ways</small>
-          </div>
-          <div className="home-education-item">
-            <span aria-hidden="true">▤</span>
-            <strong>Pages</strong>
-            <small>Bring guidance and live work together</small>
-          </div>
         </div>
       </section>
     </section>
@@ -158,12 +142,11 @@ export function WorkspaceHome({
   }
 
   const primaryDestination =
-    destinations.find((destination) => destination.kind === "site") ??
+    destinations.find((destination) => destination.kind === "table") ??
     destinations.find((destination) => destination.kind === "page") ??
     destinations[0];
-  if (!primaryDestination) {
-    return null;
-  }
+  if (!primaryDestination) return null;
+
   const supportingDestinations = destinations.filter(
     (destination) => destination.href !== primaryDestination.href,
   );
@@ -184,8 +167,8 @@ export function WorkspaceHome({
         <span className="workspace-live-status">Live workspace</span>
       </header>
       <p className="home-lede">
-        This is your real workspace. Open a configured destination below to
-        review the setup and begin using it.
+        This is your real workspace. Open the work that is configured for this
+        business. Saved Views stay inside their Table.
       </p>
 
       <section
@@ -193,6 +176,9 @@ export function WorkspaceHome({
         className="workspace-home-next"
       >
         <p className="eyebrow">Start here</p>
+        <span className="workspace-home-destination-type">
+          {destinationTypeLabel(primaryDestination)}
+        </span>
         <h2 id="workspace-home-next-heading">{primaryDestination.label}</h2>
         <p>{primaryDestination.description}</p>
         <Link className="button" href={primaryDestination.href}>
@@ -205,7 +191,13 @@ export function WorkspaceHome({
           aria-labelledby="workspace-home-work-heading"
           className="workspace-home-supporting"
         >
-          <h2 id="workspace-home-work-heading">Your work</h2>
+          <div className="workspace-home-section-heading">
+            <div>
+              <p className="eyebrow">Configured destinations</p>
+              <h2 id="workspace-home-work-heading">Your work</h2>
+            </div>
+            <span>{supportingDestinations.length} more</span>
+          </div>
           <div className="workspace-home-grid">
             {supportingDestinations.map((destination) => (
               <Link
@@ -215,6 +207,9 @@ export function WorkspaceHome({
               >
                 <span className="workspace-home-icon" aria-hidden="true">
                   {destination.label.slice(0, 1)}
+                </span>
+                <span className="workspace-home-destination-type">
+                  {destinationTypeLabel(destination)}
                 </span>
                 <strong>{destination.label}</strong>
                 <span>{destination.description}</span>

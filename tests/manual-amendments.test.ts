@@ -377,10 +377,12 @@ describe("deterministic manual preorder schedule amendments", () => {
     expect(editor).toContain("Notice required before collection");
     expect(editor).toContain("How far ahead customers can order");
     expect(editor).toContain("Review change");
-    expect(layout).toContain("href={`/app/${businessSlug}/setup`}");
-    expect(layout).toContain("Setup");
+    expect(overview).toContain("Settings / Setup");
+    expect(layout).not.toContain("href={`/app/${businessSlug}/setup`}");
+    expect(layout).not.toContain(">Setup<");
     expect(layout).toContain("const canManageConfiguration = hasCapability(");
     expect(layout).toContain("href={`/app/${businessSlug}/changes`}");
     expect(layout).toContain("Changes");
+    expect(layout).toContain("Settings");
   });
 });

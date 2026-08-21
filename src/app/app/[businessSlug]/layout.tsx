@@ -43,14 +43,6 @@ export default async function TenantLayout({
       name: view.name,
       path: experienceKeyToPath(view.key),
     }));
-  const nonTableViews = navigation.views.filter(
-    (view) => view.view_type !== "table",
-  );
-  const otherViews = nonTableViews.map((view) => ({
-    key: view.key,
-    name: view.name,
-    path: experienceKeyToPath(view.key),
-  }));
   let currentness: {
     expectedBaseVersionId: string;
     expectedHeadRevision: number;
@@ -104,60 +96,26 @@ export default async function TenantLayout({
             </span>
             Home
           </WorkspaceNavLink>
-          <section
-            aria-labelledby="work-navigation-heading"
-            className="workspace-work-group"
-          >
-            <div className="workspace-work-heading">
-              <h2 id="work-navigation-heading">Work</h2>
-            </div>
-            <TablesSidebar
-              action={createDirectTableAction.bind(null, businessSlug)}
-              businessSlug={businessSlug}
-              currentness={canManageConfiguration ? currentness : null}
-              tables={tables}
-            />
-            <PagesSidebar
-              action={
-                canManageConfiguration && currentness
-                  ? createPageAction.bind(null, businessSlug, currentness)
-                  : undefined
-              }
-              businessSlug={businessSlug}
-              currentness={canManageConfiguration ? currentness : null}
-              pages={navigation.pages.map((page) => ({
-                id: page.id,
-                slug: page.slug,
-                title: page.title,
-              }))}
-            />
-            {nonTableViews.length > 0 ? (
-              <section
-                aria-labelledby="other-views-navigation-heading"
-                className="sidebar-section workspace-other-views"
-              >
-                <div className="sidebar-section-heading">
-                  <h3 id="other-views-navigation-heading">Other views</h3>
-                </div>
-                <nav aria-label="Other views">
-                  {nonTableViews.map((view) => (
-                    <Link
-                      className="workspace-secondary-destination"
-                      href={`/app/${businessSlug}/workspace/${experienceKeyToPath(
-                        view.key,
-                      )}`}
-                      key={view.id}
-                    >
-                      <span aria-hidden="true" className="workspace-nav-icon">
-                        ◌
-                      </span>
-                      {view.name}
-                    </Link>
-                  ))}
-                </nav>
-              </section>
-            ) : null}
-          </section>
+          <TablesSidebar
+            action={createDirectTableAction.bind(null, businessSlug)}
+            businessSlug={businessSlug}
+            currentness={canManageConfiguration ? currentness : null}
+            tables={tables}
+          />
+          <PagesSidebar
+            action={
+              canManageConfiguration && currentness
+                ? createPageAction.bind(null, businessSlug, currentness)
+                : undefined
+            }
+            businessSlug={businessSlug}
+            currentness={canManageConfiguration ? currentness : null}
+            pages={navigation.pages.map((page) => ({
+              id: page.id,
+              slug: page.slug,
+              title: page.title,
+            }))}
+          />
           {navigation.publicPages.length > 0 ? (
             <section aria-label="Sites" className="workspace-sites-group">
               <PagesSidebar
@@ -187,12 +145,6 @@ export default async function TenantLayout({
                     ≋
                   </span>
                   Changes
-                </Link>
-                <Link href={`/app/${businessSlug}/setup`}>
-                  <span aria-hidden="true" className="workspace-nav-icon">
-                    ◉
-                  </span>
-                  Setup
                 </Link>
               </>
             ) : null}
@@ -242,7 +194,6 @@ export default async function TenantLayout({
         businessName={tenant.business.name}
         businessSlug={businessSlug}
         canManageConfiguration={canManageConfiguration}
-        otherViews={otherViews}
         pages={navigation.pages.map((page) => ({
           slug: page.slug,
           title: page.title,

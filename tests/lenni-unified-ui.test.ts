@@ -22,7 +22,6 @@ describe("Lenni unified workspace presentation", () => {
         businessName: "Bakery",
         businessSlug: "bakery",
         canManageConfiguration: true,
-        otherViews: [],
         pages: [],
         tables: [],
       }),
@@ -32,21 +31,28 @@ describe("Lenni unified workspace presentation", () => {
         businessName: "Bakery",
         businessSlug: "bakery",
         canManageConfiguration: false,
-        otherViews: [],
         pages: [],
         tables: [],
       }),
     );
 
     expect(ownerHtml).toContain('aria-label="Mobile workspace navigation"');
-    expect(ownerHtml).toContain("Tell Lenni");
-    expect(ownerHtml).toContain("Work");
+    expect(ownerHtml).toContain("Tables");
+    expect(ownerHtml).toContain("Pages");
     expect(ownerHtml).toContain("More");
-    expect(staffHtml).not.toContain("Tell Lenni");
+    expect(ownerHtml).not.toContain("Work");
     expect(staffHtml).not.toContain("Changes");
     expect(staffHtml).not.toContain("Setup");
-    expect(staffHtml).toContain("Work");
+    expect(staffHtml).toContain("Tables");
+    expect(staffHtml).toContain("Pages");
     expect(staffHtml).toContain("More");
+
+    const source = readFileSync(
+      new URL("../src/components/workspace-mobile-nav.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("Tell Lenni");
+    expect(source).not.toContain('type SheetKind = "work"');
   });
 
   it("keeps the mobile sheet focus, escape, and overflow contract", () => {
@@ -69,6 +75,20 @@ describe("Lenni unified workspace presentation", () => {
     expect(source).toContain("trigger.focus()");
     expect(source).toContain('document.body.style.overflow = "hidden"');
     expect(source).toContain("document.body.style.overflow = previousOverflow");
+  });
+
+  it("keeps the desktop shell one-destination and capability-driven", () => {
+    const source = readFileSync(
+      new URL("../src/app/app/[businessSlug]/layout.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("<TablesSidebar");
+    expect(source).toContain("<PagesSidebar");
+    expect(source).toContain('aria-label="Sites"');
+    expect(source).not.toContain(">Work</");
+    expect(source).not.toContain("Other views");
+    expect(source).not.toContain("href={`/app/${businessSlug}/setup`}");
   });
 
   it("keeps C7 settings, auth and public preorder presentation bounded", () => {
