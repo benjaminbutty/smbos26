@@ -13612,3 +13612,277 @@ textarea {
     padding-top: var(--space-2);
   }
 }
+
+/* Journey 2 Tables and Record context. */
+.editor-desktop-grid {
+  min-width: 0;
+  position: relative;
+}
+
+.editor-mobile-record-list {
+  display: none;
+}
+
+.workspace-table-page .editor-property-disclosure {
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.workspace-table-page .editor-property-disclosure button {
+  min-height: 1.6rem;
+  padding: 0.12rem 0.35rem;
+  color: var(--coral-700);
+  background: transparent;
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-sm);
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-property-disclosure button:hover {
+  color: var(--coral-800);
+  background: var(--coral-50);
+  filter: none;
+}
+
+.workspace-table-page .table-view-query-button {
+  max-width: 100%;
+  flex-wrap: wrap;
+  text-align: left;
+}
+
+.workspace-table-page
+  .table-view-query-button
+  > span:not(.table-view-controls-chevron) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-table-page .editor-table-search {
+  position: relative;
+  display: inline-flex;
+  min-width: min(18rem, 100%);
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-table-search > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.workspace-table-page .editor-table-search input {
+  width: min(18rem, 100%);
+  min-height: 2.25rem;
+  padding: 0.5rem 2.6rem 0.5rem 0.75rem;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 0.78rem;
+}
+
+.workspace-table-page .editor-table-search input:focus {
+  border-color: var(--coral-400);
+}
+
+.workspace-table-page .editor-table-search-clear {
+  position: absolute;
+  right: 0.35rem;
+  min-height: 1.75rem;
+  padding-inline: 0.4rem;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-table-search-clear:hover {
+  color: var(--coral-700);
+  background: var(--coral-50);
+  filter: none;
+}
+
+.workspace-table-page .editor-save-stale {
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border-color: var(--border-strong);
+}
+
+.workspace-table-page .editor-grid-no-matches {
+  pointer-events: auto;
+}
+
+.workspace-table-page .editor-grid-no-matches .button-secondary {
+  min-height: 2.25rem;
+}
+
+.workspace-table-page .editor-lab-workspace:has(.editor-record-panel) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-table-page
+  .editor-lab-workspace:has(.editor-record-panel)
+  .editor-grid-area {
+  grid-column: 1;
+}
+
+.workspace-table-page .editor-record-panel {
+  position: fixed;
+  z-index: 50;
+  top: 3.5rem;
+  right: 0;
+  bottom: 0;
+  width: min(30rem, calc(100vw - 1rem));
+  max-height: none;
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-base);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+  border-left: var(--border-width-thin) solid var(--border-subtle);
+  box-shadow: var(--elevation-overlay);
+}
+
+@media (max-width: 48rem) {
+  .workspace-table-page .editor-desktop-grid {
+    display: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-list {
+    display: block;
+  }
+
+  .workspace-table-page .editor-property-disclosure {
+    display: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-items {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-card {
+    display: grid;
+    width: 100%;
+    gap: var(--space-3);
+    min-height: 5.25rem;
+    padding: var(--space-4);
+    color: var(--text-primary);
+    text-align: left;
+    background: var(--surface-base);
+    border: var(--border-width-thin) solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-card:hover {
+    background: var(--surface-base);
+    border-color: var(--border-strong);
+    filter: none;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-heading {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-heading > span {
+    flex: 0 0 auto;
+    color: var(--coral-700);
+    font-size: 1rem;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details > span {
+    display: grid;
+    min-width: 0;
+    gap: 0.18rem;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details small {
+    color: var(--text-tertiary);
+    font-size: 0.64rem;
+    font-weight: 750;
+  }
+
+  .workspace-table-page .editor-mobile-record-card-details > span > span {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace-table-page .editor-mobile-record-empty {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: var(--space-2);
+    min-height: 20rem;
+    padding: var(--space-6);
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .workspace-table-page .editor-mobile-record-empty strong {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+  }
+
+  .workspace-table-page .editor-mobile-record-empty > span {
+    max-width: 28rem;
+    font-size: 0.72rem;
+    line-height: 1.45;
+  }
+
+  .workspace-table-page .editor-table-search {
+    width: 100%;
+  }
+
+  .workspace-table-page .editor-table-search input {
+    width: 100%;
+  }
+
+  .workspace-table-page .editor-record-panel {
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    padding: var(--space-5) var(--space-4)
+      calc(var(--space-8) + env(safe-area-inset-bottom));
+    border-left: 0;
+    border-radius: 0;
+  }
+}

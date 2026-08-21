@@ -591,6 +591,14 @@ describe("Lenni unified workspace presentation", () => {
       ),
       "utf8",
     );
+    const recordPanelSource = readFileSync(
+      new URL("../src/runtime/editor-kernel/record-panel.tsx", import.meta.url),
+      "utf8",
+    );
+    const viewControlsSource = readFileSync(
+      new URL("../src/runtime/views/table-view-controls.tsx", import.meta.url),
+      "utf8",
+    );
     const cssSource = readFileSync(
       new URL("../src/app/globals.css", import.meta.url),
       "utf8",
@@ -601,7 +609,19 @@ describe("Lenni unified workspace presentation", () => {
     );
     expect(editorSource).toContain('className="editor-new-record-action"');
     expect(editorSource).toContain('data-testid="editor-grid-empty"');
+    expect(editorSource).toContain('aria-label="Search this Table"');
+    expect(editorSource).toContain('data-testid="editor-grid-no-matches"');
+    expect(editorSource).toContain('data-testid="editor-mobile-record-list"');
+    expect(editorSource).toContain('status: "stale"');
+    expect(editorSource).toContain("Needs reload");
     expect(editorSource).toContain("capabilities.rowCreationMessage");
+    expect(recordPanelSource).toContain('aria-modal="true"');
+    expect(recordPanelSource).toContain('role="dialog"');
+    expect(recordPanelSource).toContain("focusableSelector");
+    expect(viewControlsSource).toContain("Filtered by");
+    expect(viewControlsSource).toContain("Sorted by");
+    expect(viewControlsSource).toContain("Grouped by");
+    expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
     expect(productionSource).toContain("creationFallbackHref");
     expect(productionSource).toContain('className="editor-lab-kicker">Table');
     expect(cssSource).toContain(
@@ -610,6 +630,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(
       ".workspace-table-page .editor-header-menu-button",
     );
+    expect(cssSource).toContain(
+      ".workspace-table-page .editor-mobile-record-list",
+    );
+    expect(cssSource).toContain("position: fixed");
   });
 
   it("keeps Builder trust states distinct and preserves manual continuity", () => {

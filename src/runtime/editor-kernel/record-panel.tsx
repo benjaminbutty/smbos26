@@ -10,6 +10,9 @@ import {
 import { ChoiceStatusPicker, ConnectionPicker } from "./cell-editors";
 import { experienceKeyToPath } from "../routing";
 
+const focusableSelector =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 interface RecordPanelProps {
   businessSlug?: string;
   columns: readonly EditorColumn[];
@@ -229,6 +232,7 @@ export function RecordPanel({
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
   const propertyColumns = columns.filter(
@@ -245,12 +249,35 @@ export function RecordPanel({
     : undefined;
 
   useEffect(() => {
-    if (!statusLabel) return;
     const frame = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus({ preventScroll: true });
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [row.id, statusLabel]);
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable.at(0);
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [row.id]);
 
   const updateDraft = (columnKey: string, value: EditorValue): void => {
     setDraftValues((current) => ({ ...current, [columnKey]: value }));
@@ -278,7 +305,13 @@ export function RecordPanel({
   };
 
   return (
-    <aside aria-label={`${tableName} record`} className="editor-record-panel">
+    <aside
+      aria-label={`${tableName} record`}
+      aria-modal="true"
+      className="editor-record-panel"
+      ref={panelRef}
+      role="dialog"
+    >
       <div className="editor-record-panel-header">
         <div>
           {onBack ? (

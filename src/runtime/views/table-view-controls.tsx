@@ -333,6 +333,29 @@ export function TableViewControls({
       singleValueConnection(option, relationships),
   );
 
+  const filterPropertyLabel = config.filters[0]
+    ? options.find((option) => option.optionKey === config.filters[0]?.property)
+        ?.label
+    : undefined;
+  const filterSummary = config.filters.length
+    ? `Filtered by ${filterPropertyLabel ?? "a property"}${
+        config.filters.length > 1 ? ` +${config.filters.length - 1} more` : ""
+      }`
+    : "No filters";
+  const sortPropertyLabel = config.sorts[0]
+    ? options.find((option) => option.optionKey === config.sorts[0]?.property)
+        ?.label
+    : undefined;
+  const sortSummary = sortPropertyLabel
+    ? `Sorted by ${sortPropertyLabel}`
+    : "Default order";
+  const groupPropertyLabel = config.group
+    ? options.find((option) => option.optionKey === config.group)?.label
+    : undefined;
+  const groupSummary = groupPropertyLabel
+    ? `Grouped by ${groupPropertyLabel}`
+    : "No grouping";
+
   if (config.role !== "saved") {
     return null;
   }
@@ -421,9 +444,9 @@ export function TableViewControls({
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
-            <span>Filter {config.filters.length}</span>
-            <span>Sort {config.sorts.length}</span>
-            <span>Group{config.group ? " 1" : ""}</span>
+            <span>{filterSummary}</span>
+            <span>{sortSummary}</span>
+            <span>{groupSummary}</span>
             <span aria-hidden="true" className="table-view-controls-chevron">
               ⌄
             </span>
