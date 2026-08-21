@@ -7,7 +7,7 @@ import { formConfigSchema, parseViewConfig } from "../experience/schemas";
 import {
   AcquisitionCandidateQualityError,
   acquisitionCandidateQualityCodes,
-  findAcquisitionCandidateMechanicalRepairFields,
+  findAcquisitionCandidateMechanicalRepairAnalysis,
   type AcquisitionCandidateQualityCode,
 } from "./quality";
 import {
@@ -55,6 +55,23 @@ export type AcquisitionRecoveryAttempt =
       failure_code: (typeof acquisitionRecoveryFailureCodes)[number];
     }>
   | Readonly<{ status: "recovered"; recovery: AcquisitionRecoveryResult }>;
+
+export type AcquisitionRecoveryDiagnostics = Readonly<{
+  quality_flagged_field_count: number;
+  mechanical_repair_field_count: number;
+  related_field_equivalence_match_count: number;
+}>;
+
+export type AnalyzedAcquisitionRecoveryAttempt = Readonly<{
+  attempt: AcquisitionRecoveryAttempt;
+  diagnostics: AcquisitionRecoveryDiagnostics;
+}>;
+
+const emptyRecoveryDiagnostics: AcquisitionRecoveryDiagnostics = Object.freeze({
+  quality_flagged_field_count: 0,
+  mechanical_repair_field_count: 0,
+  related_field_equivalence_match_count: 0,
+});
 
 const recoverableQualityCodeSet = new Set<string>(
   acquisitionRecoverableQualityCodes,
@@ -414,39 +431,70 @@ function removeRedundantFields(
   }
 }
 
-export function attemptAcquisitionCandidateRecovery(
+export function analyzeAcquisitionCandidateRecovery(
   payloadInput: unknown,
   error: unknown,
-): AcquisitionRecoveryAttempt {
+): AnalyzedAcquisitionRecoveryAttempt {
   if (!(error instanceof AcquisitionCandidateQualityError)) {
-    return { status: "not_applicable" };
+    return {
+      attempt: { status: "not_applicable" },
+      diagnostics: emptyRecoveryDiagnostics,
+    };
   }
   if (!recoverableQualityCodeSet.has(error.code)) {
-    return { status: "not_applicable" };
+    return {
+      attempt: { status: "not_applicable" },
+      diagnostics: emptyRecoveryDiagnostics,
+    };
   }
 
   const code = error.code as AcquisitionRecoverableQualityCode;
   const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
-  const fields = findAcquisitionCandidateMechanicalRepairFields(payload, code);
+  const analysis = findAcquisitionCandidateMechanicalRepairAnalysis(
+    payload,
+    code,
+  );
+  const fields = analysis.fields;
+  const diagnostics = Object.freeze({
+    quality_flagged_field_count: analysis.quality_flagged_field_count,
+    mechanical_repair_field_count: analysis.mechanical_repair_field_count,
+    related_field_equivalence_match_count:
+      analysis.related_field_equivalence_match_count,
+  });
   if (fields.length === 0) {
     return {
-      status: "refused",
-      failure_code: "no_mechanical_repair_fields",
+      attempt: {
+        status: "refused",
+        failure_code: "no_mechanical_repair_fields",
+      },
+      diagnostics,
     };
   }
   const removedFields = new Set(
     fields.map(({ object_key, key }) => fieldIdentity(object_key, key)),
   );
   const repaired = removeRedundantFields(payload, removedFields);
-  if (repaired.status === "refused") return repaired;
+  if (repaired.status === "refused") {
+    return { attempt: repaired, diagnostics };
+  }
   return {
-    status: "recovered",
-    recovery: Object.freeze({
-      payload: repaired.payload,
-      code,
-      removed_field_count: fields.length,
-    }),
+    attempt: {
+      status: "recovered",
+      recovery: Object.freeze({
+        payload: repaired.payload,
+        code,
+        removed_field_count: fields.length,
+      }),
+    },
+    diagnostics,
   };
+}
+
+export function attemptAcquisitionCandidateRecovery(
+  payloadInput: unknown,
+  error: unknown,
+): AcquisitionRecoveryAttempt {
+  return analyzeAcquisitionCandidateRecovery(payloadInput, error).attempt;
 }
 
 export function recoverAcquisitionCandidate(

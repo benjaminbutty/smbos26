@@ -36,6 +36,7 @@ export const ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS =
   ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS;
 export const ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED = 94;
 export const ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK = 2;
+export const ACQUISITION_PRODUCT_RELIABILITY_MIN_RELATED_FIELD_EQUIVALENCE_RECOVERIES = 2;
 
 const productQualityScenario = {
   requiredConcepts: [],
@@ -72,7 +73,13 @@ type ProductReport = Readonly<{
   correction_plan_output_tokens: number;
   correction_plan_estimated_cost_microusd: number;
   correction_plan_elapsed_ms: number;
+  correction_plan_attempted: boolean;
+  correction_plan_succeeded: boolean;
   effective_service_tiers: readonly string[];
+  quality_flagged_field_count: number;
+  mechanical_repair_field_count: number;
+  related_field_equivalence_match_count: number;
+  related_field_equivalence_recovered: boolean;
 }>;
 
 function activated(
@@ -148,6 +155,15 @@ export function acquisitionProductReliabilityPassed(input: {
     input.executionFailures === 0 &&
     input.hardContractFailures === 0 &&
     input.systematicFailureScenarios === 0
+  );
+}
+
+export function acquisitionRelatedFieldEquivalenceEvidencePassed(
+  recoveredExecutionCount: number,
+): boolean {
+  return (
+    recoveredExecutionCount >=
+    ACQUISITION_PRODUCT_RELIABILITY_MIN_RELATED_FIELD_EQUIVALENCE_RECOVERIES
   );
 }
 
@@ -247,6 +263,10 @@ export async function runLiveAcquisitionProductReliability(
       let scenarioSecondPlanOutputTokens = 0;
       let scenarioSecondPlanCost = 0;
       let scenarioSecondPlanElapsed = 0;
+      let qualityFlaggedFieldCount = 0;
+      let mechanicalRepairFieldCount = 0;
+      let relatedFieldEquivalenceMatchCount = 0;
+      let relatedFieldEquivalenceRecovered = false;
       const scenarioEffectiveServiceTiers: string[] = [];
       const trackedExecution = {
         async execute(
@@ -337,6 +357,30 @@ export async function runLiveAcquisitionProductReliability(
         metadata: AcquisitionEventMetadata = {},
       ) => {
         eventNames.push(name);
+        const boundedCount = (key: string): number => {
+          const value = metadata[key];
+          return typeof value === "number" && Number.isSafeInteger(value)
+            ? Math.max(0, value)
+            : 0;
+        };
+        qualityFlaggedFieldCount = Math.max(
+          qualityFlaggedFieldCount,
+          boundedCount("quality_flagged_field_count"),
+        );
+        mechanicalRepairFieldCount = Math.max(
+          mechanicalRepairFieldCount,
+          boundedCount("mechanical_repair_field_count"),
+        );
+        relatedFieldEquivalenceMatchCount = Math.max(
+          relatedFieldEquivalenceMatchCount,
+          boundedCount("related_field_equivalence_match_count"),
+        );
+        if (
+          name === "repair_succeeded" &&
+          boundedCount("related_field_equivalence_match_count") > 0
+        ) {
+          relatedFieldEquivalenceRecovered = true;
+        }
         const failureCode = metadata.recovery_failure_code;
         if (
           name === "repair_failed" &&
@@ -425,7 +469,18 @@ export async function runLiveAcquisitionProductReliability(
         correction_plan_output_tokens: scenarioSecondPlanOutputTokens,
         correction_plan_estimated_cost_microusd: scenarioSecondPlanCost,
         correction_plan_elapsed_ms: scenarioSecondPlanElapsed,
+        correction_plan_attempted: eventNames.includes(
+          "correction_plan_attempted",
+        ),
+        correction_plan_succeeded: eventNames.includes(
+          "correction_plan_tailored_success",
+        ),
         effective_service_tiers: scenarioEffectiveServiceTiers,
+        quality_flagged_field_count: qualityFlaggedFieldCount,
+        mechanical_repair_field_count: mechanicalRepairFieldCount,
+        related_field_equivalence_match_count:
+          relatedFieldEquivalenceMatchCount,
+        related_field_equivalence_recovered: relatedFieldEquivalenceRecovered,
       });
     }
   }
@@ -474,14 +529,23 @@ export async function runLiveAcquisitionProductReliability(
       );
     })
     .map(({ id }) => id);
+  const relatedFieldEquivalenceRecoveredExecutionCount = reports.filter(
+    (report) => report.related_field_equivalence_recovered,
+  ).length;
+  const acceptanceThresholdsPassed = acquisitionProductReliabilityPassed({
+    tailored: tailoredCount,
+    fallback: finalFallbackCount,
+    executionFailures: executionFailureCount,
+    hardContractFailures: hardContractFailureCount,
+    systematicFailureScenarios: systematicFailureScenarioIds.length,
+  });
+  const relatedFieldEquivalenceEvidencePassed =
+    acquisitionRelatedFieldEquivalenceEvidencePassed(
+      relatedFieldEquivalenceRecoveredExecutionCount,
+    );
   const passed =
-    acquisitionProductReliabilityPassed({
-      tailored: tailoredCount,
-      fallback: finalFallbackCount,
-      executionFailures: executionFailureCount,
-      hardContractFailures: hardContractFailureCount,
-      systematicFailureScenarios: systematicFailureScenarioIds.length,
-    }) &&
+    acceptanceThresholdsPassed &&
+    relatedFieldEquivalenceEvidencePassed &&
     (!aiServiceTierRequiresPriority(
       openAiAcquisitionPlanningPolicy.serviceTier,
     ) ||
@@ -511,6 +575,13 @@ export async function runLiveAcquisitionProductReliability(
         openAiAcquisitionPlanningPolicy.serviceTier,
       ) || effectiveServiceTierCounts.get("priority") === totalAttempts,
     passed,
+    acceptance_thresholds_passed: acceptanceThresholdsPassed,
+    related_field_equivalence_evidence_passed:
+      relatedFieldEquivalenceEvidencePassed,
+    related_field_equivalence_recovered_execution_count:
+      relatedFieldEquivalenceRecoveredExecutionCount,
+    related_field_equivalence_minimum_recovered_execution_count:
+      ACQUISITION_PRODUCT_RELIABILITY_MIN_RELATED_FIELD_EQUIVALENCE_RECOVERIES,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,
     raw_first_pass_tailored_success_count: rawFirstPassTailoredCount,

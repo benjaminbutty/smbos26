@@ -16,6 +16,7 @@ import { generateCandidate } from "../src/core/acquisition/service";
 import { interpretAcquisitionRequest } from "../src/core/acquisition/interpreter";
 import { acquisitionBuildPayloadSchema } from "../src/core/acquisition/schemas";
 import {
+  analyzeAcquisitionCandidateRecovery,
   attemptAcquisitionCandidateRecovery,
   applyAcquisitionScopedFieldRepair,
   recoverAcquisitionCandidate,
@@ -24,11 +25,17 @@ import { buildAcquisitionRequiredIdentityRepairManifest } from "../src/core/acqu
 import { createScopedCorrectionQualificationFixture } from "../src/ai/evaluation/acquisition/scoped-correction-fixture";
 import { composeStarterComposition } from "../src/core/acquisition/composer";
 import {
+  formConfigSchema,
+  parseViewConfig,
+} from "../src/core/experience/schemas";
+import {
   AcquisitionCandidateQualityError,
+  findAcquisitionCandidateMechanicalRepairAnalysis,
   validateAcquisitionCandidate,
 } from "../src/core/acquisition/quality";
 import type {
   AcquisitionPlanningOutput,
+  AcquisitionReadyPlan,
   AcquisitionRequiredIdentityCorrectionOutput,
 } from "../src/ai/acquisition-planning/schemas";
 
@@ -284,6 +291,72 @@ function carpenterPlan(
     primary_table_reference: "table_2",
     unsupported_requirements: [],
   };
+}
+
+function relatedFieldEquivalencePlan(options: {
+  relatedTable: "Customer" | "Worker";
+  relatedFieldLabel: string;
+  candidateFieldLabel: string;
+  fieldType: "short_text" | "email" | "phone" | "long_text";
+  replaceRelatedFieldLabel?: string;
+  candidateRequired?: boolean;
+  additionalCandidateFieldLabel?: string;
+}): AcquisitionReadyPlan {
+  const plan = carpenterPlan() as AcquisitionReadyPlan;
+  const field = (label: string, required: boolean) => ({
+    label,
+    field_type: options.fieldType,
+    required,
+    options: null,
+    currency: null,
+  });
+  return {
+    ...plan,
+    tables: plan.tables.map((table) => {
+      if (table.singular_name === options.relatedTable) {
+        const replaced = options.replaceRelatedFieldLabel
+          ? table.fields.map((candidate) =>
+              candidate.label === options.replaceRelatedFieldLabel
+                ? field(options.relatedFieldLabel, candidate.required)
+                : candidate,
+            )
+          : [...table.fields, field(options.relatedFieldLabel, false)];
+        return { ...table, fields: replaced };
+      }
+      if (table.singular_name !== "Job") return table;
+      return {
+        ...table,
+        fields: [
+          ...table.fields,
+          field(
+            options.candidateFieldLabel,
+            options.candidateRequired ?? false,
+          ),
+          ...(options.additionalCandidateFieldLabel
+            ? [field(options.additionalCandidateFieldLabel, false)]
+            : []),
+        ],
+      };
+    }),
+  };
+}
+
+async function interpretedCandidate(
+  plan: AcquisitionReadyPlan,
+): Promise<ReturnType<typeof acquisitionBuildPayloadSchema.parse>> {
+  return interpretAcquisitionRequest(
+    "jobs",
+    carpenterRequest,
+    executionForPlan(plan),
+    { validate: false },
+  );
+}
+
+function crossObjectQualityError(): AcquisitionCandidateQualityError {
+  return new AcquisitionCandidateQualityError(
+    "cross_object_field_leakage",
+    "bounded cross-object test failure",
+  );
 }
 
 function loggedEvents(
@@ -761,6 +834,435 @@ describe("bounded acquisition quality recovery", () => {
       ),
     ).toBe(true);
     expect(workerExecution.calls).toBe(1);
+  });
+
+  it.each([
+    [
+      "Customer full name",
+      relatedFieldEquivalencePlan({
+        relatedTable: "Customer",
+        relatedFieldLabel: "Full name",
+        candidateFieldLabel: "Customer full name",
+        fieldType: "short_text",
+        replaceRelatedFieldLabel: "Name",
+      }),
+    ],
+    [
+      "Worker phone number",
+      relatedFieldEquivalencePlan({
+        relatedTable: "Worker",
+        relatedFieldLabel: "Phone number",
+        candidateFieldLabel: "Worker phone number",
+        fieldType: "phone",
+      }),
+    ],
+  ])(
+    "recovers the optional exact related-Field equivalent %s only after composition",
+    async (_label, plan) => {
+      const info = vi
+        .spyOn(console, "info")
+        .mockImplementation(() => undefined);
+      const payload = await generateCandidate(
+        "jobs",
+        carpenterRequest,
+        decisions,
+        { execution: executionForPlan(plan) },
+      );
+
+      expect(payload.proposal.source).toBe("tailored");
+      expect(() => validateAcquisitionCandidate(payload)).not.toThrow();
+      const events = loggedEvents(info);
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            event: "repair_succeeded",
+            quality_flagged_field_count: 1,
+            mechanical_repair_field_count: 1,
+            related_field_equivalence_match_count: 1,
+          }),
+        ]),
+      );
+      expect(events.map(({ event }) => event)).not.toContain(
+        "precomposition_canonicalisation_applied",
+      );
+    },
+  );
+
+  it("retains the existing exact Customer email address canonicalisation", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const payload = await generateCandidate(
+      "jobs",
+      carpenterRequest,
+      decisions,
+      {
+        execution: executionForPlan(
+          relatedFieldEquivalencePlan({
+            relatedTable: "Customer",
+            relatedFieldLabel: "Email address",
+            candidateFieldLabel: "Customer email address",
+            fieldType: "email",
+            replaceRelatedFieldLabel: "Email",
+          }),
+        ),
+      },
+    );
+
+    expect(payload.proposal.source).toBe("tailored");
+    expect(loggedEvents(info)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "precomposition_canonicalisation_applied",
+          removed_field_count: 1,
+        }),
+      ]),
+    );
+  });
+
+  it.each([
+    ["Customer site address", "Address", "short_text"],
+    ["Customer delivery address", "Address", "short_text"],
+    ["Customer shipping address", "Address", "short_text"],
+    ["Customer billing contact", "Contact", "short_text"],
+    ["Customer emergency contact", "Contact", "short_text"],
+    ["Customer snapshot name", "Name", "short_text"],
+    ["Customer historical name", "Name", "short_text"],
+    ["Worker role", "Role", "short_text"],
+    ["Customer full name", "Full name", "long_text"],
+  ] as const)(
+    "preserves contextual, richer, or wrong-type identity %s",
+    async (candidateFieldLabel, relatedFieldLabel, fieldType) => {
+      const candidate = await interpretedCandidate(
+        relatedFieldEquivalencePlan({
+          relatedTable: candidateFieldLabel.startsWith("Worker")
+            ? "Worker"
+            : "Customer",
+          relatedFieldLabel,
+          candidateFieldLabel,
+          fieldType,
+          ...(relatedFieldLabel === "Name"
+            ? { replaceRelatedFieldLabel: "Name" }
+            : {}),
+        }),
+      );
+      const analysis = findAcquisitionCandidateMechanicalRepairAnalysis(
+        candidate,
+        "cross_object_field_leakage",
+      );
+
+      expect(analysis.fields).toEqual([]);
+      expect(analysis.related_field_equivalence_match_count).toBe(0);
+    },
+  );
+
+  it("refuses settings and key conflicts even when labels and types match", async () => {
+    const candidate = await interpretedCandidate(
+      relatedFieldEquivalencePlan({
+        relatedTable: "Customer",
+        relatedFieldLabel: "Full name",
+        candidateFieldLabel: "Customer full name",
+        fieldType: "short_text",
+        replaceRelatedFieldLabel: "Name",
+      }),
+    );
+    const settingsMismatch = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: candidate.operations.map((operation) =>
+        operation.op === "set_field" &&
+        operation.object_key === "job" &&
+        operation.label === "Customer full name"
+          ? { ...operation, settings_json: { format: "alternate" } }
+          : operation,
+      ),
+    });
+    const keyConflict = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: candidate.operations.map((operation) =>
+        operation.op === "set_field" &&
+        operation.object_key === "job" &&
+        operation.label === "Customer full name"
+          ? { ...operation, key: "customer_role" }
+          : operation,
+      ),
+    });
+
+    for (const payload of [settingsMismatch, keyConflict]) {
+      expect(
+        findAcquisitionCandidateMechanicalRepairAnalysis(
+          payload,
+          "cross_object_field_leakage",
+        ),
+      ).toMatchObject({
+        mechanical_repair_field_count: 0,
+        related_field_equivalence_match_count: 0,
+      });
+    }
+  });
+
+  it("refuses ambiguous related Fields, Objects, and Connections", async () => {
+    const candidate = await interpretedCandidate(
+      relatedFieldEquivalencePlan({
+        relatedTable: "Customer",
+        relatedFieldLabel: "Full name",
+        candidateFieldLabel: "Customer full name",
+        fieldType: "short_text",
+        replaceRelatedFieldLabel: "Name",
+      }),
+    );
+    const relatedField = candidate.operations.find(
+      (operation) =>
+        operation.op === "set_field" &&
+        operation.object_key === "customer" &&
+        operation.label === "Full name",
+    );
+    const connection = candidate.operations.find(
+      (operation) =>
+        operation.op === "set_relationship" &&
+        [operation.source_object_key, operation.target_object_key].includes(
+          "customer",
+        ) &&
+        [operation.source_object_key, operation.target_object_key].includes(
+          "job",
+        ),
+    );
+    if (
+      !relatedField ||
+      relatedField.op !== "set_field" ||
+      !connection ||
+      connection.op !== "set_relationship"
+    ) {
+      throw new Error("Fixture is incomplete.");
+    }
+    const multipleFields = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: [
+        ...candidate.operations,
+        {
+          ...relatedField,
+          key: "customer_full_name",
+          label: "Customer full name",
+          position: relatedField.position + 20,
+        },
+      ],
+    });
+    const multipleConnections = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: [
+        ...candidate.operations,
+        {
+          ...connection,
+          key: "secondary_customer_job",
+          source_label: "has secondary jobs",
+          target_label: "secondary customer",
+        },
+      ],
+    });
+    const secondCustomer = candidate.operations.find(
+      (operation) =>
+        operation.op === "set_object" && operation.key === "customer",
+    );
+    if (!secondCustomer) throw new Error("Customer fixture is incomplete.");
+    const multipleObjects = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: [
+        ...candidate.operations,
+        {
+          ...secondCustomer,
+          key: "customer_profile",
+          singular_label: "Customer Profile",
+          plural_label: "Customer Profiles",
+        },
+        {
+          ...relatedField,
+          object_key: "customer_profile",
+          key: "full_name",
+          position: 0,
+        },
+        {
+          ...connection,
+          key: "customer_profile_job",
+          source_object_key: "customer_profile",
+          source_label: "has jobs",
+          target_label: "customer profile",
+        },
+      ],
+    });
+
+    for (const payload of [
+      multipleFields,
+      multipleConnections,
+      multipleObjects,
+    ]) {
+      expect(
+        findAcquisitionCandidateMechanicalRepairAnalysis(
+          payload,
+          "cross_object_field_leakage",
+        ),
+      ).toMatchObject({
+        mechanical_repair_field_count: 0,
+        related_field_equivalence_match_count: 0,
+      });
+    }
+  });
+
+  it("does not create required-Field correction eligibility", async () => {
+    const plan = relatedFieldEquivalencePlan({
+      relatedTable: "Customer",
+      relatedFieldLabel: "Full name",
+      candidateFieldLabel: "Customer full name",
+      fieldType: "short_text",
+      replaceRelatedFieldLabel: "Name",
+      candidateRequired: true,
+    });
+    const candidate = await interpretedCandidate(plan);
+    const analyzed = analyzeAcquisitionCandidateRecovery(
+      candidate,
+      crossObjectQualityError(),
+    );
+
+    expect(analyzed).toMatchObject({
+      attempt: {
+        status: "refused",
+        failure_code: "no_mechanical_repair_fields",
+      },
+      diagnostics: {
+        quality_flagged_field_count: 1,
+        mechanical_repair_field_count: 0,
+        related_field_equivalence_match_count: 0,
+      },
+    });
+    await expect(
+      runAcquisitionHardGateScenario(carpenterScenario, executionForPlan(plan)),
+    ).resolves.toMatchObject({
+      hard_passed: false,
+      recovery_failure_code: "no_mechanical_repair_fields",
+      correction_plan_attempted: false,
+    });
+  });
+
+  it("keeps Form and View refusal safeguards authoritative", async () => {
+    const candidate = await interpretedCandidate(
+      relatedFieldEquivalencePlan({
+        relatedTable: "Customer",
+        relatedFieldLabel: "Full name",
+        candidateFieldLabel: "Customer full name",
+        fieldType: "short_text",
+        replaceRelatedFieldLabel: "Name",
+      }),
+    );
+    const duplicate = candidate.operations.find(
+      (operation) =>
+        operation.op === "set_field" &&
+        operation.object_key === "job" &&
+        operation.label === "Customer full name",
+    );
+    if (!duplicate) throw new Error("Duplicate fixture is incomplete.");
+    let changedForm = false;
+    const invalidForm = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: candidate.operations.map((operation) => {
+        if (
+          changedForm ||
+          operation.op !== "set_form" ||
+          operation.object_key !== "job"
+        ) {
+          return operation;
+        }
+        changedForm = true;
+        const config = formConfigSchema.parse(operation.config_json);
+        return {
+          ...operation,
+          config_json: {
+            ...config,
+            fields: config.fields.filter(
+              (field) => field.field === duplicate.key,
+            ),
+          },
+        };
+      }),
+    });
+    let changedView = false;
+    const invalidView = acquisitionBuildPayloadSchema.parse({
+      ...candidate,
+      operations: candidate.operations.map((operation) => {
+        if (
+          changedView ||
+          operation.op !== "set_view" ||
+          operation.object_key !== "job" ||
+          operation.view_type !== "table"
+        ) {
+          return operation;
+        }
+        const config = parseViewConfig(
+          operation.view_type,
+          operation.config_json,
+        );
+        if (!("columns" in config)) return operation;
+        const column = config.columns.find(
+          (candidateColumn) =>
+            candidateColumn.kind === "field" &&
+            candidateColumn.field_key === duplicate.key,
+        );
+        if (!column) return operation;
+        changedView = true;
+        return {
+          ...operation,
+          config_json: {
+            ...config,
+            columns: [column],
+            fields: [duplicate.key],
+            title_field: duplicate.key,
+          },
+        };
+      }),
+    });
+
+    expect(
+      attemptAcquisitionCandidateRecovery(
+        invalidForm,
+        crossObjectQualityError(),
+      ),
+    ).toEqual({ status: "refused", failure_code: "form_would_be_invalid" });
+    expect(
+      attemptAcquisitionCandidateRecovery(
+        invalidView,
+        crossObjectQualityError(),
+      ),
+    ).toEqual({ status: "refused", failure_code: "view_would_be_invalid" });
+  });
+
+  it("fails closed when complete validation finds richer information after equivalence removal", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const payload = await generateCandidate(
+      "jobs",
+      carpenterRequest,
+      decisions,
+      {
+        execution: executionForPlan(
+          relatedFieldEquivalencePlan({
+            relatedTable: "Customer",
+            relatedFieldLabel: "Full name",
+            candidateFieldLabel: "Customer full name",
+            fieldType: "short_text",
+            replaceRelatedFieldLabel: "Name",
+            additionalCandidateFieldLabel: "Customer site address",
+          }),
+        ),
+      },
+    );
+
+    expect(payload.proposal.source).toBe("fallback");
+    expect(loggedEvents(info)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "repair_failed",
+          recovery_failure_code:
+            "second_quality_failure:cross_object_field_leakage",
+          quality_flagged_field_count: 2,
+          mechanical_repair_field_count: 1,
+          related_field_equivalence_match_count: 1,
+        }),
+      ]),
+    );
   });
 
   it("returns a valid first-pass tailored candidate without recovery", async () => {

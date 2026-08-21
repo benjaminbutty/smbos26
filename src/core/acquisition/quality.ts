@@ -153,6 +153,61 @@ type SemanticIdentityField = {
   label: string;
 };
 
+type RelatedFieldIdentityClass = "name" | "email" | "phone";
+
+const relatedFieldIdentitySignatures = new Map<
+  string,
+  Readonly<{
+    identityClass: RelatedFieldIdentityClass;
+    fieldType: FieldOperation["field_type"];
+  }>
+>([
+  ["name", { identityClass: "name", fieldType: "short_text" }],
+  ["full name", { identityClass: "name", fieldType: "short_text" }],
+  ["email", { identityClass: "email", fieldType: "email" }],
+  ["email address", { identityClass: "email", fieldType: "email" }],
+  ["phone", { identityClass: "phone", fieldType: "phone" }],
+  ["phone number", { identityClass: "phone", fieldType: "phone" }],
+  ["telephone", { identityClass: "phone", fieldType: "phone" }],
+  ["mobile", { identityClass: "phone", fieldType: "phone" }],
+  ["mobile phone", { identityClass: "phone", fieldType: "phone" }],
+]);
+
+const relatedFieldContextTokens = new Set([
+  "amount",
+  "address",
+  "alternate",
+  "assigned",
+  "assignment",
+  "billing",
+  "code",
+  "contact",
+  "date",
+  "delivery",
+  "description",
+  "emergency",
+  "historical",
+  "history",
+  "id",
+  "identifier",
+  "location",
+  "note",
+  "notes",
+  "price",
+  "primary",
+  "preferred",
+  "quantity",
+  "reference",
+  "role",
+  "secondary",
+  "shipping",
+  "site",
+  "snapshot",
+  "status",
+  "time",
+  "title",
+]);
+
 function objectSemanticTokens(object: SemanticIdentityObject): Set<string> {
   return semanticTokens(
     [object.key, object.singular_label, object.plural_label].join(" "),
@@ -161,6 +216,105 @@ function objectSemanticTokens(object: SemanticIdentityObject): Set<string> {
 
 function fieldSemanticTokens(field: SemanticIdentityField): Set<string> {
   return semanticTokens([field.key, field.label].join(" "));
+}
+
+function exactSemanticTokens(value: string): string[] {
+  return normalise(value)
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 2);
+}
+
+function objectLabelTokens(object: SemanticIdentityObject): Set<string> {
+  return new Set(
+    exactSemanticTokens(`${object.singular_label} ${object.plural_label}`),
+  );
+}
+
+function residualLabelSignature(
+  label: string,
+  related: SemanticIdentityObject,
+  requireRelatedMention: boolean,
+): string | null {
+  const relatedTokens = objectLabelTokens(related);
+  const tokens = exactSemanticTokens(label);
+  const mentionsRelated = tokens.some((token) => relatedTokens.has(token));
+  if (requireRelatedMention && !mentionsRelated) return null;
+  return tokens.filter((token) => !relatedTokens.has(token)).join(" ");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalJson(entry)).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function keySupportsIdentityClass(
+  key: string,
+  related: SemanticIdentityObject,
+  expectedClass: RelatedFieldIdentityClass,
+): boolean {
+  const relatedTokens = objectLabelTokens(related);
+  const residualTokens = exactSemanticTokens(key).filter(
+    (token) => !relatedTokens.has(token),
+  );
+  const residualSignature = residualTokens.join(" ");
+  const explicitIdentity =
+    relatedFieldIdentitySignatures.get(residualSignature);
+  if (explicitIdentity) {
+    return explicitIdentity.identityClass === expectedClass;
+  }
+  return !residualTokens.some((token) => relatedFieldContextTokens.has(token));
+}
+
+function exactRelatedFieldIdentityMatch(
+  candidate: FieldOperation,
+  related: SemanticIdentityObject,
+  relatedFields: readonly FieldOperation[],
+): boolean {
+  if (candidate.required) return false;
+  const signature = residualLabelSignature(candidate.label, related, true);
+  if (!signature) return false;
+  const permittedIdentity = relatedFieldIdentitySignatures.get(signature);
+  if (
+    !permittedIdentity ||
+    candidate.field_type !== permittedIdentity.fieldType ||
+    !keySupportsIdentityClass(
+      candidate.key,
+      related,
+      permittedIdentity.identityClass,
+    )
+  ) {
+    return false;
+  }
+
+  const matches = relatedFields.filter((relatedField) => {
+    const relatedSignature = residualLabelSignature(
+      relatedField.label,
+      related,
+      false,
+    );
+    return (
+      relatedSignature === signature &&
+      relatedField.field_type === candidate.field_type &&
+      canonicalJson(relatedField.settings_json) ===
+        canonicalJson(candidate.settings_json) &&
+      canonicalJson(relatedField.default_value) ===
+        canonicalJson(candidate.default_value) &&
+      keySupportsIdentityClass(
+        relatedField.key,
+        related,
+        permittedIdentity.identityClass,
+      )
+    );
+  });
+  return matches.length === 1;
 }
 
 function fail(code: AcquisitionCandidateQualityCode, message: string): never {
@@ -503,8 +657,29 @@ function findMechanicallyRedundantCrossObjectFields(
   relationships: ReadonlyMap<string, RelationshipOperation>,
   objects: ReadonlyMap<string, ObjectOperation>,
   fields: ReadonlyMap<string, Map<string, FieldOperation>>,
-): AcquisitionCandidateFieldReference[] {
-  const redundant: FieldOperation[] = [];
+): Readonly<{
+  fields: AcquisitionCandidateFieldReference[];
+  relatedFieldEquivalenceMatchCount: number;
+}> {
+  const legacyRedundant: FieldOperation[] = [];
+  const relatedFieldMatches = new Map<
+    string,
+    Readonly<{ field: FieldOperation; relatedObjectKeys: Set<string> }>
+  >();
+  const relationshipPairCounts = new Map<string, number>();
+  const relationshipPairKey = (left: string, right: string) =>
+    [left, right].sort().join(":");
+  for (const relationship of relationships.values()) {
+    const pairKey = relationshipPairKey(
+      relationship.source_object_key,
+      relationship.target_object_key,
+    );
+    relationshipPairCounts.set(
+      pairKey,
+      (relationshipPairCounts.get(pairKey) ?? 0) + 1,
+    );
+  }
+
   for (const relationship of relationships.values()) {
     const source = requireObject(
       objects,
@@ -522,12 +697,43 @@ function findMechanicallyRedundantCrossObjectFields(
     ] as const) {
       for (const field of fields.get(owner.key)?.values() ?? []) {
         if (isMechanicallyRedundantCrossObjectIdentityField(field, related)) {
-          redundant.push(field);
+          legacyRedundant.push(field);
+          continue;
         }
+        if (
+          relationshipPairCounts.get(
+            relationshipPairKey(owner.key, related.key),
+          ) !== 1 ||
+          !exactRelatedFieldIdentityMatch(field, related, [
+            ...(fields.get(related.key)?.values() ?? []),
+          ])
+        ) {
+          continue;
+        }
+        const identity = `${field.object_key}:${field.key}`;
+        const match = relatedFieldMatches.get(identity) ?? {
+          field,
+          relatedObjectKeys: new Set<string>(),
+        };
+        match.relatedObjectKeys.add(related.key);
+        relatedFieldMatches.set(identity, match);
       }
     }
   }
-  return uniqueFieldReferences(redundant);
+  const legacyReferences = uniqueFieldReferences(legacyRedundant);
+  const legacyIdentities = new Set(
+    legacyReferences.map(({ object_key, key }) => `${object_key}:${key}`),
+  );
+  const exactRelatedFields = [...relatedFieldMatches.entries()]
+    .filter(
+      ([identity, match]) =>
+        !legacyIdentities.has(identity) && match.relatedObjectKeys.size === 1,
+    )
+    .map(([, match]) => match.field);
+  return {
+    fields: uniqueFieldReferences([...legacyRedundant, ...exactRelatedFields]),
+    relatedFieldEquivalenceMatchCount: exactRelatedFields.length,
+  };
 }
 
 function findRelationshipScalarDuplicationFields(
@@ -595,25 +801,66 @@ export function findAcquisitionCandidateMechanicalRepairFields(
     | "semantically_redundant_field"
   >,
 ): AcquisitionCandidateFieldReference[] {
+  return findAcquisitionCandidateMechanicalRepairAnalysis(payloadInput, code)
+    .fields;
+}
+
+export type AcquisitionCandidateMechanicalRepairAnalysis = Readonly<{
+  fields: AcquisitionCandidateFieldReference[];
+  quality_flagged_field_count: number;
+  mechanical_repair_field_count: number;
+  related_field_equivalence_match_count: number;
+}>;
+
+export function findAcquisitionCandidateMechanicalRepairAnalysis(
+  payloadInput: unknown,
+  code: Extract<
+    AcquisitionCandidateQualityCode,
+    | "cross_object_field_leakage"
+    | "relationship_scalar_duplication"
+    | "semantically_redundant_field"
+  >,
+): AcquisitionCandidateMechanicalRepairAnalysis {
   const payload = acquisitionBuildPayloadSchema.parse(payloadInput);
   const objects = activeObjects(payload.operations);
   const fields = activeFields(payload.operations, objects);
   const relationships = activeRelationships(payload.operations, objects);
+  const qualityFlaggedFields =
+    code === "cross_object_field_leakage"
+      ? findCrossObjectFieldLeakageFields(relationships, objects, fields)
+      : code === "relationship_scalar_duplication"
+        ? findRelationshipScalarDuplicationFields(
+            relationships,
+            objects,
+            fields,
+          )
+        : findSemanticallyRedundantFields(objects, fields);
+  let mechanicalFields: AcquisitionCandidateFieldReference[];
+  let relatedFieldEquivalenceMatchCount = 0;
   if (code === "cross_object_field_leakage") {
-    return findMechanicallyRedundantCrossObjectFields(
+    const result = findMechanicallyRedundantCrossObjectFields(
       relationships,
       objects,
       fields,
     );
-  }
-  if (code === "relationship_scalar_duplication") {
-    return findRelationshipScalarDuplicationFields(
+    mechanicalFields = result.fields;
+    relatedFieldEquivalenceMatchCount =
+      result.relatedFieldEquivalenceMatchCount;
+  } else if (code === "relationship_scalar_duplication") {
+    mechanicalFields = findRelationshipScalarDuplicationFields(
       relationships,
       objects,
       fields,
     );
+  } else {
+    mechanicalFields = findSemanticallyRedundantFields(objects, fields);
   }
-  return findSemanticallyRedundantFields(objects, fields);
+  return {
+    fields: mechanicalFields,
+    quality_flagged_field_count: qualityFlaggedFields.length,
+    mechanical_repair_field_count: mechanicalFields.length,
+    related_field_equivalence_match_count: relatedFieldEquivalenceMatchCount,
+  };
 }
 
 function validateCrossObjectFieldLeakage(

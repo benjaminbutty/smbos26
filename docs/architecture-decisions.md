@@ -3372,3 +3372,59 @@ thresholds are missed. Per the stop rule, no prompt, timeout, cap, reasoning,
 model, third call, validator or gate change is authorised. Luna/Luna is not
 accepted; PR #59 remains unmerged and closed as not accepted, and Journey 2
 is recommended.
+
+## ADR-044 — One exact related-Field equivalence may enter bounded acquisition recovery
+
+**Status:** Accepted for one J1-R6 experiment; live evidence pending
+**Date:** 21 August 2026
+
+### Context
+
+The frozen J1-R5 Luna/Luna corpus reached 92/96 final tailored with zero hard
+or execution failures. Three fallbacks followed
+`cross_object_field_leakage` with `no_mechanical_repair_fields`. The broad
+validator identifies identity wording on a connected Object, while the
+mechanical matcher deliberately refuses additional semantic tokens. Existing
+redacted evidence does not prove the private Field shapes, so one final
+bounded experiment must establish both safety and causal use without weakening
+the validator or changing the model envelope.
+
+### Decision
+
+Post-composition recovery gains one label-first exact-equivalence case. An
+optional Field may be removed only when its human-readable label names exactly
+one connected Object and, after that Object's label tokens are removed, has an
+exact `name`, `full name`, `email`, `email address`, `phone`, `phone number`,
+`telephone`, `mobile`, or `mobile phone` signature. Exactly one active Field on
+the connected Object must have the same residual label signature, exact Field
+type, complete canonical settings and default value. There must be exactly one
+matching connected Object, one Connection between the pair and one matching
+related Field. Keys may corroborate the identity class but conflicting
+contextual keys refuse the match.
+
+The new case excludes required Fields, ambiguous matches, title and identifier
+classes, physical/site/delivery/shipping/billing address, emergency contact,
+role/assignment, snapshot/historical context and non-identity Field types.
+`email address` is the only permitted address-bearing signature. Existing
+legacy recovery classification is unchanged. Form/View rewrite safeguards and
+the complete authoritative validator remain mandatory after removal.
+
+Finite evaluation metadata records only quality-flagged, mechanical-match and
+related-equivalence counts plus existing diagnostic codes. It contains no
+labels, keys, semantic tokens, requests, operations or model output. Existing
+94/96 and fallback thresholds remain unchanged; independent causal evidence
+additionally requires at least two product-corpus executions to complete
+tailored through this exact new case.
+
+No prompt, model, reasoning, timeout, token cap, schema, scenario, primitive,
+migration, provider-call limit, reservation, requiredness, Connection,
+cardinality, security, refinement, Apply or Publish boundary changes.
+
+### Consequences
+
+The correction remains generic across existing Objects, Fields and
+Connections and remains manually editable. Required or richer information
+continues to fail closed. If deterministic verification, exact-head CI, either
+hard gate, the unchanged product thresholds, service-tier verification, or the
+two-execution causal-evidence condition fails, J1-R6 stops without another
+stochastic run and PR #59 remains closed.

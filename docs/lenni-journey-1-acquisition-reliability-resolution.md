@@ -331,3 +331,32 @@ though hard-contract failures are zero. Per the stop rule, no prompt, timeout,
 cap, reasoning, model, third call, validator or gate change is authorised.
 Luna/Luna is not accepted; PR #59 remains unmerged and is closed as not
 accepted, and Journey 2 is recommended.
+
+## J1-R6 exact related-Field equivalence experiment
+
+One final bounded experiment is authorised without reopening PR #59. It adds
+only a post-composition deterministic classification for an optional
+connected-Object identity Field whose label, Field type, complete canonical
+settings and default value exactly match one active related Field after the
+related Object's own label tokens are removed.
+
+The permitted residual signatures are `name`, `full name`, `email`,
+`email address`, `phone`, `phone number`, `telephone`, `mobile` and
+`mobile phone`, with exact matching `short_text`, `email` or `phone` types.
+Exactly one related Object, Connection and Field must match. Required Fields,
+ambiguous matches, conflicting keys, richer/contextual information, title and
+identifier classes remain ineligible. Existing Form/View safeguards and the
+complete validator still run after removal.
+
+The evaluator retains only finite redacted counts and existing diagnostic
+codes. Existing acceptance thresholds remain ≥94/96 final tailored, ≤2/96
+fallback, zero execution failures, zero hard failures and no systematic
+scenario failure. The experiment also requires at least two product-corpus
+executions to succeed specifically through the new rule; a threshold pass by
+stochastic variation alone is insufficient. Live evidence remains pending at
+the frozen implementation SHA.
+
+Deterministic verification passed format, typecheck, lint, 949 unit tests,
+production build, migration immutability, a clean 41-migration local reset,
+schema lint and the complete integration suite (265 passed, 5 expected skips).
+The exact frozen implementation SHA and live results remain pending.

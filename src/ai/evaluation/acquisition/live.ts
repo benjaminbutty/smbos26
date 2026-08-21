@@ -60,11 +60,19 @@ export async function runAcquisitionHardGateScenario(
     recovery_failure_code: AcquisitionRecoveryFailureCode | null;
     correction_plan_attempted: boolean;
     correction_plan_succeeded: boolean;
+    quality_flagged_field_count: number;
+    mechanical_repair_field_count: number;
+    related_field_equivalence_match_count: number;
+    related_field_equivalence_recovered: boolean;
   }
 > {
   let recoveryFailureCode: AcquisitionRecoveryFailureCode | null = null;
   let secondPlanAttempted = false;
   let secondPlanSucceeded = false;
+  let qualityFlaggedFieldCount = 0;
+  let mechanicalRepairFieldCount = 0;
+  let relatedFieldEquivalenceMatchCount = 0;
+  let relatedFieldEquivalenceRecovered = false;
   try {
     const payload = await generateCandidate(
       scenario.category,
@@ -80,6 +88,30 @@ export async function runAcquisitionHardGateScenario(
         allowFallback: false,
         allowRecovery: true,
         emitEvent: (name, metadata = {}) => {
+          const boundedCount = (key: string): number => {
+            const value = metadata[key];
+            return typeof value === "number" && Number.isSafeInteger(value)
+              ? Math.max(0, value)
+              : 0;
+          };
+          qualityFlaggedFieldCount = Math.max(
+            qualityFlaggedFieldCount,
+            boundedCount("quality_flagged_field_count"),
+          );
+          mechanicalRepairFieldCount = Math.max(
+            mechanicalRepairFieldCount,
+            boundedCount("mechanical_repair_field_count"),
+          );
+          relatedFieldEquivalenceMatchCount = Math.max(
+            relatedFieldEquivalenceMatchCount,
+            boundedCount("related_field_equivalence_match_count"),
+          );
+          if (
+            name === "repair_succeeded" &&
+            boundedCount("related_field_equivalence_match_count") > 0
+          ) {
+            relatedFieldEquivalenceRecovered = true;
+          }
           if (name === "correction_plan_attempted") secondPlanAttempted = true;
           if (name === "correction_plan_tailored_success") {
             secondPlanSucceeded = true;
@@ -101,6 +133,10 @@ export async function runAcquisitionHardGateScenario(
       recovery_failure_code: null,
       correction_plan_attempted: secondPlanAttempted,
       correction_plan_succeeded: secondPlanSucceeded,
+      quality_flagged_field_count: qualityFlaggedFieldCount,
+      mechanical_repair_field_count: mechanicalRepairFieldCount,
+      related_field_equivalence_match_count: relatedFieldEquivalenceMatchCount,
+      related_field_equivalence_recovered: relatedFieldEquivalenceRecovered,
     };
   } catch (error) {
     return {
@@ -108,6 +144,10 @@ export async function runAcquisitionHardGateScenario(
       recovery_failure_code: recoveryFailureCode,
       correction_plan_attempted: secondPlanAttempted,
       correction_plan_succeeded: false,
+      quality_flagged_field_count: qualityFlaggedFieldCount,
+      mechanical_repair_field_count: mechanicalRepairFieldCount,
+      related_field_equivalence_match_count: relatedFieldEquivalenceMatchCount,
+      related_field_equivalence_recovered: false,
     };
   }
 }
@@ -165,6 +205,10 @@ export async function runLiveAcquisitionGate(
     correction_plan_succeeded: boolean;
     correction_plan_elapsed_ms: number;
     effective_service_tiers: string[];
+    quality_flagged_field_count: number;
+    mechanical_repair_field_count: number;
+    related_field_equivalence_match_count: number;
+    related_field_equivalence_recovered: boolean;
   }> = [];
   const repetitions = gate === "qualification" ? 1 : 3;
   for (let repetition = 1; repetition <= repetitions; repetition += 1) {
@@ -266,6 +310,12 @@ export async function runLiveAcquisitionGate(
         correction_plan_succeeded: result.correction_plan_succeeded,
         correction_plan_elapsed_ms: scenarioSecondPlanElapsedMs,
         effective_service_tiers: scenarioEffectiveServiceTiers,
+        quality_flagged_field_count: result.quality_flagged_field_count,
+        mechanical_repair_field_count: result.mechanical_repair_field_count,
+        related_field_equivalence_match_count:
+          result.related_field_equivalence_match_count,
+        related_field_equivalence_recovered:
+          result.related_field_equivalence_recovered,
       });
     }
   }
@@ -310,6 +360,9 @@ export async function runLiveAcquisitionGate(
     input_tokens: inputTokens,
     output_tokens: outputTokens,
     correction_plan_execution_count: secondPlanExecutions,
+    related_field_equivalence_recovered_execution_count: reports.filter(
+      (report) => report.related_field_equivalence_recovered,
+    ).length,
     correction_plan_success_count: reports.filter(
       (report) => report.correction_plan_succeeded,
     ).length,

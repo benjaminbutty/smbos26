@@ -10,10 +10,12 @@ import {
   acquisitionProductOutcome,
   acquisitionProductHardFindings,
   acquisitionProductReliabilityPassed,
+  acquisitionRelatedFieldEquivalenceEvidencePassed,
   assertAcquisitionProductReliabilityCorpus,
   ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS,
   ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK,
   ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED,
+  ACQUISITION_PRODUCT_RELIABILITY_MIN_RELATED_FIELD_EQUIVALENCE_RECOVERIES,
   ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
   runLiveAcquisitionProductReliability,
 } from "../src/ai/evaluation/acquisition/product-reliability-live";
@@ -28,6 +30,9 @@ describe("acquisition product-reliability corpus", () => {
     expect(ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS).toBe(96);
     expect(ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED).toBe(94);
     expect(ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK).toBe(2);
+    expect(
+      ACQUISITION_PRODUCT_RELIABILITY_MIN_RELATED_FIELD_EQUIVALENCE_RECOVERIES,
+    ).toBe(2);
     expect(acquisitionProductReliabilityScenarios).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -125,6 +130,11 @@ describe("acquisition product-reliability corpus", () => {
     ]) {
       expect(acquisitionProductReliabilityPassed(rejected)).toBe(false);
     }
+  });
+
+  it("requires two safely recovered executions as separate causal evidence", () => {
+    expect(acquisitionRelatedFieldEquivalenceEvidencePassed(2)).toBe(true);
+    expect(acquisitionRelatedFieldEquivalenceEvidencePassed(1)).toBe(false);
   });
 
   it("does not run the provider unless the explicit live flag and credentials are present", async () => {

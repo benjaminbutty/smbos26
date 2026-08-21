@@ -335,6 +335,9 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       category: "jobs",
       recovery_code: "quality_cross_object_field_leakage",
       removed_field_count: 1,
+      quality_flagged_field_count: 1,
+      mechanical_repair_field_count: 1,
+      related_field_equivalence_match_count: 1,
       prompt: "owner-request-marker",
       model_output: "raw-output-marker",
     });
@@ -344,11 +347,14 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       category: "jobs",
       recovery_code: "quality_cross_object_field_leakage",
       removed_field_count: 1,
+      quality_flagged_field_count: 1,
+      mechanical_repair_field_count: 1,
+      related_field_equivalence_match_count: 1,
     });
     expect(JSON.stringify(event)).not.toMatch(
       /owner-request-marker|raw-output-marker/,
     );
-    expect(Object.keys(event)).toHaveLength(5);
+    expect(Object.keys(event)).toHaveLength(8);
     info.mockRestore();
   });
 });

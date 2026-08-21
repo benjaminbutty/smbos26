@@ -33,10 +33,11 @@ import {
   validateAcquisitionCandidate,
 } from "./quality";
 import {
-  attemptAcquisitionCandidateRecovery,
+  analyzeAcquisitionCandidateRecovery,
   isAcquisitionRecoveryQualityCode,
 } from "./recovery";
 import type {
+  AcquisitionRecoveryDiagnostics,
   AcquisitionRecoveryFailureCode,
   AcquisitionRecoveryResult,
 } from "./recovery";
@@ -526,6 +527,21 @@ export async function generateCandidate(
     }
   };
   let successfulRecovery: AcquisitionRecoveryResult | null = null;
+  let successfulRecoveryDiagnostics: AcquisitionRecoveryDiagnostics | null =
+    null;
+
+  const recoveryDiagnosticMetadata = (
+    diagnostics: AcquisitionRecoveryDiagnostics | null,
+  ) =>
+    diagnostics
+      ? {
+          quality_flagged_field_count: diagnostics.quality_flagged_field_count,
+          mechanical_repair_field_count:
+            diagnostics.mechanical_repair_field_count,
+          related_field_equivalence_match_count:
+            diagnostics.related_field_equivalence_match_count,
+        }
+      : {};
 
   const finalizeRecoveryFailure = (
     failureCode: AcquisitionRecoveryFailureCode = "repaired_candidate_invalid",
@@ -535,8 +551,10 @@ export async function generateCandidate(
       category,
       recovery_code: `quality_${successfulRecovery.code}`,
       recovery_failure_code: failureCode,
+      ...recoveryDiagnosticMetadata(successfulRecoveryDiagnostics),
     });
     successfulRecovery = null;
+    successfulRecoveryDiagnostics = null;
   };
 
   const validateTailoredCandidate = (
@@ -545,11 +563,13 @@ export async function generateCandidate(
   ): Readonly<{
     payload: AcquisitionBuildPayload;
     recovery: AcquisitionRecoveryResult | null;
+    recoveryDiagnostics: AcquisitionRecoveryDiagnostics | null;
   }> => {
     try {
       return {
         payload: validateAcquisitionCandidate(candidate),
         recovery: null,
+        recoveryDiagnostics: null,
       };
     } catch (error) {
       emitDiagnostic(error, "candidate_quality", {
@@ -569,9 +589,15 @@ export async function generateCandidate(
         });
         let recoveryFailureCode: AcquisitionRecoveryFailureCode =
           "repaired_candidate_invalid";
+        let recoveryDiagnostics: AcquisitionRecoveryDiagnostics | null = null;
         let shouldReplan = false;
         try {
-          const attempt = attemptAcquisitionCandidateRecovery(candidate, error);
+          const analyzedAttempt = analyzeAcquisitionCandidateRecovery(
+            candidate,
+            error,
+          );
+          const attempt = analyzedAttempt.attempt;
+          recoveryDiagnostics = analyzedAttempt.diagnostics;
           if (attempt.status === "refused") {
             recoveryFailureCode = attempt.failure_code;
             shouldReplan =
@@ -586,6 +612,7 @@ export async function generateCandidate(
               return {
                 payload: validatedRecovery,
                 recovery: attempt.recovery,
+                recoveryDiagnostics,
               };
             } catch (recoveryError) {
               emitDiagnostic(recoveryError, "candidate_quality", {
@@ -608,6 +635,7 @@ export async function generateCandidate(
           category,
           recovery_code: `quality_${error.code}`,
           recovery_failure_code: recoveryFailureCode,
+          ...recoveryDiagnosticMetadata(recoveryDiagnostics),
         });
         if (shouldReplan) {
           throw new AcquisitionRequiredIdentityReplanSignal(error, candidate);
@@ -691,6 +719,7 @@ export async function generateCandidate(
     const validatedCandidate = validateTailoredCandidate(payload, allowReplan);
     payload = validatedCandidate.payload;
     successfulRecovery = validatedCandidate.recovery;
+    successfulRecoveryDiagnostics = validatedCandidate.recoveryDiagnostics;
   } catch (error) {
     if (!(error instanceof AcquisitionRequiredIdentityReplanSignal)) {
       if (!allowFallback) throw error;
@@ -727,6 +756,7 @@ export async function generateCandidate(
       );
       payload = validatedCandidate.payload;
       successfulRecovery = validatedCandidate.recovery;
+      successfulRecoveryDiagnostics = validatedCandidate.recoveryDiagnostics;
       usedCorrectionPlan = true;
     } catch (correctionPlanError) {
       emitEvent("correction_plan_failed", {
@@ -768,8 +798,10 @@ export async function generateCandidate(
         category,
         recovery_code: `quality_${successfulRecovery.code}`,
         removed_field_count: successfulRecovery.removed_field_count,
+        ...recoveryDiagnosticMetadata(successfulRecoveryDiagnostics),
       });
       successfulRecovery = null;
+      successfulRecoveryDiagnostics = null;
     }
     if (usedCorrectionPlan) {
       emitEvent("correction_plan_tailored_success", {
