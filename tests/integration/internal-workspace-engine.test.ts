@@ -515,7 +515,7 @@ async function queryScenarioViews(
   }
 }
 
-describe("Internal Workspace Engine three-business proof", () => {
+describe("Internal Workspace Engine four-business proof", () => {
   beforeAll(async () => {
     settings = getLocalSupabaseSettings();
     admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {

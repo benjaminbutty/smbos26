@@ -7233,8 +7233,7 @@ textarea {
   font-size: 0.68rem;
 }
 
-.workspace-table-page .editor-lab-meta > span:nth-child(2),
-.workspace-table-page .editor-lab-meta > span:nth-child(3) {
+.workspace-table-page .editor-lab-meta > span:nth-child(2) {
   display: none;
 }
 

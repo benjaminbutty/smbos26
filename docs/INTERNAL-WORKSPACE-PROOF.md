@@ -1,10 +1,11 @@
 # Internal Workspace Engine — local proof
 
-This is a local-only hands-on proof of the generic internal workspace engine. It creates three temporary Businesses through the same typed configuration and operational paths used by the application:
+This is a local-only hands-on proof of the generic internal workspace engine. It creates four temporary Businesses through the same typed configuration and operational paths used by the application:
 
 - `Proof — Milk round` — Customers, Products, Standing Orders, Standing Order Lines;
 - `Proof — Mobile dog groomer` — Customers, Pets, Appointments, Services;
 - `Proof — Catering enquiry` — Contacts, Enquiries, Events, Quotes.
+- `Proof — Trades and jobs` — Customers, Jobs, Tasks.
 
 ## Run
 
@@ -14,7 +15,7 @@ Start the repository's local Supabase stack, then run:
 npm run workspace:proof:seed
 ```
 
-The command refuses to run unless Supabase reports the repository-local API/database ports `55321` and `55322`. It leaves the three proof Businesses in place and prints one temporary owner email, password, and the Business slugs. Use those credentials only against the local app.
+The command refuses to run unless Supabase reports the repository-local API/database ports `55321` and `55322`. It leaves the four proof Businesses in place and prints one temporary owner email, password, and the Business slugs. Use those credentials only against the local app.
 
 Start the app with `npm run dev`, then sign in at:
 

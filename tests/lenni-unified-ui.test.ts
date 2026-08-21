@@ -663,6 +663,12 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(
       ".workspace-table-page .editor-mobile-record-list",
     );
+    expect(cssSource).toContain(
+      ".workspace-table-page .editor-lab-meta > span:nth-child(2)",
+    );
+    expect(cssSource).not.toContain(
+      ".workspace-table-page .editor-lab-meta > span:nth-child(3)",
+    );
     expect(cssSource).toContain(".runtime-detail-location");
     expect(cssSource).toContain(".editor-connection-popover.is-portal");
     expect(cssSource).toContain("position: sticky");
