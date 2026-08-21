@@ -37,6 +37,15 @@ export const ACQUISITION_PRODUCT_RELIABILITY_EXECUTIONS =
 export const ACQUISITION_PRODUCT_RELIABILITY_MIN_TAILORED = 94;
 export const ACQUISITION_PRODUCT_RELIABILITY_MAX_FALLBACK = 2;
 
+export function acquisitionCompletionResiliencePassed(
+  diagnosticCounts: ReadonlyMap<string, number>,
+): boolean {
+  return (
+    (diagnosticCounts.get("ai_timeout") ?? 0) === 0 &&
+    (diagnosticCounts.get("provider_incomplete_max_output_tokens") ?? 0) === 0
+  );
+}
+
 const productQualityScenario = {
   requiredConcepts: [],
 } as const;
@@ -474,18 +483,23 @@ export async function runLiveAcquisitionProductReliability(
       );
     })
     .map(({ id }) => id);
-  const passed =
-    acquisitionProductReliabilityPassed({
-      tailored: tailoredCount,
-      fallback: finalFallbackCount,
-      executionFailures: executionFailureCount,
-      hardContractFailures: hardContractFailureCount,
-      systematicFailureScenarios: systematicFailureScenarioIds.length,
-    }) &&
-    (!aiServiceTierRequiresPriority(
+  const acceptanceThresholdsPassed = acquisitionProductReliabilityPassed({
+    tailored: tailoredCount,
+    fallback: finalFallbackCount,
+    executionFailures: executionFailureCount,
+    hardContractFailures: hardContractFailureCount,
+    systematicFailureScenarios: systematicFailureScenarioIds.length,
+  });
+  const completionResiliencePassed =
+    acquisitionCompletionResiliencePassed(diagnosticCounts);
+  const effectiveServiceTierVerified =
+    !aiServiceTierRequiresPriority(
       openAiAcquisitionPlanningPolicy.serviceTier,
-    ) ||
-      effectiveServiceTierCounts.get("priority") === totalAttempts);
+    ) || effectiveServiceTierCounts.get("priority") === totalAttempts;
+  const passed =
+    acceptanceThresholdsPassed &&
+    completionResiliencePassed &&
+    effectiveServiceTierVerified;
   const summary = {
     gate: "product_reliability",
     planning_policy_key: openAiAcquisitionPlanningPolicy.key,
@@ -506,10 +520,9 @@ export async function runLiveAcquisitionProductReliability(
         left.localeCompare(right),
       ),
     ),
-    effective_service_tier_verified:
-      !aiServiceTierRequiresPriority(
-        openAiAcquisitionPlanningPolicy.serviceTier,
-      ) || effectiveServiceTierCounts.get("priority") === totalAttempts,
+    effective_service_tier_verified: effectiveServiceTierVerified,
+    acceptance_thresholds_passed: acceptanceThresholdsPassed,
+    completion_resilience_passed: completionResiliencePassed,
     passed,
     scenario_count: ACQUISITION_PRODUCT_RELIABILITY_SCENARIO_COUNT,
     execution_count: reports.length,

@@ -23,6 +23,7 @@ import {
 } from "./openai-schema";
 import {
   OpenAiAuthenticationDiagnostic,
+  OpenAiIncompleteDiagnostic,
   OpenAiInvalidRequestDiagnostic,
   parseOpenAiSafeSchemaContext,
   type OpenAiInvalidRequestReasonCode,
@@ -30,11 +31,14 @@ import {
 
 export {
   OpenAiAuthenticationDiagnostic,
+  OpenAiIncompleteDiagnostic,
   OpenAiInvalidRequestDiagnostic,
+  openAiIncompleteReasonCodes,
   openAiInvalidRequestReasonCodes,
   parseOpenAiSafeSchemaContext,
 } from "./openai-diagnostics";
 export type {
+  OpenAiIncompleteReasonCode,
   OpenAiInvalidRequestReasonCode,
   OpenAiSafeSchemaContext,
 } from "./openai-diagnostics";
@@ -294,6 +298,13 @@ function parseCompletedResponse(
     const reason = isRecord(details) ? details.reason : undefined;
     if (reason === "content_filter") {
       throw providerError("content_filtered", usage);
+    }
+    if (reason === "max_output_tokens") {
+      throw providerError(
+        "incomplete",
+        usage,
+        new OpenAiIncompleteDiagnostic("max_output_tokens"),
+      );
     }
     throw providerError("incomplete", usage);
   }

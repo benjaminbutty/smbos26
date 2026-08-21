@@ -24,6 +24,7 @@ import {
   createOpenAiResponsesClient,
   OPENAI_MODEL_KEY,
   OpenAiAuthenticationDiagnostic,
+  OpenAiIncompleteDiagnostic,
   OpenAiInvalidRequestDiagnostic,
   OpenAiResponsesStructuredProvider,
   serializeOpenAiStructuredInput,
@@ -758,6 +759,52 @@ describe("OpenAI Responses structured provider", () => {
       });
     },
   );
+
+  it("retains only the closed max-output incomplete reason", async () => {
+    const { client } = clientReturning({
+      ...completedResponse({}),
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+    });
+    const provider = new OpenAiResponsesStructuredProvider({ client });
+
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(request());
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+
+    expect(caught).toMatchObject({
+      kind: "incomplete",
+      cause: expect.any(OpenAiIncompleteDiagnostic),
+      usage: { inputTokens: 12, outputTokens: 4 },
+    });
+    expect((caught?.cause as OpenAiIncompleteDiagnostic).reasonCode).toBe(
+      "max_output_tokens",
+    );
+  });
+
+  it("does not retain an unknown incomplete reason", async () => {
+    const marker = "raw-provider-incomplete-marker";
+    const { client } = clientReturning({
+      ...completedResponse({}),
+      status: "incomplete",
+      incomplete_details: { reason: marker },
+    });
+    const provider = new OpenAiResponsesStructuredProvider({ client });
+
+    let caught: StructuredAiProviderError | undefined;
+    try {
+      await provider.generateStructured(request());
+    } catch (cause) {
+      caught = cause as StructuredAiProviderError;
+    }
+
+    expect(caught).toMatchObject({ kind: "incomplete" });
+    expect(caught?.cause).toBeUndefined();
+    expect(JSON.stringify(caught)).not.toContain(marker);
+  });
 
   it.each([
     [429, "rate_limited"],

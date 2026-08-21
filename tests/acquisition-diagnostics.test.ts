@@ -4,6 +4,7 @@ vi.mock("server-only", () => ({}));
 
 import { StructuredAiProviderError } from "../src/ai/contracts";
 import { AiExecutionError } from "../src/ai/errors";
+import { OpenAiIncompleteDiagnostic } from "../src/ai/providers/openai";
 import {
   classifyAcquisitionCandidateDiagnostic,
   emitAcquisitionCandidateDiagnostic,
@@ -59,6 +60,44 @@ describe("bounded acquisition candidate diagnostics", () => {
       code: "provider_structured_output_invalid",
       ...context,
     });
+  });
+
+  it("classifies max-output incompleteness without provider detail", () => {
+    const diagnostic = classifyAcquisitionCandidateDiagnostic(
+      new AiExecutionError("ai_incomplete", {
+        cause: new StructuredAiProviderError("incomplete", "safe", {
+          cause: new OpenAiIncompleteDiagnostic("max_output_tokens"),
+          usage: { inputTokens: 12, outputTokens: 12_288 },
+        }),
+      }),
+      "candidate_generation",
+      context,
+    );
+
+    expect(diagnostic).toEqual({
+      event: "acquisition_candidate_diagnostic",
+      stage: "provider_structured_output",
+      code: "provider_incomplete_max_output_tokens",
+      ...context,
+    });
+  });
+
+  it("keeps unknown incomplete reasons generic", () => {
+    const diagnostic = classifyAcquisitionCandidateDiagnostic(
+      new AiExecutionError("ai_incomplete", {
+        cause: new StructuredAiProviderError(
+          "incomplete",
+          "raw-provider-incomplete-marker",
+        ),
+      }),
+      "candidate_generation",
+      context,
+    );
+
+    expect(diagnostic.code).toBe("provider_incomplete");
+    expect(JSON.stringify(diagnostic)).not.toContain(
+      "raw-provider-incomplete-marker",
+    );
   });
 
   it("emits no raw error text", () => {

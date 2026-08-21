@@ -37,6 +37,7 @@ export type AcquisitionCandidateDiagnosticCode =
   | "provider_structured_output_invalid"
   | "provider_refused"
   | "provider_incomplete"
+  | "provider_incomplete_max_output_tokens"
   | "provider_content_filtered"
   | "provider_disabled"
   | "provider_execution_failed"
@@ -107,7 +108,13 @@ function providerDiagnostic(
       case "incomplete":
         return {
           stage: "provider_structured_output",
-          code: "provider_incomplete",
+          code:
+            failure.cause instanceof Error &&
+            failure.cause.name === "OpenAiIncompleteDiagnostic" &&
+            "reasonCode" in failure.cause &&
+            failure.cause.reasonCode === "max_output_tokens"
+              ? "provider_incomplete_max_output_tokens"
+              : "provider_incomplete",
         };
       case "content_filtered":
         return {

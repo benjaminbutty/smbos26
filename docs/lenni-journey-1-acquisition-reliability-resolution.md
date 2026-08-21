@@ -331,3 +331,31 @@ though hard-contract failures are zero. Per the stop rule, no prompt, timeout,
 cap, reasoning, model, third call, validator or gate change is authorised.
 Luna/Luna is not accepted; PR #59 remains unmerged and is closed as not
 accepted, and Journey 2 is recommended.
+
+## J1-R6 refusal and J1-R7 completion-resilience experiment
+
+The later J1-R6 related-Field equivalence implementation was frozen at
+`66e580b3b9a7fda5d027871aeeb339e4ebe35ac2`. Deterministic verification and
+exact-head CI passed, but its one 96-execution corpus produced 93 final
+tailored and three fallback results. The new matcher activated zero times.
+Two fallbacks were initial `ai_timeout` calls at 45,056 and 45,031 ms; the
+third was `provider_incomplete` after 37,314 ms with exactly 8,192 output
+tokens. There were no execution failures, hard-contract failures or systematic
+scenario failures. The R6 code is not a supported correction and is excluded
+from the next branch.
+
+J1-R7 starts from the evidence-only head
+`0126c355b2efc949aef132739f49823ebbd44823`. It changes only measured initial
+completion boundaries: Luna xhigh/Fast planning moves from 45 to 60 seconds
+and from 8,192 to 12,288 output tokens. Correction remains at 45 seconds and
+8,192 tokens. A finite max-output incomplete diagnostic and truthful staged
+waiting/retry UX are added without retaining provider detail. Prompts, models,
+schemas, validators, deterministic fallback, one initial call plus one scoped
+correction, `store:false`, manual editing and all Apply/Publish boundaries are
+unchanged.
+
+After deterministic verification and exact-head CI, exactly one product
+corpus is authorised. Qualification and reliability are deliberately not
+rerun. Existing 94/96 and fallback gates remain unchanged, with additional
+requirements of zero timeout and zero max-output incomplete outcomes. The
+corpus result is pending at the code-freeze point.

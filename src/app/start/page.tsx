@@ -2,12 +2,15 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AcquisitionProposalCard } from "../../components/acquisition-proposal";
+import { AcquisitionGenerationSubmit } from "../../components/acquisition-generation-submit";
 import { AcquisitionConversation } from "../../components/acquisition-conversation";
 import { AcquisitionRefinement } from "../../components/acquisition-refinement";
 import { AcquisitionRequestInput } from "../../components/acquisition-request-input";
 import { Notice } from "../../components/notice";
-import { PendingSubmitButton } from "../../components/pending-submit-button";
-import { createProposalAction } from "./actions";
+import {
+  createProposalAction,
+  retryAcquisitionTailoringAction,
+} from "./actions";
 import {
   acquisitionCategoryOptions,
   type AcquisitionCategory,
@@ -129,6 +132,22 @@ export default async function StartPage({
       ) : activeProposal ? (
         <>
           <AcquisitionProposalCard proposal={activeProposal} />
+          {activeProposal.source === "fallback" ? (
+            <form
+              action={retryAcquisitionTailoringAction}
+              className="acquisition-tailoring-retry"
+            >
+              <p>
+                This starting point is ready to use. You can also ask Lenni to
+                try tailoring it again using the same description.
+              </p>
+              <AcquisitionGenerationSubmit
+                className="button-secondary"
+                label="Try tailoring again"
+                statusId="acquisition-tailoring-retry-progress"
+              />
+            </form>
+          ) : null}
           <details className="acquisition-restart" id="revise">
             <summary>Start again with a different description</summary>
             <div className="acquisition-restart-content">
@@ -205,9 +224,8 @@ function ProposalForm({
 
       <AcquisitionRequestInput defaultValue={defaultRequest} />
 
-      <PendingSubmitButton
+      <AcquisitionGenerationSubmit
         label={submitLabel}
-        pendingLabel="Shaping your workspace…"
         statusId={`acquisition-${formKey}-progress`}
       />
     </form>

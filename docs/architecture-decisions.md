@@ -3372,3 +3372,56 @@ thresholds are missed. Per the stop rule, no prompt, timeout, cap, reasoning,
 model, third call, validator or gate change is authorised. Luna/Luna is not
 accepted; PR #59 remains unmerged and closed as not accepted, and Journey 2
 is recommended.
+
+## ADR-044 — Acquisition completion resilience addresses measured provider tails without weakening validation
+
+**Status:** Accepted as one bounded J1-R7 experiment
+
+**Date:** 21 August 2026
+
+### Context
+
+The closed J1-R6 related-Field equivalence experiment at
+`66e580b3b9a7fda5d027871aeeb339e4ebe35ac2` passed deterministic verification
+and exact-head CI but failed its one product corpus: 93/96 were final tailored,
+three were truthful fallback, no execution or hard-contract failure occurred,
+and the proposed equivalence path activated zero times. The three fallbacks
+were two initial `ai_timeout` calls at the 45-second client boundary and one
+`provider_incomplete` call at exactly the 8,192 output-token ceiling. The same
+three scenarios completed in their other repetitions. R6 therefore supplied
+no causal evidence for its Field matcher and its production changes remain
+excluded.
+
+OpenAI Responses counts reasoning and visible output inside
+`max_output_tokens`. The provider response also exposes a finite incomplete
+reason. The retained evidence therefore supports one completion-resilience
+experiment rather than another validator or semantic-recovery change.
+
+### Decision
+
+- J1-R7 branches from `0126c355b2efc949aef132739f49823ebbd44823`,
+  not the failed R6 implementation.
+- Initial Luna xhigh/Fast planning receives a 60-second client timeout and a
+  12,288-token output ceiling. Its model, reasoning, service tier, instruction,
+  schema, one-attempt policy and trusted validator remain unchanged.
+- The already-fast scoped correction remains Luna xhigh/Fast with 45 seconds,
+  8,192 output tokens and one attempt. The workflow remains one reservation
+  and at most one initial plan plus one exact-trigger correction.
+- OpenAI `max_output_tokens` incompleteness is retained only as the finite
+  `provider_incomplete_max_output_tokens` diagnostic. Unknown incomplete
+  detail stays generic; raw provider text and payloads are never retained.
+- The public form shows truthful staged waiting copy at 0, 10, 30 and 45
+  seconds. A fallback proposal remains immediately usable and may expose one
+  owner-triggered retry through the existing reservation and proposal limits.
+  There is no automatic retry, background mode or hidden loop.
+- `store:false`, prompt and schema boundaries, deterministic fallback,
+  requiredness, Connections, cardinalities, Apply/Publish separation and
+  manual editability remain unchanged. No migration or primitive is added.
+
+The existing corpus acceptance remains at least 94/96 final tailored, at most
+2/96 fallback, zero execution failures, zero hard-contract failures and no
+systematic repeated scenario failure. This experiment additionally requires
+zero `ai_timeout` and zero `provider_incomplete_max_output_tokens`. The owner
+authorised one 96-execution corpus only; qualification and reliability will
+not be rerun. Failure stops J1-R7 without tuning or a second corpus. Success
+requires fresh independent review before any merge decision.

@@ -7,6 +7,7 @@ import {
   ACQUISITION_PRODUCT_RELIABILITY_REPETITIONS,
 } from "../src/ai/evaluation/acquisition/product-reliability";
 import {
+  acquisitionCompletionResiliencePassed,
   acquisitionProductOutcome,
   acquisitionProductHardFindings,
   acquisitionProductReliabilityPassed,
@@ -125,6 +126,23 @@ describe("acquisition product-reliability corpus", () => {
     ]) {
       expect(acquisitionProductReliabilityPassed(rejected)).toBe(false);
     }
+  });
+
+  it("requires zero timeout and max-output incomplete diagnostics", () => {
+    expect(acquisitionCompletionResiliencePassed(new Map())).toBe(true);
+    expect(
+      acquisitionCompletionResiliencePassed(new Map([["ai_timeout", 1]])),
+    ).toBe(false);
+    expect(
+      acquisitionCompletionResiliencePassed(
+        new Map([["provider_incomplete_max_output_tokens", 1]]),
+      ),
+    ).toBe(false);
+    expect(
+      acquisitionCompletionResiliencePassed(
+        new Map([["quality_cross_object_field_leakage", 3]]),
+      ),
+    ).toBe(true);
   });
 
   it("does not run the provider unless the explicit live flag and credentials are present", async () => {

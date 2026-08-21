@@ -101,8 +101,8 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       outputMicrousdPerMillion: 1_200_000,
       maxInputBytes: 8 * 1024,
       maxBillableInputTokens: 4_000,
-      maxOutputTokens: 8_192,
-      timeoutMs: 45_000,
+      maxOutputTokens: 12_288,
+      timeoutMs: 60_000,
       maxAttempts: 1,
       retryableFailureKinds: [],
     });
@@ -200,7 +200,7 @@ describe("Phase 5 public AI and telemetry boundary", () => {
     expect(correctionInput).not.toHaveProperty("owner_request");
   });
 
-  it("keeps both acquisition stages on the fixed Luna xhigh/Fast profile", () => {
+  it("keeps both acquisition stages on Luna xhigh/Fast with bounded stage-specific ceilings", () => {
     expect({
       modelKey: OPENAI_ACQUISITION_MODEL_KEY,
       reasoningEffort: OPENAI_ACQUISITION_REASONING_EFFORT,
@@ -211,8 +211,8 @@ describe("Phase 5 public AI and telemetry boundary", () => {
       modelKey: "gpt-5.6-luna",
       reasoningEffort: "xhigh",
       serviceTier: "fast",
-      maxOutputTokens: 8_192,
-      timeoutMs: 45_000,
+      maxOutputTokens: 12_288,
+      timeoutMs: 60_000,
     });
     expect(openAiAcquisitionPlanningPolicy.modelKey).not.toBe("gpt-5.6-sol");
     expect(openAiAcquisitionRequiredIdentityCorrectionPolicy.modelKey).not.toBe(
@@ -224,9 +224,16 @@ describe("Phase 5 public AI and telemetry boundary", () => {
         openAiAcquisitionRequiredIdentityCorrectionPolicy.reasoningEffort,
       serviceTier:
         openAiAcquisitionRequiredIdentityCorrectionPolicy.serviceTier,
-      maxOutputTokens:
-        openAiAcquisitionRequiredIdentityCorrectionPolicy.maxOutputTokens,
-      timeoutMs: openAiAcquisitionRequiredIdentityCorrectionPolicy.timeoutMs,
+    });
+    expect(openAiAcquisitionPlanningPolicy).toMatchObject({
+      maxOutputTokens: 12_288,
+      timeoutMs: 60_000,
+      maxAttempts: 1,
+    });
+    expect(openAiAcquisitionRequiredIdentityCorrectionPolicy).toMatchObject({
+      maxOutputTokens: 8_192,
+      timeoutMs: 45_000,
+      maxAttempts: 1,
     });
   });
 
