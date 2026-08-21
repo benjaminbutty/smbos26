@@ -14051,3 +14051,133 @@ textarea {
     font-size: 0.9rem;
   }
 }
+
+/* I4 embedded Saved Views keep the same mobile Record-first interaction. */
+@media (max-width: 48rem) {
+  .editor-kernel-embedded .editor-desktop-grid {
+    display: none;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-list {
+    display: block;
+  }
+
+  .editor-kernel-embedded .editor-lab-workspace:has(.editor-record-panel) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editor-kernel-embedded
+    .editor-lab-workspace:has(.editor-record-panel)
+    .editor-grid-area {
+    grid-column: 1;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-items {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card {
+    display: grid;
+    width: 100%;
+    gap: var(--space-3);
+    min-height: 5.25rem;
+    padding: var(--space-4);
+    color: var(--text-primary);
+    text-align: left;
+    background: var(--surface-base);
+    border: var(--border-width-thin) solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-heading {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-heading strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-heading > span {
+    flex: 0 0 auto;
+    color: var(--coral-700);
+    font-size: 1rem;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details > span {
+    display: grid;
+    min-width: 0;
+    gap: 0.18rem;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details small {
+    color: var(--text-tertiary);
+    font-size: 0.64rem;
+    font-weight: 750;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-card-details > span > span {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-empty {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: var(--space-2);
+    min-height: 12rem;
+    padding: var(--space-6);
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-empty strong {
+    color: var(--text-primary);
+    font-size: 0.86rem;
+  }
+
+  .editor-kernel-embedded .editor-mobile-record-empty > span {
+    max-width: 28rem;
+    font-size: 0.72rem;
+    line-height: 1.45;
+  }
+
+  .editor-kernel-embedded .editor-record-panel {
+    position: fixed;
+    z-index: 50;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    max-height: none;
+    padding: var(--space-5) var(--space-4)
+      calc(var(--space-8) + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    background: var(--surface-base);
+    border: 0;
+    border-radius: 0;
+    box-shadow: var(--elevation-overlay);
+  }
+}

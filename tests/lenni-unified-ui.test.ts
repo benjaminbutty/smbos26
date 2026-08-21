@@ -192,6 +192,7 @@ describe("Lenni unified workspace presentation", () => {
 
     expect(editorSource).toContain('aria-keyshortcuts="/"');
     expect(editorSource).toContain("Press / to add");
+    expect(editorSource).toContain('void addBlock({ type: "divider" })');
     expect(editorSource).toContain('aria-controls="page-editor-add-menu"');
     expect(editorSource).toContain('aria-live="polite"');
     expect(editorSource).toContain("draggable={Boolean(id)}");
@@ -203,6 +204,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain("/* C5 Page canvas presentation.");
     expect(cssSource).toContain(".page-editor-inline-edit:focus-visible");
     expect(cssSource).toContain(".page-editor-view-block .editor-grid-shell");
+    expect(cssSource).toContain(
+      ".editor-kernel-embedded .editor-mobile-record-list",
+    );
+    expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
   });

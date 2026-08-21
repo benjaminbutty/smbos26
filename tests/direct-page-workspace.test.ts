@@ -185,6 +185,19 @@ describe("Page grammar and direct Workspace composer", () => {
     expect(layout.blocks[1]).toHaveProperty("id");
   });
 
+  it("adds a Divider through the direct Page action boundary", () => {
+    const result = composeDirectPageAction(snapshot, {
+      action: "add_page_block",
+      pageKey: "workspace",
+      block: { type: "divider" },
+    });
+    const layout = (result.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+
+    expect(layout.blocks.at(-1)).toMatchObject({ type: "divider" });
+    expect(layout.blocks.at(-1)).toHaveProperty("id");
+  });
+
   it("supports bounded block update, reorder, and removal by stable ID", () => {
     const editableSnapshot: ConfigurationSnapshotV1 = {
       ...snapshot,

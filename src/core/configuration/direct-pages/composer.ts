@@ -192,6 +192,8 @@ function pageBlockFromInput(
       };
     case "text":
       return { type: "text", text: input.text };
+    case "divider":
+      return { type: "divider" };
     case "view":
       return {
         type: "view",
