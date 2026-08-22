@@ -11,6 +11,7 @@ import type {
 } from "../contracts";
 import type {
   ProductionAddColumnAction,
+  ProductionAddExistingConnectionAction,
   ProductionChangeColumnTypeAction,
   ProductionConfigurationCurrentness,
   ProductionCellEditAction,
@@ -31,6 +32,7 @@ import type {
 
 export interface ProductionTableAdapterActions {
   createConnection?: ProductionCreateConnectionAction;
+  addExistingConnection?: ProductionAddExistingConnectionAction;
   updateCell: ProductionCellEditAction;
   updateConnection?: ProductionConnectionEditAction;
   searchConnectionTargets?: ProductionConnectionSearchAction;

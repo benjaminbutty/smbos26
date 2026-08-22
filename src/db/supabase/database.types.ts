@@ -2380,6 +2380,17 @@ export type Database = {
         };
         Returns: Json;
       };
+      preview_table_view_records: {
+        Args: {
+          expected_business_id: string;
+          requested_columns: Json;
+          requested_limit?: number;
+          requested_offset?: number;
+          requested_query: Json;
+          requested_source_view_key: string;
+        };
+        Returns: Json;
+      };
       remove_graph_relationship: {
         Args: {
           expected_business_id: string;

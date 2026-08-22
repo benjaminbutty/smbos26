@@ -25,6 +25,7 @@ import {
 } from "../../../../../runtime/editor-kernel/production/table-mapper";
 import { ProductionTableWorkspace } from "../../../../../runtime/editor-kernel/production/production-table-workspace";
 import {
+  addExistingProductionTableConnectionAction,
   addProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
   createProductionTableConnectionAction,
@@ -141,6 +142,60 @@ export default async function WorkspaceScreenPage({
         ];
       })
       .sort((left, right) => left.label.localeCompare(right.label));
+    const configuredColumns = normalizeTableViewConfig(bundle.config).columns;
+    const configuredConnectionKeys = new Set(
+      configuredColumns.flatMap((column) =>
+        column.kind === "connection"
+          ? [`${column.relationship_key}:${column.direction}`]
+          : [],
+      ),
+    );
+    const existingConnections = (bundle.relationships ?? [])
+      .flatMap((relationship) => {
+        if (!relationship.is_active) return [];
+        const direction =
+          relationship.source_object_definition_id ===
+          bundle.definition.object_definition_id
+            ? ("source" as const)
+            : ("target" as const);
+        if (configuredConnectionKeys.has(`${relationship.key}:${direction}`)) {
+          return [];
+        }
+        const otherObjectId =
+          direction === "source"
+            ? relationship.target_object_definition_id
+            : relationship.source_object_definition_id;
+        const otherObject = tableObjectById.get(otherObjectId);
+        const targetViewKey = targetViewKeyByObjectId[otherObjectId];
+        if (!otherObject || otherObject.kind !== "custom" || !targetViewKey) {
+          return [];
+        }
+        const currentMultiplicity =
+          relationship.cardinality === "many_to_many" ||
+          (relationship.cardinality === "one_to_many" && direction === "target")
+            ? ("several" as const)
+            : ("one" as const);
+        const targetMultiplicity =
+          relationship.cardinality === "many_to_many" ||
+          (relationship.cardinality === "one_to_many" && direction === "source")
+            ? ("several" as const)
+            : ("one" as const);
+        return [
+          {
+            relationshipKey: relationship.key,
+            direction,
+            label:
+              direction === "source"
+                ? relationship.source_label
+                : relationship.target_label,
+            otherTableLabel: otherObject.plural_label,
+            targetViewKey,
+            currentMultiplicity,
+            targetMultiplicity,
+          },
+        ];
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
     const productionPreview = await (async () => {
       try {
         const config = bundle.config as TableViewConfig;
@@ -191,6 +246,23 @@ export default async function WorkspaceScreenPage({
       }
     })();
     const { availability, currentness, mapped } = productionPreview;
+    const primaryView = tableViews.find(
+      (view) => normalizeTableViewConfig(view.config_json).role === "primary",
+    );
+    if (!primaryView) {
+      notFound();
+    }
+    const primaryConfig = normalizeTableViewConfig(primaryView.config_json);
+    const availableSavedViewColumns = [
+      ...bundle.fields
+        .filter((field) => field.is_active)
+        .sort((left, right) => left.position - right.position)
+        .map((field) => ({
+          kind: "field" as const,
+          field_key: field.key,
+        })),
+      ...primaryConfig.columns.filter((column) => column.kind === "connection"),
+    ];
     const primary = mapped.table.columns.find(
       (column) => column.key === mapped.table.primaryColumnKey,
     );
@@ -220,6 +292,12 @@ export default async function WorkspaceScreenPage({
         <ProductionTableWorkspace
           businessSlug={businessSlug}
           actions={{
+            addExistingConnection:
+              addExistingProductionTableConnectionAction.bind(
+                null,
+                businessSlug,
+                bundle.definition.key,
+              ),
             addColumn: addProductionTableColumnAction.bind(
               null,
               businessSlug,
@@ -323,6 +401,7 @@ export default async function WorkspaceScreenPage({
             pluralLabel: bundle.object.plural_label,
           }}
           connectionTargets={connectionTargets}
+          existingConnections={existingConnections}
           headerContent={
             <>
               <TableViewTabs
@@ -331,14 +410,17 @@ export default async function WorkspaceScreenPage({
                 views={tableViews}
               />
               <TableViewControls
+                availableColumns={availableSavedViewColumns}
                 businessSlug={businessSlug}
                 config={normalizeTableViewConfig(bundle.config)}
                 currentness={currentness}
                 fields={bundle.fields}
+                primaryViewKey={primaryView.key}
                 {...(bundle.relationships
                   ? { relationships: bundle.relationships }
                   : {})}
                 viewKey={bundle.definition.key}
+                viewName={bundle.definition.name}
               />
             </>
           }

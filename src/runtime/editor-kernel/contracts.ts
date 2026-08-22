@@ -122,6 +122,22 @@ export interface ConnectionTableOption {
   pluralLabel: string;
 }
 
+export interface ExistingConnectionPropertyOption {
+  relationshipKey: string;
+  direction: "source" | "target";
+  label: string;
+  otherTableLabel: string;
+  targetViewKey: string;
+  currentMultiplicity: ConnectionMultiplicity;
+  targetMultiplicity: ConnectionMultiplicity;
+}
+
+export interface AddExistingConnectionPropertyInput {
+  relationshipKey: string;
+  direction: "source" | "target";
+  label: string;
+}
+
 export interface CreateConnectionPropertyInput {
   targetViewKey: string;
   label: string;

@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import { tableViewQuerySchema } from "../../experience/schemas";
+import {
+  tableViewColumnSchema,
+  tableViewQuerySchema,
+} from "../../experience/schemas";
 import { graphKeySchema } from "../../graph/schemas";
 
 const directTableLabelSchema = z.string().trim().min(1).max(120);
@@ -37,6 +40,7 @@ export const directTableActionKindSchema = z.enum([
   "rename_saved_view",
   "update_view_query",
   "archive_saved_view",
+  "configure_saved_view",
 ]);
 
 const directTableOptionsSchema = z
@@ -314,6 +318,17 @@ const archiveSavedViewIntentSchema = z
   })
   .strict();
 
+const configureSavedViewIntentSchema = z
+  .object({
+    action: z.literal("configure_saved_view"),
+    sourceViewKey: graphKeySchema,
+    viewKey: graphKeySchema.optional(),
+    name: directTableLabelSchema,
+    columns: z.array(tableViewColumnSchema).min(1).max(50),
+    query: tableViewQuerySchema,
+  })
+  .strict();
+
 export const directTableIntentSchema = z.discriminatedUnion("action", [
   createTableIntentSchema,
   renameTableIntentSchema,
@@ -332,6 +347,7 @@ export const directTableIntentSchema = z.discriminatedUnion("action", [
   renameSavedViewIntentSchema,
   updateViewQueryIntentSchema,
   archiveSavedViewIntentSchema,
+  configureSavedViewIntentSchema,
 ]);
 
 export const directTableCurrentnessSchema = z
