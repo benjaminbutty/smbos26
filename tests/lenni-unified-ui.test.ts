@@ -702,6 +702,9 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).toContain("Grouped by");
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
     expect(viewControlsSource).toContain("useUnsavedNavigationWarning");
+    expect(viewControlsSource).toContain("config.filters.slice(1)");
+    expect(viewControlsSource).toContain("filter_match: config.filter_match");
+    expect(viewControlsSource).toContain("config.sorts.slice(1)");
     expect(editorSource).toContain("useUnsavedNavigationWarning");
     expect(unsavedWarningSource).toContain('"beforeunload"');
     expect(unsavedWarningSource).toContain("window.confirm(message)");

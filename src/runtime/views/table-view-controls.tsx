@@ -290,12 +290,14 @@ export function TableViewControls({
       ? initialFilter.value
       : "",
   );
+  const [filterTouched, setFilterTouched] = useState(false);
   const [sortOption, setSortOption] = useState(() =>
     optionForQueryProperty(config.sorts[0]?.property, options),
   );
   const [sortDirection, setSortDirection] = useState<
     "ascending" | "descending"
   >(config.sorts[0]?.direction ?? "ascending");
+  const [sortTouched, setSortTouched] = useState(false);
   const [groupOption, setGroupOption] = useState(() =>
     optionForQueryProperty(config.group, options),
   );
@@ -424,47 +426,62 @@ export function TableViewControls({
     setConnectionValue("");
     setConnectionSearch("");
     setConnectionResults([]);
+    setFilterTouched(true);
     setPreview(null);
   };
 
-  const save = (): void => {
+  const draftQuery = (): TableViewQuery => {
     const filters: TableViewQuery["filters"] = [];
-    const filterValue =
-      selectedProperty?.kind === "connection" ? connectionValue : value;
-    const filterBase = selectedProperty
-      ? {
-          property: selectedProperty.optionKey,
-          operator,
+    if (!filterTouched && initialFilter) {
+      filters.push(initialFilter);
+    } else {
+      const filterValue =
+        selectedProperty?.kind === "connection" ? connectionValue : value;
+      const filterBase = selectedProperty
+        ? { property: selectedProperty.optionKey, operator }
+        : null;
+      if (filterBase) {
+        if (noValueOperators.has(operator)) {
+          filters.push(filterBase);
+        } else if (listOperators.has(operator)) {
+          const list = valuesFromText(
+            operator === "between" ? `${value},${secondValue}` : filterValue,
+          );
+          if (
+            list.length > 0 &&
+            (operator !== "between" || list.length === 2)
+          ) {
+            filters.push({ ...filterBase, values: list });
+          }
+        } else if (filterValue) {
+          filters.push({ ...filterBase, value: filterValue });
         }
-      : null;
-    if (filterBase) {
-      if (noValueOperators.has(operator)) {
-        filters.push(filterBase);
-      } else if (listOperators.has(operator)) {
-        const list = valuesFromText(
-          operator === "between" ? `${value},${secondValue}` : filterValue,
-        );
-        if (list.length > 0 && (operator !== "between" || list.length === 2)) {
-          filters.push({ ...filterBase, values: list });
-        }
-      } else if (filterValue) {
-        filters.push({ ...filterBase, value: filterValue });
       }
     }
+    filters.push(...config.filters.slice(1));
     const sortProperty = options.find(
       (option) => option.optionKey === sortOption,
     );
     const groupProperty = options.find(
       (option) => option.optionKey === groupOption,
     );
-    const query: TableViewQuery = {
+    const sorts: TableViewQuery["sorts"] =
+      !sortTouched && config.sorts[0]
+        ? [config.sorts[0]]
+        : sortProperty
+          ? [{ property: sortProperty.optionKey, direction: sortDirection }]
+          : [];
+    sorts.push(...config.sorts.slice(1));
+    return {
       filters,
-      filter_match: "all",
-      sorts: sortProperty
-        ? [{ property: sortProperty.optionKey, direction: sortDirection }]
-        : [],
+      filter_match: config.filter_match,
+      sorts,
       group: groupProperty?.optionKey ?? null,
     };
+  };
+
+  const save = (): void => {
+    const query = draftQuery();
     if (!draftCurrentness || !name.trim() || !preview) return;
     startTransition(() => {
       setFeedback(null);
@@ -488,33 +505,7 @@ export function TableViewControls({
   };
 
   const previewDraft = (): void => {
-    const filters: TableViewQuery["filters"] = [];
-    const filterValue =
-      selectedProperty?.kind === "connection" ? connectionValue : value;
-    if (selectedProperty) {
-      const base = { property: selectedProperty.optionKey, operator };
-      if (noValueOperators.has(operator)) filters.push(base);
-      else if (listOperators.has(operator)) {
-        const values = valuesFromText(
-          operator === "between" ? `${value},${secondValue}` : filterValue,
-        );
-        if (values.length > 0) filters.push({ ...base, values });
-      } else if (filterValue) filters.push({ ...base, value: filterValue });
-    }
-    const sortProperty = options.find(
-      (option) => option.optionKey === sortOption,
-    );
-    const groupProperty = options.find(
-      (option) => option.optionKey === groupOption,
-    );
-    const query: TableViewQuery = {
-      filters,
-      filter_match: "all",
-      sorts: sortProperty
-        ? [{ property: sortProperty.optionKey, direction: sortDirection }]
-        : [],
-      group: groupProperty?.optionKey ?? null,
-    };
+    const query = draftQuery();
     startTransition(() => {
       setFeedback(null);
       void previewProductionSavedViewAction(businessSlug, primaryViewKey, {
@@ -635,6 +626,7 @@ export function TableViewControls({
               <select
                 onChange={(event) => {
                   setOperator(event.currentTarget.value as FilterOperator);
+                  setFilterTouched(true);
                   setPreview(null);
                 }}
                 value={operator}
@@ -663,6 +655,7 @@ export function TableViewControls({
                   className="table-view-connection-selected"
                   onClick={() => {
                     setConnectionValue("");
+                    setFilterTouched(true);
                     setPreview(null);
                   }}
                   type="button"
@@ -676,6 +669,7 @@ export function TableViewControls({
                   key={result.id}
                   onClick={() => {
                     setConnectionValue(result.id);
+                    setFilterTouched(true);
                     setPreview(null);
                   }}
                   type="button"
@@ -689,6 +683,7 @@ export function TableViewControls({
               aria-label="Filter value"
               onChange={(event) => {
                 setValue(event.currentTarget.value);
+                setFilterTouched(true);
                 setPreview(null);
               }}
               placeholder={operator === "between" ? "First value" : "Value"}
@@ -700,6 +695,7 @@ export function TableViewControls({
               aria-label="Second filter value"
               onChange={(event) => {
                 setSecondValue(event.currentTarget.value);
+                setFilterTouched(true);
                 setPreview(null);
               }}
               placeholder="Second value"
@@ -711,6 +707,7 @@ export function TableViewControls({
             <select
               onChange={(event) => {
                 setSortOption(event.currentTarget.value);
+                setSortTouched(true);
                 setPreview(null);
               }}
               value={sortOption}
@@ -730,6 +727,7 @@ export function TableViewControls({
                 setSortDirection(
                   event.currentTarget.value as "ascending" | "descending",
                 );
+                setSortTouched(true);
                 setPreview(null);
               }}
               value={sortDirection}
