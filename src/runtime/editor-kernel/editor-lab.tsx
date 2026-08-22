@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   DataGrid,
@@ -27,7 +28,7 @@ import {
   freshDraftRowIndex,
   hasDraftName,
   reorderColumnKeys,
-  type CreateColumnInput,
+  type CreatePropertyInput,
   type CreateConnectionPropertyInput,
   type ConnectionTableOption,
   type EditorCapabilities,
@@ -52,7 +53,17 @@ import {
 } from "./table-columns";
 import { RecordPanel } from "./record-panel";
 import type { TableEditorAdapter } from "./contracts";
-import { OptionManager, ShortcutSheet, TypePicker } from "./lenni-ui";
+import { OptionManager, Popover, ShortcutSheet, TypePicker } from "./lenni-ui";
+import {
+  addablePropertyKinds,
+  describePropertyChange,
+  maximumPropertyOptions,
+  propertyKindDescription,
+  propertyKindLabel,
+  previewTableWithProperty,
+  validatePropertyOptions,
+  type PropertyDraft,
+} from "./property-preview";
 
 export interface EditorRecordContext {
   columns: readonly EditorColumn[];
@@ -140,22 +151,6 @@ type SaveState =
   | { status: "stale"; message?: string }
   | { status: "error"; cellLabel?: string; message?: string };
 
-const addableColumnKinds: ReadonlyArray<{
-  kind: EditorColumnKind;
-  label: string;
-}> = [
-  { kind: "text", label: "Text" },
-  { kind: "long_text", label: "Long text" },
-  { kind: "number", label: "Number" },
-  { kind: "boolean", label: "Yes / No" },
-  { kind: "date", label: "Date" },
-  { kind: "email", label: "Email" },
-  { kind: "phone", label: "Phone" },
-  { kind: "url", label: "Website" },
-  { kind: "select", label: "Choice" },
-  { kind: "status", label: "Status" },
-];
-
 function saveErrorMessage(error: unknown): string {
   return error instanceof Error && error.message
     ? error.message
@@ -181,13 +176,6 @@ function rowSearchText(
     return [editorInputValue(value ?? null), ...(labels ?? [])];
   });
   return values.join(" ").toLocaleLowerCase("en");
-}
-
-function optionsAreValid(options: readonly string[]): boolean {
-  const normalized = options.map((option) =>
-    option.normalize("NFKC").toLocaleLowerCase("en"),
-  );
-  return options.length >= 2 && new Set(normalized).size === normalized.length;
 }
 
 function TableTitleEditor({
@@ -370,6 +358,7 @@ function EditorMobileRecordList({
   noMatches,
   onClearSearch,
   onOpenRecord,
+  previewColumn,
   rows,
   tableName,
 }: Readonly<{
@@ -379,6 +368,7 @@ function EditorMobileRecordList({
   noMatches: boolean;
   onClearSearch: () => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
+  previewColumn?: EditorColumn;
   rows: readonly EditorRow[];
   tableName: string;
 }>): ReactNode {
@@ -396,6 +386,15 @@ function EditorMobileRecordList({
       className="editor-mobile-record-list"
       data-testid="editor-mobile-record-list"
     >
+      {previewColumn ? (
+        <div className="editor-mobile-property-preview" role="status">
+          <strong>{previewColumn.label}</strong>
+          <span>
+            Preview only · Empty until you add this property. It cannot be
+            edited yet.
+          </span>
+        </div>
+      ) : null}
       {rows.length === 0 ? (
         <div className="editor-mobile-record-empty" role="status">
           <strong>
@@ -701,32 +700,145 @@ export function ConnectionPropertyPopover({
   );
 }
 
+function initialPropertyDraft(): PropertyDraft {
+  return {
+    label: "",
+    kind: "text",
+    options: ["Option 1", "Option 2"],
+    placement: { mode: "end" },
+  };
+}
+
 export function AddColumnPopover({
+  anchorRef,
   canAddConnections,
+  columns = [],
   connectionSource,
   connectionTargets,
+  draft: controlledDraft,
   onClose,
   onCreate,
   onCreateConnection,
+  onDraftChange,
+  onRefresh,
+  externalError,
+  tableName,
 }: Readonly<{
-  canAddConnections: boolean;
+  anchorRef?: RefObject<HTMLElement | null>;
+  canAddConnections?: boolean;
+  columns?: readonly EditorColumn[];
   connectionSource?: Pick<
     ConnectionTableOption,
     "singularLabel" | "pluralLabel"
   >;
   connectionTargets?: readonly ConnectionTableOption[];
+  draft?: PropertyDraft;
   onClose: () => void;
-  onCreate: (input: CreateColumnInput) => Promise<void>;
+  onCreate: (input: CreatePropertyInput) => Promise<boolean | void>;
   onCreateConnection?: (
     input: CreateConnectionPropertyInput,
   ) => Promise<boolean>;
+  onDraftChange?: (draft: PropertyDraft) => void;
+  onRefresh?: () => void;
+  externalError?: string | null;
+  tableName?: string;
 }>): ReactNode {
   const [connectionOpen, setConnectionOpen] = useState(false);
-  const [label, setLabel] = useState("");
-  const [kind, setKind] = useState<EditorColumnKind>("text");
-  const [options, setOptions] = useState<string[]>(["Active", "Inactive"]);
+  const [localDraft, setLocalDraft] =
+    useState<PropertyDraft>(initialPropertyDraft);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const propertyNameRef = useRef<HTMLInputElement>(null);
+  const draft = controlledDraft ?? localDraft;
+
+  useEffect(() => {
+    let followUpFrame: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      followUpFrame = window.requestAnimationFrame(() => {
+        propertyNameRef.current?.focus({ preventScroll: true });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (followUpFrame !== undefined) {
+        window.cancelAnimationFrame(followUpFrame);
+      }
+    };
+  }, []);
+  const propertyColumns = columns.filter(
+    (column) => column.kind !== "connection" && !column.preview,
+  );
+  const optionError =
+    draft.kind === "select" || draft.kind === "status"
+      ? validatePropertyOptions(draft.options)
+      : null;
+  const placementAnchorKey =
+    draft.placement.mode === "end" ? null : draft.placement.anchorColumnKey;
+  const placementError =
+    placementAnchorKey !== null &&
+    !propertyColumns.some((column) => column.key === placementAnchorKey)
+      ? "Choose an existing property for this placement."
+      : null;
+  const descriptor = describePropertyChange(
+    {
+      key: "property-editor",
+      name: tableName ?? "this Table",
+      primaryColumnKey: propertyColumns[0]?.key ?? "",
+      columns: propertyColumns,
+      rows: [],
+    },
+    draft,
+  );
+
+  const updateDraft = (next: PropertyDraft): void => {
+    if (!controlledDraft) {
+      setLocalDraft(next);
+    }
+    onDraftChange?.(next);
+    setError(null);
+  };
+
+  const submit = (): void => {
+    if (submitting) return;
+    const label = draft.label.trim();
+    if (!label) {
+      setError("Give this property a name.");
+      return;
+    }
+    if (optionError) {
+      setError(optionError);
+      return;
+    }
+    if (placementError) {
+      setError(placementError);
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    const input: CreatePropertyInput = {
+      label,
+      kind: draft.kind,
+      placement: draft.placement,
+      ...(draft.kind === "select" || draft.kind === "status"
+        ? { options: draft.options }
+        : {}),
+      ...(draft.kind === "currency"
+        ? { currency: draft.currency ?? "GBP" }
+        : {}),
+    };
+    void onCreate(input)
+      .then((created) => {
+        if (created !== false) {
+          onClose();
+        }
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error ? cause.message : "Could not add property",
+        );
+      })
+      .finally(() => setSubmitting(false));
+  };
 
   if (connectionOpen && connectionSource && onCreateConnection) {
     return (
@@ -741,74 +853,193 @@ export function AddColumnPopover({
   }
 
   return (
-    <form
-      className="editor-add-column-popover"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!label.trim() || submitting) {
-          return;
-        }
-        const input: CreateColumnInput = { label, kind };
-        if (kind === "select" || kind === "status") {
-          input.options = options;
-          if (!optionsAreValid(input.options)) {
-            setError("Choice and Status need two different options.");
-            return;
-          }
-        }
-        setError(null);
-        setSubmitting(true);
-        void onCreate(input).finally(() => setSubmitting(false));
-      }}
+    <Popover
+      {...(anchorRef ? { anchorRef } : {})}
+      className="editor-property-editor"
+      onClose={onClose}
+      viewportSafe={Boolean(anchorRef)}
     >
-      <div className="editor-popover-heading">
-        <strong>Add column</strong>
+      <div className="editor-property-editor-header editor-popover-heading">
+        <div>
+          <strong>Add property</strong>
+          <span>Shape this Table where you work.</span>
+        </div>
         <button
-          aria-label="Close add column menu"
+          aria-label="Close add property editor"
           onClick={onClose}
           type="button"
         >
           ×
         </button>
       </div>
-      <label>
-        Name
-        <input
-          autoFocus
-          maxLength={80}
-          onChange={(event) => setLabel(event.currentTarget.value)}
-          placeholder="e.g. Email"
-          required
-          value={label}
-        />
-      </label>
-      <label>Type</label>
-      <TypePicker
-        allowedKinds={addableColumnKinds.map((option) => option.kind)}
-        onChange={setKind}
-        value={kind}
-      />
-      {kind === "select" || kind === "status" ? (
+      <div className="editor-property-editor-body">
         <label>
-          Options
-          <OptionManager
-            onChange={(next) => setOptions([...next])}
-            options={options}
+          Property name
+          <input
+            maxLength={120}
+            onChange={(event) =>
+              updateDraft({ ...draft, label: event.currentTarget.value })
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.preventDefault();
+            }}
+            placeholder="e.g. Referral source"
+            ref={propertyNameRef}
+            value={draft.label}
           />
         </label>
+        <div className="editor-property-type-section">
+          <div className="editor-property-section-heading">
+            <span>Type</span>
+            <span className="editor-property-type-label">
+              {propertyKindLabel(draft.kind)}
+            </span>
+          </div>
+          <p className="editor-property-type-note">
+            {propertyKindDescription(draft.kind)}
+          </p>
+          <TypePicker
+            allowedKinds={addablePropertyKinds}
+            onChange={(kind) => updateDraft({ ...draft, kind })}
+            value={draft.kind}
+          />
+        </div>
+        {draft.kind === "currency" ? (
+          <label>
+            Currency
+            <select
+              aria-label="Currency"
+              onChange={(event) =>
+                updateDraft({ ...draft, currency: event.currentTarget.value })
+              }
+              value={draft.currency ?? "GBP"}
+            >
+              <option value="GBP">UK pounds (GBP)</option>
+              <option value="EUR">Euros (EUR)</option>
+              <option value="USD">US dollars (USD)</option>
+            </select>
+          </label>
+        ) : null}
+        {draft.kind === "select" || draft.kind === "status" ? (
+          <div className="editor-property-options-section">
+            <div className="editor-property-section-heading">
+              <span>{draft.kind === "status" ? "Stages" : "Choices"}</span>
+              <span>{draft.options.length} added</span>
+            </div>
+            <OptionManager
+              maxOptions={maximumPropertyOptions}
+              onChange={(options) => updateDraft({ ...draft, options })}
+              options={draft.options}
+            />
+            {optionError ? (
+              <span className="editor-structural-error" role="alert">
+                {optionError}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <div className="editor-property-placement-section">
+          <label>
+            Placement
+            <select
+              aria-label="Property placement"
+              onChange={(event) => {
+                const mode = event.currentTarget.value as
+                  "end" | "before" | "after";
+                if (mode === "end") {
+                  updateDraft({ ...draft, placement: { mode } });
+                  return;
+                }
+                const anchorColumnKey =
+                  draft.placement.mode === "end"
+                    ? propertyColumns[0]?.key
+                    : draft.placement.anchorColumnKey;
+                if (!anchorColumnKey) return;
+                updateDraft({
+                  ...draft,
+                  placement: { mode, anchorColumnKey },
+                });
+              }}
+              value={draft.placement.mode}
+            >
+              <option value="end">At the end</option>
+              <option disabled={propertyColumns.length === 0} value="before">
+                Before a property
+              </option>
+              <option disabled={propertyColumns.length === 0} value="after">
+                After a property
+              </option>
+            </select>
+          </label>
+          {draft.placement.mode !== "end" ? (
+            <label>
+              Property
+              <select
+                aria-label="Placement property"
+                onChange={(event) =>
+                  updateDraft({
+                    ...draft,
+                    placement: {
+                      mode: draft.placement.mode,
+                      anchorColumnKey: event.currentTarget.value,
+                    },
+                  })
+                }
+                value={draft.placement.anchorColumnKey}
+              >
+                {propertyColumns.map((column) => (
+                  <option key={column.key} value={column.key}>
+                    {column.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+        <div className="editor-property-consequence" aria-live="polite">
+          <strong>What happens</strong>
+          <p>{descriptor.summary}</p>
+          {descriptor.optionCount !== undefined ? (
+            <p>
+              {descriptor.optionCount}{" "}
+              {descriptor.optionCount === 1 ? "option" : "options"} will be
+              available.
+            </p>
+          ) : null}
+          <ul>
+            {descriptor.details.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        </div>
+        {error || externalError ? (
+          <span className="editor-structural-error" role="alert">
+            {error ?? externalError}
+          </span>
+        ) : null}
+      </div>
+      <div className="editor-property-editor-actions">
+        <button className="editor-menu-back" onClick={onClose} type="button">
+          Cancel
+        </button>
+        <button
+          className="editor-menu-submit"
+          disabled={submitting}
+          onClick={submit}
+          type="button"
+        >
+          {submitting ? "Adding…" : "Add property"}
+        </button>
+      </div>
+      {externalError && onRefresh ? (
+        <button
+          className="editor-property-refresh"
+          onClick={onRefresh}
+          type="button"
+        >
+          Refresh and recheck
+        </button>
       ) : null}
-      {error ? (
-        <span className="editor-structural-error" role="alert">
-          {error}
-        </span>
-      ) : null}
-      <button
-        className="editor-menu-submit"
-        disabled={submitting}
-        type="submit"
-      >
-        {submitting ? "Adding…" : "Add column"}
-      </button>
       {canAddConnections && onCreateConnection && connectionSource ? (
         (connectionTargets?.length ?? 0) > 0 ? (
           <>
@@ -830,7 +1061,7 @@ export function AddColumnPopover({
           </span>
         )
       ) : null}
-    </form>
+    </Popover>
   );
 }
 
@@ -867,6 +1098,10 @@ export function EditorKernel({
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [columnMenuKey, setColumnMenuKey] = useState<string | null>(null);
   const [addColumnOpen, setAddColumnOpen] = useState(false);
+  const [propertyDraft, setPropertyDraft] = useState<PropertyDraft | null>(
+    null,
+  );
+  const [focusColumnKey, setFocusColumnKey] = useState<string | null>(null);
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [selectionAnchor, setSelectionAnchor] = useState<GridPoint | null>(
     null,
@@ -883,10 +1118,13 @@ export function EditorKernel({
   } | null>(null);
   const [recordSearch, setRecordSearch] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved" });
+  const [structuralError, setStructuralError] = useState<string | null>(null);
   const [retry, setRetry] = useState<SaveRetry | null>(null);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [showAllProperties, setShowAllProperties] = useState(false);
   const gridRef = useRef<DataGridHandle>(null);
+  const addColumnButtonRef = useRef<HTMLButtonElement>(null);
+  const adapterRef = useRef(adapter);
   const operationVersions = useRef(new Map<string, number>());
   const pendingSaves = useRef(new Set<string>());
   const rangeSelectionRef = useRef(false);
@@ -908,6 +1146,15 @@ export function EditorKernel({
     : null;
   const activePanel = connectedPanel ?? sourcePanel;
   const normalizedRecordSearch = recordSearch.trim().toLocaleLowerCase("en");
+  useEffect(() => {
+    if (adapterRef.current === adapter) {
+      return;
+    }
+    adapterRef.current = adapter;
+    const next = adapter.getTable();
+    setTable(readOnly ? readOnlyTable(next) : next);
+  }, [adapter, readOnly]);
+
   const visibleRows = useMemo(
     () =>
       normalizedRecordSearch
@@ -916,6 +1163,13 @@ export function EditorKernel({
           )
         : table.rows,
     [normalizedRecordSearch, recordColumns, table.rows],
+  );
+  const presentationTable = useMemo(
+    () =>
+      propertyDraft && !readOnly
+        ? previewTableWithProperty(table, propertyDraft)
+        : table,
+    [propertyDraft, readOnly, table],
   );
   useEffect(() => {
     if (variant !== "workspace") {
@@ -933,36 +1187,38 @@ export function EditorKernel({
   }, [table.key]);
 
   const compactColumns = useMemo(() => {
-    if (table.columns.length <= compactPropertyLimit) {
-      return table.columns;
+    const columns = presentationTable.columns;
+    if (columns.length <= compactPropertyLimit) {
+      return columns;
     }
     const primaryColumn =
-      table.columns.find((column) => column.key === table.primaryColumnKey) ??
-      table.columns[0];
+      columns.find((column) => column.key === table.primaryColumnKey) ??
+      columns[0];
     if (!primaryColumn) {
-      return table.columns.slice(0, compactPropertyLimit);
+      return columns.slice(0, compactPropertyLimit);
     }
     const prioritized = [
       primaryColumn,
-      ...table.columns.filter((column) => column.key !== primaryColumn.key),
+      ...columns.filter((column) => column.key !== primaryColumn.key),
     ].slice(0, compactPropertyLimit);
     const keys = new Set(prioritized.map((column) => column.key));
-    return table.columns.filter((column) => keys.has(column.key));
-  }, [table.columns, table.primaryColumnKey]);
+    return columns.filter((column) => keys.has(column.key));
+  }, [presentationTable.columns, table.primaryColumnKey]);
   const visibleGridColumns = useMemo(
     () =>
       variant === "workspace" && isCompactViewport && !showAllProperties
         ? compactColumns
-        : table.columns,
+        : presentationTable.columns,
     [
       compactColumns,
       isCompactViewport,
+      presentationTable.columns,
       showAllProperties,
-      table.columns,
       variant,
     ],
   );
-  const omittedPropertyCount = table.columns.length - visibleGridColumns.length;
+  const omittedPropertyCount =
+    presentationTable.columns.length - visibleGridColumns.length;
   const columnForKey = useCallback(
     (columnKey: string) =>
       recordColumns.find((column) => column.key === columnKey) ?? null,
@@ -1041,6 +1297,7 @@ export function EditorKernel({
       ) {
         event.preventDefault();
         setColumnMenuKey(null);
+        setPropertyDraft(initialPropertyDraft());
         setAddColumnOpen(true);
       }
       if (
@@ -1059,6 +1316,7 @@ export function EditorKernel({
         setSelectionAnchor(point);
         setSelectionEnd(point);
         setColumnMenuKey(null);
+        setPropertyDraft(null);
         setAddColumnOpen(false);
       }
     };
@@ -1143,6 +1401,7 @@ export function EditorKernel({
   const runStructural = useCallback(
     async (operation: () => Promise<unknown>): Promise<boolean> => {
       setSaveState({ status: "saving" });
+      setStructuralError(null);
       setRetry(null);
       try {
         await operation();
@@ -1152,6 +1411,11 @@ export function EditorKernel({
         return true;
       } catch (error) {
         setSaveState(saveStateForError(error));
+        setStructuralError(
+          /reload|table changed|current/i.test(saveErrorMessage(error))
+            ? "Things changed. Refresh to recheck this property before adding it."
+            : saveErrorMessage(error),
+        );
         return false;
       }
     },
@@ -1384,15 +1648,43 @@ export function EditorKernel({
     [connectedPanel, createConnectedRecordTarget],
   );
 
-  const handleCreateColumn = useCallback(
-    async (input: CreateColumnInput): Promise<void> => {
+  const handleCreateProperty = useCallback(
+    async (input: CreatePropertyInput): Promise<boolean> => {
       if (!capabilities.canAddColumns) {
-        return;
+        return false;
       }
-      if (await runStructural(() => adapter.createColumn(input))) {
+      let createdColumnKey: string | null = null;
+      const saved = await runStructural(async () => {
+        const columnInput = {
+          label: input.label,
+          kind: input.kind,
+          ...(input.options !== undefined ? { options: input.options } : {}),
+          ...(input.currency !== undefined ? { currency: input.currency } : {}),
+        };
+        const createdColumn =
+          input.placement.mode === "end"
+            ? await adapter.createColumn(columnInput)
+            : adapter.insertColumn
+              ? await adapter.insertColumn({
+                  ...columnInput,
+                  anchorColumnKey: input.placement.anchorColumnKey,
+                  position:
+                    input.placement.mode === "before" ? "left" : "right",
+                })
+              : null;
+        if (!createdColumn) {
+          throw new Error("Placement is not available for this Table.");
+        }
+        createdColumnKey = createdColumn.key;
+      });
+      if (saved) {
+        setPropertyDraft(null);
         setAddColumnOpen(false);
         setColumnMenuKey(null);
+        setShowAllProperties(true);
+        setFocusColumnKey(createdColumnKey);
       }
+      return saved;
     },
     [adapter, capabilities.canAddColumns, runStructural],
   );
@@ -1444,12 +1736,13 @@ export function EditorKernel({
       columnKey: string,
       kind: EditorColumnKind,
       options?: readonly string[],
+      currency?: string,
     ): Promise<boolean> => {
       if (!capabilities.canChangeColumnTypes || !adapter.changeColumnType) {
         return false;
       }
       const saved = await runStructural(() =>
-        adapter.changeColumnType!(columnKey, kind, options),
+        adapter.changeColumnType!(columnKey, kind, options, currency),
       );
       if (saved) setColumnMenuKey(null);
       return saved;
@@ -1465,6 +1758,7 @@ export function EditorKernel({
         label: string;
         kind: EditorColumnKind;
         options?: readonly string[];
+        currency?: string;
       },
     ): Promise<boolean> => {
       if (!capabilities.canInsertColumns || !adapter.insertColumn) {
@@ -1518,7 +1812,10 @@ export function EditorKernel({
 
   const handleResizeColumn = useCallback(
     (column: { key: string }, width: number): void => {
-      if (!capabilities.canResizeColumns) {
+      if (
+        !capabilities.canResizeColumns ||
+        !table.columns.some((candidate) => candidate.key === column.key)
+      ) {
         return;
       }
       const nextWidth = Math.round(width);
@@ -1532,7 +1829,7 @@ export function EditorKernel({
       }));
       void adapter.resizeColumn(column.key, nextWidth).catch(() => undefined);
     },
-    [adapter, capabilities.canResizeColumns],
+    [adapter, capabilities.canResizeColumns, table.columns],
   );
 
   const handleRenameTable = useCallback(
@@ -1920,6 +2217,40 @@ export function EditorKernel({
     [capabilities.rowCreation, draftRow, normalizedRecordSearch, visibleRows],
   );
 
+  useEffect(() => {
+    if (!focusColumnKey) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const columnIndex = visibleGridColumns.findIndex(
+        (column) => column.key === focusColumnKey,
+      );
+      if (columnIndex < 0) {
+        setFocusColumnKey(null);
+        return;
+      }
+      const row = gridRows[0];
+      if (row) {
+        gridRef.current?.selectCell(
+          { idx: columnIndex, rowIdx: 0 },
+          { shouldFocusCell: true },
+        );
+        setActiveCell({ rowId: row.id, columnKey: focusColumnKey });
+        window.requestAnimationFrame(() => {
+          const selectedCell =
+            gridRef.current?.element?.querySelector<HTMLElement>(
+              '[role="gridcell"][aria-selected="true"]',
+            );
+          selectedCell?.focus({ preventScroll: true });
+        });
+      } else {
+        addColumnButtonRef.current?.focus({ preventScroll: true });
+      }
+      setFocusColumnKey(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusColumnKey, gridRows, visibleGridColumns]);
+
   const activateDraft = useCallback((rowIdx: number, columnIdx: number) => {
     setPendingEdit(null);
     setDraftActivation({ rowIdx, columnIdx });
@@ -1933,6 +2264,7 @@ export function EditorKernel({
         newRecordLabel,
         onActivateDraft: activateDraft,
         onOpenColumnMenu: (columnKey) => {
+          setPropertyDraft(null);
           setAddColumnOpen(false);
           setColumnMenuKey((current) =>
             current === columnKey ? null : columnKey,
@@ -2014,6 +2346,9 @@ export function EditorKernel({
         : (capabilities.rowCreationMessage ??
           "Records will appear here when they are available.");
   const noMatches = table.rows.length > 0 && visibleRows.length === 0;
+  const previewColumn = presentationTable.columns.find(
+    (column) => column.preview,
+  );
 
   return (
     <section
@@ -2040,6 +2375,7 @@ export function EditorKernel({
                   <button
                     onClick={() => {
                       setColumnMenuKey(null);
+                      setPropertyDraft(initialPropertyDraft());
                       setAddColumnOpen(true);
                     }}
                     role="menuitem"
@@ -2263,6 +2599,7 @@ export function EditorKernel({
               noMatches={noMatches}
               onClearSearch={() => setRecordSearch("")}
               onOpenRecord={openRecord}
+              {...(previewColumn ? { previewColumn } : {})}
               rows={visibleRows}
               tableName={table.name}
             />
@@ -2270,11 +2607,18 @@ export function EditorKernel({
               <>
                 <button
                   aria-expanded={addColumnOpen}
-                  aria-label="Add column"
+                  aria-label="Add property"
                   className="editor-add-column-button"
+                  ref={addColumnButtonRef}
                   onClick={() => {
                     setColumnMenuKey(null);
-                    setAddColumnOpen((current) => !current);
+                    if (addColumnOpen) {
+                      setPropertyDraft(null);
+                      setAddColumnOpen(false);
+                    } else {
+                      setPropertyDraft(initialPropertyDraft());
+                      setAddColumnOpen(true);
+                    }
                   }}
                   type="button"
                 >
@@ -2282,11 +2626,30 @@ export function EditorKernel({
                 </button>
                 {addColumnOpen ? (
                   <AddColumnPopover
+                    anchorRef={addColumnButtonRef}
                     canAddConnections={capabilities.canAddConnections !== false}
                     {...(connectionSource ? { connectionSource } : {})}
                     {...(connectionTargets ? { connectionTargets } : {})}
-                    onClose={() => setAddColumnOpen(false)}
-                    onCreate={handleCreateColumn}
+                    columns={table.columns}
+                    draft={propertyDraft ?? initialPropertyDraft()}
+                    onClose={() => {
+                      setPropertyDraft(null);
+                      setAddColumnOpen(false);
+                    }}
+                    onCreate={handleCreateProperty}
+                    onDraftChange={setPropertyDraft}
+                    {...(structuralError
+                      ? { externalError: structuralError }
+                      : {})}
+                    {...(onStructureChanged
+                      ? {
+                          onRefresh: () => {
+                            setStructuralError(null);
+                            onStructureChanged();
+                          },
+                        }
+                      : {})}
+                    tableName={table.name}
                     {...(onCreateConnection
                       ? { onCreateConnection: handleCreateConnection }
                       : {})}

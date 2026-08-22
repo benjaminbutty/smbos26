@@ -43,6 +43,7 @@ interface CreateEditorColumnsOptions {
     columnKey: string,
     kind: EditorColumnKind,
     options?: readonly string[],
+    currency?: string,
   ) => Promise<boolean>;
   onInsertColumn?: (
     anchorColumnKey: string,
@@ -51,6 +52,7 @@ interface CreateEditorColumnsOptions {
       label: string;
       kind: EditorColumnKind;
       options?: readonly string[];
+      currency?: string;
     },
   ) => Promise<boolean>;
   onMoveColumn?: (columnKey: string, direction: "left" | "right") => void;
@@ -154,6 +156,7 @@ function HeaderCell({
     | ((
         kind: EditorColumnKind,
         options?: readonly string[],
+        currency?: string,
       ) => Promise<boolean>)
     | undefined;
   onInsert:
@@ -163,6 +166,7 @@ function HeaderCell({
           label: string;
           kind: EditorColumnKind;
           options?: readonly string[];
+          currency?: string;
         },
       ) => Promise<boolean>)
     | undefined;
@@ -179,6 +183,8 @@ function HeaderCell({
     <div
       className={`editor-header-cell${canReorder ? " is-reorderable" : ""}`}
       data-reorderable={canReorder ? "true" : "false"}
+      data-editor-column-key={column.key}
+      data-preview-column={column.preview ? "true" : undefined}
       ref={anchorRef}
       title={canReorder ? "Drag to reorder column" : undefined}
     >
@@ -202,7 +208,7 @@ function HeaderCell({
               onOpen();
             }}
             ref={menuButtonRef}
-            tabIndex={-1}
+            tabIndex={0}
             type="button"
           >
             ···
@@ -253,6 +259,7 @@ function ColumnMenu({
     | ((
         kind: EditorColumnKind,
         options?: readonly string[],
+        currency?: string,
       ) => Promise<boolean>)
     | undefined;
   onInsert:
@@ -262,6 +269,7 @@ function ColumnMenu({
           label: string;
           kind: EditorColumnKind;
           options?: readonly string[];
+          currency?: string;
         },
       ) => Promise<boolean>)
     | undefined;
@@ -279,6 +287,7 @@ function ColumnMenu({
         : ["Option 1", "Option 2"],
   );
   const [kind, setKind] = useState<EditorColumnKind>(column.kind);
+  const [currency, setCurrency] = useState(column.currency ?? "GBP");
   const [mode, setMode] = useState<
     | "main"
     | "rename"
@@ -433,6 +442,20 @@ function ColumnMenu({
               options={options}
             />
           ) : null}
+          {kind === "currency" ? (
+            <label>
+              Currency
+              <select
+                aria-label="Currency"
+                onChange={(event) => setCurrency(event.currentTarget.value)}
+                value={currency}
+              >
+                <option value="GBP">UK pounds (GBP)</option>
+                <option value="EUR">Euros (EUR)</option>
+                <option value="USD">US dollars (USD)</option>
+              </select>
+            </label>
+          ) : null}
           <button
             className="editor-menu-submit"
             disabled={submitting}
@@ -446,6 +469,7 @@ function ColumnMenu({
               void onChangeType(
                 kind,
                 kind === "select" || kind === "status" ? options : undefined,
+                kind === "currency" ? currency : undefined,
               ).finally(() => setSubmitting(false));
             }}
             type="button"
@@ -512,11 +536,13 @@ function InsertColumnForm({
     label: string;
     kind: EditorColumnKind;
     options?: readonly string[];
+    currency?: string;
   }) => Promise<boolean>;
 }>): React.ReactNode {
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<EditorColumnKind>("text");
   const [options, setOptions] = useState<string[]>(["Option 1", "Option 2"]);
+  const [currency, setCurrency] = useState("GBP");
   const [submitting, setSubmitting] = useState(false);
   return (
     <form
@@ -529,6 +555,7 @@ function InsertColumnForm({
           label,
           kind,
           ...(kind === "select" || kind === "status" ? { options } : {}),
+          ...(kind === "currency" ? { currency } : {}),
         }).finally(() => setSubmitting(false));
       }}
     >
@@ -546,6 +573,20 @@ function InsertColumnForm({
           onChange={(next) => setOptions([...next])}
           options={options}
         />
+      ) : null}
+      {kind === "currency" ? (
+        <label>
+          Currency
+          <select
+            aria-label="Currency"
+            onChange={(event) => setCurrency(event.currentTarget.value)}
+            value={currency}
+          >
+            <option value="GBP">UK pounds (GBP)</option>
+            <option value="EUR">Euros (EUR)</option>
+            <option value="USD">US dollars (USD)</option>
+          </select>
+        </label>
       ) : null}
       <button
         className="editor-menu-submit"
@@ -607,6 +648,14 @@ export function EditorCell({
   props: RenderCellProps<EditorRow>;
 }>): React.ReactNode {
   const { row, rowIdx, tabIndex, onRowChange } = props;
+  if (column.preview) {
+    return (
+      <div className="editor-preview-cell" data-testid="proposed-property-cell">
+        <span>Empty</span>
+        <small>Not added yet</small>
+      </div>
+    );
+  }
   if (row.isDraft) {
     return column.primary && column.editable !== false ? (
       <NewRecordCell
@@ -725,28 +774,33 @@ export function createEditorColumns({
     width: column.width,
     minWidth: 128,
     maxWidth: 640,
-    resizable: canResizeColumns,
-    draggable: canReorderColumns,
+    resizable: canResizeColumns && !column.preview,
+    draggable: canReorderColumns && !column.preview,
     frozen: column.primary,
     editable: (row: EditorRow) =>
-      column.editable !== false && (!row.isDraft || Boolean(column.primary)),
-    ...(column.kind === "connection"
+      !column.preview &&
+      column.editable !== false &&
+      (!row.isDraft || Boolean(column.primary)),
+    ...(column.kind === "connection" ||
+    column.kind === "select" ||
+    column.kind === "status"
       ? { editorOptions: { commitOnOutsideClick: false } }
       : {}),
     renderHeaderCell: () => (
       <HeaderCell
         column={column}
-        canReorder={canReorderColumns}
-        canRename={canRenameColumns}
-        canUpdateOptions={canUpdateColumnOptions}
-        canChangeType={canChangeColumnTypes}
-        canInsert={canInsertColumns}
+        canReorder={canReorderColumns && !column.preview}
+        canRename={canRenameColumns && !column.preview}
+        canUpdateOptions={canUpdateColumnOptions && !column.preview}
+        canChangeType={canChangeColumnTypes && !column.preview}
+        canInsert={canInsertColumns && !column.preview}
         isOpen={columnMenuKey === column.key}
         onOpen={() => onOpenColumnMenu(column.key)}
         onClose={() => onCloseColumnMenu?.()}
         onChangeType={
           onChangeColumnType
-            ? (kind, options) => onChangeColumnType(column.key, kind, options)
+            ? (kind, options, currency) =>
+                onChangeColumnType(column.key, kind, options, currency)
             : undefined
         }
         onInsert={

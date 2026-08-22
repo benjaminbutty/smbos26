@@ -880,6 +880,11 @@
   background: inherit;
 }
 
+.editor-grid .rdg-editor-container:has(.editor-choice-picker) {
+  z-index: 4;
+  overflow: visible;
+}
+
 .editor-grid .rdg-editor-container .editor-cell-editor:focus {
   border: 0 !important;
   outline: 0 !important;
@@ -14178,5 +14183,293 @@ textarea {
     border: 0;
     border-radius: 0;
     box-shadow: var(--elevation-overlay);
+  }
+}
+
+/* Journey 3-I1: direct Property shaping stays inside the Table surface. */
+.editor-property-editor {
+  box-sizing: border-box;
+  display: grid;
+  width: min(26rem, calc(100vw - 1rem));
+  max-width: calc(100vw - 1rem);
+  max-height: min(42rem, calc(100vh - 1rem));
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+  overflow-x: hidden;
+  overflow-y: auto;
+  text-align: left;
+  z-index: 100;
+}
+
+.editor-property-editor[data-viewport-safe="true"] {
+  position: fixed;
+}
+
+.editor-property-editor-header {
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.editor-property-editor-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.editor-property-editor-header strong {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+
+.editor-property-editor-header span {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.editor-property-editor-header > button {
+  flex: 0 0 auto;
+  min-width: 2rem;
+  min-height: 2rem;
+  color: var(--text-tertiary);
+}
+
+.editor-property-editor-header > button:hover {
+  color: var(--coral-700);
+  background: var(--coral-50);
+}
+
+.editor-property-editor-body {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+}
+
+.editor-property-editor-body > label,
+.editor-property-placement-section > label {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.editor-property-editor input,
+.editor-property-editor select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.55rem;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 0.76rem;
+}
+
+.editor-property-editor input:focus,
+.editor-property-editor select:focus {
+  border-color: var(--coral-400);
+  outline: 2px solid rgba(255, 90, 77, 0.14);
+}
+
+.editor-property-type-section,
+.editor-property-options-section,
+.editor-property-placement-section {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.editor-property-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: 0.74rem;
+  font-weight: 750;
+}
+
+.editor-property-type-label {
+  color: var(--coral-700);
+  font-size: 0.68rem;
+}
+
+.editor-property-editor .editor-property-type-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.editor-property-consequence {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.editor-property-consequence strong {
+  color: var(--text-primary);
+  font-size: 0.72rem;
+}
+
+.editor-property-consequence p,
+.editor-property-consequence ul {
+  margin: 0;
+}
+
+.editor-property-consequence ul {
+  display: grid;
+  gap: 0.25rem;
+  padding-left: 1rem;
+}
+
+.editor-property-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.editor-property-editor-actions .editor-menu-back {
+  min-height: 2.25rem;
+  margin: 0;
+  padding-inline: var(--space-3);
+}
+
+.editor-property-editor-actions .editor-menu-submit {
+  min-height: 2.25rem;
+  padding-inline: var(--space-4);
+}
+
+.editor-property-refresh {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: var(--space-2) var(--space-3);
+  color: var(--coral-700);
+  background: var(--coral-50);
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-control);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+.editor-property-refresh:hover {
+  background: var(--coral-100);
+  filter: none;
+}
+
+.editor-property-editor .editor-structural-error {
+  display: block;
+  padding: var(--space-2);
+  background: var(--trust-destructive-error-surface);
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+
+.editor-preview-cell {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+  line-height: 1.2;
+}
+
+.editor-preview-cell small {
+  color: var(--text-tertiary);
+  font-size: 0.58rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.editor-grid [data-preview-column="true"] {
+  background: var(--surface-subtle);
+  border-left: 1px dashed var(--coral-300);
+  border-right: 1px dashed var(--coral-300);
+}
+
+.editor-grid [data-preview-column="true"] .editor-header-label::after {
+  color: var(--coral-700);
+  content: " · preview";
+  font-size: 0.6rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.editor-options-limit {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.64rem;
+}
+
+.editor-mobile-property-preview {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) dashed var(--coral-300);
+  border-radius: var(--radius-sm);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.editor-mobile-property-preview strong {
+  color: var(--text-primary);
+  font-size: 0.74rem;
+}
+
+@media (max-width: 48rem) {
+  .editor-property-editor[data-viewport-safe="true"] {
+    inset: 0 !important;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    padding: calc(var(--space-5) + env(safe-area-inset-top)) var(--space-4)
+      calc(var(--space-5) + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .editor-property-editor-actions {
+    position: sticky;
+    bottom: 0;
+    margin-top: var(--space-2);
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface-base);
+  }
+
+  .editor-property-editor-actions > button {
+    flex: 1 1 0;
+    min-height: 2.75rem;
   }
 }

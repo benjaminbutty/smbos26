@@ -40,6 +40,7 @@ export interface EditorColumn {
   key: string;
   label: string;
   kind: EditorColumnKind;
+  preview?: boolean;
   primary?: boolean;
   editable?: boolean;
   required?: boolean;
@@ -103,6 +104,13 @@ export interface CreateColumnInput {
   kind: EditorColumnKind;
   options?: readonly string[];
   currency?: string;
+}
+
+export type PropertyPlacement =
+  { mode: "end" } | { mode: "before" | "after"; anchorColumnKey: string };
+
+export interface CreatePropertyInput extends CreateColumnInput {
+  placement: PropertyPlacement;
 }
 
 export type ConnectionMultiplicity = "one" | "several";

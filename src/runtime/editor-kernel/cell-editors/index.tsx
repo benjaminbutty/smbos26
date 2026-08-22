@@ -557,6 +557,7 @@ export function ChoiceStatusPicker({
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const configuredOptions = (column.options ?? []).filter(
     (option) => option.trim().length > 0,
@@ -574,7 +575,19 @@ export function ChoiceStatusPicker({
     setOpen(false);
   };
   return (
-    <div className="editor-choice-picker">
+    <div
+      className="editor-choice-picker"
+      onMouseDown={(event) => event.stopPropagation()}
+      onBlur={() => {
+        window.setTimeout(() => {
+          const picker = pickerRef.current;
+          if (!picker || picker.contains(document.activeElement)) return;
+          setOpen(false);
+          onCancel?.();
+        }, 0);
+      }}
+      ref={pickerRef}
+    >
       <button
         aria-expanded={open}
         aria-haspopup={hasConfiguredOptions ? "listbox" : "dialog"}
@@ -657,6 +670,11 @@ export function ChoiceStatusPicker({
                 key={option}
                 onClick={() => commitOption(option)}
                 onMouseEnter={() => setActiveIndex(index)}
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  commitOption(option);
+                }}
                 role="option"
                 type="button"
               >
@@ -666,6 +684,12 @@ export function ChoiceStatusPicker({
             <button
               className="editor-choice-clear"
               onClick={() => {
+                onCommit(null);
+                setOpen(false);
+              }}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
                 onCommit(null);
                 setOpen(false);
               }}
@@ -693,6 +717,7 @@ export function ChoiceStatusPicker({
 
 function StatusEditor({
   columnDefinition,
+  onClose,
   onRowChange,
   row,
 }: CellEditorProps): React.ReactNode {
@@ -700,6 +725,7 @@ function StatusEditor({
   return (
     <ChoiceStatusPicker
       column={columnDefinition}
+      onCancel={() => onClose(false)}
       onCommit={(next) =>
         onRowChange(rowWithValue(row, columnDefinition.key, next), true)
       }

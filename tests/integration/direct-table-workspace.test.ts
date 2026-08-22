@@ -988,6 +988,134 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     ).toEqual(publicFormBefore);
   });
 
+  it("adds a Choice property after an existing property in one version and keeps value edits operational", async () => {
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: (await currentness(owner)).currentness,
+        intent: {
+          action: "create_table",
+          title: "J3 Property Journey " + crypto.randomUUID(),
+        },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const area = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "add_column",
+          viewKey,
+          label: "Area",
+          columnType: "short_text",
+        },
+      },
+    );
+    const beforeReferral = await sql<
+      { version_count: number; change_count: number }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions where business_id = ${business.id}) as version_count,
+        (select count(*)::integer from public.configuration_change_sets where business_id = ${business.id}) as change_count
+    `;
+    const referral = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: area.currentness,
+        intent: {
+          action: "insert_column",
+          viewKey,
+          anchorFieldKey: "area",
+          position: "right",
+          label: "Referral source",
+          columnType: "select",
+          options: [
+            "Google",
+            "Instagram",
+            "Recommendation",
+            "Returning customer",
+            "Other",
+          ],
+        },
+      },
+    );
+    expect(referral.changeSet.status).toBe("applied");
+    expect(
+      referral.composed!.operations.filter(
+        (operation) => operation.op === "set_field",
+      ),
+    ).toHaveLength(1);
+    const referralFieldKey = referral.composed!.operations.find(
+      (operation) => operation.op === "set_field",
+    )!.key;
+    const afterReferral = await currentness(owner);
+    const view = afterReferral.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    )!;
+    expect(view.config_json).toMatchObject({
+      fields: ["name", "area", referralFieldKey],
+    });
+    expect(
+      afterReferral.snapshot.field_definitions.find(
+        (field) => field.key === referralFieldKey,
+      ),
+    ).toMatchObject({
+      field_type: "select",
+      required: false,
+      settings_json: {
+        options: [
+          "Google",
+          "Instagram",
+          "Recommendation",
+          "Returning customer",
+          "Other",
+        ],
+      },
+    });
+    const [afterReferralCounts] = await sql<
+      { version_count: number; change_count: number }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions where business_id = ${business.id}) as version_count,
+        (select count(*)::integer from public.configuration_change_sets where business_id = ${business.id}) as change_count
+    `;
+    expect(afterReferralCounts).toEqual({
+      version_count: Number(beforeReferral[0]!.version_count) + 1,
+      change_count: Number(beforeReferral[0]!.change_count) + 1,
+    });
+
+    const rowData = new FormData();
+    rowData.set("viewKey", viewKey);
+    rowData.set("name", "J3 test customer");
+    const row = await createDirectTableRow(
+      owner.client,
+      { businessId: business.id },
+      { viewKey, formData: rowData },
+    );
+    await applyDirectTableRecordCellEditValue(
+      owner.client,
+      { businessId: business.id },
+      {
+        viewKey,
+        recordId: row.id,
+        fieldKey: referralFieldKey,
+        value: "Google",
+      },
+    );
+    const [afterOperationalEdit] = await sql<
+      { version_count: number; change_count: number }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions where business_id = ${business.id}) as version_count,
+        (select count(*)::integer from public.configuration_change_sets where business_id = ${business.id}) as change_count
+    `;
+    expect(afterOperationalEdit).toEqual(afterReferralCounts);
+  });
+
   it("keeps Add and Insert supported when a Table has no Forms", async () => {
     const created = await applyDirectTableAction(
       administrator.client,
