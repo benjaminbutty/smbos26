@@ -223,6 +223,45 @@ describe("Page grammar and direct Workspace composer", () => {
     expect(layout.blocks.at(-1)).toHaveProperty("id");
   });
 
+  it("inserts a bounded block after a trusted existing block", () => {
+    const stableSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          layout_json: {
+            blocks: [
+              {
+                id: headingBlockId,
+                type: "heading",
+                text: "Welcome",
+                level: 2,
+              },
+              { id: viewBlockId, type: "view", view_key: "contacts" },
+            ],
+          },
+        },
+      ],
+    };
+    const result = composeDirectPageAction(stableSnapshot, {
+      action: "add_page_block",
+      pageKey: "workspace",
+      afterBlockId: headingBlockId,
+      block: { type: "divider" },
+    });
+    const layout = (result.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+
+    expect(layout.blocks.map((block) => block.type)).toEqual([
+      "heading",
+      "divider",
+      "view",
+    ]);
+    expect(layout.blocks[0]).toMatchObject({ id: headingBlockId });
+    expect(layout.blocks[1]).toHaveProperty("id");
+    expect(layout.blocks[2]).toMatchObject({ id: viewBlockId });
+  });
+
   it("supports bounded block update, reorder, and removal by stable ID", () => {
     const editableSnapshot: ConfigurationSnapshotV1 = {
       ...snapshot,

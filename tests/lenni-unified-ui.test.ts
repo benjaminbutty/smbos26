@@ -211,13 +211,17 @@ describe("Lenni unified workspace presentation", () => {
     );
 
     expect(editorSource).toContain('aria-keyshortcuts="/"');
-    expect(editorSource).toContain("Press / to add");
-    expect(editorSource).toContain('void addBlock({ type: "divider" })');
+    expect(editorSource).toContain("Type / or add a block");
+    expect(editorSource).toContain('void addBlock({ type: "divider" },');
     expect(editorSource).toContain('aria-controls="page-editor-add-menu"');
     expect(editorSource).toContain('aria-live="polite"');
-    expect(editorSource).toContain(
-      "draggable={Boolean(id) && !structureBlocked}",
-    );
+    expect(editorSource).toContain('className="page-editor-grip-button"');
+    expect(editorSource).toContain("draggable={!structureBlocked}");
+    expect(editorSource).toContain('aria-label="Page mode"');
+    expect(editorSource).toContain("enterReadingMode");
+    expect(editorSource).toContain("page-editor-block-gutter");
+    expect(editorSource).toContain("afterBlockId");
+    expect(editorSource).toContain("page-editor-new-block");
     expect(editorSource).toContain("moveBlockToIndex");
     expect(editorSource).toContain('action: "save_page_layout"');
     expect(editorSource).not.toContain("while (nextIndex !== targetIndex)");
@@ -242,7 +246,8 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(cssSource).toContain(".page-editor-drag-handle");
+    expect(cssSource).toContain(".page-editor-block-gutter");
+    expect(cssSource).toContain(".page-editor-mode-switch");
     expect(cssSource).toContain("min-height: 2.75rem");
   });
 

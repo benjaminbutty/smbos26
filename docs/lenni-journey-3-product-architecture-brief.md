@@ -27,6 +27,23 @@ the final reordered layout. The server still reloads the active configuration,
 checks currentness and Page grammar, and applies one trusted `set_page`
 operation and one Version.
 
+The product review also confirmed that the existing canvas still presented
+permanent block-management rows rather than the accepted quiet Page grammar.
+J3-I3 therefore recomposes the same renderer-backed surface into a bounded
+content rail: title and Heading/Text edit in place, contextual `+` and grip
+controls occupy the gutter, `/` and `+` open the same finite insert menu,
+Heading/Text are composed locally before their one insert action, and a
+Reading mode removes authoring chrome while live embedded Views remain
+operable. This is presentation and component-memory state only, not an editor
+document or Page draft lifecycle.
+
+The existing finite `add_page_block` intent gains one optional
+`afterBlockId`. The server resolves that stable or legacy block identity from
+the authoritative Page and inserts the new code-owned block immediately after
+it. The browser still cannot allocate block identity or submit operations, and
+one completed insertion still produces one `set_page` operation and one
+Version. Omitting placement retains the existing append behavior.
+
 Stale Page recovery remains memory-only. A stale title or text draft stays in
 component state while the route refreshes the latest authoritative Page and
 currentness; the owner must review and deliberately save again. No silent
@@ -37,10 +54,12 @@ or silently recreated; the owner may copy it and discard the unresolved draft.
 
 ### Migration decision and interfaces
 
-No migration, dependency or action-vocabulary extension is required.
+No migration, dependency or new action kind is required.
 `save_page_layout` is already accepted by the Direct Page boundary and the
 database action-shape guard. J3-I3 exposes that existing action to the reorder
-completion seam rather than adding a second reorder lifecycle.
+completion seam rather than adding a second reorder lifecycle. The optional
+placement field extends only the existing strict `add_page_block` schema and
+composer; it does not extend the database action allow-list.
 
 Primary seams are:
 

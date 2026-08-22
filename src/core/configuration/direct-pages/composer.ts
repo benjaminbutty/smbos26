@@ -355,10 +355,18 @@ function composePageMutation(
       }
       assertEligibleSavedView(snapshot, intent.block.viewKey);
     }
-    nextBlocks.push({
+    const nextBlock = {
       ...pageBlockFromInput(intent.block),
       id: globalThis.crypto.randomUUID(),
-    });
+    };
+    if (intent.afterBlockId === undefined) {
+      nextBlocks.push(nextBlock);
+    } else if (intent.afterBlockId === null) {
+      nextBlocks.unshift(nextBlock);
+    } else {
+      const { index } = blockById(stableLayout, intent.afterBlockId);
+      nextBlocks.splice(index + 1, 0, nextBlock);
+    }
   } else if (intent.action === "update_page_block") {
     const { index, block } = blockById(stableLayout, intent.blockId);
     if (block.type !== intent.block.type) {
