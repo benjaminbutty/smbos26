@@ -31,6 +31,9 @@ Stale Page recovery remains memory-only. A stale title or text draft stays in
 component state while the route refreshes the latest authoritative Page and
 currentness; the owner must review and deliberately save again. No silent
 rebase, local storage, session storage or durable editing session is added.
+If the edited block was removed or changed to an incompatible supported type,
+the draft remains visibly selectable in a conflict panel but cannot be applied
+or silently recreated; the owner may copy it and discard the unresolved draft.
 
 ### Migration decision and interfaces
 

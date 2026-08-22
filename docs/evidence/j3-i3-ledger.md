@@ -54,6 +54,12 @@ The Page was rendered against the same authenticated route at each required view
 
 Keyboard/touch seams are covered by the `/` shortcut, keyboard-reachable inline title/content controls, visible focus styles, explicit mobile move/remove buttons, and reduced-motion CSS. The checked routes exposed no visible runtime error or non-empty alert.
 
+The independent exact-PR review additionally exercised the stale-conflict
+design. When the latest Page no longer contains a compatible block for an open
+Heading/Text draft, the draft stays visibly selectable with an explicit
+`Discard draft` action and remains covered by the navigation-loss warning. It
+cannot be saved against the removed block or silently recreated.
+
 Durable screenshots:
 
 - `docs/evidence/j3-i3-page-1440x900.png`

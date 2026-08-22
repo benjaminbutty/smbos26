@@ -554,14 +554,19 @@ export function PageEditor({
     selectedViewKey,
   );
   const structureBlocked = status === "saving" || status === "stale";
+  const editingSourceBlock = editing
+    ? layout.blocks.find((block, index) => blockId(block, index) === editing.id)
+    : undefined;
+  const editingSourceCandidate = editingSourceBlock
+    ? editableBlock(editingSourceBlock)
+    : null;
+  const editingSource =
+    editingSourceCandidate?.type === editing?.type
+      ? editingSourceCandidate
+      : null;
   const hasMeaningfulDraft =
     (renaming && titleDraft.trim() !== title) ||
-    (editing !== null &&
-      layout.blocks.some((block, index) => {
-        if (blockId(block, index) !== editing.id) return false;
-        const editable = editableBlock(block);
-        return editable?.text !== editing.text;
-      })) ||
+    (editing !== null && editingSource?.text !== editing.text) ||
     pendingReorder !== null;
 
   if (
@@ -847,6 +852,39 @@ export function PageEditor({
         </p>
       ) : null}
 
+      {editing && !editingSource ? (
+        <section
+          aria-label="Unresolved Page text draft"
+          className="page-editor-draft-conflict"
+          role="alert"
+        >
+          <div>
+            <strong>Your text draft is still here</strong>
+            <p>
+              That block is no longer on the latest Page. Copy anything you
+              need, then discard this draft or add a new supported block.
+            </p>
+          </div>
+          <textarea
+            aria-label="Unresolved text draft"
+            onChange={(event) =>
+              setEditing((value) =>
+                value ? { ...value, text: event.currentTarget.value } : value,
+              )
+            }
+            rows={4}
+            value={editing.text}
+          />
+          <button
+            className="button button-secondary button-small"
+            onClick={() => setEditing(null)}
+            type="button"
+          >
+            Discard draft
+          </button>
+        </section>
+      ) : null}
+
       <div className="page-editor-insert-shell" ref={insertShellRef}>
         <div className="page-editor-controls">
           <button
@@ -1074,7 +1112,7 @@ export function PageEditor({
                   block={block}
                   blockIdentifier={id}
                   businessSlug={businessSlug}
-                  editing={editing}
+                  editing={editingSource ? editing : null}
                   embed={
                     block.type === "view" ? views[block.view_key] : undefined
                   }

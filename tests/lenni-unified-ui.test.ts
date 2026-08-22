@@ -223,6 +223,8 @@ describe("Lenni unified workspace presentation", () => {
     expect(editorSource).not.toContain("while (nextIndex !== targetIndex)");
     expect(editorSource).toContain("Refresh and recheck");
     expect(editorSource).toContain("useUnsavedNavigationWarning");
+    expect(editorSource).toContain("Your text draft is still here");
+    expect(editorSource).toContain('aria-label="Unresolved text draft"');
     expect(pageRouteSource).toContain("key={page.definition.key}");
     expect(pageRouteSource).not.toContain(
       "expectedHeadRevision}-${page.definition.title}",

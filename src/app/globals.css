@@ -3391,6 +3391,24 @@ textarea {
   border-radius: 0.55rem;
 }
 
+.page-editor-draft-conflict {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-md);
+}
+
+.page-editor-draft-conflict p {
+  margin: var(--space-1) 0 0;
+}
+
+.page-editor-draft-conflict .button {
+  justify-self: start;
+}
+
 .page-editor-controls {
   justify-content: flex-start;
   flex-wrap: wrap;
