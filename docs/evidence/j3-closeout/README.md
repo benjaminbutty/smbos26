@@ -15,7 +15,7 @@ fixtures and created no configuration or operational mutation.
 | Catering enquiry, Owner | 390x844 | [Enquiries](./owner-catering-390x844.jpg) | Deliberate Record-first mobile Table and shared Open Enquiries tab; no overflow or browser warnings/errors |
 | Trades/jobs, Owner | 390x844 | [Jobs](./owner-trades-390x844.jpg) | Scheduled Jobs tab and mobile operating surface; no overflow or browser warnings/errors |
 | Milk round, Admin | 1024x768 | [Standing Orders](./admin-milk-round-1024x768.jpg) | Same structural controls as Owner, including Add property and Create saved view |
-| Bedford Bakery, Staff | 1024x768 | [Orders](./staff-bedford-orders-1024x768.jpg) | Complete operating Table with structural controls, Changes and Tell Lenni absent |
+| Bedford Bakery, Staff | 1024x768 | [Orders](./staff-bedford-orders-1024x768.jpg) | Complete operating Table; structural controls, Changes and Tell Lenni absent |
 
 All four business shapes came from the existing generic
 `internal-workspace-engine` fixture and production runtime. No screenshot uses

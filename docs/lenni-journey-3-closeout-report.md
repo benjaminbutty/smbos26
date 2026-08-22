@@ -157,8 +157,8 @@ This is the accepted bounded model, not an unimplemented persistence promise.
    workspaces and their primary Tables/Saved Views.
 4. Use Bedford Owner and Staff routes emitted by `demo:seed` to compare
    structural and operating roles.
-5. Review `/app/lenni-connections-demo/workspace/phase2_appointments`, an
-   internal Page under Pages, and
+5. Review `/app/lenni-connections-demo/workspace/phase2_appointments`,
+   `/app/lenni-connections-demo/pages/operations-overview`, and
    `/app/bedford-bakery-demo/sites/preorder?mode=edit`.
 6. Keep `/p/bedford-bakery-demo/preorder` open separately while editing the
    published Site; confirm it stays unchanged until **Publish changes**.
