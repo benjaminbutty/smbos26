@@ -1,7 +1,9 @@
 # J3-I3 Internal Pages evidence ledger
 
-Date: 22 August 2026  
-Branch: `codex/j3-i3-internal-pages`  
+Date: 22 August 2026
+
+Branch: `codex/j3-i3-internal-pages`
+
 Base: `43e45536d354942ec8f544a1436632c8ba14586e`
 
 ## Owner journey
