@@ -205,6 +205,7 @@ export async function applyDirectTableAction(
     "rename_saved_view",
     "update_view_query",
     "archive_saved_view",
+    "configure_saved_view",
   ]);
   const internalWorkspaceAction = internalWorkspaceActionKinds.has(
     composed.actionKind,

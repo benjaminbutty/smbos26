@@ -5,7 +5,20 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app/bakery",
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
+
+vi.mock(
+  "../src/runtime/editor-kernel/production/production-table-actions",
+  () => ({
+    archiveProductionSavedViewAction: vi.fn(),
+    configureProductionSavedViewAction: vi.fn(),
+    duplicateProductionSavedViewAction: vi.fn(),
+    previewProductionSavedViewAction: vi.fn(),
+    refreshProductionTableCurrentnessAction: vi.fn(),
+    searchProductionTableConnectionTargetsAction: vi.fn(),
+  }),
+);
 
 import { WorkspaceHome } from "../src/components/workspace-home";
 import { WorkspaceMobileNav } from "../src/components/workspace-mobile-nav";
@@ -14,6 +27,7 @@ import { AcquisitionSetupSummary } from "../src/components/acquisition-setup-sum
 import { BuilderResultPanel } from "../src/components/builder-ui";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
+import { TableViewControls } from "../src/runtime/views/table-view-controls";
 
 describe("Lenni unified workspace presentation", () => {
   it("keeps mobile navigation role-aware while preserving shared destinations", () => {
@@ -582,6 +596,44 @@ describe("Lenni unified workspace presentation", () => {
     expect(html).toContain("Active");
     expect(html).toContain('aria-current="page"');
     expect(html).toContain("Saved");
+  });
+
+  it("shows the Table-local Saved View control only with structural access", () => {
+    const props = {
+      availableColumns: [{ kind: "field", field_key: "name" }],
+      businessSlug: "bakery",
+      config: {
+        schema_version: 2,
+        role: "primary",
+        columns: [{ kind: "field", field_key: "name" }],
+        fields: ["name"],
+        title_field: "name",
+        include_archived: false,
+        filters: [],
+        filter_match: "all",
+        sorts: [],
+        group: null,
+      },
+      fields: [{ key: "name", label: "Name", field_type: "short_text" }],
+      primaryViewKey: "appointments",
+      relationships: [],
+      viewKey: "appointments",
+      viewName: "Appointments",
+    };
+    const owner = renderToStaticMarkup(
+      createElement(TableViewControls, {
+        ...props,
+        currentness: {
+          expectedBaseVersionId: "10000000-0000-4000-8000-000000000001",
+          expectedHeadRevision: 2,
+        },
+      } as never),
+    );
+    const staff = renderToStaticMarkup(
+      createElement(TableViewControls, props as never),
+    );
+    expect(owner).toContain('aria-label="Create saved view"');
+    expect(staff).not.toContain("Create saved view");
   });
 
   it("keeps the production Table action and empty-state contract explicit", () => {

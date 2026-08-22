@@ -717,6 +717,29 @@ describe("Internal Workspace Engine", () => {
       }),
     ).toThrow();
 
+    const shownExisting = composeDirectTableAction(duplicateSnapshot, {
+      action: "add_existing_connection_property",
+      viewKey: "milk_rounds",
+      relationshipKey: "dog_connection",
+      direction: "target",
+      label: "Dogs",
+    });
+    expect(shownExisting.operations).toHaveLength(1);
+    expect(shownExisting.operations[0]).toMatchObject({
+      op: "set_view",
+      key: "milk_rounds",
+      config_json: expect.objectContaining({
+        columns: expect.arrayContaining([
+          {
+            kind: "connection",
+            relationship_key: "dog_connection",
+            direction: "target",
+            label: "Dogs",
+          },
+        ]),
+      }),
+    });
+
     const savedView = view(
       "40000000-0000-4000-8000-000000000006",
       "dog_saved",
@@ -828,6 +851,37 @@ describe("Internal Workspace Engine", () => {
       }),
     });
 
+    const resizedSourceSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      views: snapshot.views.map((candidate) =>
+        candidate.key === "milk_rounds"
+          ? view(
+              candidate.id,
+              candidate.key,
+              candidate.name,
+              candidate.object_definition_id,
+              "milk_round",
+              {
+                ...candidate.config_json,
+                column_widths: { name: 240, delivery_date: 180 },
+              },
+            )
+          : candidate,
+      ),
+    };
+    const selectedColumns = composeDirectTableAction(resizedSourceSnapshot, {
+      action: "configure_saved_view",
+      sourceViewKey: "milk_rounds",
+      name: "Names only",
+      columns: [{ kind: "field", field_key: "name" }],
+      query: { filters: [], filter_match: "all", sorts: [], group: null },
+    });
+    expect(selectedColumns.operations[0]).toMatchObject({
+      config_json: expect.objectContaining({
+        column_widths: { name: 240 },
+      }),
+    });
+
     expect(() =>
       validateTableViewQuery(
         {
@@ -872,6 +926,96 @@ describe("Internal Workspace Engine", () => {
       sorts: [{ property: "connection:dogs:source", direction: "ascending" }],
       group: "connection:dogs:source",
     });
+  });
+
+  it("creates and updates a complete saved View in one bounded action", () => {
+    const query = {
+      filters: [
+        { property: "field:status", operator: "is" as const, value: "Open" },
+      ],
+      filter_match: "all" as const,
+      sorts: [
+        { property: "field:delivery_date", direction: "ascending" as const },
+      ],
+      group: "field:status",
+    };
+    const created = composeDirectTableAction(snapshot, {
+      action: "configure_saved_view",
+      sourceViewKey: "milk_rounds",
+      name: "Needs confirming",
+      columns: [
+        { kind: "field", field_key: "name" },
+        { kind: "field", field_key: "delivery_date" },
+        { kind: "field", field_key: "status" },
+      ],
+      query,
+    });
+    expect(created.actionKind).toBe("configure_saved_view");
+    expect(created.operations).toHaveLength(1);
+    expect(created.operations[0]).toMatchObject({
+      op: "set_view",
+      name: "Needs confirming",
+      config_json: expect.objectContaining({
+        role: "saved",
+        columns: [
+          { kind: "field", field_key: "name" },
+          { kind: "field", field_key: "delivery_date" },
+          { kind: "field", field_key: "status" },
+        ],
+        ...query,
+      }),
+    });
+
+    const savedOperation = created.operations[0];
+    if (savedOperation?.op !== "set_view") throw new Error("Missing View.");
+    const savedSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      views: [
+        ...snapshot.views,
+        view(
+          "40000000-0000-4000-8000-000000000099",
+          savedOperation.key,
+          savedOperation.name,
+          milkObjectId,
+          "milk_round",
+          savedOperation.config_json as Record<string, Json>,
+        ),
+      ],
+    };
+    const updated = composeDirectTableAction(savedSnapshot, {
+      action: "configure_saved_view",
+      sourceViewKey: "milk_rounds",
+      viewKey: savedOperation.key,
+      name: "Confirm next",
+      columns: [
+        { kind: "field", field_key: "name" },
+        { kind: "field", field_key: "status" },
+      ],
+      query: { ...query, sorts: [], group: null },
+    });
+    expect(updated.operations).toHaveLength(1);
+    expect(updated.operations[0]).toMatchObject({
+      key: savedOperation.key,
+      name: "Confirm next",
+      config_json: expect.objectContaining({
+        columns: [
+          { kind: "field", field_key: "name" },
+          { kind: "field", field_key: "status" },
+        ],
+        sorts: [],
+        group: null,
+      }),
+    });
+
+    expect(() =>
+      composeDirectTableAction(snapshot, {
+        action: "configure_saved_view",
+        sourceViewKey: "milk_rounds",
+        name: "Missing title",
+        columns: [{ kind: "field", field_key: "status" }],
+        query: { filters: [], filter_match: "all", sorts: [], group: null },
+      }),
+    ).toThrow("saved view");
   });
 
   it("keeps field collisions and self-relationship directions unambiguous", () => {

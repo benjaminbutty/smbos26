@@ -2664,8 +2664,111 @@ textarea {
   display: grid;
   gap: 0.65rem;
   margin-top: 0.65rem;
-  max-width: 28rem;
+  max-width: min(44rem, calc(100vw - 2rem));
   padding: 0.8rem;
+}
+
+.table-view-draft-heading,
+.table-view-draft-actions,
+.table-view-management-actions,
+.table-view-column-picker > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.table-view-draft-heading > span {
+  padding: 0.18rem 0.42rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.table-view-column-picker {
+  display: grid;
+  max-height: 13rem;
+  gap: 0.35rem;
+  overflow: auto;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+}
+
+.table-view-column-picker button {
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+  padding: 0.2rem;
+}
+
+.table-view-draft-preview {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.table-view-draft-preview-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+
+.table-view-draft-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+}
+
+.table-view-draft-preview th,
+.table-view-draft-preview td {
+  min-width: 8rem;
+  padding: 0.45rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.table-view-management-actions {
+  flex-wrap: wrap;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+}
+
+.table-view-management-actions p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 48rem) {
+  .workspace-table-page .table-view-query-popover {
+    position: fixed;
+    z-index: 80;
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    margin: 0;
+    padding: 1rem;
+    overflow-y: auto;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .table-view-draft-actions {
+    position: sticky;
+    bottom: 0;
+    padding: 0.75rem 0;
+    background: var(--surface-strong);
+  }
+
+  .table-view-draft-actions button {
+    min-height: 2.75rem;
+    flex: 1;
+  }
 }
 
 .table-view-query-popover label {
@@ -8850,6 +8953,65 @@ textarea {
   gap: 0.55rem;
 }
 
+@media (min-width: 48.01rem) {
+  .workspace-table-page .editor-connection-create-popover {
+    position: fixed;
+    z-index: 70;
+    top: auto;
+    right: 1.5rem;
+    bottom: 1rem;
+  }
+}
+
+.workspace-table-page .editor-existing-connections {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.55rem;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.45rem;
+}
+
+.workspace-table-page .editor-existing-connections legend {
+  padding: 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .editor-existing-connections > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.workspace-table-page .editor-existing-connections > label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  padding: 0.4rem;
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.35rem;
+}
+
+.workspace-table-page .editor-existing-connections input {
+  width: auto;
+  min-height: 0;
+  margin-top: 0.15rem;
+}
+
+.workspace-table-page .editor-existing-connections label > span {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.workspace-table-page .editor-existing-connections small {
+  color: var(--text-secondary);
+  font-size: 0.63rem;
+}
+
 .workspace-table-page .editor-connection-multiplicity {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(4.5rem, auto);
@@ -8914,6 +9076,34 @@ textarea {
 
 .workspace-table-page .editor-connection-flow-actions .editor-menu-back {
   margin: 0;
+}
+
+@media (max-width: 48rem) {
+  .workspace-table-page .editor-connection-create-popover {
+    position: fixed;
+    z-index: 100;
+    inset: 0;
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    padding: calc(var(--space-4) + env(safe-area-inset-top)) var(--space-4)
+      calc(var(--space-4) + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .workspace-table-page .editor-connection-flow-actions {
+    position: sticky;
+    bottom: 0;
+    padding-block: var(--space-3);
+    background: var(--surface-base);
+  }
+
+  .workspace-table-page .editor-connection-flow-actions button {
+    min-height: 2.75rem;
+  }
 }
 
 .editor-sr-only {
@@ -11205,12 +11395,28 @@ textarea {
   box-sizing: border-box;
   width: min(28rem, calc(100vw - 2rem));
   max-width: 100%;
+  max-height: min(44rem, calc(100dvh - 14rem));
   margin-bottom: var(--space-3);
   padding: var(--space-3);
+  overflow-y: auto;
   background: var(--surface-base);
   border-color: var(--border-subtle);
   border-radius: var(--radius-md);
   box-shadow: var(--elevation-overlay);
+}
+
+@media (min-width: 48.01rem) {
+  .workspace-table-page .table-view-controls {
+    position: relative;
+  }
+
+  .workspace-table-page .table-view-query-popover {
+    position: absolute;
+    z-index: 60;
+    top: 100%;
+    left: 0;
+    overscroll-behavior: contain;
+  }
 }
 
 .workspace-table-page .editor-lab-meta {
@@ -11330,6 +11536,7 @@ textarea {
 
   .workspace-table-page .table-view-query-popover {
     width: 100%;
+    max-height: none;
   }
 
   .workspace-table-page .editor-grid-empty {

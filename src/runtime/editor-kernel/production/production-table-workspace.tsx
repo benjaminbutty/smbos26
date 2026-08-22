@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useMemo, type ReactNode } from "react";
 
 import type {
+  AddExistingConnectionPropertyInput,
   ConnectionTableOption,
   CreateConnectionPropertyInput,
   EditorCapabilities,
   EditorTable,
+  ExistingConnectionPropertyOption,
 } from "../contracts";
 import { EditorKernel } from "../editor-kernel";
 import type { EditorColumn, EditorRow, EditorValue } from "../contracts";
@@ -51,6 +53,7 @@ export interface ProductionTableWorkspaceProps {
     "singularLabel" | "pluralLabel"
   >;
   connectionTargets?: readonly ConnectionTableOption[];
+  existingConnections?: readonly ExistingConnectionPropertyOption[];
   readOnly?: boolean;
   surface?: "workspace" | "embedded";
 }
@@ -75,6 +78,7 @@ export function ProductionTableWorkspace({
   createConnectedRecordTarget,
   connectionSource,
   connectionTargets,
+  existingConnections,
   surface = "workspace",
   table,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
@@ -87,7 +91,12 @@ export function ProductionTableWorkspace({
   const createConnection = useMemo(
     () =>
       actions.createConnection && currentness
-        ? async (input: CreateConnectionPropertyInput): Promise<boolean> => {
+        ? async (
+            input: CreateConnectionPropertyInput,
+          ): Promise<string | false> => {
+            const existingColumnKeys = new Set(
+              table.columns.map((column) => column.key),
+            );
             const result = await actions.createConnection!({
               ...input,
               currentness,
@@ -95,10 +104,46 @@ export function ProductionTableWorkspace({
             if (result.status === "error") {
               throw new Error(result.message);
             }
-            return true;
+            const createdColumnKey =
+              result.value.table.columns.find(
+                (column) => !existingColumnKeys.has(column.key),
+              )?.key ?? false;
+            if (createdColumnKey) {
+              window.location.hash = `table-column-${encodeURIComponent(createdColumnKey)}`;
+            }
+            return createdColumnKey;
           }
         : undefined,
-    [actions.createConnection, currentness],
+    [actions.createConnection, currentness, table.columns],
+  );
+
+  const addExistingConnection = useMemo(
+    () =>
+      actions.addExistingConnection && currentness
+        ? async (
+            input: AddExistingConnectionPropertyInput,
+          ): Promise<string | false> => {
+            const existingColumnKeys = new Set(
+              table.columns.map((column) => column.key),
+            );
+            const result = await actions.addExistingConnection!({
+              ...input,
+              currentness,
+            });
+            if (result.status === "error") {
+              throw new Error(result.message);
+            }
+            const createdColumnKey =
+              result.value.table.columns.find(
+                (column) => !existingColumnKeys.has(column.key),
+              )?.key ?? false;
+            if (createdColumnKey) {
+              window.location.hash = `table-column-${encodeURIComponent(createdColumnKey)}`;
+            }
+            return createdColumnKey;
+          }
+        : undefined,
+    [actions.addExistingConnection, currentness, table.columns],
   );
 
   const readConnectedRecordContext = useMemo(
@@ -243,7 +288,11 @@ export function ProductionTableWorkspace({
       onStructureChanged={() => router.refresh()}
       {...(connectionSource ? { connectionSource } : {})}
       {...(connectionTargets ? { connectionTargets } : {})}
+      {...(existingConnections ? { existingConnections } : {})}
       {...(createConnection ? { onCreateConnection: createConnection } : {})}
+      {...(addExistingConnection
+        ? { onAddExistingConnection: addExistingConnection }
+        : {})}
       {...(recordCountLabel !== undefined ? { recordCountLabel } : {})}
       {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
       {...(panelStatusLabel !== undefined ? { panelStatusLabel } : {})}

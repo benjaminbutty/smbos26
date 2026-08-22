@@ -11,6 +11,7 @@ import {
 import {
   applyDirectTableAction,
   DirectTableServiceError,
+  loadDirectTableConfiguration,
 } from "../../../core/configuration/direct-tables/service";
 import {
   directTableColumnTypeSchema,
@@ -22,8 +23,11 @@ import {
   directTableTypeLabel,
 } from "../../../core/configuration/direct-tables/type-compatibility";
 import { createExperienceService } from "../../../core/experience/service";
-import { normalizeTableViewConfig } from "../../../core/experience/schemas";
-import { tableViewQuerySchema } from "../../../core/experience/schemas";
+import {
+  normalizeTableViewConfig,
+  tableViewColumnSchema,
+  tableViewQuerySchema,
+} from "../../../core/experience/schemas";
 import { createServerClient } from "../../../db/supabase/server";
 import type { Json } from "../../../db/supabase/database.types";
 import {
@@ -33,6 +37,7 @@ import {
 import { experienceKeyToPath } from "../../routing";
 import {
   searchTableConnectionTargets,
+  previewTableViewRecords,
   setTableRecordConnectionValues,
 } from "../../../core/experience/table-query";
 import {
@@ -47,16 +52,23 @@ import type { EditorRow } from "../contracts";
 import type {
   ProductionActionResult,
   ProductionAddColumnInput,
+  ProductionAddExistingConnectionInput,
   ProductionChangeColumnTypeInput,
   ProductionCellEditInput,
   ProductionConnectionCreateInput,
   ProductionConnectionEditInput,
   ProductionConnectionSearchInput,
+  ProductionConfigureSavedViewInput,
+  ProductionConfiguredSavedView,
+  ProductionDuplicateSavedViewInput,
+  ProductionArchiveSavedViewInput,
   ProductionConfigurationCurrentness,
   ProductionCreateConnectionInput,
   ProductionInsertColumnInput,
   ProductionPasteInput,
   ProductionPasteResult,
+  ProductionPreviewSavedView,
+  ProductionPreviewSavedViewInput,
   ProductionRecordPanelContext,
   ProductionRecordReadInput,
   ProductionRenameColumnInput,
@@ -304,9 +316,26 @@ const createConnectionInputSchema = z
       });
     }
   });
+const addExistingConnectionInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    relationshipKey: viewKeySchema,
+    direction: z.enum(["source", "target"]),
+    label: z.string().trim().min(1).max(120),
+  })
+  .strict();
 const savedViewQueryInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
+    query: tableViewQuerySchema,
+  })
+  .strict();
+const configureSavedViewInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    viewKey: viewKeySchema.optional(),
+    name: z.string().trim().min(1).max(120),
+    columns: z.array(tableViewColumnSchema).min(1).max(50),
     query: tableViewQuerySchema,
   })
   .strict();
@@ -601,6 +630,30 @@ export async function createProductionTableConnectionAction(
   );
 }
 
+export async function addExistingProductionTableConnectionAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionAddExistingConnectionInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = addExistingConnectionInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That Connection could not be shown safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "add_existing_connection_property",
+      viewKey: context.viewKey,
+      relationshipKey: parsed.data.relationshipKey,
+      direction: parsed.data.direction,
+      label: parsed.data.label,
+    },
+  );
+}
+
 export async function insertProductionTableColumnAction(
   businessSlugInput: string,
   viewKeyInput: string,
@@ -837,6 +890,234 @@ export async function updateProductionSavedViewQueryAction(
       viewKey: context.viewKey,
       query: parsed.data.query,
     },
+  );
+}
+
+export async function configureProductionSavedViewAction(
+  businessSlugInput: string,
+  sourceViewKeyInput: string,
+  input: ProductionConfigureSavedViewInput,
+): Promise<ProductionActionResult<ProductionConfiguredSavedView>> {
+  const context = structureContext(businessSlugInput, sourceViewKeyInput);
+  const parsed = configureSavedViewInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That saved view could not be saved safely.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  if (!hasConfigurationCapability(tenant.membership.role)) {
+    return resultError("Owner or Admin access is required for View changes.");
+  }
+  try {
+    const applied = await applyDirectTableAction(
+      supabase,
+      { businessId: tenant.business.id, actorId: tenant.user.id },
+      {
+        currentness: parsed.data.currentness,
+        intent: {
+          action: "configure_saved_view",
+          sourceViewKey: context.viewKey,
+          ...(parsed.data.viewKey ? { viewKey: parsed.data.viewKey } : {}),
+          name: parsed.data.name,
+          columns: parsed.data.columns,
+          query: parsed.data.query,
+        },
+      },
+    );
+    if (!applied.composed) {
+      throw new Error("The saved View result was incomplete.");
+    }
+    revalidatePath(routePath(context.businessSlug, context.viewKey), "page");
+    revalidatePath(
+      routePath(context.businessSlug, applied.composed.viewKey),
+      "page",
+    );
+    revalidatePath(`/app/${context.businessSlug}`, "layout");
+    return {
+      status: "success",
+      value: {
+        currentness: applied.currentness,
+        viewKey: applied.composed.viewKey,
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function previewProductionSavedViewAction(
+  businessSlugInput: string,
+  sourceViewKeyInput: string,
+  input: ProductionPreviewSavedViewInput,
+): Promise<ProductionActionResult<ProductionPreviewSavedView>> {
+  const context = structureContext(businessSlugInput, sourceViewKeyInput);
+  const parsed = configureSavedViewInputSchema
+    .omit({ currentness: true, viewKey: true, name: true })
+    .safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That saved view preview is not valid.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  if (!hasConfigurationCapability(tenant.membership.role)) {
+    return resultError("Owner or Admin access is required for View previews.");
+  }
+  try {
+    const experience = createExperienceService(supabase, {
+      businessId: tenant.business.id,
+    });
+    const bundle = await experience.loadView(context.viewKey, "internal");
+    const sourceConfig = normalizeTableViewConfig(bundle.config);
+    const query = await previewTableViewRecords(
+      supabase,
+      tenant.business.id,
+      context.viewKey,
+      { ...parsed.data, limit: 100 },
+    );
+    const config = normalizeTableViewConfig({
+      ...sourceConfig,
+      role: "saved",
+      columns: parsed.data.columns,
+      fields: parsed.data.columns.flatMap((column) =>
+        column.kind === "field" ? [column.field_key] : [],
+      ),
+      ...parsed.data.query,
+    });
+    const mapped = mapExperienceViewBundleToEditorTable({
+      bundle: {
+        ...bundle,
+        config,
+        records: query.records,
+        connectionValues: query.connectionValues,
+        query: {
+          totalCount: query.totalCount,
+          limit: query.limit,
+          offset: query.offset,
+          hasMore: query.hasMore,
+          group: query.group,
+          groups: query.groups,
+        },
+      },
+    });
+    return {
+      status: "success",
+      value: {
+        table: {
+          ...mapped.table,
+          columns: mapped.table.columns.map((column) => ({
+            ...column,
+            editable: false,
+            readOnlyReason: "Save this View before operating Records here.",
+          })),
+        },
+        totalCount: query.totalCount,
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function refreshProductionTableCurrentnessAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+): Promise<ProductionActionResult<ProductionConfigurationCurrentness>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  if (!context) return resultError("That Table is no longer available.");
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  if (!hasConfigurationCapability(tenant.membership.role)) {
+    return resultError("Owner or Admin access is required for View changes.");
+  }
+  try {
+    await createExperienceService(supabase, {
+      businessId: tenant.business.id,
+    }).loadView(context.viewKey, "internal");
+    const configuration = await loadDirectTableConfiguration(supabase, {
+      businessId: tenant.business.id,
+      actorId: tenant.user.id,
+    });
+    return { status: "success", value: configuration.currentness };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+async function applySavedViewManagementAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  currentness: ProductionConfigurationCurrentness,
+  intent: unknown,
+): Promise<ProductionActionResult<ProductionConfiguredSavedView>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  if (!context) return resultError("That saved view is no longer available.");
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  if (!hasConfigurationCapability(tenant.membership.role)) {
+    return resultError("Owner or Admin access is required for View changes.");
+  }
+  try {
+    const applied = await applyDirectTableAction(
+      supabase,
+      { businessId: tenant.business.id, actorId: tenant.user.id },
+      { currentness, intent },
+    );
+    if (!applied.composed)
+      throw new Error("The saved View result was incomplete.");
+    revalidatePath(`/app/${context.businessSlug}`, "layout");
+    return {
+      status: "success",
+      value: {
+        currentness: applied.currentness,
+        viewKey: applied.composed.viewKey,
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function duplicateProductionSavedViewAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionDuplicateSavedViewInput,
+): Promise<ProductionActionResult<ProductionConfiguredSavedView>> {
+  const parsed = z
+    .object({
+      currentness: structureCurrentnessSchema,
+      name: z.string().trim().min(1).max(120),
+    })
+    .strict()
+    .safeParse(input);
+  if (!parsed.success) return resultError("Choose a valid View name.");
+  return applySavedViewManagementAction(
+    businessSlugInput,
+    viewKeyInput,
+    parsed.data.currentness,
+    {
+      action: "duplicate_saved_view",
+      sourceViewKey: viewKeyInput,
+      name: parsed.data.name,
+    },
+  );
+}
+
+export async function archiveProductionSavedViewAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionArchiveSavedViewInput,
+): Promise<ProductionActionResult<ProductionConfiguredSavedView>> {
+  const parsed = z
+    .object({ currentness: structureCurrentnessSchema })
+    .strict()
+    .safeParse(input);
+  if (!parsed.success)
+    return resultError("That saved view is no longer current.");
+  return applySavedViewManagementAction(
+    businessSlugInput,
+    viewKeyInput,
+    parsed.data.currentness,
+    { action: "archive_saved_view", viewKey: viewKeyInput },
   );
 }
 

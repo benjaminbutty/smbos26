@@ -4,6 +4,7 @@ import type { EditorTable } from "../src/runtime/editor-kernel/contracts";
 import {
   describePropertyChange,
   ensureCompactPropertyPreviewColumns,
+  previewTableWithConnection,
   previewTableWithProperty,
   reorderPropertyOptions,
   validatePropertyOptions,
@@ -27,6 +28,26 @@ const table: EditorTable = {
 };
 
 describe("J3-I1 property preview", () => {
+  it("shows a proposed Connection as empty and non-operable", () => {
+    const preview = previewTableWithConnection(table, {
+      targetViewKey: "services",
+      label: "Services",
+      currentMultiplicity: "several",
+      targetMultiplicity: "several",
+      reverseLabel: "Appointments",
+      addReverse: true,
+    });
+    expect(preview.columns.at(-1)).toMatchObject({
+      kind: "connection",
+      label: "Services",
+      editable: false,
+      preview: true,
+      readOnlyReason: "Add this connection before selecting Records.",
+    });
+    expect(preview.rows).toBe(table.rows);
+    expect(preview.rows[0]?.connectionValues).toBeUndefined();
+  });
+
   it("inserts a non-editable empty overlay without changing authoritative rows", () => {
     const preview = previewTableWithProperty(table, {
       label: "Referral source",

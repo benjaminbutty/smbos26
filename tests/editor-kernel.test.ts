@@ -432,11 +432,57 @@ describe("editor kernel contracts", () => {
     expect(markup).toContain("Table to connect");
     expect(markup).toContain("One");
     expect(markup).toContain("Several");
-    expect(markup).toContain("Create connection");
+    expect(markup).toContain("Each Appointment can have:");
+    expect(markup).toContain("Each Service can have:");
+    expect(markup).toContain("Add connection");
+    expect(markup).toContain("nothing is filled automatically");
+    expect(markup).toContain("not either Record");
     expect(markup).not.toMatch(
       /Object|Relationship|cardinality|source|target|UUID/i,
     );
     expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it("prefers showing an eligible existing Connection over creating a duplicate", () => {
+    const onCreate = vi.fn(async () => true);
+    const onAddExisting = vi.fn(async () => true);
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionPropertyPopover, {
+        existingConnections: [
+          {
+            relationshipKey: "appointment_services",
+            direction: "source" as const,
+            label: "Services",
+            otherTableLabel: "Services",
+            targetViewKey: "services",
+            currentMultiplicity: "several" as const,
+            targetMultiplicity: "several" as const,
+          },
+        ],
+        onAddExisting,
+        onBack: () => undefined,
+        onClose: () => undefined,
+        onCreate,
+        source: { singularLabel: "Appointment", pluralLabel: "Appointments" },
+        targets: [
+          {
+            viewKey: "services",
+            label: "Services",
+            singularLabel: "Service",
+            pluralLabel: "Services",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("Already connected");
+    expect(markup).toContain("instead of creating a duplicate");
+    expect(markup).toContain("Show connection");
+    expect(markup).toContain(
+      "Existing Records and connected values stay unchanged",
+    );
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(onAddExisting).not.toHaveBeenCalled();
   });
 
   it("keeps Add Property submission owned by its structural form", () => {

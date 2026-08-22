@@ -1,25 +1,84 @@
 # Lenni Journey 3 — The workspace is the builder
 
-Status: J3-I0 resolved; J3-I1 implementation active  
+Status: J3-I1 merged; J3-I2 implementation active
 Repository: `benjaminbutty/smbos26`  
 Starting origin/main: `8a5598fa5e9e65991283421346e350d85a0a50ad`  
-Feature branch: `codex/j3-i1-tables-properties`
+J3-I2 starting origin/main: `8ca69e3c6b45ea30393b2ce5f1e5ac378d16cdbe`
+Feature branch: `codex/j3-i2-saved-views-connections`
+
+## J3-I2 repository resolution
+
+### Reused foundations
+
+J3-I2 reuses canonical V2 mixed Table columns, the typed Table query grammar,
+Saved View tabs and exact Page View keys, the Direct Table composer/service,
+the atomic internal-workspace configuration RPC, currentness and immutable
+Versions, the production Table kernel, and the existing Connection search,
+selection and unlink RPCs. Connection edge writes remain operational and do
+not advance configuration history.
+
+### Bounded extensions
+
+The repository audit confirmed two gaps described by the controlling brief:
+
+- existing `create_saved_view` persisted an initially blank View and
+  `update_view_query` required a second Version;
+- `query_view_records` could read only a persisted View key and could not
+  preview an unsaved typed query.
+
+J3-I2 therefore adds one finite `configure_saved_view` intent that creates or
+updates name, exact ordered mixed columns and the complete typed query through
+one `set_view` operation and one applied Version. It also adds the narrow
+Owner/Admin-only read boundary recorded in [ADR-044](./ADR-044.md). The read
+uses authoritative current Records, writes nothing and is not available to
+Staff or anonymous/public runtime.
+
+Connection creation continues using the existing one-relationship plus one or
+two affected-View operation composition. The J3 work is presentation and
+productisation: both-side One/Several language, optional inverse naming,
+proposed empty non-operable column, deterministic consequence copy and focus
+recovery. No new relationship lifecycle is introduced.
+
+### Migration decision and interfaces
+
+One additive migration extends the internal-workspace action allow-list for
+`configure_saved_view` and adds `preview_table_view_records`. It adds no table,
+tenant draft row, query store, primitive, generic SQL authority or public read
+surface. Browser actions submit only typed query/columns, route-bound View
+identity and expected currentness; Business and actor remain server-derived.
+
+Primary seams are:
+
+- `src/core/configuration/direct-tables/{schemas,composer,service}.ts`;
+- `src/core/experience/{schemas,table-query}.ts`;
+- `src/runtime/views/table-view-{navigation,controls}.tsx`;
+- the production Table action and editor-kernel Connection preview seams;
+- `supabase/migrations/20260822120000_j3_i2_saved_view_boundary.sql`;
+- focused unit, direct Table/Internal Workspace integration, RLS and Page
+  exact-key regression tests.
+
+### Exact exclusions
+
+J3-I2 adds no personal Views, global View navigation, arbitrary query
+language, formulas, aggregations, Connection deletion or cardinality changes,
+required/self/public Connections, persistent drafts, Page authoring, Site
+publication, AI/Builder changes, dependency, renderer, primitive or second
+configuration lifecycle. J3-I3 and later work have not started.
 
 ## Purpose and authority
 
 Journey 3 proves that an Owner/Admin can shape a working Lenni system by
-interacting with the workspace itself. The current execution checkpoint is
-limited to Tables and Properties. The accepted Journey 3 execution brief and
-Capability Reconciliation and Product & Architecture Brief are the product
-authority for this checkpoint; the Claude Journey 3 canvas is a visual
-reference only.
+interacting with the workspace itself. The accepted Journey 3 execution brief
+and Capability Reconciliation and Product & Architecture Brief are the product
+authority; the Claude Journey 3 canvas is a visual reference only. The J3-I1
+material below records the merged Tables and Properties foundation, while the
+resolution above governs the active J3-I2 Saved Views and Connections work.
 
 The canvas assumptions that are not adopted include a universal internal
 Review → Apply bar, a Property requiredness toggle, Property removal, and
 editing unsupported Site capability blocks. Simple internal structural edits
 remain one bounded, consequence-named direct action. Published Site
-publication, Saved Views/Connections, Pages and later work remain in their
-approved future checkpoints.
+publication and Pages remain in their approved later checkpoints.
 
 ## J3-I0 repository resolution
 
@@ -136,7 +195,7 @@ editor’s working context while syncing the authoritative result.
 These are UX and bounded presentation seams over the existing direct Table
 engine. No server truth model or configuration lifecycle change is identified.
 
-## Active checkpoint scope
+## J3-I1 checkpoint scope
 
 J3-I1 only:
 
@@ -185,6 +244,6 @@ implementation authority where it conflicts with those decisions.
 
 ## Later checkpoint reminder
 
-J3-I2 Saved Views/Connections, J3-I3 Pages, J3-I4 deliberate published Site
-changes and J3-I5 cross-business closeout require separate approval after
-their predecessor is merged. No later checkpoint is active in this branch.
+J3-I3 Pages, J3-I4 deliberate published Site changes and J3-I5 cross-business
+closeout remain authorised only after their predecessor is merged and
+post-merge main CI is green. No later checkpoint is active in this branch.

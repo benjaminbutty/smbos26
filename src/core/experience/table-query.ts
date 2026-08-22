@@ -4,9 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import {
+  tableViewColumnSchema,
   tableViewConnectionPropertyKey,
   tableViewPropertyKeySchema,
+  tableViewQuerySchema,
 } from "./schemas";
+import type { TableViewColumn, TableViewQuery } from "./schemas";
 import type { Database, Json, Tables } from "../../db/supabase/database.types";
 
 const connectionValueSchema = z
@@ -76,28 +79,7 @@ export interface TableQueryResult {
   groups: Json[];
 }
 
-export function connectionColumnStorageKey(
-  relationshipKey: string,
-  direction: "source" | "target",
-): string {
-  return tableViewConnectionPropertyKey(relationshipKey, direction);
-}
-
-export async function queryTableViewRecords(
-  client: SupabaseClient<Database>,
-  businessId: string,
-  viewKey: string,
-  input: { limit?: number; offset?: number } = {},
-): Promise<TableQueryResult> {
-  const { data, error } = await client.rpc("query_view_records", {
-    expected_business_id: businessId,
-    requested_view_key: viewKey,
-    requested_limit: input.limit ?? 250,
-    requested_offset: input.offset ?? 0,
-  });
-  if (error || data === null) {
-    throw new Error("Could not load the Table records.", { cause: error });
-  }
+function parsedTableQueryResult(data: unknown): TableQueryResult {
   const parsed = tableQueryResponseSchema.parse(data);
   const connectionValues: TableQueryResult["connectionValues"] = {};
   const records = parsed.records.map((item) => {
@@ -120,6 +102,62 @@ export async function queryTableViewRecords(
     group: (parsed.group as Json | null | undefined) ?? null,
     groups: parsed.groups as Json[],
   };
+}
+
+export function connectionColumnStorageKey(
+  relationshipKey: string,
+  direction: "source" | "target",
+): string {
+  return tableViewConnectionPropertyKey(relationshipKey, direction);
+}
+
+export async function queryTableViewRecords(
+  client: SupabaseClient<Database>,
+  businessId: string,
+  viewKey: string,
+  input: { limit?: number; offset?: number } = {},
+): Promise<TableQueryResult> {
+  const { data, error } = await client.rpc("query_view_records", {
+    expected_business_id: businessId,
+    requested_view_key: viewKey,
+    requested_limit: input.limit ?? 250,
+    requested_offset: input.offset ?? 0,
+  });
+  if (error || data === null) {
+    throw new Error("Could not load the Table records.", { cause: error });
+  }
+  return parsedTableQueryResult(data);
+}
+
+export async function previewTableViewRecords(
+  client: SupabaseClient<Database>,
+  businessId: string,
+  sourceViewKey: string,
+  input: {
+    query: TableViewQuery;
+    columns: readonly TableViewColumn[];
+    limit?: number;
+    offset?: number;
+  },
+): Promise<TableQueryResult> {
+  const query = tableViewQuerySchema.parse(input.query);
+  const columns = z
+    .array(tableViewColumnSchema)
+    .min(1)
+    .max(50)
+    .parse(input.columns);
+  const { data, error } = await client.rpc("preview_table_view_records", {
+    expected_business_id: businessId,
+    requested_source_view_key: sourceViewKey,
+    requested_query: query as Json,
+    requested_columns: columns as Json,
+    requested_limit: input.limit ?? 250,
+    requested_offset: input.offset ?? 0,
+  });
+  if (error || data === null) {
+    throw new Error("Could not preview the Table records.", { cause: error });
+  }
+  return parsedTableQueryResult(data);
 }
 
 export async function searchTableConnectionTargets(

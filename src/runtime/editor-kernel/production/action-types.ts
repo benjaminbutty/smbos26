@@ -5,7 +5,10 @@ import type {
   EditorTable,
   EditorValue,
 } from "../contracts";
-import type { TableViewQuery } from "../../../core/experience/schemas";
+import type {
+  TableViewColumn,
+  TableViewQuery,
+} from "../../../core/experience/schemas";
 
 export interface ProductionCellEditInput {
   recordId: string;
@@ -156,9 +159,48 @@ export interface ProductionCreateConnectionInput {
   addReverse: boolean;
 }
 
+export interface ProductionAddExistingConnectionInput {
+  currentness: ProductionConfigurationCurrentness;
+  relationshipKey: string;
+  direction: "source" | "target";
+  label: string;
+}
+
 export interface ProductionSavedViewQueryInput {
   currentness: ProductionConfigurationCurrentness;
   query: TableViewQuery;
+}
+
+export interface ProductionConfigureSavedViewInput {
+  currentness: ProductionConfigurationCurrentness;
+  viewKey?: string;
+  name: string;
+  columns: readonly TableViewColumn[];
+  query: TableViewQuery;
+}
+
+export interface ProductionConfiguredSavedView {
+  currentness: ProductionConfigurationCurrentness;
+  viewKey: string;
+}
+
+export interface ProductionPreviewSavedViewInput {
+  columns: readonly TableViewColumn[];
+  query: TableViewQuery;
+}
+
+export interface ProductionPreviewSavedView {
+  table: EditorTable;
+  totalCount: number;
+}
+
+export interface ProductionDuplicateSavedViewInput {
+  currentness: ProductionConfigurationCurrentness;
+  name: string;
+}
+
+export interface ProductionArchiveSavedViewInput {
+  currentness: ProductionConfigurationCurrentness;
 }
 
 export type ProductionActionResult<T> =
@@ -247,4 +289,8 @@ export type ProductionRenameTableAction = (
 
 export type ProductionCreateConnectionAction = (
   input: ProductionCreateConnectionInput,
+) => Promise<ProductionActionResult<ProductionTableStructureState>>;
+
+export type ProductionAddExistingConnectionAction = (
+  input: ProductionAddExistingConnectionInput,
 ) => Promise<ProductionActionResult<ProductionTableStructureState>>;

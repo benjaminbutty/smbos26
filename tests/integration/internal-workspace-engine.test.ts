@@ -22,6 +22,7 @@ import {
 } from "../../src/core/experience/schemas";
 import {
   queryTableViewRecords,
+  previewTableViewRecords,
   searchTableConnectionTargets,
   setTableRecordConnectionValues,
 } from "../../src/core/experience/table-query";
@@ -96,6 +97,33 @@ async function createOwner(): Promise<Identity> {
   if (signedIn.error || !signedIn.data.user) {
     throw signedIn.error ?? new Error("Could not sign in proof owner.");
   }
+  return { client, user: signedIn.data.user };
+}
+
+async function createIdentity(label: string): Promise<Identity> {
+  const email = `workspace-${label}-${crypto.randomUUID()}@example.test`;
+  const created = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (created.error || !created.data.user) {
+    throw created.error ?? new Error(`Could not create ${label}.`);
+  }
+  createdUserIds.push(created.data.user.id);
+  const client = createClient<Database>(
+    settings.apiUrl,
+    settings.publishableKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+  const signedIn = await client.auth.signInWithPassword({ email, password });
+  if (signedIn.error || !signedIn.data.user) throw signedIn.error;
   return { client, user: signedIn.data.user };
 }
 
@@ -305,27 +333,28 @@ async function configureScenario(
 
   for (const query of fixture.queries) {
     const sourceViewKey = state.tableViews.get(query.tableKey)!;
+    const before = state.currentness.expectedHeadRevision;
+    const current = await loadDirectTableConfiguration(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const sourceView = current.snapshot.views.find(
+      (candidate) => candidate.key === sourceViewKey,
+    );
+    if (!sourceView) throw new Error(`Missing source View ${sourceViewKey}.`);
+    const sourceConfig = normalizeTableViewConfig(sourceView.config_json);
+    const tableQuery = queryInput(state, query);
     const created = await applyAction(state, {
-      action: "create_saved_view",
+      action: "configure_saved_view",
       sourceViewKey,
       name: query.name,
+      columns: sourceConfig.columns,
+      query: tableQuery,
     });
+    expect(state.currentness.expectedHeadRevision).toBe(before + 1);
     const savedViewKey = created.composed?.viewKey;
     if (!savedViewKey) throw new Error(`Missing saved View ${query.name}.`);
     state.savedViews.set(tableMapKey(query.tableKey, query.name), savedViewKey);
-
-    const tableQuery = queryInput(state, query);
-    if (
-      tableQuery.filters.length > 0 ||
-      tableQuery.sorts.length > 0 ||
-      tableQuery.group
-    ) {
-      await applyAction(state, {
-        action: "update_view_query",
-        viewKey: savedViewKey,
-        query: tableQuery,
-      });
-    }
   }
 
   return state;
@@ -556,6 +585,36 @@ describe("Internal Workspace Engine four-business proof", () => {
     for (const fixture of internalWorkspaceProofFixtures) {
       const state = await configureScenario(fixture);
       await createScenarioRecords(fixture, state);
+      const firstQuery = fixture.queries[0];
+      if (firstQuery) {
+        const sourceViewKey = state.tableViews.get(firstQuery.tableKey)!;
+        const configurationBeforePreview = await loadDirectTableConfiguration(
+          owner.client,
+          { businessId: state.business.id, actorId: owner.user.id },
+        );
+        const sourceView = configurationBeforePreview.snapshot.views.find(
+          (candidate) => candidate.key === sourceViewKey,
+        );
+        if (!sourceView) throw new Error("Missing preview source View.");
+        const preview = await previewTableViewRecords(
+          owner.client,
+          state.business.id,
+          sourceViewKey,
+          {
+            query: queryInput(state, firstQuery),
+            columns: normalizeTableViewConfig(sourceView.config_json).columns,
+            limit: 250,
+          },
+        );
+        expect(preview.totalCount).toBeGreaterThanOrEqual(1);
+        const configurationAfterPreview = await loadDirectTableConfiguration(
+          owner.client,
+          { businessId: state.business.id, actorId: owner.user.id },
+        );
+        expect(configurationAfterPreview.currentness).toEqual(
+          configurationBeforePreview.currentness,
+        );
+      }
       await connectScenarioRecords(fixture, state);
       await queryScenarioViews(fixture, state);
       states.push(state);
@@ -615,6 +674,127 @@ describe("Internal Workspace Engine four-business proof", () => {
 
     const first = states[0]!;
     const second = states[1]!;
+    const firstSavedEntry = first.savedViews.entries().next().value as
+      [string, string] | undefined;
+    if (!firstSavedEntry)
+      throw new Error("Missing coherent Saved View fixture.");
+    const [firstSavedMapKey, firstSavedViewKey] = firstSavedEntry;
+    const firstSourceTableKey = firstSavedMapKey.split(":", 1)[0];
+    const firstPrimaryViewKey = firstSourceTableKey
+      ? first.tableViews.get(firstSourceTableKey)
+      : undefined;
+    if (!firstPrimaryViewKey) {
+      throw new Error("Missing coherent Saved View source Table.");
+    }
+    const beforeSavedEdit = await loadDirectTableConfiguration(owner.client, {
+      businessId: first.business.id,
+      actorId: owner.user.id,
+    });
+    const firstSavedView = beforeSavedEdit.snapshot.views.find(
+      (candidate) => candidate.key === firstSavedViewKey,
+    );
+    const firstPrimaryView = beforeSavedEdit.snapshot.views.find(
+      (candidate) => candidate.key === firstPrimaryViewKey,
+    );
+    if (!firstSavedView || !firstPrimaryView) {
+      throw new Error("Missing coherent Saved View edit fixtures.");
+    }
+    const savedConfig = normalizeTableViewConfig(firstSavedView.config_json);
+    const edited = await applyAction(first, {
+      action: "configure_saved_view",
+      sourceViewKey: firstPrimaryViewKey,
+      viewKey: firstSavedViewKey,
+      name: `${firstSavedView.name} updated`,
+      columns: savedConfig.columns,
+      query: {
+        filters: savedConfig.filters,
+        filter_match: savedConfig.filter_match,
+        sorts: savedConfig.sorts,
+        group: savedConfig.group,
+      },
+    });
+    expect(edited.composed?.viewKey).toBe(firstSavedViewKey);
+    expect(first.currentness.expectedHeadRevision).toBe(
+      beforeSavedEdit.currentness.expectedHeadRevision + 1,
+    );
+    const currentAfterEdit = first.currentness;
+    await expect(
+      applyDirectTableAction(
+        owner.client,
+        { businessId: first.business.id, actorId: owner.user.id },
+        {
+          currentness: beforeSavedEdit.currentness,
+          intent: {
+            action: "configure_saved_view",
+            sourceViewKey: firstPrimaryViewKey,
+            viewKey: firstSavedViewKey,
+            name: "Stale replacement",
+            columns: savedConfig.columns,
+            query: {
+              filters: savedConfig.filters,
+              filter_match: savedConfig.filter_match,
+              sorts: savedConfig.sorts,
+              group: savedConfig.group,
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow("changed");
+    const afterStaleAttempt = await loadDirectTableConfiguration(owner.client, {
+      businessId: first.business.id,
+      actorId: owner.user.id,
+    });
+    expect(afterStaleAttempt.currentness).toEqual(currentAfterEdit);
+    const staff = await createIdentity("staff");
+    const staffMembership = await admin.from("business_memberships").insert({
+      business_id: first.business.id,
+      user_id: staff.user.id,
+      role: "staff",
+    });
+    if (staffMembership.error) throw staffMembership.error;
+    const firstSourceViewKey = first.tableViews.values().next().value as string;
+    const firstConfiguration = await loadDirectTableConfiguration(
+      owner.client,
+      {
+        businessId: first.business.id,
+        actorId: owner.user.id,
+      },
+    );
+    const firstSourceView = firstConfiguration.snapshot.views.find(
+      (candidate) => candidate.key === firstSourceViewKey,
+    );
+    if (!firstSourceView) throw new Error("Missing staff proof View.");
+    await expect(
+      previewTableViewRecords(
+        staff.client,
+        first.business.id,
+        firstSourceViewKey,
+        {
+          query: { filters: [], filter_match: "all", sorts: [], group: null },
+          columns: normalizeTableViewConfig(firstSourceView.config_json)
+            .columns,
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      previewTableViewRecords(
+        owner.client,
+        second.business.id,
+        firstSourceViewKey,
+        {
+          query: { filters: [], filter_match: "all", sorts: [], group: null },
+          columns: normalizeTableViewConfig(firstSourceView.config_json)
+            .columns,
+        },
+      ),
+    ).rejects.toThrow();
+    await expect(
+      queryTableViewRecords(
+        staff.client,
+        first.business.id,
+        firstSourceViewKey,
+      ),
+    ).resolves.toMatchObject({ totalCount: expect.any(Number) });
     const firstFixture = internalWorkspaceProofFixtures[0]!;
     const firstLink = firstFixture.links[0]!;
     const firstRelation = first.relationshipKeys.get(

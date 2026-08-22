@@ -1,4 +1,5 @@
 import type {
+  CreateConnectionPropertyInput,
   EditorColumn,
   EditorColumnKind,
   EditorTable,
@@ -40,6 +41,34 @@ export interface PropertyChangeDescriptor {
 }
 
 export const proposedPropertyKey = "__proposed_property__";
+export const proposedConnectionKey = "__proposed_connection__";
+export type ConnectionDraft = CreateConnectionPropertyInput;
+
+export function previewTableWithConnection(
+  table: EditorTable,
+  draft: ConnectionDraft,
+): EditorTable {
+  const key = table.columns.some(
+    (column) => column.key === proposedConnectionKey,
+  )
+    ? `${proposedConnectionKey}_2`
+    : proposedConnectionKey;
+  return {
+    ...table,
+    columns: [
+      ...table.columns,
+      {
+        key,
+        label: draft.label.trim() || "New connection",
+        kind: "connection",
+        editable: false,
+        preview: true,
+        readOnlyReason: "Add this connection before selecting Records.",
+        width: 220,
+      },
+    ],
+  };
+}
 
 const propertyKindLabels: Readonly<Partial<Record<EditorColumnKind, string>>> =
   {
