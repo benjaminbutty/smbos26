@@ -16,6 +16,7 @@ import { createServerClient } from "../../../../../db/supabase/server";
 import { PageRenderer } from "../../../../../runtime/pages/page-renderer";
 import {
   applyPageBlockAction,
+  publishPageChangesAction,
   renamePageAction,
 } from "../../../../../runtime/pages/direct-actions";
 import { PageEditor } from "../../../../../runtime/page-editor/page-editor";
@@ -248,11 +249,12 @@ export default async function SitePage({
           </div>
           {page.definition.status === "published" ? (
             <Notice kind="message">
-              Changes to this published Site go live when you save.
+              Supported edits stay in this browser until you deliberately
+              publish the complete change.
             </Notice>
           ) : null}
           <PageEditor
-            key={`${page.definition.key}-${currentness.expectedHeadRevision}-${page.definition.title}`}
+            key={page.definition.key}
             applyPageBlockAction={applyPageBlockAction.bind(
               null,
               businessSlug,
@@ -266,6 +268,11 @@ export default async function SitePage({
             previewBookings={bookings}
             previewForms={forms}
             publishedSite={page.definition.status === "published"}
+            publishPageChangesAction={publishPageChangesAction.bind(
+              null,
+              businessSlug,
+              page.definition.key,
+            )}
             renamePageAction={renamePageAction.bind(
               null,
               businessSlug,

@@ -87,6 +87,7 @@ export const directPageActionKindSchema = z.enum([
   "create_page",
   "rename_page",
   "save_page_layout",
+  "publish_page_changes",
 ]);
 
 const createPageIntentSchema = z
@@ -112,10 +113,20 @@ const savePageLayoutIntentSchema = z
   })
   .strict();
 
+const publishPageChangesIntentSchema = z
+  .object({
+    action: z.literal("publish_page_changes"),
+    pageKey: graphKeySchema,
+    title: directPageTitleSchema,
+    layout: pageLayoutSchema,
+  })
+  .strict();
+
 export const directPageIntentSchema = z.discriminatedUnion("action", [
   createPageIntentSchema,
   renamePageIntentSchema,
   savePageLayoutIntentSchema,
+  publishPageChangesIntentSchema,
   addPageBlockIntentSchema,
   updatePageBlockIntentSchema,
   removePageBlockIntentSchema,

@@ -36,6 +36,7 @@ export type DirectPageActionResult =
   | {
       status: "success";
       pageSlug: string;
+      title: string;
       currentness: z.infer<typeof directPageCurrentnessSchema>;
       layout: z.infer<typeof pageLayoutSchema>;
     }
@@ -115,14 +116,16 @@ async function applyPageIntent(
       "page",
     );
     revalidatePath(`/app/${encodeURIComponent(businessSlug)}`, "layout");
+    const appliedPage = applied.snapshot.pages.find(
+      (page) => page.key === applied.composed.pageKey,
+    );
     return {
       status: "success",
       pageSlug: applied.composed.pageSlug,
+      title: appliedPage?.title ?? applied.composed.title,
       currentness: applied.currentness,
       layout: pageLayoutSchema.parse(
-        applied.snapshot.pages.find(
-          (page) => page.key === applied.composed.pageKey,
-        )?.layout_json ?? { blocks: [] },
+        appliedPage?.layout_json ?? { blocks: [] },
       ),
     };
   } catch (error) {
@@ -177,6 +180,28 @@ export async function applyPageBlockAction(
     input.currentness,
     input.intent,
   );
+}
+
+export async function publishPageChangesAction(
+  businessSlug: string,
+  pageKey: string,
+  input: { currentness: unknown; title: unknown; layout: unknown },
+): Promise<DirectPageActionResult> {
+  const title = z.string().trim().min(1).max(120).safeParse(input.title);
+  const layout = pageLayoutSchema.safeParse(input.layout);
+  if (!title.success || !layout.success) {
+    return {
+      status: "error",
+      message:
+        "These Site changes are not supported. Review the title and content, then try again.",
+    };
+  }
+  return applyPageIntent(businessSlug, pageKey, input.currentness, {
+    action: "publish_page_changes",
+    pageKey,
+    title: title.data,
+    layout: layout.data,
+  });
 }
 
 export async function createPageAction(

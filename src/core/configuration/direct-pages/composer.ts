@@ -30,6 +30,9 @@ export const directPageErrorCodes = [
   "direct_page_key_unavailable",
   "direct_page_slug_unavailable",
   "direct_page_view_unavailable",
+  "direct_page_published_site_ineligible",
+  "direct_page_published_site_requires_publication",
+  "direct_page_site_block_locked",
   "direct_page_block_not_found",
   "direct_page_block_unchanged",
   "direct_page_operations_invalid",
@@ -52,6 +55,12 @@ const directPageErrorMessages: Readonly<Record<DirectPageErrorCode, string>> = {
     "That Page address could not be prepared safely. Try a different name.",
   direct_page_view_unavailable:
     "That saved View is no longer available to add to this Page.",
+  direct_page_published_site_ineligible:
+    "This Page is not an active published Site. Reload and try again.",
+  direct_page_published_site_requires_publication:
+    "Published Site edits must be reviewed and published together. Reload the Site editor and use Publish changes.",
+  direct_page_site_block_locked:
+    "Booking, Form and other customer capabilities can be reordered here, but their settings and presence cannot be changed.",
   direct_page_block_not_found:
     "That Page block is no longer available. Reload and try again.",
   direct_page_block_unchanged: "That Page block is already in that position.",
@@ -244,6 +253,51 @@ function pageOperation(values: Omit<PageOperation, "op">): PageOperation {
   return setPageOperationSchema.parse({ op: "set_page", ...values });
 }
 
+function siteBlockIsEditable(block: PageLayout["blocks"][number]): boolean {
+  return (
+    block.type === "heading" ||
+    block.type === "text" ||
+    block.type === "divider"
+  );
+}
+
+function lockedSiteBlockCounts(layout: PageLayout): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const block of layout.blocks) {
+    if (siteBlockIsEditable(block)) continue;
+    const configuredBlock = { ...block, id: undefined };
+    const signature = JSON.stringify(configuredBlock);
+    counts.set(signature, (counts.get(signature) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function assertLockedSiteBlocksUnchanged(
+  baseLayout: PageLayout,
+  candidateLayout: PageLayout,
+): void {
+  const candidateSignatures = new Set(
+    candidateLayout.blocks
+      .filter((block) => !siteBlockIsEditable(block))
+      .map((block) => JSON.stringify(block)),
+  );
+  const stableBaseBlocksRemain = baseLayout.blocks
+    .filter(
+      (block) =>
+        !siteBlockIsEditable(block) && "id" in block && Boolean(block.id),
+    )
+    .every((block) => candidateSignatures.has(JSON.stringify(block)));
+  const base = lockedSiteBlockCounts(baseLayout);
+  const candidate = lockedSiteBlockCounts(candidateLayout);
+  if (
+    !stableBaseBlocksRemain ||
+    base.size !== candidate.size ||
+    [...base].some(([signature, count]) => candidate.get(signature) !== count)
+  ) {
+    throw new DirectPageComposerError("direct_page_site_block_locked");
+  }
+}
+
 function finalizeAction(
   actionKind: DirectPageActionKind,
   title: string,
@@ -305,6 +359,46 @@ function composePageMutation(
 ): ComposedDirectPageAction {
   const page = activePage(snapshot, intent.pageKey);
   const baseLayout = pageLayoutSchema.parse(page.layout_json);
+
+  if (intent.action === "publish_page_changes") {
+    if (page.audience !== "public" || page.status !== "published") {
+      throw new DirectPageComposerError(
+        "direct_page_published_site_ineligible",
+      );
+    }
+    if (pageTitleConflict(snapshot, intent.title, page.key, "public")) {
+      throw new DirectPageComposerError("direct_page_title_conflict");
+    }
+    const candidateLayout = pageLayoutSchema.parse(intent.layout);
+    assertLockedSiteBlocksUnchanged(baseLayout, candidateLayout);
+    if (
+      intent.title === page.title &&
+      JSON.stringify(candidateLayout) === JSON.stringify(baseLayout)
+    ) {
+      throw new DirectPageComposerError("direct_page_block_unchanged");
+    }
+    return finalizeAction(
+      "publish_page_changes",
+      `Publish changes to ${intent.title}`,
+      page.key,
+      page.slug,
+      pageOperation({
+        key: page.key,
+        title: intent.title,
+        slug: page.slug,
+        audience: "public",
+        layout_json: pageLayoutWithStableIds(candidateLayout),
+        status: "published",
+        is_active: page.is_active,
+      }),
+    );
+  }
+
+  if (page.audience === "public" && page.status === "published") {
+    throw new DirectPageComposerError(
+      "direct_page_published_site_requires_publication",
+    );
+  }
 
   if (intent.action === "rename_page") {
     if (pageTitleConflict(snapshot, intent.title, page.key, page.audience)) {

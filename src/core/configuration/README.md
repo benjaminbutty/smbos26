@@ -88,28 +88,36 @@ through the existing graph rules, and creates no configuration history.
 ## Direct Page Workspace
 
 `direct-pages/` is the matching bounded facade for the workspace Page authoring
-lane. Its finite actions are `create_page`, `rename_page`, and
-`save_page_layout`. The composer reloads one immutable active snapshot,
+lane. Its finite actions are `create_page`, `rename_page`,
+`save_page_layout`, and the published-Site-only `publish_page_changes`. The
+composer reloads one immutable active snapshot,
 preserves the Page key/slug on rename and layout save, assigns stable block IDs
 when a layout is first persisted, and accepts only the existing strict Page
 grammar. The service calls the single authenticated
 `apply_direct_page_configuration_change` RPC, which reuses the M5
 propose/validate/apply engine atomically.
 
-Existing active internal and public Pages share those rename and layout-save
-actions. The trusted action-shape check requires audience, status, identity,
-slug, activation and every unrelated snapshot collection to remain unchanged.
-Direct Page creation remains internal and draft-only. A draft Site therefore
-stays draft when edited; a published Site stays published and its saved content
-is immediately served by the existing public runtime. Initial Site publication
-continues to use the separate owner-facing `Publish Site` action.
+Existing active internal Pages and draft public Pages share the rename and
+layout-save actions. The trusted action-shape check requires audience, status,
+identity, slug, activation and every unrelated snapshot collection to remain
+unchanged. Direct Page creation remains internal and draft-only. A draft Site
+therefore stays draft when edited, and initial Site publication continues to use
+the separate owner-facing `Publish Site` action.
+
+An already-published Site uses `publish_page_changes`. Its candidate title and
+layout remain only in the active browser editor until the owner deliberately
+publishes. The server reloads the authoritative published Page, validates the
+complete bounded layout and locked capability blocks, and applies one immutable
+Version while preserving identity, slug, audience, published status and
+activation. Ordinary rename/layout actions fail closed for published public
+Pages, so the explicit publication boundary cannot be bypassed.
 
 Page editor state is transient Tiptap JSON. It is translated to and from the
 canonical `pages.layout_json` grammar at the client boundary; raw editor JSON
 never becomes a second configuration truth model. Unsupported historical blocks
 round-trip as bounded read-only atoms, and internal Table Views embed the
-production Table kernel without structural Table controls. AI, public Page
-publication, and reviewed Changes work remain on their existing boundaries.
+production Table kernel without structural Table controls. AI and reviewed
+Changes work remain on their existing boundaries.
 
 ## Owner/Admin routes
 

@@ -19,6 +19,7 @@ const objectId = "00000000-0000-4000-8000-000000000002";
 const viewId = "00000000-0000-4000-8000-000000000003";
 const headingBlockId = "00000000-0000-4000-8000-000000000004";
 const viewBlockId = "00000000-0000-4000-8000-000000000005";
+const siteButtonBlockId = "00000000-0000-4000-8000-000000000006";
 
 const snapshot: ConfigurationSnapshotV1 = {
   schema_version: 1,
@@ -391,52 +392,233 @@ describe("Page grammar and direct Workspace composer", () => {
     ).toThrowError(DirectPageComposerError);
   });
 
-  it.each(["draft", "published"] as const)(
-    "preserves public Site identity and %s lifecycle on rename and layout save",
-    (status) => {
-      const publicSnapshot: ConfigurationSnapshotV1 = {
-        ...snapshot,
-        pages: [
+  it("preserves draft public Site identity and lifecycle on private saves", () => {
+    const publicSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          key: "public_site",
+          title: "Public site",
+          slug: "public-site",
+          audience: "public",
+          status: "draft",
+        },
+      ],
+    };
+
+    const renamed = composeDirectPageAction(publicSnapshot, {
+      action: "rename_page",
+      pageKey: "public_site",
+      title: "Book with us",
+    });
+    const saved = composeDirectPageAction(publicSnapshot, {
+      action: "save_page_layout",
+      pageKey: "public_site",
+      layout: { blocks: [{ type: "text", text: "Updated Site" }] },
+    });
+
+    for (const result of [renamed, saved]) {
+      expect(result.operations).toEqual([
+        expect.objectContaining({
+          op: "set_page",
+          key: "public_site",
+          slug: "public-site",
+          audience: "public",
+          status: "draft",
+          is_active: true,
+        }),
+      ]);
+    }
+    expect(renamed.operations[0]).toMatchObject({ title: "Book with us" });
+    expect(saved.operations[0]).toMatchObject({ title: "Public site" });
+  });
+
+  it("rejects ordinary direct saves for an already-published Site", () => {
+    const publicSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          key: "public_site",
+          title: "Public site",
+          slug: "public-site",
+          audience: "public",
+          status: "published",
+        },
+      ],
+    };
+    for (const intent of [
+      {
+        action: "rename_page" as const,
+        pageKey: "public_site",
+        title: "Changed",
+      },
+      {
+        action: "save_page_layout" as const,
+        pageKey: "public_site",
+        layout: { blocks: [{ type: "text" as const, text: "Changed" }] },
+      },
+    ]) {
+      expect(() =>
+        composeDirectPageAction(publicSnapshot, intent),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "direct_page_published_site_requires_publication",
+        }),
+      );
+    }
+  });
+
+  it("publishes one complete bounded candidate while preserving Site identity and locked atoms", () => {
+    const publicSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          key: "public_site",
+          title: "Public site",
+          slug: "public-site",
+          audience: "public",
+          status: "published",
+          layout_json: {
+            blocks: [
+              {
+                id: headingBlockId,
+                type: "heading",
+                text: "Welcome",
+                level: 1,
+              },
+              {
+                id: siteButtonBlockId,
+                type: "button",
+                label: "Book now",
+                href: "/book",
+                style: "primary",
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const published = composeDirectPageAction(publicSnapshot, {
+      action: "publish_page_changes",
+      pageKey: "public_site",
+      title: "Book with us",
+      layout: {
+        blocks: [
           {
-            ...snapshot.pages[0]!,
-            key: "public_site",
-            title: "Public site",
-            slug: "public-site",
-            audience: "public",
-            status,
+            id: siteButtonBlockId,
+            type: "button",
+            label: "Book now",
+            href: "/book",
+            style: "primary",
+          },
+          {
+            id: headingBlockId,
+            type: "heading",
+            text: "Appointments",
+            level: 2,
+          },
+          { type: "divider" },
+        ],
+      },
+    });
+
+    expect(published.actionKind).toBe("publish_page_changes");
+    expect(published.operations).toEqual([
+      expect.objectContaining({
+        op: "set_page",
+        key: "public_site",
+        title: "Book with us",
+        slug: "public-site",
+        audience: "public",
+        status: "published",
+        is_active: true,
+      }),
+    ]);
+    const layout = (published.operations[0] as { layout_json: PageLayout })
+      .layout_json;
+    expect(layout.blocks.map((block) => block.type)).toEqual([
+      "button",
+      "heading",
+      "divider",
+    ]);
+    expect(layout.blocks[0]).toMatchObject({ id: siteButtonBlockId });
+    expect(layout.blocks[2]).toHaveProperty("id");
+  });
+
+  it("fails closed when published Site intent changes locked atoms or lifecycle", () => {
+    const publicPage: ConfigurationSnapshotV1["pages"][number] = {
+      ...snapshot.pages[0]!,
+      key: "public_site",
+      title: "Public site",
+      slug: "public-site",
+      audience: "public",
+      status: "published",
+      layout_json: {
+        blocks: [
+          {
+            id: siteButtonBlockId,
+            type: "button",
+            label: "Book now",
+            href: "/book",
+            style: "primary",
           },
         ],
-      };
+      },
+    };
+    for (const blocks of [
+      [],
+      [
+        {
+          id: siteButtonBlockId,
+          type: "button" as const,
+          label: "Changed",
+          href: "/book",
+          style: "primary" as const,
+        },
+      ],
+    ]) {
+      expect(() =>
+        composeDirectPageAction(
+          { ...snapshot, pages: [publicPage] },
+          {
+            action: "publish_page_changes",
+            pageKey: "public_site",
+            title: "Changed Site",
+            layout: { blocks },
+          },
+        ),
+      ).toThrowError(
+        expect.objectContaining({ code: "direct_page_site_block_locked" }),
+      );
+    }
 
-      const renamed = composeDirectPageAction(publicSnapshot, {
-        action: "rename_page",
-        pageKey: "public_site",
-        title: "Book with us",
-      });
-      const saved = composeDirectPageAction(publicSnapshot, {
-        action: "save_page_layout",
-        pageKey: "public_site",
-        layout: { blocks: [{ type: "text", text: "Updated Site" }] },
-      });
+    for (const page of [
+      { ...publicPage, status: "draft" as const },
+      { ...publicPage, audience: "internal" as const },
+    ]) {
+      expect(() =>
+        composeDirectPageAction(
+          { ...snapshot, pages: [page] },
+          {
+            action: "publish_page_changes",
+            pageKey: "public_site",
+            title: "Changed Site",
+            layout: page.layout_json,
+          },
+        ),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "direct_page_published_site_ineligible",
+        }),
+      );
+    }
+  });
 
-      for (const result of [renamed, saved]) {
-        expect(result.operations).toEqual([
-          expect.objectContaining({
-            op: "set_page",
-            key: "public_site",
-            slug: "public-site",
-            audience: "public",
-            status,
-            is_active: true,
-          }),
-        ]);
-      }
-      expect(renamed.operations[0]).toMatchObject({ title: "Book with us" });
-      expect(saved.operations[0]).toMatchObject({ title: "Public site" });
-    },
-  );
-
-  it("explains the distinct draft and published Site save behavior", () => {
+  it("keeps draft publication separate and published edits in a local candidate", () => {
     const siteRoute = readFileSync(
       new URL(
         "../src/app/app/[businessSlug]/sites/[pageSlug]/page.tsx",
@@ -450,11 +632,19 @@ describe("Page grammar and direct Workspace composer", () => {
     );
 
     expect(siteRoute).toContain(
-      "Changes to this published Site go live when you save.",
+      "Supported edits stay in this browser until you deliberately",
     );
-    expect(editor).toContain(
-      "Changes to this published Site go live when you save.",
-    );
+    expect(siteRoute).toContain("key={page.definition.key}");
+    expect(siteRoute).toContain("publishPageChangesAction={");
+    expect(editor).toContain("Customers still see the current published Site");
+    expect(editor).toContain("Publish changes");
+    expect(editor).toContain("Discard changes");
+    expect(editor).toContain("useUnsavedNavigationWarning");
+    expect(editor).toContain("site-candidate-preview-frame");
+    expect(editor).toContain("00000000-0000-4000-8000-");
     expect(editor).toContain("Publish Site remains a separate owner action.");
+    expect(editor).not.toContain(
+      "Changes to this published Site go live when you save.",
+    );
   });
 });
