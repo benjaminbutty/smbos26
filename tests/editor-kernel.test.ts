@@ -162,6 +162,56 @@ describe("editor kernel contracts", () => {
     expect(savedMarkup).not.toMatch(/Save|Cancel/);
   });
 
+  it("renders a proposed property as empty and keeps structural controls absent for Staff", () => {
+    const table = createMockTableAdapter({ delayMs: 0 }).getTable();
+    const phone = table.columns.find((column) => column.key === "phone");
+    if (!phone) {
+      throw new Error("Expected the seeded Phone property.");
+    }
+    const proposed = {
+      ...phone,
+      key: "__proposed_property__",
+      label: "Referral source",
+      kind: "select" as const,
+      editable: false,
+      preview: true,
+      readOnlyReason: "Not added yet",
+    };
+    const gridColumns = createEditorColumns({
+      canChangeColumnTypes: false,
+      canInsertColumns: false,
+      canRenameColumns: false,
+      canReorderColumns: false,
+      canResizeColumns: false,
+      canUpdateColumnOptions: false,
+      columnMenuKey: null,
+      columns: [proposed],
+      onActivateDraft: () => undefined,
+      onOpenColumnMenu: () => undefined,
+      onOpenRecord: () => undefined,
+      onRenameColumn: async () => true,
+      onUpdateColumnOptions: async () => true,
+      pendingEdit: null,
+    });
+    const headerMarkup = renderToStaticMarkup(
+      gridColumns[0]!.renderHeaderCell?.({} as never) ?? null,
+    );
+    expect(headerMarkup).toContain("Referral source");
+    expect(headerMarkup).not.toContain("Column menu");
+    const cellMarkup = renderToStaticMarkup(
+      gridColumns[0]!.renderCell?.({
+        column: { idx: 0, key: proposed.key },
+        isCellEditable: false,
+        onRowChange: () => undefined,
+        row: table.rows[0]!,
+        rowIdx: 0,
+        tabIndex: 0,
+      } as unknown as RenderCellProps<EditorRow>),
+    );
+    expect(cellMarkup).toContain("Empty");
+    expect(cellMarkup).toContain("Not added yet");
+  });
+
   it("renders a titled record panel with static property values", () => {
     const table = createMockTableAdapter({ delayMs: 0 }).getTable();
     const row = table.rows[0];
@@ -399,11 +449,36 @@ describe("editor kernel contracts", () => {
       }),
     );
 
-    expect(markup).toContain('<form class="editor-add-column-popover">');
-    expect(markup).toMatch(
-      /<button[^>]*type="submit"[^>]*>Add column<\/button>/,
+    expect(markup).toContain(
+      '<div class="lenni-popover editor-property-editor"',
     );
-    expect(markup).not.toContain("formAction");
+    expect(markup).toContain('type="button">Add property</button>');
+    expect(markup).toContain("What happens");
+    expect(markup).not.toMatch(/Review|Apply|requiredness/i);
     expect(addColumn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the active property input visible when currentness needs a recheck", () => {
+    const table = createMockTableAdapter({ delayMs: 0 }).getTable();
+    const markup = renderToStaticMarkup(
+      createElement(AddColumnPopover, {
+        columns: table.columns,
+        draft: {
+          label: "Referral source",
+          kind: "select",
+          options: ["Google", "Instagram"],
+          placement: { mode: "after", anchorColumnKey: "phone" },
+        },
+        externalError:
+          "Things changed. Refresh to recheck this property before adding it.",
+        onClose: () => undefined,
+        onCreate: async () => false,
+        onRefresh: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain('value="Referral source"');
+    expect(markup).toContain("Things changed");
+    expect(markup).toContain("Refresh and recheck");
   });
 });

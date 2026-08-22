@@ -20,6 +20,7 @@ export const lenniTypePickerOptions: readonly TypePickerOption[] = [
     description: "Notes and longer writing",
   },
   { kind: "number", label: "Number", description: "Counts and quantities" },
+  { kind: "currency", label: "Money", description: "Prices and amounts" },
   { kind: "boolean", label: "Yes / No", description: "A simple checkbox" },
   { kind: "date", label: "Date", description: "A calendar date" },
   { kind: "email", label: "Email", description: "Email addresses" },
@@ -61,13 +62,15 @@ export function Popover({
       if (!anchor) return;
       const bounds = anchor.getBoundingClientRect();
       const gap = 8;
-      const width = Math.min(288, Math.max(0, window.innerWidth - gap * 2));
+      const width = Math.min(
+        popover?.getBoundingClientRect().width || 288,
+        Math.max(0, window.innerWidth - gap * 2),
+      );
       const estimatedHeight = Math.min(
-        512,
+        window.innerHeight - gap * 2,
         Math.max(
           0,
-          popover?.getBoundingClientRect().height ||
-            window.innerHeight - gap * 2,
+          popover?.scrollHeight || popover?.getBoundingClientRect().height || 0,
         ),
       );
       const topBelow = bounds.bottom + gap;
@@ -83,9 +86,17 @@ export function Popover({
     };
 
     updatePosition();
+    let followUpFrame: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      followUpFrame = window.requestAnimationFrame(updatePosition);
+    });
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     return () => {
+      window.cancelAnimationFrame(frame);
+      if (followUpFrame !== undefined) {
+        window.cancelAnimationFrame(followUpFrame);
+      }
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
@@ -186,9 +197,11 @@ export function TypePicker({
 }
 
 export function OptionManager({
+  maxOptions = 100,
   options,
   onChange,
 }: Readonly<{
+  maxOptions?: number;
   options: readonly string[];
   onChange: (options: readonly string[]) => void;
 }>): ReactNode {
@@ -260,14 +273,15 @@ export function OptionManager({
       <div className="lenni-option-add">
         <input
           aria-label="New option"
+          disabled={options.length >= maxOptions}
           onChange={(event) => setDraft(event.currentTarget.value)}
           placeholder="New option"
           value={draft}
         />
         <button
-          disabled={!draft.trim()}
+          disabled={!draft.trim() || options.length >= maxOptions}
           onClick={() => {
-            if (!draft.trim()) return;
+            if (!draft.trim() || options.length >= maxOptions) return;
             onChange([...options, draft.trim()]);
             setDraft("");
           }}
@@ -276,6 +290,11 @@ export function OptionManager({
           Add
         </button>
       </div>
+      {options.length >= maxOptions ? (
+        <p className="editor-options-limit" role="status">
+          Maximum {maxOptions} options.
+        </p>
+      ) : null}
     </div>
   );
 }

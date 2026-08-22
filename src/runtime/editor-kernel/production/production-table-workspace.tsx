@@ -23,7 +23,6 @@ import type {
   ProductionScopedConnectionEditAction,
   ProductionScopedConnectionSearchAction,
 } from "./action-types";
-import { productionTableRefreshKey } from "./action-types";
 import {
   createProductionTableAdapter,
   type ProductionTableAdapterActions,
@@ -231,7 +230,6 @@ export function ProductionTableWorkspace({
     <EditorKernel
       adapter={adapter}
       capabilities={capabilities}
-      key={productionTableRefreshKey(currentness)}
       {...(businessSlug !== undefined ? { businessSlug } : {})}
       footer={footer}
       headerContent={headerContent}
