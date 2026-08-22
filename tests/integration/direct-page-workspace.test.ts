@@ -36,6 +36,7 @@ let admin: Client;
 let anonymous: Client;
 let sql: Sql;
 let owner: Identity;
+let workspaceAdmin: Identity;
 let staff: Identity;
 let business: Tables<"businesses">;
 
@@ -179,6 +180,7 @@ describe("workspace foundation direct Page actions", () => {
       },
     );
     owner = await createIdentity("owner");
+    workspaceAdmin = await createIdentity("admin");
     staff = await createIdentity("staff");
 
     const created = await owner.client.rpc("create_business", {
@@ -190,11 +192,18 @@ describe("workspace foundation direct Page actions", () => {
       throw created.error ?? new Error("Could not create the test Business.");
     }
     business = created.data;
-    const membership = await admin.from("business_memberships").insert({
-      business_id: business.id,
-      user_id: staff.user.id,
-      role: "staff",
-    });
+    const membership = await admin.from("business_memberships").insert([
+      {
+        business_id: business.id,
+        user_id: workspaceAdmin.user.id,
+        role: "admin",
+      },
+      {
+        business_id: business.id,
+        user_id: staff.user.id,
+        role: "staff",
+      },
+    ]);
     if (membership.error) throw membership.error;
   }, 180_000);
 
@@ -302,6 +311,93 @@ describe("workspace foundation direct Page actions", () => {
     expect(saved.changeSet.base_head_revision).toBe(
       renamed.changeSet.base_head_revision + 1,
     );
+  });
+
+  it("saves a completed long-distance Page reorder in exactly one Version", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `reorder_${suffix}`;
+    const created = await applyConfigurationOperations(
+      [
+        {
+          op: "set_page",
+          key: pageKey,
+          title: "This week",
+          slug: `this-week-${suffix}`,
+          audience: "internal",
+          layout_json: {
+            blocks: [
+              {
+                id: crypto.randomUUID(),
+                type: "heading",
+                text: "One",
+                level: 2,
+              },
+              { id: crypto.randomUUID(), type: "text", text: "Two" },
+              { id: crypto.randomUUID(), type: "divider" },
+              { id: crypto.randomUUID(), type: "text", text: "Four" },
+            ],
+          },
+          status: "draft",
+          is_active: true,
+        },
+      ],
+      `Create ${pageKey}`,
+    );
+    const page = created.snapshot.pages.find((entry) => entry.key === pageKey);
+    if (!page) throw new Error("Expected the reorder Page.");
+    const [first, ...remaining] = page.layout_json.blocks;
+    if (!first) throw new Error("Expected Page blocks.");
+    const before = await configurationCounts();
+
+    const reordered = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "save_page_layout",
+          pageKey,
+          layout: { blocks: [...remaining, first] },
+        },
+      },
+    );
+    const after = await configurationCounts();
+    const reorderedPage = reordered.snapshot.pages.find(
+      (entry) => entry.key === pageKey,
+    );
+
+    expect(reorderedPage?.layout_json.blocks.map((block) => block.id)).toEqual([
+      ...remaining.map((block) => block.id),
+      first.id,
+    ]);
+    expect(after).toEqual({
+      versions: before.versions + 1,
+      changes: before.changes + 1,
+      revision: before.revision + 1,
+    });
+  });
+
+  it("allows an Admin to author one bounded Page action", async () => {
+    const before = await currentness(workspaceAdmin);
+    const countsBefore = await configurationCounts();
+    const created = await applyDirectPageAction(
+      workspaceAdmin.client,
+      { businessId: business.id, actorId: workspaceAdmin.user.id },
+      {
+        currentness: before.currentness,
+        intent: {
+          action: "create_page",
+          title: `Admin page ${crypto.randomUUID().slice(0, 8)}`,
+        },
+      },
+    );
+
+    expect(created.changeSet.status).toBe("applied");
+    expect(await configurationCounts()).toEqual({
+      versions: countsBefore.versions + 1,
+      changes: countsBefore.changes + 1,
+      revision: countsBefore.revision + 1,
+    });
   });
 
   it("renames and edits a draft public Site without changing its identity or lifecycle", async () => {

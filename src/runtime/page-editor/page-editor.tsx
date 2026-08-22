@@ -25,6 +25,7 @@ import { ProductionTableWorkspace } from "../editor-kernel/production/production
 import type { EditorCapabilities } from "../editor-kernel/contracts";
 import type { PageEditorViewEmbed } from "./extensions";
 import { PageRenderer } from "../pages/page-renderer";
+import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
 import {
   groupPageViewsByTable,
   selectPageView,
@@ -32,10 +33,11 @@ import {
   type PageViewOption,
 } from "./view-chooser";
 
-type PageBlockIntent = Extract<
+type PageStructureIntent = Extract<
   DirectPageIntent,
   {
     action:
+      | "save_page_layout"
       | "add_page_block"
       | "update_page_block"
       | "remove_page_block"
@@ -45,7 +47,7 @@ type PageBlockIntent = Extract<
 
 type ApplyPageBlockAction = (input: {
   currentness: DirectPageCurrentness;
-  intent: PageBlockIntent;
+  intent: PageStructureIntent;
 }) => Promise<DirectPageActionResult>;
 
 type RenamePageAction = (input: {
@@ -72,7 +74,17 @@ export interface PageEditorProps {
 }
 
 type EditorSaveStatus = "saved" | "saving" | "stale" | "error";
-type AddMenu = "closed" | "blocks" | "views";
+type SuccessfulPageAction = Extract<
+  DirectPageActionResult,
+  { status: "success" }
+>;
+type EditorMode = "editing" | "reading";
+type AddMenuStep = "blocks" | "views";
+
+interface AddMenuState {
+  step: AddMenuStep;
+  afterBlockId: string | null;
+}
 type EditableBlock = Extract<PageBlock, { type: "heading" | "text" }>;
 
 interface BlockDraft {
@@ -80,6 +92,17 @@ interface BlockDraft {
   type: EditableBlock["type"];
   text: string;
   level?: 1 | 2 | 3;
+}
+
+interface ReorderIntent {
+  sourceId: string;
+  targetIndex: number;
+}
+
+interface PendingInsert {
+  type: "heading" | "text";
+  afterBlockId: string | null;
+  text: string;
 }
 
 function statusText(status: EditorSaveStatus): string {
@@ -129,6 +152,28 @@ function blockLabel(block: PageBlock): string {
 
 function editableBlock(block: PageBlock): EditableBlock | null {
   return block.type === "heading" || block.type === "text" ? block : null;
+}
+
+function reorderPageLayout(
+  layout: PageLayout,
+  intent: ReorderIntent,
+): PageLayout | null {
+  const sourceIndex = layout.blocks.findIndex(
+    (block, index) => blockId(block, index) === intent.sourceId,
+  );
+  if (
+    sourceIndex < 0 ||
+    intent.targetIndex < 0 ||
+    intent.targetIndex >= layout.blocks.length ||
+    sourceIndex === intent.targetIndex
+  ) {
+    return null;
+  }
+  const blocks = [...layout.blocks];
+  const [moved] = blocks.splice(sourceIndex, 1);
+  if (!moved) return null;
+  blocks.splice(intent.targetIndex, 0, moved);
+  return { blocks };
 }
 
 function embeddedCapabilities(
@@ -291,6 +336,7 @@ function CapabilityBlockFrame({
 }
 
 function PageBlockView({
+  authoring,
   block,
   blockIdentifier,
   businessSlug,
@@ -301,8 +347,11 @@ function PageBlockView({
   onCancel,
   onChange,
   onEdit,
+  onLevelChange,
   onSave,
+  saveBlocked,
 }: Readonly<{
+  authoring: boolean;
   block: PageBlock;
   blockIdentifier: string | null;
   businessSlug: string;
@@ -315,7 +364,9 @@ function PageBlockView({
   onCancel: () => void;
   onChange: (value: string) => void;
   onEdit: () => void;
+  onLevelChange: (value: 1 | 2 | 3) => void;
   onSave: () => void;
+  saveBlocked: boolean;
 }>): ReactNode {
   const id = blockIdentifier;
   const editingThisBlock = id !== null && editing?.id === id;
@@ -331,13 +382,29 @@ function PageBlockView({
         }}
       >
         {editable.type === "heading" ? (
-          <input
-            aria-label="Heading text"
-            autoFocus
-            maxLength={200}
-            onChange={(event) => onChange(event.currentTarget.value)}
-            value={editing.text}
-          />
+          <div className="page-editor-heading-fields">
+            <input
+              aria-label="Heading text"
+              autoFocus
+              maxLength={200}
+              onChange={(event) => onChange(event.currentTarget.value)}
+              value={editing.text}
+            />
+            <label>
+              Heading size
+              <select
+                aria-label="Heading size"
+                onChange={(event) =>
+                  onLevelChange(Number(event.currentTarget.value) as 1 | 2 | 3)
+                }
+                value={editing.level ?? 2}
+              >
+                <option value={1}>Large</option>
+                <option value={2}>Medium</option>
+                <option value={3}>Small</option>
+              </select>
+            </label>
+          </div>
         ) : (
           <textarea
             aria-label="Text block content"
@@ -349,7 +416,11 @@ function PageBlockView({
           />
         )}
         <div className="page-editor-block-form-actions">
-          <button className="button button-small" type="submit">
+          <button
+            className="button button-small"
+            disabled={saveBlocked}
+            type="submit"
+          >
             Save
           </button>
           <button
@@ -365,7 +436,7 @@ function PageBlockView({
   }
 
   const editableContent = (content: ReactNode): ReactNode => {
-    if (!editable || !id) return content;
+    if (!authoring || !editable || !id) return content;
     return (
       <div
         aria-label={`Edit ${blockLabel(block)}`}
@@ -486,7 +557,7 @@ export function PageEditor({
   views,
 }: Readonly<PageEditorProps>): ReactNode {
   const router = useRouter();
-  const insertShellRef = useRef<HTMLDivElement>(null);
+  const editorShellRef = useRef<HTMLElement>(null);
   const pageViewTables = useMemo(
     () => groupPageViewsByTable(availableViews),
     [availableViews],
@@ -495,9 +566,11 @@ export function PageEditor({
   const [titleDraft, setTitleDraft] = useState(initialTitle);
   const [layout, setLayout] = useState(initialLayout);
   const [currentnessRef, setCurrentnessRef] = useState(currentness);
+  const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
   const [status, setStatus] = useState<EditorSaveStatus>("saved");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [addMenu, setAddMenu] = useState<AddMenu>("closed");
+  const [mode, setMode] = useState<EditorMode>("editing");
+  const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [selectedTableKey, setSelectedTableKey] = useState(
     () => pageViewTables[0]?.key ?? "",
   );
@@ -506,7 +579,15 @@ export function PageEditor({
   );
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState<BlockDraft | null>(null);
+  const [pendingInsert, setPendingInsert] = useState<PendingInsert | null>(
+    null,
+  );
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [blockMenuId, setBlockMenuId] = useState<string | null>(null);
   const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
+  const [pendingReorder, setPendingReorder] = useState<ReorderIntent | null>(
+    null,
+  );
   const selectedTable =
     pageViewTables.find((table) => table.key === selectedTableKey) ??
     pageViewTables[0];
@@ -514,23 +595,71 @@ export function PageEditor({
     selectedTable,
     selectedViewKey,
   );
+  const structureBlocked = status === "saving" || status === "stale";
+  const editingSourceBlock = editing
+    ? layout.blocks.find((block, index) => blockId(block, index) === editing.id)
+    : undefined;
+  const editingSourceCandidate = editingSourceBlock
+    ? editableBlock(editingSourceBlock)
+    : null;
+  const editingSource =
+    editingSourceCandidate?.type === editing?.type
+      ? editingSourceCandidate
+      : null;
+  const hasMeaningfulDraft =
+    (renaming && titleDraft.trim() !== title) ||
+    (editing !== null && editingSource?.text !== editing.text) ||
+    (pendingInsert !== null && pendingInsert.text.trim().length > 0) ||
+    pendingReorder !== null;
+
+  if (
+    currentness.expectedBaseVersionId !==
+      loadedCurrentness.expectedBaseVersionId ||
+    currentness.expectedHeadRevision !== loadedCurrentness.expectedHeadRevision
+  ) {
+    const wasStale = status === "stale";
+    const reprepared = pendingReorder
+      ? reorderPageLayout(initialLayout, pendingReorder)
+      : null;
+    setLoadedCurrentness(currentness);
+    setCurrentnessRef(currentness);
+    setTitle(initialTitle);
+    if (!renaming) setTitleDraft(initialTitle);
+    setLayout(reprepared ?? initialLayout);
+    setStatus("saved");
+    if (wasStale) {
+      setStatusMessage(
+        reprepared
+          ? "The latest Page is loaded. Review the proposed order and save it again."
+          : "The latest Page is loaded. Review your draft and save it again.",
+      );
+    }
+  }
+
+  useUnsavedNavigationWarning(
+    hasMeaningfulDraft && status !== "saving",
+    "Leave this Page? Your unfinished Page change will be lost.",
+  );
 
   useEffect(() => {
-    if (addMenu === "closed") return;
+    if (addMenu === null && blockMenuId === null) return;
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
-        setAddMenu("closed");
+        setAddMenu(null);
+        setBlockMenuId(null);
       }
     };
     const closeOnOutsidePointer = (event: PointerEvent): void => {
       const target = event.target;
       if (
-        target instanceof Node &&
-        insertShellRef.current &&
-        !insertShellRef.current.contains(target)
+        target instanceof Element &&
+        !target.closest(
+          ".page-editor-insert-menu, .page-editor-block-menu, [aria-controls='page-editor-add-menu'], .page-editor-grip-button",
+        )
       ) {
-        setAddMenu("closed");
+        setAddMenu(null);
+        setBlockMenuId(null);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
@@ -539,11 +668,12 @@ export function PageEditor({
       window.removeEventListener("keydown", closeOnEscape);
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
     };
-  }, [addMenu]);
+  }, [addMenu, blockMenuId]);
 
   const runStructureAction = async (
-    intent: PageBlockIntent,
-  ): Promise<DirectPageActionResult | null> => {
+    intent: PageStructureIntent,
+  ): Promise<SuccessfulPageAction | null> => {
+    if (status === "saving" || status === "stale") return null;
     setStatus("saving");
     setStatusMessage(null);
     const result = await applyPageBlockAction({
@@ -555,7 +685,8 @@ export function PageEditor({
       setLayout(result.layout);
       setStatus("saved");
       setEditing(null);
-      setAddMenu("closed");
+      setAddMenu(null);
+      setBlockMenuId(null);
       router.refresh();
       return result;
     }
@@ -568,53 +699,62 @@ export function PageEditor({
     sourceId: string,
     targetIndex: number,
   ): Promise<void> => {
-    const sourceIndex = layout.blocks.findIndex(
-      (block) => blockId(block) === sourceId,
-    );
-    if (
-      sourceIndex < 0 ||
-      targetIndex < 0 ||
-      targetIndex >= layout.blocks.length ||
-      sourceIndex === targetIndex
-    ) {
-      return;
-    }
-
+    if (status === "saving" || status === "stale") return;
+    const intent = { sourceId, targetIndex };
+    const nextLayout = reorderPageLayout(layout, intent);
+    if (!nextLayout) return;
+    setPendingReorder(intent);
+    setLayout(nextLayout);
     setStatus("saving");
     setStatusMessage(null);
-    let nextCurrentness = currentnessRef;
-    let nextLayout = layout;
-    let nextIndex = sourceIndex;
-
-    while (nextIndex !== targetIndex) {
-      const direction = nextIndex < targetIndex ? "down" : "up";
-      const result = await applyPageBlockAction({
-        currentness: nextCurrentness,
-        intent: {
-          action: "move_page_block",
-          pageKey,
-          blockId: sourceId,
-          direction,
-        },
-      });
-      if (result.status !== "success") {
-        setStatus(result.status === "stale" ? "stale" : "error");
-        setStatusMessage(result.message);
-        return;
-      }
-      nextCurrentness = result.currentness;
-      nextLayout = result.layout;
-      nextIndex += direction === "down" ? 1 : -1;
+    const result = await applyPageBlockAction({
+      currentness: currentnessRef,
+      intent: { action: "save_page_layout", pageKey, layout: nextLayout },
+    });
+    if (result.status !== "success") {
+      setStatus(result.status === "stale" ? "stale" : "error");
+      setStatusMessage(result.message);
+      return;
     }
+    setPendingReorder(null);
+    setCurrentnessRef(result.currentness);
+    setLayout(result.layout);
+    setStatus("saved");
+    router.refresh();
+  };
 
-    setCurrentnessRef(nextCurrentness);
-    setLayout(nextLayout);
+  const saveRepreparedOrder = async (): Promise<void> => {
+    if (!pendingReorder) return;
+    const candidate = reorderPageLayout(initialLayout, pendingReorder);
+    if (!candidate) {
+      setPendingReorder(null);
+      setLayout(initialLayout);
+      setStatusMessage(
+        "That block is no longer available in the latest Page. Choose a new order.",
+      );
+      return;
+    }
+    setStatus("saving");
+    setStatusMessage(null);
+    const result = await applyPageBlockAction({
+      currentness: currentnessRef,
+      intent: { action: "save_page_layout", pageKey, layout: candidate },
+    });
+    if (result.status !== "success") {
+      setStatus(result.status === "stale" ? "stale" : "error");
+      setStatusMessage(result.message);
+      return;
+    }
+    setPendingReorder(null);
+    setCurrentnessRef(result.currentness);
+    setLayout(result.layout);
     setStatus("saved");
     router.refresh();
   };
 
   const rename = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (status === "saving" || status === "stale") return;
     const nextTitle = titleDraft.trim();
     if (!nextTitle || nextTitle === title) {
       setTitleDraft(title);
@@ -673,20 +813,351 @@ export function PageEditor({
     });
   };
 
-  const addBlock = async (block: DirectPageBlockInput): Promise<void> => {
-    await runStructureAction({
+  const addBlock = async (
+    block: DirectPageBlockInput,
+    afterBlockId: string | null,
+  ): Promise<void> => {
+    const insertedIndex =
+      afterBlockId === null
+        ? 0
+        : layout.blocks.findIndex(
+            (candidate, index) => blockId(candidate, index) === afterBlockId,
+          ) + 1;
+    const result = await runStructureAction({
       action: "add_page_block",
       pageKey,
       block,
+      afterBlockId,
+    });
+    if (!result) return;
+    setPendingInsert(null);
+    const inserted = result.layout.blocks[insertedIndex];
+    const insertedId = inserted ? blockId(inserted, insertedIndex) : null;
+    setSelectedBlockId(insertedId);
+    globalThis.requestAnimationFrame(() => {
+      if (!insertedId) return;
+      document
+        .querySelector<HTMLElement>(
+          `[data-page-block-id="${CSS.escape(insertedId)}"]`,
+        )
+        ?.focus();
     });
   };
 
+  const openAddMenu = (afterBlockId: string | null): void => {
+    setPendingInsert(null);
+    setBlockMenuId(null);
+    setAddMenu((value) =>
+      value?.step === "blocks" && value.afterBlockId === afterBlockId
+        ? null
+        : { step: "blocks", afterBlockId },
+    );
+  };
+
+  const beginTextInsert = (
+    type: PendingInsert["type"],
+    afterBlockId: string | null,
+  ): void => {
+    setAddMenu(null);
+    setPendingInsert({ type, afterBlockId, text: "" });
+  };
+
+  const savePendingInsert = async (
+    event: FormEvent<HTMLFormElement>,
+  ): Promise<void> => {
+    event.preventDefault();
+    if (!pendingInsert) return;
+    const text = pendingInsert.text.trim();
+    if (!text) {
+      setStatus("error");
+      setStatusMessage("Write something before adding this block.");
+      return;
+    }
+    await addBlock(
+      pendingInsert.type === "heading"
+        ? { type: "heading", text, level: 2 }
+        : { type: "text", text },
+      pendingInsert.afterBlockId,
+    );
+  };
+
+  const enterReadingMode = (): void => {
+    if (hasMeaningfulDraft) {
+      const discard = window.confirm(
+        "Switch to Reading and discard your unfinished Page change?",
+      );
+      if (!discard) return;
+    }
+    setRenaming(false);
+    setTitleDraft(title);
+    setEditing(null);
+    setPendingInsert(null);
+    setAddMenu(null);
+    setBlockMenuId(null);
+    setSelectedBlockId(null);
+    setMode("reading");
+  };
+
+  const authoring = siteMode || mode === "editing";
+  const trailingBlockId =
+    layout.blocks.length > 0
+      ? blockId(layout.blocks.at(-1)!, layout.blocks.length - 1)
+      : null;
+
+  const insertMenu = (afterBlockId: string | null): ReactNode => {
+    if (!addMenu || addMenu.afterBlockId !== afterBlockId) return null;
+    return (
+      <div
+        aria-label={`Add to ${siteMode ? "Site" : "Page"}`}
+        className="page-editor-insert-menu"
+        id="page-editor-add-menu"
+        role="menu"
+      >
+        {addMenu.step === "blocks" ? (
+          <>
+            <div className="page-editor-insert-menu-heading">
+              Add to this {siteMode ? "Site" : "Page"}
+            </div>
+            {!siteMode ? (
+              <button
+                className="page-editor-insert-choice"
+                onClick={() => {
+                  const table =
+                    pageViewTables.find((candidate) =>
+                      candidate.views.some(
+                        (view) => view.key === effectiveSelectedViewKey,
+                      ),
+                    ) ?? pageViewTables[0];
+                  const selection = selectPageViewTable(
+                    pageViewTables,
+                    table?.key ?? "",
+                  );
+                  setSelectedTableKey(selection.tableKey);
+                  setSelectedViewKey(selection.viewKey);
+                  setAddMenu({ step: "views", afterBlockId });
+                }}
+                type="button"
+              >
+                <span aria-hidden="true">▦</span>
+                <span>
+                  <strong>Saved view</strong>
+                  <small>Live records from a Table</small>
+                </span>
+              </button>
+            ) : null}
+            <button
+              className="page-editor-insert-choice"
+              onClick={() => beginTextInsert("heading", afterBlockId)}
+              type="button"
+            >
+              <span aria-hidden="true">H</span>
+              <span>
+                <strong>Heading</strong>
+                <small>Introduce a section</small>
+              </span>
+            </button>
+            <button
+              className="page-editor-insert-choice"
+              onClick={() => beginTextInsert("text", afterBlockId)}
+              type="button"
+            >
+              <span aria-hidden="true">T</span>
+              <span>
+                <strong>Text</strong>
+                <small>Add guidance or context</small>
+              </span>
+            </button>
+            <button
+              className="page-editor-insert-choice"
+              onClick={() => void addBlock({ type: "divider" }, afterBlockId)}
+              type="button"
+            >
+              <span aria-hidden="true">—</span>
+              <span>
+                <strong>Divider</strong>
+                <small>Separate sections</small>
+              </span>
+            </button>
+          </>
+        ) : (
+          <form
+            className="page-editor-view-chooser"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (effectiveSelectedViewKey) {
+                void addBlock(
+                  { type: "view", viewKey: effectiveSelectedViewKey },
+                  afterBlockId,
+                );
+              }
+            }}
+          >
+            <div className="page-editor-insert-menu-heading">
+              Add a saved View
+            </div>
+            <p>Choose an existing View. Its records stay live on this Page.</p>
+            <label>
+              Table
+              <select
+                aria-label="Table"
+                onChange={(event) => {
+                  const selection = selectPageViewTable(
+                    pageViewTables,
+                    event.currentTarget.value,
+                  );
+                  setSelectedTableKey(selection.tableKey);
+                  setSelectedViewKey(selection.viewKey);
+                }}
+                value={selectedTable?.key ?? ""}
+              >
+                {pageViewTables.map((table) => (
+                  <option key={table.key} value={table.key}>
+                    {table.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Saved View
+              <select
+                aria-label="Saved View"
+                disabled={!selectedTable}
+                onChange={(event) =>
+                  setSelectedViewKey(
+                    selectPageView(selectedTable, event.currentTarget.value),
+                  )
+                }
+                value={effectiveSelectedViewKey}
+              >
+                {selectedTable?.views.map((view) => (
+                  <option key={view.key} value={view.key}>
+                    {view.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="page-editor-menu-actions">
+              <button
+                className="button button-small"
+                disabled={!effectiveSelectedViewKey}
+                type="submit"
+              >
+                Add saved View
+              </button>
+              <button
+                className="button button-secondary button-small"
+                onClick={() => setAddMenu({ step: "blocks", afterBlockId })}
+                type="button"
+              >
+                Back
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    );
+  };
+
+  const pendingInsertForm = (afterBlockId: string | null): ReactNode => {
+    if (!pendingInsert || pendingInsert.afterBlockId !== afterBlockId) {
+      return null;
+    }
+    return (
+      <form
+        className={`page-editor-new-block page-editor-new-${pendingInsert.type}`}
+        onSubmit={(event) => void savePendingInsert(event)}
+      >
+        {pendingInsert.type === "heading" ? (
+          <input
+            aria-label="New heading"
+            autoFocus
+            maxLength={200}
+            onChange={(event) => {
+              const text = event.currentTarget.value;
+              setPendingInsert((value) => (value ? { ...value, text } : value));
+            }}
+            placeholder="Heading"
+            value={pendingInsert.text}
+          />
+        ) : (
+          <textarea
+            aria-label="New text"
+            autoFocus
+            maxLength={5_000}
+            onChange={(event) => {
+              const text = event.currentTarget.value;
+              setPendingInsert((value) => (value ? { ...value, text } : value));
+            }}
+            placeholder="Start writing…"
+            rows={3}
+            value={pendingInsert.text}
+          />
+        )}
+        <div className="page-editor-block-form-actions">
+          <button className="button button-small" type="submit">
+            Add {pendingInsert.type}
+          </button>
+          <button
+            className="button button-secondary button-small"
+            onClick={() => setPendingInsert(null)}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+  };
+
   return (
-    <section className="page-editor-shell">
-      <header className="page-editor-header">
-        <div>
-          <p className="eyebrow">{siteMode ? "Site" : "Page"}</p>
-          {renaming ? (
+    <section
+      className={`page-editor-shell ${
+        siteMode ? "page-editor-site" : "page-editor-internal"
+      } ${authoring ? "is-editing" : "is-reading"}`}
+      ref={editorShellRef}
+    >
+      <div className="page-editor-topbar">
+        <div className="page-editor-context">
+          <span aria-hidden="true" className="page-editor-page-icon">
+            ▤
+          </span>
+          <span>{siteMode ? "Site" : "Pages"}</span>
+          <span aria-hidden="true">/</span>
+          <strong>{title}</strong>
+          <span
+            aria-live="polite"
+            className={`page-editor-save-state page-editor-save-${status}`}
+            data-save-state={status}
+            role="status"
+          >
+            {statusText(status)}
+          </span>
+        </div>
+        {!siteMode ? (
+          <div aria-label="Page mode" className="page-editor-mode-switch">
+            <button
+              aria-pressed={mode === "editing"}
+              className={mode === "editing" ? "is-active" : ""}
+              onClick={() => setMode("editing")}
+              type="button"
+            >
+              Editing
+            </button>
+            <button
+              aria-pressed={mode === "reading"}
+              className={mode === "reading" ? "is-active" : ""}
+              onClick={enterReadingMode}
+              type="button"
+            >
+              Reading
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="page-editor-document">
+        <header className="page-editor-header">
+          {renaming && authoring ? (
             <form className="page-editor-title-form" onSubmit={rename}>
               <input
                 aria-label={`${siteMode ? "Site" : "Page"} name`}
@@ -695,386 +1166,357 @@ export function PageEditor({
                 onChange={(event) => setTitleDraft(event.currentTarget.value)}
                 value={titleDraft}
               />
-              <button className="button button-small" type="submit">
-                Save
-              </button>
-              <button
-                className="button button-secondary button-small"
-                onClick={() => {
-                  setTitleDraft(title);
-                  setRenaming(false);
-                }}
-                type="button"
-              >
-                Cancel
-              </button>
+              <div className="page-editor-block-form-actions">
+                <button
+                  className="button button-small"
+                  disabled={structureBlocked}
+                  type="submit"
+                >
+                  Save title
+                </button>
+                <button
+                  className="button button-secondary button-small"
+                  onClick={() => {
+                    setTitleDraft(title);
+                    setRenaming(false);
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
             </form>
-          ) : (
+          ) : authoring ? (
             <button
               aria-label={`Rename ${siteMode ? "Site" : "Page"}`}
               className="page-editor-title-button"
+              disabled={structureBlocked}
               onClick={() => setRenaming(true)}
               type="button"
             >
               <h1>{title}</h1>
             </button>
+          ) : (
+            <h1 className="page-editor-reading-title">{title}</h1>
           )}
-        </div>
-        <div
-          className={`page-editor-save-state page-editor-save-${status}`}
-          data-save-state={status}
-          aria-live="polite"
-          role="status"
-        >
-          {statusText(status)}
-        </div>
-      </header>
+        </header>
 
-      {statusMessage ? (
-        <p className="page-editor-status-message" role="alert">
-          {statusMessage}
-          {status === "stale" ? (
+        {statusMessage ? (
+          <p className="page-editor-status-message" role="alert">
+            {statusMessage}
+            {status === "stale" ? (
+              <button
+                className="page-editor-retry"
+                onClick={() => router.refresh()}
+                type="button"
+              >
+                Refresh and recheck
+              </button>
+            ) : null}
+            {status !== "stale" && pendingReorder ? (
+              <button
+                className="page-editor-retry"
+                onClick={() => void saveRepreparedOrder()}
+                type="button"
+              >
+                Save order
+              </button>
+            ) : null}
+          </p>
+        ) : null}
+
+        {editing && !editingSource ? (
+          <section
+            aria-label="Unresolved Page text draft"
+            className="page-editor-draft-conflict"
+            role="alert"
+          >
+            <div>
+              <strong>Your text draft is still here</strong>
+              <p>
+                That block is no longer on the latest Page. Copy anything you
+                need, then discard this draft or add a new supported block.
+              </p>
+            </div>
+            <textarea
+              aria-label="Unresolved text draft"
+              onChange={(event) => {
+                const text = event.currentTarget.value;
+                setEditing((value) => (value ? { ...value, text } : value));
+              }}
+              rows={4}
+              value={editing.text}
+            />
             <button
-              className="page-editor-retry"
-              onClick={() => router.refresh()}
+              className="button button-secondary button-small"
+              onClick={() => setEditing(null)}
               type="button"
             >
-              Reload
+              Discard draft
             </button>
-          ) : null}
-        </p>
-      ) : null}
+          </section>
+        ) : null}
 
-      <div className="page-editor-insert-shell" ref={insertShellRef}>
-        <div className="page-editor-controls">
-          <button
-            aria-controls="page-editor-add-menu"
-            aria-expanded={addMenu !== "closed"}
-            className="button button-secondary"
-            onClick={() =>
-              setAddMenu((value) => (value === "blocks" ? "closed" : "blocks"))
+        <div
+          aria-keyshortcuts="/"
+          aria-label={`${title} content`}
+          className="page-editor-canvas"
+          onKeyDown={(event) => {
+            const target = event.target as HTMLElement;
+            if (
+              !authoring ||
+              event.key !== "/" ||
+              addMenu !== null ||
+              renaming ||
+              editing ||
+              pendingInsert ||
+              target.closest(
+                "input, textarea, select, button, [contenteditable='true']",
+              )
+            ) {
+              return;
             }
-            type="button"
-          >
-            + Add block
-          </button>
-          <span className="page-editor-add-hint">
-            {siteMode
-              ? "Edit content and order; preview matches the customer Site."
-              : "Press / to add"}
-          </span>
-        </div>
-
-        {addMenu !== "closed" ? (
-          <div
-            aria-label={`Add to ${siteMode ? "Site" : "Page"}`}
-            className="page-editor-insert-menu"
-            id="page-editor-add-menu"
-            role="menu"
-          >
-            {addMenu === "blocks" ? (
-              <>
-                <div className="page-editor-insert-menu-heading">Add block</div>
-                <button
-                  onClick={() =>
-                    void addBlock({
-                      type: "heading",
-                      text: "New heading",
-                      level: 2,
-                    })
-                  }
-                  type="button"
-                >
-                  Heading
-                </button>
-                <button
-                  onClick={() =>
-                    void addBlock({ type: "text", text: "Start writing…" })
-                  }
-                  type="button"
-                >
-                  Text
-                </button>
-                <button
-                  onClick={() => void addBlock({ type: "divider" })}
-                  type="button"
-                >
-                  Divider
-                </button>
-                {!siteMode ? (
-                  <button
-                    onClick={() => {
-                      const table =
-                        pageViewTables.find((candidate) =>
-                          candidate.views.some(
-                            (view) => view.key === effectiveSelectedViewKey,
-                          ),
-                        ) ?? pageViewTables[0];
-                      const selection = selectPageViewTable(
-                        pageViewTables,
-                        table?.key ?? "",
-                      );
-                      setSelectedTableKey(selection.tableKey);
-                      setSelectedViewKey(selection.viewKey);
-                      setAddMenu("views");
-                    }}
-                    type="button"
-                  >
-                    Saved View
-                  </button>
-                ) : null}
-              </>
-            ) : (
-              <form
-                className="page-editor-view-chooser"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (effectiveSelectedViewKey) {
-                    void addBlock({
-                      type: "view",
-                      viewKey: effectiveSelectedViewKey,
-                    });
-                  }
-                }}
+            event.preventDefault();
+            openAddMenu(selectedBlockId ?? trailingBlockId);
+          }}
+          tabIndex={authoring ? 0 : undefined}
+        >
+          {layout.blocks.length === 0 && !pendingInsert ? (
+            authoring ? (
+              <button
+                aria-controls="page-editor-add-menu"
+                aria-expanded={addMenu?.afterBlockId === null}
+                className="page-editor-empty"
+                disabled={structureBlocked}
+                onClick={() => openAddMenu(null)}
+                type="button"
               >
-                <div className="page-editor-insert-menu-heading">
-                  Add saved View
-                </div>
-                <label>
-                  Table
-                  <select
-                    aria-label="Table"
-                    onChange={(event) => {
-                      const selection = selectPageViewTable(
-                        pageViewTables,
-                        event.currentTarget.value,
-                      );
-                      setSelectedTableKey(selection.tableKey);
-                      setSelectedViewKey(selection.viewKey);
-                    }}
-                    value={selectedTable?.key ?? ""}
-                  >
-                    {pageViewTables.map((table) => (
-                      <option key={table.key} value={table.key}>
-                        {table.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Saved View
-                  <select
-                    aria-label="Saved View"
-                    disabled={!selectedTable}
-                    onChange={(event) =>
-                      setSelectedViewKey(
-                        selectPageView(
-                          selectedTable,
-                          event.currentTarget.value,
-                        ),
-                      )
+                <strong>Start this {siteMode ? "Site" : "Page"}</strong>
+                <span>Choose a saved View, heading, text or divider.</span>
+              </button>
+            ) : (
+              <p className="page-editor-reading-empty">
+                This Page has no content yet.
+              </p>
+            )
+          ) : null}
+          {pendingInsertForm(null)}
+          {insertMenu(null)}
+          {layout.blocks.map((block, index) => {
+            const id = blockId(block, index);
+            const selected = selectedBlockId === id;
+            return (
+              <div
+                className="page-editor-block-stack"
+                key={id ?? `${index}-${block.type}`}
+              >
+                <article
+                  className={`page-editor-block${
+                    draggingBlockId === id ? " is-dragging" : ""
+                  }${selected ? " is-selected" : ""}`}
+                  data-block-type={block.type}
+                  data-page-block-id={id ?? undefined}
+                  onClick={() => {
+                    if (authoring && id) setSelectedBlockId(id);
+                  }}
+                  onDragOver={(event) => {
+                    if (draggingBlockId && draggingBlockId !== id) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
                     }
-                    value={effectiveSelectedViewKey}
-                  >
-                    {selectedTable?.views.map((view) => (
-                      <option key={view.key} value={view.key}>
-                        {view.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="button button-small"
-                  disabled={!effectiveSelectedViewKey}
-                  type="submit"
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const sourceId =
+                      event.dataTransfer.getData("text/plain") ||
+                      draggingBlockId;
+                    setDraggingBlockId(null);
+                    if (sourceId && sourceId !== id) {
+                      void moveBlockToIndex(sourceId, index);
+                    }
+                  }}
+                  tabIndex={authoring ? 0 : undefined}
                 >
-                  Add to Page
-                </button>
-                <button
-                  className="button button-secondary button-small"
-                  onClick={() => setAddMenu("blocks")}
-                  type="button"
-                >
-                  Back
-                </button>
-              </form>
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        aria-keyshortcuts="/"
-        aria-label={`${title} content`}
-        className="page-editor-canvas"
-        onKeyDown={(event) => {
-          const target = event.target as HTMLElement;
-          if (
-            event.key !== "/" ||
-            addMenu !== "closed" ||
-            renaming ||
-            editing ||
-            target.closest("input, textarea, select, [contenteditable='true']")
-          ) {
-            return;
-          }
-          event.preventDefault();
-          setAddMenu("blocks");
-        }}
-        tabIndex={0}
-      >
-        {layout.blocks.length === 0 ? (
-          <div className="page-editor-empty">
-            <strong>Start your {siteMode ? "Site" : "Page"}</strong>
-            <span>
-              {siteMode
-                ? "Add a heading or customer-facing text."
-                : "Add a heading, a note, or a live saved View."}
-            </span>
-          </div>
-        ) : null}
-        {layout.blocks.map((block, index) => {
-          const id = blockId(block, index);
-          return (
-            <article
-              className={`page-editor-block${
-                draggingBlockId === id ? " is-dragging" : ""
-              }`}
-              data-block-type={block.type}
-              draggable={Boolean(id)}
-              key={id ?? `${index}-${block.type}`}
-              onDragEnd={() => setDraggingBlockId(null)}
-              onDragOver={(event) => {
-                if (draggingBlockId && draggingBlockId !== id) {
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                }
-              }}
-              onDragStart={(event) => {
-                if (!id) return;
-                setDraggingBlockId(id);
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", id);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const sourceId =
-                  event.dataTransfer.getData("text/plain") || draggingBlockId;
-                setDraggingBlockId(null);
-                if (sourceId && sourceId !== id) {
-                  void moveBlockToIndex(sourceId, index);
-                }
-              }}
-            >
-              <div className="page-editor-block-content">
-                <PageBlockView
-                  block={block}
-                  blockIdentifier={id}
-                  businessSlug={businessSlug}
-                  editing={editing}
-                  embed={
-                    block.type === "view" ? views[block.view_key] : undefined
-                  }
-                  previewBookings={previewBookings}
-                  previewForms={previewForms}
-                  onEdit={() => startEditing(block, id)}
-                  onCancel={() => setEditing(null)}
-                  onChange={(text) =>
-                    setEditing((value) => (value ? { ...value, text } : value))
-                  }
-                  onSave={() => void saveEditing()}
-                />
-              </div>
-              <div className="page-editor-block-actions">
-                {id ? (
-                  <span
-                    aria-label="Drag to reorder Page block"
-                    className="page-editor-drag-handle"
-                    title="Drag to reorder"
-                  >
-                    ⋮⋮
-                  </span>
-                ) : null}
-                <span className="page-editor-block-label">
-                  {blockLabel(block)}
-                </span>
-                {editableBlock(block) && id ? (
-                  <button
-                    aria-label={`Edit ${blockLabel(block)}`}
-                    className="page-editor-block-action"
-                    onClick={() => startEditing(block, id)}
-                    type="button"
-                  >
-                    Edit
-                  </button>
-                ) : null}
-                {id ? (
-                  <>
-                    <button
-                      aria-label={`Move ${blockLabel(block)} up`}
-                      className="page-editor-block-action"
-                      disabled={index === 0}
-                      onClick={() =>
-                        void runStructureAction({
-                          action: "move_page_block",
-                          pageKey,
-                          blockId: id,
-                          direction: "up",
-                        })
-                      }
-                      type="button"
+                  {authoring && id ? (
+                    <div
+                      aria-label={`${blockLabel(block)} block controls`}
+                      className="page-editor-block-gutter"
                     >
-                      ↑
-                    </button>
-                    <button
-                      aria-label={`Move ${blockLabel(block)} down`}
-                      className="page-editor-block-action"
-                      disabled={index === layout.blocks.length - 1}
-                      onClick={() =>
-                        void runStructureAction({
-                          action: "move_page_block",
-                          pageKey,
-                          blockId: id,
-                          direction: "down",
-                        })
+                      <button
+                        aria-controls="page-editor-add-menu"
+                        aria-expanded={addMenu?.afterBlockId === id}
+                        aria-label={`Add a block after ${blockLabel(block)}`}
+                        disabled={structureBlocked}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openAddMenu(id);
+                        }}
+                        type="button"
+                      >
+                        +
+                      </button>
+                      <button
+                        aria-expanded={blockMenuId === id}
+                        aria-label={`Options for ${blockLabel(block)}`}
+                        className="page-editor-grip-button"
+                        disabled={structureBlocked}
+                        draggable={!structureBlocked}
+                        onDragEnd={() => setDraggingBlockId(null)}
+                        onDragStart={(event) => {
+                          setDraggingBlockId(id);
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", id);
+                        }}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelectedBlockId(id);
+                          setAddMenu(null);
+                          setBlockMenuId((value) => (value === id ? null : id));
+                        }}
+                        title="Drag to reorder or open options"
+                        type="button"
+                      >
+                        ⋮⋮
+                      </button>
+                    </div>
+                  ) : null}
+                  <div className="page-editor-block-content">
+                    <PageBlockView
+                      authoring={authoring}
+                      block={block}
+                      blockIdentifier={id}
+                      businessSlug={businessSlug}
+                      editing={authoring && editingSource ? editing : null}
+                      embed={
+                        block.type === "view"
+                          ? views[block.view_key]
+                          : undefined
                       }
-                      type="button"
+                      previewBookings={previewBookings}
+                      previewForms={previewForms}
+                      onEdit={() => startEditing(block, id)}
+                      onLevelChange={(level) =>
+                        setEditing((value) =>
+                          value?.type === "heading"
+                            ? { ...value, level }
+                            : value,
+                        )
+                      }
+                      onCancel={() => setEditing(null)}
+                      onChange={(text) =>
+                        setEditing((value) =>
+                          value ? { ...value, text } : value,
+                        )
+                      }
+                      onSave={() => void saveEditing()}
+                      saveBlocked={structureBlocked}
+                    />
+                  </div>
+                  {authoring && id && blockMenuId === id ? (
+                    <div
+                      aria-label={`${blockLabel(block)} actions`}
+                      className="page-editor-block-menu"
+                      role="menu"
                     >
-                      ↓
-                    </button>
-                    <button
-                      aria-label={`Remove ${blockLabel(block)}`}
-                      className="page-editor-block-action page-editor-block-remove"
-                      onClick={() => {
-                        if (
-                          window.confirm("Remove this block from the Page?")
-                        ) {
+                      <div className="page-editor-insert-menu-heading">
+                        {blockLabel(block)}
+                      </div>
+                      {editableBlock(block) ? (
+                        <button
+                          onClick={() => {
+                            setBlockMenuId(null);
+                            startEditing(block, id);
+                          }}
+                          type="button"
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      <button
+                        disabled={structureBlocked || index === 0}
+                        onClick={() => {
+                          setBlockMenuId(null);
                           void runStructureAction({
-                            action: "remove_page_block",
+                            action: "move_page_block",
                             pageKey,
                             blockId: id,
+                            direction: "up",
                           });
+                        }}
+                        type="button"
+                      >
+                        Move up
+                      </button>
+                      <button
+                        disabled={
+                          structureBlocked || index === layout.blocks.length - 1
                         }
-                      }}
-                      type="button"
-                    >
-                      Remove
-                    </button>
-                  </>
-                ) : null}
+                        onClick={() => {
+                          setBlockMenuId(null);
+                          void runStructureAction({
+                            action: "move_page_block",
+                            pageKey,
+                            blockId: id,
+                            direction: "down",
+                          });
+                        }}
+                        type="button"
+                      >
+                        Move down
+                      </button>
+                      <button
+                        className="page-editor-block-remove"
+                        disabled={structureBlocked}
+                        onClick={() => {
+                          if (
+                            window.confirm("Remove this block from the Page?")
+                          ) {
+                            setBlockMenuId(null);
+                            void runStructureAction({
+                              action: "remove_page_block",
+                              pageKey,
+                              blockId: id,
+                            });
+                          }
+                        }}
+                        type="button"
+                      >
+                        Remove from Page
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+                {pendingInsertForm(id)}
+                {insertMenu(id)}
               </div>
-            </article>
-          );
-        })}
+            );
+          })}
+          {authoring && layout.blocks.length > 0 ? (
+            <div className="page-editor-end-insert">
+              <button
+                aria-controls="page-editor-add-menu"
+                aria-expanded={addMenu?.afterBlockId === trailingBlockId}
+                disabled={structureBlocked}
+                onClick={() => openAddMenu(trailingBlockId)}
+                type="button"
+              >
+                <span aria-hidden="true">+</span>
+                <span>Type / or add a block</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <p className="page-editor-footer">
-        {siteMode
-          ? publishedSite
-            ? "Changes to this published Site go live when you save."
-            : "Site edits use the same Page structure as the customer preview. Publish Site remains a separate owner action."
-          : "Pages bring guidance and live saved Views together. Record edits remain operational and use the same Table workspace."}
-      </p>
+      {authoring ? (
+        <p className="page-editor-footer">
+          {siteMode
+            ? publishedSite
+              ? "Changes to this published Site go live when you save."
+              : "Site edits use the same Page structure as the customer preview. Publish Site remains a separate owner action."
+            : "Click content to edit it. Use + to add below, or the grip for move and remove actions."}
+        </p>
+      ) : null}
     </section>
   );
 }

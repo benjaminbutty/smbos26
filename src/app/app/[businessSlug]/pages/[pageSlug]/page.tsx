@@ -469,10 +469,7 @@ export default async function InternalPage({
     <section className="tenant-content runtime-page">
       {error ? <Notice kind="error">{error}</Notice> : null}
       {message ? <Notice kind="message">{message}</Notice> : null}
-      <PageEditor
-        key={`${page.definition.key}-${directConfiguration.currentness.expectedHeadRevision}-${page.definition.title}`}
-        {...editorProps}
-      />
+      <PageEditor key={page.definition.key} {...editorProps} />
     </section>
   );
 }

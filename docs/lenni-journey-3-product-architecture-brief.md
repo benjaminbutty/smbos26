@@ -1,10 +1,81 @@
 # Lenni Journey 3 — The workspace is the builder
 
-Status: J3-I1 merged; J3-I2 implementation active
+Status: J3-I1 and J3-I2 merged; J3-I3 implementation active
 Repository: `benjaminbutty/smbos26`  
 Starting origin/main: `8a5598fa5e9e65991283421346e350d85a0a50ad`  
 J3-I2 starting origin/main: `8ca69e3c6b45ea30393b2ce5f1e5ac378d16cdbe`
-Feature branch: `codex/j3-i2-saved-views-connections`
+Current feature branch: `codex/j3-i3-internal-pages`
+
+## J3-I3 repository resolution
+
+### Reused foundations
+
+J3-I3 reuses the Direct Page schemas, composer and service, the strict
+`PageLayout` grammar, stable block identities, the Page/Tiptap translator, the
+existing internal Page canvas, exact Saved View chooser, and live production
+Table embed. The current route already derives tenant and role server-side,
+gives Owner/Admin the authoring canvas, and gives Staff the clean shared Page
+renderer with operational embedded Table access and no structural controls.
+
+### Bounded extensions
+
+The repository audit found one architecture-level interaction defect: desktop
+drag/drop calls `move_page_block` repeatedly until the source reaches the drop
+index, creating one immutable Version per adjacent movement. J3-I3 replaces
+that client loop with one complete bounded `save_page_layout` action containing
+the final reordered layout. The server still reloads the active configuration,
+checks currentness and Page grammar, and applies one trusted `set_page`
+operation and one Version.
+
+The product review also confirmed that the existing canvas still presented
+permanent block-management rows rather than the accepted quiet Page grammar.
+J3-I3 therefore recomposes the same renderer-backed surface into a bounded
+content rail: title and Heading/Text edit in place, contextual `+` and grip
+controls occupy the gutter, `/` and `+` open the same finite insert menu,
+Heading/Text are composed locally before their one insert action, and a
+Reading mode removes authoring chrome while live embedded Views remain
+operable. This is presentation and component-memory state only, not an editor
+document or Page draft lifecycle.
+
+The existing finite `add_page_block` intent gains one optional
+`afterBlockId`. The server resolves that stable or legacy block identity from
+the authoritative Page and inserts the new code-owned block immediately after
+it. The browser still cannot allocate block identity or submit operations, and
+one completed insertion still produces one `set_page` operation and one
+Version. Omitting placement retains the existing append behavior.
+
+Stale Page recovery remains memory-only. A stale title or text draft stays in
+component state while the route refreshes the latest authoritative Page and
+currentness; the owner must review and deliberately save again. No silent
+rebase, local storage, session storage or durable editing session is added.
+If the edited block was removed or changed to an incompatible supported type,
+the draft remains visibly selectable in a conflict panel but cannot be applied
+or silently recreated; the owner may copy it and discard the unresolved draft.
+
+### Migration decision and interfaces
+
+No migration, dependency or new action kind is required.
+`save_page_layout` is already accepted by the Direct Page boundary and the
+database action-shape guard. J3-I3 exposes that existing action to the reorder
+completion seam rather than adding a second reorder lifecycle. The optional
+placement field extends only the existing strict `add_page_block` schema and
+composer; it does not extend the database action allow-list.
+
+Primary seams are:
+
+- `src/core/configuration/direct-pages/{schemas,composer,service}.ts`;
+- `src/runtime/page-editor/{page-editor,page-translator,view-chooser}.ts{x}`;
+- `src/runtime/pages/direct-actions.ts` and the internal Page route;
+- the production embedded Table capability boundary;
+- focused Direct Page, translator, exact View chooser, integration and RLS
+  tests.
+
+### Exact exclusions
+
+J3-I3 adds no Page draft table, arbitrary rich text/HTML, dashboard grid,
+widgets, formulas, media, templates, collaboration, query builder, block type,
+Site/publication behavior, AI/Builder work, dependency, primitive, renderer or
+configuration lifecycle. J3-I4 and later work have not started.
 
 ## J3-I2 repository resolution
 

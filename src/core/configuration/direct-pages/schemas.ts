@@ -53,6 +53,7 @@ const addPageBlockIntentSchema = z
     action: z.literal("add_page_block"),
     pageKey: graphKeySchema,
     block: directPageBlockInputSchema,
+    afterBlockId: directPageBlockIdSchema.nullable().optional(),
   })
   .strict();
 
