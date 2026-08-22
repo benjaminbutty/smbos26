@@ -8649,6 +8649,15 @@ textarea {
     padding-inline: 0;
   }
 
+  .page-editor-drag-handle {
+    display: none;
+  }
+
+  .page-editor-block-action {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
   .page-editor-view-block {
     padding: var(--space-3);
   }

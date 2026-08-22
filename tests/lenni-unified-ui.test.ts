@@ -151,7 +151,6 @@ describe("Lenni unified workspace presentation", () => {
       new URL("../src/app/globals.css", import.meta.url),
       "utf8",
     );
-
     expect(locationsSource).toContain('from("business_memberships")');
     expect(locationsSource).toContain('id="business"');
     expect(locationsSource).toContain('id="locations"');
@@ -203,14 +202,31 @@ describe("Lenni unified workspace presentation", () => {
       new URL("../src/app/globals.css", import.meta.url),
       "utf8",
     );
+    const pageRouteSource = readFileSync(
+      new URL(
+        "../src/app/app/[businessSlug]/pages/[pageSlug]/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
 
     expect(editorSource).toContain('aria-keyshortcuts="/"');
     expect(editorSource).toContain("Press / to add");
     expect(editorSource).toContain('void addBlock({ type: "divider" })');
     expect(editorSource).toContain('aria-controls="page-editor-add-menu"');
     expect(editorSource).toContain('aria-live="polite"');
-    expect(editorSource).toContain("draggable={Boolean(id)}");
+    expect(editorSource).toContain(
+      "draggable={Boolean(id) && !structureBlocked}",
+    );
     expect(editorSource).toContain("moveBlockToIndex");
+    expect(editorSource).toContain('action: "save_page_layout"');
+    expect(editorSource).not.toContain("while (nextIndex !== targetIndex)");
+    expect(editorSource).toContain("Refresh and recheck");
+    expect(editorSource).toContain("useUnsavedNavigationWarning");
+    expect(pageRouteSource).toContain("key={page.definition.key}");
+    expect(pageRouteSource).not.toContain(
+      "expectedHeadRevision}-${page.definition.title}",
+    );
     expect(editorSource).toContain("Open Table");
     expect(editorSource).toContain("Read-only");
     expect(editorSource).toContain("ProductionTableWorkspace");
@@ -224,6 +240,8 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(cssSource).toContain(".page-editor-drag-handle");
+    expect(cssSource).toContain("min-height: 2.75rem");
   });
 
   it("keeps the canonical Lenni token families in the current CSS source", () => {

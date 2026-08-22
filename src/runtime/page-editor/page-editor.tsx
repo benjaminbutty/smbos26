@@ -25,6 +25,7 @@ import { ProductionTableWorkspace } from "../editor-kernel/production/production
 import type { EditorCapabilities } from "../editor-kernel/contracts";
 import type { PageEditorViewEmbed } from "./extensions";
 import { PageRenderer } from "../pages/page-renderer";
+import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
 import {
   groupPageViewsByTable,
   selectPageView,
@@ -32,10 +33,11 @@ import {
   type PageViewOption,
 } from "./view-chooser";
 
-type PageBlockIntent = Extract<
+type PageStructureIntent = Extract<
   DirectPageIntent,
   {
     action:
+      | "save_page_layout"
       | "add_page_block"
       | "update_page_block"
       | "remove_page_block"
@@ -45,7 +47,7 @@ type PageBlockIntent = Extract<
 
 type ApplyPageBlockAction = (input: {
   currentness: DirectPageCurrentness;
-  intent: PageBlockIntent;
+  intent: PageStructureIntent;
 }) => Promise<DirectPageActionResult>;
 
 type RenamePageAction = (input: {
@@ -80,6 +82,11 @@ interface BlockDraft {
   type: EditableBlock["type"];
   text: string;
   level?: 1 | 2 | 3;
+}
+
+interface ReorderIntent {
+  sourceId: string;
+  targetIndex: number;
 }
 
 function statusText(status: EditorSaveStatus): string {
@@ -129,6 +136,28 @@ function blockLabel(block: PageBlock): string {
 
 function editableBlock(block: PageBlock): EditableBlock | null {
   return block.type === "heading" || block.type === "text" ? block : null;
+}
+
+function reorderPageLayout(
+  layout: PageLayout,
+  intent: ReorderIntent,
+): PageLayout | null {
+  const sourceIndex = layout.blocks.findIndex(
+    (block, index) => blockId(block, index) === intent.sourceId,
+  );
+  if (
+    sourceIndex < 0 ||
+    intent.targetIndex < 0 ||
+    intent.targetIndex >= layout.blocks.length ||
+    sourceIndex === intent.targetIndex
+  ) {
+    return null;
+  }
+  const blocks = [...layout.blocks];
+  const [moved] = blocks.splice(sourceIndex, 1);
+  if (!moved) return null;
+  blocks.splice(intent.targetIndex, 0, moved);
+  return { blocks };
 }
 
 function embeddedCapabilities(
@@ -302,6 +331,7 @@ function PageBlockView({
   onChange,
   onEdit,
   onSave,
+  saveBlocked,
 }: Readonly<{
   block: PageBlock;
   blockIdentifier: string | null;
@@ -316,6 +346,7 @@ function PageBlockView({
   onChange: (value: string) => void;
   onEdit: () => void;
   onSave: () => void;
+  saveBlocked: boolean;
 }>): ReactNode {
   const id = blockIdentifier;
   const editingThisBlock = id !== null && editing?.id === id;
@@ -349,7 +380,11 @@ function PageBlockView({
           />
         )}
         <div className="page-editor-block-form-actions">
-          <button className="button button-small" type="submit">
+          <button
+            className="button button-small"
+            disabled={saveBlocked}
+            type="submit"
+          >
             Save
           </button>
           <button
@@ -495,6 +530,7 @@ export function PageEditor({
   const [titleDraft, setTitleDraft] = useState(initialTitle);
   const [layout, setLayout] = useState(initialLayout);
   const [currentnessRef, setCurrentnessRef] = useState(currentness);
+  const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
   const [status, setStatus] = useState<EditorSaveStatus>("saved");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [addMenu, setAddMenu] = useState<AddMenu>("closed");
@@ -507,12 +543,54 @@ export function PageEditor({
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState<BlockDraft | null>(null);
   const [draggingBlockId, setDraggingBlockId] = useState<string | null>(null);
+  const [pendingReorder, setPendingReorder] = useState<ReorderIntent | null>(
+    null,
+  );
   const selectedTable =
     pageViewTables.find((table) => table.key === selectedTableKey) ??
     pageViewTables[0];
   const effectiveSelectedViewKey = selectPageView(
     selectedTable,
     selectedViewKey,
+  );
+  const structureBlocked = status === "saving" || status === "stale";
+  const hasMeaningfulDraft =
+    (renaming && titleDraft.trim() !== title) ||
+    (editing !== null &&
+      layout.blocks.some((block, index) => {
+        if (blockId(block, index) !== editing.id) return false;
+        const editable = editableBlock(block);
+        return editable?.text !== editing.text;
+      })) ||
+    pendingReorder !== null;
+
+  if (
+    currentness.expectedBaseVersionId !==
+      loadedCurrentness.expectedBaseVersionId ||
+    currentness.expectedHeadRevision !== loadedCurrentness.expectedHeadRevision
+  ) {
+    const wasStale = status === "stale";
+    const reprepared = pendingReorder
+      ? reorderPageLayout(initialLayout, pendingReorder)
+      : null;
+    setLoadedCurrentness(currentness);
+    setCurrentnessRef(currentness);
+    setTitle(initialTitle);
+    if (!renaming) setTitleDraft(initialTitle);
+    setLayout(reprepared ?? initialLayout);
+    setStatus("saved");
+    if (wasStale) {
+      setStatusMessage(
+        reprepared
+          ? "The latest Page is loaded. Review the proposed order and save it again."
+          : "The latest Page is loaded. Review your draft and save it again.",
+      );
+    }
+  }
+
+  useUnsavedNavigationWarning(
+    hasMeaningfulDraft && status !== "saving",
+    "Leave this Page? Your unfinished Page change will be lost.",
   );
 
   useEffect(() => {
@@ -542,8 +620,9 @@ export function PageEditor({
   }, [addMenu]);
 
   const runStructureAction = async (
-    intent: PageBlockIntent,
+    intent: PageStructureIntent,
   ): Promise<DirectPageActionResult | null> => {
+    if (status === "saving" || status === "stale") return null;
     setStatus("saving");
     setStatusMessage(null);
     const result = await applyPageBlockAction({
@@ -568,53 +647,62 @@ export function PageEditor({
     sourceId: string,
     targetIndex: number,
   ): Promise<void> => {
-    const sourceIndex = layout.blocks.findIndex(
-      (block) => blockId(block) === sourceId,
-    );
-    if (
-      sourceIndex < 0 ||
-      targetIndex < 0 ||
-      targetIndex >= layout.blocks.length ||
-      sourceIndex === targetIndex
-    ) {
-      return;
-    }
-
+    if (status === "saving" || status === "stale") return;
+    const intent = { sourceId, targetIndex };
+    const nextLayout = reorderPageLayout(layout, intent);
+    if (!nextLayout) return;
+    setPendingReorder(intent);
+    setLayout(nextLayout);
     setStatus("saving");
     setStatusMessage(null);
-    let nextCurrentness = currentnessRef;
-    let nextLayout = layout;
-    let nextIndex = sourceIndex;
-
-    while (nextIndex !== targetIndex) {
-      const direction = nextIndex < targetIndex ? "down" : "up";
-      const result = await applyPageBlockAction({
-        currentness: nextCurrentness,
-        intent: {
-          action: "move_page_block",
-          pageKey,
-          blockId: sourceId,
-          direction,
-        },
-      });
-      if (result.status !== "success") {
-        setStatus(result.status === "stale" ? "stale" : "error");
-        setStatusMessage(result.message);
-        return;
-      }
-      nextCurrentness = result.currentness;
-      nextLayout = result.layout;
-      nextIndex += direction === "down" ? 1 : -1;
+    const result = await applyPageBlockAction({
+      currentness: currentnessRef,
+      intent: { action: "save_page_layout", pageKey, layout: nextLayout },
+    });
+    if (result.status !== "success") {
+      setStatus(result.status === "stale" ? "stale" : "error");
+      setStatusMessage(result.message);
+      return;
     }
+    setPendingReorder(null);
+    setCurrentnessRef(result.currentness);
+    setLayout(result.layout);
+    setStatus("saved");
+    router.refresh();
+  };
 
-    setCurrentnessRef(nextCurrentness);
-    setLayout(nextLayout);
+  const saveRepreparedOrder = async (): Promise<void> => {
+    if (!pendingReorder) return;
+    const candidate = reorderPageLayout(initialLayout, pendingReorder);
+    if (!candidate) {
+      setPendingReorder(null);
+      setLayout(initialLayout);
+      setStatusMessage(
+        "That block is no longer available in the latest Page. Choose a new order.",
+      );
+      return;
+    }
+    setStatus("saving");
+    setStatusMessage(null);
+    const result = await applyPageBlockAction({
+      currentness: currentnessRef,
+      intent: { action: "save_page_layout", pageKey, layout: candidate },
+    });
+    if (result.status !== "success") {
+      setStatus(result.status === "stale" ? "stale" : "error");
+      setStatusMessage(result.message);
+      return;
+    }
+    setPendingReorder(null);
+    setCurrentnessRef(result.currentness);
+    setLayout(result.layout);
     setStatus("saved");
     router.refresh();
   };
 
   const rename = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
+    if (status === "saving" || status === "stale") return;
     const nextTitle = titleDraft.trim();
     if (!nextTitle || nextTitle === title) {
       setTitleDraft(title);
@@ -695,7 +783,11 @@ export function PageEditor({
                 onChange={(event) => setTitleDraft(event.currentTarget.value)}
                 value={titleDraft}
               />
-              <button className="button button-small" type="submit">
+              <button
+                className="button button-small"
+                disabled={structureBlocked}
+                type="submit"
+              >
                 Save
               </button>
               <button
@@ -713,6 +805,7 @@ export function PageEditor({
             <button
               aria-label={`Rename ${siteMode ? "Site" : "Page"}`}
               className="page-editor-title-button"
+              disabled={structureBlocked}
               onClick={() => setRenaming(true)}
               type="button"
             >
@@ -739,7 +832,16 @@ export function PageEditor({
               onClick={() => router.refresh()}
               type="button"
             >
-              Reload
+              Refresh and recheck
+            </button>
+          ) : null}
+          {status !== "stale" && pendingReorder ? (
+            <button
+              className="page-editor-retry"
+              onClick={() => void saveRepreparedOrder()}
+              type="button"
+            >
+              Save order
             </button>
           ) : null}
         </p>
@@ -751,6 +853,7 @@ export function PageEditor({
             aria-controls="page-editor-add-menu"
             aria-expanded={addMenu !== "closed"}
             className="button button-secondary"
+            disabled={structureBlocked}
             onClick={() =>
               setAddMenu((value) => (value === "blocks" ? "closed" : "blocks"))
             }
@@ -941,7 +1044,7 @@ export function PageEditor({
                 draggingBlockId === id ? " is-dragging" : ""
               }`}
               data-block-type={block.type}
-              draggable={Boolean(id)}
+              draggable={Boolean(id) && !structureBlocked}
               key={id ?? `${index}-${block.type}`}
               onDragEnd={() => setDraggingBlockId(null)}
               onDragOver={(event) => {
@@ -983,6 +1086,7 @@ export function PageEditor({
                     setEditing((value) => (value ? { ...value, text } : value))
                   }
                   onSave={() => void saveEditing()}
+                  saveBlocked={structureBlocked}
                 />
               </div>
               <div className="page-editor-block-actions">
@@ -1013,7 +1117,7 @@ export function PageEditor({
                     <button
                       aria-label={`Move ${blockLabel(block)} up`}
                       className="page-editor-block-action"
-                      disabled={index === 0}
+                      disabled={structureBlocked || index === 0}
                       onClick={() =>
                         void runStructureAction({
                           action: "move_page_block",
@@ -1029,7 +1133,9 @@ export function PageEditor({
                     <button
                       aria-label={`Move ${blockLabel(block)} down`}
                       className="page-editor-block-action"
-                      disabled={index === layout.blocks.length - 1}
+                      disabled={
+                        structureBlocked || index === layout.blocks.length - 1
+                      }
                       onClick={() =>
                         void runStructureAction({
                           action: "move_page_block",
@@ -1045,6 +1151,7 @@ export function PageEditor({
                     <button
                       aria-label={`Remove ${blockLabel(block)}`}
                       className="page-editor-block-action page-editor-block-remove"
+                      disabled={structureBlocked}
                       onClick={() => {
                         if (
                           window.confirm("Remove this block from the Page?")

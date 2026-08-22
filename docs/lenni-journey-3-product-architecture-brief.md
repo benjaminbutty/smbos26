@@ -1,10 +1,59 @@
 # Lenni Journey 3 — The workspace is the builder
 
-Status: J3-I1 merged; J3-I2 implementation active
+Status: J3-I1 and J3-I2 merged; J3-I3 implementation active
 Repository: `benjaminbutty/smbos26`  
 Starting origin/main: `8a5598fa5e9e65991283421346e350d85a0a50ad`  
 J3-I2 starting origin/main: `8ca69e3c6b45ea30393b2ce5f1e5ac378d16cdbe`
-Feature branch: `codex/j3-i2-saved-views-connections`
+Current feature branch: `codex/j3-i3-internal-pages`
+
+## J3-I3 repository resolution
+
+### Reused foundations
+
+J3-I3 reuses the Direct Page schemas, composer and service, the strict
+`PageLayout` grammar, stable block identities, the Page/Tiptap translator, the
+existing internal Page canvas, exact Saved View chooser, and live production
+Table embed. The current route already derives tenant and role server-side,
+gives Owner/Admin the authoring canvas, and gives Staff the clean shared Page
+renderer with operational embedded Table access and no structural controls.
+
+### Bounded extensions
+
+The repository audit found one architecture-level interaction defect: desktop
+drag/drop calls `move_page_block` repeatedly until the source reaches the drop
+index, creating one immutable Version per adjacent movement. J3-I3 replaces
+that client loop with one complete bounded `save_page_layout` action containing
+the final reordered layout. The server still reloads the active configuration,
+checks currentness and Page grammar, and applies one trusted `set_page`
+operation and one Version.
+
+Stale Page recovery remains memory-only. A stale title or text draft stays in
+component state while the route refreshes the latest authoritative Page and
+currentness; the owner must review and deliberately save again. No silent
+rebase, local storage, session storage or durable editing session is added.
+
+### Migration decision and interfaces
+
+No migration, dependency or action-vocabulary extension is required.
+`save_page_layout` is already accepted by the Direct Page boundary and the
+database action-shape guard. J3-I3 exposes that existing action to the reorder
+completion seam rather than adding a second reorder lifecycle.
+
+Primary seams are:
+
+- `src/core/configuration/direct-pages/{schemas,composer,service}.ts`;
+- `src/runtime/page-editor/{page-editor,page-translator,view-chooser}.ts{x}`;
+- `src/runtime/pages/direct-actions.ts` and the internal Page route;
+- the production embedded Table capability boundary;
+- focused Direct Page, translator, exact View chooser, integration and RLS
+  tests.
+
+### Exact exclusions
+
+J3-I3 adds no Page draft table, arbitrary rich text/HTML, dashboard grid,
+widgets, formulas, media, templates, collaboration, query builder, block type,
+Site/publication behavior, AI/Builder work, dependency, primitive, renderer or
+configuration lifecycle. J3-I4 and later work have not started.
 
 ## J3-I2 repository resolution
 
