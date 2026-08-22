@@ -70,7 +70,7 @@ The checkpoint was exercised with:
 
 ```text
 npm run check
-  90 files, 958 tests passed
+  90 files, 959 tests passed
 npm run build
   production build passed
 npm run test:integration -- tests/integration/internal-workspace-engine.test.ts tests/integration/direct-page-workspace.test.ts
@@ -88,9 +88,10 @@ npm run workspace:proof:seed
 Focused unit coverage includes coherent Saved View create/update, typed query
 validation, title/scalar retention, exact mixed columns and width pruning,
 proposed Connection presentation, both endpoint multiplicities, existing
-Connection reuse, owner-language consequence copy, and Staff structural-control
-absence. The database-backed proof adds read-only preview isolation, stale
-currentness, one-Version assertions, Page exact-key embed regression,
-cross-Business rejection, and operational no-Version assertions.
+Connection reuse, contextual stale recovery, draft-loss warnings,
+owner-language consequence copy, and Staff structural-control absence. The
+database-backed proof adds read-only preview isolation, stale currentness,
+one-Version assertions, Page exact-key embed regression, cross-Business
+rejection, and operational no-Version assertions.
 
 No live provider evaluation was run.

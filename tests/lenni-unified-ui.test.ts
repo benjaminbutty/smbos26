@@ -656,6 +656,10 @@ describe("Lenni unified workspace presentation", () => {
       new URL("../src/runtime/views/table-view-controls.tsx", import.meta.url),
       "utf8",
     );
+    const unsavedWarningSource = readFileSync(
+      new URL("../src/runtime/unsaved-navigation-warning.ts", import.meta.url),
+      "utf8",
+    );
     const productionActionsSource = readFileSync(
       new URL(
         "../src/runtime/editor-kernel/production/production-table-actions.ts",
@@ -697,6 +701,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).toContain("Sorted by");
     expect(viewControlsSource).toContain("Grouped by");
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
+    expect(viewControlsSource).toContain("useUnsavedNavigationWarning");
+    expect(editorSource).toContain("useUnsavedNavigationWarning");
+    expect(unsavedWarningSource).toContain('"beforeunload"');
+    expect(unsavedWarningSource).toContain("window.confirm(message)");
     expect(productionActionsSource).toContain("submitExperienceForm");
     expect(productionActionsSource).toContain("availability.formKey");
     expect(connectionEditorSource).toContain("creationNotice");

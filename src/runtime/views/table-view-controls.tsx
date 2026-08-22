@@ -28,6 +28,7 @@ import {
 } from "../editor-kernel/production/production-table-actions";
 import type { EditorValue } from "../editor-kernel/contracts";
 import { experienceKeyToPath } from "../routing";
+import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
 
 type FilterOperator = TableViewFilter["operator"];
 
@@ -299,6 +300,33 @@ export function TableViewControls({
     optionForQueryProperty(config.group, options),
   );
   const controlsRef = useRef<HTMLElement>(null);
+  const hasMeaningfulDraft =
+    name !== (config.role === "saved" ? viewName : "") ||
+    propertyOption !==
+      optionForQueryProperty(initialFilter?.property, options) ||
+    operator !==
+      (initialFilter?.operator ?? defaultOperator(selectedProperty)) ||
+    value !==
+      (typeof initialFilter?.value === "string" ? initialFilter.value : "") ||
+    secondValue !==
+      (Array.isArray(initialFilter?.values) &&
+      typeof initialFilter.values[1] === "string"
+        ? initialFilter.values[1]
+        : "") ||
+    connectionValue !==
+      (typeof initialFilter?.value === "string" &&
+      initialFilterProperty?.kind === "connection"
+        ? initialFilter.value
+        : "") ||
+    sortOption !== optionForQueryProperty(config.sorts[0]?.property, options) ||
+    sortDirection !== (config.sorts[0]?.direction ?? "ascending") ||
+    groupOption !== optionForQueryProperty(config.group, options) ||
+    JSON.stringify(columns) !==
+      JSON.stringify(
+        config.role === "saved" ? config.columns : availableColumns,
+      );
+
+  useUnsavedNavigationWarning(open && hasMeaningfulDraft && !saving);
 
   useEffect(() => {
     if (!open) return;

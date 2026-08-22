@@ -485,6 +485,31 @@ describe("editor kernel contracts", () => {
     expect(onAddExisting).not.toHaveBeenCalled();
   });
 
+  it("keeps stale Connection recovery inside the contextual editor", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionPropertyPopover, {
+        externalError:
+          "Things changed. Refresh to recheck this change before trying again.",
+        onBack: () => undefined,
+        onClose: () => undefined,
+        onCreate: async () => true,
+        onRefresh: () => undefined,
+        source: { singularLabel: "Appointment", pluralLabel: "Appointments" },
+        targets: [
+          {
+            viewKey: "services",
+            label: "Services",
+            singularLabel: "Service",
+            pluralLabel: "Services",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("Things changed");
+    expect(markup).toContain("Refresh and recheck");
+  });
+
   it("keeps Add Property submission owned by its structural form", () => {
     const addColumn = vi.fn(async () => undefined);
     const markup = renderToStaticMarkup(

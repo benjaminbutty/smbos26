@@ -69,6 +69,7 @@ import {
   type ConnectionDraft,
   type PropertyDraft,
 } from "./property-preview";
+import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
 
 export interface EditorRecordContext {
   columns: readonly EditorColumn[];
@@ -462,11 +463,13 @@ function EditorMobileRecordList({
 
 export function ConnectionPropertyPopover({
   existingConnections = [],
+  externalError,
   onAddExisting,
   onBack,
   onClose,
   onCreate,
   onDraftChange,
+  onRefresh,
   source,
   targets,
 }: Readonly<{
@@ -480,6 +483,8 @@ export function ConnectionPropertyPopover({
   source: Pick<ConnectionTableOption, "singularLabel" | "pluralLabel">;
   targets: readonly ConnectionTableOption[];
   existingConnections?: readonly ExistingConnectionPropertyOption[];
+  externalError?: string | null;
+  onRefresh?: () => void;
 }>): ReactNode {
   const readableSingular = (singular: string, plural: string): string => {
     if (
@@ -859,10 +864,19 @@ export function ConnectionPropertyPopover({
           )}
         </>
       )}
-      {error ? (
+      {error || externalError ? (
         <span className="editor-structural-error" role="alert">
-          {error}
+          {error ?? externalError}
         </span>
+      ) : null}
+      {externalError && onRefresh ? (
+        <button
+          className="editor-property-refresh"
+          onClick={onRefresh}
+          type="button"
+        >
+          Refresh and recheck
+        </button>
       ) : null}
       <div className="editor-connection-flow-actions">
         <button className="editor-menu-back" onClick={onBack} type="button">
@@ -1036,12 +1050,14 @@ export function AddColumnPopover({
     return (
       <ConnectionPropertyPopover
         existingConnections={existingConnections ?? []}
+        {...(externalError ? { externalError } : {})}
         {...(onAddExistingConnection
           ? { onAddExisting: onAddExistingConnection }
           : {})}
         onBack={() => setConnectionOpen(false)}
         onClose={onClose}
         onCreate={onCreateConnection}
+        {...(onRefresh ? { onRefresh } : {})}
         {...(onConnectionDraftChange
           ? { onDraftChange: onConnectionDraftChange }
           : {})}
@@ -1332,6 +1348,12 @@ export function EditorKernel({
   const operationVersions = useRef(new Map<string, number>());
   const pendingSaves = useRef(new Set<string>());
   const rangeSelectionRef = useRef(false);
+
+  useUnsavedNavigationWarning(
+    addColumnOpen &&
+      saveState.status !== "saving" &&
+      Boolean(propertyDraft?.label.trim() || connectionDraft),
+  );
 
   const panelRow = panelRowId
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
@@ -1642,7 +1664,7 @@ export function EditorKernel({
         setSaveState(saveStateForError(error));
         setStructuralError(
           /reload|table changed|current/i.test(saveErrorMessage(error))
-            ? "Things changed. Refresh to recheck this property before adding it."
+            ? "Things changed. Refresh to recheck this change before trying again."
             : saveErrorMessage(error),
         );
         return false;
