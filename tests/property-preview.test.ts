@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EditorTable } from "../src/runtime/editor-kernel/contracts";
 import {
   describePropertyChange,
+  ensureCompactPropertyPreviewColumns,
   previewTableWithProperty,
   reorderPropertyOptions,
   validatePropertyOptions,
@@ -93,5 +94,53 @@ describe("J3-I1 property preview", () => {
     expect(
       reorderPropertyOptions(["Google", "Instagram", "Other"], 1, "down"),
     ).toEqual(["Google", "Other", "Instagram"]);
+  });
+
+  it("keeps a later placement anchor and proposed property in compact order", () => {
+    const wideTable: EditorTable = {
+      ...table,
+      columns: [
+        ...table.columns,
+        { key: "notes", label: "Notes", kind: "long_text", width: 180 },
+        {
+          key: "last_contact",
+          label: "Last contact",
+          kind: "date",
+          width: 150,
+        },
+        { key: "segment", label: "Segment", kind: "text", width: 150 },
+      ],
+    };
+    const draft = {
+      label: "Referral source",
+      kind: "select" as const,
+      options: ["Google", "Instagram"],
+      placement: { mode: "after" as const, anchorColumnKey: "segment" },
+    };
+    const preview = previewTableWithProperty(wideTable, draft);
+    const compact = preview.columns.slice(0, 4);
+
+    const visible = ensureCompactPropertyPreviewColumns(
+      preview.columns,
+      compact,
+      wideTable.primaryColumnKey,
+      draft,
+    );
+
+    expect(visible.map((column) => column.label)).toEqual([
+      "Name",
+      "Area",
+      "Phone",
+      "Notes",
+      "Segment",
+      "Referral source",
+    ]);
+    expect(visible.some((column) => column.preview)).toBe(true);
+    expect(visible.map((column) => column.key)).toEqual(
+      expect.arrayContaining(["segment", "__proposed_property__"]),
+    );
+    expect(
+      visible.findIndex((column) => column.key === "segment"),
+    ).toBeLessThan(visible.findIndex((column) => column.preview));
   });
 });

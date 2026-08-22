@@ -189,6 +189,30 @@ export function previewTableWithProperty(
   };
 }
 
+export function ensureCompactPropertyPreviewColumns(
+  columns: readonly EditorColumn[],
+  compactColumns: readonly EditorColumn[],
+  primaryColumnKey: string,
+  draft: PropertyDraft,
+): readonly EditorColumn[] {
+  const previewColumn = columns.find((column) => column.preview);
+  const requiredKeys = new Set(
+    [
+      primaryColumnKey,
+      previewColumn?.key,
+      draft.placement.mode === "end"
+        ? undefined
+        : draft.placement.anchorColumnKey,
+    ].filter((key): key is string => Boolean(key)),
+  );
+  const visibleKeys = new Set([
+    ...compactColumns.map((column) => column.key),
+    ...requiredKeys,
+  ]);
+
+  return columns.filter((column) => visibleKeys.has(column.key));
+}
+
 export function propertyPlacementLabel(
   table: EditorTable,
   placement: PropertyPlacement,

@@ -57,6 +57,7 @@ import { OptionManager, Popover, ShortcutSheet, TypePicker } from "./lenni-ui";
 import {
   addablePropertyKinds,
   describePropertyChange,
+  ensureCompactPropertyPreviewColumns,
   maximumPropertyOptions,
   propertyKindDescription,
   propertyKindLabel,
@@ -1202,8 +1203,21 @@ export function EditorKernel({
       ...columns.filter((column) => column.key !== primaryColumn.key),
     ].slice(0, compactPropertyLimit);
     const keys = new Set(prioritized.map((column) => column.key));
-    return columns.filter((column) => keys.has(column.key));
-  }, [presentationTable.columns, table.primaryColumnKey]);
+    const compact = columns.filter((column) => keys.has(column.key));
+    return propertyDraft && !readOnly
+      ? ensureCompactPropertyPreviewColumns(
+          columns,
+          compact,
+          table.primaryColumnKey,
+          propertyDraft,
+        )
+      : compact;
+  }, [
+    presentationTable.columns,
+    propertyDraft,
+    readOnly,
+    table.primaryColumnKey,
+  ]);
   const visibleGridColumns = useMemo(
     () =>
       variant === "workspace" && isCompactViewport && !showAllProperties
