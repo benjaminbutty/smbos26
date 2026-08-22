@@ -3492,3 +3492,20 @@ A fresh read-only independent review recomputed the evidence and returned
 `ACCEPT EVIDENCE LINEAGE`. J1-R7 is therefore merge-ready after final
 documentation-only exact-head CI and explicit owner review; PR #61 remains
 draft and no runtime change or further live run is authorised.
+
+## ADR-045: Published Site edits use a memory-only candidate and one atomic publication
+
+Accepted for J3-I4. Draft public Pages continue to save privately through the
+existing Direct Page boundary and use the existing explicit initial `Publish
+Site` action. An already-published public Page no longer accepts ordinary direct
+rename or layout-save actions.
+
+Its bounded title/layout candidate exists only in the active Page editor and is
+rendered by the existing `PageRenderer`. `Publish changes` sends the complete
+candidate with expected currentness through one finite Direct Page action. The
+trusted server and database boundary requires the authoritative Page to remain
+active, public and published; preserves identity, slug, audience and status;
+keeps capability/historical blocks unchanged apart from order; and applies one
+immutable Version. Failed or stale publication leaves the previous public Page
+unchanged. No durable draft, new Page, store, renderer or public runtime is
+introduced. See [ADR-045](./ADR-045.md).

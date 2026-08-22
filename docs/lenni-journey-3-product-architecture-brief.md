@@ -1,10 +1,64 @@
 # Lenni Journey 3 — The workspace is the builder
 
-Status: J3-I1 and J3-I2 merged; J3-I3 implementation active
+Status: J3-I1 through J3-I3 merged; J3-I4 implementation active
 Repository: `benjaminbutty/smbos26`  
 Starting origin/main: `8a5598fa5e9e65991283421346e350d85a0a50ad`  
 J3-I2 starting origin/main: `8ca69e3c6b45ea30393b2ce5f1e5ac378d16cdbe`
-Current feature branch: `codex/j3-i3-internal-pages`
+Current feature branch: `codex/j3-i4-sites-publication`
+
+## J3-I4 repository resolution
+
+### Reused foundations
+
+J3-I4 reuses the public `Page` primitive, strict `PageLayout` grammar, Direct
+Page composer/service, immutable configuration lifecycle, existing draft Site
+publication action, authenticated Sites route, `PageEditor`, `PageRenderer`,
+and the narrow anonymous public Page/capability resolvers. The public URL
+continues resolving only the authoritative active `public` + `published` Page.
+
+### Bounded extension
+
+Current published Site edits invoke the ordinary Direct Page actions and become
+public after every completed save. J3-I4 supersedes that behavior only for an
+already-published Site. Its bounded title/layout candidate remains in the
+active `PageEditor` component memory, uses the same `PageRenderer` for explicit
+desktop/mobile preview, warns before navigation or refresh, and creates no
+configuration or operational mutation until one deliberate **Publish changes**
+action.
+
+One finite `publish_page_changes` Direct Page intent accepts the trusted route
+Page key, expected currentness, a bounded title and the strict complete Page
+layout. The server derives Business and actor, reloads the immutable active
+snapshot, requires an active public Page that is already published, rejects a
+conflicting title, preserves key/slug/audience/status/active state, and composes
+one `set_page` operation. Heading, Text and Divider atoms may be added, edited,
+removed or reordered. Every other historical or capability atom must remain
+exactly configured and may only move. The existing atomic direct boundary
+creates one applied Change and one Version.
+
+The same restriction is repeated in PostgreSQL's direct Page action-shape
+guard. This is the one authorised additive J3-I4 migration; it adds no table,
+column, persistence model, public resolver or runtime.
+
+Draft Sites keep their accepted behavior: bounded edits save privately through
+the Direct Page boundary and **Publish Site** remains a separate deliberate
+action. They do not use or imply a durable publication draft.
+
+### Stale and failure behavior
+
+Published candidate currentness is not silently rebased. A stale publication
+keeps the local candidate in memory, reloads the latest authoritative published
+Page as the comparison baseline, re-previews the candidate, and requires a new
+deliberate press. Discard restores that latest published baseline. Any failure
+leaves the existing public URL unchanged.
+
+### Exact exclusions
+
+J3-I4 adds no draft table or second Page, local/session storage, second
+renderer, partial publication, Button/Image editor, capability configuration,
+capability removal, hide/show system, arbitrary section/layout grammar,
+branding/theme/media/domain/SEO work, public generic Record read, AI/Builder
+change, or J3-I5 feature work.
 
 ## J3-I3 repository resolution
 

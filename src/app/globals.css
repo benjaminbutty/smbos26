@@ -15288,3 +15288,146 @@ textarea {
     min-height: 2.75rem;
   }
 }
+
+/* J3-I4 deliberate publication. The editor remains the bounded Page canvas;
+   this adds an exact renderer preview and one consequence surface only for an
+   already-published customer Site candidate. */
+.site-candidate-preview {
+  display: grid;
+  width: min(100%, 72rem);
+  gap: var(--space-3);
+  margin-inline: auto;
+  padding: var(--space-6) clamp(1.25rem, 4vw, 3rem);
+  background: var(--surface-subtle);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.site-candidate-preview-heading,
+.site-publication-bar,
+.site-publication-bar-actions {
+  display: flex;
+  align-items: center;
+}
+
+.site-candidate-preview-heading,
+.site-publication-bar {
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.site-candidate-preview-heading > div:first-child,
+.site-publication-bar > div:first-child {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.site-candidate-preview-switch {
+  display: inline-flex;
+  padding: 0.16rem;
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.site-candidate-preview-switch button {
+  min-height: 2.25rem;
+  padding-inline: var(--space-3);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 0.18rem);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.site-candidate-preview-switch button.is-active {
+  color: var(--coral-900);
+  background: var(--coral-50);
+  box-shadow: var(--elevation-xs);
+}
+
+.site-candidate-preview-frame {
+  width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+  overflow: hidden;
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-panel);
+  transition: width 160ms ease;
+}
+
+.site-candidate-preview-frame.is-mobile {
+  width: min(100%, 24.375rem);
+}
+
+.site-candidate-preview-frame .public-page {
+  min-height: 32rem;
+}
+
+.site-publication-bar {
+  position: sticky;
+  z-index: 40;
+  bottom: var(--space-3);
+  width: min(calc(100% - 2rem), 72rem);
+  margin: var(--space-4) auto;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--surface-base) 94%, transparent);
+  border: var(--border-width-thin) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-panel);
+  backdrop-filter: blur(12px);
+}
+
+.site-publication-bar.has-changes {
+  border-color: var(--coral-400);
+}
+
+.site-publication-bar strong {
+  color: var(--text-primary);
+}
+
+.site-publication-bar span {
+  font-size: 0.82rem;
+}
+
+.site-publication-bar-actions {
+  flex: 0 0 auto;
+  gap: var(--space-2);
+}
+
+@media (max-width: 48rem) {
+  .site-candidate-preview {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .site-candidate-preview-heading,
+  .site-publication-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .site-candidate-preview-switch,
+  .site-publication-bar-actions {
+    width: 100%;
+  }
+
+  .site-candidate-preview-switch button,
+  .site-publication-bar-actions button {
+    flex: 1;
+    min-height: 2.75rem;
+  }
+
+  .site-publication-bar {
+    bottom: var(--space-2);
+    width: calc(100% - 1rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-candidate-preview-frame {
+    transition: none;
+  }
+}

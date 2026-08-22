@@ -99,7 +99,13 @@ async function applyConfigurationOperations(
   return currentness(owner);
 }
 
-async function createPublicDraft(pageKey: string, pageSlug: string) {
+async function createPublicDraft(
+  pageKey: string,
+  pageSlug: string,
+  layout: Extract<ConfigurationOperation, { op: "set_page" }>["layout_json"] = {
+    blocks: [{ type: "heading", text: "Book online", level: 1 }],
+  },
+) {
   return applyConfigurationOperations(
     [
       {
@@ -108,9 +114,7 @@ async function createPublicDraft(pageKey: string, pageSlug: string) {
         title: "Book online",
         slug: pageSlug,
         audience: "public",
-        layout_json: {
-          blocks: [{ type: "heading", text: "Book online", level: 1 }],
-        },
+        layout_json: layout,
         status: "draft",
         is_active: true,
       },
@@ -478,11 +482,23 @@ describe("workspace foundation direct Page actions", () => {
     });
   });
 
-  it("edits a published public Site in place and serves the saved version", async () => {
+  it("keeps the published Site live until one complete candidate is applied", async () => {
     const suffix = crypto.randomUUID().slice(0, 8);
     const pageKey = `live_site_${suffix}`;
     const pageSlug = `live-site-${suffix}`;
-    await createPublicDraft(pageKey, pageSlug);
+    const buttonId = crypto.randomUUID();
+    await createPublicDraft(pageKey, pageSlug, {
+      blocks: [
+        { type: "heading", text: "Book online", level: 1 },
+        {
+          id: buttonId,
+          type: "button",
+          label: "Book now",
+          href: "/book",
+          style: "primary",
+        },
+      ],
+    });
     const configuration = new ConfigurationChangeService(owner.client, {
       businessId: business.id,
       actorId: owner.user.id,
@@ -495,28 +511,82 @@ describe("workspace foundation direct Page actions", () => {
     );
     if (!publishedPage) throw new Error("Expected the published public Site.");
 
-    const renamed = await applyDirectPageAction(
+    const liveBefore = await resolvePublicPage(
+      anonymous,
+      business.slug,
+      publishedPage.slug,
+    );
+    const countsBefore = await configurationCounts();
+
+    await expect(
+      applyDirectPageAction(
+        owner.client,
+        { businessId: business.id, actorId: owner.user.id },
+        {
+          currentness: published.currentness,
+          intent: {
+            action: "rename_page",
+            pageKey,
+            title: "This must not go live directly",
+          },
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: "direct_page_published_site_requires_publication",
+    });
+    expect(await configurationCounts()).toEqual(countsBefore);
+    expect(liveBefore?.page).toMatchObject({
+      key: pageKey,
+      title: "Book online",
+    });
+
+    const malformed = await owner.client.rpc(
+      "apply_direct_page_configuration_change",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        expected_base_version_id: published.currentness.expectedBaseVersionId,
+        expected_head_revision: published.currentness.expectedHeadRevision,
+        requested_action_kind: "publish_page_changes",
+        requested_operations: [
+          {
+            op: "set_page",
+            key: pageKey,
+            title: "Bypass",
+            slug: pageSlug,
+            audience: "public",
+            layout_json: {
+              blocks: [{ type: "text", text: "Removed capability" }],
+            },
+            status: "published",
+            is_active: true,
+          },
+        ],
+      },
+    );
+    expect(malformed.error?.message).toContain(
+      "direct_page_action_shape_invalid",
+    );
+    expect(await configurationCounts()).toEqual(countsBefore);
+
+    const applied = await applyDirectPageAction(
       owner.client,
       { businessId: business.id, actorId: owner.user.id },
       {
         currentness: published.currentness,
         intent: {
-          action: "rename_page",
+          action: "publish_page_changes",
           pageKey,
           title: "Grooming visits at your door",
-        },
-      },
-    );
-    const saved = await applyDirectPageAction(
-      owner.client,
-      { businessId: business.id, actorId: owner.user.id },
-      {
-        currentness: renamed.currentness,
-        intent: {
-          action: "save_page_layout",
-          pageKey,
           layout: {
             blocks: [
+              {
+                id: buttonId,
+                type: "button",
+                label: "Book now",
+                href: "/book",
+                style: "primary",
+              },
               {
                 type: "heading",
                 text: "Freshly groomed at home",
@@ -528,12 +598,17 @@ describe("workspace foundation direct Page actions", () => {
         },
       },
     );
-    const edited = saved.snapshot.pages.find((page) => page.key === pageKey);
+    const edited = applied.snapshot.pages.find((page) => page.key === pageKey);
     const live = await resolvePublicPage(
       anonymous,
       business.slug,
       publishedPage.slug,
     );
+    expect(await configurationCounts()).toEqual({
+      versions: countsBefore.versions + 1,
+      changes: countsBefore.changes + 1,
+      revision: countsBefore.revision + 1,
+    });
 
     expect(edited).toMatchObject({
       id: publishedPage.id,
@@ -550,6 +625,11 @@ describe("workspace foundation direct Page actions", () => {
       title: "Grooming visits at your door",
     });
     expect(live?.page.layout.blocks).toEqual([
+      expect.objectContaining({
+        id: buttonId,
+        type: "button",
+        label: "Book now",
+      }),
       expect.objectContaining({
         type: "heading",
         text: "Freshly groomed at home",

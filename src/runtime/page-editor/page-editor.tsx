@@ -55,6 +55,12 @@ type RenamePageAction = (input: {
   title: string;
 }) => Promise<DirectPageActionResult>;
 
+type PublishPageChangesAction = (input: {
+  currentness: DirectPageCurrentness;
+  title: string;
+  layout: PageLayout;
+}) => Promise<DirectPageActionResult>;
+
 export interface PageEditorProps {
   businessSlug: string;
   pageKey: string;
@@ -71,6 +77,7 @@ export interface PageEditorProps {
   previewForms?: Readonly<Record<string, { bundle: ExperienceFormBundle }>>;
   siteMode?: boolean;
   publishedSite?: boolean;
+  publishPageChangesAction?: PublishPageChangesAction;
 }
 
 type EditorSaveStatus = "saved" | "saving" | "stale" | "error";
@@ -79,6 +86,7 @@ type SuccessfulPageAction = Extract<
   { status: "success" }
 >;
 type EditorMode = "editing" | "reading";
+type SitePreviewViewport = "desktop" | "mobile";
 type AddMenuStep = "blocks" | "views";
 
 interface AddMenuState {
@@ -152,6 +160,102 @@ function blockLabel(block: PageBlock): string {
 
 function editableBlock(block: PageBlock): EditableBlock | null {
   return block.type === "heading" || block.type === "text" ? block : null;
+}
+
+function siteContentBlock(block: PageBlock): boolean {
+  return (
+    block.type === "heading" ||
+    block.type === "text" ||
+    block.type === "divider"
+  );
+}
+
+function stableCandidateLayout(layout: PageLayout): PageLayout {
+  const usedIds = new Set(
+    layout.blocks.flatMap((block) =>
+      "id" in block && block.id ? [block.id] : [],
+    ),
+  );
+  let legacyOrdinal = 0;
+  return {
+    blocks: layout.blocks.map((block) => {
+      if ("id" in block && block.id) return block;
+      let id: string;
+      do {
+        legacyOrdinal += 1;
+        id = `00000000-0000-4000-8000-${String(legacyOrdinal).padStart(12, "0")}`;
+      } while (usedIds.has(id));
+      usedIds.add(id);
+      return { ...block, id };
+    }),
+  };
+}
+
+function localBlockFromInput(input: DirectPageBlockInput): PageBlock | null {
+  switch (input.type) {
+    case "heading":
+      return { type: "heading", text: input.text, level: input.level };
+    case "text":
+      return { type: "text", text: input.text };
+    case "divider":
+      return { type: "divider" };
+    case "view":
+      return null;
+  }
+}
+
+function applyPublishedSiteCandidateIntent(
+  layoutInput: PageLayout,
+  intent: PageStructureIntent,
+): PageLayout | null {
+  if (intent.action === "save_page_layout") {
+    return stableCandidateLayout(intent.layout);
+  }
+  const layout = stableCandidateLayout(layoutInput);
+  const blocks = [...layout.blocks];
+  if (intent.action === "add_page_block") {
+    const block = localBlockFromInput(intent.block);
+    if (!block || !siteContentBlock(block)) return null;
+    const nextBlock = { ...block, id: globalThis.crypto.randomUUID() };
+    if (intent.afterBlockId === null) {
+      blocks.unshift(nextBlock);
+    } else if (intent.afterBlockId === undefined) {
+      blocks.push(nextBlock);
+    } else {
+      const index = blocks.findIndex(
+        (candidate) =>
+          "id" in candidate && candidate.id === intent.afterBlockId,
+      );
+      if (index < 0) return null;
+      blocks.splice(index + 1, 0, nextBlock);
+    }
+    return { blocks };
+  }
+  const index = blocks.findIndex(
+    (block) => "id" in block && block.id === intent.blockId,
+  );
+  const current = blocks[index];
+  if (!current) return null;
+  if (intent.action === "update_page_block") {
+    if (!siteContentBlock(current) || current.type !== intent.block.type) {
+      return null;
+    }
+    const block = localBlockFromInput(intent.block);
+    if (!block) return null;
+    blocks[index] = { ...block, id: current.id };
+    return { blocks };
+  }
+  if (intent.action === "remove_page_block") {
+    if (!siteContentBlock(current)) return null;
+    blocks.splice(index, 1);
+    return { blocks };
+  }
+  const nextIndex = intent.direction === "up" ? index - 1 : index + 1;
+  const adjacent = blocks[nextIndex];
+  if (nextIndex < 0 || nextIndex >= blocks.length || !adjacent) return null;
+  blocks[index] = adjacent;
+  blocks[nextIndex] = current;
+  return { blocks };
 }
 
 function reorderPageLayout(
@@ -306,11 +410,9 @@ function SavedViewBlock({
 }
 
 function CapabilityBlockFrame({
-  businessSlug,
   children,
   label,
 }: Readonly<{
-  businessSlug: string;
   children: ReactNode;
   label: string;
 }>): ReactNode {
@@ -320,15 +422,10 @@ function CapabilityBlockFrame({
         <div>
           <p className="eyebrow">{label}</p>
           <span className="page-editor-view-source">
-            Customer-facing settings are managed in Tell Lenni.
+            This customer capability is configured separately. You can move it
+            on this Site without changing how it works.
           </span>
         </div>
-        <Link
-          className="button button-secondary button-small"
-          href={`/app/${encodeURIComponent(businessSlug)}/builder`}
-        >
-          Edit settings
-        </Link>
       </header>
       {children}
     </section>
@@ -508,7 +605,6 @@ function PageBlockView({
       const publicMode = block.type === "public_form";
       return (
         <CapabilityBlockFrame
-          businessSlug={businessSlug}
           label={block.type === "public_form" ? "Public Form" : "Form"}
         >
           <PageRenderer
@@ -522,7 +618,7 @@ function PageBlockView({
     }
     case "booking":
       return (
-        <CapabilityBlockFrame businessSlug={businessSlug} label="Booking">
+        <CapabilityBlockFrame label="Booking">
           <PageRenderer
             bookings={previewBookings}
             layout={{ blocks: [block] }}
@@ -551,6 +647,7 @@ export function PageEditor({
   previewBookings = {},
   previewForms = {},
   publishedSite = false,
+  publishPageChangesAction,
   renamePageAction,
   siteMode = false,
   title: initialTitle,
@@ -564,12 +661,20 @@ export function PageEditor({
   );
   const [title, setTitle] = useState(initialTitle);
   const [titleDraft, setTitleDraft] = useState(initialTitle);
-  const [layout, setLayout] = useState(initialLayout);
+  const [publishedBaseline, setPublishedBaseline] = useState(() => ({
+    title: initialTitle,
+    layout: publishedSite
+      ? stableCandidateLayout(initialLayout)
+      : initialLayout,
+  }));
+  const [layout, setLayout] = useState(() => publishedBaseline.layout);
   const [currentnessRef, setCurrentnessRef] = useState(currentness);
   const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
   const [status, setStatus] = useState<EditorSaveStatus>("saved");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [mode, setMode] = useState<EditorMode>("editing");
+  const [sitePreviewViewport, setSitePreviewViewport] =
+    useState<SitePreviewViewport>("desktop");
   const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [selectedTableKey, setSelectedTableKey] = useState(
     () => pageViewTables[0]?.key ?? "",
@@ -606,11 +711,16 @@ export function PageEditor({
     editingSourceCandidate?.type === editing?.type
       ? editingSourceCandidate
       : null;
+  const publishedCandidateDirty =
+    publishedSite &&
+    (title !== publishedBaseline.title ||
+      JSON.stringify(layout) !== JSON.stringify(publishedBaseline.layout));
   const hasMeaningfulDraft =
     (renaming && titleDraft.trim() !== title) ||
     (editing !== null && editingSource?.text !== editing.text) ||
     (pendingInsert !== null && pendingInsert.text.trim().length > 0) ||
-    pendingReorder !== null;
+    pendingReorder !== null ||
+    publishedCandidateDirty;
 
   if (
     currentness.expectedBaseVersionId !==
@@ -623,22 +733,39 @@ export function PageEditor({
       : null;
     setLoadedCurrentness(currentness);
     setCurrentnessRef(currentness);
-    setTitle(initialTitle);
-    if (!renaming) setTitleDraft(initialTitle);
-    setLayout(reprepared ?? initialLayout);
+    if (publishedSite) {
+      const nextBaseline = {
+        title: initialTitle,
+        layout: stableCandidateLayout(initialLayout),
+      };
+      setPublishedBaseline(nextBaseline);
+      if (!publishedCandidateDirty) {
+        setTitle(nextBaseline.title);
+        setTitleDraft(nextBaseline.title);
+        setLayout(nextBaseline.layout);
+      }
+    } else {
+      setTitle(initialTitle);
+      if (!renaming) setTitleDraft(initialTitle);
+      setLayout(reprepared ?? initialLayout);
+    }
     setStatus("saved");
     if (wasStale) {
       setStatusMessage(
         reprepared
           ? "The latest Page is loaded. Review the proposed order and save it again."
-          : "The latest Page is loaded. Review your draft and save it again.",
+          : publishedSite
+            ? "The latest published Site is loaded. Review your unpublished changes and publish again."
+            : "The latest Page is loaded. Review your draft and save it again.",
       );
     }
   }
 
   useUnsavedNavigationWarning(
     hasMeaningfulDraft && status !== "saving",
-    "Leave this Page? Your unfinished Page change will be lost.",
+    publishedSite
+      ? "Leave this Site? Your unpublished Site changes will be lost."
+      : "Leave this Page? Your unfinished Page change will be lost.",
   );
 
   useEffect(() => {
@@ -674,6 +801,29 @@ export function PageEditor({
     intent: PageStructureIntent,
   ): Promise<SuccessfulPageAction | null> => {
     if (status === "saving" || status === "stale") return null;
+    if (publishedSite) {
+      const nextLayout = applyPublishedSiteCandidateIntent(layout, intent);
+      if (!nextLayout) {
+        setStatus("error");
+        setStatusMessage(
+          "That customer capability cannot be changed here. You can move it without changing how it works.",
+        );
+        return null;
+      }
+      setLayout(nextLayout);
+      setStatus("saved");
+      setStatusMessage(null);
+      setEditing(null);
+      setAddMenu(null);
+      setBlockMenuId(null);
+      return {
+        status: "success",
+        pageSlug: "",
+        title,
+        currentness: currentnessRef,
+        layout: nextLayout,
+      };
+    }
     setStatus("saving");
     setStatusMessage(null);
     const result = await applyPageBlockAction({
@@ -703,6 +853,13 @@ export function PageEditor({
     const intent = { sourceId, targetIndex };
     const nextLayout = reorderPageLayout(layout, intent);
     if (!nextLayout) return;
+    if (publishedSite) {
+      setPendingReorder(null);
+      setLayout(stableCandidateLayout(nextLayout));
+      setStatus("saved");
+      setStatusMessage(null);
+      return;
+    }
     setPendingReorder(intent);
     setLayout(nextLayout);
     setStatus("saving");
@@ -759,6 +916,14 @@ export function PageEditor({
     if (!nextTitle || nextTitle === title) {
       setTitleDraft(title);
       setRenaming(false);
+      return;
+    }
+    if (publishedSite) {
+      setTitle(nextTitle);
+      setTitleDraft(nextTitle);
+      setRenaming(false);
+      setStatus("saved");
+      setStatusMessage(null);
       return;
     }
     setStatus("saving");
@@ -896,6 +1061,57 @@ export function PageEditor({
     setBlockMenuId(null);
     setSelectedBlockId(null);
     setMode("reading");
+  };
+
+  const discardPublishedCandidate = (): void => {
+    setTitle(publishedBaseline.title);
+    setTitleDraft(publishedBaseline.title);
+    setLayout(publishedBaseline.layout);
+    setRenaming(false);
+    setEditing(null);
+    setPendingInsert(null);
+    setPendingReorder(null);
+    setAddMenu(null);
+    setBlockMenuId(null);
+    setSelectedBlockId(null);
+    setStatus("saved");
+    setStatusMessage(null);
+  };
+
+  const publishCandidate = async (): Promise<void> => {
+    if (
+      !publishedSite ||
+      !publishPageChangesAction ||
+      !publishedCandidateDirty ||
+      status === "saving" ||
+      status === "stale"
+    ) {
+      return;
+    }
+    setStatus("saving");
+    setStatusMessage(null);
+    const result = await publishPageChangesAction({
+      currentness: currentnessRef,
+      title,
+      layout,
+    });
+    if (result.status !== "success") {
+      setStatus(result.status === "stale" ? "stale" : "error");
+      setStatusMessage(result.message);
+      return;
+    }
+    const nextBaseline = {
+      title: result.title,
+      layout: result.layout,
+    };
+    setPublishedBaseline(nextBaseline);
+    setTitle(nextBaseline.title);
+    setTitleDraft(nextBaseline.title);
+    setLayout(nextBaseline.layout);
+    setCurrentnessRef(result.currentness);
+    setStatus("saved");
+    setStatusMessage("Published. Customers now see these Site changes.");
+    router.refresh();
   };
 
   const authoring = siteMode || mode === "editing";
@@ -1130,7 +1346,9 @@ export function PageEditor({
             data-save-state={status}
             role="status"
           >
-            {statusText(status)}
+            {publishedCandidateDirty && status === "saved"
+              ? "Unpublished changes"
+              : statusText(status)}
           </span>
         </div>
         {!siteMode ? (
@@ -1464,25 +1682,29 @@ export function PageEditor({
                       >
                         Move down
                       </button>
-                      <button
-                        className="page-editor-block-remove"
-                        disabled={structureBlocked}
-                        onClick={() => {
-                          if (
-                            window.confirm("Remove this block from the Page?")
-                          ) {
-                            setBlockMenuId(null);
-                            void runStructureAction({
-                              action: "remove_page_block",
-                              pageKey,
-                              blockId: id,
-                            });
-                          }
-                        }}
-                        type="button"
-                      >
-                        Remove from Page
-                      </button>
+                      {!siteMode || siteContentBlock(block) ? (
+                        <button
+                          className="page-editor-block-remove"
+                          disabled={structureBlocked}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Remove this block from the ${siteMode ? "Site" : "Page"}?`,
+                              )
+                            ) {
+                              setBlockMenuId(null);
+                              void runStructureAction({
+                                action: "remove_page_block",
+                                pageKey,
+                                blockId: id,
+                              });
+                            }
+                          }}
+                          type="button"
+                        >
+                          Remove from {siteMode ? "Site" : "Page"}
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </article>
@@ -1508,11 +1730,103 @@ export function PageEditor({
         </div>
       </div>
 
+      {siteMode ? (
+        <section
+          aria-label="Customer Site preview"
+          className="site-candidate-preview"
+        >
+          <div className="site-candidate-preview-heading">
+            <div>
+              <p className="eyebrow">Customer preview</p>
+              <strong>
+                {sitePreviewViewport === "desktop" ? "Desktop" : "Mobile"}
+              </strong>
+            </div>
+            <div
+              aria-label="Preview size"
+              className="site-candidate-preview-switch"
+            >
+              <button
+                aria-pressed={sitePreviewViewport === "desktop"}
+                className={sitePreviewViewport === "desktop" ? "is-active" : ""}
+                onClick={() => setSitePreviewViewport("desktop")}
+                type="button"
+              >
+                Desktop
+              </button>
+              <button
+                aria-pressed={sitePreviewViewport === "mobile"}
+                className={sitePreviewViewport === "mobile" ? "is-active" : ""}
+                onClick={() => setSitePreviewViewport("mobile")}
+                type="button"
+              >
+                Mobile
+              </button>
+            </div>
+          </div>
+          <div
+            className={`site-candidate-preview-frame is-${sitePreviewViewport}`}
+          >
+            <PageRenderer
+              bookings={previewBookings}
+              forms={previewForms}
+              layout={layout}
+              pageTitle={title}
+              previewMode
+              publicMode
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {publishedSite ? (
+        <section
+          aria-label="Publish Site changes"
+          className={`site-publication-bar${
+            publishedCandidateDirty ? " has-changes" : ""
+          }`}
+        >
+          <div>
+            <strong>
+              {publishedCandidateDirty
+                ? "Customers still see the current published Site"
+                : "Customers are seeing this published Site"}
+            </strong>
+            <span>
+              {publishedCandidateDirty
+                ? "Preview your candidate, then publish the complete change once."
+                : "Edit supported content to prepare an unpublished candidate."}
+            </span>
+          </div>
+          <div className="site-publication-bar-actions">
+            <button
+              className="button button-secondary"
+              disabled={!publishedCandidateDirty || status === "saving"}
+              onClick={discardPublishedCandidate}
+              type="button"
+            >
+              Discard changes
+            </button>
+            <button
+              disabled={
+                !publishedCandidateDirty ||
+                status === "saving" ||
+                status === "stale"
+              }
+              onClick={() => void publishCandidate()}
+              type="button"
+            >
+              Publish changes
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {authoring ? (
         <p className="page-editor-footer">
           {siteMode
             ? publishedSite
-              ? "Changes to this published Site go live when you save."
+              ? "Supported edits stay in this browser until you press Publish changes."
               : "Site edits use the same Page structure as the customer preview. Publish Site remains a separate owner action."
             : "Click content to edit it. Use + to add below, or the grip for move and remove actions."}
         </p>
