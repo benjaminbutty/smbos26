@@ -510,6 +510,28 @@ describe("editor kernel contracts", () => {
     expect(markup).toContain("Refresh and recheck");
   });
 
+  it("keeps owner language singular when fixture labels are identical", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ConnectionPropertyPopover, {
+        onBack: () => undefined,
+        onClose: () => undefined,
+        onCreate: async () => true,
+        source: { singularLabel: "Businesses", pluralLabel: "Businesses" },
+        targets: [
+          {
+            viewKey: "cases",
+            label: "Cases",
+            singularLabel: "Cases",
+            pluralLabel: "Cases",
+          },
+        ],
+      }),
+    );
+
+    expect(markup).toContain("Each Business can have:");
+    expect(markup).toContain("Each Case can have:");
+  });
+
   it("keeps Add Property submission owned by its structural form", () => {
     const addColumn = vi.fn(async () => undefined);
     const markup = renderToStaticMarkup(

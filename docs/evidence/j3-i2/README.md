@@ -70,7 +70,7 @@ The checkpoint was exercised with:
 
 ```text
 npm run check
-  90 files, 959 tests passed
+  90 files, 960 tests passed
 npm run build
   production build passed
 npm run test:integration -- tests/integration/internal-workspace-engine.test.ts tests/integration/direct-page-workspace.test.ts

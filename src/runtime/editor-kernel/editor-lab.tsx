@@ -498,7 +498,7 @@ export function ConnectionPropertyPopover({
     const normalized = finalWord.toLocaleLowerCase("en");
     const replacement = normalized.endsWith("ies")
       ? `${finalWord.slice(0, -3)}y`
-      : normalized.endsWith("ses")
+      : normalized.endsWith("sses")
         ? finalWord.slice(0, -2)
         : normalized.endsWith("s") && !normalized.endsWith("ss")
           ? finalWord.slice(0, -1)
