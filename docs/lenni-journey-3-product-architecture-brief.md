@@ -1,10 +1,56 @@
 # Lenni Journey 3 — The workspace is the builder
 
-Status: J3-I1 through J3-I3 merged; J3-I4 implementation active
+Status: J3-I1 through J3-I4 merged; J3-I5 acceptance and closeout active
 Repository: `benjaminbutty/smbos26`  
 Starting origin/main: `8a5598fa5e9e65991283421346e350d85a0a50ad`  
 J3-I2 starting origin/main: `8ca69e3c6b45ea30393b2ce5f1e5ac378d16cdbe`
-Current feature branch: `codex/j3-i4-sites-publication`
+Current feature branch: `codex/j3-i5-closeout`
+
+## J3-I5 repository resolution
+
+### Acceptance model
+
+J3-I5 adds no product capability. It converges the four merged Journey 3
+checkpoints through the existing generic proof businesses, Bedford public
+regression, role boundaries, responsive browser checks, immutable
+configuration evidence, operational no-Version assertions and the full local
+PostgreSQL/RLS suite.
+
+The cross-business audit reuses the existing `internal-workspace-engine` proof
+fixtures for Milk round, Mobile dog groomer, Catering enquiry and Trades/jobs.
+The same production Table kernel, Saved View tabs, mixed scalar/Connection
+columns, typed query grammar and direct configuration boundaries render every
+fixture. Bedford Bakery remains the public preorder regression. No fixture
+adds a vertical runtime branch or migration.
+
+### Evidence seams
+
+The closeout evidence is intentionally cumulative:
+
+- J3-I1 proves contextual Property creation and immediate operational use;
+- J3-I2 proves coherent shared Saved Views and operational Connections;
+- J3-I3 proves the bounded internal Page canvas and live exact-View embeds;
+- J3-I4 proves memory-only published-Site candidates and atomic publication;
+- J3-I5 proves reuse across business types, roles and required widths and
+  records the exact programme ledger.
+
+The final browser pass does not repeat structural mutations merely to create
+new screenshots. It checks the merged surfaces and relies on the checkpoint
+Version-count ledgers plus the full integration suite for repeatable mutation,
+stale, permission, tenant-isolation and operational-lane assertions. This
+avoids contaminating the final owner-review fixtures while preserving exact,
+automated proof of the write boundaries.
+
+### Migration and scope decision
+
+J3-I5 requires no migration, dependency, primitive, service, renderer, action
+kind or product source change. Its repository changes are the Journey 3
+closeout report, this final architecture resolution and a durable evidence
+index/screenshots. Defects discovered within the accepted Journey 3 boundary
+would be repaired here; the completed audit found none.
+
+No Journey 4, AI, branding, workflow, formula, website-builder, persistent
+draft or adjacent capability work is included.
 
 ## J3-I4 repository resolution
 
