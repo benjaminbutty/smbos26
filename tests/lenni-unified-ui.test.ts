@@ -717,6 +717,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(editorSource).toContain('aria-label="Search this Table"');
     expect(editorSource).toContain('data-testid="editor-grid-no-matches"');
     expect(editorSource).toContain('data-testid="editor-mobile-record-list"');
+    expect(editorSource).toContain('aria-label="Working property"');
+    expect(editorSource).toContain("onEditRecord");
+    expect(editorSource).toContain("cancelFailedSave");
+    expect(editorSource).toContain("gridCoordinatesForCell");
     expect(editorSource).toContain('status: "stale"');
     expect(editorSource).toContain("Needs reload");
     expect(editorSource).toContain("capabilities.rowCreationMessage");
@@ -726,6 +730,12 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).toContain("Filtered by");
     expect(viewControlsSource).toContain("Sorted by");
     expect(viewControlsSource).toContain("Grouped by");
+    expect(viewControlsSource).toContain("setGridPreview(preview)");
+    expect(viewControlsSource).toContain(
+      "The unsaved filter, sort, group and Property order are live in",
+    );
+    expect(viewControlsSource).toContain("the grid below.");
+    expect(viewControlsSource).not.toContain("<table>");
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
     expect(viewControlsSource).toContain("useUnsavedNavigationWarning");
     expect(viewControlsSource).toContain("config.filters.slice(1)");

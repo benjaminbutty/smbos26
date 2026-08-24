@@ -73,6 +73,11 @@ export interface EditorTable {
   rows: readonly EditorRow[];
 }
 
+export interface EditorTablePreview {
+  table: EditorTable;
+  totalCount: number;
+}
+
 export interface EditorCapabilities {
   rowCreation: "direct" | "configured_form" | "unavailable";
   rowCreationMessage?: string;

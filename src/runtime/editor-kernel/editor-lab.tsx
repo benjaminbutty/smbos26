@@ -38,6 +38,7 @@ import {
   type EditorColumnKind,
   type EditorRow,
   type EditorTable,
+  type EditorTablePreview,
   type EditorValue,
 } from "./contracts";
 import {
@@ -137,6 +138,7 @@ export interface EditorKernelProps {
   title?: string;
   readOnly?: boolean;
   variant?: "workspace" | "embedded";
+  viewPreview?: EditorTablePreview | null;
 }
 
 interface ActiveCell {
@@ -149,10 +151,11 @@ interface GridPoint {
   columnIndex: number;
 }
 
-interface SaveRetry {
+export interface SaveRetry {
   rowId: string;
   columnKey: string;
   value: EditorValue;
+  previousValue: EditorValue;
 }
 
 type SaveState =
@@ -291,6 +294,23 @@ function replaceCell(
   };
 }
 
+export function gridCoordinatesForCell(
+  rows: readonly EditorRow[],
+  columns: readonly EditorColumn[],
+  cell: ActiveCell,
+): { idx: number; rowIdx: number } | null {
+  const rowIdx = rows.findIndex((row) => row.id === cell.rowId);
+  const idx = columns.findIndex((column) => column.key === cell.columnKey);
+  return rowIdx >= 0 && idx >= 0 ? { idx, rowIdx } : null;
+}
+
+export function cancelFailedSave(
+  table: EditorTable,
+  retry: SaveRetry,
+): EditorTable {
+  return replaceCell(table, retry.rowId, retry.columnKey, retry.previousValue);
+}
+
 function mergeSavedRow(current: EditorRow, saved: EditorRow): EditorRow {
   const currentConnectionValues = current.connectionValues ?? {};
   const savedConnectionValues = saved.connectionValues ?? {};
@@ -368,6 +388,7 @@ function EditorMobileRecordList({
   noMatches,
   onClearSearch,
   onOpenRecord,
+  onEditRecord,
   previewColumn,
   rows,
   tableName,
@@ -378,17 +399,29 @@ function EditorMobileRecordList({
   noMatches: boolean;
   onClearSearch: () => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
+  onEditRecord: (rowId: string, columnKey: string) => void;
   previewColumn?: EditorColumn;
   rows: readonly EditorRow[];
   tableName: string;
 }>): ReactNode {
   const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
+  const secondaryColumns = columns
+    .filter((column) => column.key !== primaryColumn?.key)
+    .slice(0, 2);
+  const workingColumns = columns.filter(
+    (column) => column.key !== primaryColumn?.key && !column.preview,
+  );
+  const [workingColumnKey, setWorkingColumnKey] = useState(
+    workingColumns.find((column) => column.editable !== false)?.key ??
+      workingColumns[0]?.key ??
+      primaryColumn?.key ??
+      "",
+  );
   if (!primaryColumn) {
     return null;
   }
-  const secondaryColumns = columns
-    .filter((column) => column.key !== primaryColumn.key)
-    .slice(0, 2);
+  const workingColumn =
+    columns.find((column) => column.key === workingColumnKey) ?? primaryColumn;
 
   return (
     <div
@@ -396,6 +429,25 @@ function EditorMobileRecordList({
       className="editor-mobile-record-list"
       data-testid="editor-mobile-record-list"
     >
+      <div className="editor-mobile-working-property">
+        <label>
+          <span>Working property</span>
+          <select
+            aria-label="Working property"
+            onChange={(event) => setWorkingColumnKey(event.currentTarget.value)}
+            value={workingColumn.key}
+          >
+            {columns
+              .filter((column) => !column.preview)
+              .map((column) => (
+                <option key={column.key} value={column.key}>
+                  {column.label}
+                </option>
+              ))}
+          </select>
+        </label>
+        <span>Tap a value to edit. Open the Record for every Property.</span>
+      </div>
       {previewColumn ? (
         <div className="editor-mobile-property-preview" role="status">
           <strong>{previewColumn.label}</strong>
@@ -431,27 +483,45 @@ function EditorMobileRecordList({
             const primaryValue = mobileRecordValue(row, primaryColumn);
             return (
               <li key={row.id}>
-                <button
-                  aria-label={`Open record ${primaryValue || "Unnamed record"}`}
-                  className="editor-mobile-record-card"
-                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
-                  type="button"
-                >
+                <article className="editor-mobile-record-card">
                   <span className="editor-mobile-record-card-heading">
-                    <strong>{primaryValue || "Unnamed record"}</strong>
-                    <span aria-hidden="true">↗</span>
+                    <button
+                      aria-label={`Open record ${primaryValue || "Unnamed record"}`}
+                      className="editor-mobile-open-record"
+                      onClick={() => onOpenRecord(row.id, primaryColumn.key)}
+                      type="button"
+                    >
+                      <strong>{primaryValue || "Unnamed record"}</strong>
+                      <span aria-hidden="true">Open ↗</span>
+                    </button>
                   </span>
+                  <button
+                    aria-label={`Edit ${workingColumn.label} for ${primaryValue || "Unnamed record"}`}
+                    className="editor-mobile-working-value"
+                    disabled={workingColumn.editable === false}
+                    onClick={() => onEditRecord(row.id, workingColumn.key)}
+                    type="button"
+                  >
+                    <small>{workingColumn.label}</small>
+                    <span>
+                      {mobileRecordValue(row, workingColumn) || "Empty"}
+                    </span>
+                    <span aria-hidden="true">Edit</span>
+                  </button>
                   {secondaryColumns.length > 0 ? (
-                    <span className="editor-mobile-record-card-details">
-                      {secondaryColumns.map((column) => (
-                        <span key={column.key}>
-                          <small>{column.label}</small>
-                          <span>{mobileRecordValue(row, column) || "—"}</span>
-                        </span>
-                      ))}
+                    <span className="editor-mobile-record-context">
+                      {secondaryColumns
+                        .filter((column) => column.key !== workingColumn.key)
+                        .slice(0, 1)
+                        .map((column) => (
+                          <span key={column.key}>
+                            {column.label}:{" "}
+                            {mobileRecordValue(row, column) || "—"}
+                          </span>
+                        ))}
                     </span>
                   ) : null}
-                </button>
+                </article>
               </li>
             );
           })}
@@ -1307,6 +1377,7 @@ export function EditorKernel({
   readOnly = false,
   title,
   variant = "workspace",
+  viewPreview = null,
 }: Readonly<EditorKernelProps>): ReactNode {
   const [table, setTable] = useState<EditorTable>(() => {
     const initial = adapter.getTable();
@@ -1329,6 +1400,7 @@ export function EditorKernel({
   const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
+  const [panelEditingKey, setPanelEditingKey] = useState<string | null>(null);
   const [connectedPanel, setConnectedPanel] =
     useState<EditorRecordContext | null>(null);
   const [panelHistory, setPanelHistory] = useState<EditorRecordContext[]>([]);
@@ -1340,6 +1412,7 @@ export function EditorKernel({
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved" });
   const [structuralError, setStructuralError] = useState<string | null>(null);
   const [retry, setRetry] = useState<SaveRetry | null>(null);
+  const [restoreCell, setRestoreCell] = useState<ActiveCell | null>(null);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [showAllProperties, setShowAllProperties] = useState(false);
   const gridRef = useRef<DataGridHandle>(null);
@@ -1358,7 +1431,9 @@ export function EditorKernel({
   const panelRow = panelRowId
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
     : null;
-  const recordColumns = table.recordColumns ?? table.columns;
+  const previewTable = viewPreview?.table;
+  const recordColumns =
+    previewTable?.recordColumns ?? table.recordColumns ?? table.columns;
   const sourcePanel = panelRow
     ? {
         columns: recordColumns,
@@ -1379,16 +1454,19 @@ export function EditorKernel({
     adapterRef.current = adapter;
     const next = adapter.getTable();
     setTable(readOnly ? readOnlyTable(next) : next);
-  }, [adapter, readOnly]);
+    if (activeCell) {
+      setRestoreCell(activeCell);
+    }
+  }, [activeCell, adapter, readOnly]);
 
   const visibleRows = useMemo(
     () =>
       normalizedRecordSearch
-        ? table.rows.filter((row) =>
+        ? (previewTable?.rows ?? table.rows).filter((row) =>
             rowSearchText(row, recordColumns).includes(normalizedRecordSearch),
           )
-        : table.rows,
-    [normalizedRecordSearch, recordColumns, table.rows],
+        : (previewTable?.rows ?? table.rows),
+    [normalizedRecordSearch, previewTable?.rows, recordColumns, table.rows],
   );
   const presentationTable = useMemo(
     () =>
@@ -1396,14 +1474,14 @@ export function EditorKernel({
         ? previewTableWithProperty(table, propertyDraft)
         : connectionDraft && !readOnly
           ? previewTableWithConnection(table, connectionDraft)
-          : table,
-    [connectionDraft, propertyDraft, readOnly, table],
+          : (previewTable ?? table),
+    [connectionDraft, previewTable, propertyDraft, readOnly, table],
   );
   useEffect(() => {
     if (variant !== "workspace") {
       return;
     }
-    const mediaQuery = window.matchMedia("(max-width: 68.75rem)");
+    const mediaQuery = window.matchMedia("(max-width: 48rem)");
     const updateViewport = (): void => setIsCompactViewport(mediaQuery.matches);
     updateViewport();
     mediaQuery.addEventListener("change", updateViewport);
@@ -1480,6 +1558,7 @@ export function EditorKernel({
     const origin = panelOrigin;
     setPanelRowId(null);
     setPanelOrigin(null);
+    setPanelEditingKey(null);
     setConnectedPanel(null);
     setPanelHistory([]);
     if (!origin) {
@@ -1590,7 +1669,12 @@ export function EditorKernel({
   }, [draftActivation]);
 
   const commitCell = useCallback(
-    (rowId: string, columnKey: string, rawValue: unknown): void => {
+    (
+      rowId: string,
+      columnKey: string,
+      rawValue: unknown,
+      options?: { force?: boolean; previousValue?: EditorValue },
+    ): void => {
       const row = table.rows.find((candidate) => candidate.id === rowId);
       const column = columnForKey(columnKey);
       if (!row || !column || column.editable === false) {
@@ -1606,7 +1690,7 @@ export function EditorKernel({
         return;
       }
       const previousValue = row.values[columnKey] ?? null;
-      if (Object.is(previousValue, value)) {
+      if (Object.is(previousValue, value) && !options?.force) {
         return;
       }
 
@@ -1642,7 +1726,12 @@ export function EditorKernel({
             return;
           }
           pendingSaves.current.delete(operationKey);
-          setRetry({ rowId, columnKey, value });
+          setRetry({
+            rowId,
+            columnKey,
+            value,
+            previousValue: options?.previousValue ?? previousValue,
+          });
           setSaveState({ status: "error", cellLabel: column.label });
         });
     },
@@ -1762,7 +1851,7 @@ export function EditorKernel({
   );
 
   const openRecord = useCallback(
-    (rowId: string, columnKey: string): void => {
+    (rowId: string, columnKey: string, editColumnKey?: string): void => {
       void adapter
         .openRecord(rowId)
         .then((row) => {
@@ -1776,6 +1865,7 @@ export function EditorKernel({
             ),
           }));
           setPanelOrigin({ rowId, columnKey });
+          setPanelEditingKey(editColumnKey ?? null);
           setPanelRowId(rowId);
           setConnectedPanel(null);
           setPanelHistory([]);
@@ -2510,6 +2600,31 @@ export function EditorKernel({
   );
 
   useEffect(() => {
+    if (!restoreCell) return;
+    const target = gridCoordinatesForCell(
+      gridRows,
+      visibleGridColumns,
+      restoreCell,
+    );
+    if (!target) {
+      setRestoreCell(null);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      gridRef.current?.selectCell(target, { shouldFocusCell: true });
+      window.requestAnimationFrame(() => {
+        gridRef.current?.element
+          ?.querySelector<HTMLElement>(
+            '[role="gridcell"][aria-selected="true"]',
+          )
+          ?.focus({ preventScroll: true });
+      });
+      setRestoreCell(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [gridRows, restoreCell, visibleGridColumns]);
+
+  useEffect(() => {
     const focusRequestedColumn = (): void => {
       const prefix = "#table-column-";
       if (!window.location.hash.startsWith(prefix)) return;
@@ -2646,7 +2761,9 @@ export function EditorKernel({
       : "records");
   const displayedRecordCountLabel = normalizedRecordSearch
     ? `${visibleRows.length} of ${table.rows.length} ${emptyRecordLabel}`
-    : (recordCountLabel ?? `${table.rows.length} ${emptyRecordLabel}`);
+    : viewPreview
+      ? `${viewPreview.table.rows.length} of ${viewPreview.totalCount} ${emptyRecordLabel}`
+      : (recordCountLabel ?? `${table.rows.length} ${emptyRecordLabel}`);
   const emptyRecordMessage =
     capabilities.rowCreation === "direct"
       ? "Start with the first record using the row below or the button above."
@@ -2712,15 +2829,35 @@ export function EditorKernel({
               ? saveState.message
               : statusLabel(saveState)}
             {saveState.status === "error" && retry ? (
-              <button
-                className="editor-retry-button"
-                onClick={() =>
-                  commitCell(retry.rowId, retry.columnKey, retry.value)
-                }
-                type="button"
-              >
-                Retry
-              </button>
+              <span className="editor-save-recovery">
+                <button
+                  className="editor-retry-button"
+                  onClick={() =>
+                    commitCell(retry.rowId, retry.columnKey, retry.value, {
+                      force: true,
+                      previousValue: retry.previousValue,
+                    })
+                  }
+                  type="button"
+                >
+                  Retry
+                </button>
+                <button
+                  className="editor-retry-button"
+                  onClick={() => {
+                    setTable((current) => cancelFailedSave(current, retry));
+                    setRetry(null);
+                    setSaveState({ status: "saved" });
+                    setRestoreCell({
+                      rowId: retry.rowId,
+                      columnKey: retry.columnKey,
+                    });
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </span>
             ) : null}
           </div>
         </div>
@@ -2754,6 +2891,11 @@ export function EditorKernel({
           </label>
         ) : null}
         <span>{displayedRecordCountLabel}</span>
+        {viewPreview ? (
+          <span className="editor-view-preview-state">
+            Previewing unsaved View in this grid
+          </span>
+        ) : null}
         {omittedPropertyCount > 0 ? (
           <span className="editor-property-disclosure">
             Showing {visibleGridColumns.length} of {table.columns.length}{" "}
@@ -2908,6 +3050,9 @@ export function EditorKernel({
               noMatches={noMatches}
               onClearSearch={() => setRecordSearch("")}
               onOpenRecord={openRecord}
+              onEditRecord={(rowId, columnKey) =>
+                openRecord(rowId, columnKey, columnKey)
+              }
               {...(previewColumn ? { previewColumn } : {})}
               rows={visibleRows}
               tableName={table.name}
@@ -2931,7 +3076,8 @@ export function EditorKernel({
                   }}
                   type="button"
                 >
-                  +
+                  <span aria-hidden="true">+</span>
+                  <span className="editor-add-column-label">Property</span>
                 </button>
                 {addColumnOpen ? (
                   <AddColumnPopover
@@ -2990,6 +3136,9 @@ export function EditorKernel({
         {activePanel ? (
           <RecordPanel
             key={`${activePanel.viewKey}:${activePanel.row.id}:${JSON.stringify(activePanel.row.values)}`}
+            {...(panelEditingKey && !connectedPanel
+              ? { initialEditingColumnKey: panelEditingKey }
+              : {})}
             {...(businessSlug !== undefined ? { businessSlug } : {})}
             columns={activePanel.columns}
             {...(activePanel.fullRecordPath !== undefined

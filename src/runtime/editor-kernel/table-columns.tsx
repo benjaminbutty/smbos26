@@ -109,6 +109,41 @@ function connectionContent(
   );
 }
 
+export function editorColumnKindIcon(kind: EditorColumnKind): string {
+  switch (kind) {
+    case "text":
+      return "Aa";
+    case "long_text":
+      return "¶";
+    case "number":
+      return "#";
+    case "currency":
+      return "£";
+    case "boolean":
+      return "✓";
+    case "date":
+      return "◫";
+    case "datetime":
+      return "◷";
+    case "email":
+      return "@";
+    case "phone":
+      return "☎";
+    case "url":
+      return "↗";
+    case "select":
+      return "◉";
+    case "multi_select":
+      return "◎";
+    case "status":
+      return "●";
+    case "connection":
+      return "↔";
+    case "file":
+      return "▧";
+  }
+}
+
 export function openConnectionCellEditor(
   column: EditorColumn | undefined,
   row: EditorRow,
@@ -193,6 +228,13 @@ function HeaderCell({
           ⋮⋮
         </span>
       ) : null}
+      <span
+        aria-hidden="true"
+        className={`editor-header-type-icon is-${column.kind}`}
+        title={`${column.kind.replaceAll("_", " ")} property`}
+      >
+        {editorColumnKindIcon(column.kind)}
+      </span>
       <span className="editor-header-label">{column.label}</span>
       {canRename ||
       canChangeType ||

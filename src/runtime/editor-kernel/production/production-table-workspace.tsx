@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import type {
   AddExistingConnectionPropertyInput,
@@ -9,6 +9,7 @@ import type {
   CreateConnectionPropertyInput,
   EditorCapabilities,
   EditorTable,
+  EditorTablePreview,
   ExistingConnectionPropertyOption,
 } from "../contracts";
 import { EditorKernel } from "../editor-kernel";
@@ -29,6 +30,7 @@ import {
   createProductionTableAdapter,
   type ProductionTableAdapterActions,
 } from "./production-table-adapter";
+import { TableViewPreviewProvider } from "../../views/table-view-preview-context";
 
 export interface ProductionTableWorkspaceProps {
   table: EditorTable;
@@ -83,6 +85,13 @@ export function ProductionTableWorkspace({
   table,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
   const router = useRouter();
+  const [viewPreview, setViewPreview] = useState<EditorTablePreview | null>(
+    null,
+  );
+  const updateViewPreview = useCallback(
+    (preview: EditorTablePreview | null): void => setViewPreview(preview),
+    [],
+  );
   const adapter = useMemo(
     () => createProductionTableAdapter(table, actions, currentness),
     [actions, currentness, table],
@@ -272,43 +281,48 @@ export function ProductionTableWorkspace({
   );
 
   return (
-    <EditorKernel
-      adapter={adapter}
-      capabilities={capabilities}
-      {...(businessSlug !== undefined ? { businessSlug } : {})}
-      footer={footer}
-      headerContent={headerContent}
-      marker={
-        surface === "workspace" ? (
-          <p className="editor-lab-kicker">Table</p>
-        ) : undefined
-      }
-      {...(creationFallbackHref !== undefined ? { creationFallbackHref } : {})}
-      {...(newRecordLabel !== undefined ? { newRecordLabel } : {})}
-      onStructureChanged={() => router.refresh()}
-      {...(connectionSource ? { connectionSource } : {})}
-      {...(connectionTargets ? { connectionTargets } : {})}
-      {...(existingConnections ? { existingConnections } : {})}
-      {...(createConnection ? { onCreateConnection: createConnection } : {})}
-      {...(addExistingConnection
-        ? { onAddExistingConnection: addExistingConnection }
-        : {})}
-      {...(recordCountLabel !== undefined ? { recordCountLabel } : {})}
-      {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
-      {...(panelStatusLabel !== undefined ? { panelStatusLabel } : {})}
-      {...(fullRecordPath !== undefined ? { fullRecordPath } : {})}
-      {...(readConnectedRecordContext
-        ? { loadConnectedRecord: readConnectedRecordContext }
-        : {})}
-      {...(updateConnectedRecord ? { updateConnectedRecord } : {})}
-      {...(searchConnectedRecord
-        ? { searchConnectedRecordTargets: searchConnectedRecord }
-        : {})}
-      {...(createConnectedRecord
-        ? { createConnectedRecordTarget: createConnectedRecord }
-        : {})}
-      readOnly={readOnly}
-      variant={surface}
-    />
+    <TableViewPreviewProvider value={{ setPreview: updateViewPreview }}>
+      <EditorKernel
+        adapter={adapter}
+        capabilities={capabilities}
+        {...(businessSlug !== undefined ? { businessSlug } : {})}
+        footer={footer}
+        headerContent={headerContent}
+        marker={
+          surface === "workspace" ? (
+            <p className="editor-lab-kicker">Table</p>
+          ) : undefined
+        }
+        {...(creationFallbackHref !== undefined
+          ? { creationFallbackHref }
+          : {})}
+        {...(newRecordLabel !== undefined ? { newRecordLabel } : {})}
+        onStructureChanged={() => router.refresh()}
+        {...(connectionSource ? { connectionSource } : {})}
+        {...(connectionTargets ? { connectionTargets } : {})}
+        {...(existingConnections ? { existingConnections } : {})}
+        {...(createConnection ? { onCreateConnection: createConnection } : {})}
+        {...(addExistingConnection
+          ? { onAddExistingConnection: addExistingConnection }
+          : {})}
+        {...(recordCountLabel !== undefined ? { recordCountLabel } : {})}
+        {...(recordTypeLabel !== undefined ? { recordTypeLabel } : {})}
+        {...(panelStatusLabel !== undefined ? { panelStatusLabel } : {})}
+        {...(fullRecordPath !== undefined ? { fullRecordPath } : {})}
+        {...(readConnectedRecordContext
+          ? { loadConnectedRecord: readConnectedRecordContext }
+          : {})}
+        {...(updateConnectedRecord ? { updateConnectedRecord } : {})}
+        {...(searchConnectedRecord
+          ? { searchConnectedRecordTargets: searchConnectedRecord }
+          : {})}
+        {...(createConnectedRecord
+          ? { createConnectedRecordTarget: createConnectedRecord }
+          : {})}
+        readOnly={readOnly}
+        variant={surface}
+        viewPreview={viewPreview}
+      />
+    </TableViewPreviewProvider>
   );
 }
