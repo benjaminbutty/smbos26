@@ -24,6 +24,7 @@ import {
   displayEditorValue,
   editorDraftRowId,
   editorInputValue,
+  editorSelectionValue,
   editorValueForColumn,
   freshDraftRowIndex,
   hasDraftName,
@@ -2744,15 +2745,16 @@ export function EditorKernel({
     ],
   );
 
-  const activeCellLabel = activeCell
-    ? table.columns.find((column) => column.key === activeCell.columnKey)?.label
+  const activeColumn = activeCell
+    ? table.columns.find((column) => column.key === activeCell.columnKey)
     : null;
+  const activeCellLabel = activeColumn?.label ?? null;
   const activeRow = activeCell
     ? table.rows.find((row) => row.id === activeCell.rowId)
     : null;
   const activeValue =
-    activeCell && activeRow
-      ? editorInputValue(activeRow.values[activeCell.columnKey] ?? null)
+    activeColumn && activeRow
+      ? editorSelectionValue(activeRow, activeColumn)
       : null;
   const emptyRecordLabel =
     recordCountLabel?.replace(/^\d+\s+/, "").trim() ||

@@ -93,7 +93,9 @@ function editableDocument(layout: InternalPageEditorProps["layout"]) {
 
 function topLevelPosition(editor: Editor): number | null {
   const { $from } = editor.state.selection;
-  if ($from.depth === 0) return null;
+  if ($from.depth === 0) {
+    return editor.state.doc.nodeAt($from.pos) ? $from.pos : null;
+  }
   return $from.before(1);
 }
 
@@ -137,6 +139,7 @@ export function InternalPageEditor({
   const router = useRouter();
   const suppressUpdatesRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const selectedBlockPositionRef = useRef<number | null>(null);
   const [bodyDirty, setBodyDirty] = useState(false);
   const [currentnessCandidate, setCurrentnessCandidate] = useState(currentness);
   const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
@@ -174,7 +177,9 @@ export function InternalPageEditor({
       },
     },
     onSelectionUpdate: ({ editor: activeEditor }) => {
-      setSelectedBlockPosition(topLevelPosition(activeEditor));
+      const position = topLevelPosition(activeEditor);
+      selectedBlockPositionRef.current = position;
+      setSelectedBlockPosition(position);
     },
     onUpdate: ({ editor: activeEditor }) => {
       if (suppressUpdatesRef.current) return;
@@ -270,7 +275,16 @@ export function InternalPageEditor({
   }, [insertChoices, insertMenu?.query]);
 
   useEffect(() => {
-    editor?.setEditable(canEdit && mode === "editing");
+    if (!editor) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled && !editor.isDestroyed) {
+        editor.setEditable(canEdit && mode === "editing", false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [canEdit, editor, mode]);
 
   if (
@@ -300,9 +314,18 @@ export function InternalPageEditor({
 
   useEffect(() => {
     if (!editor || bodyDirty) return;
-    suppressUpdatesRef.current = true;
-    editor.commands.setContent(editableDocument(layout), { emitUpdate: false });
-    suppressUpdatesRef.current = false;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled || editor.isDestroyed) return;
+      suppressUpdatesRef.current = true;
+      editor.commands.setContent(editableDocument(layout), {
+        emitUpdate: false,
+      });
+      suppressUpdatesRef.current = false;
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [bodyDirty, editor, layout, loadedCurrentness]);
 
   useUnsavedNavigationWarning(
@@ -511,21 +534,26 @@ export function InternalPageEditor({
 
   const moveSelected = (offset: -1 | 1): void => {
     if (!editor || selectedBlockPosition === null) return;
-    if (moveTopLevelNode(editor, selectedBlockPosition, offset)) {
+    const position =
+      selectedBlockPositionRef.current ??
+      topLevelPosition(editor) ??
+      selectedBlockPosition;
+    if (moveTopLevelNode(editor, position, offset)) {
+      selectedBlockPositionRef.current = null;
       setSelectedBlockPosition(null);
     }
   };
 
   const removeSelected = (): void => {
     if (!editor || selectedBlockPosition === null) return;
-    const node = editor.state.doc.nodeAt(selectedBlockPosition);
+    const position =
+      selectedBlockPositionRef.current ??
+      topLevelPosition(editor) ??
+      selectedBlockPosition;
+    const node = editor.state.doc.nodeAt(position);
     if (!node || !window.confirm("Remove this block from the Page?")) return;
-    editor
-      .chain()
-      .focus()
-      .setNodeSelection(selectedBlockPosition)
-      .deleteSelection()
-      .run();
+    editor.chain().focus().setNodeSelection(position).deleteSelection().run();
+    selectedBlockPositionRef.current = null;
     setSelectedBlockPosition(null);
   };
 
@@ -682,7 +710,10 @@ export function InternalPageEditor({
                 className="page-document-gutter"
                 editor={editor}
                 onNodeChange={({ node, pos }) => {
-                  if (node) setSelectedBlockPosition(pos);
+                  if (node) {
+                    selectedBlockPositionRef.current = pos;
+                    setSelectedBlockPosition(pos);
+                  }
                 }}
               >
                 <button
@@ -730,13 +761,25 @@ export function InternalPageEditor({
               aria-label="Selected block actions"
               className="page-block-actions"
             >
-              <button onClick={() => moveSelected(-1)} type="button">
+              <button
+                onClick={() => moveSelected(-1)}
+                onMouseDown={(event) => event.preventDefault()}
+                type="button"
+              >
                 Move up
               </button>
-              <button onClick={() => moveSelected(1)} type="button">
+              <button
+                onClick={() => moveSelected(1)}
+                onMouseDown={(event) => event.preventDefault()}
+                type="button"
+              >
                 Move down
               </button>
-              <button onClick={removeSelected} type="button">
+              <button
+                onClick={removeSelected}
+                onMouseDown={(event) => event.preventDefault()}
+                type="button"
+              >
                 Remove
               </button>
             </div>

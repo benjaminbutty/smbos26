@@ -8,6 +8,7 @@ import {
   draftRowIndex,
   displayEditorValue,
   editorValueForColumn,
+  editorSelectionValue,
   editorDraftRowId,
   freshDraftRowIndex,
   hasDraftName,
@@ -39,6 +40,23 @@ describe("editor kernel contracts", () => {
     expect(editorValueForColumn({ kind: "boolean" }, "true")).toBe(true);
     expect(displayEditorValue({ kind: "boolean" }, false)).toBe("No");
     expect(displayEditorValue({ kind: "date" }, "2026-08-09")).toContain("Aug");
+    expect(
+      editorSelectionValue(
+        {
+          id: "customer-1",
+          values: { pets: ["private-record-id"] },
+          connectionValues: {
+            pets: [{ id: "private-record-id", label: "Milo" }],
+          },
+        },
+        {
+          key: "pets",
+          label: "Pets",
+          kind: "connection",
+          width: 180,
+        },
+      ),
+    ).toBe("Milo");
   });
 
   it("moves only the requested column", () => {

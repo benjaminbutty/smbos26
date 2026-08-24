@@ -358,6 +358,18 @@ export function displayEditorValue(
   return String(value);
 }
 
+export function editorSelectionValue(
+  row: EditorRow,
+  column: EditorColumn,
+): string {
+  if (column.kind === "connection") {
+    return (row.connectionValues?.[column.key] ?? [])
+      .map(({ label }) => label)
+      .join(", ");
+  }
+  return displayEditorValue(column, row.values[column.key] ?? null);
+}
+
 export function reorderColumnKeys(
   columnKeys: readonly string[],
   sourceKey: string,

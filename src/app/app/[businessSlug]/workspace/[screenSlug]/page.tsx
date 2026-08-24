@@ -253,15 +253,30 @@ export default async function WorkspaceScreenPage({
       notFound();
     }
     const primaryConfig = normalizeTableViewConfig(primaryView.config_json);
-    const availableSavedViewColumns = [
-      ...bundle.fields
+    const activeFieldKeys = new Set(
+      bundle.fields
         .filter((field) => field.is_active)
+        .map((field) => field.key),
+    );
+    const configuredFieldKeys = new Set(
+      primaryConfig.columns.flatMap((column) =>
+        column.kind === "field" ? [column.field_key] : [],
+      ),
+    );
+    const availableSavedViewColumns = [
+      ...primaryConfig.columns.filter(
+        (column) =>
+          column.kind === "connection" || activeFieldKeys.has(column.field_key),
+      ),
+      ...bundle.fields
+        .filter(
+          (field) => field.is_active && !configuredFieldKeys.has(field.key),
+        )
         .sort((left, right) => left.position - right.position)
         .map((field) => ({
           kind: "field" as const,
           field_key: field.key,
         })),
-      ...primaryConfig.columns.filter((column) => column.kind === "connection"),
     ];
     const primary = mapped.table.columns.find(
       (column) => column.key === mapped.table.primaryColumnKey,
@@ -415,6 +430,7 @@ export default async function WorkspaceScreenPage({
                 config={normalizeTableViewConfig(bundle.config)}
                 currentness={currentness}
                 fields={bundle.fields}
+                key={`${bundle.definition.key}:${currentness?.expectedHeadRevision ?? "read-only"}`}
                 primaryViewKey={primaryView.key}
                 {...(bundle.relationships
                   ? { relationships: bundle.relationships }

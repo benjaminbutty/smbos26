@@ -231,7 +231,21 @@ describe("Lenni unified workspace presentation", () => {
     expect(internalEditorSource).toContain('action: "save_page_layout"');
     expect(internalEditorSource).toContain('aria-label="Page mode"');
     expect(internalEditorSource).toContain("useUnsavedNavigationWarning");
+    expect(internalEditorSource).toContain(
+      'editor.setEditable(canEdit && mode === "editing", false)',
+    );
+    expect(internalEditorSource).toContain("queueMicrotask(() => {");
     expect(internalEditorSource).toContain("Things changed since you opened");
+    expect(internalEditorSource).toContain(
+      "editor.state.doc.nodeAt($from.pos) ? $from.pos : null",
+    );
+    expect(internalEditorSource).toContain(
+      "selectedBlockPositionRef.current ??\n      topLevelPosition(editor) ??\n      selectedBlockPosition",
+    );
+    expect(internalEditorSource).toContain(
+      "onMouseDown={(event) => event.preventDefault()}",
+    );
+    expect(internalEditorSource).toContain("selectedBlockPositionRef.current");
     expect(internalEditorSource).not.toContain("page-editor-block-form");
     expect(internalEditorSource).not.toContain('action: "add_page_block"');
     expect(internalEditorSource).not.toContain('action: "update_page_block"');
@@ -239,6 +253,21 @@ describe("Lenni unified workspace presentation", () => {
     expect(pageRouteSource).toContain("canEdit,");
     expect(pageRouteSource).not.toContain(
       "expectedHeadRevision}-${page.definition.title}",
+    );
+
+    const workspaceRouteSource = readFileSync(
+      new URL(
+        "../src/app/app/[businessSlug]/workspace/[screenSlug]/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(workspaceRouteSource).toContain(
+      'key={`${bundle.definition.key}:${currentness?.expectedHeadRevision ?? "read-only"}`}',
+    );
+    expect(workspaceRouteSource).toContain("...primaryConfig.columns.filter(");
+    expect(workspaceRouteSource).toContain(
+      "!configuredFieldKeys.has(field.key)",
     );
     expect(extensionSource).toContain("Open table");
     expect(extensionSource).toContain("Read-only");
