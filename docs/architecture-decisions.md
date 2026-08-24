@@ -3509,3 +3509,20 @@ keeps capability/historical blocks unchanged apart from order; and applies one
 immutable Version. Failed or stale publication leaves the previous public Page
 unchanged. No durable draft, new Page, store, renderer or public runtime is
 introduced. See [ADR-045](./ADR-045.md).
+
+## ADR-046: Internal Pages use one bounded Tiptap candidate and explicit save
+
+Accepted for the Interaction Quality Reset. Internal Owner/Admin Pages now
+hold one complete Tiptap body candidate in component memory and commit it only
+through one deliberate `save_page_layout` Direct Page action. A successful body
+save creates one applied Change and one immutable Version; typing, formatting,
+movement and local undo/redo create none. The Page title retains its separate
+bounded rename action.
+
+The canonical Page grammar gains one finite platform-owned rich-text block for
+paragraphs, heading levels 1–3, flat bulleted/numbered lists and inline bold,
+italic and safe-link marks. Existing Page blocks remain compatible; raw editor
+JSON, HTML and unknown nodes/marks remain invalid in TypeScript and PostgreSQL.
+This amends ADR-037's internal autosave and rich-text deferral only. It adds no
+draft store, primitive, runtime, renderer or lifecycle, and it does not change
+the ADR-045 Site/publication contract. See [ADR-046](./ADR-046.md).
