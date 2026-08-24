@@ -19,6 +19,8 @@ import {
   deterministicTableViewRoles,
   formConfigSchema,
   normalizeTableViewConfig,
+  tableViewConnectionPropertyKey,
+  tableViewFieldPropertyKey,
   validateTableViewQuery,
   type TableViewColumn,
   type TableViewConfigV1,
@@ -294,6 +296,28 @@ function configWithFieldKeys(
     return fieldKey ? { kind: "field" as const, field_key: fieldKey } : column;
   });
   return configWithColumns(config, columns);
+}
+
+function propertyKeyForColumn(column: TableViewColumn): string {
+  return column.kind === "field"
+    ? tableViewFieldPropertyKey(column.field_key)
+    : tableViewConnectionPropertyKey(column.relationship_key, column.direction);
+}
+
+function configWithPropertyKeys(
+  config: TableViewConfigV2,
+  propertyKeys: readonly string[],
+): TableViewConfigV2 {
+  const columnsByPropertyKey = new Map(
+    config.columns.map((column) => [propertyKeyForColumn(column), column]),
+  );
+  return configWithColumns(
+    config,
+    propertyKeys.flatMap((propertyKey) => {
+      const column = columnsByPropertyKey.get(propertyKey);
+      return column ? [column] : [];
+    }),
+  );
 }
 
 function legacyTableConfig(config: TableViewConfigV2): TableViewConfigV1 {
@@ -1235,18 +1259,27 @@ function composeTableMutation(
       break;
     }
     case "reorder_columns": {
-      const currentKeys = table.config.fields;
+      const currentPropertyKeys =
+        table.config.columns.map(propertyKeyForColumn);
+      const requestedPropertyKeys = intent.propertyKeys
+        ? intent.propertyKeys
+        : intent.fieldKeys?.map((fieldKey) =>
+            tableViewFieldPropertyKey(fieldKey),
+          );
       if (
-        intent.fieldKeys.length !== currentKeys.length ||
-        new Set(intent.fieldKeys).size !== currentKeys.length ||
-        intent.fieldKeys.some((key) => !currentKeys.includes(key))
+        !requestedPropertyKeys ||
+        requestedPropertyKeys.length !== currentPropertyKeys.length ||
+        new Set(requestedPropertyKeys).size !== currentPropertyKeys.length ||
+        requestedPropertyKeys.some((key) => !currentPropertyKeys.includes(key))
       ) {
         throw new DirectTableComposerError("direct_table_reorder_invalid");
       }
       operations = [
         tableMutationViewOperation(
           table.view,
-          configWithFieldKeys(table.config, intent.fieldKeys),
+          intent.propertyKeys
+            ? configWithPropertyKeys(table.config, requestedPropertyKeys)
+            : configWithFieldKeys(table.config, intent.fieldKeys ?? []),
         ),
       ];
       title = `Reorder ${table.view.name}`;

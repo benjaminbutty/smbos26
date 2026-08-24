@@ -210,11 +210,12 @@ function canonicalBlock(node: JSONContent): PageBlock | null {
     const level = node.attrs?.level;
     const content = canonicalInline(node);
     const hasMarks = content.some((span) => Boolean(span.marks?.length));
+    const text = content.map((span) => span.text).join("");
     const result = pageBlockSchema.safeParse(
-      !hasMarks
+      !hasMarks && text
         ? withId({
             type: "heading",
-            text: content.map((span) => span.text).join(""),
+            text,
             level: level === 1 || level === 3 ? level : 2,
           })
         : withId({

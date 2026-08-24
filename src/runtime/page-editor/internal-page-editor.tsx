@@ -471,42 +471,24 @@ export function InternalPageEditor({
 
   const insertChoice = (choice: InsertChoice): void => {
     if (!editor || !insertMenu) return;
-    const chain = editor.chain().focus();
-    if (
-      insertMenu.source === "slash" &&
-      insertMenu.from !== undefined &&
-      insertMenu.to !== undefined
-    ) {
-      chain.deleteRange({ from: insertMenu.from, to: insertMenu.to });
-      if (choice.kind === "paragraph") chain.setParagraph();
-      if (choice.kind === "heading") chain.setHeading({ level: 2 });
-      if (choice.kind === "bulletList") chain.toggleBulletList();
-      if (choice.kind === "orderedList") chain.toggleOrderedList();
-      if (choice.kind === "divider") {
-        chain.insertContent({ type: pageEditorNodeNames.divider });
-      }
-      if (choice.kind === "callout") {
-        chain.insertContent({
-          type: pageEditorNodeNames.callout,
-          attrs: { text: "Write a note", tone: "info" },
-        });
-      }
-      if (choice.kind === "view") {
-        chain.insertContent({
-          type: pageEditorNodeNames.view,
-          attrs: { viewKey: choice.viewKey },
-        });
-      }
-      chain.run();
-    } else if (insertMenu.insertPos !== undefined) {
-      const node =
-        choice.kind === "paragraph"
-          ? { type: "paragraph" }
-          : choice.kind === "heading"
-            ? { type: "heading", attrs: { level: 2 } }
-            : choice.kind === "bulletList"
+    const node =
+      choice.kind === "paragraph"
+        ? { type: "paragraph" }
+        : choice.kind === "heading"
+          ? { type: "heading", attrs: { level: 2 } }
+          : choice.kind === "bulletList"
+            ? {
+                type: "bulletList",
+                content: [
+                  {
+                    type: "listItem",
+                    content: [{ type: "paragraph" }],
+                  },
+                ],
+              }
+            : choice.kind === "orderedList"
               ? {
-                  type: "bulletList",
+                  type: "orderedList",
                   content: [
                     {
                       type: "listItem",
@@ -514,27 +496,28 @@ export function InternalPageEditor({
                     },
                   ],
                 }
-              : choice.kind === "orderedList"
-                ? {
-                    type: "orderedList",
-                    content: [
-                      {
-                        type: "listItem",
-                        content: [{ type: "paragraph" }],
-                      },
-                    ],
-                  }
-                : choice.kind === "divider"
-                  ? { type: pageEditorNodeNames.divider }
-                  : choice.kind === "callout"
-                    ? {
-                        type: pageEditorNodeNames.callout,
-                        attrs: { text: "Write a note", tone: "info" },
-                      }
-                    : {
-                        type: pageEditorNodeNames.view,
-                        attrs: { viewKey: choice.viewKey },
-                      };
+              : choice.kind === "divider"
+                ? { type: pageEditorNodeNames.divider }
+                : choice.kind === "callout"
+                  ? {
+                      type: pageEditorNodeNames.callout,
+                      attrs: { text: "Write a note", tone: "info" },
+                    }
+                  : {
+                      type: pageEditorNodeNames.view,
+                      attrs: { viewKey: choice.viewKey },
+                    };
+    if (
+      insertMenu.source === "slash" &&
+      insertMenu.from !== undefined &&
+      insertMenu.to !== undefined
+    ) {
+      editor
+        .chain()
+        .focus()
+        .insertContentAt({ from: insertMenu.from, to: insertMenu.to }, node)
+        .run();
+    } else if (insertMenu.insertPos !== undefined) {
       editor.chain().focus().insertContentAt(insertMenu.insertPos, node).run();
     }
     setInsertMenu(null);

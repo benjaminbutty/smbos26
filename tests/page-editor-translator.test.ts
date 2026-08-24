@@ -97,6 +97,50 @@ describe("Page editor canonical translator", () => {
     ).toEqual({ blocks: [] });
   });
 
+  it("keeps empty block shells saveable while an owner starts writing", () => {
+    expect(
+      tiptapToPageLayout({
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [] },
+          {
+            type: "bulletList",
+            content: [
+              {
+                type: "listItem",
+                content: [{ type: "paragraph", content: [] }],
+              },
+            ],
+          },
+          {
+            type: "orderedList",
+            content: [
+              {
+                type: "listItem",
+                content: [{ type: "paragraph", content: [] }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
+      blocks: [
+        {
+          type: "rich_text",
+          node: { type: "heading", level: 2, content: [] },
+        },
+        {
+          type: "rich_text",
+          node: { type: "bullet_list", items: [{ content: [] }] },
+        },
+        {
+          type: "rich_text",
+          node: { type: "numbered_list", items: [{ content: [] }] },
+        },
+      ],
+    });
+  });
+
   it("rejects raw unsupported editor nodes", () => {
     expect(() =>
       tiptapToPageLayout({

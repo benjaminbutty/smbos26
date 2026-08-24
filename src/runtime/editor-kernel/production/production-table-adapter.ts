@@ -29,6 +29,10 @@ import type {
   ProductionUpdateColumnOptionsAction,
   ProductionColumnType,
 } from "./action-types";
+import {
+  tableViewConnectionPropertyKey,
+  tableViewFieldPropertyKey,
+} from "../../../core/experience/schemas";
 
 export interface ProductionTableAdapterActions {
   createConnection?: ProductionCreateConnectionAction;
@@ -423,9 +427,23 @@ export class ProductionTableAdapter implements TableEditorAdapter {
   async reorderColumns(
     columnKeys: readonly string[],
   ): Promise<readonly EditorColumn[]> {
+    const columnsByKey = new Map(
+      this.table.columns.map((column) => [column.key, column]),
+    );
     const result = await this.actions.reorderColumns({
       currentness: this.requireCurrentness(),
-      fieldKeys: [...columnKeys],
+      propertyKeys: columnKeys.map((columnKey) => {
+        const column = columnsByKey.get(columnKey);
+        if (!column) {
+          throw new Error("That property is no longer available.");
+        }
+        return column.kind === "connection" && column.connection
+          ? tableViewConnectionPropertyKey(
+              column.connection.relationshipKey,
+              column.connection.direction,
+            )
+          : tableViewFieldPropertyKey(column.key);
+      }),
     });
     return this.applyStructure(result).columns.map(cloneColumn);
   }

@@ -152,6 +152,8 @@ interface GridPoint {
   columnIndex: number;
 }
 
+const editorAddPropertyColumnKey = "__editor_add_property__";
+
 export interface SaveRetry {
   rowId: string;
   columnKey: string;
@@ -208,13 +210,6 @@ function TableTitleEditor({
   const inputRef = useRef<HTMLInputElement>(null);
   const committingRef = useRef(false);
 
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
   if (!enabled) {
     return <h1>{displayTitle}</h1>;
   }
@@ -243,15 +238,16 @@ function TableTitleEditor({
     }
   };
 
-  return editing ? (
+  return (
     <input
       ref={inputRef}
       aria-label="Table title"
-      className="editor-title-input"
+      className="editor-title-input editor-title-inline"
       maxLength={120}
       minLength={1}
       onBlur={() => void commit()}
       onChange={(event) => setValue(event.currentTarget.value)}
+      onFocus={() => setEditing(true)}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -261,21 +257,10 @@ function TableTitleEditor({
           cancel();
         }
       }}
+      readOnly={!editing}
       required
       value={value}
     />
-  ) : (
-    <button
-      aria-label={`Rename Table ${name}`}
-      className="editor-title-button"
-      onClick={() => {
-        setValue(name);
-        setEditing(true);
-      }}
-      type="button"
-    >
-      <span>{name}</span>
-    </button>
   );
 }
 
@@ -2681,69 +2666,105 @@ export function EditorKernel({
     setDraftActivation({ rowIdx, columnIdx });
   }, []);
 
-  const gridColumns = useMemo(
-    () =>
-      createEditorColumns({
-        columnMenuKey,
-        columns: visibleGridColumns,
-        newRecordLabel,
-        onActivateDraft: activateDraft,
-        onOpenColumnMenu: (columnKey) => {
-          setPropertyDraft(null);
-          setAddColumnOpen(false);
-          setColumnMenuKey((current) =>
-            current === columnKey ? null : columnKey,
-          );
-        },
-        onCloseColumnMenu: () => setColumnMenuKey(null),
-        onOpenRecord: openRecord,
-        onRenameColumn: handleRenameColumn,
-        onUpdateColumnOptions: handleUpdateColumnOptions,
-        onChangeColumnType: handleChangeColumnType,
-        onInsertColumn: handleInsertColumn,
-        onMoveColumn: handleMoveColumn,
-        onSearchConnectionTargets: (columnKey, search) =>
-          adapter.searchConnectionTargets
-            ? adapter.searchConnectionTargets(columnKey, search)
-            : Promise.resolve([]),
-        ...(adapter.createConnectionTarget
-          ? {
-              onCreateConnectionTarget: (
-                columnKey: string,
-                primaryValue: string,
-              ) => adapter.createConnectionTarget!(columnKey, primaryValue),
-            }
-          : {}),
-        canRenameColumns: capabilities.canRenameColumns,
-        canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
-        canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
-        canInsertColumns: Boolean(capabilities.canInsertColumns),
-        canReorderColumns: capabilities.canReorderColumns,
-        canResizeColumns: capabilities.canResizeColumns,
-        pendingEdit,
-      }),
-    [
-      activateDraft,
+  const gridColumns = useMemo(() => {
+    const columns = createEditorColumns({
       columnMenuKey,
-      handleRenameColumn,
-      handleUpdateColumnOptions,
-      handleChangeColumnType,
-      handleInsertColumn,
-      handleMoveColumn,
-      setColumnMenuKey,
-      openRecord,
-      pendingEdit,
-      capabilities.canRenameColumns,
-      capabilities.canUpdateColumnOptions,
-      capabilities.canChangeColumnTypes,
-      capabilities.canInsertColumns,
-      capabilities.canReorderColumns,
-      capabilities.canResizeColumns,
-      visibleGridColumns,
-      adapter,
+      columns: visibleGridColumns,
       newRecordLabel,
-    ],
-  );
+      onActivateDraft: activateDraft,
+      onOpenColumnMenu: (columnKey) => {
+        setPropertyDraft(null);
+        setAddColumnOpen(false);
+        setColumnMenuKey((current) =>
+          current === columnKey ? null : columnKey,
+        );
+      },
+      onCloseColumnMenu: () => setColumnMenuKey(null),
+      onOpenRecord: openRecord,
+      onRenameColumn: handleRenameColumn,
+      onUpdateColumnOptions: handleUpdateColumnOptions,
+      onChangeColumnType: handleChangeColumnType,
+      onInsertColumn: handleInsertColumn,
+      onMoveColumn: handleMoveColumn,
+      onSearchConnectionTargets: (columnKey, search) =>
+        adapter.searchConnectionTargets
+          ? adapter.searchConnectionTargets(columnKey, search)
+          : Promise.resolve([]),
+      ...(adapter.createConnectionTarget
+        ? {
+            onCreateConnectionTarget: (
+              columnKey: string,
+              primaryValue: string,
+            ) => adapter.createConnectionTarget!(columnKey, primaryValue),
+          }
+        : {}),
+      canRenameColumns: capabilities.canRenameColumns,
+      canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
+      canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
+      canInsertColumns: Boolean(capabilities.canInsertColumns),
+      canReorderColumns: capabilities.canReorderColumns,
+      canResizeColumns: capabilities.canResizeColumns,
+      pendingEdit,
+    });
+    if (!capabilities.canAddColumns) {
+      return columns;
+    }
+    return [
+      ...columns,
+      {
+        key: editorAddPropertyColumnKey,
+        name: "",
+        width: 42,
+        minWidth: 42,
+        maxWidth: 42,
+        resizable: false,
+        draggable: false,
+        renderHeaderCell: () => (
+          <button
+            aria-expanded={addColumnOpen}
+            aria-label="Add property"
+            className="editor-add-column-button"
+            ref={addColumnButtonRef}
+            onClick={() => {
+              setColumnMenuKey(null);
+              if (addColumnOpen) {
+                setPropertyDraft(null);
+                setAddColumnOpen(false);
+              } else {
+                setPropertyDraft(initialPropertyDraft());
+                setAddColumnOpen(true);
+              }
+            }}
+            type="button"
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+        ),
+        renderCell: () => null,
+      },
+    ];
+  }, [
+    activateDraft,
+    addColumnOpen,
+    adapter,
+    capabilities.canAddColumns,
+    capabilities.canChangeColumnTypes,
+    capabilities.canInsertColumns,
+    capabilities.canRenameColumns,
+    capabilities.canReorderColumns,
+    capabilities.canResizeColumns,
+    capabilities.canUpdateColumnOptions,
+    columnMenuKey,
+    handleChangeColumnType,
+    handleInsertColumn,
+    handleMoveColumn,
+    handleRenameColumn,
+    handleUpdateColumnOptions,
+    newRecordLabel,
+    openRecord,
+    pendingEdit,
+    visibleGridColumns,
+  ]);
 
   const activeColumn = activeCell
     ? table.columns.find((column) => column.key === activeCell.columnKey)
@@ -2795,33 +2816,6 @@ export function EditorKernel({
           />
         </div>
         <div className="editor-lab-header-actions">
-          {variant === "workspace" ? (
-            <details className="editor-table-menu">
-              <summary>Table menu</summary>
-              <div className="editor-table-menu-body" role="menu">
-                {capabilities.canAddColumns ? (
-                  <button
-                    onClick={() => {
-                      setColumnMenuKey(null);
-                      setPropertyDraft(initialPropertyDraft());
-                      setAddColumnOpen(true);
-                    }}
-                    role="menuitem"
-                    type="button"
-                  >
-                    Add property
-                  </button>
-                ) : null}
-                <button
-                  onClick={() => setShortcutOpen(true)}
-                  role="menuitem"
-                  type="button"
-                >
-                  Keyboard shortcuts
-                </button>
-              </div>
-            </details>
-          ) : null}
           <div
             className={`editor-save-state editor-save-${saveState.status}`}
             role="status"
@@ -2915,7 +2909,6 @@ export function EditorKernel({
             </button>
           </span>
         ) : null}
-        <span aria-hidden="true">·</span>
         <span>
           {activeCellLabel && activeValue
             ? `${activeCellLabel} · ${activeValue}`
@@ -2984,6 +2977,9 @@ export function EditorKernel({
                 }
                 onRowsChange={handleRowsChange}
                 onSelectedCellChange={({ row, column }) => {
+                  if (column.key === editorAddPropertyColumnKey) {
+                    return;
+                  }
                   setPendingEdit(null);
                   if (row) {
                     setActiveCell({ rowId: row.id, columnKey: column.key });
@@ -3061,26 +3057,6 @@ export function EditorKernel({
             />
             {capabilities.canAddColumns ? (
               <>
-                <button
-                  aria-expanded={addColumnOpen}
-                  aria-label="Add property"
-                  className="editor-add-column-button"
-                  ref={addColumnButtonRef}
-                  onClick={() => {
-                    setColumnMenuKey(null);
-                    if (addColumnOpen) {
-                      setPropertyDraft(null);
-                      setAddColumnOpen(false);
-                    } else {
-                      setPropertyDraft(initialPropertyDraft());
-                      setAddColumnOpen(true);
-                    }
-                  }}
-                  type="button"
-                >
-                  <span aria-hidden="true">+</span>
-                  <span className="editor-add-column-label">Property</span>
-                </button>
                 {addColumnOpen ? (
                   <AddColumnPopover
                     anchorRef={addColumnButtonRef}

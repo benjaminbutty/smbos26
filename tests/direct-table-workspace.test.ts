@@ -167,6 +167,34 @@ const operatingFormsSnapshot: ConfigurationSnapshotV1 = {
   ],
 };
 
+const connectionTableSnapshot: ConfigurationSnapshotV1 = {
+  ...snapshot,
+  views: snapshot.views.map((view) => ({
+    ...view,
+    config_json: {
+      schema_version: 2,
+      role: "primary",
+      columns: [
+        { kind: "field", field_key: "name" },
+        {
+          kind: "connection",
+          relationship_key: "contact_has_pet",
+          direction: "source",
+          label: "Pets",
+        },
+        { kind: "field", field_key: "status" },
+      ],
+      fields: ["name", "status"],
+      title_field: "name",
+      include_archived: false,
+      filters: [],
+      filter_match: "all",
+      sorts: [],
+      group: null,
+    },
+  })),
+};
+
 describe("direct Table Workspace composer", () => {
   it("keeps direct cell keyboard interaction deterministic", () => {
     expect(directTableEditorKeyAction("Enter")).toBe("commit");
@@ -326,6 +354,34 @@ describe("direct Table Workspace composer", () => {
     expect(resized.operations[0]).toMatchObject({
       op: "set_view",
       config_json: expect.objectContaining({ column_widths: { status: 320 } }),
+    });
+  });
+
+  it("reorders field and Connection properties as one complete Table order", () => {
+    const reordered = composeDirectTableAction(connectionTableSnapshot, {
+      action: "reorder_columns",
+      viewKey: "contacts",
+      propertyKeys: [
+        "field:status",
+        "connection:contact_has_pet:source",
+        "field:name",
+      ],
+    });
+
+    expect(reordered.operations[0]).toMatchObject({ op: "set_view" });
+    expect(
+      (reordered.operations[0] as { config_json: unknown }).config_json,
+    ).toMatchObject({
+      fields: ["status", "name"],
+      columns: [
+        { kind: "field", field_key: "status" },
+        {
+          kind: "connection",
+          relationship_key: "contact_has_pet",
+          direction: "source",
+        },
+        { kind: "field", field_key: "name" },
+      ],
     });
   });
 

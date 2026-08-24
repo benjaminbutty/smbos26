@@ -26,6 +26,7 @@ import { createExperienceService } from "../../../core/experience/service";
 import {
   normalizeTableViewConfig,
   tableViewColumnSchema,
+  tableViewPropertyKeySchema,
   tableViewQuerySchema,
 } from "../../../core/experience/schemas";
 import { createServerClient } from "../../../db/supabase/server";
@@ -287,7 +288,7 @@ const updateColumnOptionsInputSchema = z
 const reorderColumnsInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
-    fieldKeys: z.array(viewKeySchema).min(1).max(50),
+    propertyKeys: z.array(tableViewPropertyKeySchema).min(1).max(50),
   })
   .strict();
 const renameTableInputSchema = z
@@ -844,7 +845,7 @@ export async function reorderProductionTableColumnsAction(
     {
       action: "reorder_columns",
       viewKey: context.viewKey,
-      fieldKeys: parsed.data.fieldKeys,
+      propertyKeys: parsed.data.propertyKeys,
     },
   );
 }

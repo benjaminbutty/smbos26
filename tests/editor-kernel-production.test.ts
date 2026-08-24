@@ -749,15 +749,19 @@ describe("production editor adapter", () => {
         });
       }),
       reorderColumns: vi.fn(async (input) => {
-        expect(input.fieldKeys).toEqual(["status", "phone", "name"]);
+        expect(input.propertyKeys).toEqual([
+          "field:status",
+          "field:phone",
+          "field:name",
+        ]);
         expect(input.currentness).toEqual(authoritativeCurrentness);
         const byKey = new Map(
           authoritativeTable.columns.map((column) => [column.key, column]),
         );
         return structureResult({
           ...authoritativeTable,
-          columns: input.fieldKeys.flatMap((key: string) => {
-            const column = byKey.get(key);
+          columns: input.propertyKeys.flatMap((propertyKey: string) => {
+            const column = byKey.get(propertyKey.replace("field:", ""));
             return column ? [column] : [];
           }),
         });

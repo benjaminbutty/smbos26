@@ -7434,18 +7434,22 @@ textarea {
 }
 
 .workspace-table-page .editor-add-column-button {
-  top: 0.55rem;
-  right: 0.55rem;
+  position: static;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
   color: var(--text-secondary);
-  background: var(--surface-base);
-  border-color: var(--border-subtle);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .workspace-table-page .editor-add-column-button:hover,
 .workspace-table-page .editor-add-column-button[aria-expanded="true"] {
-  color: var(--surface-base);
-  background: var(--coral-700);
-  border-color: var(--coral-700);
+  color: var(--coral-700);
+  background: var(--coral-50);
 }
 
 @media (max-width: 1100px) {
@@ -15536,8 +15540,10 @@ textarea {
   display: flex;
   align-items: center;
   gap: 0.1rem;
-  margin-left: -3.6rem;
-  padding-right: var(--space-2);
+  /* Keep the floating grip flush with the document. A gap makes the handle
+     disappear while the pointer crosses from the block to its controls. */
+  margin-left: 0;
+  padding-right: 0;
 }
 
 .page-document-gutter button {
@@ -15649,6 +15655,371 @@ textarea {
 .page-slash-menu-options button span {
   color: var(--text-tertiary);
   font-size: 0.7rem;
+}
+
+/* Interaction-quality follow-through: Tables and Pages use one calm control
+   language, including portal-mounted property editors. */
+.workspace-table-page .editor-title-inline {
+  width: max-content;
+  min-width: 5ch;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: var(--border-width-thin) solid transparent;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+  cursor: text;
+  font-size: clamp(1.75rem, 3vw, 2.45rem);
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1.08;
+}
+
+.workspace-table-page .editor-title-inline:focus {
+  padding-inline: 0.08em;
+  border-color: var(--coral-300);
+  outline: 0;
+}
+
+.workspace-table-page
+  .editor-grid
+  [role="columnheader"]:has(.editor-add-column-button),
+.workspace-table-page
+  .editor-grid
+  [role="gridcell"]:has(.editor-add-column-cell) {
+  padding-inline: 0;
+}
+
+.workspace-table-page .editor-add-column-button {
+  position: static;
+  display: inline-grid;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  place-items: center;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.workspace-table-page .editor-add-column-button:hover,
+.workspace-table-page .editor-add-column-button[aria-expanded="true"] {
+  color: var(--coral-700);
+  background: var(--coral-50);
+}
+
+.editor-property-editor .lenni-type-picker {
+  gap: var(--space-2);
+}
+
+.editor-property-editor .lenni-picker-options {
+  display: grid;
+  max-height: 16.5rem;
+  gap: 0.18rem;
+  padding: 0.18rem;
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.editor-property-editor .lenni-type-option {
+  display: grid;
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.8rem;
+  padding: var(--space-2);
+  color: var(--text-primary);
+  border: var(--border-width-thin) solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.editor-property-editor .lenni-type-option:hover,
+.editor-property-editor .lenni-type-option[aria-current="true"] {
+  background: var(--coral-50);
+  border-color: var(--coral-200);
+}
+
+.editor-property-editor .lenni-type-option-icon {
+  display: grid;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  color: var(--coral-700);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.editor-property-editor .lenni-type-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+  text-align: left;
+}
+
+.editor-property-editor .lenni-type-option-copy strong {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+.editor-property-editor .lenni-type-option-copy small {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.editor-column-menu[data-viewport-safe="true"] {
+  width: min(17rem, calc(100vw - 1rem));
+  padding: var(--space-2);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+}
+
+.editor-column-menu[data-viewport-safe="true"] .lenni-menu {
+  gap: 0.12rem;
+}
+
+.editor-column-menu-heading {
+  display: grid;
+  grid-template-columns: 1.8rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.editor-column-menu-heading > span {
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  place-items: center;
+  color: var(--coral-700);
+  background: var(--coral-50);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.editor-column-menu-heading > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.08rem;
+}
+
+.editor-column-menu-heading strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.75rem;
+  line-height: 1.2;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-column-menu-heading small {
+  color: var(--text-secondary);
+  font-size: 0.62rem;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.editor-column-menu[data-viewport-safe="true"] .editor-column-menu-action {
+  width: 100%;
+  min-height: 2.1rem;
+  padding: 0.42rem var(--space-2);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-action:hover {
+  color: var(--coral-800);
+  background: var(--coral-50);
+}
+
+.workspace-table-page .table-view-query-popover {
+  gap: var(--space-3);
+  padding: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+}
+
+.workspace-table-page .table-view-draft-heading {
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-table-page .table-view-draft-heading strong {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+
+.workspace-table-page .table-view-draft-heading > span {
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-table-page .table-view-query-popover label {
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .table-view-query-popover input,
+.workspace-table-page .table-view-query-popover select {
+  min-height: 2.25rem;
+  color: var(--text-primary);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  font-size: 0.74rem;
+}
+
+.workspace-table-page .table-view-column-picker {
+  gap: var(--space-2);
+  max-height: 14rem;
+  padding: var(--space-3);
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.workspace-table-page .table-view-column-picker legend {
+  padding-inline: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.workspace-table-page .table-view-column-picker > div {
+  min-height: 2.1rem;
+  padding: 0.18rem 0;
+}
+
+.workspace-table-page .table-view-column-picker label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.workspace-table-page .table-view-column-picker input {
+  min-height: auto;
+  accent-color: var(--coral-600);
+}
+
+.workspace-table-page .table-view-column-picker span {
+  display: inline-flex;
+  gap: 0.2rem;
+}
+
+.workspace-table-page .table-view-column-picker button {
+  display: inline-grid;
+  width: 1.8rem;
+  min-width: 1.8rem;
+  min-height: 1.8rem;
+  place-items: center;
+  padding: 0;
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.workspace-table-page .table-view-draft-actions {
+  padding-top: var(--space-3);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.workspace-table-page .table-view-draft-actions button {
+  min-height: 2.25rem;
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.page-slash-menu {
+  width: min(21rem, calc(100vw - 2rem));
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-overlay);
+}
+
+.page-slash-menu-query {
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  font-size: 0.68rem;
+}
+
+.page-slash-menu-options {
+  gap: 0.18rem;
+  padding: var(--space-2);
+}
+
+.page-slash-menu-options button {
+  grid-template-columns: 1.7rem minmax(0, 1fr);
+  grid-template-areas:
+    "icon title"
+    "icon description";
+  align-items: center;
+  min-height: 3.3rem;
+  gap: 0.08rem var(--space-2);
+  padding: var(--space-2);
+  border: var(--border-width-thin) solid transparent;
+}
+
+.page-slash-menu-options button::before {
+  display: grid;
+  grid-area: icon;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  color: var(--coral-700);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+  content: "+";
+  font-size: 0.95rem;
+}
+
+.page-slash-menu-options button strong {
+  grid-area: title;
+  font-size: 0.74rem;
+  line-height: 1.2;
+}
+
+.page-slash-menu-options button span {
+  grid-area: description;
+  font-size: 0.64rem;
+  line-height: 1.25;
+}
+
+.page-slash-menu-options button:hover,
+.page-slash-menu-options button.is-active {
+  color: var(--text-primary);
+  background: var(--coral-50);
+  border-color: var(--coral-200);
 }
 
 .page-block-actions {
@@ -16000,4 +16371,35 @@ textarea {
     width: 100%;
     border-radius: var(--radius-sm);
   }
+}
+
+/* Keep the add-property trigger visually and spatially inside the final grid
+   column, including at mobile breakpoints where the old corner control used
+   different sizing rules. */
+.workspace-table-page
+  .editor-grid
+  [role="columnheader"]:has(.editor-add-column-button) {
+  padding-inline: 0;
+}
+
+.workspace-table-page .editor-add-column-button {
+  position: static;
+  display: inline-grid;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  place-items: center;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.workspace-table-page .editor-add-column-button:hover,
+.workspace-table-page .editor-add-column-button[aria-expanded="true"] {
+  color: var(--coral-700);
+  background: var(--coral-50);
 }

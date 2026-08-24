@@ -141,7 +141,7 @@ export interface ProductionUpdateColumnOptionsInput {
 
 export interface ProductionReorderColumnsInput {
   currentness: ProductionConfigurationCurrentness;
-  fieldKeys: readonly string[];
+  propertyKeys: readonly string[];
 }
 
 export interface ProductionRenameTableInput {

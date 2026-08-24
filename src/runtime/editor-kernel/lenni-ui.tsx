@@ -34,6 +34,35 @@ export const lenniTypePickerOptions: readonly TypePickerOption[] = [
   { kind: "status", label: "Status", description: "A labelled progress state" },
 ];
 
+function typePickerIcon(kind: EditorColumnKind): string {
+  switch (kind) {
+    case "text":
+      return "Aa";
+    case "long_text":
+      return "¶";
+    case "number":
+      return "#";
+    case "currency":
+      return "£";
+    case "boolean":
+      return "✓";
+    case "date":
+      return "◫";
+    case "email":
+      return "@";
+    case "phone":
+      return "☎";
+    case "url":
+      return "↗";
+    case "select":
+      return "◉";
+    case "status":
+      return "●";
+    default:
+      return "•";
+  }
+}
+
 export function Popover({
   anchorRef,
   children,
@@ -187,8 +216,13 @@ export function TypePicker({
             role="menuitem"
             type="button"
           >
-            <span>{option.label}</span>
-            <small>{option.description}</small>
+            <span aria-hidden="true" className="lenni-type-option-icon">
+              {typePickerIcon(option.kind)}
+            </span>
+            <span className="lenni-type-option-copy">
+              <strong>{option.label}</strong>
+              <small>{option.description}</small>
+            </span>
           </button>
         ))}
       </div>

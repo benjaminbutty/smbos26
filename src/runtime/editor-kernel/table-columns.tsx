@@ -361,9 +361,16 @@ function ColumnMenu({
     >
       {mode === "main" ? (
         <Menu>
-          <div className="editor-column-menu-title">{column.label}</div>
+          <div className="editor-column-menu-heading">
+            <span aria-hidden="true">{editorColumnKindIcon(column.kind)}</span>
+            <div>
+              <strong>{column.label}</strong>
+              <small>{column.kind.replaceAll("_", " ")} property</small>
+            </div>
+          </div>
           {canRename ? (
             <button
+              className="editor-column-menu-action"
               onClick={() => setMode("rename")}
               role="menuitem"
               type="button"
@@ -373,6 +380,7 @@ function ColumnMenu({
           ) : null}
           {canChangeType && onChangeType ? (
             <button
+              className="editor-column-menu-action"
               onClick={() => setMode("type")}
               role="menuitem"
               type="button"
@@ -382,6 +390,7 @@ function ColumnMenu({
           ) : null}
           {canChangeOptions ? (
             <button
+              className="editor-column-menu-action"
               onClick={() => setMode("options")}
               role="menuitem"
               type="button"
@@ -392,6 +401,7 @@ function ColumnMenu({
           {canInsert && onInsert ? (
             <>
               <button
+                className="editor-column-menu-action"
                 onClick={() => setMode("insert-left")}
                 role="menuitem"
                 type="button"
@@ -399,6 +409,7 @@ function ColumnMenu({
                 Insert property left
               </button>
               <button
+                className="editor-column-menu-action"
                 onClick={() => setMode("insert-right")}
                 role="menuitem"
                 type="button"
@@ -410,6 +421,7 @@ function ColumnMenu({
           {onMove ? (
             <>
               <button
+                className="editor-column-menu-action"
                 onClick={() => onMove("left")}
                 role="menuitem"
                 type="button"
@@ -417,6 +429,7 @@ function ColumnMenu({
                 Move left
               </button>
               <button
+                className="editor-column-menu-action"
                 onClick={() => onMove("right")}
                 role="menuitem"
                 type="button"
@@ -426,6 +439,7 @@ function ColumnMenu({
             </>
           ) : null}
           <button
+            className="editor-column-menu-action"
             onClick={() => setMode("shortcuts")}
             role="menuitem"
             type="button"

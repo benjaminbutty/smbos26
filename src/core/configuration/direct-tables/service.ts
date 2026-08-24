@@ -210,10 +210,15 @@ export async function applyDirectTableAction(
   const internalWorkspaceAction = internalWorkspaceActionKinds.has(
     composed.actionKind,
   );
+  const lenniStructuralActionKinds = new Set([
+    "add_column",
+    "insert_column",
+    "change_column_type",
+    "reorder_columns",
+  ]);
   const { data, error } = internalWorkspaceAction
     ? await client.rpc("apply_internal_workspace_configuration_change", args)
-    : composed.actionKind === "insert_column" ||
-        composed.actionKind === "change_column_type"
+    : lenniStructuralActionKinds.has(composed.actionKind)
       ? await client.rpc("apply_lenni_direct_configuration_change", args)
       : await client.rpc("apply_direct_configuration_change", args);
   if (error || !data) {
