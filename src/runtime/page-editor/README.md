@@ -6,12 +6,17 @@ boundary: it translates the bounded Page grammar into a deliberately small
 Tiptap document and translates it back before a typed `save_page_layout`
 action. Raw Tiptap JSON is never persisted.
 
-The editor supports plain text paragraphs, three heading levels, dividers,
-bounded Callouts, and live internal View blocks. Historical image, button,
-Form, and preorder blocks are retained as read-only legacy atoms so opening an
-older Page does not silently discard configuration.
+The internal editor is one continuous `EditorContent` surface. Its complete
+candidate stays in component memory until `Save page` or Cmd/Ctrl+S translates
+and commits it through one `save_page_layout` action. It supports paragraphs,
+three heading levels, bold, italic, safe links, flat bulleted/numbered lists,
+dividers, bounded Callouts and live internal View blocks. Historical image,
+button, Form and preorder blocks are retained as read-only legacy atoms so
+opening an older Page does not silently discard configuration. Typing and
+local undo/redo create no configuration Version.
 
-Sites use the same bounded editor and `PageRenderer` for existing public Pages.
+Sites keep their existing bounded authoring presentation and use the same
+canonical grammar, Direct Page service and `PageRenderer` as internal Pages.
 Draft Site edits save privately through the direct Page boundary and remain
 private until the separate Publish Site action. For an already-published Site,
 the editor keeps one complete title/layout candidate in component memory,

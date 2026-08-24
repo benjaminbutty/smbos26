@@ -381,6 +381,82 @@ describe("workspace foundation direct Page actions", () => {
     });
   });
 
+  it("saves one complete bounded rich-text Page candidate in one Version", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `rich_page_${suffix}`;
+    const created = await applyConfigurationOperations(
+      [
+        {
+          op: "set_page",
+          key: pageKey,
+          title: "Rich Page",
+          slug: `rich-page-${suffix}`,
+          audience: "internal",
+          layout_json: { blocks: [] },
+          status: "draft",
+          is_active: true,
+        },
+      ],
+      `Create ${pageKey}`,
+    );
+    const before = await configurationCounts();
+
+    const saved = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "save_page_layout",
+          pageKey,
+          layout: {
+            blocks: [
+              {
+                type: "rich_text",
+                node: {
+                  type: "paragraph",
+                  content: [
+                    { type: "text", text: "Confirm " },
+                    {
+                      type: "text",
+                      text: "today",
+                      marks: [{ type: "bold" }],
+                    },
+                  ],
+                },
+              },
+              {
+                type: "rich_text",
+                node: {
+                  type: "bullet_list",
+                  items: [
+                    { content: [{ type: "text", text: "Call Priya" }] },
+                    { content: [{ type: "text", text: "Check stock" }] },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    );
+    const after = await configurationCounts();
+    const page = saved.snapshot.pages.find((entry) => entry.key === pageKey);
+
+    expect(page?.layout_json.blocks.map((block) => block.type)).toEqual([
+      "rich_text",
+      "rich_text",
+    ]);
+    expect(page?.layout_json.blocks.every((block) => Boolean(block.id))).toBe(
+      true,
+    );
+    expect(after).toEqual({
+      versions: before.versions + 1,
+      changes: before.changes + 1,
+      revision: before.revision + 1,
+    });
+  });
+
   it("allows an Admin to author one bounded Page action", async () => {
     const before = await currentness(workspaceAdmin);
     const countsBefore = await configurationCounts();

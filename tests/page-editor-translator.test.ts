@@ -105,4 +105,133 @@ describe("Page editor canonical translator", () => {
       }),
     ).toThrow("Unsupported Page editor block");
   });
+
+  it("round-trips bounded formatting and flat lists without editor JSON", () => {
+    const document = {
+      type: "doc" as const,
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Confirm " },
+            { type: "text", text: "today", marks: [{ type: "bold" }] },
+            {
+              type: "text",
+              text: " in the diary",
+              marks: [
+                { type: "italic" },
+                { type: "link", attrs: { href: "/app/diary" } },
+              ],
+            },
+          ],
+        },
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Call Priya" }],
+                },
+              ],
+            },
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Check stock" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const layout = tiptapToPageLayout(document);
+    expect(layout.blocks).toEqual([
+      {
+        type: "rich_text",
+        node: {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Confirm " },
+            { type: "text", text: "today", marks: [{ type: "bold" }] },
+            {
+              type: "text",
+              text: " in the diary",
+              marks: [{ type: "italic" }, { type: "link", href: "/app/diary" }],
+            },
+          ],
+        },
+      },
+      {
+        type: "rich_text",
+        node: {
+          type: "bullet_list",
+          items: [
+            { content: [{ type: "text", text: "Call Priya" }] },
+            { content: [{ type: "text", text: "Check stock" }] },
+          ],
+        },
+      },
+    ]);
+    expect(tiptapToPageLayout(pageLayoutToTiptap(layout))).toEqual(layout);
+  });
+
+  it("rejects unknown marks, unsafe links, and nested lists", () => {
+    expect(() =>
+      tiptapToPageLayout({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "No", marks: [{ type: "underline" }] },
+            ],
+          },
+        ],
+      }),
+    ).toThrow("Unsupported Page editor mark");
+
+    expect(() =>
+      tiptapToPageLayout({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "No",
+                marks: [
+                  { type: "link", attrs: { href: "javascript:alert(1)" } },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow();
+
+    expect(() =>
+      tiptapToPageLayout({
+        type: "doc",
+        content: [
+          {
+            type: "bulletList",
+            content: [
+              {
+                type: "listItem",
+                content: [{ type: "bulletList", content: [] }],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow("Nested or unsupported Page lists");
+  });
 });
