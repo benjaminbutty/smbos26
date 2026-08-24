@@ -56,6 +56,7 @@ interface CreateEditorColumnsOptions {
     },
   ) => Promise<boolean>;
   onMoveColumn?: (columnKey: string, direction: "left" | "right") => void;
+  onReorderColumns?: (sourceColumnKey: string, targetColumnKey: string) => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
   onActivateDraft: (rowIdx: number, columnIdx: number) => void;
   onSearchConnectionTargets?: (
@@ -175,6 +176,7 @@ function HeaderCell({
   onChangeType,
   onInsert,
   onMove,
+  onReorder,
 }: Readonly<{
   column: EditorColumn;
   canReorder: boolean;
@@ -206,6 +208,8 @@ function HeaderCell({
       ) => Promise<boolean>)
     | undefined;
   onMove: ((direction: "left" | "right") => void) | undefined;
+  onReorder:
+    ((sourceColumnKey: string, targetColumnKey: string) => void) | undefined;
 }>): React.ReactNode {
   const anchorRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -213,6 +217,24 @@ function HeaderCell({
   const closeMenu = (): void => {
     onClose();
     window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+  };
+  const reorderFromHandle = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ): void => {
+    if (!onReorder) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceColumnKey = column.key;
+    const finish = (releaseEvent: PointerEvent): void => {
+      const target = document
+        .elementFromPoint(releaseEvent.clientX, releaseEvent.clientY)
+        ?.closest<HTMLElement>("[data-editor-column-key]")
+        ?.dataset.editorColumnKey;
+      if (target && target !== sourceColumnKey) {
+        onReorder(sourceColumnKey, target);
+      }
+    };
+    window.addEventListener("pointerup", finish, { once: true });
   };
   return (
     <div
@@ -224,9 +246,14 @@ function HeaderCell({
       title={canReorder ? "Drag to reorder column" : undefined}
     >
       {canReorder ? (
-        <span aria-hidden="true" className="editor-column-drag-affordance">
+        <button
+          aria-label={`Drag ${column.label} to reorder`}
+          className="editor-column-drag-affordance"
+          onPointerDown={reorderFromHandle}
+          type="button"
+        >
           ⋮⋮
-        </span>
+        </button>
       ) : null}
       <span
         aria-hidden="true"
@@ -812,6 +839,7 @@ export function createEditorColumns({
   onChangeColumnType,
   onInsertColumn,
   onMoveColumn,
+  onReorderColumns,
   onOpenRecord,
   onActivateDraft,
   onSearchConnectionTargets,
@@ -867,6 +895,12 @@ export function createEditorColumns({
         onMove={
           onMoveColumn
             ? (direction) => onMoveColumn(column.key, direction)
+            : undefined
+        }
+        onReorder={
+          onReorderColumns
+            ? (sourceColumnKey, targetColumnKey) =>
+                onReorderColumns(sourceColumnKey, targetColumnKey)
             : undefined
         }
         onRename={(label) => onRenameColumn(column.key, label)}

@@ -221,35 +221,31 @@ describe("Lenni unified workspace presentation", () => {
     expect(internalEditorSource).toContain("<BubbleMenu");
     expect(internalEditorSource).toContain("<DragHandle");
     expect(internalEditorSource).toContain("page-slash-menu");
-    expect(internalEditorSource).toContain("Save page");
+    expect(internalEditorSource).not.toContain("Save page");
+    expect(internalEditorSource).toContain("Changes save automatically");
+    expect(internalEditorSource).toContain('aria-label="Delete block"');
+    expect(internalEditorSource).toContain(
+      'aria-label="Drag block to move it"',
+    );
+    expect(internalEditorSource).not.toContain("page-block-actions");
+    expect(internalEditorSource).toContain("window.setTimeout");
     expect(internalEditorSource).toContain(
       'data-can-edit={canEdit ? "true" : "false"}',
     );
-    expect(internalEditorSource).toContain(
-      '<span className="page-editor-reading-state">Reading</span>',
-    );
     expect(internalEditorSource).toContain('action: "save_page_layout"');
-    expect(internalEditorSource).toContain('aria-label="Page mode"');
     expect(internalEditorSource).toContain("useUnsavedNavigationWarning");
     expect(internalEditorSource).toContain(
-      'editor.setEditable(canEdit && mode === "editing", false)',
+      "editor.setEditable(canEdit, false)",
     );
     expect(internalEditorSource).toContain("queueMicrotask(() => {");
     expect(internalEditorSource).toContain("Things changed since you opened");
     expect(internalEditorSource).toContain(
       "editor.state.doc.nodeAt($from.pos) ? $from.pos : null",
     );
-    expect(internalEditorSource).toContain(
-      "selectedBlockPositionRef.current ??\n      topLevelPosition(editor) ??\n      selectedBlockPosition",
-    );
-    expect(internalEditorSource).toContain(
-      "onMouseDown={(event) => event.preventDefault()}",
-    );
     expect(internalEditorSource).toContain("selectedBlockPositionRef.current");
-    expect(internalEditorSource).toContain("function dropTopLevelNode(");
-    expect(internalEditorSource).toContain("onPointerDown={(event) => {");
-    expect(internalEditorSource).toContain("onPointerUp={(event) => {");
-    expect(internalEditorSource).toContain("editor.view.posAtCoords({");
+    expect(internalEditorSource).toContain("function insertMenuPosition(");
+    expect(cssSource).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    expect(cssSource).toContain("position: fixed;");
     expect(internalEditorSource).toContain(
       'className="page-editor-content-boundary"',
     );

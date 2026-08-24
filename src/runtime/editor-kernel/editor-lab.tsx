@@ -24,7 +24,6 @@ import {
   displayEditorValue,
   editorDraftRowId,
   editorInputValue,
-  editorSelectionValue,
   editorValueForColumn,
   freshDraftRowIndex,
   hasDraftName,
@@ -1059,6 +1058,11 @@ export function AddColumnPopover({
     onDraftChange?.(next);
     setError(null);
   };
+  const openConnectionSetup = (): void => {
+    setError(null);
+    onDraftChange?.(null);
+    setConnectionOpen(true);
+  };
 
   const submit = (): void => {
     if (submitting) return;
@@ -1175,6 +1179,23 @@ export function AddColumnPopover({
             value={draft.kind}
           />
         </div>
+        {canAddConnections && onCreateConnection && connectionSource ? (
+          <div className="editor-property-connection-choice">
+            <div>
+              <strong>Connect another Table</strong>
+              <span>Show related Records alongside this Table.</span>
+            </div>
+            {(connectionTargets?.length ?? 0) > 0 ? (
+              <button onClick={openConnectionSetup} type="button">
+                Add connected property
+              </button>
+            ) : (
+              <span className="editor-property-type-note" role="status">
+                Create another Table before adding a connected property.
+              </span>
+            )}
+          </div>
+        ) : null}
         {draft.kind === "currency" ? (
           <label>
             Currency
@@ -1310,28 +1331,6 @@ export function AddColumnPopover({
         >
           Refresh and recheck
         </button>
-      ) : null}
-      {canAddConnections && onCreateConnection && connectionSource ? (
-        (connectionTargets?.length ?? 0) > 0 ? (
-          <>
-            <div className="editor-add-property-divider" />
-            <button
-              className="editor-add-connection-link"
-              onClick={() => {
-                setError(null);
-                onDraftChange?.(null);
-                setConnectionOpen(true);
-              }}
-              type="button"
-            >
-              Connect to another Table
-            </button>
-          </>
-        ) : (
-          <span className="editor-property-type-note" role="status">
-            Create another Table before adding a Connection.
-          </span>
-        )
       ) : null}
     </Popover>
   );
@@ -2686,6 +2685,7 @@ export function EditorKernel({
       onChangeColumnType: handleChangeColumnType,
       onInsertColumn: handleInsertColumn,
       onMoveColumn: handleMoveColumn,
+      onReorderColumns: handleReorderColumns,
       onSearchConnectionTargets: (columnKey, search) =>
         adapter.searchConnectionTargets
           ? adapter.searchConnectionTargets(columnKey, search)
@@ -2758,6 +2758,7 @@ export function EditorKernel({
     handleChangeColumnType,
     handleInsertColumn,
     handleMoveColumn,
+    handleReorderColumns,
     handleRenameColumn,
     handleUpdateColumnOptions,
     newRecordLabel,
@@ -2766,17 +2767,6 @@ export function EditorKernel({
     visibleGridColumns,
   ]);
 
-  const activeColumn = activeCell
-    ? table.columns.find((column) => column.key === activeCell.columnKey)
-    : null;
-  const activeCellLabel = activeColumn?.label ?? null;
-  const activeRow = activeCell
-    ? table.rows.find((row) => row.id === activeCell.rowId)
-    : null;
-  const activeValue =
-    activeColumn && activeRow
-      ? editorSelectionValue(activeRow, activeColumn)
-      : null;
   const emptyRecordLabel =
     recordCountLabel?.replace(/^\d+\s+/, "").trim() ||
     (recordTypeLabel
@@ -2909,11 +2899,6 @@ export function EditorKernel({
             </button>
           </span>
         ) : null}
-        <span>
-          {activeCellLabel && activeValue
-            ? `${activeCellLabel} · ${activeValue}`
-            : "Select a cell to begin"}
-        </span>
         <span className="editor-lab-shortcut-hint">
           {readOnly
             ? "Select a Record to inspect its example details · Copy supported"

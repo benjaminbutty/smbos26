@@ -631,6 +631,32 @@ describe("editor kernel contracts", () => {
     expect(addColumn).not.toHaveBeenCalled();
   });
 
+  it("makes the connected-property path visible while adding a property", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AddColumnPopover, {
+        canAddConnections: true,
+        connectionSource: {
+          singularLabel: "Customer",
+          pluralLabel: "Customers",
+        },
+        connectionTargets: [
+          {
+            label: "Pets",
+            singularLabel: "Pet",
+            pluralLabel: "Pets",
+            viewKey: "pets",
+          },
+        ],
+        onClose: () => undefined,
+        onCreate: async () => true,
+        onCreateConnection: async () => true,
+      }),
+    );
+
+    expect(markup).toContain("Connect another Table");
+    expect(markup).toContain("Add connected property");
+  });
+
   it("keeps the active property input visible when currentness needs a recheck", () => {
     const table = createMockTableAdapter({ delayMs: 0 }).getTable();
     const markup = renderToStaticMarkup(

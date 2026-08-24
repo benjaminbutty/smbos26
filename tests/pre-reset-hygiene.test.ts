@@ -175,7 +175,18 @@ describe("pre-reset Lenni UX hygiene contracts", () => {
     expect(column?.draggable).toBe(true);
     expect(headerMarkup).toContain('data-reorderable="true"');
     expect(headerMarkup).toContain("editor-column-drag-affordance");
+    expect(headerMarkup).toContain('aria-label="Drag Name to reorder"');
     expect(cssSource).toContain("cursor: grabbing;");
+    expect(editorLabSource).toContain("onReorderColumns: handleReorderColumns");
+    expect(
+      readFileSync(
+        new URL(
+          "../src/runtime/editor-kernel/table-columns.tsx",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ).toContain("elementFromPoint");
     expect(editorLabSource).toContain("Drag column headings to reorder");
   });
 });

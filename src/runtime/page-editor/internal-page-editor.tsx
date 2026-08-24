@@ -5,11 +5,11 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type FormEvent,
   type KeyboardEvent,
   type ReactNode,
 } from "react";
@@ -42,7 +42,6 @@ type InternalPageEditorProps = Pick<
 >;
 
 type SaveStatus = "saved" | "unsaved" | "saving" | "stale" | "error";
-type EditorMode = "editing" | "reading";
 
 interface InsertMenuState {
   source: "slash" | "gutter";
@@ -52,6 +51,7 @@ interface InsertMenuState {
   insertPos?: number;
   left?: number;
   top?: number;
+  maxHeight?: number;
 }
 
 interface InsertChoice {
@@ -69,21 +69,6 @@ interface InsertChoice {
   viewKey?: string;
 }
 
-function statusText(status: SaveStatus): string {
-  switch (status) {
-    case "saved":
-      return "Saved";
-    case "unsaved":
-      return "Unsaved";
-    case "saving":
-      return "Saving…";
-    case "stale":
-      return "Things changed";
-    case "error":
-      return "Could not save";
-  }
-}
-
 function editableDocument(layout: InternalPageEditorProps["layout"]) {
   const document = pageLayoutToTiptap(layout);
   return document.content?.length
@@ -99,75 +84,35 @@ function topLevelPosition(editor: Editor): number | null {
   return $from.before(1);
 }
 
-function moveTopLevelNode(editor: Editor, position: number, offset: -1 | 1) {
-  const { doc, tr } = editor.state;
-  const node = doc.nodeAt(position);
-  if (!node) return false;
-  const resolved = doc.resolve(position);
-  const index = resolved.index(0);
-  const targetIndex = index + offset;
-  if (targetIndex < 0 || targetIndex >= doc.childCount) return false;
-  if (offset === -1) {
-    const previous = doc.child(targetIndex);
-    tr.delete(position, position + node.nodeSize).insert(
-      position - previous.nodeSize,
-      node,
-    );
-  } else {
-    const next = doc.child(targetIndex);
-    tr.delete(position, position + node.nodeSize).insert(
-      position + next.nodeSize,
-      node,
-    );
-  }
-  editor.view.dispatch(tr.scrollIntoView());
-  return true;
-}
-
-function topLevelPositionAt(editor: Editor, position: number): number | null {
-  const boundedPosition = Math.max(
-    0,
-    Math.min(position, editor.state.doc.content.size),
+function insertMenuPosition(cursor: {
+  bottom: number;
+  left: number;
+  top: number;
+}): Pick<InsertMenuState, "left" | "top" | "maxHeight"> {
+  const gap = 8;
+  const minimumMenuHeight = 176;
+  const preferredMenuHeight = 384;
+  const menuWidth = 336;
+  const availableBelow = window.innerHeight - cursor.bottom - gap;
+  const availableAbove = cursor.top - gap;
+  const openAbove =
+    availableBelow < minimumMenuHeight && availableAbove > availableBelow;
+  const availableHeight = openAbove ? availableAbove : availableBelow;
+  const maxHeight = Math.max(
+    160,
+    Math.min(preferredMenuHeight, availableHeight),
   );
-  const resolved = editor.state.doc.resolve(boundedPosition);
-  if (resolved.depth === 0) {
-    return editor.state.doc.nodeAt(resolved.pos) ? resolved.pos : null;
-  }
-  return resolved.before(1);
-}
 
-function dropTopLevelNode(
-  editor: Editor,
-  sourcePosition: number,
-  targetPosition: number,
-  clientY: number,
-): boolean {
-  const { doc } = editor.state;
-  const source = doc.nodeAt(sourcePosition);
-  const targetTopLevelPosition = topLevelPositionAt(editor, targetPosition);
-  const target =
-    targetTopLevelPosition === null ? null : doc.nodeAt(targetTopLevelPosition);
-  if (!source || targetTopLevelPosition === null || !target) return false;
-
-  const targetDom = editor.view.nodeDOM(targetTopLevelPosition);
-  if (!(targetDom instanceof HTMLElement)) return false;
-  const targetRect = targetDom.getBoundingClientRect();
-  let insertPosition =
-    clientY < targetRect.top + targetRect.height / 2
-      ? targetTopLevelPosition
-      : targetTopLevelPosition + target.nodeSize;
-  if (insertPosition > sourcePosition) {
-    insertPosition -= source.nodeSize;
-  }
-  if (insertPosition === sourcePosition) return false;
-
-  editor.view.dispatch(
-    editor.state.tr
-      .delete(sourcePosition, sourcePosition + source.nodeSize)
-      .insert(insertPosition, source)
-      .scrollIntoView(),
-  );
-  return true;
+  return {
+    left: Math.min(
+      Math.max(gap, cursor.left),
+      Math.max(gap, window.innerWidth - menuWidth - gap),
+    ),
+    top: openAbove
+      ? Math.max(gap, cursor.top - maxHeight - gap)
+      : cursor.bottom + gap,
+    maxHeight,
+  };
 }
 
 export function InternalPageEditor({
@@ -186,14 +131,14 @@ export function InternalPageEditor({
   const suppressUpdatesRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedBlockPositionRef = useRef<number | null>(null);
-  const pointerDragPositionRef = useRef<number | null>(null);
+  const currentnessRef = useRef(currentness);
+  const bodyDirtyRef = useRef(false);
+  const bodyRevisionRef = useRef(0);
   const [bodyDirty, setBodyDirty] = useState(false);
   const [currentnessCandidate, setCurrentnessCandidate] = useState(currentness);
   const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
   const [title, setTitle] = useState(initialTitle);
   const [titleDraft, setTitleDraft] = useState(initialTitle);
-  const [renaming, setRenaming] = useState(false);
-  const [mode, setMode] = useState<EditorMode>(canEdit ? "editing" : "reading");
   const [status, setStatus] = useState<SaveStatus>("saved");
   const [message, setMessage] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<InsertMenuState | null>(null);
@@ -230,6 +175,8 @@ export function InternalPageEditor({
     },
     onUpdate: ({ editor: activeEditor }) => {
       if (suppressUpdatesRef.current) return;
+      bodyRevisionRef.current += 1;
+      bodyDirtyRef.current = true;
       setBodyDirty(true);
       setStatus("unsaved");
       setMessage(null);
@@ -246,18 +193,12 @@ export function InternalPageEditor({
       }
       setInsertIndex(0);
       const cursor = activeEditor.view.coordsAtPos($from.pos);
-      const canvas = canvasRef.current?.getBoundingClientRect();
       setInsertMenu({
         source: "slash",
         query: slash[1] ?? "",
         from: $from.start(),
         to: $from.pos,
-        ...(canvas
-          ? {
-              left: Math.max(0, cursor.left - canvas.left),
-              top: cursor.bottom - canvas.top + 8,
-            }
-          : {}),
+        ...insertMenuPosition(cursor),
       });
     },
   });
@@ -326,38 +267,56 @@ export function InternalPageEditor({
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled && !editor.isDestroyed) {
-        editor.setEditable(canEdit && mode === "editing", false);
+        editor.setEditable(canEdit, false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [canEdit, editor, mode]);
+  }, [canEdit, editor]);
 
-  if (
-    loadedCurrentness.expectedBaseVersionId !==
-      currentness.expectedBaseVersionId ||
-    loadedCurrentness.expectedHeadRevision !== currentness.expectedHeadRevision
-  ) {
+  useEffect(() => {
+    if (
+      loadedCurrentness.expectedBaseVersionId ===
+        currentness.expectedBaseVersionId &&
+      loadedCurrentness.expectedHeadRevision ===
+        currentness.expectedHeadRevision
+    ) {
+      return;
+    }
     const reflectsOwnAction =
       currentnessCandidate.expectedBaseVersionId ===
         currentness.expectedBaseVersionId &&
       currentnessCandidate.expectedHeadRevision ===
         currentness.expectedHeadRevision;
-    setLoadedCurrentness(currentness);
-    setCurrentnessCandidate(currentness);
-    setTitle(initialTitle);
-    setTitleDraft(initialTitle);
-    if (bodyDirty && !reflectsOwnAction) {
-      setStatus("stale");
-      setMessage(
-        "Things changed since you opened this Page. Your draft is still here; review it, then save again.",
-      );
-    } else {
-      setStatus(bodyDirty ? "unsaved" : "saved");
-      setMessage(null);
-    }
-  }
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoadedCurrentness(currentness);
+      setCurrentnessCandidate(currentness);
+      currentnessRef.current = currentness;
+      setTitle(initialTitle);
+      setTitleDraft(initialTitle);
+      if (bodyDirty && !reflectsOwnAction) {
+        setStatus("stale");
+        setMessage(
+          "Things changed since you opened this Page. Your draft is still here; review it, then save again.",
+        );
+      } else {
+        setStatus(bodyDirty ? "unsaved" : "saved");
+        setMessage(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bodyDirty,
+    currentness,
+    currentnessCandidate,
+    initialTitle,
+    loadedCurrentness,
+  ]);
 
   useEffect(() => {
     if (!editor || bodyDirty) return;
@@ -375,13 +334,9 @@ export function InternalPageEditor({
     };
   }, [bodyDirty, editor, layout, loadedCurrentness]);
 
-  useUnsavedNavigationWarning(
-    bodyDirty && status !== "saving",
-    "Leave this Page? Your unsaved Page changes will be lost.",
-  );
-
-  const savePage = async (): Promise<void> => {
-    if (!editor || status === "saving" || !bodyDirty) return;
+  const savePage = useCallback(async (): Promise<void> => {
+    if (!editor || status === "saving" || !bodyDirtyRef.current) return;
+    const savedRevision = bodyRevisionRef.current;
     let candidate;
     try {
       candidate = tiptapToPageLayout(editor.getJSON());
@@ -395,7 +350,7 @@ export function InternalPageEditor({
     setStatus("saving");
     setMessage(null);
     const result = await applyPageBlockAction({
-      currentness: currentnessCandidate,
+      currentness: currentnessRef.current,
       intent: { action: "save_page_layout", pageKey, layout: candidate },
     });
     if (result.status !== "success") {
@@ -403,31 +358,30 @@ export function InternalPageEditor({
       setMessage(result.message);
       return;
     }
+    currentnessRef.current = result.currentness;
     setCurrentnessCandidate(result.currentness);
-    suppressUpdatesRef.current = true;
-    editor.commands.setContent(editableDocument(result.layout), {
-      emitUpdate: false,
-    });
-    suppressUpdatesRef.current = false;
-    setBodyDirty(false);
-    setStatus("saved");
+    const changedWhileSaving = bodyRevisionRef.current !== savedRevision;
+    bodyDirtyRef.current = changedWhileSaving;
+    setBodyDirty(changedWhileSaving);
+    setStatus(changedWhileSaving ? "unsaved" : "saved");
     setMessage(null);
-    router.refresh();
-  };
+  }, [applyPageBlockAction, editor, pageKey, status]);
 
-  const rename = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
+  const titleDirty = titleDraft.trim() !== title;
+  const saveTitle = useCallback(async (): Promise<void> => {
     const nextTitle = titleDraft.trim();
-    if (!nextTitle || nextTitle === title || status === "saving") {
-      setTitleDraft(title);
-      setRenaming(false);
+    if (
+      !nextTitle ||
+      nextTitle === title ||
+      bodyDirtyRef.current ||
+      status === "saving"
+    ) {
       return;
     }
-    const previousStatus = bodyDirty ? "unsaved" : "saved";
     setStatus("saving");
     setMessage(null);
     const result = await renamePageAction({
-      currentness: currentnessCandidate,
+      currentness: currentnessRef.current,
       title: nextTitle,
     });
     if (result.status !== "success") {
@@ -435,13 +389,34 @@ export function InternalPageEditor({
       setMessage(result.message);
       return;
     }
+    currentnessRef.current = result.currentness;
     setCurrentnessCandidate(result.currentness);
     setTitle(nextTitle);
     setTitleDraft(nextTitle);
-    setRenaming(false);
-    setStatus(previousStatus);
+    setStatus(bodyDirtyRef.current ? "unsaved" : "saved");
     router.refresh();
-  };
+  }, [renamePageAction, router, status, title, titleDraft]);
+
+  useEffect(() => {
+    if (!editor || !bodyDirty || status !== "unsaved") {
+      return;
+    }
+    const timeout = window.setTimeout(() => void savePage(), 600);
+    return () => window.clearTimeout(timeout);
+  }, [bodyDirty, editor, savePage, status]);
+
+  useEffect(() => {
+    if (!canEdit || bodyDirty || !titleDirty || status !== "unsaved") {
+      return;
+    }
+    const timeout = window.setTimeout(() => void saveTitle(), 600);
+    return () => window.clearTimeout(timeout);
+  }, [bodyDirty, canEdit, saveTitle, status, titleDirty]);
+
+  useUnsavedNavigationWarning(
+    (bodyDirty || titleDirty) && status !== "saving",
+    "Leave this Page? Your unsaved Page changes will be lost.",
+  );
 
   const editLink = (): void => {
     if (!editor) return;
@@ -562,18 +537,6 @@ export function InternalPageEditor({
     }
   };
 
-  const moveSelected = (offset: -1 | 1): void => {
-    if (!editor || selectedBlockPosition === null) return;
-    const position =
-      selectedBlockPositionRef.current ??
-      topLevelPosition(editor) ??
-      selectedBlockPosition;
-    if (moveTopLevelNode(editor, position, offset)) {
-      selectedBlockPositionRef.current = null;
-      setSelectedBlockPosition(null);
-    }
-  };
-
   const removeSelected = (): void => {
     if (!editor || selectedBlockPosition === null) return;
     const position =
@@ -587,114 +550,27 @@ export function InternalPageEditor({
     setSelectedBlockPosition(null);
   };
 
-  const finishPointerDrag = (clientX: number, clientY: number): void => {
-    if (!editor) return;
-    const sourcePosition = pointerDragPositionRef.current;
-    pointerDragPositionRef.current = null;
-    if (sourcePosition === null) return;
-    const target = editor.view.posAtCoords({ left: clientX, top: clientY });
-    if (
-      target &&
-      dropTopLevelNode(editor, sourcePosition, target.pos, clientY)
-    ) {
-      selectedBlockPositionRef.current = null;
-      setSelectedBlockPosition(null);
-    }
-  };
-
   return (
     <section
-      className={`page-editor-shell page-editor-internal page-document-editor is-${mode}`}
+      className="page-editor-shell page-editor-internal page-document-editor"
       data-can-edit={canEdit ? "true" : "false"}
       onKeyDown={handleEditorKeyDown}
     >
-      <div className="page-editor-topbar">
-        <div className="page-editor-context">
-          <span aria-hidden="true" className="page-editor-page-icon">
-            ▤
-          </span>
-          <span>Pages</span>
-          <span aria-hidden="true">/</span>
-          <strong>{title}</strong>
-          <span
-            aria-live="polite"
-            className={`page-editor-save-state page-editor-save-${status}`}
-            data-save-state={status}
-            role="status"
-          >
-            {statusText(status)}
-          </span>
-        </div>
-        <div className="page-document-actions">
-          {canEdit ? (
-            <div aria-label="Page mode" className="page-editor-mode-switch">
-              <button
-                aria-pressed={mode === "editing"}
-                className={mode === "editing" ? "is-active" : ""}
-                onClick={() => setMode("editing")}
-                type="button"
-              >
-                Editing
-              </button>
-              <button
-                aria-pressed={mode === "reading"}
-                className={mode === "reading" ? "is-active" : ""}
-                onClick={() => setMode("reading")}
-                type="button"
-              >
-                Reading
-              </button>
-            </div>
-          ) : (
-            <span className="page-editor-reading-state">Reading</span>
-          )}
-          {canEdit && mode === "editing" ? (
-            <button
-              className="button button-small"
-              disabled={!bodyDirty || status === "saving"}
-              onClick={() => void savePage()}
-              type="button"
-            >
-              Save page
-            </button>
-          ) : null}
-        </div>
-      </div>
-
       <div className="page-editor-document">
         <header className="page-editor-header">
-          {canEdit && renaming && mode === "editing" ? (
-            <form className="page-editor-title-form" onSubmit={rename}>
-              <input
-                aria-label="Page name"
-                autoFocus
-                maxLength={120}
-                onChange={(event) => setTitleDraft(event.currentTarget.value)}
-                value={titleDraft}
-              />
-              <button className="button button-small" type="submit">
-                Save title
-              </button>
-              <button
-                className="button button-secondary button-small"
-                onClick={() => {
-                  setTitleDraft(title);
-                  setRenaming(false);
-                }}
-                type="button"
-              >
-                Cancel
-              </button>
-            </form>
-          ) : canEdit && mode === "editing" ? (
-            <button
-              aria-label="Rename Page"
-              className="page-editor-title-button"
-              onClick={() => setRenaming(true)}
-              type="button"
-            >
-              <h1>{title}</h1>
-            </button>
+          {canEdit ? (
+            <input
+              aria-label="Page name"
+              className="page-editor-title-input page-editor-title-inline"
+              maxLength={120}
+              onBlur={() => void saveTitle()}
+              onChange={(event) => {
+                setTitleDraft(event.currentTarget.value);
+                setStatus("unsaved");
+                setMessage(null);
+              }}
+              value={titleDraft}
+            />
           ) : (
             <h1 className="page-editor-reading-title">{title}</h1>
           )}
@@ -716,7 +592,7 @@ export function InternalPageEditor({
         ) : null}
 
         <div className="page-document-canvas" ref={canvasRef}>
-          {editor && canEdit && mode === "editing" ? (
+          {editor && canEdit ? (
             <>
               <BubbleMenu
                 className="page-format-menu"
@@ -770,18 +646,12 @@ export function InternalPageEditor({
                     const cursor = editor.view.coordsAtPos(
                       selectedBlockPosition + node.nodeSize,
                     );
-                    const canvas = canvasRef.current?.getBoundingClientRect();
                     setInsertIndex(0);
                     setInsertMenu({
                       source: "gutter",
                       query: "",
                       insertPos: selectedBlockPosition + node.nodeSize,
-                      ...(canvas
-                        ? {
-                            left: Math.max(0, cursor.left - canvas.left),
-                            top: cursor.bottom - canvas.top + 8,
-                          }
-                        : {}),
+                      ...insertMenuPosition(cursor),
                     });
                   }}
                   type="button"
@@ -789,45 +659,18 @@ export function InternalPageEditor({
                   +
                 </button>
                 <button
-                  aria-label="Drag block or use block actions"
-                  onClick={() => undefined}
-                  onMouseDown={(event) => {
-                    const position =
-                      selectedBlockPositionRef.current ??
-                      topLevelPosition(editor) ??
-                      selectedBlockPosition;
-                    if (position === null) return;
-                    pointerDragPositionRef.current = position;
-                    const finish = (releaseEvent: MouseEvent) => {
-                      finishPointerDrag(
-                        releaseEvent.clientX,
-                        releaseEvent.clientY,
-                      );
-                    };
-                    window.addEventListener("mouseup", finish, { once: true });
-                    event.preventDefault();
-                  }}
-                  onPointerCancel={() => {
-                    pointerDragPositionRef.current = null;
-                  }}
-                  onPointerDown={(event) => {
-                    if (event.pointerType === "mouse") return;
-                    const position =
-                      selectedBlockPositionRef.current ??
-                      topLevelPosition(editor) ??
-                      selectedBlockPosition;
-                    if (position === null) return;
-                    pointerDragPositionRef.current = position;
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    event.preventDefault();
-                  }}
-                  onPointerUp={(event) => {
-                    if (event.pointerType === "mouse") return;
-                    finishPointerDrag(event.clientX, event.clientY);
-                  }}
+                  aria-label="Drag block to move it"
+                  title="Drag to move this block"
                   type="button"
                 >
                   ⋮⋮
+                </button>
+                <button
+                  aria-label="Delete block"
+                  onClick={removeSelected}
+                  type="button"
+                >
+                  ×
                 </button>
               </DragHandle>
             </>
@@ -836,7 +679,7 @@ export function InternalPageEditor({
           <div
             className="page-editor-content-boundary"
             onMouseDown={(event) => {
-              if (!editor || !canEdit || mode !== "editing") return;
+              if (!editor || !canEdit) return;
               const target = event.target;
               if (!(target instanceof HTMLElement)) return;
               const paragraph = target.closest("p");
@@ -859,41 +702,16 @@ export function InternalPageEditor({
             <EditorContent editor={editor} />
           </div>
 
-          {canEdit && mode === "editing" && selectedBlockPosition !== null ? (
-            <div
-              aria-label="Selected block actions"
-              className="page-block-actions"
-            >
-              <button
-                onClick={() => moveSelected(-1)}
-                onMouseDown={(event) => event.preventDefault()}
-                type="button"
-              >
-                Move up
-              </button>
-              <button
-                onClick={() => moveSelected(1)}
-                onMouseDown={(event) => event.preventDefault()}
-                type="button"
-              >
-                Move down
-              </button>
-              <button
-                onClick={removeSelected}
-                onMouseDown={(event) => event.preventDefault()}
-                type="button"
-              >
-                Remove
-              </button>
-            </div>
-          ) : null}
-
-          {canEdit && mode === "editing" && insertMenu ? (
+          {canEdit && insertMenu ? (
             <div
               aria-label="Insert into Page"
               className="page-slash-menu"
               role="listbox"
-              style={{ left: insertMenu.left, top: insertMenu.top }}
+              style={{
+                left: insertMenu.left,
+                top: insertMenu.top,
+                maxHeight: insertMenu.maxHeight,
+              }}
             >
               {insertMenu.source === "gutter" ? (
                 <input
@@ -940,10 +758,10 @@ export function InternalPageEditor({
         </div>
       </div>
 
-      {canEdit && mode === "editing" ? (
+      {canEdit ? (
         <p className="page-editor-footer">
-          Type naturally, use / for blocks, or select text to format it. Save
-          the complete Page with Cmd/Ctrl+S.
+          Changes save automatically. Type naturally, use / for blocks, or
+          select text to format it.
         </p>
       ) : null}
     </section>

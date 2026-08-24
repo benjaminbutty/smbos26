@@ -14,44 +14,62 @@ interface WorkspaceTopbarProps {
   sites?: ReadonlyArray<{ slug: string; title: string }>;
 }
 
-function contextForPath(
+interface Breadcrumb {
+  href?: string;
+  label: string;
+}
+
+function breadcrumbsForPath(
   pathname: string,
   businessSlug: string,
   tables: ReadonlyArray<{ name: string; path: string }>,
   pages: ReadonlyArray<{ slug: string; title: string }>,
   sites: ReadonlyArray<{ slug: string; title: string }>,
-): string {
+): readonly Breadcrumb[] {
   const root = `/app/${encodeURIComponent(businessSlug)}`;
   if (pathname === root || pathname === `${root}/`) {
-    return "Home";
+    return [{ label: "Home" }];
   }
 
   const table = tables.find((candidate) =>
     pathname.includes(`/workspace/${candidate.path}`),
   );
   if (table) {
-    return `Tables / ${table.name}`;
+    return [
+      { href: `${root}#tables-navigation-heading`, label: "Tables" },
+      { label: table.name },
+    ];
   }
 
   const page = pages.find((candidate) =>
     pathname.includes(`/pages/${encodeURIComponent(candidate.slug)}`),
   );
   if (page) {
-    return `Pages / ${page.title}`;
+    return [
+      { href: `${root}#pages-navigation-heading`, label: "Pages" },
+      { label: page.title },
+    ];
   }
 
   const site = sites.find((candidate) =>
     pathname.includes(`/sites/${encodeURIComponent(candidate.slug)}`),
   );
   if (site) {
-    return `Sites / ${site.title}`;
+    return [
+      { href: `${root}#sites-navigation-heading`, label: "Sites" },
+      { label: site.title },
+    ];
   }
 
-  if (pathname.includes("/builder")) return "Tell Lenni";
-  if (pathname.includes("/changes")) return "Changes";
-  if (pathname.includes("/setup")) return "Settings / Setup";
-  if (pathname.includes("/locations")) return "Settings / Locations";
-  return "Workspace";
+  if (pathname.includes("/builder")) return [{ label: "Tell Lenni" }];
+  if (pathname.includes("/changes")) return [{ label: "Changes" }];
+  if (pathname.includes("/setup")) {
+    return [{ label: "Settings" }, { label: "Setup" }];
+  }
+  if (pathname.includes("/locations")) {
+    return [{ label: "Settings" }, { label: "Locations" }];
+  }
+  return [{ label: "Workspace" }];
 }
 
 export function WorkspaceTopbar({
@@ -64,7 +82,13 @@ export function WorkspaceTopbar({
   userInitials,
 }: Readonly<WorkspaceTopbarProps>): ReactNode {
   const pathname = usePathname();
-  const context = contextForPath(pathname, businessSlug, tables, pages, sites);
+  const breadcrumbs = breadcrumbsForPath(
+    pathname,
+    businessSlug,
+    tables,
+    pages,
+    sites,
+  );
   const rootPath = `/app/${encodeURIComponent(businessSlug)}`;
 
   return (
@@ -73,7 +97,18 @@ export function WorkspaceTopbar({
         <Link className="workspace-topbar-brand" href={rootPath}>
           Lenni
         </Link>
-        <p className="workspace-topbar-context">{context}</p>
+        <nav aria-label="Breadcrumb" className="workspace-topbar-context">
+          {breadcrumbs.map((breadcrumb, index) => (
+            <span key={`${breadcrumb.label}-${index}`}>
+              {index > 0 ? <span aria-hidden="true"> / </span> : null}
+              {breadcrumb.href ? (
+                <Link href={breadcrumb.href}>{breadcrumb.label}</Link>
+              ) : (
+                <span>{breadcrumb.label}</span>
+              )}
+            </span>
+          ))}
+        </nav>
       </div>
       <div className="workspace-topbar-actions">
         {canManageConfiguration ? (
