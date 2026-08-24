@@ -15847,6 +15847,19 @@ textarea {
   line-height: 1.4;
 }
 
+.page-editor-reading-state {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  padding-inline: var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
 @media (max-width: 48rem) {
   .workspace-table-page .editor-add-column-button {
     position: relative;

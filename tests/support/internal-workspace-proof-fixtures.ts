@@ -198,6 +198,14 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
         {
           key: "customers",
           title: "Customers",
+          fields: [
+            { label: "Area", columnType: "short_text" },
+            {
+              label: "Referral source",
+              columnType: "select",
+              options: ["Website", "Recommendation", "Walk-by"],
+            },
+          ],
         },
         { key: "pets", title: "Pets" },
         {
@@ -238,7 +246,11 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
         },
       ],
       records: [
-        { tableKey: "customers", label: "Aisha Khan" },
+        {
+          tableKey: "customers",
+          label: "Aisha Khan",
+          fields: { Area: "Bedford", "Referral source": "Recommendation" },
+        },
         { tableKey: "pets", label: "Milo" },
         {
           tableKey: "appointments",

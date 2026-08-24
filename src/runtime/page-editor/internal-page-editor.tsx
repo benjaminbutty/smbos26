@@ -32,6 +32,7 @@ type InternalPageEditorProps = Pick<
   | "applyPageBlockAction"
   | "availableViews"
   | "businessSlug"
+  | "canEdit"
   | "currentness"
   | "layout"
   | "pageKey"
@@ -125,6 +126,7 @@ export function InternalPageEditor({
   applyPageBlockAction,
   availableViews,
   businessSlug,
+  canEdit = true,
   currentness,
   layout,
   pageKey,
@@ -141,7 +143,7 @@ export function InternalPageEditor({
   const [title, setTitle] = useState(initialTitle);
   const [titleDraft, setTitleDraft] = useState(initialTitle);
   const [renaming, setRenaming] = useState(false);
-  const [mode, setMode] = useState<EditorMode>("editing");
+  const [mode, setMode] = useState<EditorMode>(canEdit ? "editing" : "reading");
   const [status, setStatus] = useState<SaveStatus>("saved");
   const [message, setMessage] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<InsertMenuState | null>(null);
@@ -268,25 +270,30 @@ export function InternalPageEditor({
   }, [insertChoices, insertMenu?.query]);
 
   useEffect(() => {
-    editor?.setEditable(mode === "editing");
-  }, [editor, mode]);
+    editor?.setEditable(canEdit && mode === "editing");
+  }, [canEdit, editor, mode]);
 
   if (
     loadedCurrentness.expectedBaseVersionId !==
       currentness.expectedBaseVersionId ||
     loadedCurrentness.expectedHeadRevision !== currentness.expectedHeadRevision
   ) {
+    const reflectsOwnAction =
+      currentnessCandidate.expectedBaseVersionId ===
+        currentness.expectedBaseVersionId &&
+      currentnessCandidate.expectedHeadRevision ===
+        currentness.expectedHeadRevision;
     setLoadedCurrentness(currentness);
     setCurrentnessCandidate(currentness);
     setTitle(initialTitle);
     setTitleDraft(initialTitle);
-    if (bodyDirty) {
+    if (bodyDirty && !reflectsOwnAction) {
       setStatus("stale");
       setMessage(
         "Things changed since you opened this Page. Your draft is still here; review it, then save again.",
       );
     } else {
-      setStatus("saved");
+      setStatus(bodyDirty ? "unsaved" : "saved");
       setMessage(null);
     }
   }
@@ -525,6 +532,7 @@ export function InternalPageEditor({
   return (
     <section
       className={`page-editor-shell page-editor-internal page-document-editor is-${mode}`}
+      data-can-edit={canEdit ? "true" : "false"}
       onKeyDown={handleEditorKeyDown}
     >
       <div className="page-editor-topbar">
@@ -545,25 +553,29 @@ export function InternalPageEditor({
           </span>
         </div>
         <div className="page-document-actions">
-          <div aria-label="Page mode" className="page-editor-mode-switch">
-            <button
-              aria-pressed={mode === "editing"}
-              className={mode === "editing" ? "is-active" : ""}
-              onClick={() => setMode("editing")}
-              type="button"
-            >
-              Editing
-            </button>
-            <button
-              aria-pressed={mode === "reading"}
-              className={mode === "reading" ? "is-active" : ""}
-              onClick={() => setMode("reading")}
-              type="button"
-            >
-              Reading
-            </button>
-          </div>
-          {mode === "editing" ? (
+          {canEdit ? (
+            <div aria-label="Page mode" className="page-editor-mode-switch">
+              <button
+                aria-pressed={mode === "editing"}
+                className={mode === "editing" ? "is-active" : ""}
+                onClick={() => setMode("editing")}
+                type="button"
+              >
+                Editing
+              </button>
+              <button
+                aria-pressed={mode === "reading"}
+                className={mode === "reading" ? "is-active" : ""}
+                onClick={() => setMode("reading")}
+                type="button"
+              >
+                Reading
+              </button>
+            </div>
+          ) : (
+            <span className="page-editor-reading-state">Reading</span>
+          )}
+          {canEdit && mode === "editing" ? (
             <button
               className="button button-small"
               disabled={!bodyDirty || status === "saving"}
@@ -578,7 +590,7 @@ export function InternalPageEditor({
 
       <div className="page-editor-document">
         <header className="page-editor-header">
-          {renaming && mode === "editing" ? (
+          {canEdit && renaming && mode === "editing" ? (
             <form className="page-editor-title-form" onSubmit={rename}>
               <input
                 aria-label="Page name"
@@ -601,7 +613,7 @@ export function InternalPageEditor({
                 Cancel
               </button>
             </form>
-          ) : mode === "editing" ? (
+          ) : canEdit && mode === "editing" ? (
             <button
               aria-label="Rename Page"
               className="page-editor-title-button"
@@ -631,7 +643,7 @@ export function InternalPageEditor({
         ) : null}
 
         <div className="page-document-canvas" ref={canvasRef}>
-          {editor && mode === "editing" ? (
+          {editor && canEdit && mode === "editing" ? (
             <>
               <BubbleMenu
                 className="page-format-menu"
@@ -713,7 +725,7 @@ export function InternalPageEditor({
 
           <EditorContent editor={editor} />
 
-          {mode === "editing" && selectedBlockPosition !== null ? (
+          {canEdit && mode === "editing" && selectedBlockPosition !== null ? (
             <div
               aria-label="Selected block actions"
               className="page-block-actions"
@@ -730,7 +742,7 @@ export function InternalPageEditor({
             </div>
           ) : null}
 
-          {mode === "editing" && insertMenu ? (
+          {canEdit && mode === "editing" && insertMenu ? (
             <div
               aria-label="Insert into Page"
               className="page-slash-menu"
@@ -782,7 +794,7 @@ export function InternalPageEditor({
         </div>
       </div>
 
-      {mode === "editing" ? (
+      {canEdit && mode === "editing" ? (
         <p className="page-editor-footer">
           Type naturally, use / for blocks, or select text to format it. Save
           the complete Page with Cmd/Ctrl+S.

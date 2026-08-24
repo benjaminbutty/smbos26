@@ -453,6 +453,7 @@ export default async function InternalPage({
       page.definition.key,
     ),
     businessSlug,
+    canEdit,
     currentness: directConfiguration.currentness,
     layout: page.layout,
     pageKey: page.definition.key,

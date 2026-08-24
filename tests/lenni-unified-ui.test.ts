@@ -222,6 +222,12 @@ describe("Lenni unified workspace presentation", () => {
     expect(internalEditorSource).toContain("<DragHandle");
     expect(internalEditorSource).toContain("page-slash-menu");
     expect(internalEditorSource).toContain("Save page");
+    expect(internalEditorSource).toContain(
+      'data-can-edit={canEdit ? "true" : "false"}',
+    );
+    expect(internalEditorSource).toContain(
+      '<span className="page-editor-reading-state">Reading</span>',
+    );
     expect(internalEditorSource).toContain('action: "save_page_layout"');
     expect(internalEditorSource).toContain('aria-label="Page mode"');
     expect(internalEditorSource).toContain("useUnsavedNavigationWarning");
@@ -230,6 +236,7 @@ describe("Lenni unified workspace presentation", () => {
     expect(internalEditorSource).not.toContain('action: "add_page_block"');
     expect(internalEditorSource).not.toContain('action: "update_page_block"');
     expect(pageRouteSource).toContain("key={page.definition.key}");
+    expect(pageRouteSource).toContain("canEdit,");
     expect(pageRouteSource).not.toContain(
       "expectedHeadRevision}-${page.definition.title}",
     );

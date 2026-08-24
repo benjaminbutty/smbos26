@@ -64,6 +64,7 @@ type PublishPageChangesAction = (input: {
 
 export interface PageEditorProps {
   businessSlug: string;
+  canEdit?: boolean;
   pageKey: string;
   title: string;
   layout: PageLayout;

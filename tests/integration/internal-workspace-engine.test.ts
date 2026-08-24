@@ -9,6 +9,10 @@ import {
   applyDirectTableAction,
   loadDirectTableConfiguration,
 } from "../../src/core/configuration/direct-tables/service";
+import {
+  applyDirectPageAction,
+  loadDirectPageConfiguration,
+} from "../../src/core/configuration/direct-pages/service";
 import type { DirectTableCurrentness } from "../../src/core/configuration/direct-tables/schemas";
 import { createGraphService } from "../../src/core/graph/service";
 import {
@@ -44,7 +48,7 @@ import {
 vi.mock("server-only", () => ({}));
 
 type Client = SupabaseClient<Database>;
-type Identity = { client: Client; user: User };
+type Identity = { client: Client; email: string; user: User };
 type Business = Tables<"businesses">;
 type RecordRow = Tables<"records">;
 
@@ -68,6 +72,8 @@ const createdBusinesses: Business[] = [];
 let settings: LocalSupabaseSettings;
 let admin: Client;
 let owner: Identity;
+let proofAdmin: Identity;
+let proofStaff: Identity;
 let ownerEmail = "";
 
 async function createOwner(): Promise<Identity> {
@@ -97,7 +103,7 @@ async function createOwner(): Promise<Identity> {
   if (signedIn.error || !signedIn.data.user) {
     throw signedIn.error ?? new Error("Could not sign in proof owner.");
   }
-  return { client, user: signedIn.data.user };
+  return { client, email, user: signedIn.data.user };
 }
 
 async function createIdentity(label: string): Promise<Identity> {
@@ -124,7 +130,7 @@ async function createIdentity(label: string): Promise<Identity> {
   );
   const signedIn = await client.auth.signInWithPassword({ email, password });
   if (signedIn.error || !signedIn.data.user) throw signedIn.error;
-  return { client, user: signedIn.data.user };
+  return { client, email, user: signedIn.data.user };
 }
 
 async function createBusiness(name: string): Promise<Business> {
@@ -137,6 +143,19 @@ async function createBusiness(name: string): Promise<Business> {
     throw created.error ?? new Error(`Could not create ${name}.`);
   }
   createdBusinesses.push(created.data);
+  const memberships = await admin.from("business_memberships").insert([
+    {
+      business_id: created.data.id,
+      user_id: proofAdmin.user.id,
+      role: "admin",
+    },
+    {
+      business_id: created.data.id,
+      user_id: proofStaff.user.id,
+      role: "staff",
+    },
+  ]);
+  if (memberships.error) throw memberships.error;
   return created.data;
 }
 
@@ -357,6 +376,24 @@ async function configureScenario(
     state.savedViews.set(tableMapKey(query.tableKey, query.name), savedViewKey);
   }
 
+  if (fixture.concept === "Dog groomer") {
+    const pageState = await loadDirectPageConfiguration(owner.client, {
+      businessId: business.id,
+      actorId: owner.user.id,
+    });
+    const createdPage = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: pageState.currentness,
+        intent: { action: "create_page", title: "This week" },
+      },
+    );
+    expect(createdPage.changeSet.status).toBe("applied");
+    expect(createdPage.composed.pageSlug).toBe("this-week");
+    state.currentness = createdPage.currentness;
+  }
+
   return state;
 }
 
@@ -555,6 +592,8 @@ describe("Internal Workspace Engine four-business proof", () => {
       },
     });
     owner = await createOwner();
+    proofAdmin = await createIdentity("proof-admin");
+    proofStaff = await createIdentity("proof-staff");
   }, 180_000);
 
   afterAll(async () => {
@@ -563,6 +602,8 @@ describe("Internal Workspace Engine four-business proof", () => {
         JSON.stringify({
           password,
           ownerEmail,
+          adminEmail: proofAdmin.email,
+          staffEmail: proofStaff.email,
           businesses: createdBusinesses.map((business) => ({
             id: business.id,
             name: business.name,
@@ -637,6 +678,23 @@ describe("Internal Workspace Engine four-business proof", () => {
       const pageTableViewKeys = new Set(pageTableViews.map((view) => view.key));
       for (const savedViewKey of state.savedViews.values()) {
         expect(pageTableViewKeys).toContain(savedViewKey);
+      }
+      if (fixture.concept === "Dog groomer") {
+        expect(navigation.pages).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ slug: "this-week", title: "This week" }),
+          ]),
+        );
+        await expect(
+          createExperienceService(proofAdmin.client, {
+            businessId: state.business.id,
+          }).loadPage("this-week"),
+        ).resolves.toMatchObject({ definition: { title: "This week" } });
+        await expect(
+          createExperienceService(proofStaff.client, {
+            businessId: state.business.id,
+          }).loadPage("this-week"),
+        ).resolves.toMatchObject({ definition: { title: "This week" } });
       }
 
       const afterConfiguration = await loadDirectTableConfiguration(
