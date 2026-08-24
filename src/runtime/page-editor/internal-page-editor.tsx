@@ -124,6 +124,52 @@ function moveTopLevelNode(editor: Editor, position: number, offset: -1 | 1) {
   return true;
 }
 
+function topLevelPositionAt(editor: Editor, position: number): number | null {
+  const boundedPosition = Math.max(
+    0,
+    Math.min(position, editor.state.doc.content.size),
+  );
+  const resolved = editor.state.doc.resolve(boundedPosition);
+  if (resolved.depth === 0) {
+    return editor.state.doc.nodeAt(resolved.pos) ? resolved.pos : null;
+  }
+  return resolved.before(1);
+}
+
+function dropTopLevelNode(
+  editor: Editor,
+  sourcePosition: number,
+  targetPosition: number,
+  clientY: number,
+): boolean {
+  const { doc } = editor.state;
+  const source = doc.nodeAt(sourcePosition);
+  const targetTopLevelPosition = topLevelPositionAt(editor, targetPosition);
+  const target =
+    targetTopLevelPosition === null ? null : doc.nodeAt(targetTopLevelPosition);
+  if (!source || targetTopLevelPosition === null || !target) return false;
+
+  const targetDom = editor.view.nodeDOM(targetTopLevelPosition);
+  if (!(targetDom instanceof HTMLElement)) return false;
+  const targetRect = targetDom.getBoundingClientRect();
+  let insertPosition =
+    clientY < targetRect.top + targetRect.height / 2
+      ? targetTopLevelPosition
+      : targetTopLevelPosition + target.nodeSize;
+  if (insertPosition > sourcePosition) {
+    insertPosition -= source.nodeSize;
+  }
+  if (insertPosition === sourcePosition) return false;
+
+  editor.view.dispatch(
+    editor.state.tr
+      .delete(sourcePosition, sourcePosition + source.nodeSize)
+      .insert(insertPosition, source)
+      .scrollIntoView(),
+  );
+  return true;
+}
+
 export function InternalPageEditor({
   applyPageBlockAction,
   availableViews,
@@ -140,6 +186,7 @@ export function InternalPageEditor({
   const suppressUpdatesRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedBlockPositionRef = useRef<number | null>(null);
+  const pointerDragPositionRef = useRef<number | null>(null);
   const [bodyDirty, setBodyDirty] = useState(false);
   const [currentnessCandidate, setCurrentnessCandidate] = useState(currentness);
   const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
@@ -557,6 +604,21 @@ export function InternalPageEditor({
     setSelectedBlockPosition(null);
   };
 
+  const finishPointerDrag = (clientX: number, clientY: number): void => {
+    if (!editor) return;
+    const sourcePosition = pointerDragPositionRef.current;
+    pointerDragPositionRef.current = null;
+    if (sourcePosition === null) return;
+    const target = editor.view.posAtCoords({ left: clientX, top: clientY });
+    if (
+      target &&
+      dropTopLevelNode(editor, sourcePosition, target.pos, clientY)
+    ) {
+      selectedBlockPositionRef.current = null;
+      setSelectedBlockPosition(null);
+    }
+  };
+
   return (
     <section
       className={`page-editor-shell page-editor-internal page-document-editor is-${mode}`}
@@ -746,6 +808,40 @@ export function InternalPageEditor({
                 <button
                   aria-label="Drag block or use block actions"
                   onClick={() => undefined}
+                  onMouseDown={(event) => {
+                    const position =
+                      selectedBlockPositionRef.current ??
+                      topLevelPosition(editor) ??
+                      selectedBlockPosition;
+                    if (position === null) return;
+                    pointerDragPositionRef.current = position;
+                    const finish = (releaseEvent: MouseEvent) => {
+                      finishPointerDrag(
+                        releaseEvent.clientX,
+                        releaseEvent.clientY,
+                      );
+                    };
+                    window.addEventListener("mouseup", finish, { once: true });
+                    event.preventDefault();
+                  }}
+                  onPointerCancel={() => {
+                    pointerDragPositionRef.current = null;
+                  }}
+                  onPointerDown={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    const position =
+                      selectedBlockPositionRef.current ??
+                      topLevelPosition(editor) ??
+                      selectedBlockPosition;
+                    if (position === null) return;
+                    pointerDragPositionRef.current = position;
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    event.preventDefault();
+                  }}
+                  onPointerUp={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    finishPointerDrag(event.clientX, event.clientY);
+                  }}
                   type="button"
                 >
                   ⋮⋮
@@ -754,7 +850,31 @@ export function InternalPageEditor({
             </>
           ) : null}
 
-          <EditorContent editor={editor} />
+          <div
+            className="page-editor-content-boundary"
+            onMouseDown={(event) => {
+              if (!editor || !canEdit || mode !== "editing") return;
+              const target = event.target;
+              if (!(target instanceof HTMLElement)) return;
+              const paragraph = target.closest("p");
+              if (
+                !paragraph ||
+                paragraph.parentElement !== editor.view.dom ||
+                paragraph.textContent
+              ) {
+                return;
+              }
+              const position = editor.view.posAtDOM(paragraph, 0);
+              event.preventDefault();
+              editor
+                .chain()
+                .focus()
+                .setTextSelection(position + 1)
+                .run();
+            }}
+          >
+            <EditorContent editor={editor} />
+          </div>
 
           {canEdit && mode === "editing" && selectedBlockPosition !== null ? (
             <div

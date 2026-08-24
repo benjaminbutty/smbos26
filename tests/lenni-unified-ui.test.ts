@@ -246,6 +246,16 @@ describe("Lenni unified workspace presentation", () => {
       "onMouseDown={(event) => event.preventDefault()}",
     );
     expect(internalEditorSource).toContain("selectedBlockPositionRef.current");
+    expect(internalEditorSource).toContain("function dropTopLevelNode(");
+    expect(internalEditorSource).toContain("onPointerDown={(event) => {");
+    expect(internalEditorSource).toContain("onPointerUp={(event) => {");
+    expect(internalEditorSource).toContain("editor.view.posAtCoords({");
+    expect(internalEditorSource).toContain(
+      'className="page-editor-content-boundary"',
+    );
+    expect(internalEditorSource).toContain(
+      "editor.view.posAtDOM(paragraph, 0)",
+    );
     expect(internalEditorSource).not.toContain("page-editor-block-form");
     expect(internalEditorSource).not.toContain('action: "add_page_block"');
     expect(internalEditorSource).not.toContain('action: "update_page_block"');
