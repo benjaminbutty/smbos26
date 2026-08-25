@@ -143,6 +143,48 @@ const builderUiStateSchemas = [
     .strict(),
   z
     .object({
+      state: z.literal("adaptive_solution_choice"),
+      understanding: boundedText.max(2_000),
+      current_approach: boundedText.max(2_000),
+      options: z
+        .array(
+          z
+            .object({
+              id: z.enum(["work_from_primary", "simplify_around_primary"]),
+              label: boundedText.max(120),
+              summary: boundedText.max(2_000),
+              benefits: z.array(boundedText.max(2_000)).min(1).max(3),
+              tradeoffs: z.array(boundedText.max(2_000)).min(1).max(3),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(2),
+      recommendation: boundedText.max(2_000).optional(),
+      question: boundedText.max(500),
+      continuation_token: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("adaptive_no_change"),
+      heading: boundedText.max(240),
+      message: boundedText.max(2_000),
+      action_label: boundedText.max(120),
+      destination_path: z
+        .string()
+        .trim()
+        .min(1)
+        .max(2_048)
+        .regex(/^\/app\/[a-z0-9-]+\/workspace\//),
+    })
+    .strict(),
+  z
+    .object({
       state: z.literal("unsupported"),
       message: boundedText.max(240),
     })

@@ -4,6 +4,10 @@ import { z } from "zod";
 
 import { builderPlanQuestionSchema } from "../planning/schemas";
 import {
+  builderAdaptiveSolutionChoiceResultSchema,
+  type BuilderAdaptiveSolutionChoiceResult,
+} from "./contracts";
+import {
   createOperationalConfirmationEnvelopeService,
   OPERATIONAL_CONFIRMATION_TTL_SECONDS,
   OperationalConfirmationEnvelopeError,
@@ -32,6 +36,22 @@ const answeredQuestionSchema = z
   })
   .strict();
 
+const selectedAdaptiveChoiceSchema = z
+  .object({
+    choice: builderAdaptiveSolutionChoiceResultSchema,
+    option_id: z.enum(["work_from_primary", "simplify_around_primary"]),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (!value.choice.options.some((option) => option.id === value.option_id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["option_id"],
+        message: "The selected adaptive option must have been presented.",
+      });
+    }
+  });
+
 const payloadSchema = z
   .object({
     schema_version: z.literal(
@@ -43,6 +63,7 @@ const payloadSchema = z
     original_owner_request: z.string().trim().min(1).max(4_000),
     questions: z.array(builderPlanQuestionSchema).min(1).max(5),
     answers: z.array(answeredQuestionSchema).max(15),
+    selected_adaptive_choice: selectedAdaptiveChoiceSchema.optional(),
     round: z.number().int().min(1).max(BUILDER_CLARIFICATION_MAX_ROUNDS),
     issued_at: z.number().int().nonnegative(),
     expires_at: z.number().int().nonnegative(),
@@ -122,6 +143,10 @@ export interface BuilderClarificationContinuationTokenService {
     questions: readonly z.infer<typeof builderPlanQuestionSchema>[];
     answers: readonly BuilderClarificationAnswer[];
     round: number;
+    selectedAdaptiveChoice?: {
+      choice: BuilderAdaptiveSolutionChoiceResult;
+      optionId: "work_from_primary" | "simplify_around_primary";
+    };
   }): string;
   verify(
     token: string,
@@ -153,6 +178,10 @@ export function createBuilderClarificationContinuationTokenService(
       questions: readonly z.infer<typeof builderPlanQuestionSchema>[];
       answers: readonly BuilderClarificationAnswer[];
       round: number;
+      selectedAdaptiveChoice?: {
+        choice: BuilderAdaptiveSolutionChoiceResult;
+        optionId: "work_from_primary" | "simplify_around_primary";
+      };
     }) {
       try {
         const issuedAt = now();
@@ -165,6 +194,14 @@ export function createBuilderClarificationContinuationTokenService(
           questions: input.questions,
           answers: input.answers,
           round: input.round,
+          ...(input.selectedAdaptiveChoice
+            ? {
+                selected_adaptive_choice: {
+                  choice: input.selectedAdaptiveChoice.choice,
+                  option_id: input.selectedAdaptiveChoice.optionId,
+                },
+              }
+            : {}),
           issued_at: issuedAt,
           expires_at: issuedAt + OPERATIONAL_CONFIRMATION_TTL_SECONDS,
         });

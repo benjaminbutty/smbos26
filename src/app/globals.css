@@ -2359,6 +2359,64 @@ textarea {
   background: rgba(255, 255, 255, 0.9);
 }
 
+.builder-result-adaptive {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--surface-base) 90%, #f1edf9);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
+}
+
+.builder-adaptive-options {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.builder-adaptive-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 1rem;
+  cursor: pointer;
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.builder-adaptive-option > input {
+  margin-top: 0.3rem;
+}
+
+.builder-adaptive-option > span,
+.builder-adaptive-option-detail {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.builder-adaptive-option > span > strong {
+  font-size: 1rem;
+}
+
+.builder-adaptive-option-detail {
+  padding-top: 0.65rem;
+  color: var(--text-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.builder-adaptive-option-detail ul {
+  gap: 0.35rem;
+}
+
+.builder-adaptive-choice-actions {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+}
+
+.builder-adaptive-choice-actions legend {
+  font-weight: 750;
+}
+
 .builder-result-section {
   display: grid;
   gap: 0.6rem;

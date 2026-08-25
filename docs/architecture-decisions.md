@@ -3545,3 +3545,14 @@ generic Record and initiating Connection commit or roll back together. See
 Accepted for the UAT interaction correction. Builder retains an authenticated,
 short-lived original request and answers through at most three clarification
 rounds, without permanent conversation storage. See [ADR-049](./ADR-049.md).
+
+## ADR-050: Adaptive solution choice is deterministic and bounded
+
+Accepted for the UAT interaction correction. When an owner wants to work from
+one side of an existing one-to-many Connection, Tell Lenni can explain the
+current arrangement and present only server-recognised no-change or additive
+configuration consequences. The signed continuation preserves the original
+request, presented options, selected choice, actor, Business, currentness and
+later clarification answers. It does not create a general advice task, change
+the qualified planner subject or permit operational Record migration. See
+[ADR-050](./ADR-050.md).

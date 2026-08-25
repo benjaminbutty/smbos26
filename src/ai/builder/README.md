@@ -101,6 +101,25 @@ structural, semantic, scenario-gate and provider failures. This is bounded
 engineering evidence for the amended input schema, not a permanent model
 guarantee.
 
+## Adaptive solution choice
+
+ADR-050 adds a deterministic, strict result before any provider call for a
+recognised preference to work from the parent side of a real one-to-many
+Connection. It uses current configuration metadata and trusted capabilities
+only. Its two possible signed consequences are either a no-change contextual
+Record workflow with a server-derived destination, or an ordinary additive
+configuration proposal route.
+
+This product state does not change the `builder_plan_v1` instruction, input
+schema, output schema, semantic validator, model or policy. It has no provider
+authority and the selection is signed, actor/Business/currentness-bound before
+the existing planner can be called. The prior Terra qualification and
+reliability evidence remains evidence for the unchanged planning subject; it
+is not claimed as qualification for an advisory task because no advisory model
+task exists. The selected additive route is exercised by deterministic
+continuation tests and authenticated UAT, while its eventual proposal remains
+subject to the existing planning and configuration-drafting boundaries.
+
 ## Private runtime and accounting
 
 The global production drafting, preorder-amendment and Location-intent tasks

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { createBuilderClarificationContinuationTokenService } from "../src/ai/builder/clarification-continuation-token";
+import { createBuilderAdaptiveSolutionChoiceTokenService } from "../src/ai/builder/adaptive-solution-choice-token";
+import { builderAdaptiveSolutionChoiceResultSchema } from "../src/ai/builder/contracts";
 import {
   createBuilderAction,
   initialBuilderUiState,
@@ -12,6 +14,57 @@ const businessId = "10000000-0000-4000-8000-000000000001";
 const actorId = "10000000-0000-4000-8000-000000000002";
 const versionId = "10000000-0000-4000-8000-000000000003";
 const secret = "builder-clarification-action-test-secret-0123456789";
+
+function adaptiveChoice() {
+  return builderAdaptiveSolutionChoiceResultSchema.parse({
+    schema_version: 1,
+    state: "adaptive_solution_choice",
+    understanding:
+      "You want Companies to be the main place you manage Opportunities.",
+    current_approach:
+      "Companies and Opportunities are separate so a Company can have several Opportunities.",
+    options: [
+      {
+        id: "work_from_primary",
+        label: "Work from Companies",
+        summary: "Add Opportunities directly from Companies.",
+        benefits: ["Avoid switching Tables."],
+        tradeoffs: ["Opportunities stay available together."],
+        consequence: {
+          kind: "use_current_related_workflow",
+          primary_object_key: "company",
+          primary_object_label: "Companies",
+          primary_singular_label: "Company",
+          related_object_key: "opportunity",
+          related_object_label: "Opportunities",
+          relationship_key: "company_has_opportunity",
+          primary_view_key: "company_table",
+        },
+      },
+      {
+        id: "simplify_around_primary",
+        label: "Simplify around Companies",
+        summary: "Prepare a Company-centred setup.",
+        benefits: ["Work from Companies first."],
+        tradeoffs: ["Existing Opportunities stay intact."],
+        consequence: {
+          kind: "prepare_primary_workflow_adaptation",
+          primary_object_key: "company",
+          primary_object_label: "Companies",
+          primary_singular_label: "Company",
+          related_object_key: "opportunity",
+          related_object_label: "Opportunities",
+          relationship_key: "company_has_opportunity",
+        },
+      },
+    ],
+    recommendation:
+      "Choose the current workflow for several Opportunities; simplify if one current Opportunity is normally enough.",
+    question: "Which would suit you better?",
+    base_version_id: versionId,
+    head_revision: 4,
+  });
+}
 
 function clarification(question: string, reference: string) {
   return {
@@ -80,11 +133,16 @@ function dependencies(
     secret,
     now: () => 1_000,
   });
+  const adaptiveTokenService = createBuilderAdaptiveSolutionChoiceTokenService({
+    secret,
+    now: () => 1_000,
+  });
   return {
     run,
     action: createBuilderAction({
       createServerClient: async () => supabase as never,
       createClarificationContinuationTokenService: () => tokenService,
+      createAdaptiveSolutionChoiceTokenService: () => adaptiveTokenService,
       hasCapability: () => true,
       notFound: () => {
         throw new Error("not found");
@@ -110,6 +168,138 @@ async function begin(
 }
 
 describe("Builder clarification action continuation", () => {
+  it("completes the existing Company workflow without a proposal or configuration version", async () => {
+    const fixture = dependencies([adaptiveChoice()]);
+    const choice = await begin(
+      fixture.action,
+      "I want Opportunities in a single table with Companies instead of a separate table.",
+    );
+    if (
+      choice.state !== "adaptive_solution_choice" ||
+      !choice.continuation_token
+    ) {
+      throw new Error("Expected adaptive choice.");
+    }
+    const selected = new FormData();
+    selected.set("adaptiveSolutionChoiceToken", choice.continuation_token);
+    selected.set("adaptiveSolutionOption", "work_from_primary");
+    const completion = await fixture.action("consultancy", choice, selected);
+
+    expect(completion).toMatchObject({
+      state: "adaptive_no_change",
+      action_label: "Open Companies",
+      destination_path: "/app/consultancy/workspace/company-table",
+    });
+    expect(fixture.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries the chosen adaptation into ordinary proposal preparation", async () => {
+    const fixture = dependencies([adaptiveChoice(), proposed()]);
+    const choice = await begin(fixture.action);
+    if (
+      choice.state !== "adaptive_solution_choice" ||
+      !choice.continuation_token
+    ) {
+      throw new Error("Expected adaptive choice.");
+    }
+    const selected = new FormData();
+    selected.set("adaptiveSolutionChoiceToken", choice.continuation_token);
+    selected.set("adaptiveSolutionOption", "simplify_around_primary");
+    const result = await fixture.action("consultancy", choice, selected);
+
+    expect(result).toMatchObject({ state: "proposed" });
+    expect(fixture.run).toHaveBeenCalledTimes(2);
+    expect(fixture.run.mock.calls[1]?.[1].ownerRequest).toContain(
+      "[Lenni adaptation selection]",
+    );
+    expect(fixture.run.mock.calls[1]?.[1].ownerRequest).toContain(
+      "Do not merge, deactivate, archive, copy, or rewrite operational data.",
+    );
+  });
+
+  it("retains the presented choice and selected adaptation through clarification", async () => {
+    const fixture = dependencies([
+      adaptiveChoice(),
+      clarification("Which Opportunity details matter?", "question_1"),
+    ]);
+    const choice = await begin(fixture.action);
+    if (
+      choice.state !== "adaptive_solution_choice" ||
+      !choice.continuation_token
+    ) {
+      throw new Error("Expected adaptive choice.");
+    }
+    const selected = new FormData();
+    selected.set("adaptiveSolutionChoiceToken", choice.continuation_token);
+    selected.set("adaptiveSolutionOption", "simplify_around_primary");
+    const clarificationResult = await fixture.action(
+      "consultancy",
+      choice,
+      selected,
+    );
+    if (
+      clarificationResult.state !== "needs_clarification" ||
+      !clarificationResult.continuation_token
+    ) {
+      throw new Error("Expected adaptation clarification.");
+    }
+
+    const payload = createBuilderClarificationContinuationTokenService({
+      secret,
+      now: () => 1_000,
+    }).verify(clarificationResult.continuation_token, { businessId, actorId });
+    expect(payload.selected_adaptive_choice).toMatchObject({
+      option_id: "simplify_around_primary",
+      choice: {
+        understanding: expect.stringContaining("Companies"),
+        options: expect.arrayContaining([
+          expect.objectContaining({ id: "work_from_primary" }),
+          expect.objectContaining({ id: "simplify_around_primary" }),
+        ]),
+      },
+    });
+  });
+
+  it("rejects a tampered selection and fails closed when the setup changed", async () => {
+    const tampered = dependencies([adaptiveChoice()]);
+    const choice = await begin(tampered.action);
+    if (
+      choice.state !== "adaptive_solution_choice" ||
+      !choice.continuation_token
+    ) {
+      throw new Error("Expected adaptive choice.");
+    }
+    const forged = new FormData();
+    forged.set("adaptiveSolutionChoiceToken", choice.continuation_token);
+    forged.set("adaptiveSolutionOption", "apply_everything");
+    expect(await tampered.action("consultancy", choice, forged)).toMatchObject({
+      state: "input_invalid",
+    });
+    expect(tampered.run).toHaveBeenCalledTimes(1);
+
+    const stale = dependencies([adaptiveChoice()], {
+      versionId,
+      revision: 5,
+    });
+    const staleChoice = await begin(stale.action);
+    if (
+      staleChoice.state !== "adaptive_solution_choice" ||
+      !staleChoice.continuation_token
+    ) {
+      throw new Error("Expected adaptive choice.");
+    }
+    const staleSelection = new FormData();
+    staleSelection.set(
+      "adaptiveSolutionChoiceToken",
+      staleChoice.continuation_token,
+    );
+    staleSelection.set("adaptiveSolutionOption", "work_from_primary");
+    expect(
+      await stale.action("consultancy", staleChoice, staleSelection),
+    ).toMatchObject({ state: "clarification_expired" });
+    expect(stale.run).toHaveBeenCalledTimes(1);
+  });
+
   it("sends the original request and a direct answer into the next planning call", async () => {
     const fixture = dependencies([
       clarification("Which statuses should opportunities use?", "question_1"),

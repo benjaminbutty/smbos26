@@ -109,6 +109,7 @@ import {
 } from "./runtime";
 import type { AuthoritativeAiBusinessContext } from "../../core/configuration/builder-context-source";
 import { loadAuthoritativeAiBusinessContext } from "../../core/configuration/builder-context-source";
+import { deriveAdaptiveSolutionChoice } from "./adaptive-solution";
 
 type SessionClient = SupabaseClient<Database>;
 
@@ -857,6 +858,15 @@ export function createBuilderOrchestrationService(
       });
       assertInitialContext(initial, request.businessId);
       const initialProjection = projectContext(initial);
+      const adaptiveChoice = deriveAdaptiveSolutionChoice({
+        ownerRequest: request.ownerRequest,
+        context: initialProjection.modelContext,
+        baseVersionId: initial.currentness.baseVersionId,
+        headRevision: initial.currentness.headRevision,
+      });
+      if (adaptiveChoice) {
+        return deepFreeze(adaptiveChoice);
+      }
       const planningInput = {
         schema_version: 1 as const,
         owner_request: request.ownerRequest,

@@ -204,6 +204,106 @@ export function BuilderResultPanel({
     );
   }
 
+  if (state.state === "adaptive_no_change") {
+    return (
+      <section
+        aria-labelledby="builder-adaptive-completion-heading"
+        className="builder-result builder-result-success"
+        role="status"
+      >
+        <p className="eyebrow">Your chosen way of working</p>
+        <h2 id="builder-adaptive-completion-heading">{state.heading}</h2>
+        <p>{state.message}</p>
+        <p className="builder-safety-note">
+          Nothing was changed, and there is nothing to review.
+        </p>
+        <Link className="button" href={state.destination_path}>
+          {state.action_label}
+        </Link>
+      </section>
+    );
+  }
+
+  if (state.state === "adaptive_solution_choice") {
+    return (
+      <section
+        aria-labelledby="builder-adaptive-choice-heading"
+        className="builder-result builder-result-adaptive"
+        role="status"
+      >
+        <p className="eyebrow">Tell Lenni</p>
+        <h2 id="builder-adaptive-choice-heading">
+          Here is what Lenni understood
+        </h2>
+        <div className="builder-result-lede">
+          <p>{state.understanding}</p>
+        </div>
+        <div className="builder-result-section">
+          <h3>How it works today</h3>
+          <p>{state.current_approach}</p>
+        </div>
+        <div className="builder-result-section">
+          <h3>Ways we can handle it</h3>
+          <form action={action} className="builder-adaptive-options">
+            <input
+              name="adaptiveSolutionChoiceToken"
+              type="hidden"
+              value={state.continuation_token}
+            />
+            {state.options.map((option) => (
+              <label className="builder-adaptive-option" key={option.id}>
+                <input
+                  defaultChecked={state.options.length === 1}
+                  name="adaptiveSolutionOption"
+                  required
+                  type="radio"
+                  value={option.id}
+                />
+                <span>
+                  <strong>{option.label}</strong>
+                  <span>{option.summary}</span>
+                  <span className="builder-adaptive-option-detail">
+                    <b>This gives you</b>
+                    <ul>
+                      {option.benefits.map((benefit) => (
+                        <li key={benefit}>{benefit}</li>
+                      ))}
+                    </ul>
+                  </span>
+                  <span className="builder-adaptive-option-detail">
+                    <b>Trade-offs</b>
+                    <ul>
+                      {option.tradeoffs.map((tradeoff) => (
+                        <li key={tradeoff}>{tradeoff}</li>
+                      ))}
+                    </ul>
+                  </span>
+                </span>
+              </label>
+            ))}
+            {state.recommendation ? (
+              <div className="builder-consequence">
+                <strong>My suggestion</strong>
+                <p>{state.recommendation}</p>
+              </div>
+            ) : null}
+            <fieldset className="builder-adaptive-choice-actions">
+              <legend>{state.question}</legend>
+              <PendingSubmitButton
+                label="Continue with this choice"
+                pendingLabel="Continuing with Lenni…"
+              />
+            </fieldset>
+          </form>
+        </div>
+        <p className="builder-safety-note">
+          Lenni keeps this choice for this short follow-up. Nothing changes
+          until you later review and apply a proposed change.
+        </p>
+      </section>
+    );
+  }
+
   if (state.state === "unsupported") {
     return (
       <section
@@ -804,8 +904,10 @@ export function BuilderUi({
 }: Readonly<BuilderUiProps>) {
   const [state, formAction] = useActionState(action, BUILDER_INITIAL_STATE);
   const [ownerRequest, setOwnerRequest] = useState("");
-  const isClarifying =
-    state.state === "needs_clarification" && Boolean(state.continuation_token);
+  const isContinuing =
+    (state.state === "needs_clarification" &&
+      Boolean(state.continuation_token)) ||
+    state.state === "adaptive_solution_choice";
 
   return (
     <section className="tenant-content builder-page">
@@ -828,7 +930,7 @@ export function BuilderUi({
         </p>
       </div>
 
-      {isClarifying ? (
+      {isContinuing ? (
         <section className="builder-request-panel" aria-label="Your request">
           <strong>Your request is preserved</strong>
           <p className="muted">
