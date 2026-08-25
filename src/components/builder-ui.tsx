@@ -113,10 +113,14 @@ const unavailablePresentation = {
 export function BuilderResultPanel({
   action,
   businessSlug,
+  onStartOver,
+  originalRequest,
   state,
 }: Readonly<{
   action?: BuilderFormAction;
   businessSlug: string;
+  onStartOver?: () => void;
+  originalRequest?: string;
   state: BuilderUiState;
 }>) {
   if (state.state === "idle") {
@@ -142,6 +146,35 @@ export function BuilderResultPanel({
           Open the change to undo it
         </h2>
         <p>{state.message}</p>
+      </section>
+    );
+  }
+
+  if (
+    state.state === "clarification_expired" ||
+    state.state === "clarification_limit_reached"
+  ) {
+    const isLimit = state.state === "clarification_limit_reached";
+    return (
+      <section
+        aria-labelledby="builder-clarification-ended-heading"
+        className="builder-result builder-result-warning"
+        role="status"
+      >
+        <h2 id="builder-clarification-ended-heading">
+          {isLimit ? "Lenni needs a fresh request" : "Start this request again"}
+        </h2>
+        <p>{state.message}</p>
+        <div className="builder-consequence">
+          <strong>What this means</strong>
+          <p>Your live workspace has not changed.</p>
+        </div>
+        <Link
+          className="button button-secondary"
+          href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+        >
+          Start again
+        </Link>
       </section>
     );
   }
@@ -636,26 +669,106 @@ export function BuilderResultPanel({
         </div>
       ) : null}
 
-      <div className="builder-result-section">
-        <h3>Questions to answer</h3>
-        <ol className="builder-question-list">
-          {state.questions.map((question) => (
-            <li key={question.question}>
-              <strong>{question.question}</strong>
-              <p>{question.reason}</p>
-              {question.options.length > 0 ? (
-                <ul className="builder-option-list">
-                  {question.options.map((option) => (
-                    <li key={option}>{option}</li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="builder-detail-note">Free-text answer</span>
-              )}
-            </li>
-          ))}
-        </ol>
-      </div>
+      {action && state.continuation_token ? (
+        <>
+          <div className="builder-result-section builder-preserved-request">
+            <h3>Your request</h3>
+            <p>
+              {originalRequest?.trim()
+                ? originalRequest
+                : "Your original request is preserved automatically for this short clarification."}
+            </p>
+          </div>
+          <form action={action} className="builder-request-panel">
+            <input
+              name="clarificationContinuationToken"
+              type="hidden"
+              value={state.continuation_token}
+            />
+            <fieldset className="builder-clarification-questions">
+              <legend>Questions to answer</legend>
+              {state.questions.map((question, index) => {
+                const answerName = `clarificationAnswer_${index}`;
+                return (
+                  <div
+                    className="builder-clarification-question"
+                    key={question.question}
+                  >
+                    <label htmlFor={`${answerName}-input`}>
+                      {question.question}
+                    </label>
+                    <p className="muted">{question.reason}</p>
+                    {question.response_style === "free_text" ? (
+                      <textarea
+                        id={`${answerName}-input`}
+                        maxLength={1_000}
+                        name={answerName}
+                        required
+                        rows={4}
+                      />
+                    ) : (
+                      <div className="builder-clarification-options">
+                        {question.options.map((option) => (
+                          <label key={option}>
+                            <input
+                              name={answerName}
+                              required={
+                                question.response_style === "single_choice"
+                              }
+                              type={
+                                question.response_style === "single_choice"
+                                  ? "radio"
+                                  : "checkbox"
+                              }
+                              value={option}
+                            />
+                            {option}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </fieldset>
+            <PendingSubmitButton
+              label="Continue"
+              pendingLabel="Continuing with Lenni…"
+            />
+          </form>
+          <form
+            action={action}
+            className="builder-clarification-start-over"
+            onSubmit={onStartOver}
+          >
+            <input name="clarificationStartOver" type="hidden" value="true" />
+            <button className="button button-secondary" type="submit">
+              Start over / edit original request
+            </button>
+          </form>
+        </>
+      ) : (
+        <div className="builder-result-section">
+          <h3>Questions to answer</h3>
+          <ol className="builder-question-list">
+            {state.questions.map((question) => (
+              <li key={question.question}>
+                <strong>{question.question}</strong>
+                <p>{question.reason}</p>
+                {question.options.length > 0 ? (
+                  <ul className="builder-option-list">
+                    {question.options.map((option) => (
+                      <li key={option}>{option}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="builder-detail-note">Free-text answer</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {state.unsupported_requirements.length > 0 ? (
         <div className="builder-result-section">
@@ -673,10 +786,13 @@ export function BuilderResultPanel({
         </div>
       ) : null}
 
-      <p className="builder-safety-note">
-        Add these details to your request above, then submit the complete
-        request again.
-      </p>
+      {state.continuation_token ? (
+        <p className="builder-safety-note">
+          Lenni retains this request and your answers for this short,
+          authenticated continuation only. Nothing changes until a later
+          proposal or confirmation.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -688,6 +804,8 @@ export function BuilderUi({
 }: Readonly<BuilderUiProps>) {
   const [state, formAction] = useActionState(action, BUILDER_INITIAL_STATE);
   const [ownerRequest, setOwnerRequest] = useState("");
+  const isClarifying =
+    state.state === "needs_clarification" && Boolean(state.continuation_token);
 
   return (
     <section className="tenant-content builder-page">
@@ -710,37 +828,49 @@ export function BuilderUi({
         </p>
       </div>
 
-      <form action={formAction} className="builder-request-panel">
-        <label htmlFor="builder-owner-request">What do you need?</label>
-        <textarea
-          aria-describedby="builder-request-help builder-request-count"
-          id="builder-owner-request"
-          maxLength={4_000}
-          name="ownerRequest"
-          onChange={(event) => setOwnerRequest(event.target.value)}
-          placeholder="Add Cambridge as a new Location."
-          required
-          rows={8}
-          value={ownerRequest}
-        />
-        <div className="builder-request-footer">
-          <span id="builder-request-help" className="muted">
-            One complete request at a time. You can revise it after questions
-            appear.
-          </span>
-          <output aria-live="polite" id="builder-request-count">
-            {ownerRequest.length.toLocaleString("en-GB")} / 4,000 characters
-          </output>
-        </div>
-        <PendingSubmitButton
-          label="Prepare request"
-          pendingLabel="Preparing request…"
-        />
-      </form>
+      {isClarifying ? (
+        <section className="builder-request-panel" aria-label="Your request">
+          <strong>Your request is preserved</strong>
+          <p className="muted">
+            Answer Lenni&apos;s questions below. You do not need to rewrite this
+            request.
+          </p>
+        </section>
+      ) : (
+        <form action={formAction} className="builder-request-panel">
+          <label htmlFor="builder-owner-request">What do you need?</label>
+          <textarea
+            aria-describedby="builder-request-help builder-request-count"
+            id="builder-owner-request"
+            maxLength={4_000}
+            name="ownerRequest"
+            onChange={(event) => setOwnerRequest(event.target.value)}
+            placeholder="Add Cambridge as a new Location."
+            required
+            rows={8}
+            value={ownerRequest}
+          />
+          <div className="builder-request-footer">
+            <span id="builder-request-help" className="muted">
+              One complete request at a time. Lenni will keep it while asking
+              any short follow-up questions.
+            </span>
+            <output aria-live="polite" id="builder-request-count">
+              {ownerRequest.length.toLocaleString("en-GB")} / 4,000 characters
+            </output>
+          </div>
+          <PendingSubmitButton
+            label="Prepare request"
+            pendingLabel="Preparing request…"
+          />
+        </form>
+      )}
 
       <BuilderResultPanel
         action={formAction}
         businessSlug={businessSlug}
+        onStartOver={() => setOwnerRequest("")}
+        originalRequest={ownerRequest}
         state={state}
       />
 

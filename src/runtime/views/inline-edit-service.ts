@@ -333,6 +333,7 @@ async function applyDirectTableRecordCellEditWithScope(
     field,
     configuredField,
     input.formData,
+    { enforceRequired: false },
   );
 
   try {

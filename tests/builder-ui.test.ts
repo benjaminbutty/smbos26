@@ -20,6 +20,7 @@ import {
   builderPreorderAmendmentProposalErrorCodes,
   BuilderPreorderAmendmentProposalError,
 } from "../src/ai/preorder-amendment/errors";
+import { createBuilderClarificationContinuationTokenService } from "../src/ai/builder/clarification-continuation-token";
 import { createRecordConfirmationTokenService } from "../src/ai/builder/record-confirmation-token";
 import {
   aiBusinessContextErrorCodes,
@@ -215,6 +216,49 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(Object.isFrozen(mapped)).toBe(true);
     expect(Object.isFrozen(mapped.questions)).toBe(true);
     expect(builderUiStateSchema.parse(mapped)).toEqual(mapped);
+  });
+
+  it("turns a clarification into a direct-answer continuation without exposing planning context", () => {
+    const state = mapBuilderOrchestrationResult(
+      {
+        ...clarificationResult(),
+        base_version_id: baseVersionId,
+        head_revision: 4,
+      },
+      {
+        businessId: "10000000-0000-4000-8000-000000000003",
+        actorId: "10000000-0000-4000-8000-000000000004",
+        clarificationTokenService:
+          createBuilderClarificationContinuationTokenService({
+            secret: "builder-clarification-ui-test-secret-0123456789",
+            now: () => 1_000,
+          }),
+        originalOwnerRequest: "Make our opportunity tracking simpler.",
+        clarificationAnswers: [],
+        clarificationRound: 1,
+      },
+    );
+    expect(state).toMatchObject({
+      state: "needs_clarification",
+      clarification_round: 1,
+    });
+    if (state.state !== "needs_clarification" || !state.continuation_token) {
+      throw new Error("Expected a signed clarification continuation.");
+    }
+    expect(JSON.stringify(state)).not.toContain("base_version");
+    const html = renderToStaticMarkup(
+      createElement(BuilderResultPanel, {
+        action: async () => {},
+        businessSlug: "bedford-bakery-demo",
+        originalRequest: "Make our opportunity tracking simpler.",
+        state,
+      }),
+    );
+    expect(html).toContain("Your request");
+    expect(html).toContain("clarificationContinuationToken");
+    expect(html).toContain("clarificationAnswer_0");
+    expect(html).toContain("Start over / edit original request");
+    expect(html).not.toContain("submit the complete request again");
   });
 
   it("maps unsupported and proposed results to only the bounded handoff fields", () => {
@@ -578,7 +622,7 @@ describe("Phase 8C Builder UI state and presentation boundary", () => {
     expect(clarificationHtml).toContain("Event details");
     expect(clarificationHtml).toContain("Contact details");
     expect(clarificationHtml).toContain("Free-text answer");
-    expect(clarificationHtml).toContain(
+    expect(clarificationHtml).not.toContain(
       "Add these details to your request above",
     );
     expect(clarificationHtml).toContain("&lt;script&gt;");

@@ -2382,6 +2382,64 @@ textarea {
   margin-top: 0.3rem;
 }
 
+.builder-preserved-request {
+  color: var(--text-secondary);
+}
+
+.builder-clarification-questions {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.builder-clarification-questions legend {
+  margin-bottom: 0.25rem;
+  font-weight: 750;
+}
+
+.builder-clarification-question {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.builder-clarification-question > label {
+  font-weight: 750;
+}
+
+.builder-clarification-question > p {
+  margin: 0;
+}
+
+.builder-clarification-question textarea {
+  min-height: 7rem;
+}
+
+.builder-clarification-options {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.builder-clarification-options label {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+}
+
+.builder-clarification-options input {
+  margin-top: 0.18rem;
+}
+
+.builder-clarification-start-over {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .builder-option-list {
   margin-top: 0.55rem !important;
   padding-left: 1.15rem !important;
@@ -7461,6 +7519,141 @@ textarea {
 .workspace-table-page .editor-add-column-button[aria-expanded="true"] {
   color: var(--coral-700);
   background: var(--coral-50);
+}
+
+.editor-record-connection-actions {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.editor-record-add-related {
+  width: fit-content;
+  padding: 0;
+  color: var(--coral-700);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+  background: transparent;
+  border: 0;
+}
+
+.contextual-record-create-scrim {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  padding: 1rem;
+  overflow: auto;
+  background: color-mix(in srgb, #19231f 42%, transparent);
+  place-items: center;
+}
+
+.contextual-record-create-dialog {
+  width: min(100%, 42rem);
+  max-height: min(52rem, calc(100vh - 2rem));
+  overflow: auto;
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.contextual-record-create-header,
+.contextual-record-create-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.25rem;
+}
+
+.contextual-record-create-header h2,
+.contextual-record-create-header p {
+  margin: 0;
+}
+
+.contextual-record-create-header p {
+  margin-top: 0.35rem;
+  color: var(--text-secondary);
+}
+
+.contextual-record-create-header > button {
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  line-height: 1;
+  background: transparent;
+  border: 0;
+}
+
+.contextual-record-create-fields {
+  display: grid;
+  gap: 1rem;
+  padding: 0 1.25rem;
+}
+
+.contextual-record-create-field {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.contextual-record-create-field > input,
+.contextual-record-create-field > select,
+.contextual-record-create-field > textarea {
+  width: 100%;
+  padding: 0.7rem 0.75rem;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 500;
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.contextual-record-create-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-weight: 500;
+}
+
+.contextual-record-create-options label {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.contextual-record-create-error {
+  margin: 1rem 1.25rem 0;
+  color: var(--danger-700, #aa2f2f);
+}
+
+.runtime-detail-related-create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.contextual-record-create-actions {
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 600px) {
+  .contextual-record-create-scrim {
+    padding: 0;
+    place-items: end stretch;
+  }
+
+  .contextual-record-create-dialog {
+    width: 100%;
+    max-height: min(88vh, 48rem);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
 }
 
 @media (max-width: 1100px) {

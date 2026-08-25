@@ -55,6 +55,11 @@ import {
   type PendingEdit,
 } from "./table-columns";
 import { RecordPanel } from "./record-panel";
+import {
+  ContextualRecordCreateDialog,
+  type ContextualRecordCreateConnection,
+  type ContextualRecordCreateDialogState,
+} from "./contextual-record-create-dialog";
 import type { TableEditorAdapter } from "./contracts";
 import { OptionManager, Popover, ShortcutSheet, TypePicker } from "./lenni-ui";
 import {
@@ -133,6 +138,20 @@ export interface EditorKernelProps {
         context: EditorRecordContext,
         columnKey: string,
         primaryValue: string,
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
+  loadContextualRecordCreate?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+      ) => Promise<ContextualRecordCreateDialogState>)
+    | undefined;
+  createContextualRecord?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+        values: Readonly<Record<string, EditorValue>>,
+        connections: readonly ContextualRecordCreateConnection[],
       ) => Promise<{ id: string; label: string }>)
     | undefined;
   title?: string;
@@ -1359,6 +1378,8 @@ export function EditorKernel({
   updateConnectedRecord,
   searchConnectedRecordTargets,
   createConnectedRecordTarget,
+  loadContextualRecordCreate,
+  createContextualRecord,
   readOnly = false,
   title,
   variant = "workspace",
@@ -1388,6 +1409,11 @@ export function EditorKernel({
   const [panelEditingKey, setPanelEditingKey] = useState<string | null>(null);
   const [connectedPanel, setConnectedPanel] =
     useState<EditorRecordContext | null>(null);
+  const [contextualCreate, setContextualCreate] = useState<{
+    context: EditorRecordContext;
+    columnKey: string;
+    state: ContextualRecordCreateDialogState;
+  } | null>(null);
   const [panelHistory, setPanelHistory] = useState<EditorRecordContext[]>([]);
   const [draftActivation, setDraftActivation] = useState<{
     rowIdx: number;
@@ -1972,6 +1998,91 @@ export function EditorKernel({
       );
     },
     [connectedPanel, createConnectedRecordTarget],
+  );
+
+  const beginContextualRecordCreate = useCallback(
+    (columnKey: string, parentRecordId: string): void => {
+      if (
+        !activePanel ||
+        activePanel.row.id !== parentRecordId ||
+        !loadContextualRecordCreate
+      ) {
+        return;
+      }
+      void loadContextualRecordCreate(activePanel, columnKey)
+        .then((state) =>
+          setContextualCreate({ context: activePanel, columnKey, state }),
+        )
+        .catch((error: unknown) => {
+          setSaveState({
+            status: "error",
+            message: saveErrorMessage(error),
+          });
+        });
+    },
+    [activePanel, loadContextualRecordCreate],
+  );
+
+  const saveContextualRecordCreate = useCallback(
+    async (
+      values: Readonly<Record<string, EditorValue>>,
+      connections: readonly ContextualRecordCreateConnection[],
+    ): Promise<void> => {
+      if (!contextualCreate || !createContextualRecord) {
+        throw new Error("Adding a related Record is not available.");
+      }
+      const created = await createContextualRecord(
+        contextualCreate.context,
+        contextualCreate.columnKey,
+        values,
+        connections,
+      );
+      const appendConnection = (row: EditorRow): EditorRow => {
+        const selectedValue = row.values[contextualCreate.columnKey];
+        const selected = Array.isArray(selectedValue)
+          ? selectedValue.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : [];
+        const labels = row.connectionValues?.[contextualCreate.columnKey] ?? [];
+        return {
+          ...row,
+          values: {
+            ...row.values,
+            [contextualCreate.columnKey]: selected.includes(created.id)
+              ? selected
+              : [...selected, created.id],
+          },
+          connectionValues: {
+            ...row.connectionValues,
+            [contextualCreate.columnKey]: labels.some(
+              (item) => item.id === created.id,
+            )
+              ? labels
+              : [...labels, created],
+          },
+        };
+      };
+      if (connectedPanel) {
+        setConnectedPanel((current) =>
+          current
+            ? { ...current, row: appendConnection(current.row) }
+            : current,
+        );
+      } else {
+        setTable((current) => ({
+          ...current,
+          rows: current.rows.map((row) =>
+            row.id === contextualCreate.context.row.id
+              ? appendConnection(row)
+              : row,
+          ),
+        }));
+      }
+      setContextualCreate(null);
+      setSaveState({ status: "saved" });
+    },
+    [connectedPanel, contextualCreate, createContextualRecord],
   );
 
   const handleCreateProperty = useCallback(
@@ -3123,6 +3234,9 @@ export function EditorKernel({
                       ? adapter.searchConnectionTargets(columnKey, search)
                       : Promise.resolve([])
             }
+            {...(loadContextualRecordCreate && createContextualRecord
+              ? { onAddRelatedRecord: beginContextualRecordCreate }
+              : {})}
             {...(panelStatusLabel !== undefined
               ? { statusLabel: panelStatusLabel }
               : {})}
@@ -3144,6 +3258,22 @@ export function EditorKernel({
               ? { recordTypeLabel: activePanel.recordTypeLabel }
               : {})}
             tableName={activePanel.tableName}
+          />
+        ) : null}
+        {contextualCreate ? (
+          <ContextualRecordCreateDialog
+            onClose={() => setContextualCreate(null)}
+            onSave={saveContextualRecordCreate}
+            onSearchConnectionTargets={(columnKey, search) =>
+              searchConnectedRecordTargets
+                ? searchConnectedRecordTargets(
+                    contextualCreate.context,
+                    columnKey,
+                    search,
+                  )
+                : Promise.resolve([])
+            }
+            state={contextualCreate.state}
           />
         ) : null}
       </div>

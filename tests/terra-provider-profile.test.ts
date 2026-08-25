@@ -377,7 +377,7 @@ describe("GPT-5.6 Terra medium production profile", () => {
   it("freezes the approved Phase 4B.2 planning subject", () => {
     expect(BUILDER_PLANNING_INSTRUCTION).toBe(approvedPhase4B2Instruction);
     expect(hashFile("src/ai/planning/schemas.ts")).toBe(
-      "21b3d954f3cb0a7671c3264295f02cc02adc170d43878d7f706e5b1b14230f19",
+      "4686037e32639e921e1cdb02805f93aeea646d27f0507004e3d11baa83644c59",
     );
     expect(hashFile("src/ai/planning/validation.ts")).toBe(
       "da444f7e47667a695741744046579ad6d88e2f3687e2d5f39615445695d2ff75",

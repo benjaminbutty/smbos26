@@ -63,6 +63,8 @@ export const builderClarificationResultSchema = z
     schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
     state: z.literal("needs_clarification"),
     clarification: clarificationPlanningOutputSchema,
+    base_version_id: z.uuid().optional(),
+    head_revision: z.number().int().positive().optional(),
   })
   .strict();
 

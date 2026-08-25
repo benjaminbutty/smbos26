@@ -56,14 +56,6 @@ function primaryField(
   return fields.find((field) => field.key === key) ?? null;
 }
 
-function usableDefault(
-  value: Tables<"field_definitions">["default_value"],
-): boolean {
-  if (value === null) return false;
-  if (typeof value === "string") return value.trim().length > 0;
-  return !Array.isArray(value) || value.length > 0;
-}
-
 export async function getDirectTableRowCreationAvailability(
   client: SupabaseClient<Database>,
   tenant: { businessId: string },
@@ -104,23 +96,14 @@ export async function getDirectTableRowCreationAvailability(
         };
   }
 
-  const missingDefault = activeFields.find(
-    (field) =>
-      field.key !== primary.key &&
-      field.required &&
-      !usableDefault(field.default_value),
-  );
-  return missingDefault
-    ? {
-        kind: "unavailable",
-        message: `Add row needs a value for ${missingDefault.label}. Use the configured creation screen for this Table.`,
-        ...(config.create_form_key ? { formKey: config.create_form_key } : {}),
-      }
-    : {
-        kind: "direct",
-        fields,
-        ...(config.create_form_key ? { formKey: config.create_form_key } : {}),
-      };
+  // A Table is an ordinary operational surface: creating a Record captures
+  // what the owner knows now. `field.required` remains meaningful to a
+  // configured Form, but does not make an ordinary Record unable to exist.
+  return {
+    kind: "direct",
+    fields,
+    ...(config.create_form_key ? { formKey: config.create_form_key } : {}),
+  };
 }
 
 export async function createDirectTableRow(
@@ -147,18 +130,18 @@ export async function createDirectTableRow(
     );
   }
 
-  const fields = activeObjectFields(view);
-  const formConfig = {
-    fields: fields.map((field) => ({
-      field: field.key,
-      hidden: false,
-      ...(field.default_value !== null
-        ? { default_value: field.default_value }
-        : {}),
-    })),
-  };
+  const primary = primaryField(
+    activeObjectFields(view),
+    view.config as TableViewConfig,
+  );
+  if (!primary) {
+    throw new ExperienceSubmissionError(
+      "This Table has no usable primary property.",
+    );
+  }
+  const formConfig = { fields: [{ field: primary.key, hidden: false }] };
   const data = buildConfiguredSubmission(
-    fields,
+    [primary],
     formConfig,
     "create",
     input.formData,

@@ -3526,3 +3526,22 @@ JSON, HTML and unknown nodes/marks remain invalid in TypeScript and PostgreSQL.
 This amends ADR-037's internal autosave and rich-text deferral only. It adds no
 draft store, primitive, runtime, renderer or lifecycle, and it does not change
 the ADR-045 Site/publication contract. See [ADR-046](./ADR-046.md).
+
+## ADR-047: Ordinary Records are progressively completable
+
+Accepted for the UAT interaction correction. Omitted business Properties no
+longer prevent ordinary generic Record existence; configured Forms and trusted
+capabilities retain contextual atomic completeness. See [ADR-047](./ADR-047.md).
+
+## ADR-048: Contextual related creation is one atomic Record-and-Connection action
+
+Accepted for the UAT interaction correction. An owner can add a related Record
+from an editable Connection without manually reconstructing the graph; the
+generic Record and initiating Connection commit or roll back together. See
+[ADR-048](./ADR-048.md).
+
+## ADR-049: Builder clarification uses a signed bounded continuation, not chat memory
+
+Accepted for the UAT interaction correction. Builder retains an authenticated,
+short-lived original request and answers through at most three clarification
+rounds, without permanent conversation storage. See [ADR-049](./ADR-049.md).

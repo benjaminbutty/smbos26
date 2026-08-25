@@ -11,6 +11,10 @@ export const BUILDER_UI_INPUT_INVALID_MESSAGE =
   "Describe what you would like SMBOS to build in 4,000 characters or fewer.";
 export const BUILDER_UI_CONTEXT_REQUIRED_MESSAGE =
   'To undo the latest setup change, open its applied Change or active Version and choose "Undo this change in Builder."';
+export const BUILDER_UI_CLARIFICATION_EXPIRED_MESSAGE =
+  "This short clarification session has ended or is no longer current. Start again so Lenni can review the latest setup.";
+export const BUILDER_UI_CLARIFICATION_LIMIT_REACHED_MESSAGE =
+  "Lenni still needs more detail after this short clarification. No change has been prepared. Start again with the key details, or continue using the existing workspace.";
 
 export const BUILDER_UI_UNAVAILABLE_MESSAGES = Object.freeze({
   ai_disabled:
@@ -84,6 +88,18 @@ const builderUiStateSchemas = [
     .strict(),
   z
     .object({
+      state: z.literal("clarification_expired"),
+      message: z.literal(BUILDER_UI_CLARIFICATION_EXPIRED_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
+      state: z.literal("clarification_limit_reached"),
+      message: z.literal(BUILDER_UI_CLARIFICATION_LIMIT_REACHED_MESSAGE),
+    })
+    .strict(),
+  z
+    .object({
       state: z.literal("needs_clarification"),
       understanding: z.string().trim().min(1).max(2_000),
       known_requirements: z.array(boundedText).max(20),
@@ -116,6 +132,13 @@ const builderUiStateSchemas = [
             .strict(),
         )
         .max(20),
+      continuation_token: z
+        .string()
+        .trim()
+        .min(1)
+        .max(64 * 1024)
+        .optional(),
+      clarification_round: z.number().int().min(1).max(3).optional(),
     })
     .strict(),
   z

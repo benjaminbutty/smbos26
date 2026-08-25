@@ -25,6 +25,8 @@ import type {
   ProductionScopedConnectionCreateAction,
   ProductionScopedConnectionEditAction,
   ProductionScopedConnectionSearchAction,
+  ProductionScopedContextualRecordCreateAction,
+  ProductionScopedContextualRecordCreateStateAction,
 } from "./action-types";
 import {
   createProductionTableAdapter,
@@ -50,6 +52,8 @@ export interface ProductionTableWorkspaceProps {
   updateConnectedRecordConnection?: ProductionScopedConnectionEditAction;
   searchConnectedRecordTargets?: ProductionScopedConnectionSearchAction;
   createConnectedRecordTarget?: ProductionScopedConnectionCreateAction;
+  loadContextualRecordCreateState?: ProductionScopedContextualRecordCreateStateAction;
+  createContextualRecord?: ProductionScopedContextualRecordCreateAction;
   connectionSource?: Pick<
     ConnectionTableOption,
     "singularLabel" | "pluralLabel"
@@ -78,6 +82,8 @@ export function ProductionTableWorkspace({
   updateConnectedRecordConnection,
   searchConnectedRecordTargets,
   createConnectedRecordTarget,
+  loadContextualRecordCreateState,
+  createContextualRecord,
   connectionSource,
   connectionTargets,
   existingConnections,
@@ -265,6 +271,53 @@ export function ProductionTableWorkspace({
     [businessSlug, createConnectedRecordTarget],
   );
 
+  const loadContextualRecordCreate = useMemo(
+    () =>
+      businessSlug && loadContextualRecordCreateState
+        ? async (
+            context: { viewKey: string; row: { id: string } },
+            columnKey: string,
+          ) => {
+            const result = await loadContextualRecordCreateState(
+              context.viewKey,
+              {
+                parentRecordId: context.row.id,
+                columnKey,
+              },
+            );
+            if (result.status === "error") throw new Error(result.message);
+            return result.value;
+          }
+        : undefined,
+    [businessSlug, loadContextualRecordCreateState],
+  );
+
+  const createContextual = useMemo(
+    () =>
+      businessSlug && createContextualRecord
+        ? async (
+            context: { viewKey: string; row: { id: string } },
+            columnKey: string,
+            values: Readonly<Record<string, EditorValue>>,
+            connections: readonly {
+              relationshipKey: string;
+              direction: "source" | "target";
+              targetRecordIds: readonly string[];
+            }[],
+          ) => {
+            const result = await createContextualRecord(context.viewKey, {
+              parentRecordId: context.row.id,
+              columnKey,
+              values,
+              connections,
+            });
+            if (result.status === "error") throw new Error(result.message);
+            return result.value;
+          }
+        : undefined,
+    [businessSlug, createContextualRecord],
+  );
+
   const footer = (
     <span>
       {readOnly
@@ -318,6 +371,10 @@ export function ProductionTableWorkspace({
           : {})}
         {...(createConnectedRecord
           ? { createConnectedRecordTarget: createConnectedRecord }
+          : {})}
+        {...(loadContextualRecordCreate ? { loadContextualRecordCreate } : {})}
+        {...(createContextual
+          ? { createContextualRecord: createContextual }
           : {})}
         readOnly={readOnly}
         variant={surface}

@@ -847,16 +847,15 @@ describe("metadata-driven graph engine", () => {
     ).rejects.toMatchObject({ code: "22023" });
   });
 
-  it("validates required fields, unknown keys and the resulting update", async () => {
-    const { error: requiredError } = await ownerA.client.rpc(
-      "create_graph_record",
-      {
+  it("allows progressive Records while validating supplied and unknown values", async () => {
+    const { data: progressiveRecord, error: progressiveError } =
+      await ownerA.client.rpc("create_graph_record", {
         expected_business_id: businessA.id,
         target_object_definition_id: validationObject.id,
         requested_data: {},
-      },
-    );
-    expect(requiredError?.code).toBe("23514");
+      });
+    expect(progressiveError).toBeNull();
+    expect(progressiveRecord?.data_json).toEqual({});
 
     const { error: unknownError } = await ownerA.client.rpc(
       "create_graph_record",
@@ -876,11 +875,11 @@ describe("metadata-driven graph engine", () => {
         name: "Complete",
       },
     );
-    const { error: incompleteUpdateError } = await ownerA.client
+    const { error: progressiveUpdateError } = await ownerA.client
       .from("records")
       .update({ data_json: {} })
       .eq("id", validRecord.id);
-    expect(incompleteUpdateError?.code).toBe("23514");
+    expect(progressiveUpdateError).toBeNull();
   });
 
   it("rejects required defaults that do not satisfy generic presence semantics", async () => {

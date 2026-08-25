@@ -56,6 +56,15 @@ import {
   type RecordLocationConfirmationTokenService,
 } from "../../../../ai/builder/record-location-confirmation-token";
 import {
+  BuilderClarificationContinuationTokenError,
+  BUILDER_CLARIFICATION_MAX_ROUNDS,
+  composeClarificationOwnerRequest,
+  createBuilderClarificationContinuationTokenService,
+  parseClarificationAnswers,
+  type BuilderClarificationAnswer,
+  type BuilderClarificationContinuationTokenService,
+} from "../../../../ai/builder/clarification-continuation-token";
+import {
   createLocationService,
   LocationServiceError,
 } from "../../../../core/locations/service";
@@ -73,8 +82,9 @@ import {
   RecordLocationLinkError,
 } from "../../../../core/graph/location-links";
 import { experienceKeyToPath } from "../../../../runtime/routing";
-import { BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS } from "../../../../ai/planning/schemas";
 import {
+  BUILDER_UI_CLARIFICATION_EXPIRED_MESSAGE,
+  BUILDER_UI_CLARIFICATION_LIMIT_REACHED_MESSAGE,
   BUILDER_INITIAL_STATE,
   BUILDER_UI_CONTEXT_REQUIRED_MESSAGE,
   BUILDER_UI_INPUT_INVALID_MESSAGE,
@@ -96,11 +106,7 @@ export const builderRouteSlugSchema = z
   .max(120)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
-const ownerRequestSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS);
+const ownerRequestSchema = z.string().trim().min(1).max(4_000);
 
 export function parseBuilderRouteSlug(value: unknown): string | null {
   const parsed = builderRouteSlugSchema.safeParse(value);
@@ -181,6 +187,20 @@ export function contextRequiredBuilderState(): BuilderResultUiState {
   });
 }
 
+function clarificationExpiredState(): BuilderResultUiState {
+  return freezeBuilderUiState({
+    state: "clarification_expired",
+    message: BUILDER_UI_CLARIFICATION_EXPIRED_MESSAGE,
+  });
+}
+
+function clarificationLimitReachedState(): BuilderResultUiState {
+  return freezeBuilderUiState({
+    state: "clarification_limit_reached",
+    message: BUILDER_UI_CLARIFICATION_LIMIT_REACHED_MESSAGE,
+  });
+}
+
 export function isUncontextualizedUndoPhrase(ownerRequest: string): boolean {
   return /^undo that[.!?]*$/i.test(ownerRequest.trim());
 }
@@ -214,8 +234,32 @@ function mapClarification(
   > & {
     clarification: NeedsClarificationPlanningOutput;
   },
+  continuation?: {
+    tokenService: BuilderClarificationContinuationTokenService;
+    businessId: string;
+    actorId: string;
+    originalOwnerRequest: string;
+    answers: readonly BuilderClarificationAnswer[];
+    round: number;
+  },
 ): BuilderResultUiState {
   const clarification = result.clarification;
+  const continuationToken =
+    continuation && result.base_version_id && result.head_revision
+      ? continuation.tokenService.sign({
+          businessId: continuation.businessId,
+          actorId: continuation.actorId,
+          baseVersionId: result.base_version_id,
+          headRevision: result.head_revision,
+          originalOwnerRequest: continuation.originalOwnerRequest,
+          questions: clarification.questions,
+          answers: continuation.answers,
+          round: continuation.round,
+        })
+      : undefined;
+  const clarificationRound = continuationToken
+    ? continuation?.round
+    : undefined;
   return freezeBuilderUiState({
     state: "needs_clarification",
     understanding: clarification.understanding,
@@ -235,6 +279,12 @@ function mapClarification(
     unsupported_requirements: clarification.unsupported_requirements.map(
       ({ requirement, explanation }) => ({ requirement, explanation }),
     ),
+    ...(continuationToken && clarificationRound
+      ? {
+          continuation_token: continuationToken,
+          clarification_round: clarificationRound,
+        }
+      : {}),
   });
 }
 
@@ -247,6 +297,10 @@ export function mapBuilderOrchestrationResult(
     recordTokenService?: RecordConfirmationTokenService;
     recordUpdateTokenService?: RecordUpdateConfirmationTokenService;
     recordLocationTokenService?: RecordLocationConfirmationTokenService;
+    clarificationTokenService?: BuilderClarificationContinuationTokenService;
+    originalOwnerRequest?: string;
+    clarificationAnswers?: readonly BuilderClarificationAnswer[];
+    clarificationRound?: number;
   },
 ): BuilderResultUiState {
   const result = builderOrchestrationResultSchema.parse(input);
@@ -258,6 +312,17 @@ export function mapBuilderOrchestrationResult(
       > & {
         clarification: NeedsClarificationPlanningOutput;
       },
+      confirmation?.clarificationTokenService &&
+        confirmation.originalOwnerRequest !== undefined
+        ? {
+            tokenService: confirmation.clarificationTokenService,
+            businessId: confirmation.businessId,
+            actorId: confirmation.actorId,
+            originalOwnerRequest: confirmation.originalOwnerRequest,
+            answers: confirmation.clarificationAnswers ?? [],
+            round: confirmation.clarificationRound ?? 1,
+          }
+        : undefined,
     );
   }
   if (result.state === "unsupported") {
@@ -452,6 +517,16 @@ export type BuilderActionErrorMapping =
 export function mapBuilderActionError(
   error: unknown,
 ): BuilderActionErrorMapping {
+  if (error instanceof BuilderClarificationContinuationTokenError) {
+    return {
+      kind: "state",
+      state:
+        error.code === "clarification_continuation_secret_unavailable"
+          ? unavailableState("temporarily_unavailable")
+          : clarificationExpiredState(),
+    };
+  }
+
   if (error instanceof AiBuilderError) {
     switch (error.code) {
       case "ai_builder_request_invalid":
@@ -792,6 +867,7 @@ export type BuilderActionDependencies = {
   createRecordConfirmationTokenService: typeof createRecordConfirmationTokenService;
   createRecordUpdateConfirmationTokenService: typeof createRecordUpdateConfirmationTokenService;
   createRecordLocationConfirmationTokenService: typeof createRecordLocationConfirmationTokenService;
+  createClarificationContinuationTokenService: typeof createBuilderClarificationContinuationTokenService;
   createConfirmedRecordCreationService: typeof createConfirmedRecordCreationService;
   createConfirmedRecordUpdateService: typeof createConfirmedRecordUpdateService;
   createRecordLocationLinkService: typeof createRecordLocationLinkService;
@@ -808,6 +884,8 @@ const productionBuilderActionDependencies: BuilderActionDependencies = {
   createRecordConfirmationTokenService,
   createRecordUpdateConfirmationTokenService,
   createRecordLocationConfirmationTokenService,
+  createClarificationContinuationTokenService:
+    createBuilderClarificationContinuationTokenService,
   createConfirmedRecordCreationService,
   createConfirmedRecordUpdateService,
   createRecordLocationLinkService,
@@ -838,6 +916,16 @@ function recordLocationConfirmationTokenFormValue(
     return null;
   }
   const value = formData.get("recordLocationConfirmationToken");
+  return typeof value === "string" && value.trim() ? value : "";
+}
+
+function clarificationContinuationTokenFormValue(
+  formData: FormData,
+): string | null {
+  if (!formData.has("clarificationContinuationToken")) {
+    return null;
+  }
+  const value = formData.get("clarificationContinuationToken");
   return typeof value === "string" && value.trim() ? value : "";
 }
 
@@ -1254,6 +1342,123 @@ export function createBuilderAction(
       );
     }
 
+    if (formData.get("clarificationStartOver") === "true") {
+      return BUILDER_INITIAL_STATE;
+    }
+
+    const clarificationToken =
+      clarificationContinuationTokenFormValue(formData);
+    if (clarificationToken !== null) {
+      const supabase = await dependencies.createServerClient();
+      const tenant = await resolveBuilderTenant(businessSlug, supabase, {
+        notFound: dependencies.notFound,
+        resolveTenant: dependencies.resolveTenant,
+      });
+      if (
+        !dependencies.hasCapability(
+          tenant.membership.role,
+          "manage_configuration",
+        )
+      ) {
+        dependencies.notFound();
+      }
+
+      try {
+        const clarificationTokenService =
+          dependencies.createClarificationContinuationTokenService();
+        const continuation = clarificationTokenService.verify(
+          clarificationToken,
+          {
+            businessId: tenant.business.id,
+            actorId: tenant.user.id,
+          },
+        );
+        const headResult = await supabase
+          .from("business_configuration_heads")
+          .select("business_id,active_version_id,head_revision")
+          .eq("business_id", tenant.business.id)
+          .maybeSingle();
+        if (headResult.error) {
+          return unavailableState("temporarily_unavailable");
+        }
+        if (
+          !headResult.data ||
+          headResult.data.business_id !== tenant.business.id ||
+          headResult.data.active_version_id !== continuation.base_version_id ||
+          headResult.data.head_revision !== continuation.head_revision
+        ) {
+          return clarificationExpiredState();
+        }
+
+        let answers: readonly BuilderClarificationAnswer[];
+        try {
+          answers = parseClarificationAnswers(continuation, formData);
+        } catch {
+          return invalidBuilderInputState();
+        }
+        const ownerRequest = composeClarificationOwnerRequest(
+          continuation.original_owner_request,
+          answers,
+        );
+        const result = await dependencies.orchestrationService.run(supabase, {
+          businessId: tenant.business.id,
+          ownerRequest,
+        });
+        if (
+          result.state === "needs_clarification" &&
+          continuation.round >= BUILDER_CLARIFICATION_MAX_ROUNDS
+        ) {
+          return clarificationLimitReachedState();
+        }
+
+        let tokenService: LocationConfirmationTokenService | undefined;
+        let recordTokenService: RecordConfirmationTokenService | undefined;
+        let recordUpdateTokenService:
+          RecordUpdateConfirmationTokenService | undefined;
+        let recordLocationTokenService:
+          RecordLocationConfirmationTokenService | undefined;
+        if (result.state === "location_confirmation") {
+          tokenService = dependencies.createLocationConfirmationTokenService();
+        }
+        if (result.state === "record_confirmation") {
+          recordTokenService =
+            dependencies.createRecordConfirmationTokenService();
+        }
+        if (result.state === "record_update_confirmation") {
+          recordUpdateTokenService =
+            dependencies.createRecordUpdateConfirmationTokenService();
+        }
+        if (result.state === "record_location_confirmation") {
+          recordLocationTokenService =
+            dependencies.createRecordLocationConfirmationTokenService();
+        }
+        return mapBuilderOrchestrationResult(result, {
+          businessId: tenant.business.id,
+          actorId: tenant.user.id,
+          ...(tokenService ? { tokenService } : {}),
+          ...(recordTokenService ? { recordTokenService } : {}),
+          ...(recordUpdateTokenService ? { recordUpdateTokenService } : {}),
+          ...(recordLocationTokenService ? { recordLocationTokenService } : {}),
+          ...(result.state === "needs_clarification"
+            ? {
+                clarificationTokenService,
+                originalOwnerRequest: continuation.original_owner_request,
+                clarificationAnswers: answers,
+                clarificationRound: continuation.round + 1,
+              }
+            : {}),
+        });
+      } catch (error) {
+        const mapped = mapBuilderActionError(error);
+        if (mapped.kind === "not_found") {
+          dependencies.notFound();
+          return invalidBuilderInputState();
+        }
+        if (mapped.kind === "unexpected") throw mapped.error;
+        return mapped.state;
+      }
+    }
+
     const parsedRequest = parseBuilderOwnerRequest(formData);
     if (!parsedRequest.success) {
       return invalidBuilderInputState();
@@ -1288,6 +1493,8 @@ export function createBuilderAction(
         RecordUpdateConfirmationTokenService | undefined;
       let recordLocationTokenService:
         RecordLocationConfirmationTokenService | undefined;
+      let clarificationTokenService:
+        BuilderClarificationContinuationTokenService | undefined;
       if (result.state === "location_confirmation") {
         tokenService = dependencies.createLocationConfirmationTokenService();
       }
@@ -1303,12 +1510,17 @@ export function createBuilderAction(
         recordLocationTokenService =
           dependencies.createRecordLocationConfirmationTokenService();
       }
+      if (result.state === "needs_clarification") {
+        clarificationTokenService =
+          dependencies.createClarificationContinuationTokenService();
+      }
       return mapBuilderOrchestrationResult(
         result,
         tokenService ||
           recordTokenService ||
           recordUpdateTokenService ||
-          recordLocationTokenService
+          recordLocationTokenService ||
+          clarificationTokenService
           ? {
               businessId: tenant.business.id,
               actorId: tenant.user.id,
@@ -1317,6 +1529,14 @@ export function createBuilderAction(
               ...(recordUpdateTokenService ? { recordUpdateTokenService } : {}),
               ...(recordLocationTokenService
                 ? { recordLocationTokenService }
+                : {}),
+              ...(clarificationTokenService
+                ? {
+                    clarificationTokenService,
+                    originalOwnerRequest: parsedRequest.ownerRequest,
+                    clarificationAnswers: [],
+                    clarificationRound: 1,
+                  }
                 : {}),
             }
           : undefined,

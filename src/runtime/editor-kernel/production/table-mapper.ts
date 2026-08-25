@@ -31,6 +31,8 @@ export interface ProductionTableMappingInput {
   editFormFieldKeys?: readonly string[] | undefined;
   /** The primary internal Table screen for each connected object, when available. */
   targetViewKeyByObjectId?: Readonly<Record<string, string>> | undefined;
+  /** Owner-facing singular labels for connected Objects, when available. */
+  targetObjectLabelByObjectId?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface ProductionTableMapping {
@@ -153,6 +155,9 @@ function mapField(
     kind,
     editable,
     required: field.required,
+    ...(field.default_value !== null
+      ? { defaultValue: editorValueFromJson(field.default_value) }
+      : {}),
     ...(options.length > 0 ? { options } : {}),
     ...(kind === "currency" ? { currency: fieldCurrency(field) ?? "GBP" } : {}),
     ...(reason ? { readOnlyReason: reason } : {}),
@@ -173,6 +178,7 @@ function mapConnection(
   column: Extract<TableViewColumn, { kind: "connection" }>,
   bundle: ExperienceViewBundle,
   targetViewKeyByObjectId?: Readonly<Record<string, string>>,
+  targetObjectLabelByObjectId?: Readonly<Record<string, string>>,
 ): EditorColumn {
   const relationship = (bundle.relationships ?? []).find(
     (candidate) =>
@@ -210,6 +216,9 @@ function mapConnection(
       direction: column.direction,
       multiple,
       targetObjectKey,
+      ...(targetObjectLabelByObjectId?.[targetObjectKey]
+        ? { targetObjectLabel: targetObjectLabelByObjectId[targetObjectKey] }
+        : {}),
       ...(targetViewKeyByObjectId?.[targetObjectKey]
         ? { targetViewKey: targetViewKeyByObjectId[targetObjectKey] }
         : {}),
@@ -309,6 +318,7 @@ export function mapProductionRecordToEditorRow(
 export function mapExperienceViewBundleToEditorTable({
   bundle,
   editFormFieldKeys,
+  targetObjectLabelByObjectId,
   targetViewKeyByObjectId,
 }: ProductionTableMappingInput): ProductionTableMapping {
   if (
@@ -360,7 +370,14 @@ export function mapExperienceViewBundleToEditorTable({
       (column): column is Extract<TableViewColumn, { kind: "connection" }> =>
         column.kind === "connection",
     )
-    .map((column) => mapConnection(column, bundle, targetViewKeyByObjectId));
+    .map((column) =>
+      mapConnection(
+        column,
+        bundle,
+        targetViewKeyByObjectId,
+        targetObjectLabelByObjectId,
+      ),
+    );
   const allColumns = [...fieldColumns, ...connectionColumns];
   const columns = config.columns.map((configuredColumn) => {
     const key =

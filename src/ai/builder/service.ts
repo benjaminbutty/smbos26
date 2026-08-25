@@ -273,6 +273,21 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
+function bindClarificationCurrentness(
+  result: BuilderOrchestrationResult,
+  currentness: { baseVersionId: string; headRevision: number },
+): BuilderOrchestrationResult {
+  if (result.state !== "needs_clarification") {
+    throw new AiBuilderError("ai_builder_runtime_invalid");
+  }
+  return builderOrchestrationResultSchema.parse({
+    ...result,
+    clarification: result.clarification,
+    base_version_id: currentness.baseVersionId,
+    head_revision: currentness.headRevision,
+  });
+}
+
 function locationDuplicate(
   state: LocationCreationState,
   locationName: string,
@@ -883,11 +898,14 @@ export function createBuilderOrchestrationService(
 
       if (plan.state === "needs_clarification") {
         return deepFreeze(
-          builderOrchestrationResultSchema.parse({
-            schema_version: 1,
-            state: "needs_clarification",
-            clarification: plan,
-          }),
+          bindClarificationCurrentness(
+            builderOrchestrationResultSchema.parse({
+              schema_version: 1,
+              state: "needs_clarification",
+              clarification: plan,
+            }),
+            afterPlanning.currentness,
+          ),
         );
       }
 
@@ -927,7 +945,12 @@ export function createBuilderOrchestrationService(
             intentExecution.output,
           );
           if (intent.state === "needs_clarification") {
-            return deepFreeze(locationIntentClarification(intent));
+            return deepFreeze(
+              bindClarificationCurrentness(
+                locationIntentClarification(intent),
+                afterPlanning.currentness,
+              ),
+            );
           }
 
           const secondLocationState =
@@ -1018,7 +1041,12 @@ export function createBuilderOrchestrationService(
               )
             : parsedIntent;
           if (intent.state === "needs_clarification") {
-            return deepFreeze(recordIntentClarification(intent));
+            return deepFreeze(
+              bindClarificationCurrentness(
+                recordIntentClarification(intent),
+                afterPlanning.currentness,
+              ),
+            );
           }
 
           const secondRecordState = await dependencies.readRecordCreationState(
@@ -1081,7 +1109,12 @@ export function createBuilderOrchestrationService(
               )
             : parsedIntent;
           if (intent.state === "needs_clarification") {
-            return deepFreeze(recordUpdateIntentClarification(intent));
+            return deepFreeze(
+              bindClarificationCurrentness(
+                recordUpdateIntentClarification(intent),
+                afterPlanning.currentness,
+              ),
+            );
           }
 
           const targetState = await dependencies.readRecordUpdateState(
@@ -1200,7 +1233,12 @@ export function createBuilderOrchestrationService(
               )
             : parsedIntent;
           if (intent.state === "needs_clarification") {
-            return deepFreeze(recordLocationLinkIntentClarification(intent));
+            return deepFreeze(
+              bindClarificationCurrentness(
+                recordLocationLinkIntentClarification(intent),
+                afterPlanning.currentness,
+              ),
+            );
           }
 
           const targetState = await dependencies.readRecordLocationLinkState(
@@ -1345,7 +1383,15 @@ export function createBuilderOrchestrationService(
             }),
           );
         }
-        return deepFreeze(builderOrchestrationResultSchema.parse(route));
+        const routeResult = builderOrchestrationResultSchema.parse(route);
+        return deepFreeze(
+          routeResult.state === "needs_clarification"
+            ? bindClarificationCurrentness(
+                routeResult,
+                afterPlanning.currentness,
+              )
+            : routeResult,
+        );
       }
 
       const taskInput = builderConfigurationDraftTaskInputSchema.parse({

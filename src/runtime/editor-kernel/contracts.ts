@@ -44,6 +44,8 @@ export interface EditorColumn {
   primary?: boolean;
   editable?: boolean;
   required?: boolean;
+  /** An authoritative configured default, applied when the owner omits it. */
+  defaultValue?: EditorValue;
   options?: readonly string[];
   currency?: string;
   readOnlyReason?: string;
@@ -52,6 +54,7 @@ export interface EditorColumn {
     direction: "source" | "target";
     multiple: boolean;
     targetObjectKey: string;
+    targetObjectLabel?: string;
     targetViewKey?: string;
   };
   width: number;

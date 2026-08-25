@@ -1261,27 +1261,45 @@ function composeTableMutation(
     case "reorder_columns": {
       const currentPropertyKeys =
         table.config.columns.map(propertyKeyForColumn);
-      const requestedPropertyKeys = intent.propertyKeys
-        ? intent.propertyKeys
-        : intent.fieldKeys?.map((fieldKey) =>
-            tableViewFieldPropertyKey(fieldKey),
-          );
-      if (
-        !requestedPropertyKeys ||
-        requestedPropertyKeys.length !== currentPropertyKeys.length ||
-        new Set(requestedPropertyKeys).size !== currentPropertyKeys.length ||
-        requestedPropertyKeys.some((key) => !currentPropertyKeys.includes(key))
-      ) {
-        throw new DirectTableComposerError("direct_table_reorder_invalid");
+      if (intent.propertyKeys) {
+        const requestedPropertyKeys = intent.propertyKeys;
+        if (
+          requestedPropertyKeys.length !== currentPropertyKeys.length ||
+          new Set(requestedPropertyKeys).size !== currentPropertyKeys.length ||
+          requestedPropertyKeys.some(
+            (key) => !currentPropertyKeys.includes(key),
+          )
+        ) {
+          throw new DirectTableComposerError("direct_table_reorder_invalid");
+        }
+        operations = [
+          tableMutationViewOperation(
+            table.view,
+            configWithPropertyKeys(table.config, requestedPropertyKeys),
+          ),
+        ];
+      } else {
+        // The older form-posting surface only knows about Field keys. It may
+        // still operate on a Table that has Connection columns, so validate
+        // and reorder the Field subset while retaining Connection columns in
+        // their existing slots. The editor-kernel property-key route above is
+        // the complete, mixed Field/Connection ordering surface.
+        const requestedFieldKeys = intent.fieldKeys;
+        if (
+          !requestedFieldKeys ||
+          requestedFieldKeys.length !== table.config.fields.length ||
+          new Set(requestedFieldKeys).size !== table.config.fields.length ||
+          requestedFieldKeys.some((key) => !table.config.fields.includes(key))
+        ) {
+          throw new DirectTableComposerError("direct_table_reorder_invalid");
+        }
+        operations = [
+          tableMutationViewOperation(
+            table.view,
+            configWithFieldKeys(table.config, requestedFieldKeys),
+          ),
+        ];
       }
-      operations = [
-        tableMutationViewOperation(
-          table.view,
-          intent.propertyKeys
-            ? configWithPropertyKeys(table.config, requestedPropertyKeys)
-            : configWithFieldKeys(table.config, intent.fieldKeys ?? []),
-        ),
-      ];
       title = `Reorder ${table.view.name}`;
       break;
     }

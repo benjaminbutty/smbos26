@@ -896,13 +896,12 @@ describe("confirmed generic Record creation boundary", () => {
     });
   });
 
-  it("rejects invalid generic field data before any Record is inserted", async () => {
+  it("allows progressive generic Record creation while still rejecting invalid supplied values", async () => {
     const leadState = await readCreationState(owner, "lead", ownerUser.id);
     const invalidLeadRequests: Array<{
       requestedData: Json;
       message: string;
     }> = [
-      { requestedData: {}, message: "Required field is missing: name" },
       {
         requestedData: { name: 123 },
         message: "Invalid value for field: name",
@@ -924,10 +923,22 @@ describe("confirmed generic Record creation boundary", () => {
         message: "Invalid value for field: website",
       },
     ];
+
+    const partialLead = await createFromState(owner, leadState, {});
+    expect(partialLead.error).toBeNull();
+    expect(partialLead.data).toMatchObject({
+      object_definition_id: lead.id,
+      data_json: {},
+    });
+    const currentLeadState = await readCreationState(
+      owner,
+      "lead",
+      ownerUser.id,
+    );
     for (const request of invalidLeadRequests) {
       const { data, error } = await createFromState(
         owner,
-        leadState,
+        currentLeadState,
         request.requestedData,
       );
       expect(data).toBeNull();
@@ -990,7 +1001,7 @@ describe("confirmed generic Record creation boundary", () => {
     }
   });
 
-  it("reports generic eligibility and blocks inactive or capability-owned Objects", async () => {
+  it("reports generic eligibility, allowing partial relationship context while blocking inactive Objects", async () => {
     const inactiveState = await readCreationState(
       owner,
       "inactive_object",
@@ -1015,16 +1026,102 @@ describe("confirmed generic Record creation boundary", () => {
     );
     expect(protectedState.object_definition_id).toBe(protectedObject.id);
     expect(protectedState.eligibility).toEqual({
-      eligible: false,
-      reason_codes: ["required_relationship_target"],
+      eligible: true,
+      reason_codes: [],
     });
     const protectedAttempt = await createFromState(owner, protectedState, {
       name: "Should not exist",
     });
-    expect(protectedAttempt.data).toBeNull();
-    expect(protectedAttempt.error?.message).toContain(
-      "record_creation_object_ineligible",
+    expect(protectedAttempt.error).toBeNull();
+    expect(protectedAttempt.data).toMatchObject({
+      business_id: business.id,
+      object_definition_id: protectedObject.id,
+      data_json: { name: "Should not exist" },
+    });
+  });
+
+  it("creates a related Record and its initiating Connection atomically", async () => {
+    const parent = await owner.rpc("create_graph_record", {
+      expected_business_id: business.id,
+      target_object_definition_id: requiredSourceObject.id,
+      requested_data: {},
+      requested_record_status: "active",
+    });
+    expect(parent.error).toBeNull();
+    expect(parent.data).toMatchObject({
+      business_id: business.id,
+      object_definition_id: requiredSourceObject.id,
+    });
+    if (!parent.data) throw new Error("Could not create contextual parent.");
+
+    const created = await owner.rpc("create_contextual_graph_record", {
+      expected_business_id: business.id,
+      initiating_relationship_key: "trusted_transaction_requires_detail",
+      initiating_direction: "source",
+      parent_record_id: parent.data.id,
+      requested_data: { name: "Send Sarah proposal" },
+      requested_connections: [],
+    });
+    expect(created.error).toBeNull();
+    expect(created.data).toMatchObject({
+      business_id: business.id,
+      object_definition_id: protectedObject.id,
+      created_by: ownerUser.id,
+      data_json: { name: "Send Sarah proposal" },
+    });
+    if (!created.data) throw new Error("Could not create related Record.");
+
+    const connection = await owner
+      .from("record_relationships")
+      .select("business_id,source_record_id,target_record_id")
+      .eq("source_record_id", parent.data.id)
+      .eq("target_record_id", created.data.id)
+      .maybeSingle();
+    expect(connection.error).toBeNull();
+    expect(connection.data).toEqual({
+      business_id: business.id,
+      source_record_id: parent.data.id,
+      target_record_id: created.data.id,
+    });
+
+    const anotherParent = await owner.rpc("create_graph_record", {
+      expected_business_id: business.id,
+      target_object_definition_id: requiredSourceObject.id,
+      requested_data: {},
+      requested_record_status: "active",
+    });
+    if (!anotherParent.data) {
+      throw anotherParent.error ?? new Error("Could not create second parent.");
+    }
+    const before = await owner
+      .from("records")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id)
+      .eq("object_definition_id", protectedObject.id);
+    const rejected = await owner.rpc("create_contextual_graph_record", {
+      expected_business_id: business.id,
+      initiating_relationship_key: "trusted_transaction_requires_detail",
+      initiating_direction: "source",
+      parent_record_id: anotherParent.data.id,
+      requested_data: { name: "Must roll back" },
+      requested_connections: [
+        {
+          relationship_key: "trusted_transaction_requires_detail",
+          direction: "source",
+          target_record_ids: [anotherParent.data.id],
+        },
+      ],
+    });
+    expect(rejected.data).toBeNull();
+    expect(rejected.error?.message).toMatch(
+      /contextual_record_(connection|target)_unavailable/,
     );
+    const after = await owner
+      .from("records")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", business.id)
+      .eq("object_definition_id", protectedObject.id);
+    expect(after.count).toBe(before.count);
   });
 
   it("enforces Owner/Admin membership, actor binding, tenant binding, and authentication", async () => {

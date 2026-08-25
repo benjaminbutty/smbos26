@@ -39,6 +39,8 @@ interface RecordPanelProps {
         primaryValue: string,
       ) => Promise<{ id: string; label: string }>)
     | undefined;
+  onAddRelatedRecord?:
+    ((columnKey: string, parentRecordId: string) => void) | undefined;
 }
 
 function connectedRecordHref(
@@ -231,6 +233,7 @@ export function RecordPanel({
   onFollowConnectedRecord,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
+  onAddRelatedRecord,
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
   const [editingKey, setEditingKey] = useState<string | null>(
@@ -517,28 +520,43 @@ export function RecordPanel({
                       </p>
                     )}
                     {column.editable !== false ? (
-                      <ConnectionPicker
-                        column={column}
-                        labels={labels}
-                        onCommit={(next) =>
-                          onCommitCell(row.id, column.key, next)
-                        }
-                        onSearch={(search) =>
-                          onSearchConnectionTargets
-                            ? onSearchConnectionTargets(column.key, search)
-                            : Promise.resolve(labels)
-                        }
-                        {...(onCreateConnectionTarget
-                          ? {
-                              onCreate: (primaryValue: string) =>
-                                onCreateConnectionTarget(
-                                  column.key,
-                                  primaryValue,
-                                ),
+                      <div className="editor-record-connection-actions">
+                        <ConnectionPicker
+                          column={column}
+                          labels={labels}
+                          onCommit={(next) =>
+                            onCommitCell(row.id, column.key, next)
+                          }
+                          onSearch={(search) =>
+                            onSearchConnectionTargets
+                              ? onSearchConnectionTargets(column.key, search)
+                              : Promise.resolve(labels)
+                          }
+                          {...(onCreateConnectionTarget
+                            ? {
+                                onCreate: (primaryValue: string) =>
+                                  onCreateConnectionTarget(
+                                    column.key,
+                                    primaryValue,
+                                  ),
+                              }
+                            : {})}
+                          value={row.values[column.key] ?? []}
+                        />
+                        {onAddRelatedRecord ? (
+                          <button
+                            className="editor-record-add-related"
+                            onClick={() =>
+                              onAddRelatedRecord(column.key, row.id)
                             }
-                          : {})}
-                        value={row.values[column.key] ?? []}
-                      />
+                            type="button"
+                          >
+                            Add{" "}
+                            {column.connection?.targetObjectLabel ??
+                              column.label}
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                     {column.editable === false ? (
                       <span
