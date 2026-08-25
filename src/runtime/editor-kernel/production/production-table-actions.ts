@@ -1264,7 +1264,17 @@ export async function searchProductionTableConnectionTargetsAction(
   input: ProductionConnectionSearchInput,
 ): Promise<ProductionActionResult<readonly { id: string; label: string }[]>> {
   const businessSlug = routeSlugSchema.parse(businessSlugInput);
-  const viewKey = viewKeySchema.parse(viewKeyInput);
+  // Contextual creation can hand this action the owner-facing route form
+  // (`opportunity-view`) while Table actions normally use the configuration
+  // key (`opportunity_view`). Accept both at this trusted server boundary so
+  // a nested Connection picker never fails merely because it came from a
+  // routed Record surface.
+  const normalizedViewKeyInput = viewKeyInput.replaceAll("-", "_");
+  const parsedViewKey = viewKeySchema.safeParse(normalizedViewKeyInput);
+  if (!parsedViewKey.success) {
+    return resultError("That Table is no longer available.");
+  }
+  const viewKey = parsedViewKey.data;
   const parsed = connectionSearchInputSchema.safeParse(input);
   if (!parsed.success) {
     return resultError("That connection search is not available.");

@@ -3267,7 +3267,10 @@ export function EditorKernel({
             onSearchConnectionTargets={(columnKey, search) =>
               searchConnectedRecordTargets
                 ? searchConnectedRecordTargets(
-                    contextualCreate.context,
+                    {
+                      ...contextualCreate.context,
+                      viewKey: contextualCreate.state.targetViewKey,
+                    },
                     columnKey,
                     search,
                   )
