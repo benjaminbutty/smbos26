@@ -7,9 +7,9 @@ import { marketingMetadata } from "./marketing-metadata";
 import "react-data-grid/lib/styles.css";
 import "./globals.css";
 
-const pageTitle = "Run your business. Your way. · SMBOS";
+const pageTitle = "Your business, in one calm workspace. · Lenni";
 const pageDescription =
-  "A flexible operating platform for small businesses, shaped around how you actually work.";
+  "Lenni is a flexible business workspace for small businesses, shaped around how you actually work.";
 
 function requestOrigin(requestHeaders: Headers): URL {
   const forwardedHost = requestHeaders.get("x-forwarded-host");
@@ -28,7 +28,7 @@ function requestOrigin(requestHeaders: Headers): URL {
 
 export async function generateMetadata(): Promise<Metadata> {
   const metadataBase = requestOrigin(await headers());
-  const socialImage = new URL("/og.png", metadataBase).toString();
+  const socialImage = new URL("/og-lenni.png", metadataBase).toString();
 
   return {
     ...marketingMetadata,
