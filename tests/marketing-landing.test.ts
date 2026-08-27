@@ -8,18 +8,22 @@ import HomePage from "../src/app/page";
 import { marketingMetadata } from "../src/app/marketing-metadata";
 
 describe("public marketing landing page", () => {
-  it("renders the brief-led hero and first Lenni entry path", () => {
+  it("renders the Lenni-branded workspace hero and first entry path", () => {
     const markup = renderToStaticMarkup(createElement(HomePage));
 
-    expect(markup).toContain("Run your business.");
-    expect(markup).toContain("Your way.");
-    expect(markup).toContain("Everything you need to run your business");
+    expect(markup).toContain("Your business,");
+    expect(markup).toContain("in one calm workspace.");
+    expect(markup).toContain("Bring the work that keeps your business moving");
     expect(markup).toContain('href="/start"');
     expect(markup).toContain("Start with Lenni");
     expect(markup).toContain('href="/sign-up"');
     expect(markup).toContain("Build manually");
-    expect(markup).toContain("AI helps you build");
-    expect(markup).toContain("What is SMBOS?");
+    expect(markup).toContain("Tell Lenni");
+    expect(markup).toContain("What is Lenni?");
+    expect(markup).toContain("Is Lenni just an AI chatbot?");
+    expect(markup).toContain("Lenni workspace");
+    expect(markup).not.toContain("What is SMBOS?");
+    expect(markup).not.toContain("SMBOS");
     expect(markup).not.toContain("SMBOS v0.1");
     expect(markup).not.toContain("Milestone 1");
     expect(markup).not.toContain("secure foundation");
@@ -28,14 +32,18 @@ describe("public marketing landing page", () => {
   it("uses the owner-facing metadata direction", () => {
     expect(marketingMetadata).toMatchObject({
       description:
-        "SMBOS is a flexible operating platform for small businesses, shaped around how you actually work.",
+        "Lenni is a flexible business workspace for small businesses, shaped around how you actually work.",
       openGraph: {
-        title: "Run your business. Your way. · SMBOS",
-        images: ["/og.png"],
+        title: "Your business, in one calm workspace. · Lenni",
+        images: ["/og-lenni.png"],
       },
       twitter: {
         card: "summary_large_image",
-        images: ["/og.png"],
+        images: ["/og-lenni.png"],
+      },
+      title: {
+        default: "Your business, in one calm workspace.",
+        template: "%s · Lenni",
       },
     });
   });
