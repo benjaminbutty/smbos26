@@ -3,7 +3,9 @@ import { z } from "zod";
 import { aiBusinessModelContextV1Schema } from "../context/schemas";
 
 export const BUILDER_PLAN_SCHEMA_VERSION = 1 as const;
-export const BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS = 4_000;
+// A normal composer request remains limited to 4,000 characters in the UI.
+// The planner also accepts the bounded server-composed clarification envelope.
+export const BUILDER_PLAN_MAX_OWNER_REQUEST_CHARACTERS = 8_000;
 
 const referenceSchema = (prefix: string) =>
   z

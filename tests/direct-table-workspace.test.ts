@@ -385,6 +385,30 @@ describe("direct Table Workspace composer", () => {
     });
   });
 
+  it("keeps Connection columns in place when the legacy Field-only route reorders a Table", () => {
+    const reordered = composeDirectTableAction(connectionTableSnapshot, {
+      action: "reorder_columns",
+      viewKey: "contacts",
+      fieldKeys: ["status", "name"],
+    });
+
+    expect(reordered.operations[0]).toMatchObject({ op: "set_view" });
+    expect(
+      (reordered.operations[0] as { config_json: unknown }).config_json,
+    ).toMatchObject({
+      fields: ["status", "name"],
+      columns: [
+        { kind: "field", field_key: "status" },
+        {
+          kind: "connection",
+          relationship_key: "contact_has_pet",
+          direction: "source",
+        },
+        { kind: "field", field_key: "name" },
+      ],
+    });
+  });
+
   it("keeps a Table's configured create/edit Forms usable when adding or inserting a Field", () => {
     const added = composeDirectTableAction(operatingFormsSnapshot, {
       action: "add_column",

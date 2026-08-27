@@ -323,6 +323,28 @@ describe("generic experience renderers", () => {
     expect(html).toContain(">Edit<");
   });
 
+  it("places contextual related-work actions in the full Record connection surface", () => {
+    const html = renderToStaticMarkup(
+      createElement(ViewRenderer, {
+        bundle: viewBundle("detail", {
+          fields: ["company_name", "status"],
+          title_field: "company_name",
+          include_archived: false,
+        }),
+        businessSlug: "bedford-bakery",
+        record: records[0]!,
+        detailConnectionActions: createElement(
+          "button",
+          { type: "button" },
+          "Add person",
+        ),
+      }),
+    );
+
+    expect(html).toContain("Connections");
+    expect(html).toContain("Add person");
+  });
+
   it("renders configured Form controls with friendly labels", () => {
     const html = renderToStaticMarkup(
       createElement(FormRenderer, {

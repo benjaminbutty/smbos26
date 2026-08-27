@@ -17,10 +17,12 @@ The request is strict and contains only:
 }
 ```
 
-The Business UUID is validated, the owner request is trimmed and bounded by
-the existing 4,000-character planning contract and a 16,384-byte UTF-8 limit.
-Actor identity, membership, role, context, model and policy are always derived
-or selected on the server.
+The Business UUID is validated. A normal owner-composer request remains
+trimmed to 4,000 characters and a 16,384-byte UTF-8 limit. The planner also
+accepts a server-composed clarification continuation of at most 8,000
+characters; its original owner request remains at most 4,000 characters and
+the browser never supplies the composed context. Actor identity, membership,
+role, context, model and policy are always derived or selected on the server.
 
 The result is a frozen strict discriminated value. Clarification wraps the
 existing `needs_clarification` planning contract. Unsupported ready plans use
@@ -61,6 +63,62 @@ metadata. Both boundaries perform their own second currentness read and call
 the ordinary M5 `proposeChangeSet()` exactly once. Therefore the successful
 path has four authoritative context loads in total; clarification and
 unsupported paths have two.
+
+## Bounded clarification continuation
+
+ADR-049 replaces the former owner request reconstruction interaction. A
+clarification result is bound to the authoritative configuration version and
+head revision, then the Builder Server Action signs only its original request,
+questions, accumulated answers, actor, Business, version, expiry and round.
+The 15-minute HMAC continuation has a distinct namespace, rejects tampering
+and actor/Business mismatch, and is rechecked against the live head before the
+next planning call. The server appends a deterministic `Original owner
+request` and `Clarification answers already established` envelope to the
+qualified planner input.
+
+There are at most three rounds, five current questions, 1,000 characters per
+answer and 5,000 answer characters in total. No response may create a proposal
+or operational confirmation merely by answering a question. A ready response
+continues through the existing deterministic proposal/confirmation route.
+There is no database conversation record, provider-output persistence,
+browser-storage recovery or permanent Builder chat.
+
+The composed input-limit increase changes the planning input schema but not the
+planning instruction, model policy, semantic validator or provider task. The
+previous qualified planning subject therefore cannot be represented as the
+same exact schema hash; the locked profile hash is updated with this change.
+Deterministic planning suites remain evidence for structural compatibility;
+any new live qualification/reliability evidence must identify this schema
+subject explicitly rather than being claimed as carried forward.
+
+The renewed redacted planning gates for this changed input-schema subject ran
+on 25 August 2026 with the same fixed Terra-medium policy: qualification
+passed 8/8 scenarios (35,013 input tokens, 2,605 output tokens, 126,610
+estimated microusd, 41,643 ms); reliability passed 24/24 executions across all
+eight scenarios and three repetitions (105,039 input tokens, 8,217 output
+tokens, 385,860 estimated microusd, 130,210 ms). Both reported zero
+structural, semantic, scenario-gate and provider failures. This is bounded
+engineering evidence for the amended input schema, not a permanent model
+guarantee.
+
+## Adaptive solution choice
+
+ADR-050 adds a deterministic, strict result before any provider call for a
+recognised preference to work from the parent side of a real one-to-many
+Connection. It uses current configuration metadata and trusted capabilities
+only. Its two possible signed consequences are either a no-change contextual
+Record workflow with a server-derived destination, or an ordinary additive
+configuration proposal route.
+
+This product state does not change the `builder_plan_v1` instruction, input
+schema, output schema, semantic validator, model or policy. It has no provider
+authority and the selection is signed, actor/Business/currentness-bound before
+the existing planner can be called. The prior Terra qualification and
+reliability evidence remains evidence for the unchanged planning subject; it
+is not claimed as qualification for an advisory task because no advisory model
+task exists. The selected additive route is exercised by deterministic
+continuation tests and authenticated UAT, while its eventual proposal remains
+subject to the existing planning and configuration-drafting boundaries.
 
 ## Private runtime and accounting
 

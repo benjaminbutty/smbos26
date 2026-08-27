@@ -1340,7 +1340,63 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
     expect(walAfter?.bytes).toBeGreaterThan(0);
   });
 
-  it("rejects incompatible Records, required Fields, options, and Relationship shape without changing live state", async () => {
+  it("allows contextual Form requiredness without invalidating existing progressive Records", async () => {
+    const service = new ConfigurationChangeService(owner.client, {
+      actorId: owner.user.id,
+      businessId: business.id,
+    });
+    const createForm = entity(
+      baselineSnapshot.forms,
+      "compatibility_probe_create",
+    );
+    const snapshotBefore = await currentLiveSnapshot();
+    const headBefore = await currentHead();
+    const changeSet = await service.proposeChangeSet({
+      ...(await service.getProposalCurrentness()),
+      title: "Require a future Form answer",
+      description: null,
+      operations: [
+        {
+          op: "set_field",
+          object_key: "compatibility_probe",
+          key: "required_later",
+          label: "Required later",
+          field_type: "short_text",
+          required: true,
+          default_value: null,
+          settings_json: {},
+          position: 2,
+          is_active: true,
+        },
+        {
+          op: "set_form",
+          key: requiredString(createForm.key, "Form key"),
+          name: requiredString(createForm.name, "Form name"),
+          object_key: requiredString(createForm.object_key, "Form Object"),
+          mode: "create",
+          config_json: {
+            fields: [
+              { field: "value", hidden: false },
+              { field: "category", hidden: false },
+              { field: "required_later", hidden: false },
+            ],
+          },
+          audience: "internal",
+          is_active: true,
+        },
+      ],
+    });
+    const validated = await service.validateChangeSet(changeSet.id);
+    expect(validated.status).toBe("validated");
+    expect(validated.validation_result_json).toMatchObject({
+      outcome: "valid",
+      errors: [],
+    });
+    expect(await currentLiveSnapshot()).toEqual(snapshotBefore);
+    expect(await currentHead()).toEqual(headBefore);
+  });
+
+  it("rejects incompatible Records, options, and Relationship shape without changing live state", async () => {
     const service = new ConfigurationChangeService(owner.client, {
       actorId: owner.user.id,
       businessId: business.id,
@@ -1361,10 +1417,6 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       baselineSnapshot.relationship_definitions,
       "compatibility_probe_has_child",
     );
-    const createForm = entity(
-      baselineSnapshot.forms,
-      "compatibility_probe_create",
-    );
     const snapshotBefore = await currentLiveSnapshot();
     const headBefore = await currentHead();
     const recordBefore = requireData(
@@ -1384,40 +1436,6 @@ describe("Milestone 5 Phase 2A proposals and Phase 2B validation", () => {
       {
         title: "Incompatible populated Field type",
         operations: [setFieldFrom(valueField, { field_type: "number" })],
-        expectedCode: "existing_records_incompatible",
-      },
-      {
-        title: "Required Field without existing values",
-        operations: [
-          {
-            op: "set_field",
-            object_key: "compatibility_probe",
-            key: "required_later",
-            label: "Required later",
-            field_type: "short_text",
-            required: true,
-            default_value: null,
-            settings_json: {},
-            position: 2,
-            is_active: true,
-          },
-          {
-            op: "set_form",
-            key: requiredString(createForm.key, "Form key"),
-            name: requiredString(createForm.name, "Form name"),
-            object_key: requiredString(createForm.object_key, "Form Object"),
-            mode: "create",
-            config_json: {
-              fields: [
-                { field: "value", hidden: false },
-                { field: "category", hidden: false },
-                { field: "required_later", hidden: false },
-              ],
-            },
-            audience: "internal",
-            is_active: true,
-          },
-        ],
         expectedCode: "existing_records_incompatible",
       },
       {

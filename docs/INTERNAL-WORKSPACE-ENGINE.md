@@ -91,6 +91,25 @@ and writes through the narrow `set_record_connection_values` RPC. The server
 derives the target Object from the relationship and rechecks membership,
 cardinality, active Records and the configured View column.
 
+### Contextual related Record creation
+
+ADR-048 adds one owner-facing branch to an editable Connection: `Add <target
+singular label>`. It opens a single nested create surface while preserving the
+parent Record context. The target uses its actual configured Properties and can
+capture only the values known now under ADR-047. Other Connections on that
+surface use the existing search/select picker; nested Record creation does not
+recurse.
+
+The browser submits the parent Record, initiating Connection, ordinary target
+values and selected existing Connections to
+`create_contextual_graph_record`. That narrow security-invoker RPC validates
+active same-Business entities and commits the new Record, initiating edge and
+additional edges in one transaction. Existing graph trigger/RLS/cardinality
+checks stay authoritative. A stale, unavailable or conflicting Connection
+therefore creates no orphan Record; both the parent and target Tables refresh
+only after success. This remains an internal authorised operational action—no
+public nested creation or relationship-specific module exists.
+
 ## Saved View query contract
 
 Saved View queries are typed JSON validated by Zod, the M5 candidate trigger and

@@ -1915,6 +1915,32 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      create_contextual_graph_record: {
+        Args: {
+          expected_business_id: string;
+          initiating_direction: string;
+          initiating_relationship_key: string;
+          parent_record_id: string;
+          requested_connections?: Json;
+          requested_data?: Json;
+        };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          created_by: string | null;
+          data_json: Json;
+          id: string;
+          object_definition_id: string;
+          record_status: Database["public"]["Enums"]["graph_record_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_location: {
         Args: {
           expected_actor_id: string;

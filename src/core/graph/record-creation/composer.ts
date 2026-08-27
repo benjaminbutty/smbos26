@@ -256,16 +256,9 @@ function validateAndCanonicalizeValues(
     return canonicalizeValue(field, value);
   });
   const canonicalKeys = new Set(canonical.map((value) => value.field_key));
-  for (const field of state.fields) {
-    if (
-      field.is_active &&
-      field.required &&
-      field.default_value === null &&
-      !canonicalKeys.has(field.key)
-    ) {
-      fail("required_field_missing");
-    }
-  }
+  // Generic Record creation is progressive. Requiredness is evaluated by the
+  // contextual Form or specialised trusted operation that invoked creation,
+  // not by this generic confirmation composer.
   return state.fields
     .filter((field) => canonicalKeys.has(field.key))
     .map((field) => canonical.find((value) => value.field_key === field.key)!)

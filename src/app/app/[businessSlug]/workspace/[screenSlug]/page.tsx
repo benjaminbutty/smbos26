@@ -41,6 +41,8 @@ import {
   updateProductionTableConnectionAction,
   updateProductionTableColumnOptionsAction,
   createProductionTableConnectionTargetAction,
+  createProductionTableContextualRecordAction,
+  getProductionTableContextualRecordCreateStateAction,
   searchProductionTableConnectionTargetsAction,
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
@@ -461,6 +463,14 @@ export default async function WorkspaceScreenPage({
             businessSlug,
           )}
           createConnectedRecordTarget={createProductionTableConnectionTargetAction.bind(
+            null,
+            businessSlug,
+          )}
+          createContextualRecord={createProductionTableContextualRecordAction.bind(
+            null,
+            businessSlug,
+          )}
+          loadContextualRecordCreateState={getProductionTableContextualRecordCreateStateAction.bind(
             null,
             businessSlug,
           )}
