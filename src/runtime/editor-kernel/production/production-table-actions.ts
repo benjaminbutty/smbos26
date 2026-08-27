@@ -26,12 +26,14 @@ import { createExperienceService } from "../../../core/experience/service";
 import {
   normalizeTableViewConfig,
   tableViewColumnSchema,
+  tableViewPropertyKeySchema,
   tableViewQuerySchema,
 } from "../../../core/experience/schemas";
 import { createServerClient } from "../../../db/supabase/server";
 import type { Json } from "../../../db/supabase/database.types";
 import {
   ExperienceSubmissionError,
+  buildConfiguredSubmission,
   submitExperienceForm,
 } from "../../forms/submission";
 import { experienceKeyToPath } from "../../routing";
@@ -48,7 +50,7 @@ import {
   createDirectTableRow,
   getDirectTableRowCreationAvailability,
 } from "../../views/direct-table-record-service";
-import type { EditorRow } from "../contracts";
+import { displayEditorValue, type EditorRow } from "../contracts";
 import type {
   ProductionActionResult,
   ProductionAddColumnInput,
@@ -58,6 +60,8 @@ import type {
   ProductionConnectionCreateInput,
   ProductionConnectionEditInput,
   ProductionConnectionSearchInput,
+  ProductionContextualRecordCreateInput,
+  ProductionContextualRecordCreateState,
   ProductionConfigureSavedViewInput,
   ProductionConfiguredSavedView,
   ProductionDuplicateSavedViewInput,
@@ -80,6 +84,7 @@ import type {
   ProductionUpdateColumnOptionsInput,
 } from "./action-types";
 import {
+  editorValueFromJson,
   mapExperienceViewBundleToEditorTable,
   mapProductionRecordToEditorRow,
   ProductionTableMappingError,
@@ -145,6 +150,30 @@ const connectionCreateInputSchema = z
     primaryValue: z.string().trim().min(1).max(1_000),
   })
   .strict();
+const contextualRecordCreateInputSchema = z
+  .object({
+    parentRecordId: z.uuid(),
+    columnKey: z.string().min(1).max(180),
+    values: z.record(z.string().min(1).max(80), editorValueSchema),
+    connections: z
+      .array(
+        z
+          .object({
+            relationshipKey: viewKeySchema,
+            direction: z.enum(["source", "target"]),
+            targetRecordIds: z.array(z.uuid()).max(100),
+          })
+          .strict(),
+      )
+      .max(20),
+  })
+  .strict();
+const contextualRecordStateInputSchema = contextualRecordCreateInputSchema.pick(
+  {
+    parentRecordId: true,
+    columnKey: true,
+  },
+);
 const rowInputSchema = z
   .object({
     primaryValue: z.string().trim().min(1).max(1_000),
@@ -287,7 +316,7 @@ const updateColumnOptionsInputSchema = z
 const reorderColumnsInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
-    fieldKeys: z.array(viewKeySchema).min(1).max(50),
+    propertyKeys: z.array(tableViewPropertyKeySchema).min(1).max(50),
   })
   .strict();
 const renameTableInputSchema = z
@@ -481,14 +510,27 @@ type StructuralPreflight = (
   businessId: string,
 ) => Promise<void>;
 
-async function loadMappedTable(
+export async function loadMappedTable(
   supabase: Awaited<ReturnType<typeof createServerClient>>,
   businessId: string,
   viewKey: string,
 ) {
   const experience = createExperienceService(supabase, { businessId });
   const bundle = await experience.loadView(viewKey, "internal");
-  const targetViewKeyByObjectId = (await experience.listTableViews())
+  const [tableViews, objectResult] = await Promise.all([
+    experience.listTableViews(),
+    supabase
+      .from("object_definitions")
+      .select("id,singular_label")
+      .eq("business_id", businessId)
+      .eq("is_active", true),
+  ]);
+  if (objectResult.error) {
+    throw new ExperienceSubmissionError(
+      "Connected Record labels are unavailable.",
+    );
+  }
+  const targetViewKeyByObjectId = tableViews
     .sort((left, right) => {
       const leftConfig = normalizeTableViewConfig(left.config_json);
       const rightConfig = normalizeTableViewConfig(right.config_json);
@@ -505,6 +547,12 @@ async function loadMappedTable(
       }
       return result;
     }, {});
+  const targetObjectLabelByObjectId = (objectResult.data ?? []).reduce<
+    Record<string, string>
+  >((result, object) => {
+    result[object.id] = object.singular_label;
+    return result;
+  }, {});
   const config = normalizeTableViewConfig(bundle.config);
   let editFormFieldKeys: readonly string[] | undefined;
   if (config.edit_form_key) {
@@ -526,6 +574,7 @@ async function loadMappedTable(
   return mapExperienceViewBundleToEditorTable({
     bundle,
     editFormFieldKeys,
+    targetObjectLabelByObjectId,
     targetViewKeyByObjectId,
   });
 }
@@ -844,7 +893,7 @@ export async function reorderProductionTableColumnsAction(
     {
       action: "reorder_columns",
       viewKey: context.viewKey,
-      fieldKeys: parsed.data.fieldKeys,
+      propertyKeys: parsed.data.propertyKeys,
     },
   );
 }
@@ -1215,7 +1264,17 @@ export async function searchProductionTableConnectionTargetsAction(
   input: ProductionConnectionSearchInput,
 ): Promise<ProductionActionResult<readonly { id: string; label: string }[]>> {
   const businessSlug = routeSlugSchema.parse(businessSlugInput);
-  const viewKey = viewKeySchema.parse(viewKeyInput);
+  // Contextual creation can hand this action the owner-facing route form
+  // (`opportunity-view`) while Table actions normally use the configuration
+  // key (`opportunity_view`). Accept both at this trusted server boundary so
+  // a nested Connection picker never fails merely because it came from a
+  // routed Record surface.
+  const normalizedViewKeyInput = viewKeyInput.replaceAll("-", "_");
+  const parsedViewKey = viewKeySchema.safeParse(normalizedViewKeyInput);
+  if (!parsedViewKey.success) {
+    return resultError("That Table is no longer available.");
+  }
+  const viewKey = parsedViewKey.data;
   const parsed = connectionSearchInputSchema.safeParse(input);
   if (!parsed.success) {
     return resultError("That connection search is not available.");
@@ -1253,6 +1312,248 @@ export async function searchProductionTableConnectionTargetsAction(
       },
     );
     return { status: "success", value: targets };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+async function contextualCreationTarget(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+  sourceViewKey: string,
+  input: Pick<
+    ProductionContextualRecordCreateInput,
+    "parentRecordId" | "columnKey"
+  >,
+) {
+  const source = await loadMappedTable(supabase, businessId, sourceViewKey);
+  const parent = source.table.rows.find(
+    (row) => row.id === input.parentRecordId,
+  );
+  const connection = source.table.columns.find(
+    (column) => column.key === input.columnKey,
+  );
+  if (
+    !parent ||
+    !connection ||
+    connection.kind !== "connection" ||
+    !connection.connection ||
+    connection.editable === false
+  ) {
+    throw new ExperienceSubmissionError(
+      "This Connection is no longer available for adding related work.",
+    );
+  }
+
+  const experience = createExperienceService(supabase, { businessId });
+  const targetView = (await experience.listTableViews())
+    .filter(
+      (candidate) =>
+        candidate.object_definition_id ===
+        connection.connection!.targetObjectKey,
+    )
+    .sort((left, right) => {
+      const leftConfig = normalizeTableViewConfig(left.config_json);
+      const rightConfig = normalizeTableViewConfig(right.config_json);
+      return (
+        (leftConfig.role === "primary" ? 0 : 1) -
+          (rightConfig.role === "primary" ? 0 : 1) ||
+        left.name.localeCompare(right.name) ||
+        left.key.localeCompare(right.key)
+      );
+    })[0];
+  if (!targetView) {
+    throw new ExperienceSubmissionError(
+      "The related Table is no longer available.",
+    );
+  }
+
+  const targetBundle = await experience.loadView(targetView.key, "internal");
+  const target = await loadMappedTable(supabase, businessId, targetView.key);
+  const parentPrimary = source.table.columns.find(
+    (column) => column.key === source.table.primaryColumnKey,
+  );
+  const parentLabel = parentPrimary
+    ? displayEditorValue(
+        parentPrimary,
+        parent.values[parentPrimary.key] ?? null,
+      )
+    : "this record";
+
+  return { connection, parent, parentLabel, target, targetBundle, targetView };
+}
+
+export async function getProductionTableContextualRecordCreateStateAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: Pick<
+    ProductionContextualRecordCreateInput,
+    "parentRecordId" | "columnKey"
+  >,
+): Promise<ProductionActionResult<ProductionContextualRecordCreateState>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = contextualRecordStateInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return resultError("That related Record is no longer available.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+  try {
+    const state = await contextualCreationTarget(
+      supabase,
+      tenant.business.id,
+      viewKey,
+      parsed.data,
+    );
+    return {
+      status: "success",
+      value: {
+        parentLabel: state.parentLabel,
+        connectionLabel: state.connection.label,
+        objectLabel: state.targetBundle.object.singular_label,
+        targetViewKey: state.targetView.key,
+        columns: (
+          state.target.table.recordColumns ?? state.target.table.columns
+        )
+          .filter((column) => column.kind !== "file")
+          .filter(
+            (column) =>
+              !(
+                column.kind === "connection" &&
+                column.connection?.relationshipKey ===
+                  state.connection.connection!.relationshipKey
+              ),
+          ),
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+function formDataForContextualValues(
+  values: Readonly<
+    Record<string, string | number | boolean | readonly string[] | null>
+  >,
+): FormData {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(values)) {
+    if (value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      for (const item of value) formData.append(key, item);
+    } else if (typeof value === "boolean") {
+      formData.set(key, value ? "true" : "false");
+    } else {
+      formData.set(key, String(value));
+    }
+  }
+  return formData;
+}
+
+export async function createProductionTableContextualRecordAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionContextualRecordCreateInput,
+): Promise<ProductionActionResult<{ id: string; label: string }>> {
+  const businessSlug = routeSlugSchema.parse(businessSlugInput);
+  const viewKey = viewKeySchema.parse(viewKeyInput);
+  const parsed = contextualRecordCreateInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return resultError("Check the related Record and try again.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(businessSlug, supabase);
+  try {
+    const state = await contextualCreationTarget(
+      supabase,
+      tenant.business.id,
+      viewKey,
+      parsed.data,
+    );
+    const initiatingConnection = state.connection.connection;
+    if (!initiatingConnection) {
+      return resultError("This Connection changed while you were adding this.");
+    }
+    const recordFields = state.target.recordFields.filter(
+      (field) => field.field_type !== "file",
+    );
+    const allowedFieldKeys = new Set(recordFields.map((field) => field.key));
+    if (
+      Object.keys(parsed.data.values).some((key) => !allowedFieldKeys.has(key))
+    ) {
+      return resultError("A Property changed while you were adding this.");
+    }
+    const requestedData = buildConfiguredSubmission(
+      recordFields,
+      {
+        fields: recordFields.map((field) => ({
+          field: field.key,
+          hidden: false,
+        })),
+      },
+      "create",
+      formDataForContextualValues(parsed.data.values),
+      {},
+      { enforceRequired: false },
+    );
+    const allowedConnections = new Map(
+      (state.target.table.recordColumns ?? state.target.table.columns)
+        .filter((column) => column.kind === "connection" && column.connection)
+        .map((column) => [
+          `${column.connection!.relationshipKey}:${column.connection!.direction}`,
+          column,
+        ]),
+    );
+    const requestedConnections = parsed.data.connections.filter(
+      (connection) => connection.targetRecordIds.length > 0,
+    );
+    if (
+      requestedConnections.some(
+        (connection) =>
+          !allowedConnections.has(
+            `${connection.relationshipKey}:${connection.direction}`,
+          ) ||
+          connection.relationshipKey === initiatingConnection.relationshipKey,
+      )
+    ) {
+      return resultError("A Connection changed while you were adding this.");
+    }
+    const { data: record, error } = await supabase.rpc(
+      "create_contextual_graph_record",
+      {
+        expected_business_id: tenant.business.id,
+        initiating_relationship_key: initiatingConnection.relationshipKey,
+        initiating_direction: initiatingConnection.direction,
+        parent_record_id: parsed.data.parentRecordId,
+        requested_data: requestedData,
+        requested_connections: requestedConnections.map((connection) => ({
+          relationship_key: connection.relationshipKey,
+          direction: connection.direction,
+          target_record_ids: connection.targetRecordIds,
+        })),
+      },
+    );
+    if (error || !record) {
+      throw new ExperienceSubmissionError(
+        "That information changed while you were adding this. Review the latest record and try again.",
+      );
+    }
+    const primary = state.target.table.recordColumns?.find(
+      (column) => column.primary,
+    );
+    const data =
+      typeof record.data_json === "object" &&
+      record.data_json !== null &&
+      !Array.isArray(record.data_json)
+        ? record.data_json
+        : {};
+    const label = primary
+      ? displayEditorValue(primary, editorValueFromJson(data[primary.key]))
+      : state.targetBundle.object.singular_label;
+    revalidatePath(routePath(businessSlug, viewKey), "page");
+    revalidatePath(routePath(businessSlug, state.targetView.key), "page");
+    return { status: "success", value: { id: record.id, label } };
   } catch (error) {
     return resultError(safeError(error));
   }

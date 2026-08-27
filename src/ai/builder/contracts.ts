@@ -63,6 +63,8 @@ export const builderClarificationResultSchema = z
     schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
     state: z.literal("needs_clarification"),
     clarification: clarificationPlanningOutputSchema,
+    base_version_id: z.uuid().optional(),
+    head_revision: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -96,6 +98,104 @@ export const builderUnsupportedResultSchema = z
       });
     }
   });
+
+const adaptiveOptionIdSchema = z.enum([
+  "work_from_primary",
+  "simplify_around_primary",
+]);
+const adaptiveChoiceTextSchema = z.string().trim().min(1).max(2_000);
+
+const useCurrentRelatedWorkflowConsequenceSchema = z
+  .object({
+    kind: z.literal("use_current_related_workflow"),
+    primary_object_key: graphKeySchema,
+    primary_object_label: z.string().trim().min(1).max(120),
+    primary_singular_label: z.string().trim().min(1).max(120),
+    related_object_key: graphKeySchema,
+    related_object_label: z.string().trim().min(1).max(120),
+    relationship_key: graphKeySchema,
+    primary_view_key: graphKeySchema,
+  })
+  .strict();
+
+const preparePrimaryWorkflowAdaptationConsequenceSchema = z
+  .object({
+    kind: z.literal("prepare_primary_workflow_adaptation"),
+    primary_object_key: graphKeySchema,
+    primary_object_label: z.string().trim().min(1).max(120),
+    primary_singular_label: z.string().trim().min(1).max(120),
+    related_object_key: graphKeySchema,
+    related_object_label: z.string().trim().min(1).max(120),
+    relationship_key: graphKeySchema,
+  })
+  .strict();
+
+export const builderAdaptiveOptionSchema = z
+  .object({
+    id: adaptiveOptionIdSchema,
+    label: z.string().trim().min(1).max(120),
+    summary: adaptiveChoiceTextSchema,
+    benefits: z.array(adaptiveChoiceTextSchema).min(1).max(3),
+    tradeoffs: z.array(adaptiveChoiceTextSchema).min(1).max(3),
+    consequence: z.discriminatedUnion("kind", [
+      useCurrentRelatedWorkflowConsequenceSchema,
+      preparePrimaryWorkflowAdaptationConsequenceSchema,
+    ]),
+  })
+  .strict();
+
+export const builderAdaptiveSolutionChoiceResultSchema = z
+  .object({
+    schema_version: z.literal(BUILDER_ORCHESTRATION_SCHEMA_VERSION),
+    state: z.literal("adaptive_solution_choice"),
+    understanding: adaptiveChoiceTextSchema,
+    current_approach: adaptiveChoiceTextSchema,
+    options: z.array(builderAdaptiveOptionSchema).min(1).max(2),
+    recommendation: adaptiveChoiceTextSchema.optional(),
+    question: z.string().trim().min(1).max(500),
+    base_version_id: z.uuid(),
+    head_revision: z.number().int().positive(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const ids = value.options.map(({ id }) => id);
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["options"],
+        message: "Adaptive option ids must be unique.",
+      });
+    }
+    if (
+      value.options.some(
+        ({ id }) =>
+          !["work_from_primary", "simplify_around_primary"].includes(id),
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["options"],
+        message: "Adaptive options must use a trusted consequence.",
+      });
+    }
+    for (const option of value.options) {
+      const expectedConsequence =
+        option.id === "work_from_primary"
+          ? "use_current_related_workflow"
+          : "prepare_primary_workflow_adaptation";
+      if (option.consequence.kind !== expectedConsequence) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["options"],
+          message: "Adaptive option consequence does not match its trusted id.",
+        });
+      }
+    }
+  });
+
+export type BuilderAdaptiveSolutionChoiceResult = z.infer<
+  typeof builderAdaptiveSolutionChoiceResultSchema
+>;
 
 export const builderProposedResultSchema = z
   .object({
@@ -333,6 +433,7 @@ export const builderRecordLocationUnavailableResultSchema = z
 
 export const builderOrchestrationResultSchema = z.discriminatedUnion("state", [
   builderClarificationResultSchema,
+  builderAdaptiveSolutionChoiceResultSchema,
   builderUnsupportedResultSchema,
   builderProposedResultSchema,
   builderLocationConfirmationResultSchema,

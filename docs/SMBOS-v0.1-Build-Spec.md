@@ -1638,6 +1638,24 @@ production drafting registration remain unchanged. A GET of the Builder route
 does not invoke AI or create side effects; only the explicit action may pass a
 request to the existing orchestration service.
 
+#### UAT amendment — bounded clarification continuity
+
+ADR-049 supersedes the original revise-and-resubmit clarification interaction.
+When planning asks a question, the original composer is replaced by typed
+answer controls and a compact preserved intent. A 15-minute server-signed
+continuation, bound to the authenticated Business, actor and configuration
+head, carries the original request, current questions, established answers and
+one bounded round number. The browser cannot alter that context undetected.
+The server composes it deterministically before invoking the existing planner.
+
+There are at most three rounds, five questions per round, 1,000 characters per
+answer, 5,000 aggregate answer characters and 8,000 composed request
+characters. Expiry, tampering, actor/Business mismatch, changed configuration
+or exhausted rounds produce no proposal or mutation authority. This is not
+chat: no transcript, provider output, browser storage, permanent continuation
+table, Apply or Publish action is introduced. Refresh continuity is not
+claimed.
+
 ### 8.6 Validation layer
 
 Every proposed operation must validate:
@@ -2860,6 +2878,22 @@ generic operational dispatch remain out of scope. The default and production
 runtime mappings remain disabled; the Terra policy, exact reservation
 envelope, frozen two-context/eight-scenario harness and live qualification /
 reliability flags are engineering-only.
+
+#### UAT amendment — progressive ordinary Records
+
+ADR-047 supersedes the former use of `Field.required` and required incoming
+Relationship metadata as generic Record-existence blockers. The graph trigger
+still applies authoritative defaults and rejects unknown, archived or malformed
+supplied values, but active ordinary Records may omit business Properties and
+Connections that are not yet known. The existing explicit Builder confirmation
+and currentness check remain intact; an omitted ordinary value is not itself a
+reason to reject the generic Record.
+
+Configured Forms remain contextual completion boundaries and continue to
+enforce their required Properties. Preorder, Booking and other specialised
+trusted transactions retain their own atomic completeness requirements. A
+progressive generic Record cannot be used as a bypass around those capability
+boundaries.
 
 ## Milestone 12 Phase 12B - Builder-assisted generic Record updates
 

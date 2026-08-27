@@ -275,7 +275,7 @@ describe("Phase 5 anonymous acquisition boundary", () => {
         "appointment_view",
       ),
     ).resolves.toMatchObject({
-      kind: "unavailable",
+      kind: "direct",
       formKey: "appointment_create",
     });
 

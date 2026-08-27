@@ -99,6 +99,61 @@ describe("Page grammar and direct Workspace composer", () => {
     });
   });
 
+  it("accepts only the bounded canonical rich-text grammar", () => {
+    const layout = pageLayoutSchema.parse({
+      blocks: [
+        {
+          type: "rich_text",
+          node: {
+            type: "heading",
+            level: 2,
+            content: [
+              { type: "text", text: "This week", marks: [{ type: "bold" }] },
+            ],
+          },
+        },
+        {
+          type: "rich_text",
+          node: {
+            type: "numbered_list",
+            items: [
+              {
+                content: [
+                  {
+                    type: "text",
+                    text: "Open the diary",
+                    marks: [{ type: "link", href: "/app/diary" }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(layout.blocks).toHaveLength(2);
+
+    expect(() =>
+      pageLayoutSchema.parse({
+        blocks: [
+          {
+            type: "rich_text",
+            node: {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Unsafe",
+                  marks: [{ type: "link", href: "javascript:alert(1)" }],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("rejects duplicate stable block IDs", () => {
     expect(() =>
       pageLayoutSchema.parse({
@@ -432,6 +487,28 @@ describe("Page grammar and direct Workspace composer", () => {
     }
     expect(renamed.operations[0]).toMatchObject({ title: "Book with us" });
     expect(saved.operations[0]).toMatchObject({ title: "Public site" });
+
+    expect(() =>
+      composeDirectPageAction(publicSnapshot, {
+        action: "save_page_layout",
+        pageKey: "public_site",
+        layout: {
+          blocks: [
+            {
+              type: "rich_text",
+              node: {
+                type: "paragraph",
+                content: [{ type: "text", text: "Internal only" }],
+              },
+            },
+          ],
+        },
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "direct_page_site_rich_text_unsupported",
+      }),
+    );
   });
 
   it("rejects ordinary direct saves for an already-published Site", () => {

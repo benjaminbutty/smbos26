@@ -32,6 +32,7 @@ import {
   selectPageViewTable,
   type PageViewOption,
 } from "./view-chooser";
+import { InternalPageEditor } from "./internal-page-editor";
 
 type PageStructureIntent = Extract<
   DirectPageIntent,
@@ -63,6 +64,7 @@ type PublishPageChangesAction = (input: {
 
 export interface PageEditorProps {
   businessSlug: string;
+  canEdit?: boolean;
   pageKey: string;
   title: string;
   layout: PageLayout;
@@ -136,6 +138,8 @@ function blockLabel(block: PageBlock): string {
     case "heading":
       return "Heading";
     case "text":
+      return "Text";
+    case "rich_text":
       return "Text";
     case "view":
       return "Saved View";
@@ -560,6 +564,8 @@ function PageBlockView({
       return editableContent(<h2>{block.text}</h2>);
     case "text":
       return editableContent(<p className="page-text-block">{block.text}</p>);
+    case "rich_text":
+      return <PageRenderer layout={{ blocks: [block] }} />;
     case "view":
       return (
         <SavedViewBlock
@@ -637,7 +643,7 @@ function PageBlockView({
   }
 }
 
-export function PageEditor({
+function LegacyPageEditor({
   applyPageBlockAction,
   availableViews,
   businessSlug,
@@ -1832,5 +1838,13 @@ export function PageEditor({
         </p>
       ) : null}
     </section>
+  );
+}
+
+export function PageEditor(props: Readonly<PageEditorProps>): ReactNode {
+  return props.siteMode ? (
+    <LegacyPageEditor {...props} />
+  ) : (
+    <InternalPageEditor {...props} />
   );
 }

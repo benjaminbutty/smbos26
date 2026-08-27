@@ -15,5 +15,11 @@ SMBOS v0 is a manual-first operating workspace for non-technical small-business 
 11. The internal workspace is manual-first: direct owner actions and future AI
     assistance use the same typed, bounded configuration intents and the same
     deterministic runtime.
+12. Ordinary Records capture what the owner knows now and can be enriched
+    later; a business Property is not automatically a barrier to Record
+    existence.
+13. Connections provide structure without requiring an owner to perform graph
+    maintenance: related work can be created in the Record context when the
+    configured Connection permits it.
 
 The product direction is therefore small, composable, and evidence-led: make the manual workspace reliable first, then add bounded assistance without changing the runtime contract.

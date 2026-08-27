@@ -31,6 +31,7 @@ interface ViewRendererProps {
   record?: Tables<"records">;
   navigationViewKey?: string;
   detailConnections?: readonly RuntimeDetailConnectionGroup[];
+  detailConnectionActions?: ReactNode;
   inlineEditAction?: InlineEditAction;
   preview?: boolean;
   readOnly?: boolean;
@@ -381,6 +382,7 @@ export function DetailView({
   fieldsByKey,
   recordBasePath,
   detailConnections,
+  detailConnectionActions,
   preview = false,
   readOnly = false,
 }: Readonly<ViewComponentProps>): ReactNode {
@@ -517,6 +519,18 @@ export function DetailView({
                   </section>
                 ))}
               </div>
+              {detailConnectionActions}
+            </section>
+          ) : detailConnectionActions ? (
+            <section
+              aria-label="Connections"
+              className="runtime-detail-connections"
+            >
+              <div className="runtime-detail-connections-heading">
+                <p className="eyebrow">Related work</p>
+                <h2>Connections</h2>
+              </div>
+              {detailConnectionActions}
             </section>
           ) : null}
         </aside>
@@ -531,6 +545,7 @@ export function ViewRenderer({
   record,
   navigationViewKey,
   detailConnections,
+  detailConnectionActions,
   inlineEditAction,
   preview = false,
   readOnly = false,
@@ -609,6 +624,7 @@ export function ViewRenderer({
           readOnly={readOnly}
           recordBasePath={recordBasePath}
           {...(detailConnections ? { detailConnections } : {})}
+          {...(detailConnectionActions ? { detailConnectionActions } : {})}
           {...(record ? { record } : {})}
         />
       ) : null}

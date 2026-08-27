@@ -27,6 +27,13 @@ import {
   ViewRenderer,
   viewFieldKeys,
 } from "../../../../../../runtime/views/view-renderer";
+import { loadMappedTable } from "../../../../../../runtime/editor-kernel/production/production-table-actions";
+import {
+  createProductionTableContextualRecordAction,
+  getProductionTableContextualRecordCreateStateAction,
+  searchProductionTableConnectionTargetsAction,
+} from "../../../../../../runtime/editor-kernel/production/production-table-actions";
+import { ContextualDetailConnections } from "../../../../../../runtime/editor-kernel/production/contextual-detail-connections";
 import { RecordLocationAvailability } from "./record-location-availability";
 
 interface RecordDetailPageProps {
@@ -145,47 +152,66 @@ export default async function RecordDetailPage({
     readSearchParam(searchParams, "message"),
   ]);
 
-  const { source, detail, record, detailConnections } = await (async () => {
-    try {
-      const [source, tableViews] = await Promise.all([
-        experience.loadView(experiencePathToKey(screenSlug)),
-        experience.listTableViews(),
-      ]);
-      const sourceRecord = source.records.find(
-        (candidate) => candidate.id === recordId,
-      );
-      if (!sourceRecord) {
-        notFound();
-      }
+  const { source, detail, record, detailConnections, contextualParent } =
+    await (async () => {
+      try {
+        const [source, tableViews] = await Promise.all([
+          experience.loadView(experiencePathToKey(screenSlug)),
+          experience.listTableViews(),
+        ]);
+        const sourceRecord = source.records.find(
+          (candidate) => candidate.id === recordId,
+        );
+        if (!sourceRecord) {
+          notFound();
+        }
+        const mappedSource = await loadMappedTable(
+          supabase,
+          tenant.business.id,
+          source.definition.key,
+        );
+        const contextualParent = mappedSource.table.rows.find(
+          (candidate) => candidate.id === recordId,
+        );
 
-      const configuredDetail = await experience.loadDetailViewForObject(
-        source.definition.object_definition_id,
-      );
-      const detail = configuredDetail ?? fallbackDetailBundle(source);
-      const record = configuredDetail
-        ? configuredDetail.records.find(
-            (candidate) => candidate.id === recordId,
-          )
-        : sourceRecord;
-      if (!record) {
-        notFound();
-      }
+        const configuredDetail = await experience.loadDetailViewForObject(
+          source.definition.object_definition_id,
+        );
+        const detail = configuredDetail ?? fallbackDetailBundle(source);
+        const record = configuredDetail
+          ? configuredDetail.records.find(
+              (candidate) => candidate.id === recordId,
+            )
+          : sourceRecord;
+        if (!record) {
+          notFound();
+        }
 
-      return {
-        detail,
-        record,
-        source,
-        detailConnections: detailConnectionGroups(
+        return {
+          detail,
+          record,
           source,
-          record.id,
-          businessSlug,
-          tableViews,
-        ),
-      };
-    } catch {
-      notFound();
-    }
-  })();
+          detailConnections: detailConnectionGroups(
+            source,
+            record.id,
+            businessSlug,
+            tableViews,
+          ),
+          ...(contextualParent
+            ? {
+                contextualParent: {
+                  row: contextualParent,
+                  columns:
+                    mappedSource.table.recordColumns ??
+                    mappedSource.table.columns,
+                },
+              }
+            : {}),
+        };
+      } catch {
+        notFound();
+      }
+    })();
 
   return (
     <section className="tenant-content">
@@ -197,6 +223,29 @@ export default async function RecordDetailPage({
         navigationViewKey={source.definition.key}
         record={record}
         detailConnections={detailConnections}
+        {...(contextualParent
+          ? {
+              detailConnectionActions: (
+                <ContextualDetailConnections
+                  columns={contextualParent.columns}
+                  createRecord={createProductionTableContextualRecordAction.bind(
+                    null,
+                    businessSlug,
+                  )}
+                  loadCreateState={getProductionTableContextualRecordCreateStateAction.bind(
+                    null,
+                    businessSlug,
+                  )}
+                  parentRow={contextualParent.row}
+                  searchConnectionTargets={searchProductionTableConnectionTargetsAction.bind(
+                    null,
+                    businessSlug,
+                  )}
+                  sourceViewKey={source.definition.key}
+                />
+              ),
+            }
+          : {})}
       />
       <RecordLocationAvailability
         businessId={tenant.business.id}

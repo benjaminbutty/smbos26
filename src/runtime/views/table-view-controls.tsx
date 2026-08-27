@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 
 import type {
   TableViewColumn,
@@ -26,9 +33,9 @@ import {
   refreshProductionTableCurrentnessAction,
   searchProductionTableConnectionTargetsAction,
 } from "../editor-kernel/production/production-table-actions";
-import type { EditorValue } from "../editor-kernel/contracts";
 import { experienceKeyToPath } from "../routing";
 import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
+import { useTableViewPreview } from "./table-view-preview-context";
 
 type FilterOperator = TableViewFilter["operator"];
 
@@ -239,6 +246,7 @@ export function TableViewControls({
   viewKey: string;
 }>): React.ReactNode {
   const router = useRouter();
+  const { setPreview: setGridPreview } = useTableViewPreview();
   const [open, setOpen] = useState(false);
   const [saving, startTransition] = useTransition();
   const [name, setName] = useState(config.role === "saved" ? viewName : "");
@@ -302,6 +310,7 @@ export function TableViewControls({
     optionForQueryProperty(config.group, options),
   );
   const controlsRef = useRef<HTMLElement>(null);
+  const previewRequestRef = useRef(0);
   const hasMeaningfulDraft =
     name !== (config.role === "saved" ? viewName : "") ||
     propertyOption !==
@@ -329,6 +338,11 @@ export function TableViewControls({
       );
 
   useUnsavedNavigationWarning(open && hasMeaningfulDraft && !saving);
+
+  useEffect(() => {
+    setGridPreview(preview);
+    return () => setGridPreview(null);
+  }, [preview, setGridPreview]);
 
   useEffect(() => {
     if (!open) return;
@@ -430,7 +444,7 @@ export function TableViewControls({
     setPreview(null);
   };
 
-  const draftQuery = (): TableViewQuery => {
+  const draftQuery = useCallback((): TableViewQuery => {
     const filters: TableViewQuery["filters"] = [];
     if (!filterTouched && initialFilter) {
       filters.push(initialFilter);
@@ -478,7 +492,41 @@ export function TableViewControls({
       sorts,
       group: groupProperty?.optionKey ?? null,
     };
-  };
+  }, [
+    config.filter_match,
+    config.filters,
+    config.sorts,
+    connectionValue,
+    filterTouched,
+    groupOption,
+    initialFilter,
+    operator,
+    options,
+    secondValue,
+    selectedProperty,
+    sortDirection,
+    sortOption,
+    sortTouched,
+    value,
+  ]);
+
+  useEffect(() => {
+    if (!open) return;
+    const request = previewRequestRef.current + 1;
+    previewRequestRef.current = request;
+    const timeout = window.setTimeout(() => {
+      setFeedback(null);
+      void previewProductionSavedViewAction(businessSlug, primaryViewKey, {
+        columns,
+        query: draftQuery(),
+      }).then((result) => {
+        if (previewRequestRef.current !== request) return;
+        if (result.status === "success") setPreview(result.value);
+        else setFeedback(result.message);
+      });
+    }, 220);
+    return () => window.clearTimeout(timeout);
+  }, [businessSlug, columns, draftQuery, open, primaryViewKey]);
 
   const save = (): void => {
     const query = draftQuery();
@@ -500,20 +548,6 @@ export function TableViewControls({
         } else {
           setFeedback(result.message);
         }
-      });
-    });
-  };
-
-  const previewDraft = (): void => {
-    const query = draftQuery();
-    startTransition(() => {
-      setFeedback(null);
-      void previewProductionSavedViewAction(businessSlug, primaryViewKey, {
-        columns,
-        query,
-      }).then((result) => {
-        if (result.status === "success") setPreview(result.value);
-        else setFeedback(result.message);
       });
     });
   };
@@ -540,13 +574,6 @@ export function TableViewControls({
       "Connection"
     );
   };
-  const displayValue = (value: EditorValue | undefined): string => {
-    if (value === null || value === undefined || value === "") return "Empty";
-    if (Array.isArray(value)) return value.join(", ") || "Empty";
-    if (typeof value === "object") return "—";
-    return String(value);
-  };
-
   const selectedConnectionLabel = connectionResults.find(
     (result) => result.id === connectionValue,
   )?.label;
@@ -817,9 +844,6 @@ export function TableViewControls({
               );
             })}
           </fieldset>
-          <button disabled={saving} onClick={previewDraft} type="button">
-            Preview result
-          </button>
           {preview ? (
             <div
               aria-label="Unsaved View preview"
@@ -829,32 +853,10 @@ export function TableViewControls({
                 {preview.table.rows.length} of {preview.totalCount} matching
                 Records
               </strong>
-              <div className="table-view-draft-preview-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      {preview.table.columns.map((column) => (
-                        <th key={column.key}>{column.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.table.rows.slice(0, 8).map((row) => (
-                      <tr key={row.id}>
-                        {preview.table.columns.map((column) => (
-                          <td key={column.key}>
-                            {column.kind === "connection"
-                              ? row.connectionValues?.[column.key]
-                                  ?.map((item) => item.label)
-                                  .join(", ") || "Empty"
-                              : displayValue(row.values[column.key])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <span>
+                The unsaved filter, sort, group and Property order are live in
+                the grid below.
+              </span>
             </div>
           ) : null}
           {feedback ? (
@@ -874,7 +876,7 @@ export function TableViewControls({
                     if (result.status === "success") {
                       setDraftCurrentness(result.value);
                       setFeedback(
-                        "Latest setup loaded. Preview this draft again, then press Save view.",
+                        "Latest setup loaded. The grid will recheck this draft before you save it.",
                       );
                       setPreview(null);
                     } else setFeedback(result.message);

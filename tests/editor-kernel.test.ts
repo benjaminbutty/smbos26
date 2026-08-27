@@ -8,6 +8,7 @@ import {
   draftRowIndex,
   displayEditorValue,
   editorValueForColumn,
+  editorSelectionValue,
   editorDraftRowId,
   freshDraftRowIndex,
   hasDraftName,
@@ -21,10 +22,13 @@ import {
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import {
   AddColumnPopover,
+  cancelFailedSave,
   ConnectionPropertyPopover,
+  gridCoordinatesForCell,
 } from "../src/runtime/editor-kernel/editor-lab";
 import {
   createEditorColumns,
+  editorColumnKindIcon,
   openConnectionCellEditor,
 } from "../src/runtime/editor-kernel/table-columns";
 
@@ -36,6 +40,23 @@ describe("editor kernel contracts", () => {
     expect(editorValueForColumn({ kind: "boolean" }, "true")).toBe(true);
     expect(displayEditorValue({ kind: "boolean" }, false)).toBe("No");
     expect(displayEditorValue({ kind: "date" }, "2026-08-09")).toContain("Aug");
+    expect(
+      editorSelectionValue(
+        {
+          id: "customer-1",
+          values: { pets: ["private-record-id"] },
+          connectionValues: {
+            pets: [{ id: "private-record-id", label: "Milo" }],
+          },
+        },
+        {
+          key: "pets",
+          label: "Pets",
+          kind: "connection",
+          width: 180,
+        },
+      ),
+    ).toBe("Milo");
   });
 
   it("moves only the requested column", () => {
@@ -45,6 +66,48 @@ describe("editor kernel contracts", () => {
     expect(
       reorderColumnKeys(["name", "phone", "status"], "missing", "name"),
     ).toEqual(["name", "phone", "status"]);
+  });
+
+  it("maps owner-readable Property type icons", () => {
+    expect(editorColumnKindIcon("text")).toBe("Aa");
+    expect(editorColumnKindIcon("currency")).toBe("£");
+    expect(editorColumnKindIcon("status")).toBe("●");
+    expect(editorColumnKindIcon("connection")).toBe("↔");
+  });
+
+  it("restores a requested cell after refreshed rows and cancels a failed optimistic save", () => {
+    const table = createMockTableAdapter({ delayMs: 0 }).getTable();
+    const row = table.rows[0]!;
+    const target = gridCoordinatesForCell(table.rows, table.columns, {
+      rowId: row.id,
+      columnKey: "phone",
+    });
+    expect(target).toEqual({ rowIdx: 0, idx: 1 });
+    expect(
+      gridCoordinatesForCell(table.rows, table.columns, {
+        rowId: "missing",
+        columnKey: "phone",
+      }),
+    ).toBeNull();
+
+    const attempted = {
+      ...table,
+      rows: table.rows.map((candidate) =>
+        candidate.id === row.id
+          ? {
+              ...candidate,
+              values: { ...candidate.values, phone: "attempted value" },
+            }
+          : candidate,
+      ),
+    };
+    const cancelled = cancelFailedSave(attempted, {
+      rowId: row.id,
+      columnKey: "phone",
+      value: "attempted value",
+      previousValue: row.values.phone ?? null,
+    });
+    expect(cancelled.rows[0]?.values.phone).toBe(row.values.phone);
   });
 
   it("keeps mock updates in memory and exposes deterministic failure recovery", async () => {
@@ -234,6 +297,23 @@ describe("editor kernel contracts", () => {
     expect(markup).not.toContain("editor-panel-inline-editor");
     expect(markup).not.toContain("<small");
     expect(markup).not.toMatch(/Save|Cancel/);
+  });
+
+  it("opens a requested mobile working Property directly in edit mode", () => {
+    const table = createMockTableAdapter({ delayMs: 0 }).getTable();
+    const row = table.rows[0]!;
+    const markup = renderToStaticMarkup(
+      createElement(RecordPanel, {
+        columns: table.columns,
+        initialEditingColumnKey: "phone",
+        onClose: () => undefined,
+        onCommitCell: () => undefined,
+        row,
+        tableName: table.name,
+      }),
+    );
+    expect(markup).toContain('aria-label="Edit Phone"');
+    expect(markup).toContain("editor-panel-inline-editor");
   });
 
   it("keeps generic single and several Connections plain at rest and opens their picker on click", () => {
@@ -549,6 +629,32 @@ describe("editor kernel contracts", () => {
     expect(markup).toContain("What happens");
     expect(markup).not.toMatch(/Review|Apply|requiredness/i);
     expect(addColumn).not.toHaveBeenCalled();
+  });
+
+  it("makes the connected-property path visible while adding a property", () => {
+    const markup = renderToStaticMarkup(
+      createElement(AddColumnPopover, {
+        canAddConnections: true,
+        connectionSource: {
+          singularLabel: "Customer",
+          pluralLabel: "Customers",
+        },
+        connectionTargets: [
+          {
+            label: "Pets",
+            singularLabel: "Pet",
+            pluralLabel: "Pets",
+            viewKey: "pets",
+          },
+        ],
+        onClose: () => undefined,
+        onCreate: async () => true,
+        onCreateConnection: async () => true,
+      }),
+    );
+
+    expect(markup).toContain("Connect another Table");
+    expect(markup).toContain("Add connected property");
   });
 
   it("keeps the active property input visible when currentness needs a recheck", () => {

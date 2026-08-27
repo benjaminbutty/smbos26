@@ -261,8 +261,6 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     );
     expect(row.data_json).toMatchObject({
       name: "Sam Taylor",
-      email: "sam@example.test",
-      [statusFieldKey]: "Booked",
     });
 
     const editData = new FormData();
@@ -589,6 +587,77 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
         expect.objectContaining({ kind: "connection", direction: "source" }),
       ],
     });
+    const relationshipOperation = created.composed!.operations.find(
+      (operation) => operation.op === "set_relationship",
+    );
+    if (
+      !relationshipOperation ||
+      relationshipOperation.op !== "set_relationship"
+    ) {
+      throw new Error("The Connection operation did not include its key.");
+    }
+    const reordered = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: afterConfiguration.currentness,
+        intent: {
+          action: "reorder_columns",
+          viewKey: currentViewKey,
+          propertyKeys: [
+            `connection:${relationshipOperation.key}:target`,
+            "field:name",
+          ],
+        },
+      },
+    );
+    expect(reordered.changeSet.status).toBe("applied");
+    const afterReorderConfiguration = await currentness(owner);
+    expect(
+      afterReorderConfiguration.snapshot.views.find(
+        (candidate) => candidate.key === currentViewKey,
+      )?.config_json,
+    ).toMatchObject({
+      columns: [
+        expect.objectContaining({
+          kind: "connection",
+          relationship_key: relationshipOperation.key,
+          direction: "target",
+        }),
+        expect.objectContaining({ kind: "field", field_key: "name" }),
+      ],
+      fields: ["name"],
+    });
+    const [afterReorderCounts] = await sql<
+      {
+        version_count: number;
+        head_revision: number;
+        change_count: number;
+        edge_count: number;
+      }[]
+    >`
+      select
+        (select count(*)::integer from public.configuration_versions
+         where business_id = ${business.id}) as version_count,
+        (select head_revision from public.business_configuration_heads
+         where business_id = ${business.id}) as head_revision,
+        (select count(*)::integer from public.configuration_change_sets
+         where business_id = ${business.id}) as change_count,
+        (select count(*)::integer from public.record_relationships
+         where business_id = ${business.id}) as edge_count
+    `;
+    if (!afterReorderCounts) {
+      throw new Error("Could not read the post-reorder configuration counts.");
+    }
+    expect({
+      ...afterReorderCounts,
+      head_revision: Number(afterReorderCounts.head_revision),
+    }).toMatchObject({
+      version_count: afterCounts.version_count + 1,
+      head_revision: Number(afterCounts.head_revision) + 1,
+      change_count: afterCounts.change_count + 1,
+      edge_count: afterCounts.edge_count,
+    });
     expect(
       (
         await sql<{ data_json: unknown }[]>`
@@ -633,7 +702,7 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
         (select count(*)::integer from public.record_relationships
          where business_id = ${business.id}) as edge_count
     `;
-    expect(afterStaleCounts).toEqual(afterCounts);
+    expect(afterStaleCounts).toEqual(afterReorderCounts);
 
     await expect(
       applyDirectTableAction(
@@ -711,11 +780,22 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     const valuedRowData = new FormData();
     valuedRowData.set("viewKey", viewKey);
     valuedRowData.set("name", "Valued record");
-    valuedRowData.set(addedFieldKey, "valued@example.test");
-    await createDirectTableRow(
+    const valuedRow = await createDirectTableRow(
       owner.client,
       { businessId: business.id },
       { viewKey, formData: valuedRowData },
+    );
+    const emailData = new FormData();
+    emailData.set(addedFieldKey, "valued@example.test");
+    await applyDirectTableRecordCellEdit(
+      owner.client,
+      { businessId: business.id },
+      {
+        viewKey,
+        recordId: valuedRow.id,
+        fieldKey: addedFieldKey,
+        formData: emailData,
+      },
     );
 
     const afterColumn = await currentness(owner);
@@ -910,6 +990,56 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
       ),
     ).toEqual(publicFormBefore);
 
+    const addedCurrency = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: afterAdd.currentness,
+        intent: {
+          action: "add_column",
+          viewKey,
+          label: "Budget",
+          columnType: "currency",
+          currency: "GBP",
+        },
+      },
+    );
+    expect(addedCurrency.changeSet.status).toBe("applied");
+    expect(
+      addedCurrency.composed!.operations.map((operation) => operation.op),
+    ).toEqual(["set_field", "set_form", "set_form", "set_view"]);
+    const currencyFieldKey = addedCurrency.composed!.operations.find(
+      (operation) => operation.op === "set_field",
+    )!.key;
+    const afterCurrency = await currentness(owner);
+    const afterCurrencyCounts = await counts();
+    expect(
+      afterCurrency.snapshot.field_definitions.find(
+        (candidate) => candidate.key === currencyFieldKey,
+      ),
+    ).toMatchObject({
+      field_type: "currency",
+      settings_json: { currency: "GBP" },
+    });
+    expect(
+      afterCurrency.snapshot.views.find(
+        (candidate) => candidate.key === viewKey,
+      )?.config_json,
+    ).toMatchObject({ fields: ["name", addedFieldKey, currencyFieldKey] });
+    for (const formKey of [createFormKey, editFormKey]) {
+      expect(
+        afterCurrency.snapshot.forms.find(
+          (candidate) => candidate.key === formKey,
+        )?.config_json,
+      ).toMatchObject({
+        fields: [
+          { field: "name", hidden: false },
+          { field: addedFieldKey, hidden: false },
+          { field: currencyFieldKey, hidden: false },
+        ],
+      });
+    }
+
     const rowData = new FormData();
     rowData.set("viewKey", viewKey);
     rowData.set("name", "Long-text record");
@@ -931,14 +1061,14 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     expect(edited.data_json).toMatchObject({
       [addedFieldKey]: "A subsequent operational value",
     });
-    expect(await counts()).toEqual(afterAddCounts);
+    expect(await counts()).toEqual(afterCurrencyCounts);
 
     const beforeInsert = await counts();
     const inserted = await applyDirectTableAction(
       owner.client,
       { businessId: business.id, actorId: owner.user.id },
       {
-        currentness: afterAdd.currentness,
+        currentness: afterCurrency.currentness,
         intent: {
           action: "insert_column",
           viewKey,
@@ -968,7 +1098,9 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     expect(
       afterInsert.snapshot.views.find((candidate) => candidate.key === viewKey)
         ?.config_json,
-    ).toMatchObject({ fields: ["name", insertedFieldKey, addedFieldKey] });
+    ).toMatchObject({
+      fields: ["name", insertedFieldKey, addedFieldKey, currencyFieldKey],
+    });
     for (const formKey of [createFormKey, editFormKey]) {
       const form = afterInsert.snapshot.forms.find(
         (candidate) => candidate.key === formKey,
@@ -977,6 +1109,7 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
         fields: [
           { field: "name", hidden: false },
           { field: addedFieldKey, hidden: false },
+          { field: currencyFieldKey, hidden: false },
           { field: insertedFieldKey, hidden: false },
         ],
       });
@@ -1379,13 +1512,12 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
         },
       ),
     ).rejects.toThrow();
-    await expect(
-      applyDirectTableRecordCellEditValue(
-        staff.client,
-        { businessId: business.id },
-        { viewKey, recordId: row.id, fieldKey: "name", value: null },
-      ),
-    ).rejects.toThrow(/required/i);
+    const clearedPrimaryValue = await applyDirectTableRecordCellEditValue(
+      staff.client,
+      { businessId: business.id },
+      { viewKey, recordId: row.id, fieldKey: "name", value: null },
+    );
+    expect(clearedPrimaryValue.data_json).toMatchObject({ name: null });
 
     const afterOperationalWork = await sql<
       { version_count: number; head_revision: number; change_count: number }[]

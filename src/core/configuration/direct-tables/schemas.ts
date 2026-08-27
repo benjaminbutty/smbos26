@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   tableViewColumnSchema,
+  tableViewPropertyKeySchema,
   tableViewQuerySchema,
 } from "../../experience/schemas";
 import { graphKeySchema } from "../../graph/schemas";
@@ -231,9 +232,22 @@ const reorderColumnsIntentSchema = z
   .object({
     action: z.literal("reorder_columns"),
     viewKey: graphKeySchema,
-    fieldKeys: z.array(graphKeySchema).min(1).max(50),
+    // `fieldKeys` is retained for the older form-posting surface. The Table
+    // editor sends property keys so Field and Connection columns can move in
+    // one ordered working surface.
+    fieldKeys: z.array(graphKeySchema).min(1).max(50).optional(),
+    propertyKeys: z.array(tableViewPropertyKeySchema).min(1).max(50).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (Boolean(input.fieldKeys) === Boolean(input.propertyKeys)) {
+      context.addIssue({
+        code: "custom",
+        message: "Provide one complete Table property order.",
+        path: ["propertyKeys"],
+      });
+    }
+  });
 
 const resizeColumnIntentSchema = z
   .object({

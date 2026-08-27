@@ -3509,3 +3509,50 @@ keeps capability/historical blocks unchanged apart from order; and applies one
 immutable Version. Failed or stale publication leaves the previous public Page
 unchanged. No durable draft, new Page, store, renderer or public runtime is
 introduced. See [ADR-045](./ADR-045.md).
+
+## ADR-046: Internal Pages use one bounded Tiptap candidate and explicit save
+
+Accepted for the Interaction Quality Reset. Internal Owner/Admin Pages now
+hold one complete Tiptap body candidate in component memory and commit it only
+through one deliberate `save_page_layout` Direct Page action. A successful body
+save creates one applied Change and one immutable Version; typing, formatting,
+movement and local undo/redo create none. The Page title retains its separate
+bounded rename action.
+
+The canonical Page grammar gains one finite platform-owned rich-text block for
+paragraphs, heading levels 1–3, flat bulleted/numbered lists and inline bold,
+italic and safe-link marks. Existing Page blocks remain compatible; raw editor
+JSON, HTML and unknown nodes/marks remain invalid in TypeScript and PostgreSQL.
+This amends ADR-037's internal autosave and rich-text deferral only. It adds no
+draft store, primitive, runtime, renderer or lifecycle, and it does not change
+the ADR-045 Site/publication contract. See [ADR-046](./ADR-046.md).
+
+## ADR-047: Ordinary Records are progressively completable
+
+Accepted for the UAT interaction correction. Omitted business Properties no
+longer prevent ordinary generic Record existence; configured Forms and trusted
+capabilities retain contextual atomic completeness. See [ADR-047](./ADR-047.md).
+
+## ADR-048: Contextual related creation is one atomic Record-and-Connection action
+
+Accepted for the UAT interaction correction. An owner can add a related Record
+from an editable Connection without manually reconstructing the graph; the
+generic Record and initiating Connection commit or roll back together. See
+[ADR-048](./ADR-048.md).
+
+## ADR-049: Builder clarification uses a signed bounded continuation, not chat memory
+
+Accepted for the UAT interaction correction. Builder retains an authenticated,
+short-lived original request and answers through at most three clarification
+rounds, without permanent conversation storage. See [ADR-049](./ADR-049.md).
+
+## ADR-050: Adaptive solution choice is deterministic and bounded
+
+Accepted for the UAT interaction correction. When an owner wants to work from
+one side of an existing one-to-many Connection, Tell Lenni can explain the
+current arrangement and present only server-recognised no-change or additive
+configuration consequences. The signed continuation preserves the original
+request, presented options, selected choice, actor, Business, currentness and
+later clarification answers. It does not create a general advice task, change
+the qualified planner subject or permit operational Record migration. See
+[ADR-050](./ADR-050.md).

@@ -139,6 +139,7 @@ const fields = [
     settings_json: { options: ["Wedding", "Corporate"] },
   }),
   field("status", "Status", "status", 6, {
+    default_value: "New",
     settings_json: { options: ["New", "Booked"] },
   }),
   field("starts_at", "Starts at", "datetime", 7),
@@ -201,6 +202,7 @@ describe("production editor Table mapping", () => {
       key: "status",
       kind: "status",
       options: ["New", "Booked"],
+      defaultValue: "New",
     });
     expect(mapped.table.columns[3]).toMatchObject({
       key: "attachment",
@@ -297,6 +299,10 @@ describe("production editor Table mapping", () => {
           ),
         ],
       ),
+      targetObjectLabelByObjectId: {
+        [petObjectId]: "Pet",
+        [serviceObjectId]: "Service",
+      },
     }).table;
     const pet = mapped.columns.find((column) => column.label === "Pet");
     const services = mapped.columns.find(
@@ -312,6 +318,7 @@ describe("production editor Table mapping", () => {
         direction: "target",
         multiple: false,
         targetObjectKey: petObjectId,
+        targetObjectLabel: "Pet",
       },
     });
     expect(services).toMatchObject({
@@ -323,6 +330,7 @@ describe("production editor Table mapping", () => {
         direction: "source",
         multiple: true,
         targetObjectKey: serviceObjectId,
+        targetObjectLabel: "Service",
       },
     });
 
@@ -749,15 +757,19 @@ describe("production editor adapter", () => {
         });
       }),
       reorderColumns: vi.fn(async (input) => {
-        expect(input.fieldKeys).toEqual(["status", "phone", "name"]);
+        expect(input.propertyKeys).toEqual([
+          "field:status",
+          "field:phone",
+          "field:name",
+        ]);
         expect(input.currentness).toEqual(authoritativeCurrentness);
         const byKey = new Map(
           authoritativeTable.columns.map((column) => [column.key, column]),
         );
         return structureResult({
           ...authoritativeTable,
-          columns: input.fieldKeys.flatMap((key: string) => {
-            const column = byKey.get(key);
+          columns: input.propertyKeys.flatMap((propertyKey: string) => {
+            const column = byKey.get(propertyKey.replace("field:", ""));
             return column ? [column] : [];
           }),
         });

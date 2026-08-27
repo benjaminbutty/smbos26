@@ -44,6 +44,8 @@ export interface EditorColumn {
   primary?: boolean;
   editable?: boolean;
   required?: boolean;
+  /** An authoritative configured default, applied when the owner omits it. */
+  defaultValue?: EditorValue;
   options?: readonly string[];
   currency?: string;
   readOnlyReason?: string;
@@ -52,6 +54,7 @@ export interface EditorColumn {
     direction: "source" | "target";
     multiple: boolean;
     targetObjectKey: string;
+    targetObjectLabel?: string;
     targetViewKey?: string;
   };
   width: number;
@@ -71,6 +74,11 @@ export interface EditorTable {
   columns: readonly EditorColumn[];
   recordColumns?: readonly EditorColumn[];
   rows: readonly EditorRow[];
+}
+
+export interface EditorTablePreview {
+  table: EditorTable;
+  totalCount: number;
 }
 
 export interface EditorCapabilities {
@@ -351,6 +359,18 @@ export function displayEditorValue(
     return editorInputValue(value);
   }
   return String(value);
+}
+
+export function editorSelectionValue(
+  row: EditorRow,
+  column: EditorColumn,
+): string {
+  if (column.kind === "connection") {
+    return (row.connectionValues?.[column.key] ?? [])
+      .map(({ label }) => label)
+      .join(", ");
+  }
+  return displayEditorValue(column, row.values[column.key] ?? null);
 }
 
 export function reorderColumnKeys(

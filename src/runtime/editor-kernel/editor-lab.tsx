@@ -38,6 +38,7 @@ import {
   type EditorColumnKind,
   type EditorRow,
   type EditorTable,
+  type EditorTablePreview,
   type EditorValue,
 } from "./contracts";
 import {
@@ -54,6 +55,11 @@ import {
   type PendingEdit,
 } from "./table-columns";
 import { RecordPanel } from "./record-panel";
+import {
+  ContextualRecordCreateDialog,
+  type ContextualRecordCreateConnection,
+  type ContextualRecordCreateDialogState,
+} from "./contextual-record-create-dialog";
 import type { TableEditorAdapter } from "./contracts";
 import { OptionManager, Popover, ShortcutSheet, TypePicker } from "./lenni-ui";
 import {
@@ -134,9 +140,24 @@ export interface EditorKernelProps {
         primaryValue: string,
       ) => Promise<{ id: string; label: string }>)
     | undefined;
+  loadContextualRecordCreate?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+      ) => Promise<ContextualRecordCreateDialogState>)
+    | undefined;
+  createContextualRecord?:
+    | ((
+        context: EditorRecordContext,
+        columnKey: string,
+        values: Readonly<Record<string, EditorValue>>,
+        connections: readonly ContextualRecordCreateConnection[],
+      ) => Promise<{ id: string; label: string }>)
+    | undefined;
   title?: string;
   readOnly?: boolean;
   variant?: "workspace" | "embedded";
+  viewPreview?: EditorTablePreview | null;
 }
 
 interface ActiveCell {
@@ -149,10 +170,13 @@ interface GridPoint {
   columnIndex: number;
 }
 
-interface SaveRetry {
+const editorAddPropertyColumnKey = "__editor_add_property__";
+
+export interface SaveRetry {
   rowId: string;
   columnKey: string;
   value: EditorValue;
+  previousValue: EditorValue;
 }
 
 type SaveState =
@@ -204,13 +228,6 @@ function TableTitleEditor({
   const inputRef = useRef<HTMLInputElement>(null);
   const committingRef = useRef(false);
 
-  useEffect(() => {
-    if (editing) {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }
-  }, [editing]);
-
   if (!enabled) {
     return <h1>{displayTitle}</h1>;
   }
@@ -239,15 +256,16 @@ function TableTitleEditor({
     }
   };
 
-  return editing ? (
+  return (
     <input
       ref={inputRef}
       aria-label="Table title"
-      className="editor-title-input"
+      className="editor-title-input editor-title-inline"
       maxLength={120}
       minLength={1}
       onBlur={() => void commit()}
       onChange={(event) => setValue(event.currentTarget.value)}
+      onFocus={() => setEditing(true)}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -257,21 +275,10 @@ function TableTitleEditor({
           cancel();
         }
       }}
+      readOnly={!editing}
       required
       value={value}
     />
-  ) : (
-    <button
-      aria-label={`Rename Table ${name}`}
-      className="editor-title-button"
-      onClick={() => {
-        setValue(name);
-        setEditing(true);
-      }}
-      type="button"
-    >
-      <span>{name}</span>
-    </button>
   );
 }
 
@@ -289,6 +296,23 @@ function replaceCell(
         : row,
     ),
   };
+}
+
+export function gridCoordinatesForCell(
+  rows: readonly EditorRow[],
+  columns: readonly EditorColumn[],
+  cell: ActiveCell,
+): { idx: number; rowIdx: number } | null {
+  const rowIdx = rows.findIndex((row) => row.id === cell.rowId);
+  const idx = columns.findIndex((column) => column.key === cell.columnKey);
+  return rowIdx >= 0 && idx >= 0 ? { idx, rowIdx } : null;
+}
+
+export function cancelFailedSave(
+  table: EditorTable,
+  retry: SaveRetry,
+): EditorTable {
+  return replaceCell(table, retry.rowId, retry.columnKey, retry.previousValue);
 }
 
 function mergeSavedRow(current: EditorRow, saved: EditorRow): EditorRow {
@@ -368,6 +392,7 @@ function EditorMobileRecordList({
   noMatches,
   onClearSearch,
   onOpenRecord,
+  onEditRecord,
   previewColumn,
   rows,
   tableName,
@@ -378,17 +403,29 @@ function EditorMobileRecordList({
   noMatches: boolean;
   onClearSearch: () => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
+  onEditRecord: (rowId: string, columnKey: string) => void;
   previewColumn?: EditorColumn;
   rows: readonly EditorRow[];
   tableName: string;
 }>): ReactNode {
   const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
+  const secondaryColumns = columns
+    .filter((column) => column.key !== primaryColumn?.key)
+    .slice(0, 2);
+  const workingColumns = columns.filter(
+    (column) => column.key !== primaryColumn?.key && !column.preview,
+  );
+  const [workingColumnKey, setWorkingColumnKey] = useState(
+    workingColumns.find((column) => column.editable !== false)?.key ??
+      workingColumns[0]?.key ??
+      primaryColumn?.key ??
+      "",
+  );
   if (!primaryColumn) {
     return null;
   }
-  const secondaryColumns = columns
-    .filter((column) => column.key !== primaryColumn.key)
-    .slice(0, 2);
+  const workingColumn =
+    columns.find((column) => column.key === workingColumnKey) ?? primaryColumn;
 
   return (
     <div
@@ -396,6 +433,25 @@ function EditorMobileRecordList({
       className="editor-mobile-record-list"
       data-testid="editor-mobile-record-list"
     >
+      <div className="editor-mobile-working-property">
+        <label>
+          <span>Working property</span>
+          <select
+            aria-label="Working property"
+            onChange={(event) => setWorkingColumnKey(event.currentTarget.value)}
+            value={workingColumn.key}
+          >
+            {columns
+              .filter((column) => !column.preview)
+              .map((column) => (
+                <option key={column.key} value={column.key}>
+                  {column.label}
+                </option>
+              ))}
+          </select>
+        </label>
+        <span>Tap a value to edit. Open the Record for every Property.</span>
+      </div>
       {previewColumn ? (
         <div className="editor-mobile-property-preview" role="status">
           <strong>{previewColumn.label}</strong>
@@ -431,27 +487,45 @@ function EditorMobileRecordList({
             const primaryValue = mobileRecordValue(row, primaryColumn);
             return (
               <li key={row.id}>
-                <button
-                  aria-label={`Open record ${primaryValue || "Unnamed record"}`}
-                  className="editor-mobile-record-card"
-                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
-                  type="button"
-                >
+                <article className="editor-mobile-record-card">
                   <span className="editor-mobile-record-card-heading">
-                    <strong>{primaryValue || "Unnamed record"}</strong>
-                    <span aria-hidden="true">↗</span>
+                    <button
+                      aria-label={`Open record ${primaryValue || "Unnamed record"}`}
+                      className="editor-mobile-open-record"
+                      onClick={() => onOpenRecord(row.id, primaryColumn.key)}
+                      type="button"
+                    >
+                      <strong>{primaryValue || "Unnamed record"}</strong>
+                      <span aria-hidden="true">Open ↗</span>
+                    </button>
                   </span>
+                  <button
+                    aria-label={`Edit ${workingColumn.label} for ${primaryValue || "Unnamed record"}`}
+                    className="editor-mobile-working-value"
+                    disabled={workingColumn.editable === false}
+                    onClick={() => onEditRecord(row.id, workingColumn.key)}
+                    type="button"
+                  >
+                    <small>{workingColumn.label}</small>
+                    <span>
+                      {mobileRecordValue(row, workingColumn) || "Empty"}
+                    </span>
+                    <span aria-hidden="true">Edit</span>
+                  </button>
                   {secondaryColumns.length > 0 ? (
-                    <span className="editor-mobile-record-card-details">
-                      {secondaryColumns.map((column) => (
-                        <span key={column.key}>
-                          <small>{column.label}</small>
-                          <span>{mobileRecordValue(row, column) || "—"}</span>
-                        </span>
-                      ))}
+                    <span className="editor-mobile-record-context">
+                      {secondaryColumns
+                        .filter((column) => column.key !== workingColumn.key)
+                        .slice(0, 1)
+                        .map((column) => (
+                          <span key={column.key}>
+                            {column.label}:{" "}
+                            {mobileRecordValue(row, column) || "—"}
+                          </span>
+                        ))}
                     </span>
                   ) : null}
-                </button>
+                </article>
               </li>
             );
           })}
@@ -1003,6 +1077,11 @@ export function AddColumnPopover({
     onDraftChange?.(next);
     setError(null);
   };
+  const openConnectionSetup = (): void => {
+    setError(null);
+    onDraftChange?.(null);
+    setConnectionOpen(true);
+  };
 
   const submit = (): void => {
     if (submitting) return;
@@ -1119,6 +1198,23 @@ export function AddColumnPopover({
             value={draft.kind}
           />
         </div>
+        {canAddConnections && onCreateConnection && connectionSource ? (
+          <div className="editor-property-connection-choice">
+            <div>
+              <strong>Connect another Table</strong>
+              <span>Show related Records alongside this Table.</span>
+            </div>
+            {(connectionTargets?.length ?? 0) > 0 ? (
+              <button onClick={openConnectionSetup} type="button">
+                Add connected property
+              </button>
+            ) : (
+              <span className="editor-property-type-note" role="status">
+                Create another Table before adding a connected property.
+              </span>
+            )}
+          </div>
+        ) : null}
         {draft.kind === "currency" ? (
           <label>
             Currency
@@ -1255,28 +1351,6 @@ export function AddColumnPopover({
           Refresh and recheck
         </button>
       ) : null}
-      {canAddConnections && onCreateConnection && connectionSource ? (
-        (connectionTargets?.length ?? 0) > 0 ? (
-          <>
-            <div className="editor-add-property-divider" />
-            <button
-              className="editor-add-connection-link"
-              onClick={() => {
-                setError(null);
-                onDraftChange?.(null);
-                setConnectionOpen(true);
-              }}
-              type="button"
-            >
-              Connect to another Table
-            </button>
-          </>
-        ) : (
-          <span className="editor-property-type-note" role="status">
-            Create another Table before adding a Connection.
-          </span>
-        )
-      ) : null}
     </Popover>
   );
 }
@@ -1304,9 +1378,12 @@ export function EditorKernel({
   updateConnectedRecord,
   searchConnectedRecordTargets,
   createConnectedRecordTarget,
+  loadContextualRecordCreate,
+  createContextualRecord,
   readOnly = false,
   title,
   variant = "workspace",
+  viewPreview = null,
 }: Readonly<EditorKernelProps>): ReactNode {
   const [table, setTable] = useState<EditorTable>(() => {
     const initial = adapter.getTable();
@@ -1329,8 +1406,14 @@ export function EditorKernel({
   const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
+  const [panelEditingKey, setPanelEditingKey] = useState<string | null>(null);
   const [connectedPanel, setConnectedPanel] =
     useState<EditorRecordContext | null>(null);
+  const [contextualCreate, setContextualCreate] = useState<{
+    context: EditorRecordContext;
+    columnKey: string;
+    state: ContextualRecordCreateDialogState;
+  } | null>(null);
   const [panelHistory, setPanelHistory] = useState<EditorRecordContext[]>([]);
   const [draftActivation, setDraftActivation] = useState<{
     rowIdx: number;
@@ -1340,6 +1423,7 @@ export function EditorKernel({
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved" });
   const [structuralError, setStructuralError] = useState<string | null>(null);
   const [retry, setRetry] = useState<SaveRetry | null>(null);
+  const [restoreCell, setRestoreCell] = useState<ActiveCell | null>(null);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [showAllProperties, setShowAllProperties] = useState(false);
   const gridRef = useRef<DataGridHandle>(null);
@@ -1358,7 +1442,9 @@ export function EditorKernel({
   const panelRow = panelRowId
     ? (table.rows.find((row) => row.id === panelRowId) ?? null)
     : null;
-  const recordColumns = table.recordColumns ?? table.columns;
+  const previewTable = viewPreview?.table;
+  const recordColumns =
+    previewTable?.recordColumns ?? table.recordColumns ?? table.columns;
   const sourcePanel = panelRow
     ? {
         columns: recordColumns,
@@ -1379,16 +1465,19 @@ export function EditorKernel({
     adapterRef.current = adapter;
     const next = adapter.getTable();
     setTable(readOnly ? readOnlyTable(next) : next);
-  }, [adapter, readOnly]);
+    if (activeCell) {
+      setRestoreCell(activeCell);
+    }
+  }, [activeCell, adapter, readOnly]);
 
   const visibleRows = useMemo(
     () =>
       normalizedRecordSearch
-        ? table.rows.filter((row) =>
+        ? (previewTable?.rows ?? table.rows).filter((row) =>
             rowSearchText(row, recordColumns).includes(normalizedRecordSearch),
           )
-        : table.rows,
-    [normalizedRecordSearch, recordColumns, table.rows],
+        : (previewTable?.rows ?? table.rows),
+    [normalizedRecordSearch, previewTable?.rows, recordColumns, table.rows],
   );
   const presentationTable = useMemo(
     () =>
@@ -1396,14 +1485,14 @@ export function EditorKernel({
         ? previewTableWithProperty(table, propertyDraft)
         : connectionDraft && !readOnly
           ? previewTableWithConnection(table, connectionDraft)
-          : table,
-    [connectionDraft, propertyDraft, readOnly, table],
+          : (previewTable ?? table),
+    [connectionDraft, previewTable, propertyDraft, readOnly, table],
   );
   useEffect(() => {
     if (variant !== "workspace") {
       return;
     }
-    const mediaQuery = window.matchMedia("(max-width: 68.75rem)");
+    const mediaQuery = window.matchMedia("(max-width: 48rem)");
     const updateViewport = (): void => setIsCompactViewport(mediaQuery.matches);
     updateViewport();
     mediaQuery.addEventListener("change", updateViewport);
@@ -1480,6 +1569,7 @@ export function EditorKernel({
     const origin = panelOrigin;
     setPanelRowId(null);
     setPanelOrigin(null);
+    setPanelEditingKey(null);
     setConnectedPanel(null);
     setPanelHistory([]);
     if (!origin) {
@@ -1590,7 +1680,12 @@ export function EditorKernel({
   }, [draftActivation]);
 
   const commitCell = useCallback(
-    (rowId: string, columnKey: string, rawValue: unknown): void => {
+    (
+      rowId: string,
+      columnKey: string,
+      rawValue: unknown,
+      options?: { force?: boolean; previousValue?: EditorValue },
+    ): void => {
       const row = table.rows.find((candidate) => candidate.id === rowId);
       const column = columnForKey(columnKey);
       if (!row || !column || column.editable === false) {
@@ -1606,7 +1701,7 @@ export function EditorKernel({
         return;
       }
       const previousValue = row.values[columnKey] ?? null;
-      if (Object.is(previousValue, value)) {
+      if (Object.is(previousValue, value) && !options?.force) {
         return;
       }
 
@@ -1642,7 +1737,12 @@ export function EditorKernel({
             return;
           }
           pendingSaves.current.delete(operationKey);
-          setRetry({ rowId, columnKey, value });
+          setRetry({
+            rowId,
+            columnKey,
+            value,
+            previousValue: options?.previousValue ?? previousValue,
+          });
           setSaveState({ status: "error", cellLabel: column.label });
         });
     },
@@ -1762,7 +1862,7 @@ export function EditorKernel({
   );
 
   const openRecord = useCallback(
-    (rowId: string, columnKey: string): void => {
+    (rowId: string, columnKey: string, editColumnKey?: string): void => {
       void adapter
         .openRecord(rowId)
         .then((row) => {
@@ -1776,6 +1876,7 @@ export function EditorKernel({
             ),
           }));
           setPanelOrigin({ rowId, columnKey });
+          setPanelEditingKey(editColumnKey ?? null);
           setPanelRowId(rowId);
           setConnectedPanel(null);
           setPanelHistory([]);
@@ -1897,6 +1998,91 @@ export function EditorKernel({
       );
     },
     [connectedPanel, createConnectedRecordTarget],
+  );
+
+  const beginContextualRecordCreate = useCallback(
+    (columnKey: string, parentRecordId: string): void => {
+      if (
+        !activePanel ||
+        activePanel.row.id !== parentRecordId ||
+        !loadContextualRecordCreate
+      ) {
+        return;
+      }
+      void loadContextualRecordCreate(activePanel, columnKey)
+        .then((state) =>
+          setContextualCreate({ context: activePanel, columnKey, state }),
+        )
+        .catch((error: unknown) => {
+          setSaveState({
+            status: "error",
+            message: saveErrorMessage(error),
+          });
+        });
+    },
+    [activePanel, loadContextualRecordCreate],
+  );
+
+  const saveContextualRecordCreate = useCallback(
+    async (
+      values: Readonly<Record<string, EditorValue>>,
+      connections: readonly ContextualRecordCreateConnection[],
+    ): Promise<void> => {
+      if (!contextualCreate || !createContextualRecord) {
+        throw new Error("Adding a related Record is not available.");
+      }
+      const created = await createContextualRecord(
+        contextualCreate.context,
+        contextualCreate.columnKey,
+        values,
+        connections,
+      );
+      const appendConnection = (row: EditorRow): EditorRow => {
+        const selectedValue = row.values[contextualCreate.columnKey];
+        const selected = Array.isArray(selectedValue)
+          ? selectedValue.filter(
+              (item): item is string => typeof item === "string",
+            )
+          : [];
+        const labels = row.connectionValues?.[contextualCreate.columnKey] ?? [];
+        return {
+          ...row,
+          values: {
+            ...row.values,
+            [contextualCreate.columnKey]: selected.includes(created.id)
+              ? selected
+              : [...selected, created.id],
+          },
+          connectionValues: {
+            ...row.connectionValues,
+            [contextualCreate.columnKey]: labels.some(
+              (item) => item.id === created.id,
+            )
+              ? labels
+              : [...labels, created],
+          },
+        };
+      };
+      if (connectedPanel) {
+        setConnectedPanel((current) =>
+          current
+            ? { ...current, row: appendConnection(current.row) }
+            : current,
+        );
+      } else {
+        setTable((current) => ({
+          ...current,
+          rows: current.rows.map((row) =>
+            row.id === contextualCreate.context.row.id
+              ? appendConnection(row)
+              : row,
+          ),
+        }));
+      }
+      setContextualCreate(null);
+      setSaveState({ status: "saved" });
+    },
+    [connectedPanel, contextualCreate, createContextualRecord],
   );
 
   const handleCreateProperty = useCallback(
@@ -2510,6 +2696,31 @@ export function EditorKernel({
   );
 
   useEffect(() => {
+    if (!restoreCell) return;
+    const target = gridCoordinatesForCell(
+      gridRows,
+      visibleGridColumns,
+      restoreCell,
+    );
+    if (!target) {
+      setRestoreCell(null);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      gridRef.current?.selectCell(target, { shouldFocusCell: true });
+      window.requestAnimationFrame(() => {
+        gridRef.current?.element
+          ?.querySelector<HTMLElement>(
+            '[role="gridcell"][aria-selected="true"]',
+          )
+          ?.focus({ preventScroll: true });
+      });
+      setRestoreCell(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [gridRows, restoreCell, visibleGridColumns]);
+
+  useEffect(() => {
     const focusRequestedColumn = (): void => {
       const prefix = "#table-column-";
       if (!window.location.hash.startsWith(prefix)) return;
@@ -2565,80 +2776,108 @@ export function EditorKernel({
     setDraftActivation({ rowIdx, columnIdx });
   }, []);
 
-  const gridColumns = useMemo(
-    () =>
-      createEditorColumns({
-        columnMenuKey,
-        columns: visibleGridColumns,
-        newRecordLabel,
-        onActivateDraft: activateDraft,
-        onOpenColumnMenu: (columnKey) => {
-          setPropertyDraft(null);
-          setAddColumnOpen(false);
-          setColumnMenuKey((current) =>
-            current === columnKey ? null : columnKey,
-          );
-        },
-        onCloseColumnMenu: () => setColumnMenuKey(null),
-        onOpenRecord: openRecord,
-        onRenameColumn: handleRenameColumn,
-        onUpdateColumnOptions: handleUpdateColumnOptions,
-        onChangeColumnType: handleChangeColumnType,
-        onInsertColumn: handleInsertColumn,
-        onMoveColumn: handleMoveColumn,
-        onSearchConnectionTargets: (columnKey, search) =>
-          adapter.searchConnectionTargets
-            ? adapter.searchConnectionTargets(columnKey, search)
-            : Promise.resolve([]),
-        ...(adapter.createConnectionTarget
-          ? {
-              onCreateConnectionTarget: (
-                columnKey: string,
-                primaryValue: string,
-              ) => adapter.createConnectionTarget!(columnKey, primaryValue),
-            }
-          : {}),
-        canRenameColumns: capabilities.canRenameColumns,
-        canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
-        canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
-        canInsertColumns: Boolean(capabilities.canInsertColumns),
-        canReorderColumns: capabilities.canReorderColumns,
-        canResizeColumns: capabilities.canResizeColumns,
-        pendingEdit,
-      }),
-    [
-      activateDraft,
+  const gridColumns = useMemo(() => {
+    const columns = createEditorColumns({
       columnMenuKey,
-      handleRenameColumn,
-      handleUpdateColumnOptions,
-      handleChangeColumnType,
-      handleInsertColumn,
-      handleMoveColumn,
-      setColumnMenuKey,
-      openRecord,
-      pendingEdit,
-      capabilities.canRenameColumns,
-      capabilities.canUpdateColumnOptions,
-      capabilities.canChangeColumnTypes,
-      capabilities.canInsertColumns,
-      capabilities.canReorderColumns,
-      capabilities.canResizeColumns,
-      visibleGridColumns,
-      adapter,
+      columns: visibleGridColumns,
       newRecordLabel,
-    ],
-  );
+      onActivateDraft: activateDraft,
+      onOpenColumnMenu: (columnKey) => {
+        setPropertyDraft(null);
+        setAddColumnOpen(false);
+        setColumnMenuKey((current) =>
+          current === columnKey ? null : columnKey,
+        );
+      },
+      onCloseColumnMenu: () => setColumnMenuKey(null),
+      onOpenRecord: openRecord,
+      onRenameColumn: handleRenameColumn,
+      onUpdateColumnOptions: handleUpdateColumnOptions,
+      onChangeColumnType: handleChangeColumnType,
+      onInsertColumn: handleInsertColumn,
+      onMoveColumn: handleMoveColumn,
+      onReorderColumns: handleReorderColumns,
+      onSearchConnectionTargets: (columnKey, search) =>
+        adapter.searchConnectionTargets
+          ? adapter.searchConnectionTargets(columnKey, search)
+          : Promise.resolve([]),
+      ...(adapter.createConnectionTarget
+        ? {
+            onCreateConnectionTarget: (
+              columnKey: string,
+              primaryValue: string,
+            ) => adapter.createConnectionTarget!(columnKey, primaryValue),
+          }
+        : {}),
+      canRenameColumns: capabilities.canRenameColumns,
+      canUpdateColumnOptions: capabilities.canUpdateColumnOptions,
+      canChangeColumnTypes: Boolean(capabilities.canChangeColumnTypes),
+      canInsertColumns: Boolean(capabilities.canInsertColumns),
+      canReorderColumns: capabilities.canReorderColumns,
+      canResizeColumns: capabilities.canResizeColumns,
+      pendingEdit,
+    });
+    if (!capabilities.canAddColumns) {
+      return columns;
+    }
+    return [
+      ...columns,
+      {
+        key: editorAddPropertyColumnKey,
+        name: "",
+        width: 42,
+        minWidth: 42,
+        maxWidth: 42,
+        resizable: false,
+        draggable: false,
+        renderHeaderCell: () => (
+          <button
+            aria-expanded={addColumnOpen}
+            aria-label="Add property"
+            className="editor-add-column-button"
+            ref={addColumnButtonRef}
+            onClick={() => {
+              setColumnMenuKey(null);
+              if (addColumnOpen) {
+                setPropertyDraft(null);
+                setAddColumnOpen(false);
+              } else {
+                setPropertyDraft(initialPropertyDraft());
+                setAddColumnOpen(true);
+              }
+            }}
+            type="button"
+          >
+            <span aria-hidden="true">+</span>
+          </button>
+        ),
+        renderCell: () => null,
+      },
+    ];
+  }, [
+    activateDraft,
+    addColumnOpen,
+    adapter,
+    capabilities.canAddColumns,
+    capabilities.canChangeColumnTypes,
+    capabilities.canInsertColumns,
+    capabilities.canRenameColumns,
+    capabilities.canReorderColumns,
+    capabilities.canResizeColumns,
+    capabilities.canUpdateColumnOptions,
+    columnMenuKey,
+    handleChangeColumnType,
+    handleInsertColumn,
+    handleMoveColumn,
+    handleReorderColumns,
+    handleRenameColumn,
+    handleUpdateColumnOptions,
+    newRecordLabel,
+    openRecord,
+    pendingEdit,
+    visibleGridColumns,
+  ]);
 
-  const activeCellLabel = activeCell
-    ? table.columns.find((column) => column.key === activeCell.columnKey)?.label
-    : null;
-  const activeRow = activeCell
-    ? table.rows.find((row) => row.id === activeCell.rowId)
-    : null;
-  const activeValue =
-    activeCell && activeRow
-      ? editorInputValue(activeRow.values[activeCell.columnKey] ?? null)
-      : null;
   const emptyRecordLabel =
     recordCountLabel?.replace(/^\d+\s+/, "").trim() ||
     (recordTypeLabel
@@ -2646,7 +2885,9 @@ export function EditorKernel({
       : "records");
   const displayedRecordCountLabel = normalizedRecordSearch
     ? `${visibleRows.length} of ${table.rows.length} ${emptyRecordLabel}`
-    : (recordCountLabel ?? `${table.rows.length} ${emptyRecordLabel}`);
+    : viewPreview
+      ? `${viewPreview.table.rows.length} of ${viewPreview.totalCount} ${emptyRecordLabel}`
+      : (recordCountLabel ?? `${table.rows.length} ${emptyRecordLabel}`);
   const emptyRecordMessage =
     capabilities.rowCreation === "direct"
       ? "Start with the first record using the row below or the button above."
@@ -2676,33 +2917,6 @@ export function EditorKernel({
           />
         </div>
         <div className="editor-lab-header-actions">
-          {variant === "workspace" ? (
-            <details className="editor-table-menu">
-              <summary>Table menu</summary>
-              <div className="editor-table-menu-body" role="menu">
-                {capabilities.canAddColumns ? (
-                  <button
-                    onClick={() => {
-                      setColumnMenuKey(null);
-                      setPropertyDraft(initialPropertyDraft());
-                      setAddColumnOpen(true);
-                    }}
-                    role="menuitem"
-                    type="button"
-                  >
-                    Add property
-                  </button>
-                ) : null}
-                <button
-                  onClick={() => setShortcutOpen(true)}
-                  role="menuitem"
-                  type="button"
-                >
-                  Keyboard shortcuts
-                </button>
-              </div>
-            </details>
-          ) : null}
           <div
             className={`editor-save-state editor-save-${saveState.status}`}
             role="status"
@@ -2712,15 +2926,35 @@ export function EditorKernel({
               ? saveState.message
               : statusLabel(saveState)}
             {saveState.status === "error" && retry ? (
-              <button
-                className="editor-retry-button"
-                onClick={() =>
-                  commitCell(retry.rowId, retry.columnKey, retry.value)
-                }
-                type="button"
-              >
-                Retry
-              </button>
+              <span className="editor-save-recovery">
+                <button
+                  className="editor-retry-button"
+                  onClick={() =>
+                    commitCell(retry.rowId, retry.columnKey, retry.value, {
+                      force: true,
+                      previousValue: retry.previousValue,
+                    })
+                  }
+                  type="button"
+                >
+                  Retry
+                </button>
+                <button
+                  className="editor-retry-button"
+                  onClick={() => {
+                    setTable((current) => cancelFailedSave(current, retry));
+                    setRetry(null);
+                    setSaveState({ status: "saved" });
+                    setRestoreCell({
+                      rowId: retry.rowId,
+                      columnKey: retry.columnKey,
+                    });
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </span>
             ) : null}
           </div>
         </div>
@@ -2754,6 +2988,11 @@ export function EditorKernel({
           </label>
         ) : null}
         <span>{displayedRecordCountLabel}</span>
+        {viewPreview ? (
+          <span className="editor-view-preview-state">
+            Previewing unsaved View in this grid
+          </span>
+        ) : null}
         {omittedPropertyCount > 0 ? (
           <span className="editor-property-disclosure">
             Showing {visibleGridColumns.length} of {table.columns.length}{" "}
@@ -2771,12 +3010,6 @@ export function EditorKernel({
             </button>
           </span>
         ) : null}
-        <span aria-hidden="true">·</span>
-        <span>
-          {activeCellLabel && activeValue
-            ? `${activeCellLabel} · ${activeValue}`
-            : "Select a cell to begin"}
-        </span>
         <span className="editor-lab-shortcut-hint">
           {readOnly
             ? "Select a Record to inspect its example details · Copy supported"
@@ -2840,6 +3073,9 @@ export function EditorKernel({
                 }
                 onRowsChange={handleRowsChange}
                 onSelectedCellChange={({ row, column }) => {
+                  if (column.key === editorAddPropertyColumnKey) {
+                    return;
+                  }
                   setPendingEdit(null);
                   if (row) {
                     setActiveCell({ rowId: row.id, columnKey: column.key });
@@ -2908,31 +3144,15 @@ export function EditorKernel({
               noMatches={noMatches}
               onClearSearch={() => setRecordSearch("")}
               onOpenRecord={openRecord}
+              onEditRecord={(rowId, columnKey) =>
+                openRecord(rowId, columnKey, columnKey)
+              }
               {...(previewColumn ? { previewColumn } : {})}
               rows={visibleRows}
               tableName={table.name}
             />
             {capabilities.canAddColumns ? (
               <>
-                <button
-                  aria-expanded={addColumnOpen}
-                  aria-label="Add property"
-                  className="editor-add-column-button"
-                  ref={addColumnButtonRef}
-                  onClick={() => {
-                    setColumnMenuKey(null);
-                    if (addColumnOpen) {
-                      setPropertyDraft(null);
-                      setAddColumnOpen(false);
-                    } else {
-                      setPropertyDraft(initialPropertyDraft());
-                      setAddColumnOpen(true);
-                    }
-                  }}
-                  type="button"
-                >
-                  +
-                </button>
                 {addColumnOpen ? (
                   <AddColumnPopover
                     anchorRef={addColumnButtonRef}
@@ -2990,6 +3210,9 @@ export function EditorKernel({
         {activePanel ? (
           <RecordPanel
             key={`${activePanel.viewKey}:${activePanel.row.id}:${JSON.stringify(activePanel.row.values)}`}
+            {...(panelEditingKey && !connectedPanel
+              ? { initialEditingColumnKey: panelEditingKey }
+              : {})}
             {...(businessSlug !== undefined ? { businessSlug } : {})}
             columns={activePanel.columns}
             {...(activePanel.fullRecordPath !== undefined
@@ -3011,6 +3234,9 @@ export function EditorKernel({
                       ? adapter.searchConnectionTargets(columnKey, search)
                       : Promise.resolve([])
             }
+            {...(loadContextualRecordCreate && createContextualRecord
+              ? { onAddRelatedRecord: beginContextualRecordCreate }
+              : {})}
             {...(panelStatusLabel !== undefined
               ? { statusLabel: panelStatusLabel }
               : {})}
@@ -3032,6 +3258,25 @@ export function EditorKernel({
               ? { recordTypeLabel: activePanel.recordTypeLabel }
               : {})}
             tableName={activePanel.tableName}
+          />
+        ) : null}
+        {contextualCreate ? (
+          <ContextualRecordCreateDialog
+            onClose={() => setContextualCreate(null)}
+            onSave={saveContextualRecordCreate}
+            onSearchConnectionTargets={(columnKey, search) =>
+              searchConnectedRecordTargets
+                ? searchConnectedRecordTargets(
+                    {
+                      ...contextualCreate.context,
+                      viewKey: contextualCreate.state.targetViewKey,
+                    },
+                    columnKey,
+                    search,
+                  )
+                : Promise.resolve([])
+            }
+            state={contextualCreate.state}
           />
         ) : null}
       </div>

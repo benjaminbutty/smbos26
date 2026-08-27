@@ -19,6 +19,12 @@ export interface PageEditorDocument extends JSONContent {
   content?: JSONContent[];
 }
 
+type RichTextBlock = Extract<PageBlock, { type: "rich_text" }>;
+type RichTextContent = Extract<
+  RichTextBlock["node"],
+  { content: unknown }
+>["content"];
+
 function blockIdAttrs(block: PageBlock): { blockId: string | null } {
   return { blockId: "id" in block ? (block.id ?? null) : null };
 }
@@ -38,6 +44,55 @@ function legacyNode(block: PageBlock): JSONContent {
   };
 }
 
+function tiptapMarks(
+  marks: RichTextContent[number]["marks"],
+): JSONContent["marks"] {
+  return marks?.map((mark) =>
+    mark.type === "link"
+      ? { type: "link", attrs: { href: mark.href } }
+      : { type: mark.type },
+  );
+}
+
+function tiptapInline(content: RichTextContent): JSONContent[] {
+  return content.map((span) => {
+    const marks = tiptapMarks(span.marks);
+    return {
+      type: "text",
+      text: span.text,
+      ...(marks?.length ? { marks } : {}),
+    };
+  });
+}
+
+function richTextToTiptap(block: RichTextBlock): JSONContent {
+  const attrs = blockIdAttrs(block);
+  switch (block.node.type) {
+    case "paragraph":
+      return {
+        type: "paragraph",
+        attrs,
+        content: tiptapInline(block.node.content),
+      };
+    case "heading":
+      return {
+        type: "heading",
+        attrs: { ...attrs, level: block.node.level },
+        content: tiptapInline(block.node.content),
+      };
+    case "bullet_list":
+    case "numbered_list":
+      return {
+        type: block.node.type === "bullet_list" ? "bulletList" : "orderedList",
+        attrs,
+        content: block.node.items.map((item) => ({
+          type: "listItem",
+          content: [{ type: "paragraph", content: tiptapInline(item.content) }],
+        })),
+      };
+  }
+}
+
 export function pageLayoutToTiptap(layoutInput: unknown): PageEditorDocument {
   const layout = pageLayoutSchema.parse(layoutInput);
   const content = layout.blocks.map<JSONContent>((block) => {
@@ -54,6 +109,8 @@ export function pageLayoutToTiptap(layoutInput: unknown): PageEditorDocument {
           attrs: blockIdAttrs(block),
           content: textContent(block.text),
         };
+      case "rich_text":
+        return richTextToTiptap(block);
       case "divider":
         return {
           type: pageEditorNodeNames.divider,
@@ -86,7 +143,6 @@ export function pageLayoutToTiptap(layoutInput: unknown): PageEditorDocument {
         return legacyNode(block);
     }
   });
-
   return { type: "doc", content };
 }
 
@@ -97,13 +153,52 @@ function blockId(
 }
 
 function textFromNode(node: JSONContent): string {
-  if (typeof node.attrs?.text === "string") {
-    return node.attrs.text;
-  }
+  if (typeof node.attrs?.text === "string") return node.attrs.text;
   return (node.content ?? [])
     .filter((child) => child.type === "text")
     .map((child) => child.text ?? "")
     .join("");
+}
+
+function canonicalMarks(node: JSONContent): RichTextContent[number]["marks"] {
+  if (!node.marks?.length) return undefined;
+  const marks = node.marks.map((mark) => {
+    if (mark.type === "bold" || mark.type === "italic") {
+      return { type: mark.type } as const;
+    }
+    if (mark.type === "link" && typeof mark.attrs?.href === "string") {
+      return { type: "link" as const, href: mark.attrs.href };
+    }
+    throw new Error("Unsupported Page editor mark.");
+  });
+  return marks.sort((first, second) => first.type.localeCompare(second.type));
+}
+
+function canonicalInline(node: JSONContent): RichTextContent {
+  return (node.content ?? []).map((child) => {
+    if (child.type !== "text" || !child.text) {
+      throw new Error("Unsupported Page editor inline content.");
+    }
+    const marks = canonicalMarks(child);
+    return {
+      type: "text" as const,
+      text: child.text,
+      ...(marks?.length ? { marks } : {}),
+    };
+  });
+}
+
+function listItems(node: JSONContent): RichTextContent[] {
+  return (node.content ?? []).map((item) => {
+    if (
+      item.type !== "listItem" ||
+      item.content?.length !== 1 ||
+      item.content[0]?.type !== "paragraph"
+    ) {
+      throw new Error("Nested or unsupported Page lists are not allowed.");
+    }
+    return canonicalInline(item.content[0]);
+  });
 }
 
 function canonicalBlock(node: JSONContent): PageBlock | null {
@@ -113,18 +208,50 @@ function canonicalBlock(node: JSONContent): PageBlock | null {
 
   if (node.type === "heading") {
     const level = node.attrs?.level;
+    const content = canonicalInline(node);
+    const hasMarks = content.some((span) => Boolean(span.marks?.length));
+    const text = content.map((span) => span.text).join("");
     const result = pageBlockSchema.safeParse(
-      withId({
-        type: "heading",
-        text: textFromNode(node),
-        level: level === 1 || level === 3 ? level : 2,
-      }),
+      !hasMarks && text
+        ? withId({
+            type: "heading",
+            text,
+            level: level === 1 || level === 3 ? level : 2,
+          })
+        : withId({
+            type: "rich_text",
+            node: {
+              type: "heading",
+              level: level === 1 || level === 3 ? level : 2,
+              content,
+            },
+          }),
     );
     return result.success ? result.data : null;
   }
   if (node.type === "paragraph") {
+    const content = canonicalInline(node);
+    const hasMarks = content.some((span) => Boolean(span.marks?.length));
+    const text = content.map((span) => span.text).join("");
     const result = pageBlockSchema.safeParse(
-      withId({ type: "text", text: textFromNode(node) }),
+      !hasMarks && text
+        ? withId({ type: "text", text })
+        : withId({
+            type: "rich_text",
+            node: { type: "paragraph", content },
+          }),
+    );
+    return result.success ? result.data : null;
+  }
+  if (node.type === "bulletList" || node.type === "orderedList") {
+    const result = pageBlockSchema.safeParse(
+      withId({
+        type: "rich_text",
+        node: {
+          type: node.type === "bulletList" ? "bullet_list" : "numbered_list",
+          items: listItems(node).map((content) => ({ content })),
+        },
+      }),
     );
     return result.success ? result.data : null;
   }
@@ -163,9 +290,7 @@ function canonicalBlock(node: JSONContent): PageBlock | null {
       const parsed = pageBlockSchema.safeParse(
         JSON.parse(String(node.attrs?.blockJson ?? "")),
       );
-      if (!parsed.success) {
-        return null;
-      }
+      if (!parsed.success) return null;
       return id && !("id" in parsed.data)
         ? pageBlockSchema.parse({ ...parsed.data, id })
         : parsed.data;
@@ -187,13 +312,15 @@ export function tiptapToPageLayout(documentInput: unknown): PageLayout {
   }
 
   const blocks = (document.content ?? []).flatMap((node) => {
-    if (node.type === "paragraph" && textFromNode(node).trim() === "") {
+    if (
+      node.type === "paragraph" &&
+      (node.content?.length ?? 0) === 0 &&
+      blockId(node.attrs) === undefined
+    ) {
       return [];
     }
     const block = canonicalBlock(node);
-    if (!block) {
-      throw new Error("Unsupported Page editor block.");
-    }
+    if (!block) throw new Error("Unsupported Page editor block.");
     return [block];
   });
   return pageLayoutSchema.parse({ blocks });

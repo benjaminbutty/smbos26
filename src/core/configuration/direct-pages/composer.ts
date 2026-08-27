@@ -33,6 +33,7 @@ export const directPageErrorCodes = [
   "direct_page_published_site_ineligible",
   "direct_page_published_site_requires_publication",
   "direct_page_site_block_locked",
+  "direct_page_site_rich_text_unsupported",
   "direct_page_block_not_found",
   "direct_page_block_unchanged",
   "direct_page_operations_invalid",
@@ -61,6 +62,8 @@ const directPageErrorMessages: Readonly<Record<DirectPageErrorCode, string>> = {
     "Published Site edits must be reviewed and published together. Reload the Site editor and use Publish changes.",
   direct_page_site_block_locked:
     "Booking, Form and other customer capabilities can be reordered here, but their settings and presence cannot be changed.",
+  direct_page_site_rich_text_unsupported:
+    "Rich document formatting is available on internal Pages only. This Site keeps its existing supported content controls.",
   direct_page_block_not_found:
     "That Page block is no longer available. Reload and try again.",
   direct_page_block_unchanged: "That Page block is already in that position.",
@@ -422,6 +425,14 @@ function composePageMutation(
   }
 
   if (intent.action === "save_page_layout") {
+    if (
+      page.audience === "public" &&
+      intent.layout.blocks.some((block) => block.type === "rich_text")
+    ) {
+      throw new DirectPageComposerError(
+        "direct_page_site_rich_text_unsupported",
+      );
+    }
     return finalizeAction(
       "save_page_layout",
       `Save ${page.title}`,

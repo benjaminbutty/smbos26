@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import type {
   ExperienceFormBundle,
@@ -92,6 +92,52 @@ function MissingBlock({ message }: Readonly<{ message: string }>): ReactNode {
   );
 }
 
+type RichTextPageBlock = Extract<
+  PageLayout["blocks"][number],
+  { type: "rich_text" }
+>;
+
+function RichTextInline({
+  content,
+}: Readonly<{
+  content: Extract<RichTextPageBlock["node"], { content: unknown }>["content"];
+}>): ReactNode {
+  return content.map((span, index) => {
+    let rendered: ReactNode = span.text;
+    for (const mark of span.marks ?? []) {
+      if (mark.type === "bold") rendered = <strong>{rendered}</strong>;
+      if (mark.type === "italic") rendered = <em>{rendered}</em>;
+      if (mark.type === "link") {
+        rendered = <a href={mark.href}>{rendered}</a>;
+      }
+    }
+    return <Fragment key={`${index}-${span.text}`}>{rendered}</Fragment>;
+  });
+}
+
+function RichTextBlock({ block }: Readonly<{ block: RichTextPageBlock }>) {
+  const node = block.node;
+  if (node.type === "paragraph") {
+    return (
+      <p className="page-text-block">
+        <RichTextInline content={node.content} />
+      </p>
+    );
+  }
+  if (node.type === "heading") {
+    const content = <RichTextInline content={node.content} />;
+    if (node.level === 1) return <h1>{content}</h1>;
+    if (node.level === 3) return <h3>{content}</h3>;
+    return <h2>{content}</h2>;
+  }
+  const items = node.items.map((item, index) => (
+    <li key={index}>
+      <RichTextInline content={item.content} />
+    </li>
+  ));
+  return node.type === "bullet_list" ? <ul>{items}</ul> : <ol>{items}</ol>;
+}
+
 export function PageRenderer({
   layout,
   pageTitle,
@@ -139,6 +185,8 @@ export function PageRenderer({
                 {block.text}
               </p>
             );
+          case "rich_text":
+            return <RichTextBlock block={block} key={key} />;
           case "image":
             return (
               <figure className="page-image-block" key={key}>

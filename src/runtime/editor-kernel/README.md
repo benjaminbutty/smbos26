@@ -36,6 +36,22 @@ configuration history. The same adapter contract is used for embedded Tables,
 where operational editing remains available only when permitted and all
 structural controls stay hidden.
 
+The Interaction Quality Reset keeps that runtime and tightens its presentation
+contract. Cell saves are optimistic; a failed save retains the attempted value
+and offers working Retry and Cancel actions, while an adapter refresh restores
+the selected cell. Desktop and tablet keep every Property at a readable width
+inside the grid's own horizontal scroll. At phone width the same kernel becomes
+a Record-first surface with one explicit working-Property chooser: tapping its
+value opens that Property directly in the full-screen Record editor, while the
+Record name still opens the complete Record.
+
+Shared Saved View configuration remains a separate, currentness-checked action.
+The view controls publish an unsaved preview through a local React context so
+the real grid immediately shows the proposed filters, sorts, grouping and
+Property order. The preview is transient, creates no Version, and never becomes
+a second Table runtime; one final Save view action creates or updates one
+shared View and one configuration Version.
+
 `EditorKernel` also supports an embedded read-only surface for Page View
 blocks. Embedded Tables always suppress structural controls and use the same
 adapter contract as the ordinary workspace. The Page editor owns the

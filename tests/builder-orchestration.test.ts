@@ -1014,7 +1014,7 @@ describe("authenticated Builder orchestration contract", () => {
     expect(
       builderOrchestrationRequestSchema.safeParse({
         businessId: ids.business,
-        ownerRequest: "x".repeat(4_001),
+        ownerRequest: "x".repeat(8_001),
       }).success,
     ).toBe(false);
   });
@@ -1050,6 +1050,8 @@ describe("authenticated Builder orchestration contract", () => {
       schema_version: 1,
       state: "needs_clarification",
       clarification: clarification(),
+      base_version_id: ids.version,
+      head_revision: 1,
     });
     expect(Object.isFrozen(result)).toBe(true);
     expect(

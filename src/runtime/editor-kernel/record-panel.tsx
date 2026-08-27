@@ -17,6 +17,7 @@ interface RecordPanelProps {
   businessSlug?: string;
   columns: readonly EditorColumn[];
   fullRecordPath?: string;
+  initialEditingColumnKey?: string;
   recordTypeLabel?: string;
   statusLabel?: string;
   row: EditorRow;
@@ -38,6 +39,8 @@ interface RecordPanelProps {
         primaryValue: string,
       ) => Promise<{ id: string; label: string }>)
     | undefined;
+  onAddRelatedRecord?:
+    ((columnKey: string, parentRecordId: string) => void) | undefined;
 }
 
 function connectedRecordHref(
@@ -219,6 +222,7 @@ export function RecordPanel({
   businessSlug,
   columns,
   fullRecordPath,
+  initialEditingColumnKey,
   recordTypeLabel,
   row,
   statusLabel,
@@ -229,9 +233,12 @@ export function RecordPanel({
   onFollowConnectedRecord,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
+  onAddRelatedRecord,
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
-  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(
+    initialEditingColumnKey ?? null,
+  );
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
@@ -250,7 +257,9 @@ export function RecordPanel({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      closeButtonRef.current?.focus({ preventScroll: true });
+      if (!initialEditingColumnKey) {
+        closeButtonRef.current?.focus({ preventScroll: true });
+      }
     });
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Tab" || !panelRef.current) return;
@@ -277,7 +286,7 @@ export function RecordPanel({
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [row.id]);
+  }, [initialEditingColumnKey, row.id]);
 
   const updateDraft = (columnKey: string, value: EditorValue): void => {
     setDraftValues((current) => ({ ...current, [columnKey]: value }));
@@ -511,28 +520,43 @@ export function RecordPanel({
                       </p>
                     )}
                     {column.editable !== false ? (
-                      <ConnectionPicker
-                        column={column}
-                        labels={labels}
-                        onCommit={(next) =>
-                          onCommitCell(row.id, column.key, next)
-                        }
-                        onSearch={(search) =>
-                          onSearchConnectionTargets
-                            ? onSearchConnectionTargets(column.key, search)
-                            : Promise.resolve(labels)
-                        }
-                        {...(onCreateConnectionTarget
-                          ? {
-                              onCreate: (primaryValue: string) =>
-                                onCreateConnectionTarget(
-                                  column.key,
-                                  primaryValue,
-                                ),
+                      <div className="editor-record-connection-actions">
+                        <ConnectionPicker
+                          column={column}
+                          labels={labels}
+                          onCommit={(next) =>
+                            onCommitCell(row.id, column.key, next)
+                          }
+                          onSearch={(search) =>
+                            onSearchConnectionTargets
+                              ? onSearchConnectionTargets(column.key, search)
+                              : Promise.resolve(labels)
+                          }
+                          {...(onCreateConnectionTarget
+                            ? {
+                                onCreate: (primaryValue: string) =>
+                                  onCreateConnectionTarget(
+                                    column.key,
+                                    primaryValue,
+                                  ),
+                              }
+                            : {})}
+                          value={row.values[column.key] ?? []}
+                        />
+                        {onAddRelatedRecord ? (
+                          <button
+                            className="editor-record-add-related"
+                            onClick={() =>
+                              onAddRelatedRecord(column.key, row.id)
                             }
-                          : {})}
-                        value={row.values[column.key] ?? []}
-                      />
+                            type="button"
+                          >
+                            Add{" "}
+                            {column.connection?.targetObjectLabel ??
+                              column.label}
+                          </button>
+                        ) : null}
+                      </div>
                     ) : null}
                     {column.editable === false ? (
                       <span

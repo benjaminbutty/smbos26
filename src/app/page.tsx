@@ -10,18 +10,18 @@ const steps = [
   },
   {
     number: "02",
-    title: "Shape the right setup",
-    text: "SMBOS helps turn that into the customers, products, orders, enquiries and screens you need.",
+    title: "Start with a real workspace",
+    text: "Lenni turns that into a starting workspace with the Tables, Pages and information your business needs.",
   },
   {
     number: "03",
-    title: "Review important changes",
-    text: "See what is being proposed before a material change becomes live.",
+    title: "Review what changes",
+    text: "See a clear starting point and review important changes before they become live.",
   },
   {
     number: "04",
-    title: "Run the business normally",
-    text: "Your team works from clear lists, forms and pages. Come back to Builder when things change.",
+    title: "Keep the work moving",
+    text: "Your team works from clear Tables and Pages. Tell Lenni again whenever the business changes.",
   },
 ];
 
@@ -53,119 +53,122 @@ function ProductPreview(): ReactNode {
     <div
       className="product-preview"
       role="img"
-      aria-label="A product preview showing an operational Orders screen, Builder and a reviewed change"
+      aria-label="A Lenni workspace showing Home, Tables, Pages and a reviewed change"
     >
       <div className="preview-window-bar">
         <span className="preview-window-dot preview-window-dot-coral" />
         <span className="preview-window-dot preview-window-dot-amber" />
         <span className="preview-window-dot preview-window-dot-green" />
-        <span className="preview-window-title">SMBOS workspace</span>
+        <span className="preview-window-title">Lenni workspace</span>
       </div>
 
       <div className="preview-workspace">
         <aside className="preview-rail" aria-hidden="true">
-          <div className="preview-app-mark">S</div>
-          <div className="preview-rail-label">Northstar Bakehouse</div>
-          <span className="preview-rail-heading">Work</span>
+          <div className="preview-app-mark">L</div>
+          <div className="preview-rail-label">Marlow Bakehouse</div>
           <span className="preview-rail-item preview-rail-item-active">
+            <span className="preview-rail-icon">⌂</span> Home
+          </span>
+          <span className="preview-rail-heading preview-rail-heading-spaced">
+            Tables
+          </span>
+          <span className="preview-rail-item">
             <span className="preview-rail-icon">□</span> Orders
           </span>
           <span className="preview-rail-item">
-            <span className="preview-rail-icon">○</span> Products
-          </span>
-          <span className="preview-rail-item">
-            <span className="preview-rail-icon">◇</span> Customers
+            <span className="preview-rail-icon">○</span> Customers
           </span>
           <span className="preview-rail-heading preview-rail-heading-spaced">
-            Setup
+            Pages
           </span>
           <span className="preview-rail-item">
-            <span className="preview-rail-icon">✦</span> Builder
+            <span className="preview-rail-icon">▤</span> Collection plan
           </span>
           <span className="preview-rail-item">
-            <span className="preview-rail-icon">↗</span> Changes
+            <span className="preview-rail-icon">◎</span> Settings
           </span>
         </aside>
 
         <div className="preview-main">
           <div className="preview-page-heading">
             <div>
-              <span className="preview-overline">
-                Today · Northstar Bakehouse
-              </span>
-              <strong>Orders</strong>
+              <span className="preview-overline">Marlow Bakehouse</span>
+              <strong>Home</strong>
             </div>
             <span className="preview-live-chip">
-              <span /> Live
+              <span /> Live workspace
             </span>
           </div>
 
           <div className="preview-toolbar">
-            <span className="preview-search">⌕ Search orders</span>
-            <span className="preview-filter">All statuses⌄</span>
-            <span className="preview-filter">Today⌄</span>
+            <span className="preview-search">Good morning, Jamie</span>
+            <span className="preview-filter">Today</span>
+            <span className="preview-filter">Tell Lenni →</span>
           </div>
 
           <div className="preview-content-grid">
-            <section className="preview-orders-card" aria-label="Orders list">
+            <section
+              className="preview-orders-card"
+              aria-label="Workspace overview"
+            >
               <div className="preview-card-heading">
-                <strong>Upcoming collections</strong>
-                <span>8 orders</span>
+                <strong>Start here</strong>
+                <span>Live workspace</span>
               </div>
               <div className="preview-table-head">
-                <span>Customer</span>
-                <span>Collection</span>
+                <span>What&apos;s ready</span>
+                <span>Next step</span>
                 <span>Status</span>
               </div>
               <div className="preview-order-row">
                 <span>
-                  <b>Amelia Reed</b>
-                  <small>#1048 · Afternoon Tea Box</small>
+                  <b>Today&apos;s orders</b>
+                  <small>Orders Table · 8 records</small>
                 </span>
-                <span>Bedford · 11:30</span>
+                <span>Open Table</span>
                 <span className="preview-status preview-status-ready">
                   Ready
                 </span>
               </div>
               <div className="preview-order-row">
                 <span>
-                  <b>Jon Bell</b>
-                  <small>#1047 · Celebration Box</small>
+                  <b>Collection plan</b>
+                  <small>Workspace Page · Draft</small>
                 </span>
-                <span>Bedford · 12:00</span>
+                <span>Review Page</span>
                 <span className="preview-status preview-status-confirmed">
-                  Confirmed
+                  In progress
                 </span>
               </div>
               <div className="preview-order-row">
                 <span>
-                  <b>Priya Shah</b>
-                  <small>#1046 · Kids Afternoon Tea</small>
+                  <b>Customer follow-ups</b>
+                  <small>Customers Table · 4 to review</small>
                 </span>
-                <span>Milton Keynes · 12:30</span>
+                <span>Open Table</span>
                 <span className="preview-status preview-status-new">New</span>
               </div>
             </section>
 
             <aside
               className="preview-builder-card"
-              aria-label="Builder change preview"
+              aria-label="Tell Lenni change preview"
             >
               <div className="preview-builder-topline">
                 <span className="preview-builder-spark">✦</span>
-                <span>Builder</span>
-                <span className="preview-suggestion-chip">Suggestion</span>
+                <span>Tell Lenni</span>
+                <span className="preview-suggestion-chip">Proposed</span>
               </div>
               <p className="preview-builder-request">
-                “Add an optional dietary requirements question to preorders.”
+                “Create a page for this week&apos;s collection plan.”
               </p>
               <div className="preview-change-card">
                 <div>
                   <span className="preview-proposed-dot" />
                   <strong>Ready to review</strong>
                 </div>
-                <span className="preview-change-label">1 change</span>
-                <p>Dietary requirements · Optional question</p>
+                <span className="preview-change-label">1 Page</span>
+                <p>Collection plan · Ready to add</p>
               </div>
               <span className="preview-review-link">Review change →</span>
             </aside>
@@ -182,17 +185,16 @@ export default function HomePage(): ReactNode {
       <section className="marketing-hero" aria-labelledby="home-title">
         <div className="marketing-hero-copy">
           <p className="marketing-kicker">
-            An operating platform for independent businesses
+            A workspace for independent businesses
           </p>
           <h1 id="home-title">
-            Run your business.
-            <span>Your way.</span>
+            Your business,
+            <span>in one calm workspace.</span>
           </h1>
           <p className="marketing-hero-lede">
-            Everything you need to run your business, shaped around how you
-            work. Keep customers, products, orders, enquiries and the rest of
-            the business connected in one place — without forcing your business
-            into someone else&apos;s process.
+            Bring the work that keeps your business moving into one connected,
+            editable workspace. Start with Lenni, or shape it yourself — either
+            way, it stays built around how you work.
           </p>
           <div className="marketing-hero-actions">
             <a className="marketing-button" href="/start">
@@ -210,7 +212,8 @@ export default function HomePage(): ReactNode {
         <div className="marketing-hero-visual">
           <ProductPreview />
           <p className="marketing-visual-caption">
-            Normal day-to-day work, with a clearer way to shape what comes next.
+            A real workspace for everyday work, with a clearer way to shape what
+            comes next.
           </p>
         </div>
       </section>
@@ -228,19 +231,17 @@ export default function HomePage(): ReactNode {
 
       <section
         className="marketing-section marketing-contrast-section"
-        id="why-smbos"
+        id="why-lenni"
         aria-labelledby="contrast-title"
       >
         <div className="marketing-section-intro">
-          <p className="marketing-kicker">Why SMBOS</p>
-          <h2 id="contrast-title">
-            Your business shouldn&apos;t have to fit the tool.
-          </h2>
+          <p className="marketing-kicker">Why Lenni</p>
+          <h2 id="contrast-title">Start with your work, not a blank system.</h2>
           <p>
             Small businesses often end up split across spreadsheets, inboxes,
-            specialist apps, messaging threads and manual processes. Even
-            flexible tools can leave the owner to figure out how everything
-            should fit together.
+            specialist apps, messaging threads and manual processes. Lenni gives
+            that work a clearer home without asking you to become a system
+            designer first.
           </p>
         </div>
 
@@ -249,24 +250,24 @@ export default function HomePage(): ReactNode {
             <span className="marketing-card-number">01</span>
             <h3>Built around your business</h3>
             <p>
-              Start from how the business actually works, not from a rigid
-              template.
+              Begin with what the business needs to do, not a generic setup to
+              decode.
             </p>
           </article>
           <article className="marketing-reason-card">
             <span className="marketing-card-number">02</span>
-            <h3>Connected by default</h3>
+            <h3>One connected workspace</h3>
             <p>
-              Customers, orders, products, enquiries and more belong in one
-              operating environment.
+              Keep customers, orders, plans and the rest of your work together
+              in one place.
             </p>
           </article>
           <article className="marketing-reason-card">
             <span className="marketing-card-number">03</span>
-            <h3>Made to change</h3>
+            <h3>Made to evolve</h3>
             <p>
-              Let the setup evolve as the business does, without rebuilding from
-              scratch.
+              Review a new starting point or a change before it becomes part of
+              the workspace.
             </p>
           </article>
         </div>
@@ -280,7 +281,7 @@ export default function HomePage(): ReactNode {
         <div className="marketing-section-intro marketing-section-intro-narrow">
           <p className="marketing-kicker">How it works</p>
           <h2 id="how-title">
-            Tell us how your business works. SMBOS helps shape the rest.
+            Tell Lenni what you need. Start with a workspace that makes sense.
           </h2>
         </div>
         <div className="marketing-steps">
@@ -304,9 +305,8 @@ export default function HomePage(): ReactNode {
             Your business decides what belongs in it.
           </h2>
           <p>
-            These are different business shapes, not separate SMBOS products.
-            The same flexible foundation can make room for the way each one
-            works.
+            These are different business shapes, not separate products. Lenni
+            makes room for the way each one works.
           </p>
         </div>
         <div className="marketing-business-grid">
@@ -336,20 +336,19 @@ export default function HomePage(): ReactNode {
             AI helps you build. It doesn&apos;t run the show.
           </h2>
           <p>
-            Use Builder when you want help planning or changing the business.
-            SMBOS prepares the work; important system changes stay reviewable
-            and deliberate. Day-to-day operation remains clear and usable
-            without AI.
+            Tell Lenni what you need when you want a useful starting point or a
+            proposed change. You can review it before it goes live, while
+            day-to-day work stays clear and usable without AI.
           </p>
         </div>
         <div className="marketing-control-grid">
           <div className="marketing-control-card marketing-control-card-coral">
-            <span className="marketing-control-label">Builder helps with</span>
+            <span className="marketing-control-label">Lenni helps with</span>
             <ul>
               <li>Understanding what you need</li>
-              <li>Preparing new concepts and screens</li>
-              <li>Preparing supported changes</li>
-              <li>Helping the setup evolve</li>
+              <li>Preparing a useful starting workspace</li>
+              <li>Preparing reviewable changes</li>
+              <li>Helping the workspace evolve</li>
             </ul>
           </div>
           <div className="marketing-control-card marketing-control-card-dark">
@@ -373,25 +372,25 @@ export default function HomePage(): ReactNode {
       >
         <div className="marketing-section-intro marketing-section-intro-narrow">
           <p className="marketing-kicker">A few useful answers</p>
-          <h2 id="faq-title">A clearer way to think about SMBOS.</h2>
+          <h2 id="faq-title">A clearer way to think about Lenni.</h2>
         </div>
         <div className="marketing-faq-list">
           <details>
-            <summary>What is SMBOS?</summary>
+            <summary>What is Lenni?</summary>
             <p>
-              A flexible operating platform for small businesses that helps you
-              build and run the setup your business actually needs.
+              Lenni is a flexible business workspace that helps you build and
+              run the setup your business actually needs.
             </p>
           </details>
           <details>
             <summary>Do I need to know how to build databases or apps?</summary>
             <p>
-              No. SMBOS is designed around business language and normal
+              No. Lenni is designed around business language and normal
               operating screens rather than technical system-building concepts.
             </p>
           </details>
           <details>
-            <summary>Is SMBOS just an AI chatbot?</summary>
+            <summary>Is Lenni just an AI chatbot?</summary>
             <p>
               No. AI helps plan and change the setup. The business itself runs
               through clear product screens and continues to work without AI.
@@ -400,7 +399,7 @@ export default function HomePage(): ReactNode {
           <details>
             <summary>What kinds of businesses is it for?</summary>
             <p>
-              SMBOS is being designed for independent businesses with very
+              Lenni is being designed for independent businesses with very
               different operating models — from cafés and retailers to mobile
               services, hospitality and enquiry-led businesses.
             </p>

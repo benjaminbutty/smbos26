@@ -769,7 +769,7 @@ export const formConfigSchema = z
   })
   .strict();
 
-const safeHrefSchema = z
+export const safePageHrefSchema = z
   .string()
   .trim()
   .min(1)
@@ -812,7 +812,7 @@ const buttonBlockSchema = z
   .object({
     type: z.literal("button"),
     label: labelSchema,
-    href: safeHrefSchema,
+    href: safePageHrefSchema,
     style: z.enum(["primary", "secondary"]).default("primary"),
     id: pageBlockIdSchema.optional(),
   })
@@ -856,6 +856,98 @@ const calloutBlockSchema = z
   })
   .strict();
 
+const pageRichTextMarkSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("bold") }).strict(),
+  z.object({ type: z.literal("italic") }).strict(),
+  z.object({ type: z.literal("link"), href: safePageHrefSchema }).strict(),
+]);
+
+const pageRichTextSpanSchema = z
+  .object({
+    type: z.literal("text"),
+    text: z.string().min(1).max(5_000),
+    marks: z.array(pageRichTextMarkSchema).max(3).optional(),
+  })
+  .strict()
+  .superRefine((span, context) => {
+    const markTypes = (span.marks ?? []).map((mark) => mark.type);
+    if (new Set(markTypes).size !== markTypes.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Rich text marks cannot be repeated on one text span.",
+        path: ["marks"],
+      });
+    }
+  });
+
+const pageRichTextContentSchema = z
+  .array(pageRichTextSpanSchema)
+  .max(200)
+  .superRefine((content, context) => {
+    const length = content.reduce((total, span) => total + span.text.length, 0);
+    if (length > 5_000) {
+      context.addIssue({
+        code: "custom",
+        message: "Rich text content cannot exceed 5,000 characters.",
+      });
+    }
+  });
+
+const pageRichTextNodeSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("paragraph"),
+      content: pageRichTextContentSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("heading"),
+      level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      content: pageRichTextContentSchema,
+    })
+    .strict()
+    .superRefine((node, context) => {
+      const length = node.content.reduce(
+        (total, span) => total + span.text.length,
+        0,
+      );
+      if (length > 200) {
+        context.addIssue({
+          code: "custom",
+          message: "Rich text headings cannot exceed 200 characters.",
+          path: ["content"],
+        });
+      }
+    }),
+  z
+    .object({
+      type: z.literal("bullet_list"),
+      items: z
+        .array(z.object({ content: pageRichTextContentSchema }).strict())
+        .min(1)
+        .max(50),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("numbered_list"),
+      items: z
+        .array(z.object({ content: pageRichTextContentSchema }).strict())
+        .min(1)
+        .max(50),
+    })
+    .strict(),
+]);
+
+const richTextBlockSchema = z
+  .object({
+    type: z.literal("rich_text"),
+    node: pageRichTextNodeSchema,
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict();
+
 export const pageBlockSchema = z.discriminatedUnion("type", [
   headingBlockSchema,
   textBlockSchema,
@@ -868,6 +960,7 @@ export const pageBlockSchema = z.discriminatedUnion("type", [
   preorderBlockSchema,
   dividerBlockSchema,
   calloutBlockSchema,
+  richTextBlockSchema,
 ]);
 
 export const pageLayoutSchema = z

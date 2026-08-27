@@ -33,6 +33,30 @@ export interface ProductionConnectionCreateInput {
   primaryValue: string;
 }
 
+export interface ProductionContextualRecordCreateInput {
+  parentRecordId: string;
+  columnKey: string;
+  values: Readonly<Record<string, EditorValue>>;
+  connections: readonly {
+    relationshipKey: string;
+    direction: "source" | "target";
+    targetRecordIds: readonly string[];
+  }[];
+}
+
+export interface ProductionContextualRecordCreateState {
+  parentLabel: string;
+  connectionLabel: string;
+  objectLabel: string;
+  targetViewKey: string;
+  columns: readonly EditorColumn[];
+}
+
+export interface ProductionContextualRecordCreateResult {
+  id: string;
+  label: string;
+}
+
 export interface ProductionRowCreateInput {
   primaryValue: string;
 }
@@ -141,7 +165,7 @@ export interface ProductionUpdateColumnOptionsInput {
 
 export interface ProductionReorderColumnsInput {
   currentness: ProductionConfigurationCurrentness;
-  fieldKeys: readonly string[];
+  propertyKeys: readonly string[];
 }
 
 export interface ProductionRenameTableInput {
@@ -222,6 +246,17 @@ export type ProductionConnectionCreateAction = (
   input: ProductionConnectionCreateInput,
 ) => Promise<ProductionActionResult<{ id: string; label: string }>>;
 
+export type ProductionContextualRecordCreateAction = (
+  input: ProductionContextualRecordCreateInput,
+) => Promise<ProductionActionResult<ProductionContextualRecordCreateResult>>;
+
+export type ProductionContextualRecordCreateStateAction = (
+  input: Pick<
+    ProductionContextualRecordCreateInput,
+    "parentRecordId" | "columnKey"
+  >,
+) => Promise<ProductionActionResult<ProductionContextualRecordCreateState>>;
+
 export type ProductionRowCreateAction = (
   input: ProductionRowCreateInput,
 ) => Promise<ProductionActionResult<EditorRow>>;
@@ -254,6 +289,19 @@ export type ProductionScopedConnectionCreateAction = (
   viewKey: string,
   input: ProductionConnectionCreateInput,
 ) => Promise<ProductionActionResult<{ id: string; label: string }>>;
+
+export type ProductionScopedContextualRecordCreateAction = (
+  viewKey: string,
+  input: ProductionContextualRecordCreateInput,
+) => Promise<ProductionActionResult<ProductionContextualRecordCreateResult>>;
+
+export type ProductionScopedContextualRecordCreateStateAction = (
+  viewKey: string,
+  input: Pick<
+    ProductionContextualRecordCreateInput,
+    "parentRecordId" | "columnKey"
+  >,
+) => Promise<ProductionActionResult<ProductionContextualRecordCreateState>>;
 
 export type ProductionPasteAction = (
   input: ProductionPasteInput,

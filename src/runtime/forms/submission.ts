@@ -181,6 +181,7 @@ export function buildConfiguredSubmission(
   mode: Tables<"forms">["mode"],
   formData: FormData,
   existingValues: Record<string, Json | undefined> = {},
+  options: { enforceRequired?: boolean } = {},
 ): Record<string, Json> {
   const fieldsByKey = new Map(fields.map((field) => [field.key, field]));
   const submission: Record<string, Json> = {};
@@ -209,7 +210,11 @@ export function buildConfiguredSubmission(
       ? existingValues[field.key]
       : value;
 
-    if (field.required && !valueIsPresent(effectiveValue)) {
+    if (
+      options.enforceRequired !== false &&
+      field.required &&
+      !valueIsPresent(effectiveValue)
+    ) {
       throw new ExperienceSubmissionError(
         `${fieldLabel(field, configuredField)} is required.`,
       );
@@ -229,10 +234,15 @@ export function buildConfiguredFieldPatch(
   field: Tables<"field_definitions">,
   config: FormFieldConfig,
   formData: FormData,
+  options: { enforceRequired?: boolean } = {},
 ): Record<string, Json> {
   const value = parseConfiguredFieldValue(field, config, formData);
 
-  if (field.required && !valueIsPresent(value)) {
+  if (
+    options.enforceRequired !== false &&
+    field.required &&
+    !valueIsPresent(value)
+  ) {
     throw new ExperienceSubmissionError(
       `${fieldLabel(field, config)} is required.`,
     );

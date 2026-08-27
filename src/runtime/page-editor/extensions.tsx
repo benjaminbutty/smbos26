@@ -65,6 +65,7 @@ function extensionOptions(
 }
 
 function CalloutNodeView({
+  editor,
   node,
   updateAttributes,
 }: ReactNodeViewProps): React.ReactNode {
@@ -80,6 +81,7 @@ function CalloutNodeView({
         onChange={(event) =>
           updateAttributes({ text: event.currentTarget.value })
         }
+        readOnly={!editor.isEditable}
         rows={2}
         value={String(node.attrs.text ?? "")}
       />
@@ -110,7 +112,11 @@ function PageViewNodeView({
   if (!embed) {
     return (
       <NodeViewWrapper className="page-editor-missing-view">
-        <div contentEditable={false}>
+        <div
+          contentEditable={false}
+          onKeyDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           This View is not available in the current workspace.
         </div>
       </NodeViewWrapper>
@@ -171,7 +177,11 @@ function PageViewNodeView({
 
   return (
     <NodeViewWrapper className="page-editor-view-node">
-      <div contentEditable={false}>
+      <div
+        contentEditable={false}
+        onKeyDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         <ViewRenderer
           bundle={embed.bundle}
           businessSlug={options.businessSlug}
@@ -195,7 +205,7 @@ const PageBlockAttributes = Extension.create({
   addGlobalAttributes() {
     return [
       {
-        types: ["heading", "paragraph"],
+        types: ["heading", "paragraph", "bulletList", "orderedList"],
         attributes: {
           blockId: {
             default: null,
@@ -319,17 +329,21 @@ export function createPageEditorExtensions(
     PageDocument,
     StarterKit.configure({
       blockquote: false,
-      bold: false,
-      bulletList: false,
+      bold: {},
+      bulletList: {},
       code: false,
       codeBlock: false,
       document: false,
       hardBreak: false,
-      italic: false,
-      link: false,
-      listItem: false,
+      italic: {},
+      link: {
+        autolink: true,
+        defaultProtocol: "https",
+        openOnClick: false,
+      },
+      listItem: {},
       listKeymap: false,
-      orderedList: false,
+      orderedList: {},
       strike: false,
       underline: false,
       horizontalRule: false,

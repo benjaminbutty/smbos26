@@ -194,8 +194,15 @@ describe("Lenni unified workspace presentation", () => {
   });
 
   it("keeps the Page editor bounded, direct, and renderer-backed", () => {
-    const editorSource = readFileSync(
-      new URL("../src/runtime/page-editor/page-editor.tsx", import.meta.url),
+    const internalEditorSource = readFileSync(
+      new URL(
+        "../src/runtime/page-editor/internal-page-editor.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const extensionSource = readFileSync(
+      new URL("../src/runtime/page-editor/extensions.tsx", import.meta.url),
       "utf8",
     );
     const cssSource = readFileSync(
@@ -210,43 +217,79 @@ describe("Lenni unified workspace presentation", () => {
       "utf8",
     );
 
-    expect(editorSource).toContain('aria-keyshortcuts="/"');
-    expect(editorSource).toContain("Type / or add a block");
-    expect(editorSource).toContain('void addBlock({ type: "divider" },');
-    expect(editorSource).toContain('aria-controls="page-editor-add-menu"');
-    expect(editorSource).toContain('aria-live="polite"');
-    expect(editorSource).toContain('className="page-editor-grip-button"');
-    expect(editorSource).toContain("draggable={!structureBlocked}");
-    expect(editorSource).toContain('aria-label="Page mode"');
-    expect(editorSource).toContain("enterReadingMode");
-    expect(editorSource).toContain("page-editor-block-gutter");
-    expect(editorSource).toContain("afterBlockId");
-    expect(editorSource).toContain("page-editor-new-block");
-    expect(editorSource).toContain("moveBlockToIndex");
-    expect(editorSource).toContain('action: "save_page_layout"');
-    expect(editorSource).not.toContain("while (nextIndex !== targetIndex)");
-    expect(editorSource).toContain("Refresh and recheck");
-    expect(editorSource).toContain("useUnsavedNavigationWarning");
-    expect(editorSource).toContain("Your text draft is still here");
-    expect(editorSource).toContain('aria-label="Unresolved text draft"');
+    expect(internalEditorSource).toContain("<EditorContent editor={editor} />");
+    expect(internalEditorSource).toContain("<BubbleMenu");
+    expect(internalEditorSource).toContain("<DragHandle");
+    expect(internalEditorSource).toContain("page-slash-menu");
+    expect(internalEditorSource).not.toContain("Save page");
+    expect(internalEditorSource).toContain("Changes save automatically");
+    expect(internalEditorSource).toContain('aria-label="Delete block"');
+    expect(internalEditorSource).toContain(
+      'aria-label="Drag block to move it"',
+    );
+    expect(internalEditorSource).not.toContain("page-block-actions");
+    expect(internalEditorSource).toContain("window.setTimeout");
+    expect(internalEditorSource).toContain(
+      'data-can-edit={canEdit ? "true" : "false"}',
+    );
+    expect(internalEditorSource).toContain('action: "save_page_layout"');
+    expect(internalEditorSource).toContain("useUnsavedNavigationWarning");
+    expect(internalEditorSource).toContain(
+      "editor.setEditable(canEdit, false)",
+    );
+    expect(internalEditorSource).toContain("queueMicrotask(() => {");
+    expect(internalEditorSource).toContain("Things changed since you opened");
+    expect(internalEditorSource).toContain(
+      "editor.state.doc.nodeAt($from.pos) ? $from.pos : null",
+    );
+    expect(internalEditorSource).toContain("selectedBlockPositionRef.current");
+    expect(internalEditorSource).toContain("function insertMenuPosition(");
+    expect(cssSource).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    expect(cssSource).toContain("position: fixed;");
+    expect(internalEditorSource).toContain(
+      'className="page-editor-content-boundary"',
+    );
+    expect(internalEditorSource).toContain(
+      "editor.view.posAtDOM(paragraph, 0)",
+    );
+    expect(internalEditorSource).not.toContain("page-editor-block-form");
+    expect(internalEditorSource).not.toContain('action: "add_page_block"');
+    expect(internalEditorSource).not.toContain('action: "update_page_block"');
     expect(pageRouteSource).toContain("key={page.definition.key}");
+    expect(pageRouteSource).toContain("canEdit,");
     expect(pageRouteSource).not.toContain(
       "expectedHeadRevision}-${page.definition.title}",
     );
-    expect(editorSource).toContain("Open Table");
-    expect(editorSource).toContain("Read-only");
-    expect(editorSource).toContain("ProductionTableWorkspace");
+
+    const workspaceRouteSource = readFileSync(
+      new URL(
+        "../src/app/app/[businessSlug]/workspace/[screenSlug]/page.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(workspaceRouteSource).toContain(
+      'key={`${bundle.definition.key}:${currentness?.expectedHeadRevision ?? "read-only"}`}',
+    );
+    expect(workspaceRouteSource).toContain("...primaryConfig.columns.filter(");
+    expect(workspaceRouteSource).toContain(
+      "!configuredFieldKeys.has(field.key)",
+    );
+    expect(extensionSource).toContain("Open table");
+    expect(extensionSource).toContain("Read-only");
+    expect(extensionSource).toContain("ProductionTableWorkspace");
 
     expect(cssSource).toContain("/* C5 Page canvas presentation.");
-    expect(cssSource).toContain(".page-editor-inline-edit:focus-visible");
-    expect(cssSource).toContain(".page-editor-view-block .editor-grid-shell");
+    expect(cssSource).toContain(".page-document-canvas .tiptap");
+    expect(cssSource).toContain(".page-document-gutter");
+    expect(cssSource).toContain(".page-format-menu");
+    expect(cssSource).toContain(".page-slash-menu");
     expect(cssSource).toContain(
       ".editor-kernel-embedded .editor-mobile-record-list",
     );
     expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(cssSource).toContain(".page-editor-block-gutter");
     expect(cssSource).toContain(".page-editor-mode-switch");
     expect(cssSource).toContain("min-height: 2.75rem");
   });
@@ -716,6 +759,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(editorSource).toContain('aria-label="Search this Table"');
     expect(editorSource).toContain('data-testid="editor-grid-no-matches"');
     expect(editorSource).toContain('data-testid="editor-mobile-record-list"');
+    expect(editorSource).toContain('aria-label="Working property"');
+    expect(editorSource).toContain("onEditRecord");
+    expect(editorSource).toContain("cancelFailedSave");
+    expect(editorSource).toContain("gridCoordinatesForCell");
     expect(editorSource).toContain('status: "stale"');
     expect(editorSource).toContain("Needs reload");
     expect(editorSource).toContain("capabilities.rowCreationMessage");
@@ -725,6 +772,12 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).toContain("Filtered by");
     expect(viewControlsSource).toContain("Sorted by");
     expect(viewControlsSource).toContain("Grouped by");
+    expect(viewControlsSource).toContain("setGridPreview(preview)");
+    expect(viewControlsSource).toContain(
+      "The unsaved filter, sort, group and Property order are live in",
+    );
+    expect(viewControlsSource).toContain("the grid below.");
+    expect(viewControlsSource).not.toContain("<table>");
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
     expect(viewControlsSource).toContain("useUnsavedNavigationWarning");
     expect(viewControlsSource).toContain("config.filters.slice(1)");

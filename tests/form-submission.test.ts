@@ -124,6 +124,43 @@ describe("configured Form submission", () => {
     ).toThrow("Company name is required.");
   });
 
+  it("can compose a generic progressive create without weakening a configured Form", () => {
+    const company = field("company_name", "Company name", "short_text", true);
+    const notes = field("notes", "Notes", "long_text", true);
+    const partial = new FormData();
+    partial.set("company_name", "Acme Ltd");
+
+    expect(() =>
+      buildConfiguredSubmission(
+        [company, notes],
+        {
+          fields: [
+            { field: "company_name", hidden: false },
+            { field: "notes", hidden: false },
+          ],
+        },
+        "create",
+        partial,
+      ),
+    ).toThrow("Notes is required.");
+
+    expect(
+      buildConfiguredSubmission(
+        [company, notes],
+        {
+          fields: [
+            { field: "company_name", hidden: false },
+            { field: "notes", hidden: false },
+          ],
+        },
+        "create",
+        partial,
+        {},
+        { enforceRequired: false },
+      ),
+    ).toEqual({ company_name: "Acme Ltd" });
+  });
+
   it("preserves an existing File on a blank edit and accepts a URL replacement", () => {
     const title = field("title", "Title", "short_text", true);
     const attachment = field("attachment", "Attachment", "file");

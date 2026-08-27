@@ -111,6 +111,7 @@ type Identity = { client: Client; user: User };
 type Business = Tables<"businesses">;
 
 const password = "Milestone-8-builder-ui-action-test!";
+const confirmationSecret = "builder-ui-actions-test-confirmation-secret-2026";
 const createdUserIds: string[] = [];
 
 let settings: LocalSupabaseSettings;
@@ -123,6 +124,7 @@ let staff: Identity;
 let outsider: Identity;
 let business: Business;
 let outsiderBusiness: Business;
+let originalConfirmationSecret: string | undefined;
 
 function requireData<T>(
   result: { data: T; error: { message: string } | null },
@@ -535,6 +537,9 @@ async function runRealAction(
 describe("Milestone 8 Phase 8C real Builder action boundary", () => {
   beforeAll(async () => {
     settings = getLocalSupabaseSettings();
+    originalConfirmationSecret =
+      process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET;
+    process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET = confirmationSecret;
     process.env.NEXT_PUBLIC_SUPABASE_URL = settings.apiUrl;
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = settings.publishableKey;
     process.env.SUPABASE_SERVICE_ROLE_KEY = settings.serviceRoleKey;
@@ -643,6 +648,12 @@ describe("Milestone 8 Phase 8C real Builder action boundary", () => {
       for (const userId of createdUserIds) {
         await serviceRole.auth.admin.deleteUser(userId);
       }
+    }
+    if (originalConfirmationSecret === undefined) {
+      delete process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET;
+    } else {
+      process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET =
+        originalConfirmationSecret;
     }
   });
 
