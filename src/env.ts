@@ -13,6 +13,11 @@ const optionalString = z.preprocess(
   z.string().trim().min(1).optional(),
 );
 
+const marketingOnlyMode = z
+  .enum(["true", "false"])
+  .default("false")
+  .transform((value) => value === "true");
+
 export const environmentSchema = z
   .object({
     NODE_ENV: z
@@ -25,6 +30,7 @@ export const environmentSchema = z
     PREORDER_RATE_LIMIT_SECRET: optionalString,
     ACQUISITION_RATE_LIMIT_SECRET: optionalString,
     BUILDER_OPERATIONAL_CONFIRMATION_SECRET: optionalString,
+    MARKETING_ONLY_MODE: marketingOnlyMode,
   })
   .superRefine((environment, context) => {
     if (
@@ -41,6 +47,7 @@ export const environmentSchema = z
 
     if (
       environment.NODE_ENV === "production" &&
+      !environment.MARKETING_ONLY_MODE &&
       !environment.PREORDER_RATE_LIMIT_SECRET
     ) {
       context.addIssue({
@@ -53,6 +60,7 @@ export const environmentSchema = z
 
     if (
       environment.NODE_ENV === "production" &&
+      !environment.MARKETING_ONLY_MODE &&
       !environment.ACQUISITION_RATE_LIMIT_SECRET
     ) {
       context.addIssue({
@@ -84,5 +92,6 @@ export function getEnvironment(): Environment {
     ACQUISITION_RATE_LIMIT_SECRET: process.env.ACQUISITION_RATE_LIMIT_SECRET,
     BUILDER_OPERATIONAL_CONFIRMATION_SECRET:
       process.env.BUILDER_OPERATIONAL_CONFIRMATION_SECRET,
+    MARKETING_ONLY_MODE: process.env.MARKETING_ONLY_MODE,
   });
 }

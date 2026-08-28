@@ -14,10 +14,12 @@ describe("public marketing landing page", () => {
     expect(markup).toContain("Your business,");
     expect(markup).toContain("in one calm workspace.");
     expect(markup).toContain("Bring the work that keeps your business moving");
-    expect(markup).toContain('href="/start"');
-    expect(markup).toContain("Start with Lenni");
-    expect(markup).toContain('href="/sign-up"');
-    expect(markup).toContain("Build manually");
+    expect(markup).toContain('href="#early-access"');
+    expect(markup).toContain("Show me what Lenni would build");
+    expect(markup).toContain('href="/outgrown-spreadsheets"');
+    expect(markup).toContain("Outgrown spreadsheets? Read more");
+    expect(markup).not.toContain('href="/start"');
+    expect(markup).not.toContain('href="/sign-up"');
     expect(markup).toContain("Tell Lenni");
     expect(markup).toContain("What is Lenni?");
     expect(markup).toContain("Is Lenni just an AI chatbot?");

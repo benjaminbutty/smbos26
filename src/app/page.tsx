@@ -197,15 +197,15 @@ export default function HomePage(): ReactNode {
             way, it stays built around how you work.
           </p>
           <div className="marketing-hero-actions">
-            <a className="marketing-button" href="/start">
-              Start with Lenni
+            <a className="marketing-button" href="#early-access">
+              Show me what Lenni would build
             </a>
-            <a className="marketing-text-button" href="/sign-up">
-              Build manually <span aria-hidden="true">↘</span>
+            <a className="marketing-text-button" href="/outgrown-spreadsheets">
+              Outgrown spreadsheets? Read more <span aria-hidden="true">↘</span>
             </a>
           </div>
           <p className="marketing-hero-note">
-            See a useful starting point before you create an account.
+            Join early access to see Lenni when it&apos;s ready.
           </p>
         </div>
 

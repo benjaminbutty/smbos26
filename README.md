@@ -980,20 +980,30 @@ key cannot enter client source. Deployment builds require both public Supabase
 values. Trusted preorder writes also require the server-only service-role key
 at runtime.
 
-| Variable                               | Required now    | Visibility  |
-| -------------------------------------- | --------------- | ----------- |
-| `NEXT_PUBLIC_APP_URL`                  | No              | Browser     |
-| `NEXT_PUBLIC_SUPABASE_URL`             | Yes             | Browser     |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes             | Browser     |
-| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder    | Server only |
-| `PREORDER_RATE_LIMIT_SECRET`           | Production      | Server only |
-| `AI_PROVIDER`                          | No (`disabled`) | Server only |
-| `OPENAI_API_KEY`                       | When `openai`   | Server only |
+| Variable                               | Required now     | Visibility  |
+| -------------------------------------- | ---------------- | ----------- |
+| `NEXT_PUBLIC_APP_URL`                  | No               | Browser     |
+| `NEXT_PUBLIC_SUPABASE_URL`             | Yes              | Browser     |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Yes              | Browser     |
+| `SUPABASE_SERVICE_ROLE_KEY`            | For preorder     | Server only |
+| `PREORDER_RATE_LIMIT_SECRET`           | Production       | Server only |
+| `MARKETING_ONLY_MODE`                  | Marketing launch | Server only |
+| `AI_PROVIDER`                          | No (`disabled`)  | Server only |
+| `OPENAI_API_KEY`                       | When `openai`    | Server only |
 
 The publishable key is designed for browser use; PostgreSQL RLS is the
 authorization boundary. The preorder server uses the service role only to call
 three narrow, schema-validated transaction/email RPCs. The browser never
 receives it and cannot execute the write RPC directly.
+
+Set `MARKETING_ONLY_MODE=true` only on the Lenni marketing deployment. In that
+mode the proxy returns a controlled 404 for application routes and permits only
+`/`, `/outgrown-spreadsheets`, `/robots.txt`, `/sitemap.xml`, framework/static
+assets, and the Server Actions posted by the two marketing pages. The default
+is `false`, so local development and tests continue to run the full
+application. Marketing-only production still requires the public Supabase
+values and `SUPABASE_SERVICE_ROLE_KEY` for waitlist submissions; it does not
+require the preorder or acquisition rate-limit secrets.
 
 `AI_PROVIDER` accepts only blank/`disabled` or `openai`. OpenAI mode requires
 `OPENAI_API_KEY`; provider, endpoint, model, attempts, timeout, token maximum,
