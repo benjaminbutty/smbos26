@@ -18,12 +18,28 @@ if (!isTypeGeneration) {
     ACQUISITION_RATE_LIMIT_SECRET: process.env.ACQUISITION_RATE_LIMIT_SECRET,
     AI_PROVIDER: process.env.AI_PROVIDER,
     AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY,
+    MARKETING_ONLY_MODE: process.env.MARKETING_ONLY_MODE,
   });
 }
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "www\\.uselenni\\.com",
+          },
+        ],
+        destination: "https://uselenni.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
   turbopack: {
     root: import.meta.dirname,
   },

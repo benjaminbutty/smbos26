@@ -6,6 +6,47 @@ import { refreshAuthSession } from "./db/supabase/proxy";
 const configurationPreviewPath =
   /^\/app\/[^/]+\/changes\/[^/]+\/preview\/[^/]+\/?$/;
 
+const marketingOnlyPaths = new Set([
+  "/",
+  "/outgrown-spreadsheets",
+  "/robots.txt",
+  "/sitemap.xml",
+]);
+
+function normalizePathname(pathname: string): string {
+  if (pathname === "/") {
+    return pathname;
+  }
+
+  return pathname.replace(/\/+$/, "");
+}
+
+export function isMarketingOnlyMode(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return environment.MARKETING_ONLY_MODE === "true";
+}
+
+export function rejectMarketingOnlyRoute(
+  request: NextRequest,
+  marketingOnly = isMarketingOnlyMode(),
+): NextResponse | null {
+  if (
+    !marketingOnly ||
+    marketingOnlyPaths.has(normalizePathname(request.nextUrl.pathname))
+  ) {
+    return null;
+  }
+
+  return new NextResponse("Not found.", {
+    status: 404,
+    headers: {
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex",
+    },
+  });
+}
+
 export function rejectConfigurationPreviewMutation(
   request: NextRequest,
 ): NextResponse | null {
@@ -29,6 +70,11 @@ export function rejectConfigurationPreviewMutation(
 }
 
 export async function proxy(request: NextRequest) {
+  const marketingOnlyRejection = rejectMarketingOnlyRoute(request);
+  if (marketingOnlyRejection) {
+    return marketingOnlyRejection;
+  }
+
   const rejected = rejectConfigurationPreviewMutation(request);
   if (rejected) {
     return rejected;
