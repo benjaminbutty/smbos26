@@ -7,10 +7,8 @@ import { getLocalSupabaseSettings } from "./support/local-supabase";
 
 vi.mock("server-only", () => ({}));
 
-import {
-  EARLY_ACCESS_INITIAL_STATE,
-  joinEarlyAccess,
-} from "../../src/app/actions/marketing";
+import { joinEarlyAccess } from "../../src/app/actions/marketing";
+import { EARLY_ACCESS_INITIAL_STATE } from "../../src/components/early-access-form-state";
 
 type Client = SupabaseClient<Database>;
 

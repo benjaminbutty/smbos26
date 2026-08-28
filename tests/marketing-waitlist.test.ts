@@ -12,10 +12,8 @@ vi.mock("../src/db/supabase/admin", () => ({
   createAdminClient: () => adminHarness.client,
 }));
 
-import {
-  EARLY_ACCESS_INITIAL_STATE,
-  joinEarlyAccess,
-} from "../src/app/actions/marketing";
+import { joinEarlyAccess } from "../src/app/actions/marketing";
+import { EARLY_ACCESS_INITIAL_STATE } from "../src/components/early-access-form-state";
 
 function formData(values: Record<string, string>): FormData {
   const form = new FormData();
@@ -35,6 +33,12 @@ function clientWithInsertResult(error: { code?: string } | null) {
 }
 
 describe("early-access waitlist boundary", () => {
+  it("exports only the async Server Action at runtime", async () => {
+    const actions = await import("../src/app/actions/marketing");
+
+    expect(Object.keys(actions)).toEqual(["joinEarlyAccess"]);
+  });
+
   it("validates on the server and saves normalized input", async () => {
     const insert = clientWithInsertResult(null);
 
