@@ -2,10 +2,8 @@
 
 import { useActionState } from "react";
 
-import {
-  EARLY_ACCESS_INITIAL_STATE,
-  joinEarlyAccess,
-} from "../app/actions/marketing";
+import { joinEarlyAccess } from "../app/actions/marketing";
+import { EARLY_ACCESS_INITIAL_STATE } from "./early-access-form-state";
 
 export function EarlyAccessForm() {
   const [state, formAction, pending] = useActionState(

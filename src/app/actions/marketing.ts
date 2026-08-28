@@ -5,15 +5,7 @@ import {
   saveWaitlistSignup,
   waitlistSignupInputSchema,
 } from "../../core/marketing/waitlist";
-
-export type EarlyAccessFormState =
-  | { status: "idle" }
-  | { status: "error"; message: string }
-  | { status: "success"; message: string };
-
-export const EARLY_ACCESS_INITIAL_STATE: EarlyAccessFormState = {
-  status: "idle",
-};
+import type { EarlyAccessFormState } from "../../components/early-access-form-state";
 
 export async function joinEarlyAccess(
   _previousState: EarlyAccessFormState,
