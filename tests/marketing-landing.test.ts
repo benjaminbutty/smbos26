@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -48,5 +50,16 @@ describe("public marketing landing page", () => {
         template: "%s · Lenni",
       },
     });
+  });
+
+  it("loads the required deferred JAMP scripts from the document head", () => {
+    const layoutSource = readFileSync("src/app/layout.tsx", "utf8");
+
+    expect(layoutSource).toMatch(
+      /<script\s+defer\s+crossOrigin="anonymous"\s+data-website-id="cmtej8bsc0004q500nl740or8"\s+src="https:\/\/jamp\.io\/main\.js"\s+\/>/,
+    );
+    expect(layoutSource).toMatch(
+      /<script\s+defer\s+crossOrigin="anonymous"\s+data-website-id="cmtej8bsc0004q500nl740or8"\s+src="https:\/\/jamp\.io\/index\.js"\s+\/>/,
+    );
   });
 });
