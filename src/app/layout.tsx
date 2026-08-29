@@ -17,6 +17,20 @@ export default function RootLayout({
 }: Readonly<RootLayoutProps>): ReactNode {
   return (
     <html lang="en">
+      <head>
+        <script
+          defer
+          crossOrigin="anonymous"
+          data-website-id="cmtej8bsc0004q500nl740or8"
+          src="https://jamp.io/main.js"
+        />
+        <script
+          defer
+          crossOrigin="anonymous"
+          data-website-id="cmtej8bsc0004q500nl740or8"
+          src="https://jamp.io/index.js"
+        />
+      </head>
       <body>
         <AppShell>{children}</AppShell>
       </body>
