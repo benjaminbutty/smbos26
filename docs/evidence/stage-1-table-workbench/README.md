@@ -41,6 +41,20 @@ It proves an accurate complete-View count, 50-Record first and final pages,
 and a search match beyond the initial page. It does not replace the requested
 authenticated browser review at the stated desktop and mobile widths.
 
+## Acceptance audit
+
+| Requirement | Current evidence | Status |
+| --- | --- | --- |
+| Generic runtime, typed editing, connections, record context and role boundary | Four-business proof plus direct-Table integration and unit suites | Verified locally |
+| Complete-View search, exact count and bounded paging | Direct-Table integration, including the 1,250-Record fixture | Verified locally |
+| Current, atomic bulk set/clear with no configuration Version | Direct-Table integration and the database RPC | Verified locally |
+| Saved View candidate and connected-property safety | Composer, mapper and integration coverage | Verified locally |
+| Owner/Admin/Staff desktop and mobile experience | Requires authenticated browser review on the routes above | Pending approval |
+| Screenshot, browser-console and configuration-history capture | Requires authenticated browser review | Pending approval |
+| Clean reset proof | Requires permission to delete/recreate local development data | Pending approval |
+| Production dependency audit | Requires permission to send dependency metadata to the npm audit endpoint | Pending approval |
+| Draft PR and exact-head CI | Requires permission to create the external GitHub draft PR | Pending approval |
+
 ## Captured technical evidence
 
 - focused unit tests: `tests/internal-workspace-engine.test.ts`,
