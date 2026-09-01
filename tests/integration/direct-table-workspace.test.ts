@@ -1807,6 +1807,81 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
     );
   });
 
+  it("keeps complete-View search and 50-record paging bounded at 1,250 Records", async () => {
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: (await currentness(owner)).currentness,
+        intent: {
+          action: "create_table",
+          title: `Scale ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const state = await currentness(owner);
+    const view = state.snapshot.views.find(
+      (candidate) => candidate.key === viewKey,
+    );
+    if (!view) throw new Error("Could not load the scale Table View.");
+    const object = state.snapshot.object_definitions.find(
+      (candidate) => candidate.key === view.object_key,
+    );
+    if (!object) throw new Error("Could not load the scale Table Object.");
+
+    await sql`
+      insert into public.records (
+        business_id,
+        object_definition_id,
+        data_json
+      )
+      select
+        ${business.id}::uuid,
+        ${object.id}::uuid,
+        jsonb_build_object(
+          'name',
+          case
+            when record_index = 1249 then 'Scale needle 1249'
+            else 'Scale record ' || lpad(record_index::text, 4, '0')
+          end
+        )
+      from generate_series(1, 1250) as records(record_index)
+    `;
+
+    const firstPage = await queryTableViewRecords(
+      owner.client,
+      business.id,
+      viewKey,
+      { limit: 50 },
+    );
+    expect(firstPage.totalCount).toBe(1250);
+    expect(firstPage.records).toHaveLength(50);
+    expect(firstPage.hasMore).toBe(true);
+
+    const finalPage = await queryTableViewRecords(
+      owner.client,
+      business.id,
+      viewKey,
+      { limit: 50, offset: 1200 },
+    );
+    expect(finalPage.totalCount).toBe(1250);
+    expect(finalPage.records).toHaveLength(50);
+    expect(finalPage.hasMore).toBe(false);
+
+    const searched = await queryTableViewRecords(
+      owner.client,
+      business.id,
+      viewKey,
+      { limit: 50, search: "needle 1249" },
+    );
+    expect(searched.totalCount).toBe(1);
+    expect(searched.records).toHaveLength(1);
+    expect(searched.records[0]!.data_json).toMatchObject({
+      name: "Scale needle 1249",
+    });
+  });
+
   it("reads a one-hop related property without copying it into the current Record", async () => {
     const current = await applyDirectTableAction(
       owner.client,

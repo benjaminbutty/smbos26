@@ -26,14 +26,20 @@ For each Table, confirm:
 6. mobile shows concise Record cards and a full-screen Record context, never a
    “Working property” selector.
 
+The focused integration suite also creates a real 1,250-Record Table fixture.
+It proves an accurate complete-View count, 50-Record first and final pages,
+and a search match beyond the initial page. It does not replace the requested
+authenticated browser review at the stated desktop and mobile widths.
+
 ## Captured technical evidence
 
 - focused unit tests: `tests/internal-workspace-engine.test.ts`,
   `tests/direct-table-workspace.test.ts`,
   `tests/editor-kernel-production.test.ts`;
 - focused integration: `tests/integration/direct-table-workspace.test.ts`
-  (13 tests); and the existing four-business generic proof fixture
+  (14 tests, including the 1,250-Record paging/search fixture); and the existing four-business generic proof fixture
   `tests/integration/internal-workspace-engine.test.ts` (2 tests);
+- full integration: 27 files, 275 passed and 5 intentionally skipped;
 - transactional database validation of
   `20260901100000_stage_1_table_workbench.sql` against the existing local
   schema (the transaction is rolled back);
@@ -43,4 +49,6 @@ For each Table, confirm:
 - a clean reset and authenticated browser screenshots remain pending explicit
   local-database reset authorisation because reset drops/recreates development
   data, plus immediate permission to enter a local proof account password in
-  the browser.
+  the browser; and
+- the production dependency audit remains pending explicit permission to send
+  the repository dependency metadata to the npm audit endpoint.
