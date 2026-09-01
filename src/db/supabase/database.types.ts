@@ -167,6 +167,8 @@ export type Database = {
       };
       anonymous_build_sessions: {
         Row: {
+          accepted_at: string | null;
+          accepted_candidate_checksum: string | null;
           attempt_count: number;
           claim_status: string;
           claimed_at: string | null;
@@ -174,8 +176,6 @@ export type Database = {
           claimed_user_id: string | null;
           clarification_json: Json | null;
           created_at: string;
-          accepted_candidate_checksum: string | null;
-          accepted_at: string | null;
           expires_at: string;
           id: string;
           proposal_count: number;
@@ -183,11 +183,13 @@ export type Database = {
           regeneration_count: number;
           request_text: string | null;
           requested_category: string;
-          successful_refinement_count: number;
           session_token_hash: string;
+          successful_refinement_count: number;
           updated_at: string;
         };
         Insert: {
+          accepted_at?: string | null;
+          accepted_candidate_checksum?: string | null;
           attempt_count?: number;
           claim_status?: string;
           claimed_at?: string | null;
@@ -195,8 +197,6 @@ export type Database = {
           claimed_user_id?: string | null;
           clarification_json?: Json | null;
           created_at?: string;
-          accepted_candidate_checksum?: string | null;
-          accepted_at?: string | null;
           expires_at: string;
           id?: string;
           proposal_count?: number;
@@ -204,11 +204,13 @@ export type Database = {
           regeneration_count?: number;
           request_text?: string | null;
           requested_category: string;
-          successful_refinement_count?: number;
           session_token_hash: string;
+          successful_refinement_count?: number;
           updated_at?: string;
         };
         Update: {
+          accepted_at?: string | null;
+          accepted_candidate_checksum?: string | null;
           attempt_count?: number;
           claim_status?: string;
           claimed_at?: string | null;
@@ -216,8 +218,6 @@ export type Database = {
           claimed_user_id?: string | null;
           clarification_json?: Json | null;
           created_at?: string;
-          accepted_candidate_checksum?: string | null;
-          accepted_at?: string | null;
           expires_at?: string;
           id?: string;
           proposal_count?: number;
@@ -225,8 +225,8 @@ export type Database = {
           regeneration_count?: number;
           request_text?: string | null;
           requested_category?: string;
-          successful_refinement_count?: number;
           session_token_hash?: string;
+          successful_refinement_count?: number;
           updated_at?: string;
         };
         Relationships: [
@@ -236,6 +236,160 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "businesses";
             referencedColumns: ["id"];
+          },
+        ];
+      };
+      booking_rate_limits: {
+        Row: {
+          attempt_count: number;
+          booking_key: string;
+          business_id: string;
+          id: string;
+          page_id: string;
+          request_hash: string;
+          updated_at: string;
+          window_started_at: string;
+        };
+        Insert: {
+          attempt_count?: number;
+          booking_key: string;
+          business_id: string;
+          id?: string;
+          page_id: string;
+          request_hash: string;
+          updated_at?: string;
+          window_started_at: string;
+        };
+        Update: {
+          attempt_count?: number;
+          booking_key?: string;
+          business_id?: string;
+          id?: string;
+          page_id?: string;
+          request_hash?: string;
+          updated_at?: string;
+          window_started_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "booking_rate_limits_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "booking_rate_limits_tenant_page_fkey";
+            columns: ["business_id", "page_id"];
+            isOneToOne: false;
+            referencedRelation: "pages";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
+      booking_slot_counters: {
+        Row: {
+          booking_key: string;
+          business_id: string;
+          created_at: string;
+          id: string;
+          page_id: string;
+          reservation_count: number;
+          starts_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          booking_key: string;
+          business_id: string;
+          created_at?: string;
+          id?: string;
+          page_id: string;
+          reservation_count?: number;
+          starts_at: string;
+          updated_at?: string;
+        };
+        Update: {
+          booking_key?: string;
+          business_id?: string;
+          created_at?: string;
+          id?: string;
+          page_id?: string;
+          reservation_count?: number;
+          starts_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "booking_slot_counters_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "booking_slot_counters_tenant_page_fkey";
+            columns: ["business_id", "page_id"];
+            isOneToOne: false;
+            referencedRelation: "pages";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
+      booking_submissions: {
+        Row: {
+          booking_key: string;
+          booking_record_id: string;
+          business_id: string;
+          confirmation_json: Json;
+          created_at: string;
+          id: string;
+          idempotency_token: string;
+          page_id: string;
+          public_reference: string;
+        };
+        Insert: {
+          booking_key: string;
+          booking_record_id: string;
+          business_id: string;
+          confirmation_json: Json;
+          created_at?: string;
+          id?: string;
+          idempotency_token: string;
+          page_id: string;
+          public_reference?: string;
+        };
+        Update: {
+          booking_key?: string;
+          booking_record_id?: string;
+          business_id?: string;
+          confirmation_json?: Json;
+          created_at?: string;
+          id?: string;
+          idempotency_token?: string;
+          page_id?: string;
+          public_reference?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "booking_submissions_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "booking_submissions_tenant_page_fkey";
+            columns: ["business_id", "page_id"];
+            isOneToOne: false;
+            referencedRelation: "pages";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "booking_submissions_tenant_record_fkey";
+            columns: ["business_id", "booking_record_id"];
+            isOneToOne: false;
+            referencedRelation: "records";
+            referencedColumns: ["business_id", "id"];
           },
         ];
       };
@@ -1207,6 +1361,113 @@ export type Database = {
           },
         ];
       };
+      public_form_rate_limits: {
+        Row: {
+          attempt_count: number;
+          business_id: string;
+          form_id: string;
+          id: string;
+          request_hash: string;
+          updated_at: string;
+          window_started_at: string;
+        };
+        Insert: {
+          attempt_count?: number;
+          business_id: string;
+          form_id: string;
+          id?: string;
+          request_hash: string;
+          updated_at?: string;
+          window_started_at: string;
+        };
+        Update: {
+          attempt_count?: number;
+          business_id?: string;
+          form_id?: string;
+          id?: string;
+          request_hash?: string;
+          updated_at?: string;
+          window_started_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "public_form_rate_limits_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "public_form_rate_limits_tenant_form_fkey";
+            columns: ["business_id", "form_id"];
+            isOneToOne: false;
+            referencedRelation: "forms";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
+      public_form_submissions: {
+        Row: {
+          business_id: string;
+          created_at: string;
+          form_id: string;
+          id: string;
+          idempotency_token: string;
+          page_id: string;
+          public_reference: string;
+          record_id: string;
+        };
+        Insert: {
+          business_id: string;
+          created_at?: string;
+          form_id: string;
+          id?: string;
+          idempotency_token: string;
+          page_id: string;
+          public_reference?: string;
+          record_id: string;
+        };
+        Update: {
+          business_id?: string;
+          created_at?: string;
+          form_id?: string;
+          id?: string;
+          idempotency_token?: string;
+          page_id?: string;
+          public_reference?: string;
+          record_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "public_form_submissions_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "public_form_submissions_tenant_form_fkey";
+            columns: ["business_id", "form_id"];
+            isOneToOne: false;
+            referencedRelation: "forms";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "public_form_submissions_tenant_page_fkey";
+            columns: ["business_id", "page_id"];
+            isOneToOne: false;
+            referencedRelation: "pages";
+            referencedColumns: ["business_id", "id"];
+          },
+          {
+            foreignKeyName: "public_form_submissions_tenant_record_fkey";
+            columns: ["business_id", "record_id"];
+            isOneToOne: false;
+            referencedRelation: "records";
+            referencedColumns: ["business_id", "id"];
+          },
+        ];
+      };
       record_location_links: {
         Row: {
           business_id: string;
@@ -1777,6 +2038,16 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      bulk_update_table_records: {
+        Args: {
+          expected_business_id: string;
+          requested_field_key: string;
+          requested_records: Json;
+          requested_value: Json;
+          requested_view_key: string;
+        };
+        Returns: Json;
+      };
       claim_anonymous_build_session: {
         Args: {
           requested_business_name: string;
@@ -1869,6 +2140,32 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      create_contextual_graph_record: {
+        Args: {
+          expected_business_id: string;
+          initiating_direction: string;
+          initiating_relationship_key: string;
+          parent_record_id: string;
+          requested_connections?: Json;
+          requested_data?: Json;
+        };
+        Returns: {
+          business_id: string;
+          created_at: string;
+          created_by: string | null;
+          data_json: Json;
+          id: string;
+          object_definition_id: string;
+          record_status: Database["public"]["Enums"]["graph_record_status"];
+          updated_at: string;
+        };
+        SetofOptions: {
+          from: "*";
+          to: "records";
+          isOneToOne: true;
+          isSetofReturn: false;
+        };
+      };
       create_graph_record: {
         Args: {
           expected_business_id: string;
@@ -1911,32 +2208,6 @@ export type Database = {
         SetofOptions: {
           from: "*";
           to: "record_relationships";
-          isOneToOne: true;
-          isSetofReturn: false;
-        };
-      };
-      create_contextual_graph_record: {
-        Args: {
-          expected_business_id: string;
-          initiating_direction: string;
-          initiating_relationship_key: string;
-          parent_record_id: string;
-          requested_connections?: Json;
-          requested_data?: Json;
-        };
-        Returns: {
-          business_id: string;
-          created_at: string;
-          created_by: string | null;
-          data_json: Json;
-          id: string;
-          object_definition_id: string;
-          record_status: Database["public"]["Enums"]["graph_record_status"];
-          updated_at: string;
-        };
-        SetofOptions: {
-          from: "*";
-          to: "records";
           isOneToOne: true;
           isSetofReturn: false;
         };
@@ -2351,6 +2622,17 @@ export type Database = {
           isSetofReturn: false;
         };
       };
+      preview_table_view_records: {
+        Args: {
+          expected_business_id: string;
+          requested_columns: Json;
+          requested_limit?: number;
+          requested_offset?: number;
+          requested_query: Json;
+          requested_source_view_key: string;
+        };
+        Returns: Json;
+      };
       propose_configuration_change: {
         Args: {
           expected_actor_id: string;
@@ -2402,18 +2684,8 @@ export type Database = {
           expected_business_id: string;
           requested_limit?: number;
           requested_offset?: number;
+          requested_search?: string;
           requested_view_key: string;
-        };
-        Returns: Json;
-      };
-      preview_table_view_records: {
-        Args: {
-          expected_business_id: string;
-          requested_columns: Json;
-          requested_limit?: number;
-          requested_offset?: number;
-          requested_query: Json;
-          requested_source_view_key: string;
         };
         Returns: Json;
       };
@@ -2475,6 +2747,22 @@ export type Database = {
           requested_change_set_id: string;
           requested_page_key: string;
           requested_preorder_key: string;
+        };
+        Returns: Json;
+      };
+      resolve_public_booking: {
+        Args: {
+          requested_booking_key: string;
+          requested_business_slug: string;
+          requested_page_slug: string;
+        };
+        Returns: Json;
+      };
+      resolve_public_form: {
+        Args: {
+          requested_business_slug: string;
+          requested_form_key: string;
+          requested_page_slug: string;
         };
         Returns: Json;
       };
@@ -2550,6 +2838,39 @@ export type Database = {
           usage_complete: boolean;
           usage_overrun: boolean;
         }[];
+      };
+      submit_public_booking: {
+        Args: {
+          requested_booking_key: string;
+          requested_business_slug: string;
+          requested_idempotency_token: string;
+          requested_page_slug: string;
+          requested_request_hash: string;
+          requested_submission: Json;
+        };
+        Returns: Json;
+      };
+      submit_public_booking_legacy: {
+        Args: {
+          requested_booking_key: string;
+          requested_business_slug: string;
+          requested_idempotency_token: string;
+          requested_page_slug: string;
+          requested_request_hash: string;
+          requested_submission: Json;
+        };
+        Returns: Json;
+      };
+      submit_public_create_form: {
+        Args: {
+          requested_business_slug: string;
+          requested_data: Json;
+          requested_form_key: string;
+          requested_idempotency_token: string;
+          requested_page_slug: string;
+          requested_request_hash: string;
+        };
+        Returns: Json;
       };
       submit_public_preorder: {
         Args: {

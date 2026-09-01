@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   tableViewColumnSchema,
+  tableViewConnectedFieldColumnKey,
   tableViewConnectionPropertyKey,
   tableViewPropertyKeySchema,
   tableViewQuerySchema,
@@ -22,6 +23,7 @@ const tableQueryRecordSchema = z
     connections: z
       .record(z.string(), z.array(connectionValueSchema))
       .default({}),
+    projections: z.record(z.string(), z.string().nullable()).default({}),
     group_value: z.unknown().nullable().optional(),
   })
   .strict();
@@ -71,6 +73,7 @@ export interface TableQueryResult {
     string,
     Record<string, readonly { id: string; label: string }[]>
   >;
+  projectionValues: Record<string, Record<string, string | null>>;
   totalCount: number;
   limit: number;
   offset: number;
@@ -82,6 +85,7 @@ export interface TableQueryResult {
 function parsedTableQueryResult(data: unknown): TableQueryResult {
   const parsed = tableQueryResponseSchema.parse(data);
   const connectionValues: TableQueryResult["connectionValues"] = {};
+  const projectionValues: TableQueryResult["projectionValues"] = {};
   const records = parsed.records.map((item) => {
     const record = parsedRecord(item.record);
     connectionValues[record.id] = Object.fromEntries(
@@ -90,11 +94,23 @@ function parsedTableQueryResult(data: unknown): TableQueryResult {
         values,
       ]),
     );
+    projectionValues[record.id] = Object.fromEntries(
+      Object.entries(item.projections).map(([key, value]) => [
+        z
+          .string()
+          .regex(
+            /^connected_field:[a-z][a-z0-9_]{0,79}:(?:source|target):[a-z][a-z0-9_]{0,79}$/,
+          )
+          .parse(key),
+        value,
+      ]),
+    );
     return record;
   });
   return {
     records,
     connectionValues,
+    projectionValues,
     totalCount: parsed.total_count,
     limit: parsed.limit,
     offset: parsed.offset,
@@ -111,17 +127,30 @@ export function connectionColumnStorageKey(
   return tableViewConnectionPropertyKey(relationshipKey, direction);
 }
 
+export function connectedFieldColumnStorageKey(
+  relationshipKey: string,
+  direction: "source" | "target",
+  targetFieldKey: string,
+): string {
+  return tableViewConnectedFieldColumnKey(
+    relationshipKey,
+    direction,
+    targetFieldKey,
+  );
+}
+
 export async function queryTableViewRecords(
   client: SupabaseClient<Database>,
   businessId: string,
   viewKey: string,
-  input: { limit?: number; offset?: number } = {},
+  input: { limit?: number; offset?: number; search?: string } = {},
 ): Promise<TableQueryResult> {
   const { data, error } = await client.rpc("query_view_records", {
     expected_business_id: businessId,
     requested_view_key: viewKey,
     requested_limit: input.limit ?? 250,
     requested_offset: input.offset ?? 0,
+    requested_search: (input.search ?? "").trim().slice(0, 200),
   });
   if (error || data === null) {
     throw new Error("Could not load the Table records.", { cause: error });

@@ -19,7 +19,8 @@ import {
   deterministicTableViewRoles,
   formConfigSchema,
   normalizeTableViewConfig,
-  tableViewConnectionPropertyKey,
+  tableViewColumnReferenceKey,
+  tableViewColumnWidthKey,
   tableViewFieldPropertyKey,
   validateTableViewQuery,
   type TableViewColumn,
@@ -299,9 +300,7 @@ function configWithFieldKeys(
 }
 
 function propertyKeyForColumn(column: TableViewColumn): string {
-  return column.kind === "field"
-    ? tableViewFieldPropertyKey(column.field_key)
-    : tableViewConnectionPropertyKey(column.relationship_key, column.direction);
+  return tableViewColumnReferenceKey(column);
 }
 
 function configWithPropertyKeys(
@@ -387,6 +386,58 @@ function hasConnectionColumn(
       column.kind === "connection" &&
       column.relationship_key === relationshipKey &&
       column.direction === direction,
+  );
+}
+
+function connectionIsSingleValue(
+  relationship: RelationshipDefinition,
+  direction: "source" | "target",
+): boolean {
+  return (
+    relationship.cardinality === "one_to_one" ||
+    (relationship.cardinality === "one_to_many" && direction === "target")
+  );
+}
+
+function connectedTargetField(
+  snapshot: ConfigurationSnapshotV1,
+  table: ReturnType<typeof activeTable>,
+  relationship: RelationshipDefinition,
+  direction: "source" | "target",
+  targetFieldKey: string,
+): (typeof snapshot.field_definitions)[number] {
+  const targetObjectKey =
+    direction === "source"
+      ? relationship.target_object_key
+      : relationship.source_object_key;
+  const targetObject = snapshot.object_definitions.find(
+    (object) => object.key === targetObjectKey && object.is_active,
+  );
+  const field = snapshot.field_definitions.find(
+    (candidate) =>
+      candidate.object_key === targetObjectKey &&
+      candidate.key === targetFieldKey &&
+      candidate.is_active &&
+      candidate.object_definition_id === targetObject?.id,
+  );
+  if (!targetObject || !field || field.field_type === "file") {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  return field;
+}
+
+function hasConnectedFieldColumn(
+  config: TableViewConfigV2,
+  relationshipKey: string,
+  direction: "source" | "target",
+  targetFieldKey: string,
+): boolean {
+  return config.columns.some(
+    (column) =>
+      column.kind === "connected_field" &&
+      column.relationship_key === relationshipKey &&
+      column.direction === direction &&
+      column.target_field_key === targetFieldKey,
   );
 }
 
@@ -631,6 +682,7 @@ function validateSavedViewConfiguration(
   source: ReturnType<typeof activeTable>,
   baseConfig: TableViewConfigV2,
   columns: readonly TableViewColumn[],
+  requestedColumnWidths: Readonly<Record<string, number>> | undefined,
   query: TableViewQuery,
 ): TableViewConfigV2 {
   const fieldKeys = new Set(
@@ -671,6 +723,19 @@ function validateSavedViewConfiguration(
     ) {
       throw new DirectTableComposerError("direct_table_saved_view_invalid");
     }
+    if (
+      column.kind === "connected_field" &&
+      (!connectionIsSingleValue(relationship, column.direction) ||
+        !connectedTargetField(
+          snapshot,
+          source,
+          relationship,
+          column.direction,
+          column.target_field_key,
+        ))
+    ) {
+      throw new DirectTableComposerError("direct_table_saved_view_invalid");
+    }
   }
   const scalarColumns = columns.filter((column) => column.kind === "field");
   if (
@@ -700,10 +765,13 @@ function validateSavedViewConfiguration(
       columns,
     });
     const selectedFieldKeys = new Set(fieldKeysFromColumns(columns));
+    const visibleColumnWidthKeys = new Set(
+      columns.map((column) => tableViewColumnWidthKey(column)),
+    );
     const columnWidths = Object.fromEntries(
-      Object.entries(baseConfig.column_widths ?? {}).filter(([fieldKey]) =>
-        selectedFieldKeys.has(fieldKey),
-      ),
+      Object.entries(
+        requestedColumnWidths ?? baseConfig.column_widths ?? {},
+      ).filter(([columnKey]) => visibleColumnWidthKeys.has(columnKey)),
     );
     const safeBaseConfig = { ...baseConfig };
     delete safeBaseConfig.column_widths;
@@ -753,6 +821,7 @@ function composeConfigureSavedView(
     source,
     existing?.config ?? source.config,
     intent.columns,
+    intent.columnWidths,
     intent.query,
   );
   return finalizeAction(
@@ -954,6 +1023,52 @@ function composeRenameConnectionProperty(
     `Rename ${intent.label}`,
     table.view.key,
     [tableViewOperation(table.view, configWithColumns(table.config, columns))],
+  );
+}
+
+function composeAddConnectedProperty(
+  snapshot: ConfigurationSnapshotV1,
+  intent: Extract<DirectTableIntent, { action: "add_connected_property" }>,
+): ComposedDirectTableAction {
+  const table = activeTable(snapshot, intent.viewKey);
+  const relationship = relationshipForKey(snapshot, intent.relationshipKey);
+  const direction = connectionDirection(table, relationship, intent.direction);
+  if (
+    !connectionIsSingleValue(relationship, direction) ||
+    hasConnectedFieldColumn(
+      table.config,
+      relationship.key,
+      direction,
+      intent.targetFieldKey,
+    )
+  ) {
+    throw new DirectTableComposerError("direct_table_connection_invalid");
+  }
+  const targetField = connectedTargetField(
+    snapshot,
+    table,
+    relationship,
+    direction,
+    intent.targetFieldKey,
+  );
+  const label = intent.label ?? targetField.label;
+  const column: TableViewColumn = {
+    kind: "connected_field",
+    relationship_key: relationship.key,
+    direction,
+    target_field_key: targetField.key,
+    label,
+  };
+  return finalizeAction(
+    "add_connected_property",
+    `Show ${label}`,
+    table.view.key,
+    [
+      tableViewOperation(
+        table.view,
+        configWithColumns(table.config, [...table.config.columns, column]),
+      ),
+    ],
   );
 }
 
@@ -1304,9 +1419,16 @@ function composeTableMutation(
       break;
     }
     case "resize_column": {
-      tableField(snapshot, table, intent.fieldKey);
+      const propertyKey =
+        intent.propertyKey ?? tableViewFieldPropertyKey(intent.fieldKey!);
+      const column = table.config.columns.find(
+        (candidate) => tableViewColumnReferenceKey(candidate) === propertyKey,
+      );
+      if (!column) {
+        throw new DirectTableComposerError("direct_table_width_invalid");
+      }
       const widths = { ...(table.config.column_widths ?? {}) };
-      widths[intent.fieldKey] = intent.width;
+      widths[tableViewColumnWidthKey(column)] = intent.width;
       operations = [
         tableMutationViewOperation(
           table.view,
@@ -1316,7 +1438,7 @@ function composeTableMutation(
           }),
         ),
       ];
-      title = `Resize ${intent.fieldKey}`;
+      title = `Resize ${propertyKey}`;
       break;
     }
   }
@@ -1419,6 +1541,9 @@ export function composeDirectTableAction(
   }
   if (intent.action === "rename_connection_property") {
     return composeRenameConnectionProperty(snapshot, intent);
+  }
+  if (intent.action === "add_connected_property") {
+    return composeAddConnectedProperty(snapshot, intent);
   }
   if (
     intent.action === "rename_saved_view" ||

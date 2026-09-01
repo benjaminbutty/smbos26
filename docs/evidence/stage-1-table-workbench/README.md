@@ -1,0 +1,46 @@
+# Stage 1 Table Workbench v0 — evidence ledger
+
+This directory records repeatable local review evidence for the Stage 1 Table
+Workbench branch. No production credentials, personal data or customer data
+belongs here.
+
+## Required review routes
+
+After a clean local reset and the existing proof/demo seeds, review the
+generic Tables for Milk round, dog groomer, catering enquiry, trades/jobs and
+Bedford preorder regression. Exercise Owner, Admin and Staff at 1440×900,
+1024×768 and 390×844.
+
+For each Table, confirm:
+
+1. search counts the complete current View and Load more stays bounded;
+2. typed editing, creation, Connection pickers and Record context retain the
+   established capability boundary;
+3. selected loaded Records can set or clear one eligible direct Property, and
+   an intentionally stale marker leaves every selected Record unchanged;
+4. a saved candidate previews multiple filters, all/any, ordered sorts, group,
+   Property order/visibility/width and produces one normal configuration
+   Version on Save;
+5. a one-hop related Property is read-only, searchable and leads through the
+   connected Record; and
+6. mobile shows concise Record cards and a full-screen Record context, never a
+   “Working property” selector.
+
+## Captured technical evidence
+
+- focused unit tests: `tests/internal-workspace-engine.test.ts`,
+  `tests/direct-table-workspace.test.ts`,
+  `tests/editor-kernel-production.test.ts`;
+- focused integration: `tests/integration/direct-table-workspace.test.ts`
+  (13 tests); and the existing four-business generic proof fixture
+  `tests/integration/internal-workspace-engine.test.ts` (2 tests);
+- transactional database validation of
+  `20260901100000_stage_1_table_workbench.sql` against the existing local
+  schema (the transaction is rolled back);
+- the Stage 1 migration was also applied to the existing local development
+  database and the browser route was checked through the normal Lenni
+  sign-in boundary;
+- a clean reset and authenticated browser screenshots remain pending explicit
+  local-database reset authorisation because reset drops/recreates development
+  data, plus immediate permission to enter a local proof account password in
+  the browser.

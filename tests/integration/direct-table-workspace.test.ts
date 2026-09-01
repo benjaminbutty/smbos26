@@ -13,6 +13,10 @@ import {
 } from "../../src/core/configuration/direct-tables/service";
 import { ConfigurationChangeService } from "../../src/core/configuration/service";
 import { normalizeTableViewConfig } from "../../src/core/experience/schemas";
+import {
+  queryTableViewRecords,
+  setTableRecordConnectionValues,
+} from "../../src/core/experience/table-query";
 import { createDirectTableRow } from "../../src/runtime/views/direct-table-record-service";
 import {
   applyDirectTableRecordCellEdit,
@@ -1670,5 +1674,243 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
         },
       ),
     ).rejects.toThrow(/Reload|changed|stale/i);
+  });
+
+  it("searches the complete View and applies a current all-or-none bulk update without a Version", async () => {
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: (await currentness(owner)).currentness,
+        intent: {
+          action: "create_table",
+          title: `Bulk ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const status = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "add_column",
+          viewKey,
+          label: "Stage",
+          columnType: "status",
+          options: ["New", "Booked"],
+        },
+      },
+    );
+    const statusFieldKey = status.composed!.operations.find(
+      (operation) => operation.op === "set_field",
+    )!.key;
+    const createRow = async (name: string) => {
+      const formData = new FormData();
+      formData.set("viewKey", viewKey);
+      formData.set("name", name);
+      return createDirectTableRow(
+        owner.client,
+        { businessId: business.id },
+        { viewKey, formData },
+      );
+    };
+    const first = await createRow("Search needle one");
+    const second = await createRow("Search needle two");
+    await createRow("Different record");
+
+    const searched = await queryTableViewRecords(
+      owner.client,
+      business.id,
+      viewKey,
+      { limit: 1, search: "needle" },
+    );
+    expect(searched.totalCount).toBe(2);
+    expect(searched.records).toHaveLength(1);
+    expect(searched.hasMore).toBe(true);
+
+    const before = await currentness(owner);
+    const currentRows = await owner.client
+      .from("records")
+      .select("id, updated_at, data_json")
+      .eq("business_id", business.id)
+      .in("id", [first.id, second.id]);
+    if (
+      currentRows.error ||
+      !currentRows.data ||
+      currentRows.data.length !== 2
+    ) {
+      throw currentRows.error ?? new Error("Could not load bulk test rows.");
+    }
+    const update = await owner.client.rpc("bulk_update_table_records", {
+      expected_business_id: business.id,
+      requested_view_key: viewKey,
+      requested_field_key: statusFieldKey,
+      requested_value: "Booked",
+      requested_records: currentRows.data.map((row) => ({
+        record_id: row.id,
+        expected_updated_at: row.updated_at,
+      })),
+    });
+    expect(update.error).toBeNull();
+    expect(update.data).toMatchObject({
+      record_ids: expect.arrayContaining([first.id, second.id]),
+    });
+    expect((await currentness(owner)).currentness).toEqual(before.currentness);
+
+    const afterUpdate = await owner.client
+      .from("records")
+      .select("id, updated_at, data_json")
+      .eq("business_id", business.id)
+      .in("id", [first.id, second.id]);
+    if (
+      afterUpdate.error ||
+      !afterUpdate.data ||
+      afterUpdate.data.length !== 2
+    ) {
+      throw afterUpdate.error ?? new Error("Could not reload bulk test rows.");
+    }
+    expect(afterUpdate.data.map((row) => row.data_json)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ [statusFieldKey]: "Booked" }),
+      ]),
+    );
+
+    const stale = await owner.client.rpc("bulk_update_table_records", {
+      expected_business_id: business.id,
+      requested_view_key: viewKey,
+      requested_field_key: statusFieldKey,
+      requested_value: "New",
+      requested_records: afterUpdate.data.map((row, index) => ({
+        record_id: row.id,
+        expected_updated_at:
+          index === 0
+            ? currentRows.data.find((beforeRow) => beforeRow.id === row.id)!
+                .updated_at
+            : row.updated_at,
+      })),
+    });
+    expect(stale.error).toBeTruthy();
+    const afterStale = await owner.client
+      .from("records")
+      .select("data_json")
+      .eq("business_id", business.id)
+      .in("id", [first.id, second.id]);
+    expect(afterStale.error).toBeNull();
+    expect(afterStale.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data_json: expect.objectContaining({ [statusFieldKey]: "Booked" }),
+        }),
+      ]),
+    );
+  });
+
+  it("reads a one-hop related property without copying it into the current Record", async () => {
+    const current = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: (await currentness(owner)).currentness,
+        intent: {
+          action: "create_table",
+          title: `Appointments ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const related = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: current.currentness,
+        intent: {
+          action: "create_table",
+          title: `Pets ${crypto.randomUUID()}`,
+        },
+      },
+    );
+    const currentViewKey = current.composed!.viewKey;
+    const relatedViewKey = related.composed!.viewKey;
+    const connection = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: related.currentness,
+        intent: {
+          action: "create_connection_property",
+          viewKey: currentViewKey,
+          targetViewKey: relatedViewKey,
+          label: "Pet",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
+          addReverse: false,
+        },
+      },
+    );
+    const relationshipKey = connection.composed!.operations.find(
+      (operation) => operation.op === "set_relationship",
+    )!.key;
+    const createRow = async (viewKey: string, name: string) => {
+      const formData = new FormData();
+      formData.set("viewKey", viewKey);
+      formData.set("name", name);
+      return createDirectTableRow(
+        owner.client,
+        { businessId: business.id },
+        { viewKey, formData },
+      );
+    };
+    const appointment = await createRow(currentViewKey, "Wash and trim");
+    const pet = await createRow(relatedViewKey, "Mabel");
+    await setTableRecordConnectionValues(owner.client, business.id, {
+      viewKey: currentViewKey,
+      recordId: appointment.id,
+      relationshipKey,
+      direction: "target",
+      targetRecordIds: [pet.id],
+    });
+
+    const beforeProjection = await currentness(owner);
+    const projection = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: beforeProjection.currentness,
+        intent: {
+          action: "add_connected_property",
+          viewKey: currentViewKey,
+          relationshipKey,
+          direction: "target",
+          targetFieldKey: "name",
+          label: "Pet · Name",
+        },
+      },
+    );
+    expect(projection.currentness.expectedHeadRevision).toBe(
+      beforeProjection.currentness.expectedHeadRevision + 1,
+    );
+    const queried = await queryTableViewRecords(
+      owner.client,
+      business.id,
+      currentViewKey,
+      { search: "Mabel" },
+    );
+    expect(queried.totalCount).toBe(1);
+    expect(queried.projectionValues[appointment.id]).toMatchObject({
+      [`connected_field:${relationshipKey}:target:name`]: "Mabel",
+    });
+    expect(queried.connectionValues[appointment.id]).toMatchObject({
+      [`connection:${relationshipKey}:target`]: [
+        expect.objectContaining({ id: pet.id, label: "Mabel" }),
+      ],
+    });
+    const persisted = await owner.client
+      .from("records")
+      .select("data_json")
+      .eq("id", appointment.id)
+      .single();
+    expect(persisted.error).toBeNull();
+    expect(persisted.data?.data_json).toEqual({ name: "Wash and trim" });
   });
 });

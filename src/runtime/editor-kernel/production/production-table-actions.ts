@@ -26,6 +26,7 @@ import { createExperienceService } from "../../../core/experience/service";
 import {
   normalizeTableViewConfig,
   tableViewColumnSchema,
+  tableViewColumnWidthKeySchema,
   tableViewPropertyKeySchema,
   tableViewQuerySchema,
 } from "../../../core/experience/schemas";
@@ -38,6 +39,7 @@ import {
 } from "../../forms/submission";
 import { experienceKeyToPath } from "../../routing";
 import {
+  queryTableViewRecords,
   searchTableConnectionTargets,
   previewTableViewRecords,
   setTableRecordConnectionValues,
@@ -55,6 +57,7 @@ import type {
   ProductionActionResult,
   ProductionAddColumnInput,
   ProductionAddExistingConnectionInput,
+  ProductionAddConnectedPropertyInput,
   ProductionChangeColumnTypeInput,
   ProductionCellEditInput,
   ProductionConnectionCreateInput,
@@ -66,6 +69,7 @@ import type {
   ProductionConfiguredSavedView,
   ProductionDuplicateSavedViewInput,
   ProductionArchiveSavedViewInput,
+  ProductionBulkUpdateInput,
   ProductionConfigurationCurrentness,
   ProductionCreateConnectionInput,
   ProductionInsertColumnInput,
@@ -75,6 +79,8 @@ import type {
   ProductionPreviewSavedViewInput,
   ProductionRecordPanelContext,
   ProductionRecordReadInput,
+  ProductionTablePage,
+  ProductionTablePageInput,
   ProductionRenameColumnInput,
   ProductionRenameTableInput,
   ProductionReorderColumnsInput,
@@ -180,6 +186,41 @@ const rowInputSchema = z
   })
   .strict();
 const recordInputSchema = z.object({ recordId: z.uuid() }).strict();
+const tablePageInputSchema = z
+  .object({
+    offset: z.number().int().min(0).max(1_000_000),
+    search: z.string().trim().max(200),
+  })
+  .strict();
+const bulkUpdateInputSchema = z
+  .object({
+    fieldKey: viewKeySchema,
+    value: editorValueSchema,
+    records: z
+      .array(
+        z
+          .object({
+            recordId: z.uuid(),
+            expectedUpdatedAt: z.string().datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      new Set(input.records.map((record) => record.recordId)).size !==
+      input.records.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Each selected Record can be updated once.",
+        path: ["records"],
+      });
+    }
+  });
 const addColumnInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
@@ -353,6 +394,15 @@ const addExistingConnectionInputSchema = z
     label: z.string().trim().min(1).max(120),
   })
   .strict();
+const addConnectedPropertyInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    relationshipKey: viewKeySchema,
+    direction: z.enum(["source", "target"]),
+    targetFieldKey: viewKeySchema,
+    label: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict();
 const savedViewQueryInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
@@ -365,6 +415,9 @@ const configureSavedViewInputSchema = z
     viewKey: viewKeySchema.optional(),
     name: z.string().trim().min(1).max(120),
     columns: z.array(tableViewColumnSchema).min(1).max(50),
+    columnWidths: z
+      .record(tableViewColumnWidthKeySchema, z.number().int().min(128).max(640))
+      .optional(),
     query: tableViewQuerySchema,
   })
   .strict();
@@ -579,6 +632,146 @@ export async function loadMappedTable(
   });
 }
 
+/**
+ * Loads one bounded page through the authoritative Table query. The browser
+ * supplies only transient search and paging values; the route derives the
+ * Business and View scope before the RPC runs.
+ */
+export async function loadProductionTablePageAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionTablePageInput,
+): Promise<ProductionActionResult<ProductionTablePage>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = tablePageInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That Table page is not available.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  try {
+    const [mapped, query] = await Promise.all([
+      loadMappedTable(supabase, tenant.business.id, context.viewKey),
+      queryTableViewRecords(supabase, tenant.business.id, context.viewKey, {
+        limit: 50,
+        offset: parsed.data.offset,
+        search: parsed.data.search,
+      }),
+    ]);
+    return {
+      status: "success",
+      value: {
+        rows: query.records.map((record) =>
+          mapProductionRecordToEditorRow(
+            mapped.table,
+            record,
+            query.connectionValues[record.id],
+            query.projectionValues[record.id],
+          ),
+        ),
+        totalCount: query.totalCount,
+        offset: query.offset,
+        hasMore: query.hasMore,
+        search: parsed.data.search,
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function bulkUpdateProductionTableRecordsAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionBulkUpdateInput,
+): Promise<ProductionActionResult<readonly EditorRow[]>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = bulkUpdateInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError(
+      "Choose up to 100 current Records and one editable property.",
+    );
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  try {
+    const mapped = await loadMappedTable(
+      supabase,
+      tenant.business.id,
+      context.viewKey,
+    );
+    const field = mapped.recordFields.find(
+      (candidate) =>
+        candidate.key === parsed.data.fieldKey && candidate.is_active,
+    );
+    if (
+      !field ||
+      parsed.data.fieldKey === mapped.table.primaryColumnKey ||
+      ![
+        "short_text",
+        "long_text",
+        "number",
+        "currency",
+        "boolean",
+        "date",
+        "datetime",
+        "email",
+        "phone",
+        "url",
+        "select",
+        "status",
+        "multi_select",
+      ].includes(field.field_type)
+    ) {
+      return resultError(
+        "That property cannot be updated across selected Records.",
+      );
+    }
+    const { data, error } = await supabase.rpc("bulk_update_table_records", {
+      expected_business_id: tenant.business.id,
+      requested_view_key: context.viewKey,
+      requested_field_key: parsed.data.fieldKey,
+      requested_value: parsed.data.value as Json,
+      requested_records: parsed.data.records.map((record) => ({
+        record_id: record.recordId,
+        expected_updated_at: record.expectedUpdatedAt,
+      })) as Json,
+    });
+    if (error || data === null) {
+      throw new ExperienceSubmissionError(
+        "Selected Records changed or could not be updated. Nothing was changed.",
+      );
+    }
+    const response = z
+      .object({ record_ids: z.array(z.uuid()).min(1).max(100) })
+      .strict()
+      .parse(data);
+    const { data: records, error: recordsError } = await supabase
+      .from("records")
+      .select("*")
+      .eq("business_id", tenant.business.id)
+      .in("id", response.record_ids);
+    if (
+      recordsError ||
+      !records ||
+      records.length !== response.record_ids.length
+    ) {
+      throw new ExperienceSubmissionError(
+        "Records were updated but could not be reloaded safely.",
+      );
+    }
+    revalidatePath(routePath(context.businessSlug, context.viewKey), "page");
+    return {
+      status: "success",
+      value: records.map((record) =>
+        mapProductionRecordToEditorRow(mapped.table, record),
+      ),
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
 async function applyProductionStructuralAction(
   businessSlug: string,
   viewKey: string,
@@ -699,6 +892,31 @@ export async function addExistingProductionTableConnectionAction(
       relationshipKey: parsed.data.relationshipKey,
       direction: parsed.data.direction,
       label: parsed.data.label,
+    },
+  );
+}
+
+export async function addProductionTableConnectedPropertyAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionAddConnectedPropertyInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = addConnectedPropertyInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That related property could not be shown safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "add_connected_property",
+      viewKey: context.viewKey,
+      relationshipKey: parsed.data.relationshipKey,
+      direction: parsed.data.direction,
+      targetFieldKey: parsed.data.targetFieldKey,
+      ...(parsed.data.label ? { label: parsed.data.label } : {}),
     },
   );
 }
@@ -969,6 +1187,9 @@ export async function configureProductionSavedViewAction(
           ...(parsed.data.viewKey ? { viewKey: parsed.data.viewKey } : {}),
           name: parsed.data.name,
           columns: parsed.data.columns,
+          ...(parsed.data.columnWidths
+            ? { columnWidths: parsed.data.columnWidths }
+            : {}),
           query: parsed.data.query,
         },
       },
@@ -1030,6 +1251,9 @@ export async function previewProductionSavedViewAction(
       fields: parsed.data.columns.flatMap((column) =>
         column.kind === "field" ? [column.field_key] : [],
       ),
+      ...(parsed.data.columnWidths
+        ? { column_widths: parsed.data.columnWidths }
+        : {}),
       ...parsed.data.query,
     });
     const mapped = mapExperienceViewBundleToEditorTable({
@@ -1038,6 +1262,7 @@ export async function previewProductionSavedViewAction(
         config,
         records: query.records,
         connectionValues: query.connectionValues,
+        projectionValues: query.projectionValues,
         query: {
           totalCount: query.totalCount,
           limit: query.limit,

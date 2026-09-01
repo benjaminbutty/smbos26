@@ -1018,6 +1018,87 @@ describe("Internal Workspace Engine", () => {
     ).toThrow("saved view");
   });
 
+  it("adds one-hop related properties without creating Fields and retains their saved width", () => {
+    const relatedSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      relationship_definitions: [
+        relationship(
+          "50000000-0000-4000-8000-000000000001",
+          "dog_has_milk_round",
+          dogObjectId,
+          "dog",
+          milkObjectId,
+          "milk_round",
+          "Milk rounds",
+          "Dog",
+          "one_to_many",
+        ),
+      ],
+    };
+    const related = composeDirectTableAction(relatedSnapshot, {
+      action: "add_connected_property",
+      viewKey: "milk_rounds",
+      relationshipKey: "dog_has_milk_round",
+      direction: "target",
+      targetFieldKey: "name",
+      label: "Dog · Name",
+    });
+    expect(related.operations).toHaveLength(1);
+    expect(related.operations[0]).toMatchObject({
+      op: "set_view",
+      config_json: expect.objectContaining({
+        columns: expect.arrayContaining([
+          {
+            kind: "connected_field",
+            relationship_key: "dog_has_milk_round",
+            direction: "target",
+            target_field_key: "name",
+            label: "Dog · Name",
+          },
+        ]),
+      }),
+    });
+
+    const saved = composeDirectTableAction(relatedSnapshot, {
+      action: "configure_saved_view",
+      sourceViewKey: "milk_rounds",
+      name: "Dog rounds",
+      columns: [
+        { kind: "field", field_key: "name" },
+        {
+          kind: "connected_field",
+          relationship_key: "dog_has_milk_round",
+          direction: "target",
+          target_field_key: "name",
+          label: "Dog · Name",
+        },
+      ],
+      columnWidths: {
+        name: 240,
+        "connected_field:dog_has_milk_round:target:name": 300,
+      },
+      query: { filters: [], filter_match: "all", sorts: [], group: null },
+    });
+    expect(saved.operations[0]).toMatchObject({
+      config_json: expect.objectContaining({
+        column_widths: {
+          name: 240,
+          "connected_field:dog_has_milk_round:target:name": 300,
+        },
+      }),
+    });
+
+    expect(() =>
+      composeDirectTableAction(relatedSnapshot, {
+        action: "add_connected_property",
+        viewKey: "dogs",
+        relationshipKey: "dog_has_milk_round",
+        direction: "source",
+        targetFieldKey: "name",
+      }),
+    ).toThrow();
+  });
+
   it("keeps field collisions and self-relationship directions unambiguous", () => {
     expect(() =>
       validateTableViewQuery(

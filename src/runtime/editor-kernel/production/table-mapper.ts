@@ -1,5 +1,8 @@
 import type { ExperienceViewBundle } from "../../../core/experience/service";
-import { connectionColumnStorageKey } from "../../../core/experience/table-query";
+import {
+  connectedFieldColumnStorageKey,
+  connectionColumnStorageKey,
+} from "../../../core/experience/table-query";
 import {
   normalizeTableViewConfig,
   type TableViewColumn,
@@ -33,6 +36,9 @@ export interface ProductionTableMappingInput {
   targetViewKeyByObjectId?: Readonly<Record<string, string>> | undefined;
   /** Owner-facing singular labels for connected Objects, when available. */
   targetObjectLabelByObjectId?: Readonly<Record<string, string>> | undefined;
+  /** Owner-facing labels for configured one-hop related properties. */
+  connectedFieldLabelByStorageKey?:
+    Readonly<Record<string, string>> | undefined;
 }
 
 export interface ProductionTableMapping {
@@ -227,6 +233,29 @@ function mapConnection(
   };
 }
 
+function mapConnectedField(
+  column: Extract<TableViewColumn, { kind: "connected_field" }>,
+  config: TableViewConfig,
+  connectedFieldLabelByStorageKey?: Readonly<Record<string, string>>,
+): EditorColumn {
+  const key = connectedFieldColumnStorageKey(
+    column.relationship_key,
+    column.direction,
+    column.target_field_key,
+  );
+  return {
+    key,
+    label:
+      column.label ??
+      connectedFieldLabelByStorageKey?.[key] ??
+      column.target_field_key.replaceAll("_", " "),
+    kind: "text",
+    editable: false,
+    readOnlyReason: "Open the connected record to edit this property.",
+    width: config.column_widths?.[key] ?? defaultWidths.text,
+  };
+}
+
 function compatibleEditorObject(
   value: Record<string, Json | undefined>,
 ): EditorValue | null {
@@ -292,18 +321,21 @@ function mapRow(
   table: EditorTable,
   record: Tables<"records">,
   connectionValues?: Record<string, readonly { id: string; label: string }[]>,
+  projectionValues?: Record<string, string | null>,
 ): EditorRow {
   const data = recordData(record);
   const values: Record<string, EditorValue> = {};
   for (const column of table.recordColumns ?? table.columns) {
     values[column.key] =
-      column.kind === "connection"
+      projectionValues?.[column.key] ??
+      (column.kind === "connection"
         ? (connectionValues?.[column.key]?.map((value) => value.id) ?? [])
-        : editorValueFromJson(data[column.key]);
+        : editorValueFromJson(data[column.key]));
   }
   return {
     id: record.id,
     values,
+    updatedAt: record.updated_at,
     ...(connectionValues ? { connectionValues } : {}),
   };
 }
@@ -311,12 +343,15 @@ function mapRow(
 export function mapProductionRecordToEditorRow(
   table: EditorTable,
   record: Tables<"records">,
+  connectionValues?: Record<string, readonly { id: string; label: string }[]>,
+  projectionValues?: Record<string, string | null>,
 ): EditorRow {
-  return mapRow(table, record);
+  return mapRow(table, record, connectionValues, projectionValues);
 }
 
 export function mapExperienceViewBundleToEditorTable({
   bundle,
+  connectedFieldLabelByStorageKey,
   editFormFieldKeys,
   targetObjectLabelByObjectId,
   targetViewKeyByObjectId,
@@ -378,15 +413,71 @@ export function mapExperienceViewBundleToEditorTable({
         targetObjectLabelByObjectId,
       ),
     );
-  const allColumns = [...fieldColumns, ...connectionColumns];
+  const connectedFieldColumns = config.columns
+    .filter(
+      (
+        column,
+      ): column is Extract<TableViewColumn, { kind: "connected_field" }> =>
+        column.kind === "connected_field",
+    )
+    .map((column) =>
+      mapConnectedField(column, config, connectedFieldLabelByStorageKey),
+    );
+  const projectionConnectionColumns = config.columns
+    .filter(
+      (
+        column,
+      ): column is Extract<TableViewColumn, { kind: "connected_field" }> =>
+        column.kind === "connected_field",
+    )
+    .filter(
+      (projection) =>
+        !connectionColumns.some(
+          (connection) =>
+            connection.connection?.relationshipKey ===
+              projection.relationship_key &&
+            connection.connection.direction === projection.direction,
+        ),
+    )
+    .filter(
+      (projection, index, candidates) =>
+        candidates.findIndex(
+          (candidate) =>
+            candidate.relationship_key === projection.relationship_key &&
+            candidate.direction === projection.direction,
+        ) === index,
+    )
+    .map((projection) =>
+      mapConnection(
+        {
+          kind: "connection",
+          relationship_key: projection.relationship_key,
+          direction: projection.direction,
+        },
+        bundle,
+        targetViewKeyByObjectId,
+        targetObjectLabelByObjectId,
+      ),
+    );
+  const allColumns = [
+    ...fieldColumns,
+    ...connectionColumns,
+    ...connectedFieldColumns,
+  ];
   const columns = config.columns.map((configuredColumn) => {
     const key =
       configuredColumn.kind === "field"
         ? configuredColumn.field_key
-        : connectionColumnStorageKey(
-            configuredColumn.relationship_key,
-            configuredColumn.direction,
-          );
+        : configuredColumn.kind === "connection"
+          ? connectionColumnStorageKey(
+              configuredColumn.relationship_key,
+              configuredColumn.direction,
+            )
+          : connectedFieldColumnStorageKey(
+              configuredColumn.relationship_key,
+              configuredColumn.direction,
+              configuredColumn.target_field_key,
+            );
     const column = allColumns.find((candidate) => candidate.key === key);
     if (!column) {
       throw new ProductionTableMappingError(
@@ -395,7 +486,12 @@ export function mapExperienceViewBundleToEditorTable({
     }
     return column;
   });
-  const recordColumns = [...fieldColumns, ...connectionColumns];
+  const recordColumns = [
+    ...fieldColumns,
+    ...connectionColumns,
+    ...connectedFieldColumns,
+    ...projectionConnectionColumns,
+  ];
   const rows = bundle.records
     .filter(
       (record) => config.include_archived || record.record_status === "active",
@@ -412,6 +508,7 @@ export function mapExperienceViewBundleToEditorTable({
         },
         record,
         bundle.connectionValues?.[record.id],
+        bundle.projectionValues?.[record.id],
       ),
     );
 

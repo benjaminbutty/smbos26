@@ -200,6 +200,7 @@ export async function applyDirectTableAction(
     "create_connection_property",
     "add_existing_connection_property",
     "rename_connection_property",
+    "add_connected_property",
     "create_saved_view",
     "duplicate_saved_view",
     "rename_saved_view",

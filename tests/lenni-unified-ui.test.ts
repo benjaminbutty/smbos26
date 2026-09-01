@@ -759,8 +759,9 @@ describe("Lenni unified workspace presentation", () => {
     expect(editorSource).toContain('aria-label="Search this Table"');
     expect(editorSource).toContain('data-testid="editor-grid-no-matches"');
     expect(editorSource).toContain('data-testid="editor-mobile-record-list"');
-    expect(editorSource).toContain('aria-label="Working property"');
-    expect(editorSource).toContain("onEditRecord");
+    expect(editorSource).not.toContain('aria-label="Working property"');
+    expect(editorSource).toContain("aria-label={`Open record");
+    expect(editorSource).toContain("onOpenRecord");
     expect(editorSource).toContain("cancelFailedSave");
     expect(editorSource).toContain("gridCoordinatesForCell");
     expect(editorSource).toContain('status: "stale"');
@@ -781,7 +782,7 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
     expect(viewControlsSource).toContain("useUnsavedNavigationWarning");
     expect(viewControlsSource).toContain("config.filters.slice(1)");
-    expect(viewControlsSource).toContain("filter_match: config.filter_match");
+    expect(viewControlsSource).toContain("filter_match: filterMatch");
     expect(viewControlsSource).toContain("config.sorts.slice(1)");
     expect(editorSource).toContain("useUnsavedNavigationWarning");
     expect(unsavedWarningSource).toContain('"beforeunload"');

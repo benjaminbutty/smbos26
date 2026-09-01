@@ -10,6 +10,7 @@ import {
   normalizeTableViewConfig,
   type TableViewConfig,
 } from "../../../../../core/experience/schemas";
+import { connectedFieldColumnStorageKey } from "../../../../../core/experience/table-query";
 import { createServerClient } from "../../../../../db/supabase/server";
 import {
   readSearchParam,
@@ -26,6 +27,7 @@ import {
 import { ProductionTableWorkspace } from "../../../../../runtime/editor-kernel/production/production-table-workspace";
 import {
   addExistingProductionTableConnectionAction,
+  bulkUpdateProductionTableRecordsAction,
   addProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
   createProductionTableConnectionAction,
@@ -43,6 +45,7 @@ import {
   createProductionTableConnectionTargetAction,
   createProductionTableContextualRecordAction,
   getProductionTableContextualRecordCreateStateAction,
+  loadProductionTablePageAction,
   searchProductionTableConnectionTargetsAction,
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
@@ -112,12 +115,25 @@ export default async function WorkspaceScreenPage({
           left.key.localeCompare(right.key)
         );
       });
-    const { data: tableObjects, error: tableObjectsError } = await supabase
-      .from("object_definitions")
-      .select("id, singular_label, plural_label, kind, is_active")
-      .eq("business_id", tenant.business.id)
-      .eq("is_active", true);
-    if (tableObjectsError || !tableObjects) {
+    const [tableObjectsResult, fieldsResult] = await Promise.all([
+      supabase
+        .from("object_definitions")
+        .select("id, singular_label, plural_label, kind, is_active")
+        .eq("business_id", tenant.business.id)
+        .eq("is_active", true),
+      supabase
+        .from("field_definitions")
+        .select("object_definition_id, key, label, field_type, position")
+        .eq("business_id", tenant.business.id)
+        .eq("is_active", true),
+    ]);
+    const tableObjects = tableObjectsResult.data;
+    if (
+      tableObjectsResult.error ||
+      !tableObjects ||
+      fieldsResult.error ||
+      !fieldsResult.data
+    ) {
       notFound();
     }
     const tableObjectById = new Map(
@@ -198,6 +214,57 @@ export default async function WorkspaceScreenPage({
         ];
       })
       .sort((left, right) => left.label.localeCompare(right.label));
+    const fieldsByObjectId = new Map<string, typeof fieldsResult.data>();
+    for (const field of fieldsResult.data) {
+      const current = fieldsByObjectId.get(field.object_definition_id) ?? [];
+      current.push(field);
+      fieldsByObjectId.set(field.object_definition_id, current);
+    }
+    const connectedPropertyOptions = (bundle.relationships ?? [])
+      .flatMap((relationship) => {
+        if (!relationship.is_active) return [];
+        const direction =
+          relationship.source_object_definition_id ===
+          bundle.definition.object_definition_id
+            ? ("source" as const)
+            : relationship.target_object_definition_id ===
+                bundle.definition.object_definition_id
+              ? ("target" as const)
+              : null;
+        const isSingleValue =
+          relationship.cardinality === "one_to_one" ||
+          (relationship.cardinality === "one_to_many" &&
+            direction === "target");
+        if (!direction || !isSingleValue) return [];
+        const targetObjectId =
+          direction === "source"
+            ? relationship.target_object_definition_id
+            : relationship.source_object_definition_id;
+        const connectionLabel =
+          direction === "source"
+            ? relationship.source_label
+            : relationship.target_label;
+        return (fieldsByObjectId.get(targetObjectId) ?? [])
+          .filter((field) => field.field_type !== "file")
+          .sort((left, right) => left.position - right.position)
+          .map((field) => ({
+            relationshipKey: relationship.key,
+            direction,
+            targetFieldKey: field.key,
+            label: `${connectionLabel} · ${field.label}`,
+          }));
+      })
+      .sort((left, right) => left.label.localeCompare(right.label));
+    const connectedFieldLabelByStorageKey = Object.fromEntries(
+      connectedPropertyOptions.map((option) => [
+        connectedFieldColumnStorageKey(
+          option.relationshipKey,
+          option.direction,
+          option.targetFieldKey,
+        ),
+        option.label,
+      ]),
+    );
     const productionPreview = await (async () => {
       try {
         const config = bundle.config as TableViewConfig;
@@ -223,6 +290,7 @@ export default async function WorkspaceScreenPage({
         }
         const mapped = mapExperienceViewBundleToEditorTable({
           bundle,
+          connectedFieldLabelByStorageKey,
           editFormFieldKeys,
           targetViewKeyByObjectId,
         });
@@ -268,7 +336,7 @@ export default async function WorkspaceScreenPage({
     const availableSavedViewColumns = [
       ...primaryConfig.columns.filter(
         (column) =>
-          column.kind === "connection" || activeFieldKeys.has(column.field_key),
+          column.kind !== "field" || activeFieldKeys.has(column.field_key),
       ),
       ...bundle.fields
         .filter(
@@ -308,6 +376,11 @@ export default async function WorkspaceScreenPage({
         {message ? <Notice kind="message">{message}</Notice> : null}
         <ProductionTableWorkspace
           businessSlug={businessSlug}
+          bulkUpdate={bulkUpdateProductionTableRecordsAction.bind(
+            null,
+            businessSlug,
+            bundle.definition.key,
+          )}
           actions={{
             addExistingConnection:
               addExistingProductionTableConnectionAction.bind(
@@ -429,6 +502,7 @@ export default async function WorkspaceScreenPage({
               <TableViewControls
                 availableColumns={availableSavedViewColumns}
                 businessSlug={businessSlug}
+                connectedPropertyOptions={connectedPropertyOptions}
                 config={normalizeTableViewConfig(bundle.config)}
                 currentness={currentness}
                 fields={bundle.fields}
@@ -445,6 +519,17 @@ export default async function WorkspaceScreenPage({
           newRecordLabel={`New ${bundle.object.singular_label.toLocaleLowerCase("en")}`}
           recordTypeLabel={bundle.object.singular_label}
           recordCountLabel={`${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`}
+          {...(bundle.query
+            ? {
+                initialHasMore: bundle.query.hasMore,
+                initialTotalCount: bundle.query.totalCount,
+              }
+            : {})}
+          loadTablePage={loadProductionTablePageAction.bind(
+            null,
+            businessSlug,
+            bundle.definition.key,
+          )}
           fullRecordPath={`/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(bundle.definition.key)}`}
           readConnectedRecord={readProductionRecordPanelContextAction.bind(
             null,

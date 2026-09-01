@@ -55,6 +55,7 @@ import {
   type PendingEdit,
 } from "./table-columns";
 import { RecordPanel } from "./record-panel";
+import { selectionForRows, TableBulkUpdateBar } from "./bulk-update-bar";
 import {
   ContextualRecordCreateDialog,
   type ContextualRecordCreateConnection,
@@ -93,6 +94,14 @@ export interface EditorKernelProps {
   capabilities?: EditorCapabilities;
   creationFallbackHref?: string;
   footer?: ReactNode;
+  bulkUpdate?: (input: {
+    fieldKey: string;
+    value: EditorValue;
+    records: readonly { recordId: string; expectedUpdatedAt: string }[];
+  }) => Promise<
+    | { status: "success"; value: readonly EditorRow[] }
+    | { status: "error"; message: string }
+  >;
   headerContent?: ReactNode;
   marker?: ReactNode;
   newRecordLabel?: string;
@@ -156,6 +165,8 @@ export interface EditorKernelProps {
     | undefined;
   title?: string;
   readOnly?: boolean;
+  /** A containing workbench owns complete-view search and paging. */
+  serverSearchManaged?: boolean;
   variant?: "workspace" | "embedded";
   viewPreview?: EditorTablePreview | null;
 }
@@ -392,7 +403,6 @@ function EditorMobileRecordList({
   noMatches,
   onClearSearch,
   onOpenRecord,
-  onEditRecord,
   previewColumn,
   rows,
   tableName,
@@ -403,7 +413,6 @@ function EditorMobileRecordList({
   noMatches: boolean;
   onClearSearch: () => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
-  onEditRecord: (rowId: string, columnKey: string) => void;
   previewColumn?: EditorColumn;
   rows: readonly EditorRow[];
   tableName: string;
@@ -412,20 +421,9 @@ function EditorMobileRecordList({
   const secondaryColumns = columns
     .filter((column) => column.key !== primaryColumn?.key)
     .slice(0, 2);
-  const workingColumns = columns.filter(
-    (column) => column.key !== primaryColumn?.key && !column.preview,
-  );
-  const [workingColumnKey, setWorkingColumnKey] = useState(
-    workingColumns.find((column) => column.editable !== false)?.key ??
-      workingColumns[0]?.key ??
-      primaryColumn?.key ??
-      "",
-  );
   if (!primaryColumn) {
     return null;
   }
-  const workingColumn =
-    columns.find((column) => column.key === workingColumnKey) ?? primaryColumn;
 
   return (
     <div
@@ -433,25 +431,6 @@ function EditorMobileRecordList({
       className="editor-mobile-record-list"
       data-testid="editor-mobile-record-list"
     >
-      <div className="editor-mobile-working-property">
-        <label>
-          <span>Working property</span>
-          <select
-            aria-label="Working property"
-            onChange={(event) => setWorkingColumnKey(event.currentTarget.value)}
-            value={workingColumn.key}
-          >
-            {columns
-              .filter((column) => !column.preview)
-              .map((column) => (
-                <option key={column.key} value={column.key}>
-                  {column.label}
-                </option>
-              ))}
-          </select>
-        </label>
-        <span>Tap a value to edit. Open the Record for every Property.</span>
-      </div>
       {previewColumn ? (
         <div className="editor-mobile-property-preview" role="status">
           <strong>{previewColumn.label}</strong>
@@ -487,45 +466,27 @@ function EditorMobileRecordList({
             const primaryValue = mobileRecordValue(row, primaryColumn);
             return (
               <li key={row.id}>
-                <article className="editor-mobile-record-card">
+                <button
+                  aria-label={`Open record ${primaryValue || "Unnamed record"}`}
+                  className="editor-mobile-record-card"
+                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
+                  type="button"
+                >
                   <span className="editor-mobile-record-card-heading">
-                    <button
-                      aria-label={`Open record ${primaryValue || "Unnamed record"}`}
-                      className="editor-mobile-open-record"
-                      onClick={() => onOpenRecord(row.id, primaryColumn.key)}
-                      type="button"
-                    >
-                      <strong>{primaryValue || "Unnamed record"}</strong>
-                      <span aria-hidden="true">Open ↗</span>
-                    </button>
+                    <strong>{primaryValue || "Unnamed record"}</strong>
+                    <span aria-hidden="true">Open</span>
                   </span>
-                  <button
-                    aria-label={`Edit ${workingColumn.label} for ${primaryValue || "Unnamed record"}`}
-                    className="editor-mobile-working-value"
-                    disabled={workingColumn.editable === false}
-                    onClick={() => onEditRecord(row.id, workingColumn.key)}
-                    type="button"
-                  >
-                    <small>{workingColumn.label}</small>
-                    <span>
-                      {mobileRecordValue(row, workingColumn) || "Empty"}
-                    </span>
-                    <span aria-hidden="true">Edit</span>
-                  </button>
                   {secondaryColumns.length > 0 ? (
-                    <span className="editor-mobile-record-context">
-                      {secondaryColumns
-                        .filter((column) => column.key !== workingColumn.key)
-                        .slice(0, 1)
-                        .map((column) => (
-                          <span key={column.key}>
-                            {column.label}:{" "}
-                            {mobileRecordValue(row, column) || "—"}
-                          </span>
-                        ))}
+                    <span className="editor-mobile-record-card-details">
+                      {secondaryColumns.map((column) => (
+                        <span key={column.key}>
+                          <small>{column.label}</small>
+                          <span>{mobileRecordValue(row, column) || "—"}</span>
+                        </span>
+                      ))}
                     </span>
                   ) : null}
-                </article>
+                </button>
               </li>
             );
           })}
@@ -1361,6 +1322,7 @@ export function EditorKernel({
   capabilities = defaultEditorCapabilities,
   creationFallbackHref,
   footer,
+  bulkUpdate,
   headerContent,
   marker,
   newRecordLabel = "New record",
@@ -1381,6 +1343,7 @@ export function EditorKernel({
   loadContextualRecordCreate,
   createContextualRecord,
   readOnly = false,
+  serverSearchManaged = false,
   title,
   variant = "workspace",
   viewPreview = null,
@@ -1457,7 +1420,9 @@ export function EditorKernel({
       }
     : null;
   const activePanel = connectedPanel ?? sourcePanel;
-  const normalizedRecordSearch = recordSearch.trim().toLocaleLowerCase("en");
+  const normalizedRecordSearch = serverSearchManaged
+    ? ""
+    : recordSearch.trim().toLocaleLowerCase("en");
   useEffect(() => {
     if (adapterRef.current === adapter) {
       return;
@@ -2896,6 +2861,44 @@ export function EditorKernel({
         : (capabilities.rowCreationMessage ??
           "Records will appear here when they are available.");
   const noMatches = table.rows.length > 0 && visibleRows.length === 0;
+  const bulkRows = useMemo(() => {
+    if (!selectionAnchor) return [];
+    const bounds = selectionBounds(
+      selectionAnchor,
+      selectionEnd ?? selectionAnchor,
+    );
+    return visibleRows.slice(bounds.startRow, bounds.endRow + 1);
+  }, [selectionAnchor, selectionEnd, visibleRows]);
+  const bulkSelection = useMemo(() => selectionForRows(bulkRows), [bulkRows]);
+  const applyBulkUpdate = useCallback(
+    async (
+      fieldKey: string,
+      value: EditorValue,
+      records: readonly { recordId: string; expectedUpdatedAt: string }[],
+    ): Promise<void> => {
+      if (!bulkUpdate) return;
+      const result = await bulkUpdate({ fieldKey, value, records });
+      if (result.status === "error") throw new Error(result.message);
+      const updated = new Map(result.value.map((row) => [row.id, row]));
+      setTable((current) => ({
+        ...current,
+        rows: current.rows.map((row) => {
+          const next = updated.get(row.id);
+          return next
+            ? {
+                ...next,
+                values: { ...row.values, ...next.values },
+                ...(row.connectionValues
+                  ? { connectionValues: row.connectionValues }
+                  : {}),
+              }
+            : row;
+        }),
+      }));
+      setSaveState({ status: "saved" });
+    },
+    [bulkUpdate],
+  );
   const previewColumn = presentationTable.columns.find(
     (column) => column.preview,
   );
@@ -2965,7 +2968,7 @@ export function EditorKernel({
       ) : null}
 
       <div className="editor-lab-meta">
-        {variant === "workspace" ? (
+        {variant === "workspace" && !serverSearchManaged ? (
           <label className="editor-table-search">
             <span>Search this Table</span>
             <input
@@ -2987,7 +2990,7 @@ export function EditorKernel({
             ) : null}
           </label>
         ) : null}
-        <span>{displayedRecordCountLabel}</span>
+        {!serverSearchManaged ? <span>{displayedRecordCountLabel}</span> : null}
         {viewPreview ? (
           <span className="editor-view-preview-state">
             Previewing unsaved View in this grid
@@ -3044,6 +3047,14 @@ export function EditorKernel({
           ) : null}
         </div>
       </div>
+
+      {bulkUpdate && !readOnly ? (
+        <TableBulkUpdateBar
+          columns={table.columns}
+          onApply={applyBulkUpdate}
+          selection={bulkSelection}
+        />
+      ) : null}
 
       <div className="editor-lab-workspace">
         <div className="editor-grid-area">
@@ -3144,9 +3155,6 @@ export function EditorKernel({
               noMatches={noMatches}
               onClearSearch={() => setRecordSearch("")}
               onOpenRecord={openRecord}
-              onEditRecord={(rowId, columnKey) =>
-                openRecord(rowId, columnKey, columnKey)
-              }
               {...(previewColumn ? { previewColumn } : {})}
               rows={visibleRows}
               tableName={table.name}
