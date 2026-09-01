@@ -11,6 +11,16 @@ generic Tables for Milk round, dog groomer, catering enquiry, trades/jobs and
 Bedford preorder regression. Exercise Owner, Admin and Staff at 1440×900,
 1024×768 and 390×844.
 
+The persisted generic proof seed exposes these local review starting points:
+
+- `http://localhost:3000/app/proof-milk-round/workspace/active_orders`
+- `http://localhost:3000/app/proof-mobile-dog-groomer/workspace/appointments_this_week`
+- `http://localhost:3000/app/proof-catering-enquiry/workspace/open_enquiries`
+- `http://localhost:3000/app/proof-trades-and-jobs/workspace/scheduled_jobs`
+
+The existing demo seed prints the Bedford preorder regression route when it
+runs: `http://localhost:3000/app/bedford-bakery/workspace/orders`.
+
 For each Table, confirm:
 
 1. search counts the complete current View and Load more stays bounded;
