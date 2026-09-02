@@ -1,60 +1,123 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Tables } from "../../db/supabase/database.types";
 import { experienceKeyToPath } from "../routing";
 
-export function TableViewTabs({
+function isSavedView(view: Tables<"views">): boolean {
+  return Boolean(
+    view.config_json &&
+    typeof view.config_json === "object" &&
+    !Array.isArray(view.config_json) &&
+    view.config_json.role === "saved",
+  );
+}
+
+/**
+ * Presentation only: View identities, routes and configuration semantics stay
+ * unchanged from the replaced tab strip.
+ */
+export function TableViewSelector({
   businessSlug,
+  canCreateSavedViews = false,
   currentViewKey,
   views,
 }: Readonly<{
   businessSlug: string;
+  canCreateSavedViews?: boolean;
   currentViewKey: string;
   views: readonly Tables<"views">[];
 }>): React.ReactNode {
-  const activeTabRef = useRef<HTMLAnchorElement>(null);
-  const activeTabId = `table-view-tab-${currentViewKey}`;
+  const [open, setOpen] = useState(false);
+  const selectorRef = useRef<HTMLDivElement>(null);
+  const orderedViews = [...views].sort(
+    (left, right) => Number(isSavedView(left)) - Number(isSavedView(right)),
+  );
+  const currentView = orderedViews.find((view) => view.key === currentViewKey);
+
   useEffect(() => {
-    let timeout: number | undefined;
-    const focusActiveTab = (): void => {
-      if (window.location.hash !== `#${activeTabId}`) return;
-      timeout = window.setTimeout(() => {
-        activeTabRef.current?.focus({ preventScroll: true });
-      }, 100);
+    if (!open) return;
+    const close = (event: PointerEvent): void => {
+      if (
+        event.target instanceof Node &&
+        !selectorRef.current?.contains(event.target)
+      ) {
+        setOpen(false);
+      }
     };
-    focusActiveTab();
-    window.addEventListener("hashchange", focusActiveTab);
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", closeOnEscape);
     return () => {
-      window.removeEventListener("hashchange", focusActiveTab);
-      if (timeout !== undefined) window.clearTimeout(timeout);
+      document.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [activeTabId]);
-  if (views.length < 2) {
-    return null;
-  }
+  }, [open]);
+
+  const selectCreateView = (): void => {
+    setOpen(false);
+    window.location.hash = "create-saved-view";
+  };
+
   return (
-    <nav aria-label="Table views" className="table-view-tabs">
-      {views.map((view) => (
-        <a
-          aria-current={view.key === currentViewKey ? "page" : undefined}
-          className={`table-view-tab${view.key === currentViewKey ? " is-active" : ""}`}
-          href={`/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(view.key)}`}
-          id={`table-view-tab-${view.key}`}
-          key={view.key}
-          ref={view.key === currentViewKey ? activeTabRef : undefined}
-        >
-          <span>{view.name}</span>
-          {view.config_json &&
-          typeof view.config_json === "object" &&
-          view.config_json !== null &&
-          !Array.isArray(view.config_json) &&
-          view.config_json.role === "saved" ? (
-            <small>Saved</small>
+    <nav
+      aria-label="Table views"
+      className="table-view-selector"
+      ref={selectorRef}
+    >
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="table-view-selector-trigger"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <span className="table-view-selector-label">Current view</span>
+        <strong>{currentView?.name ?? "Table"}</strong>
+        <span aria-hidden="true" className="table-view-selector-chevron">
+          ⌄
+        </span>
+      </button>
+      {open ? (
+        <div className="table-view-selector-menu" role="menu">
+          {orderedViews.map((view) => {
+            const current = view.key === currentViewKey;
+            return (
+              <a
+                aria-current={current ? "page" : undefined}
+                className={`table-view-selector-option${current ? " is-current" : ""}`}
+                href={`/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(view.key)}#table-view-selector-${view.key}`}
+                key={view.key}
+                onClick={() => setOpen(false)}
+                role="menuitem"
+              >
+                <span>{view.name}</span>
+                {current ? (
+                  <span className="table-view-selector-current">Current</span>
+                ) : isSavedView(view) ? null : (
+                  <span className="table-view-selector-primary">Main</span>
+                )}
+              </a>
+            );
+          })}
+          {canCreateSavedViews ? (
+            <>
+              <div aria-hidden="true" className="table-view-selector-divider" />
+              <button
+                className="table-view-selector-create"
+                onClick={selectCreateView}
+                role="menuitem"
+                type="button"
+              >
+                <span aria-hidden="true">+</span> Create new view
+              </button>
+            </>
           ) : null}
-        </a>
-      ))}
+        </div>
+      ) : null}
     </nav>
   );
 }

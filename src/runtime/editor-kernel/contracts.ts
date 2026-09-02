@@ -64,6 +64,8 @@ export interface EditorRow {
   id: string;
   values: Record<string, EditorValue>;
   connectionValues?: Record<string, readonly { id: string; label: string }[]>;
+  /** Server-owned currentness marker used by the bounded bulk boundary. */
+  updatedAt?: string;
   isDraft?: boolean;
 }
 

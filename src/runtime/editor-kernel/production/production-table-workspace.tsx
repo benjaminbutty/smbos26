@@ -1,7 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import type {
   AddExistingConnectionPropertyInput,
@@ -27,6 +33,8 @@ import type {
   ProductionScopedConnectionSearchAction,
   ProductionScopedContextualRecordCreateAction,
   ProductionScopedContextualRecordCreateStateAction,
+  ProductionBulkUpdateAction,
+  ProductionTablePageAction,
 } from "./action-types";
 import {
   createProductionTableAdapter,
@@ -40,11 +48,17 @@ export interface ProductionTableWorkspaceProps {
   actions: ProductionTableAdapterActions;
   businessSlug?: string;
   headerContent?: ReactNode;
+  viewControls?: ReactNode;
   currentness?: ProductionConfigurationCurrentness | undefined;
   creationFallbackHref?: string | undefined;
   newRecordLabel?: string;
   recordTypeLabel?: string;
   recordCountLabel?: string;
+  initialSearch?: string;
+  initialTotalCount?: number;
+  initialHasMore?: boolean;
+  loadTablePage?: ProductionTablePageAction;
+  bulkUpdate?: ProductionBulkUpdateAction;
   panelStatusLabel?: string;
   fullRecordPath?: string;
   readConnectedRecord?: ProductionRecordPanelContextAction;
@@ -71,11 +85,17 @@ export function ProductionTableWorkspace({
   creationFallbackHref,
   currentness,
   headerContent,
+  viewControls,
   newRecordLabel,
   panelStatusLabel,
   recordTypeLabel,
   readOnly = false,
   recordCountLabel,
+  initialSearch = "",
+  initialTotalCount,
+  initialHasMore = false,
+  loadTablePage,
+  bulkUpdate,
   fullRecordPath,
   readConnectedRecord,
   updateConnectedRecordCell,
@@ -91,16 +111,87 @@ export function ProductionTableWorkspace({
   table,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
   const router = useRouter();
+  const [loadedTable, setLoadedTable] = useState(table);
+  const [lastReceivedTable, setLastReceivedTable] = useState(table);
+  const [search, setSearch] = useState(initialSearch);
+  const [appliedSearch, setAppliedSearch] = useState(initialSearch);
+  const [totalCount, setTotalCount] = useState(
+    initialTotalCount ?? table.rows.length,
+  );
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [loadingPage, setLoadingPage] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [selectionResetToken, setSelectionResetToken] = useState(0);
   const [viewPreview, setViewPreview] = useState<EditorTablePreview | null>(
     null,
   );
+  if (table !== lastReceivedTable) {
+    setLastReceivedTable(table);
+    setLoadedTable(table);
+    setSearch(initialSearch);
+    setAppliedSearch(initialSearch);
+    setTotalCount(initialTotalCount ?? table.rows.length);
+    setHasMore(initialHasMore);
+    setPageError(null);
+  }
   const updateViewPreview = useCallback(
     (preview: EditorTablePreview | null): void => setViewPreview(preview),
     [],
   );
   const adapter = useMemo(
-    () => createProductionTableAdapter(table, actions, currentness),
-    [actions, currentness, table],
+    () => createProductionTableAdapter(loadedTable, actions, currentness),
+    [actions, currentness, loadedTable],
+  );
+
+  const loadPage = useCallback(
+    async (
+      offset: number,
+      nextSearch: string,
+      append: boolean,
+    ): Promise<void> => {
+      if (!loadTablePage || loadingPage) return;
+      if (!append) {
+        setSelectionResetToken((current) => current + 1);
+      }
+      setLoadingPage(true);
+      setPageError(null);
+      try {
+        const result = await loadTablePage({ offset, search: nextSearch });
+        if (result.status === "error") throw new Error(result.message);
+        setLoadedTable((current) => ({
+          ...current,
+          rows: append
+            ? [
+                ...current.rows,
+                ...result.value.rows.filter(
+                  (row) =>
+                    !current.rows.some((existing) => existing.id === row.id),
+                ),
+              ]
+            : [...result.value.rows],
+        }));
+        setAppliedSearch(result.value.search);
+        setTotalCount(result.value.totalCount);
+        setHasMore(result.value.hasMore);
+      } catch (error) {
+        setPageError(
+          error instanceof Error
+            ? error.message
+            : "Could not load more records. Try again.",
+        );
+      } finally {
+        setLoadingPage(false);
+      }
+    },
+    [loadTablePage, loadingPage],
+  );
+
+  const submitSearch = useCallback(
+    (event: FormEvent<HTMLFormElement>): void => {
+      event.preventDefault();
+      void loadPage(0, search.trim(), false);
+    },
+    [loadPage, search],
   );
 
   const createConnection = useMemo(
@@ -333,6 +424,66 @@ export function ProductionTableWorkspace({
     </span>
   );
 
+  const workbenchToolbar = loadTablePage ? (
+    <div className="table-workbench-toolbar">
+      <form className="table-workbench-search" onSubmit={submitSearch}>
+        <label htmlFor={`table-search-${table.key}`}>
+          <span className="editor-sr-only">
+            Search {recordTypeLabel ?? table.name}
+          </span>
+          <input
+            id={`table-search-${table.key}`}
+            maxLength={200}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={`Search ${(recordTypeLabel ?? table.name).toLocaleLowerCase("en")}…`}
+            type="search"
+            value={search}
+          />
+        </label>
+        <button disabled={loadingPage} type="submit">
+          {loadingPage ? "Searching…" : "Search"}
+        </button>
+        {search ? (
+          <button
+            className="table-workbench-search-clear"
+            disabled={loadingPage}
+            onClick={() => {
+              setSearch("");
+              void loadPage(0, "", false);
+            }}
+            type="button"
+          >
+            Clear
+          </button>
+        ) : null}
+      </form>
+      {viewControls}
+      <div className="table-workbench-toolbar-status" role="status">
+        <span>
+          {appliedSearch
+            ? `${totalCount} matching record${totalCount === 1 ? "" : "s"}`
+            : `${totalCount} record${totalCount === 1 ? "" : "s"}`}
+        </span>
+        {hasMore ? (
+          <button
+            disabled={loadingPage}
+            onClick={() =>
+              void loadPage(loadedTable.rows.length, appliedSearch, true)
+            }
+            type="button"
+          >
+            {loadingPage ? "Loading…" : "Load more"}
+          </button>
+        ) : null}
+        {pageError ? (
+          <span className="table-workbench-error">{pageError}</span>
+        ) : null}
+      </div>
+    </div>
+  ) : (
+    viewControls
+  );
+
   return (
     <TableViewPreviewProvider value={{ setPreview: updateViewPreview }}>
       <EditorKernel
@@ -341,6 +492,7 @@ export function ProductionTableWorkspace({
         {...(businessSlug !== undefined ? { businessSlug } : {})}
         footer={footer}
         headerContent={headerContent}
+        toolbarContent={workbenchToolbar}
         marker={
           surface === "workspace" ? (
             <p className="editor-lab-kicker">Table</p>
@@ -351,6 +503,9 @@ export function ProductionTableWorkspace({
           : {})}
         {...(newRecordLabel !== undefined ? { newRecordLabel } : {})}
         onStructureChanged={() => router.refresh()}
+        {...(bulkUpdate ? { bulkUpdate } : {})}
+        serverSearchManaged={Boolean(loadTablePage)}
+        selectionResetToken={selectionResetToken}
         {...(connectionSource ? { connectionSource } : {})}
         {...(connectionTargets ? { connectionTargets } : {})}
         {...(existingConnections ? { existingConnections } : {})}

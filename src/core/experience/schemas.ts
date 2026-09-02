@@ -41,9 +41,25 @@ export const tableViewConnectionColumnSchema = z
   })
   .strict();
 
+/**
+ * A read-only, one-hop value displayed from a single connected Record. This is
+ * deliberately a View projection rather than a Field: the value is never
+ * copied into the source Record and cannot be edited through the source Table.
+ */
+export const tableViewConnectedFieldColumnSchema = z
+  .object({
+    kind: z.literal("connected_field"),
+    relationship_key: graphKeySchema,
+    direction: tableViewColumnDirectionSchema,
+    target_field_key: graphKeySchema,
+    label: labelSchema.optional(),
+  })
+  .strict();
+
 export const tableViewColumnSchema = z.discriminatedUnion("kind", [
   tableViewFieldColumnSchema,
   tableViewConnectionColumnSchema,
+  tableViewConnectedFieldColumnSchema,
 ]);
 
 const tableViewPropertyKeyPattern =
@@ -52,6 +68,14 @@ const tableViewPropertyKeyPattern =
 export const tableViewPropertyKeySchema = z
   .string()
   .regex(tableViewPropertyKeyPattern);
+
+const tableViewColumnReferenceKeyPattern =
+  /^(?:field:[a-z][a-z0-9_]{0,79}|connection:[a-z][a-z0-9_]{0,79}:(?:source|target)|connected_field:[a-z][a-z0-9_]{0,79}:(?:source|target):[a-z][a-z0-9_]{0,79})$/;
+
+/** A complete Table column identity, used for layout-only ordering. */
+export const tableViewColumnReferenceKeySchema = z
+  .string()
+  .regex(tableViewColumnReferenceKeyPattern);
 
 export type TableViewPropertyKey = z.infer<typeof tableViewPropertyKeySchema>;
 
@@ -73,6 +97,56 @@ export function tableViewConnectionPropertyKey(
 ): string {
   return `connection:${graphKeySchema.parse(relationshipKey)}:${direction}`;
 }
+
+export function tableViewConnectedFieldColumnKey(
+  relationshipKey: string,
+  direction: "source" | "target",
+  targetFieldKey: string,
+): string {
+  return `connected_field:${graphKeySchema.parse(relationshipKey)}:${direction}:${graphKeySchema.parse(targetFieldKey)}`;
+}
+
+export function tableViewColumnReferenceKey(column: TableViewColumn): string {
+  if (column.kind === "field") {
+    return tableViewFieldPropertyKey(column.field_key);
+  }
+  if (column.kind === "connection") {
+    return tableViewConnectionPropertyKey(
+      column.relationship_key,
+      column.direction,
+    );
+  }
+  return tableViewConnectedFieldColumnKey(
+    column.relationship_key,
+    column.direction,
+    column.target_field_key,
+  );
+}
+
+/**
+ * Field widths retain their historical Field-key storage. Mixed columns use a
+ * stable canonical key so immutable V1/V2 snapshots need no rewrite.
+ */
+export function tableViewColumnWidthKey(column: TableViewColumn): string {
+  if (column.kind === "field") return column.field_key;
+  if (column.kind === "connection") {
+    return tableViewConnectionPropertyKey(
+      column.relationship_key,
+      column.direction,
+    );
+  }
+  return tableViewConnectedFieldColumnKey(
+    column.relationship_key,
+    column.direction,
+    column.target_field_key,
+  );
+}
+
+export const tableViewColumnWidthKeySchema = z
+  .string()
+  .regex(
+    /^(?:[a-z][a-z0-9_]{0,79}|connection:[a-z][a-z0-9_]{0,79}:(?:source|target)|connected_field:[a-z][a-z0-9_]{0,79}:(?:source|target):[a-z][a-z0-9_]{0,79})$/,
+  );
 
 export function parseTableViewPropertyKey(
   propertyKey: string,
@@ -242,12 +316,27 @@ const tableViewConfigV2InputSchema = z
     fields: fieldKeysSchema.optional(),
     title_field: graphKeySchema,
     column_widths: z
-      .record(graphKeySchema, z.number().int().min(128).max(640))
+      .record(tableViewColumnWidthKeySchema, z.number().int().min(128).max(640))
       .optional(),
     ...viewActionsSchema,
     ...tableViewQuerySchema.shape,
   })
-  .strict();
+  .strict()
+  .superRefine((config, context) => {
+    if (!config.column_widths) return;
+    const visibleColumns = new Set(
+      config.columns.map((column) => tableViewColumnWidthKey(column)),
+    );
+    for (const columnKey of Object.keys(config.column_widths)) {
+      if (!visibleColumns.has(columnKey)) {
+        context.addIssue({
+          code: "custom",
+          message: "Column widths can only be set for visible Table columns.",
+          path: ["column_widths", columnKey],
+        });
+      }
+    }
+  });
 
 export const tableViewConfigSchema = z.union([
   tableViewConfigV1Schema,
@@ -311,11 +400,17 @@ export function normalizeTableViewConfig(
       },
     ]);
   }
-  const columnKeys = parsed.columns.map((column) =>
-    column.kind === "field"
-      ? `field:${column.field_key}`
-      : `connection:${column.relationship_key}:${column.direction}`,
-  );
+  const columnKeys = parsed.columns.map((column) => {
+    if (column.kind === "field") return `field:${column.field_key}`;
+    if (column.kind === "connection") {
+      return `connection:${column.relationship_key}:${column.direction}`;
+    }
+    return tableViewConnectedFieldColumnKey(
+      column.relationship_key,
+      column.direction,
+      column.target_field_key,
+    );
+  });
   if (new Set(columnKeys).size !== columnKeys.length) {
     throw new z.ZodError([
       {

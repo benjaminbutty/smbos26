@@ -91,7 +91,7 @@ describe("pre-reset Lenni UX hygiene contracts", () => {
     expect(tableColumnsSource).toContain("!validOptions(options)");
   });
 
-  it("keeps connection quick-create explicit, coral, and disabled until named", () => {
+  it("keeps connection quick-create visible before a name is typed", () => {
     const markup = renderToStaticMarkup(
       createElement(ConnectionPicker, {
         column: {
@@ -117,12 +117,10 @@ describe("pre-reset Lenni UX hygiene contracts", () => {
       }),
     );
 
-    expect(markup).toContain("Type a name to enable quick-create.");
+    expect(markup).toContain("+ Create new Pet");
     expect(markup).toContain('class="editor-connection-create"');
-    expect(markup).toContain("disabled");
     expect(cssSource).toContain("background: var(--coral-600);");
-    expect(cssSource).toContain("background: var(--surface-subtle);");
-    expect(cssSource).toContain("cursor: not-allowed;");
+    expect(cssSource).toContain("editor-connection-create-divider");
     expect(editorLabSource).toContain("...(adapter.createConnectionTarget");
 
     const unavailableMarkup = renderToStaticMarkup(
@@ -148,8 +146,8 @@ describe("pre-reset Lenni UX hygiene contracts", () => {
     expect(unavailableMarkup).not.toContain("editor-connection-create");
   });
 
-  it("exposes direct drag affordance while retaining the existing reorder callback", () => {
-    const [column] = createEditorColumns({
+  it("shows source and insertion feedback while retaining the reorder callback", () => {
+    const columns = createEditorColumns({
       columnMenuKey: null,
       columns: [
         {
@@ -159,23 +157,41 @@ describe("pre-reset Lenni UX hygiene contracts", () => {
           primary: true,
           width: 200,
         },
+        {
+          key: "status",
+          label: "Status",
+          kind: "status",
+          options: ["Open", "Done"],
+          width: 160,
+        },
       ],
+      columnDragState: { sourceKey: "name", targetKey: "status" },
       onActivateDraft: () => undefined,
+      onColumnDragStateChange: () => undefined,
       onOpenColumnMenu: () => undefined,
       onOpenRecord: () => undefined,
+      onReorderColumns: () => undefined,
       onRenameColumn: async () => true,
       onUpdateColumnOptions: async () => true,
       pendingEdit: null,
     });
 
     const headerMarkup = renderToStaticMarkup(
-      column?.renderHeaderCell?.({} as never) ?? null,
+      createElement(
+        "div",
+        null,
+        ...columns.map(
+          (column) => column.renderHeaderCell?.({} as never) ?? null,
+        ),
+      ),
     );
 
-    expect(column?.draggable).toBe(true);
+    expect(columns.every((column) => column.draggable === false)).toBe(true);
     expect(headerMarkup).toContain('data-reorderable="true"');
     expect(headerMarkup).toContain("editor-column-drag-affordance");
     expect(headerMarkup).toContain('aria-label="Drag Name to reorder"');
+    expect(headerMarkup).toContain("is-dragging-source");
+    expect(headerMarkup).toContain("is-drag-drop-target");
     expect(cssSource).toContain("cursor: grabbing;");
     expect(editorLabSource).toContain("onReorderColumns: handleReorderColumns");
     expect(
@@ -187,6 +203,7 @@ describe("pre-reset Lenni UX hygiene contracts", () => {
         "utf8",
       ),
     ).toContain("elementFromPoint");
+    expect(cssSource).toContain("is-drag-drop-target::before");
     expect(editorLabSource).toContain("Drag column headings to reorder");
   });
 });

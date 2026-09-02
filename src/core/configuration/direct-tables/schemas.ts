@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import {
   tableViewColumnSchema,
-  tableViewPropertyKeySchema,
+  tableViewColumnReferenceKeySchema,
+  tableViewColumnWidthKeySchema,
   tableViewQuerySchema,
 } from "../../experience/schemas";
 import { graphKeySchema } from "../../graph/schemas";
@@ -36,6 +37,7 @@ export const directTableActionKindSchema = z.enum([
   "create_connection_property",
   "add_existing_connection_property",
   "rename_connection_property",
+  "add_connected_property",
   "create_saved_view",
   "duplicate_saved_view",
   "rename_saved_view",
@@ -236,7 +238,11 @@ const reorderColumnsIntentSchema = z
     // editor sends property keys so Field and Connection columns can move in
     // one ordered working surface.
     fieldKeys: z.array(graphKeySchema).min(1).max(50).optional(),
-    propertyKeys: z.array(tableViewPropertyKeySchema).min(1).max(50).optional(),
+    propertyKeys: z
+      .array(tableViewColumnReferenceKeySchema)
+      .min(1)
+      .max(50)
+      .optional(),
   })
   .strict()
   .superRefine((input, context) => {
@@ -253,10 +259,22 @@ const resizeColumnIntentSchema = z
   .object({
     action: z.literal("resize_column"),
     viewKey: graphKeySchema,
-    fieldKey: graphKeySchema,
+    // Field key is retained for existing callers. New workbench controls use
+    // the complete property key so Connection and connected columns are safe.
+    fieldKey: graphKeySchema.optional(),
+    propertyKey: tableViewColumnReferenceKeySchema.optional(),
     width: z.number().int().min(128).max(640),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    if (Boolean(input.fieldKey) === Boolean(input.propertyKey)) {
+      context.addIssue({
+        code: "custom",
+        message: "Provide one Table property to resize.",
+        path: ["propertyKey"],
+      });
+    }
+  });
 
 const connectionMultiplicitySchema = z.enum(["one", "several"]);
 
@@ -290,6 +308,17 @@ const renameConnectionPropertyIntentSchema = z
     relationshipKey: graphKeySchema,
     direction: z.enum(["source", "target"]),
     label: directTableLabelSchema,
+  })
+  .strict();
+
+const addConnectedPropertyIntentSchema = z
+  .object({
+    action: z.literal("add_connected_property"),
+    viewKey: graphKeySchema,
+    relationshipKey: graphKeySchema,
+    direction: z.enum(["source", "target"]),
+    targetFieldKey: graphKeySchema,
+    label: directTableLabelSchema.optional(),
   })
   .strict();
 
@@ -339,6 +368,9 @@ const configureSavedViewIntentSchema = z
     viewKey: graphKeySchema.optional(),
     name: directTableLabelSchema,
     columns: z.array(tableViewColumnSchema).min(1).max(50),
+    columnWidths: z
+      .record(tableViewColumnWidthKeySchema, z.number().int().min(128).max(640))
+      .optional(),
     query: tableViewQuerySchema,
   })
   .strict();
@@ -356,6 +388,7 @@ export const directTableIntentSchema = z.discriminatedUnion("action", [
   createConnectionPropertyIntentSchema,
   addExistingConnectionPropertyIntentSchema,
   renameConnectionPropertyIntentSchema,
+  addConnectedPropertyIntentSchema,
   createSavedViewIntentSchema,
   duplicateSavedViewIntentSchema,
   renameSavedViewIntentSchema,

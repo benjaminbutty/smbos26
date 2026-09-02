@@ -11,6 +11,8 @@ import {
 } from "react";
 import {
   DataGrid,
+  SELECT_COLUMN_KEY,
+  SelectColumn,
   type CellKeyDownArgs,
   type CellKeyboardEvent,
   type CellMouseArgs,
@@ -25,7 +27,6 @@ import {
   editorDraftRowId,
   editorInputValue,
   editorValueForColumn,
-  freshDraftRowIndex,
   hasDraftName,
   reorderColumnKeys,
   type AddExistingConnectionPropertyInput,
@@ -52,9 +53,11 @@ import {
 import {
   createEditorColumns,
   openConnectionCellEditor,
+  type ColumnDragState,
   type PendingEdit,
 } from "./table-columns";
 import { RecordPanel } from "./record-panel";
+import { selectionForRows, TableBulkUpdateBar } from "./bulk-update-bar";
 import {
   ContextualRecordCreateDialog,
   type ContextualRecordCreateConnection,
@@ -93,7 +96,17 @@ export interface EditorKernelProps {
   capabilities?: EditorCapabilities;
   creationFallbackHref?: string;
   footer?: ReactNode;
+  bulkUpdate?: (input: {
+    fieldKey: string;
+    value: EditorValue;
+    records: readonly { recordId: string; expectedUpdatedAt: string }[];
+  }) => Promise<
+    | { status: "success"; value: readonly EditorRow[] }
+    | { status: "error"; message: string }
+  >;
   headerContent?: ReactNode;
+  /** Server-owned search and View controls share the operating toolbar. */
+  toolbarContent?: ReactNode;
   marker?: ReactNode;
   newRecordLabel?: string;
   onStructureChanged?: () => void;
@@ -156,6 +169,10 @@ export interface EditorKernelProps {
     | undefined;
   title?: string;
   readOnly?: boolean;
+  /** A containing workbench owns complete-view search and paging. */
+  serverSearchManaged?: boolean;
+  /** Clears checkbox selection after a complete-View search replacement. */
+  selectionResetToken?: number;
   variant?: "workspace" | "embedded";
   viewPreview?: EditorTablePreview | null;
 }
@@ -392,7 +409,6 @@ function EditorMobileRecordList({
   noMatches,
   onClearSearch,
   onOpenRecord,
-  onEditRecord,
   previewColumn,
   rows,
   tableName,
@@ -403,7 +419,6 @@ function EditorMobileRecordList({
   noMatches: boolean;
   onClearSearch: () => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
-  onEditRecord: (rowId: string, columnKey: string) => void;
   previewColumn?: EditorColumn;
   rows: readonly EditorRow[];
   tableName: string;
@@ -412,20 +427,9 @@ function EditorMobileRecordList({
   const secondaryColumns = columns
     .filter((column) => column.key !== primaryColumn?.key)
     .slice(0, 2);
-  const workingColumns = columns.filter(
-    (column) => column.key !== primaryColumn?.key && !column.preview,
-  );
-  const [workingColumnKey, setWorkingColumnKey] = useState(
-    workingColumns.find((column) => column.editable !== false)?.key ??
-      workingColumns[0]?.key ??
-      primaryColumn?.key ??
-      "",
-  );
   if (!primaryColumn) {
     return null;
   }
-  const workingColumn =
-    columns.find((column) => column.key === workingColumnKey) ?? primaryColumn;
 
   return (
     <div
@@ -433,25 +437,6 @@ function EditorMobileRecordList({
       className="editor-mobile-record-list"
       data-testid="editor-mobile-record-list"
     >
-      <div className="editor-mobile-working-property">
-        <label>
-          <span>Working property</span>
-          <select
-            aria-label="Working property"
-            onChange={(event) => setWorkingColumnKey(event.currentTarget.value)}
-            value={workingColumn.key}
-          >
-            {columns
-              .filter((column) => !column.preview)
-              .map((column) => (
-                <option key={column.key} value={column.key}>
-                  {column.label}
-                </option>
-              ))}
-          </select>
-        </label>
-        <span>Tap a value to edit. Open the Record for every Property.</span>
-      </div>
       {previewColumn ? (
         <div className="editor-mobile-property-preview" role="status">
           <strong>{previewColumn.label}</strong>
@@ -487,45 +472,27 @@ function EditorMobileRecordList({
             const primaryValue = mobileRecordValue(row, primaryColumn);
             return (
               <li key={row.id}>
-                <article className="editor-mobile-record-card">
+                <button
+                  aria-label={`Open record ${primaryValue || "Unnamed record"}`}
+                  className="editor-mobile-record-card"
+                  onClick={() => onOpenRecord(row.id, primaryColumn.key)}
+                  type="button"
+                >
                   <span className="editor-mobile-record-card-heading">
-                    <button
-                      aria-label={`Open record ${primaryValue || "Unnamed record"}`}
-                      className="editor-mobile-open-record"
-                      onClick={() => onOpenRecord(row.id, primaryColumn.key)}
-                      type="button"
-                    >
-                      <strong>{primaryValue || "Unnamed record"}</strong>
-                      <span aria-hidden="true">Open ↗</span>
-                    </button>
+                    <strong>{primaryValue || "Unnamed record"}</strong>
+                    <span aria-hidden="true">Open</span>
                   </span>
-                  <button
-                    aria-label={`Edit ${workingColumn.label} for ${primaryValue || "Unnamed record"}`}
-                    className="editor-mobile-working-value"
-                    disabled={workingColumn.editable === false}
-                    onClick={() => onEditRecord(row.id, workingColumn.key)}
-                    type="button"
-                  >
-                    <small>{workingColumn.label}</small>
-                    <span>
-                      {mobileRecordValue(row, workingColumn) || "Empty"}
-                    </span>
-                    <span aria-hidden="true">Edit</span>
-                  </button>
                   {secondaryColumns.length > 0 ? (
-                    <span className="editor-mobile-record-context">
-                      {secondaryColumns
-                        .filter((column) => column.key !== workingColumn.key)
-                        .slice(0, 1)
-                        .map((column) => (
-                          <span key={column.key}>
-                            {column.label}:{" "}
-                            {mobileRecordValue(row, column) || "—"}
-                          </span>
-                        ))}
+                    <span className="editor-mobile-record-card-details">
+                      {secondaryColumns.map((column) => (
+                        <span key={column.key}>
+                          <small>{column.label}</small>
+                          <span>{mobileRecordValue(row, column) || "—"}</span>
+                        </span>
+                      ))}
                     </span>
                   ) : null}
-                </article>
+                </button>
               </li>
             );
           })}
@@ -1361,7 +1328,9 @@ export function EditorKernel({
   capabilities = defaultEditorCapabilities,
   creationFallbackHref,
   footer,
+  bulkUpdate,
   headerContent,
+  toolbarContent,
   marker,
   newRecordLabel = "New record",
   onStructureChanged,
@@ -1381,6 +1350,8 @@ export function EditorKernel({
   loadContextualRecordCreate,
   createContextualRecord,
   readOnly = false,
+  serverSearchManaged = false,
+  selectionResetToken = 0,
   title,
   variant = "workspace",
   viewPreview = null,
@@ -1392,6 +1363,8 @@ export function EditorKernel({
   const [activeCell, setActiveCell] = useState<ActiveCell | null>(null);
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const [columnMenuKey, setColumnMenuKey] = useState<string | null>(null);
+  const [columnDragState, setColumnDragState] =
+    useState<ColumnDragState | null>(null);
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [propertyDraft, setPropertyDraft] = useState<PropertyDraft | null>(
     null,
@@ -1404,6 +1377,11 @@ export function EditorKernel({
     null,
   );
   const [selectionEnd, setSelectionEnd] = useState<GridPoint | null>(null);
+  const [selectedRecordIds, setSelectedRecordIds] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
+  const [draftRetry, setDraftRetry] = useState<string | null>(null);
   const [panelRowId, setPanelRowId] = useState<string | null>(null);
   const [panelOrigin, setPanelOrigin] = useState<ActiveCell | null>(null);
   const [panelEditingKey, setPanelEditingKey] = useState<string | null>(null);
@@ -1415,10 +1393,7 @@ export function EditorKernel({
     state: ContextualRecordCreateDialogState;
   } | null>(null);
   const [panelHistory, setPanelHistory] = useState<EditorRecordContext[]>([]);
-  const [draftActivation, setDraftActivation] = useState<{
-    rowIdx: number;
-    columnIdx: number;
-  } | null>(null);
+  const [draftInputActive, setDraftInputActive] = useState(false);
   const [recordSearch, setRecordSearch] = useState("");
   const [saveState, setSaveState] = useState<SaveState>({ status: "saved" });
   const [structuralError, setStructuralError] = useState<string | null>(null);
@@ -1426,6 +1401,7 @@ export function EditorKernel({
   const [restoreCell, setRestoreCell] = useState<ActiveCell | null>(null);
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [showAllProperties, setShowAllProperties] = useState(false);
+  const gridColumnOffset = bulkUpdate && !readOnly ? 1 : 0;
   const gridRef = useRef<DataGridHandle>(null);
   const addColumnButtonRef = useRef<HTMLButtonElement>(null);
   const adapterRef = useRef(adapter);
@@ -1457,7 +1433,9 @@ export function EditorKernel({
       }
     : null;
   const activePanel = connectedPanel ?? sourcePanel;
-  const normalizedRecordSearch = recordSearch.trim().toLocaleLowerCase("en");
+  const normalizedRecordSearch = serverSearchManaged
+    ? ""
+    : recordSearch.trim().toLocaleLowerCase("en");
   useEffect(() => {
     if (adapterRef.current === adapter) {
       return;
@@ -1465,10 +1443,17 @@ export function EditorKernel({
     adapterRef.current = adapter;
     const next = adapter.getTable();
     setTable(readOnly ? readOnlyTable(next) : next);
+    setSelectedRecordIds(new Set());
+    setSelectionNotice(null);
     if (activeCell) {
       setRestoreCell(activeCell);
     }
   }, [activeCell, adapter, readOnly]);
+
+  useEffect(() => {
+    setSelectedRecordIds(new Set());
+    setSelectionNotice(null);
+  }, [selectionResetToken]);
 
   const visibleRows = useMemo(
     () =>
@@ -1479,6 +1464,19 @@ export function EditorKernel({
         : (previewTable?.rows ?? table.rows),
     [normalizedRecordSearch, previewTable?.rows, recordColumns, table.rows],
   );
+  useEffect(() => {
+    setSelectedRecordIds(new Set());
+    setSelectionNotice(null);
+  }, [viewPreview]);
+
+  useEffect(() => {
+    if (!draftInputActive) return;
+    gridRef.current?.scrollToCell({
+      idx: gridColumnOffset,
+      rowIdx: visibleRows.length,
+    });
+  }, [draftInputActive, gridColumnOffset, visibleRows.length]);
+
   const presentationTable = useMemo(
     () =>
       propertyDraft && !readOnly
@@ -1582,7 +1580,7 @@ export function EditorKernel({
       );
       if (rowIdx >= 0 && columnIdx >= 0) {
         gridRef.current?.selectCell(
-          { idx: columnIdx, rowIdx },
+          { idx: columnIdx + gridColumnOffset, rowIdx },
           { shouldFocusCell: true },
         );
         window.requestAnimationFrame(() => {
@@ -1594,7 +1592,7 @@ export function EditorKernel({
         });
       }
     });
-  }, [panelOrigin, visibleGridColumns, visibleRows]);
+  }, [gridColumnOffset, panelOrigin, visibleGridColumns, visibleRows]);
 
   useEffect(() => {
     setSelectionAnchor(null);
@@ -1665,20 +1663,6 @@ export function EditorKernel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [capabilities.canAddColumns, selectionAnchor, table.columns]);
 
-  useEffect(() => {
-    if (!draftActivation) {
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
-      gridRef.current?.selectCell(
-        { idx: draftActivation.columnIdx, rowIdx: draftActivation.rowIdx },
-        { shouldFocusCell: true },
-      );
-      setDraftActivation(null);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [draftActivation]);
-
   const commitCell = useCallback(
     (
       rowId: string,
@@ -1712,6 +1696,7 @@ export function EditorKernel({
       setTable((current) => replaceCell(current, rowId, columnKey, value));
       setSaveState({ status: "saving" });
       setRetry(null);
+      setDraftRetry(null);
 
       void adapter
         .updateCell(rowId, columnKey, value)
@@ -1773,10 +1758,8 @@ export function EditorKernel({
     [adapter, onStructureChanged],
   );
 
-  type DraftCreateFocus = "new-draft" | { columnIdx: number };
-
   const createDraftRecord = useCallback(
-    (rawName: unknown, focus: DraftCreateFocus = "new-draft"): void => {
+    (rawName: unknown): void => {
       if (!hasDraftName(rawName)) {
         return;
       }
@@ -1784,7 +1767,6 @@ export function EditorKernel({
         setRecordSearch("");
       }
       const name = rawName.trim();
-      const createdRowIndex = table.rows.length;
       const primaryColumnIndex = table.columns.findIndex(
         (column) => column.key === table.primaryColumnKey,
       );
@@ -1798,6 +1780,7 @@ export function EditorKernel({
       }
       setSaveState({ status: "saving" });
       setRetry(null);
+      setDraftInputActive(false);
 
       void adapter
         .createRow({ [table.primaryColumnKey]: name })
@@ -1807,34 +1790,16 @@ export function EditorKernel({
             rows: [...current.rows, row],
           }));
           setSaveState({ status: "saved" });
-
-          const targetRowIndex =
-            focus === "new-draft"
-              ? freshDraftRowIndex(createdRowIndex)
-              : createdRowIndex;
-          const targetColumnIndex =
-            focus === "new-draft"
-              ? primaryColumnIndex
-              : Math.max(
-                  0,
-                  Math.min(focus.columnIdx, table.columns.length - 1),
-                );
-          window.requestAnimationFrame(() => {
-            gridRef.current?.selectCell(
-              { idx: targetColumnIndex, rowIdx: targetRowIndex },
-              { shouldFocusCell: true },
-            );
-          });
         })
-        .catch(() => setSaveState({ status: "error", cellLabel: "Name" }));
+        .catch(() => {
+          setDraftRetry(name);
+          setSaveState({
+            status: "error",
+            message: "Could not create this Record. Retry or cancel.",
+          });
+        });
     },
-    [
-      adapter,
-      normalizedRecordSearch,
-      table.columns,
-      table.primaryColumnKey,
-      table.rows.length,
-    ],
+    [adapter, normalizedRecordSearch, table.columns, table.primaryColumnKey],
   );
 
   const handleRowsChange = useCallback(
@@ -2483,7 +2448,7 @@ export function EditorKernel({
           event.preventGridDefault();
           const anchor = selectionAnchor ?? {
             rowIndex: args.rowIdx,
-            columnIndex: args.column.idx,
+            columnIndex: args.column.idx - gridColumnOffset,
           };
           const rowCount =
             visibleRows.length +
@@ -2499,7 +2464,7 @@ export function EditorKernel({
               0,
               Math.min(
                 visibleGridColumns.length - 1,
-                args.column.idx + delta.column,
+                args.column.idx - gridColumnOffset + delta.column,
               ),
             ),
           };
@@ -2507,7 +2472,10 @@ export function EditorKernel({
           setSelectionAnchor(anchor);
           setSelectionEnd(next);
           args.selectCell(
-            { idx: next.columnIndex, rowIdx: next.rowIndex },
+            {
+              idx: next.columnIndex + gridColumnOffset,
+              rowIdx: next.rowIndex,
+            },
             { shouldFocusCell: true },
           );
           return;
@@ -2526,7 +2494,7 @@ export function EditorKernel({
           }
           const point = selectionAnchor ?? {
             rowIndex: args.rowIdx,
-            columnIndex: args.column.idx,
+            columnIndex: args.column.idx - gridColumnOffset,
           };
           const end = selectionEnd ?? point;
           const bounds = selectionBounds(point, end);
@@ -2553,14 +2521,7 @@ export function EditorKernel({
         ) {
           event.preventGridDefault();
           args.onClose(false, true);
-          const nextColumnIndex = args.column.idx + 1;
-          if (nextColumnIndex < visibleGridColumns.length) {
-            createDraftRecord(args.row.values[column.key], {
-              columnIdx: nextColumnIndex,
-            });
-          } else {
-            createDraftRecord(args.row.values[column.key]);
-          }
+          createDraftRecord(args.row.values[column.key]);
         }
         return;
       }
@@ -2619,6 +2580,7 @@ export function EditorKernel({
       applyPasteMatrix,
       capabilities.rowCreation,
       createDraftRecord,
+      gridColumnOffset,
       readOnly,
       selectionAnchor,
       selectionEnd,
@@ -2664,7 +2626,13 @@ export function EditorKernel({
 
   const handleCellMouseDown = useCallback(
     (args: CellMouseArgs<EditorRow>, event: React.MouseEvent): void => {
-      const point = { rowIndex: args.rowIdx, columnIndex: args.column.idx };
+      if (args.column.key === SELECT_COLUMN_KEY) {
+        return;
+      }
+      const point = {
+        rowIndex: args.rowIdx,
+        columnIndex: args.column.idx - gridColumnOffset,
+      };
       if (event.shiftKey && selectionAnchor) {
         event.preventDefault();
         rangeSelectionRef.current = true;
@@ -2675,7 +2643,7 @@ export function EditorKernel({
         setSelectionEnd(point);
       }
     },
-    [selectionAnchor],
+    [gridColumnOffset, selectionAnchor],
   );
 
   const draftRow = useMemo<EditorRow>(
@@ -2707,7 +2675,10 @@ export function EditorKernel({
       return;
     }
     const frame = window.requestAnimationFrame(() => {
-      gridRef.current?.selectCell(target, { shouldFocusCell: true });
+      gridRef.current?.selectCell(
+        { ...target, idx: target.idx + gridColumnOffset },
+        { shouldFocusCell: true },
+      );
       window.requestAnimationFrame(() => {
         gridRef.current?.element
           ?.querySelector<HTMLElement>(
@@ -2718,7 +2689,7 @@ export function EditorKernel({
       setRestoreCell(null);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [gridRows, restoreCell, visibleGridColumns]);
+  }, [gridColumnOffset, gridRows, restoreCell, visibleGridColumns]);
 
   useEffect(() => {
     const focusRequestedColumn = (): void => {
@@ -2752,7 +2723,7 @@ export function EditorKernel({
       const row = gridRows[0];
       if (row) {
         gridRef.current?.selectCell(
-          { idx: columnIndex, rowIdx: 0 },
+          { idx: columnIndex + gridColumnOffset, rowIdx: 0 },
           { shouldFocusCell: true },
         );
         setActiveCell({ rowId: row.id, columnKey: focusColumnKey });
@@ -2769,19 +2740,21 @@ export function EditorKernel({
       setFocusColumnKey(null);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [focusColumnKey, gridRows, visibleGridColumns]);
+  }, [focusColumnKey, gridColumnOffset, gridRows, visibleGridColumns]);
 
-  const activateDraft = useCallback((rowIdx: number, columnIdx: number) => {
+  const activateDraft = useCallback(() => {
     setPendingEdit(null);
-    setDraftActivation({ rowIdx, columnIdx });
+    setDraftInputActive(true);
   }, []);
 
   const gridColumns = useMemo(() => {
     const columns = createEditorColumns({
       columnMenuKey,
       columns: visibleGridColumns,
+      draftInputActive,
       newRecordLabel,
       onActivateDraft: activateDraft,
+      onCancelDraftInput: () => setDraftInputActive(false),
       onOpenColumnMenu: (columnKey) => {
         setPropertyDraft(null);
         setAddColumnOpen(false);
@@ -2797,6 +2770,8 @@ export function EditorKernel({
       onInsertColumn: handleInsertColumn,
       onMoveColumn: handleMoveColumn,
       onReorderColumns: handleReorderColumns,
+      columnDragState,
+      onColumnDragStateChange: setColumnDragState,
       onSearchConnectionTargets: (columnKey, search) =>
         adapter.searchConnectionTargets
           ? adapter.searchConnectionTargets(columnKey, search)
@@ -2866,6 +2841,7 @@ export function EditorKernel({
     capabilities.canResizeColumns,
     capabilities.canUpdateColumnOptions,
     columnMenuKey,
+    columnDragState,
     handleChangeColumnType,
     handleInsertColumn,
     handleMoveColumn,
@@ -2875,6 +2851,7 @@ export function EditorKernel({
     newRecordLabel,
     openRecord,
     pendingEdit,
+    draftInputActive,
     visibleGridColumns,
   ]);
 
@@ -2896,6 +2873,63 @@ export function EditorKernel({
         : (capabilities.rowCreationMessage ??
           "Records will appear here when they are available.");
   const noMatches = table.rows.length > 0 && visibleRows.length === 0;
+  const bulkRows = useMemo(() => {
+    return table.rows.filter((row) => selectedRecordIds.has(row.id));
+  }, [selectedRecordIds, table.rows]);
+  const bulkSelection = useMemo(() => selectionForRows(bulkRows), [bulkRows]);
+  const handleSelectedRowsChange = useCallback(
+    (nextSelectedRows: Set<string>): void => {
+      const loadedIds = new Set(table.rows.map((row) => row.id));
+      const next = new Set(
+        [...nextSelectedRows].filter((recordId) => loadedIds.has(recordId)),
+      );
+      if (next.size > 100) {
+        setSelectionNotice("Select up to 100 loaded records for one update.");
+        return;
+      }
+      setSelectionNotice(null);
+      setSelectedRecordIds(next);
+    },
+    [table.rows],
+  );
+  const applyBulkUpdate = useCallback(
+    async (
+      fieldKey: string,
+      value: EditorValue,
+      records: readonly { recordId: string; expectedUpdatedAt: string }[],
+    ): Promise<void> => {
+      if (!bulkUpdate) return;
+      const result = await bulkUpdate({ fieldKey, value, records });
+      if (result.status === "error") throw new Error(result.message);
+      const updated = new Map(result.value.map((row) => [row.id, row]));
+      setTable((current) => ({
+        ...current,
+        rows: current.rows.map((row) => {
+          const next = updated.get(row.id);
+          return next
+            ? {
+                ...next,
+                values: { ...row.values, ...next.values },
+                ...(row.connectionValues
+                  ? { connectionValues: row.connectionValues }
+                  : {}),
+              }
+            : row;
+        }),
+      }));
+      setSelectedRecordIds(new Set());
+      setSelectionNotice(
+        `Updated ${records.length} record${records.length === 1 ? "" : "s"}. Selection cleared.`,
+      );
+      setSaveState({ status: "saved" });
+    },
+    [bulkUpdate],
+  );
+  const selectableGridColumns = useMemo(
+    () =>
+      bulkUpdate && !readOnly ? [SelectColumn, ...gridColumns] : gridColumns,
+    [bulkUpdate, gridColumns, readOnly],
+  );
   const previewColumn = presentationTable.columns.find(
     (column) => column.preview,
   );
@@ -2956,6 +2990,28 @@ export function EditorKernel({
                 </button>
               </span>
             ) : null}
+            {saveState.status === "error" && draftRetry ? (
+              <span className="editor-save-recovery">
+                <button
+                  className="editor-retry-button"
+                  onClick={() => createDraftRecord(draftRetry)}
+                  type="button"
+                >
+                  Retry
+                </button>
+                <button
+                  className="editor-retry-button"
+                  onClick={() => {
+                    setDraftRetry(null);
+                    setSaveState({ status: "saved" });
+                    setDraftInputActive(true);
+                  }}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : null}
           </div>
         </div>
       </header>
@@ -2965,29 +3021,41 @@ export function EditorKernel({
       ) : null}
 
       <div className="editor-lab-meta">
-        {variant === "workspace" ? (
-          <label className="editor-table-search">
-            <span>Search this Table</span>
-            <input
-              aria-label="Search this Table"
-              onChange={(event) => setRecordSearch(event.currentTarget.value)}
-              placeholder={`Search ${table.name}`}
-              type="search"
-              value={recordSearch}
-            />
-            {recordSearch ? (
-              <button
-                aria-label="Clear search"
-                className="editor-table-search-clear"
-                onClick={() => setRecordSearch("")}
-                type="button"
-              >
-                Clear
-              </button>
+        {toolbarContent ? (
+          <div className="editor-workbench-toolbar-content">
+            {toolbarContent}
+          </div>
+        ) : (
+          <>
+            {variant === "workspace" && !serverSearchManaged ? (
+              <label className="editor-table-search">
+                <span>Search this Table</span>
+                <input
+                  aria-label="Search this Table"
+                  onChange={(event) =>
+                    setRecordSearch(event.currentTarget.value)
+                  }
+                  placeholder={`Search ${table.name}`}
+                  type="search"
+                  value={recordSearch}
+                />
+                {recordSearch ? (
+                  <button
+                    aria-label="Clear search"
+                    className="editor-table-search-clear"
+                    onClick={() => setRecordSearch("")}
+                    type="button"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </label>
             ) : null}
-          </label>
-        ) : null}
-        <span>{displayedRecordCountLabel}</span>
+            {!serverSearchManaged ? (
+              <span>{displayedRecordCountLabel}</span>
+            ) : null}
+          </>
+        )}
         {viewPreview ? (
           <span className="editor-view-preview-state">
             Previewing unsaved View in this grid
@@ -3010,26 +3078,20 @@ export function EditorKernel({
             </button>
           </span>
         ) : null}
-        <span className="editor-lab-shortcut-hint">
-          {readOnly
-            ? "Select a Record to inspect its example details · Copy supported"
-            : `${capabilities.canReorderColumns ? "Drag column headings to reorder · " : ""}Enter / double-click to edit · ⌘C / ⌘V supported`}
-        </span>
+        {!toolbarContent ? (
+          <span className="editor-lab-shortcut-hint">
+            {readOnly
+              ? "Select a Record to inspect its example details · Copy supported"
+              : `${capabilities.canReorderColumns ? "Drag column headings to reorder · " : ""}Enter / double-click to edit · ⌘C / ⌘V supported`}
+          </span>
+        ) : null}
         <div className="editor-lab-meta-actions">
           {capabilities.rowCreation === "direct" ? (
             <button
               className="editor-new-record-action"
               onClick={() => {
                 setRecordSearch("");
-                const primaryColumnIndex = table.columns.findIndex(
-                  (column) => column.key === table.primaryColumnKey,
-                );
-                if (primaryColumnIndex >= 0) {
-                  setDraftActivation({
-                    rowIdx: table.rows.length,
-                    columnIdx: primaryColumnIndex,
-                  });
-                }
+                setDraftInputActive(true);
               }}
               type="button"
             >
@@ -3045,6 +3107,23 @@ export function EditorKernel({
         </div>
       </div>
 
+      {bulkUpdate && !readOnly ? (
+        <TableBulkUpdateBar
+          columns={table.columns}
+          onApply={applyBulkUpdate}
+          onClearSelection={() => {
+            setSelectedRecordIds(new Set());
+            setSelectionNotice("Selection cleared.");
+          }}
+          selection={bulkSelection}
+        />
+      ) : null}
+      {selectionNotice ? (
+        <p aria-live="polite" className="editor-selection-notice" role="status">
+          {selectionNotice}
+        </p>
+      ) : null}
+
       <div className="editor-lab-workspace">
         <div className="editor-grid-area">
           <div
@@ -3056,7 +3135,7 @@ export function EditorKernel({
               <DataGrid
                 aria-label={`${table.name} editor`}
                 className="editor-grid"
-                columns={gridColumns}
+                columns={selectableGridColumns}
                 data-testid="editor-grid"
                 headerRowHeight={36}
                 onCellClick={handleCellClick}
@@ -3072,8 +3151,19 @@ export function EditorKernel({
                     : undefined
                 }
                 onRowsChange={handleRowsChange}
+                {...(bulkUpdate && !readOnly
+                  ? {
+                      isRowSelectionDisabled: (row: EditorRow) =>
+                        row.isDraft === true,
+                      onSelectedRowsChange: handleSelectedRowsChange,
+                      selectedRows: selectedRecordIds,
+                    }
+                  : {})}
                 onSelectedCellChange={({ row, column }) => {
-                  if (column.key === editorAddPropertyColumnKey) {
+                  if (
+                    column.key === editorAddPropertyColumnKey ||
+                    column.key === SELECT_COLUMN_KEY
+                  ) {
                     return;
                   }
                   setPendingEdit(null);
@@ -3088,7 +3178,7 @@ export function EditorKernel({
                             (candidate) => candidate.id === row.id,
                           )
                       : 0,
-                    columnIndex: column.idx,
+                    columnIndex: column.idx - gridColumnOffset,
                   };
                   if (rangeSelectionRef.current) {
                     rangeSelectionRef.current = false;
@@ -3144,9 +3234,6 @@ export function EditorKernel({
               noMatches={noMatches}
               onClearSearch={() => setRecordSearch("")}
               onOpenRecord={openRecord}
-              onEditRecord={(rowId, columnKey) =>
-                openRecord(rowId, columnKey, columnKey)
-              }
               {...(previewColumn ? { previewColumn } : {})}
               rows={visibleRows}
               tableName={table.name}

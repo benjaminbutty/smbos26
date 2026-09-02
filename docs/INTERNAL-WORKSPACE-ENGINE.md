@@ -11,8 +11,8 @@ AI execution path.
 
 ## Product boundary
 
-The default experience is a familiar Table: properties, connected Records,
-saved tabs, filters, sorting and grouping. Database, JSON, relationship
+The default experience is a familiar Table: properties, connected Records, a
+current-View selector, filters, sorting and grouping. Database, JSON, relationship
 cardinality and query-grammar terms stay behind the platform boundary.
 
 Manual controls are the first client of the engine. A Field added from a Table
@@ -64,8 +64,8 @@ JSON never stores relationship IDs; connected Records remain in the generic
 `record_relationships` edge store.
 
 There is exactly one active primary Table per Object. The sidebar shows the
-primary Table once. Saved Tables are available as tabs and can be embedded by
-their exact View key in a Page. An embedded Table keeps the View's query and
+primary Table once. Saved Views are available from the Table's current-View
+selector and can be embedded by their exact View key in a Page. An embedded Table keeps the View's query and
 connection behavior but has no structural or query controls.
 
 ## Connections
@@ -127,6 +127,35 @@ page and include deterministic pagination metadata and group counts.
 
 The browser submits only a trusted View key and bounded paging. It does not
 submit SQL, a query language, column expressions or a filter predicate.
+
+## Table Workbench v0
+
+ADR-051 extends the operating surface without changing the generic model.
+Search is a transient bounded server query over the complete current View;
+the browser supplies only a 200-character search phrase and page offset.
+Visible Field values, Connection labels and configured one-hop related values
+are searched under the existing Business membership/RLS boundary.
+
+The workbench loads 50 Records at a time and may bulk set or clear one eligible
+non-primary direct Field across at most 100 explicitly checked, currently
+loaded Records. Ordinary cell focus never selects a Record; changing the View
+or submitting a new search clears the ephemeral checkbox selection, and Load
+more does not add Records to it. Each selection carries the server-issued `updated_at` marker. The database locks and
+checks the entire set before writing, so a stale or invalid member leaves every
+selected Record unchanged. Bulk operation is operational state and never makes
+a configuration Version.
+
+A related Property may expose one Field from a one-hop, single-valued
+Connection. It is computed at query time, read-only, searchable and paired with
+the existing connected Record context for navigation. It is not a Field copy,
+formula, rollup, write-through editor or multiple/multi-hop join.
+
+Saved View candidates remain in component memory. A compact Filter, Sort,
+Group and Properties editor may compose up to 20 typed filters using all/any
+matching, five ordered sorts, one group and a mixed-column layout including
+bounded widths. Preview reads are not Changes; each Save or Save as new goes
+through the ordinary currentness-checked
+configuration lifecycle.
 
 ## Proof coverage
 

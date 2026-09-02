@@ -29,7 +29,7 @@ Switch Businesses using the workspace selector and visit each Business's Table w
 
 For each Business:
 
-1. Open a primary Table and confirm the sidebar has one entry for the Table while saved Views appear as tabs.
+1. Open a primary Table and confirm the sidebar has one entry for the Table while saved Views appear in the current-View selector.
 2. Open a saved View and confirm its filter, sort, or group is retained after refresh.
 3. Edit a Connection in the Table or Record panel; confirm the connected primary label is shown and the saved View still uses the same Records.
 4. Open the Page editor, create or rename an internal Page, and add Heading,

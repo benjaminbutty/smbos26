@@ -3556,3 +3556,11 @@ request, presented options, selected choice, actor, Business, currentness and
 later clarification answers. It does not create a general advice task, change
 the qualified planner subject or permit operational Record migration. See
 [ADR-050](./ADR-050.md).
+
+## ADR-051: Table Workbench v0 keeps bulk, search and related values bounded
+
+Accepted for Lenni Stage 1. The generic Table workbench adds server-owned
+complete-View search/paging, atomic loaded-Record bulk set/clear and one-hop
+read-only related Field projection without a spreadsheet primitive, copied
+data, arbitrary query language or a new runtime. This amends ADR-036's prior
+bulk/spreadsheet deferral only. See [ADR-051](./ADR-051.md).
