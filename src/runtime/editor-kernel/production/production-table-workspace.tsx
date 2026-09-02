@@ -48,6 +48,7 @@ export interface ProductionTableWorkspaceProps {
   actions: ProductionTableAdapterActions;
   businessSlug?: string;
   headerContent?: ReactNode;
+  viewControls?: ReactNode;
   currentness?: ProductionConfigurationCurrentness | undefined;
   creationFallbackHref?: string | undefined;
   newRecordLabel?: string;
@@ -84,6 +85,7 @@ export function ProductionTableWorkspace({
   creationFallbackHref,
   currentness,
   headerContent,
+  viewControls,
   newRecordLabel,
   panelStatusLabel,
   recordTypeLabel,
@@ -119,6 +121,7 @@ export function ProductionTableWorkspace({
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingPage, setLoadingPage] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [selectionResetToken, setSelectionResetToken] = useState(0);
   const [viewPreview, setViewPreview] = useState<EditorTablePreview | null>(
     null,
   );
@@ -147,6 +150,9 @@ export function ProductionTableWorkspace({
       append: boolean,
     ): Promise<void> => {
       if (!loadTablePage || loadingPage) return;
+      if (!append) {
+        setSelectionResetToken((current) => current + 1);
+      }
       setLoadingPage(true);
       setPageError(null);
       try {
@@ -418,55 +424,75 @@ export function ProductionTableWorkspace({
     </span>
   );
 
+  const workbenchToolbar = loadTablePage ? (
+    <div className="table-workbench-toolbar">
+      <form className="table-workbench-search" onSubmit={submitSearch}>
+        <label htmlFor={`table-search-${table.key}`}>
+          <span className="editor-sr-only">
+            Search {recordTypeLabel ?? table.name}
+          </span>
+          <input
+            id={`table-search-${table.key}`}
+            maxLength={200}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={`Search ${(recordTypeLabel ?? table.name).toLocaleLowerCase("en")}…`}
+            type="search"
+            value={search}
+          />
+        </label>
+        <button disabled={loadingPage} type="submit">
+          {loadingPage ? "Searching…" : "Search"}
+        </button>
+        {search ? (
+          <button
+            className="table-workbench-search-clear"
+            disabled={loadingPage}
+            onClick={() => {
+              setSearch("");
+              void loadPage(0, "", false);
+            }}
+            type="button"
+          >
+            Clear
+          </button>
+        ) : null}
+      </form>
+      {viewControls}
+      <div className="table-workbench-toolbar-status" role="status">
+        <span>
+          {appliedSearch
+            ? `${totalCount} matching record${totalCount === 1 ? "" : "s"}`
+            : `${totalCount} record${totalCount === 1 ? "" : "s"}`}
+        </span>
+        {hasMore ? (
+          <button
+            disabled={loadingPage}
+            onClick={() =>
+              void loadPage(loadedTable.rows.length, appliedSearch, true)
+            }
+            type="button"
+          >
+            {loadingPage ? "Loading…" : "Load more"}
+          </button>
+        ) : null}
+        {pageError ? (
+          <span className="table-workbench-error">{pageError}</span>
+        ) : null}
+      </div>
+    </div>
+  ) : (
+    viewControls
+  );
+
   return (
     <TableViewPreviewProvider value={{ setPreview: updateViewPreview }}>
-      {loadTablePage ? (
-        <section aria-label="Find records" className="table-workbench-search">
-          <form onSubmit={submitSearch}>
-            <label htmlFor={`table-search-${table.key}`}>
-              Find in {table.name}
-            </label>
-            <input
-              id={`table-search-${table.key}`}
-              maxLength={200}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search this Table"
-              type="search"
-              value={search}
-            />
-            <button disabled={loadingPage} type="submit">
-              {loadingPage ? "Searching…" : "Search"}
-            </button>
-          </form>
-          <p aria-live="polite" className="table-workbench-count">
-            {appliedSearch
-              ? `${totalCount} matching record${totalCount === 1 ? "" : "s"}`
-              : `${totalCount} record${totalCount === 1 ? "" : "s"}`}
-          </p>
-          {hasMore ? (
-            <button
-              disabled={loadingPage}
-              onClick={() =>
-                void loadPage(loadedTable.rows.length, appliedSearch, true)
-              }
-              type="button"
-            >
-              {loadingPage ? "Loading…" : "Load more"}
-            </button>
-          ) : null}
-          {pageError ? (
-            <p aria-live="polite" className="table-workbench-error">
-              {pageError}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
       <EditorKernel
         adapter={adapter}
         capabilities={capabilities}
         {...(businessSlug !== undefined ? { businessSlug } : {})}
         footer={footer}
         headerContent={headerContent}
+        toolbarContent={workbenchToolbar}
         marker={
           surface === "workspace" ? (
             <p className="editor-lab-kicker">Table</p>
@@ -479,6 +505,7 @@ export function ProductionTableWorkspace({
         onStructureChanged={() => router.refresh()}
         {...(bulkUpdate ? { bulkUpdate } : {})}
         serverSearchManaged={Boolean(loadTablePage)}
+        selectionResetToken={selectionResetToken}
         {...(connectionSource ? { connectionSource } : {})}
         {...(connectionTargets ? { connectionTargets } : {})}
         {...(existingConnections ? { existingConnections } : {})}

@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type {
   Column,
   RenderCellProps,
@@ -26,6 +26,11 @@ export interface PendingEdit {
   rowId: string;
   columnKey: string;
   value: EditorValue;
+}
+
+export interface ColumnDragState {
+  sourceKey: string;
+  targetKey: string | null;
 }
 
 interface CreateEditorColumnsOptions {
@@ -57,8 +62,12 @@ interface CreateEditorColumnsOptions {
   ) => Promise<boolean>;
   onMoveColumn?: (columnKey: string, direction: "left" | "right") => void;
   onReorderColumns?: (sourceColumnKey: string, targetColumnKey: string) => void;
+  columnDragState?: ColumnDragState | null;
+  onColumnDragStateChange?: (state: ColumnDragState | null) => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
-  onActivateDraft: (rowIdx: number, columnIdx: number) => void;
+  draftInputActive?: boolean;
+  onActivateDraft: () => void;
+  onCancelDraftInput?: () => void;
   onSearchConnectionTargets?: (
     columnKey: string,
     search: string,
@@ -177,6 +186,8 @@ function HeaderCell({
   onInsert,
   onMove,
   onReorder,
+  dragState,
+  onDragStateChange,
 }: Readonly<{
   column: EditorColumn;
   canReorder: boolean;
@@ -210,35 +221,77 @@ function HeaderCell({
   onMove: ((direction: "left" | "right") => void) | undefined;
   onReorder:
     ((sourceColumnKey: string, targetColumnKey: string) => void) | undefined;
+  dragState: ColumnDragState | null | undefined;
+  onDragStateChange: ((state: ColumnDragState | null) => void) | undefined;
 }>): React.ReactNode {
   const anchorRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const dragInProgressRef = useRef(false);
   const canChangeOptions = column.kind === "select" || column.kind === "status";
   const closeMenu = (): void => {
     onClose();
     window.requestAnimationFrame(() => menuButtonRef.current?.focus());
   };
   const reorderFromHandle = (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event:
+      | React.PointerEvent<HTMLButtonElement>
+      | React.MouseEvent<HTMLButtonElement>,
   ): void => {
-    if (!onReorder) return;
+    if (!onReorder || !onDragStateChange || dragInProgressRef.current) return;
+    dragInProgressRef.current = true;
+    const reorder = onReorder;
+    const updateDragState = onDragStateChange;
     event.preventDefault();
     event.stopPropagation();
+    const handle = event.currentTarget;
+    const pointerId = "pointerId" in event ? event.pointerId : undefined;
     const sourceColumnKey = column.key;
-    const finish = (releaseEvent: PointerEvent): void => {
-      const target = document
-        .elementFromPoint(releaseEvent.clientX, releaseEvent.clientY)
-        ?.closest<HTMLElement>("[data-editor-column-key]")
-        ?.dataset.editorColumnKey;
-      if (target && target !== sourceColumnKey) {
-        onReorder(sourceColumnKey, target);
-      }
+    const targetAt = (clientX: number, clientY: number): string | null =>
+      document
+        .elementFromPoint(clientX, clientY)
+        ?.closest<HTMLElement>("[data-editor-column-key]")?.dataset
+        .editorColumnKey ?? null;
+    const updateTarget = (
+      moveEvent: PointerEvent | MouseEvent,
+    ): string | null => {
+      const target = targetAt(moveEvent.clientX, moveEvent.clientY);
+      updateDragState({ sourceKey: sourceColumnKey, targetKey: target });
+      return target;
     };
-    window.addEventListener("pointerup", finish, { once: true });
+    function cleanUp(): void {
+      dragInProgressRef.current = false;
+      window.removeEventListener("pointermove", updateTarget);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("mousemove", updateTarget);
+      window.removeEventListener("mouseup", finish);
+      if (pointerId !== undefined) handle.releasePointerCapture?.(pointerId);
+    }
+    function finish(releaseEvent: PointerEvent | MouseEvent): void {
+      if (!dragInProgressRef.current) return;
+      const target = updateTarget(releaseEvent);
+      updateDragState(null);
+      cleanUp();
+      if (target && target !== sourceColumnKey) {
+        reorder(sourceColumnKey, target);
+      }
+    }
+    function cancel(): void {
+      if (!dragInProgressRef.current) return;
+      updateDragState(null);
+      cleanUp();
+    }
+    if (pointerId !== undefined) handle.setPointerCapture?.(pointerId);
+    updateDragState({ sourceKey: sourceColumnKey, targetKey: sourceColumnKey });
+    window.addEventListener("pointermove", updateTarget);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("mousemove", updateTarget);
+    window.addEventListener("mouseup", finish);
   };
   return (
     <div
-      className={`editor-header-cell${canReorder ? " is-reorderable" : ""}`}
+      className={`editor-header-cell${canReorder ? " is-reorderable" : ""}${dragState?.sourceKey === column.key ? " is-dragging-source" : ""}${dragState?.targetKey === column.key && dragState.sourceKey !== column.key ? " is-drag-drop-target" : ""}`}
       data-reorderable={canReorder ? "true" : "false"}
       data-editor-column-key={column.key}
       data-preview-column={column.preview ? "true" : undefined}
@@ -249,6 +302,7 @@ function HeaderCell({
         <button
           aria-label={`Drag ${column.label} to reorder`}
           className="editor-column-drag-affordance"
+          onMouseDown={reorderFromHandle}
           onPointerDown={reorderFromHandle}
           type="button"
         >
@@ -686,22 +740,56 @@ function InsertColumnForm({
 }
 
 function NewRecordCell({
-  columnIdx,
+  active,
+  inputLabel,
   label,
   onActivate,
-  rowIdx,
+  onCancel,
+  onCommit,
 }: Readonly<{
-  columnIdx: number;
+  active: boolean;
+  inputLabel: string;
   label: string;
-  onActivate: (rowIdx: number, columnIdx: number) => void;
-  rowIdx: number;
+  onActivate: () => void;
+  onCancel: () => void;
+  onCommit: (name: string) => void;
 }>): React.ReactNode {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    if (active) inputRef.current?.focus();
+  }, [active]);
+
+  if (active) {
+    return (
+      <input
+        aria-label={`Edit ${inputLabel}`}
+        className="editor-cell-editor"
+        onChange={(event) => setValue(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const name = value.trim();
+            if (name) onCommit(name);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        ref={inputRef}
+        type="text"
+        value={value}
+      />
+    );
+  }
+
   return (
     <button
       aria-label="New record"
       className="editor-new-record-trigger"
       data-testid="new-record-trigger"
-      onClick={() => onActivate(rowIdx, columnIdx)}
+      onClick={onActivate}
       tabIndex={-1}
       type="button"
     >
@@ -716,21 +804,25 @@ function NewRecordCell({
 export function EditorCell({
   column,
   newRecordLabel = "New record",
+  draftInputActive,
   onOpenRecord,
   onActivateDraft,
+  onCancelDraftInput,
   props,
 }: Readonly<{
   column: EditorColumn;
   newRecordLabel?: string;
+  draftInputActive?: boolean;
   onOpenRecord: (rowId: string, columnKey: string) => void;
-  onActivateDraft: (rowIdx: number, columnIdx: number) => void;
+  onActivateDraft: () => void;
+  onCancelDraftInput?: () => void;
   onSearchConnectionTargets?: (
     columnKey: string,
     search: string,
   ) => Promise<readonly { id: string; label: string }[]>;
   props: RenderCellProps<EditorRow>;
 }>): React.ReactNode {
-  const { row, rowIdx, tabIndex, onRowChange } = props;
+  const { row, tabIndex, onRowChange } = props;
   if (column.preview) {
     return (
       <div className="editor-preview-cell" data-testid="proposed-property-cell">
@@ -742,10 +834,18 @@ export function EditorCell({
   if (row.isDraft) {
     return column.primary && column.editable !== false ? (
       <NewRecordCell
-        columnIdx={props.column.idx}
+        active={Boolean(draftInputActive)}
+        inputLabel={column.label}
+        key={draftInputActive ? "active-draft-input" : "idle-draft-input"}
         label={newRecordLabel}
         onActivate={onActivateDraft}
-        rowIdx={rowIdx}
+        onCancel={onCancelDraftInput ?? (() => undefined)}
+        onCommit={(name) =>
+          onRowChange({
+            ...row,
+            values: { ...row.values, [column.key]: name },
+          })
+        }
       />
     ) : (
       <span>—</span>
@@ -840,8 +940,12 @@ export function createEditorColumns({
   onInsertColumn,
   onMoveColumn,
   onReorderColumns,
+  columnDragState,
+  onColumnDragStateChange,
   onOpenRecord,
   onActivateDraft,
+  onCancelDraftInput = () => undefined,
+  draftInputActive = false,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
   canRenameColumns = true,
@@ -859,7 +963,7 @@ export function createEditorColumns({
     minWidth: 128,
     maxWidth: 640,
     resizable: canResizeColumns && !column.preview,
-    draggable: canReorderColumns && !column.preview,
+    draggable: false,
     frozen: column.primary,
     editable: (row: EditorRow) =>
       !column.preview &&
@@ -903,6 +1007,8 @@ export function createEditorColumns({
                 onReorderColumns(sourceColumnKey, targetColumnKey)
             : undefined
         }
+        dragState={columnDragState}
+        onDragStateChange={onColumnDragStateChange}
         onRename={(label) => onRenameColumn(column.key, label)}
         onUpdateOptions={(options) =>
           onUpdateColumnOptions(column.key, options)
@@ -912,8 +1018,10 @@ export function createEditorColumns({
     renderCell: (props: RenderCellProps<EditorRow>) => (
       <EditorCell
         column={column}
+        draftInputActive={draftInputActive}
         newRecordLabel={newRecordLabel}
         onActivateDraft={onActivateDraft}
+        onCancelDraftInput={onCancelDraftInput}
         onOpenRecord={onOpenRecord}
         props={props}
       />

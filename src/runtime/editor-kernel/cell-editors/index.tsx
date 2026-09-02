@@ -65,6 +65,10 @@ export function ConnectionPicker({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selected);
+  const targetLabel = column.connection?.targetObjectLabel ?? column.label;
+  const createLabel = query.trim()
+    ? `+ Create “${query.trim()}” as a new ${targetLabel}`
+    : `+ Create new ${targetLabel}`;
   const isSearching =
     open && (searchState === "loading" || searchState === "idle");
 
@@ -145,20 +149,29 @@ export function ConnectionPicker({
     onCommit(next);
     if (!column.connection?.multiple) {
       setOpen(false);
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
     }
   };
   const selectedLabels = (labels ?? []).filter((item) =>
     selectedSet.has(item.id),
   );
   const create = async (): Promise<void> => {
-    if (!onCreate || !query.trim() || creating) return;
+    if (!onCreate || creating) return;
+    if (!query.trim()) {
+      setCreateError(`Enter a name before creating a new ${targetLabel}.`);
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     setCreationNotice(null);
     try {
       const created = await onCreate(query.trim());
       commit(
-        column.connection?.multiple ? [...selected, created.id] : [created.id],
+        column.connection?.multiple
+          ? selectedSet.has(created.id)
+            ? selected
+            : [...selected, created.id]
+          : [created.id],
       );
       setCreationNotice(`${created.label} added to ${column.label}.`);
     } catch (error) {
@@ -194,22 +207,25 @@ export function ConnectionPicker({
       }
     >
       <input
-        aria-label={`Search ${column.label}`}
+        aria-label={`Search ${targetLabel}`}
         autoFocus
         className="editor-choice-search"
         onChange={(event) => {
+          setCreateError(null);
+          setCreationNotice(null);
           setSearchState("loading");
           setQuery(event.currentTarget.value);
         }}
-        placeholder="Search records"
+        placeholder={`Search ${targetLabel.toLocaleLowerCase("en")}s`}
         value={query}
       />
       <div className="editor-connection-popover-heading">
-        <strong>Connect to {column.label}</strong>
+        <strong>Connect to {targetLabel}</strong>
         <span>
           {column.connection?.multiple ? "Several records" : "One record"}
         </span>
       </div>
+      <p className="editor-connection-results-heading">Existing matches</p>
       {searchState === "unavailable" ? (
         <div
           aria-live="polite"
@@ -264,11 +280,7 @@ export function ConnectionPicker({
       )}
       {onCreate ? (
         <>
-          {!query.trim() ? (
-            <p className="editor-connection-create-hint">
-              Type a name to enable quick-create.
-            </p>
-          ) : null}
+          <div className="editor-connection-create-divider" />
           {createError ? (
             <p
               aria-live="polite"
@@ -279,15 +291,12 @@ export function ConnectionPicker({
             </p>
           ) : null}
           <button
-            aria-disabled={!query.trim() || creating}
             className="editor-connection-create"
-            disabled={!query.trim() || creating}
+            disabled={creating}
             onClick={() => void create()}
             type="button"
           >
-            {creating
-              ? "Creating…"
-              : `+ Create ${column.label.toLocaleLowerCase("en")}`}
+            {creating ? "Creating…" : createLabel}
           </button>
         </>
       ) : null}
@@ -410,6 +419,7 @@ function useSeedInitialValue({
 function TextLikeEditor({
   columnDefinition,
   initialValue,
+  onClose,
   onRowChange,
   row,
 }: CellEditorProps): React.ReactNode {
@@ -438,6 +448,15 @@ function TextLikeEditor({
           ? "tel"
           : "text";
 
+  const commitDraft = (): void => {
+    const next = value.trim();
+    if (!next) {
+      onClose(false, true);
+      return;
+    }
+    onRowChange(rowWithValue(row, columnDefinition.key, value), true);
+  };
+
   return (
     <input
       ref={ref}
@@ -446,7 +465,21 @@ function TextLikeEditor({
       onChange={(event) => {
         const next = event.currentTarget.value;
         setValue(next);
-        onRowChange(rowWithValue(row, columnDefinition.key, next));
+        if (!row.isDraft) {
+          onRowChange(rowWithValue(row, columnDefinition.key, next));
+        }
+      }}
+      onKeyDown={(event) => {
+        if (!row.isDraft) return;
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          event.stopPropagation();
+          commitDraft();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose(false, true);
+        }
       }}
       type={inputType}
       value={value}

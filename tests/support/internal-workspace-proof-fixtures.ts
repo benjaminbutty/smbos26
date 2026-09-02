@@ -71,6 +71,37 @@ export interface InternalWorkspaceProofFixture {
   queries: readonly InternalWorkspaceProofQueryFixture[];
 }
 
+const milkRoundCustomerLabels = Array.from(
+  { length: 20 },
+  (_, index) => `Customer ${String(index + 1).padStart(2, "0")}`,
+);
+
+const milkRoundCustomerRecords: readonly InternalWorkspaceProofRecordFixture[] =
+  milkRoundCustomerLabels.map((label, index) => ({
+    tableKey: "customers",
+    label,
+    fields: { Status: index < 16 ? "Active" : "Paused" },
+  }));
+
+const milkRoundStandingOrderRecords: readonly InternalWorkspaceProofRecordFixture[] =
+  milkRoundCustomerLabels.map((_, index) => ({
+    tableKey: "standing_orders",
+    label: `Standing order ${String(index + 1).padStart(2, "0")}`,
+    fields: {
+      Status: index < 16 ? "Open" : "Paused",
+      "Delivery date": `2026-08-${String(index + 1).padStart(2, "0")}`,
+    },
+  }));
+
+const milkRoundCustomerLinks: readonly InternalWorkspaceProofLinkFixture[] =
+  milkRoundCustomerLabels.map((label, index) => ({
+    sourceTableKey: "standing_orders",
+    targetTableKey: "customers",
+    connectionLabel: "Customer",
+    sourceRecordLabel: `Standing order ${String(index + 1).padStart(2, "0")}`,
+    targetRecordLabels: [label],
+  }));
+
 export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixture[] =
   [
     {
@@ -130,33 +161,19 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
         },
       ],
       records: [
-        {
-          tableKey: "customers",
-          label: "Beth Carter",
-          fields: { Status: "Active" },
-        },
+        ...milkRoundCustomerRecords,
         { tableKey: "products", label: "Whole milk" },
-        {
-          tableKey: "standing_orders",
-          label: "Beth's Monday order",
-          fields: { Status: "Open", "Delivery date": "2026-08-17" },
-        },
+        ...milkRoundStandingOrderRecords,
         { tableKey: "standing_order_lines", label: "Two bottles" },
       ],
       links: [
-        {
-          sourceTableKey: "standing_orders",
-          targetTableKey: "customers",
-          connectionLabel: "Customer",
-          sourceRecordLabel: "Beth's Monday order",
-          targetRecordLabels: ["Beth Carter"],
-        },
+        ...milkRoundCustomerLinks,
         {
           sourceTableKey: "standing_order_lines",
           targetTableKey: "standing_orders",
           connectionLabel: "Standing order",
           sourceRecordLabel: "Two bottles",
-          targetRecordLabels: ["Beth's Monday order"],
+          targetRecordLabels: ["Standing order 01"],
         },
         {
           sourceTableKey: "standing_order_lines",

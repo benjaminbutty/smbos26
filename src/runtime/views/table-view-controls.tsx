@@ -40,6 +40,8 @@ import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
 import { useTableViewPreview } from "./table-view-preview-context";
 
 type FilterOperator = TableViewFilter["operator"];
+type ViewControlSection =
+  "filters" | "sort" | "group" | "properties" | "manage";
 
 interface QueryProperty {
   kind: "field" | "connection";
@@ -259,6 +261,9 @@ export function TableViewControls({
   const router = useRouter();
   const { setPreview: setGridPreview } = useTableViewPreview();
   const [open, setOpen] = useState(false);
+  const [activeSection, setActiveSection] =
+    useState<ViewControlSection>("filters");
+  const [forceSaveAsNew, setForceSaveAsNew] = useState(false);
   const [saving, startTransition] = useTransition();
   const [name, setName] = useState(config.role === "saved" ? viewName : "");
   const [columns, setColumns] = useState<readonly TableViewColumn[]>(
@@ -365,6 +370,91 @@ export function TableViewControls({
         config.role === "saved" ? config.columns : availableColumns,
       );
 
+  const resetCandidate = useCallback((): void => {
+    const baselineOptions = propertyOptions(fields, config, relationships);
+    const baselineFilter = config.filters[0];
+    const baselineFilterProperty = baselineOptions.find(
+      (option) => option.optionKey === baselineFilter?.property,
+    );
+    setName(config.role === "saved" ? viewName : "");
+    setColumns(config.role === "saved" ? config.columns : availableColumns);
+    setColumnWidths(config.column_widths ?? {});
+    setPropertyOption(
+      optionForQueryProperty(baselineFilter?.property, baselineOptions),
+    );
+    setOperator(
+      baselineFilter?.operator ?? defaultOperator(baselineFilterProperty),
+    );
+    setValue(
+      typeof baselineFilter?.value === "string" ? baselineFilter.value : "",
+    );
+    setSecondValue(
+      Array.isArray(baselineFilter?.values) &&
+        typeof baselineFilter.values[1] === "string"
+        ? baselineFilter.values[1]
+        : "",
+    );
+    setConnectionSearch("");
+    setConnectionResults([]);
+    setConnectionValue(
+      typeof baselineFilter?.value === "string" &&
+        baselineFilterProperty?.kind === "connection"
+        ? baselineFilter.value
+        : "",
+    );
+    setFilterTouched(false);
+    setAdditionalFilters(config.filters.slice(1));
+    setFilterMatch(config.filter_match);
+    setSortOption(
+      optionForQueryProperty(config.sorts[0]?.property, baselineOptions),
+    );
+    setSortDirection(config.sorts[0]?.direction ?? "ascending");
+    setSortTouched(false);
+    setAdditionalSorts(config.sorts.slice(1));
+    setGroupOption(optionForQueryProperty(config.group, baselineOptions));
+    setConnectedPropertyKey("");
+    setDraftCurrentness(currentness);
+    setPreview(null);
+    setFeedback(null);
+    setForceSaveAsNew(false);
+  }, [
+    availableColumns,
+    config,
+    currentness,
+    fields,
+    relationships,
+    setAdditionalFilters,
+    setAdditionalSorts,
+    setColumnWidths,
+    setColumns,
+    setConnectedPropertyKey,
+    setConnectionResults,
+    setConnectionSearch,
+    setConnectionValue,
+    setDraftCurrentness,
+    setFeedback,
+    setFilterMatch,
+    setFilterTouched,
+    setGroupOption,
+    setName,
+    setOperator,
+    setPreview,
+    setPropertyOption,
+    setSecondValue,
+    setSortDirection,
+    setSortOption,
+    setSortTouched,
+    setValue,
+    setForceSaveAsNew,
+    viewName,
+  ]);
+
+  const openSection = (section: ViewControlSection): void => {
+    if (!open) setForceSaveAsNew(false);
+    setActiveSection(section);
+    setOpen(true);
+  };
+
   useUnsavedNavigationWarning(open && hasMeaningfulDraft && !saving);
 
   useEffect(() => {
@@ -377,6 +467,7 @@ export function TableViewControls({
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
+        resetCandidate();
         setOpen(false);
       }
     };
@@ -387,6 +478,7 @@ export function TableViewControls({
         controlsRef.current &&
         !controlsRef.current.contains(target)
       ) {
+        resetCandidate();
         setOpen(false);
       }
     };
@@ -396,7 +488,26 @@ export function TableViewControls({
       window.removeEventListener("keydown", closeOnEscape);
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
     };
-  }, [open]);
+  }, [open, resetCandidate]);
+
+  useEffect(() => {
+    const openRequestedView = (): void => {
+      if (window.location.hash !== "#create-saved-view") return;
+      resetCandidate();
+      setForceSaveAsNew(true);
+      setName("");
+      setActiveSection("filters");
+      setOpen(true);
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`,
+      );
+    };
+    openRequestedView();
+    window.addEventListener("hashchange", openRequestedView);
+    return () => window.removeEventListener("hashchange", openRequestedView);
+  }, [resetCandidate]);
 
   useEffect(() => {
     if (!selectedProperty || selectedProperty.kind !== "connection") {
@@ -433,29 +544,6 @@ export function TableViewControls({
         )) ||
       singleValueConnection(option, relationships),
   );
-
-  const filterPropertyLabel = config.filters[0]
-    ? options.find((option) => option.optionKey === config.filters[0]?.property)
-        ?.label
-    : undefined;
-  const filterSummary = config.filters.length
-    ? `Filtered by ${filterPropertyLabel ?? "a property"}${
-        config.filters.length > 1 ? ` +${config.filters.length - 1} more` : ""
-      }`
-    : "No filters";
-  const sortPropertyLabel = config.sorts[0]
-    ? options.find((option) => option.optionKey === config.sorts[0]?.property)
-        ?.label
-    : undefined;
-  const sortSummary = sortPropertyLabel
-    ? `Sorted by ${sortPropertyLabel}`
-    : "Default order";
-  const groupPropertyLabel = config.group
-    ? options.find((option) => option.optionKey === config.group)?.label
-    : undefined;
-  const groupSummary = groupPropertyLabel
-    ? `Grouped by ${groupPropertyLabel}`
-    : "No grouping";
 
   const changeProperty = (nextOptionKey: string): void => {
     const nextProperty = options.find(
@@ -618,7 +706,9 @@ export function TableViewControls({
       setFeedback(null);
       void configureProductionSavedViewAction(businessSlug, primaryViewKey, {
         currentness: draftCurrentness,
-        ...(config.role === "saved" && !asNew ? { viewKey } : {}),
+        ...(config.role === "saved" && !asNew && !forceSaveAsNew
+          ? { viewKey }
+          : {}),
         name,
         columns,
         ...(Object.keys(columnWidths).length > 0 ? { columnWidths } : {}),
@@ -627,7 +717,7 @@ export function TableViewControls({
         if (result.status === "success") {
           setOpen(false);
           router.push(
-            `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(result.value.viewKey)}#table-view-tab-${result.value.viewKey}`,
+            `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(result.value.viewKey)}#table-view-selector-${result.value.viewKey}`,
           );
         } else {
           setFeedback(result.message);
@@ -710,313 +800,304 @@ export function TableViewControls({
     >
       <div className="table-view-query-summary">
         {currentness ? (
-          <button
-            aria-expanded={open}
-            aria-label={
-              config.role === "saved" ? "Edit saved view" : "Create saved view"
-            }
-            className="table-view-query-button"
-            onClick={() => setOpen((current) => !current)}
-            type="button"
-          >
-            {config.role === "saved" ? (
-              <>
-                <span>{filterSummary}</span>
-                <span>{sortSummary}</span>
-                <span>{groupSummary}</span>
-              </>
-            ) : (
-              <span aria-hidden="true">＋</span>
-            )}
-            <span aria-hidden="true" className="table-view-controls-chevron">
-              ⌄
-            </span>
-          </button>
+          <div className="table-view-toolbar-controls" role="group">
+            {(
+              [
+                ["filters", "Filter"],
+                ["sort", "Sort"],
+                ["group", "Group"],
+                ["properties", "Properties"],
+              ] as const
+            ).map(([section, label]) => (
+              <button
+                aria-expanded={open && activeSection === section}
+                className={`table-view-query-button${open && activeSection === section ? " is-active" : ""}`}
+                key={section}
+                onClick={() => openSection(section)}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
+            {config.role === "saved" && !forceSaveAsNew ? (
+              <button
+                aria-expanded={open && activeSection === "manage"}
+                className={`table-view-query-button${open && activeSection === "manage" ? " is-active" : ""}`}
+                onClick={() => openSection("manage")}
+                type="button"
+              >
+                View details
+              </button>
+            ) : null}
+            {hasMeaningfulDraft ? (
+              <span className="table-view-unsaved-state" role="status">
+                Unsaved changes
+              </span>
+            ) : null}
+          </div>
         ) : null}
       </div>
       {open && currentness ? (
         <div className="table-view-query-popover">
           <div className="table-view-draft-heading">
             <strong>
-              {config.role === "saved" ? "Edit saved view" : "New saved view"}
+              {activeSection === "filters"
+                ? "Filter"
+                : activeSection === "sort"
+                  ? "Sort"
+                  : activeSection === "group"
+                    ? "Group"
+                    : activeSection === "properties"
+                      ? "Properties"
+                      : "View details"}
             </strong>
-            <span>Unsaved</span>
+            {hasMeaningfulDraft ? <span>Unsaved</span> : null}
           </div>
-          <label>
-            View name
-            <input
-              maxLength={120}
-              onChange={(event) => {
-                setName(event.currentTarget.value);
-                setPreview(null);
-              }}
-              placeholder="e.g. Needs confirming"
-              value={name}
-            />
-          </label>
-          <label>
-            Filter property
-            <select
-              onChange={(event) => changeProperty(event.currentTarget.value)}
-              value={propertyOption}
-            >
-              <option value="">No filter</option>
-              {options.map((option) => (
-                <option key={option.optionKey} value={option.optionKey}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {selectedProperty ? (
-            <label>
-              Filter rule
-              <select
+          {config.role === "primary" || activeSection === "manage" ? (
+            <label className="table-view-name-field">
+              View name
+              <input
+                maxLength={120}
                 onChange={(event) => {
-                  setOperator(event.currentTarget.value as FilterOperator);
-                  setFilterTouched(true);
+                  setName(event.currentTarget.value);
                   setPreview(null);
                 }}
-                value={operator}
-              >
-                {filterOperators.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                placeholder="e.g. Needs confirming"
+                value={name}
+              />
             </label>
           ) : null}
-          {selectedProperty?.kind === "connection" &&
-          !noValueOperators.has(operator) ? (
-            <div className="table-view-connection-filter">
-              <input
-                aria-label={`Search ${selectedProperty.label}`}
-                onChange={(event) =>
-                  setConnectionSearch(event.currentTarget.value)
-                }
-                placeholder={`Find ${selectedProperty.label}`}
-                value={connectionSearch}
-              />
-              {connectionValue ? (
-                <button
-                  className="table-view-connection-selected"
-                  onClick={() => {
-                    setConnectionValue("");
-                    setFilterTouched(true);
-                    setPreview(null);
-                  }}
-                  type="button"
+          {activeSection === "filters" ? (
+            <>
+              <label>
+                Filter property
+                <select
+                  onChange={(event) =>
+                    changeProperty(event.currentTarget.value)
+                  }
+                  value={propertyOption}
                 >
-                  {selectedConnectionLabel ?? "Selected Record"} ×
-                </button>
-              ) : null}
-              {connectionResults.slice(0, 50).map((result) => (
-                <button
-                  className="table-view-connection-result"
-                  key={result.id}
-                  onClick={() => {
-                    setConnectionValue(result.id);
-                    setFilterTouched(true);
-                    setPreview(null);
-                  }}
-                  type="button"
-                >
-                  {result.label}
-                </button>
-              ))}
-            </div>
-          ) : selectedProperty && !noValueOperators.has(operator) ? (
-            <input
-              aria-label="Filter value"
-              onChange={(event) => {
-                setValue(event.currentTarget.value);
-                setFilterTouched(true);
-                setPreview(null);
-              }}
-              placeholder={operator === "between" ? "First value" : "Value"}
-              value={value}
-            />
-          ) : null}
-          {operator === "between" ? (
-            <input
-              aria-label="Second filter value"
-              onChange={(event) => {
-                setSecondValue(event.currentTarget.value);
-                setFilterTouched(true);
-                setPreview(null);
-              }}
-              placeholder="Second value"
-              value={secondValue}
-            />
-          ) : null}
-          <label>
-            Match filters
-            <select
-              onChange={(event) => {
-                setFilterMatch(event.currentTarget.value as "all" | "any");
-                setPreview(null);
-              }}
-              value={filterMatch}
-            >
-              <option value="all">Every rule</option>
-              <option value="any">Any rule</option>
-            </select>
-          </label>
-          {additionalFilters.map((filter, index) => {
-            const property = options.find(
-              (option) => option.optionKey === filter.property,
-            );
-            const operators = property
-              ? property.kind === "connection"
-                ? connectionOperators()
-                : fieldOperators(property.fieldType ?? "short_text")
-              : [];
-            return (
-              <div
-                className="table-view-additional-rule"
-                key={`${filter.property}:${index}`}
-              >
+                  <option value="">No filter</option>
+                  {options.map((option) => (
+                    <option key={option.optionKey} value={option.optionKey}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedProperty ? (
                 <label>
-                  Additional filter {index + 1}
+                  Filter rule
                   <select
-                    onChange={(event) =>
-                      setAdditionalFilterProperty(
-                        index,
-                        event.currentTarget.value,
-                      )
-                    }
-                    value={property?.optionKey ?? ""}
+                    onChange={(event) => {
+                      setOperator(event.currentTarget.value as FilterOperator);
+                      setFilterTouched(true);
+                      setPreview(null);
+                    }}
+                    value={operator}
                   >
-                    {options.map((option) => (
-                      <option key={option.optionKey} value={option.optionKey}>
+                    {filterOperators.map((option) => (
+                      <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
                     ))}
                   </select>
                 </label>
-                <select
-                  aria-label={`Rule for additional filter ${index + 1}`}
-                  onChange={(event) =>
-                    setAdditionalFilterOperator(
-                      index,
-                      event.currentTarget.value as FilterOperator,
-                    )
-                  }
-                  value={filter.operator}
-                >
-                  {operators.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {!noValueOperators.has(filter.operator) ? (
+              ) : null}
+              {selectedProperty?.kind === "connection" &&
+              !noValueOperators.has(operator) ? (
+                <div className="table-view-connection-filter">
                   <input
-                    aria-label={`Value for additional filter ${index + 1}`}
+                    aria-label={`Search ${selectedProperty.label}`}
                     onChange={(event) =>
-                      setAdditionalFilterValue(index, event.currentTarget.value)
+                      setConnectionSearch(event.currentTarget.value)
                     }
-                    placeholder={
-                      listOperators.has(filter.operator)
-                        ? "Values, separated by commas"
-                        : "Value"
-                    }
-                    value={filterValueText(filter)}
+                    placeholder={`Find ${selectedProperty.label}`}
+                    value={connectionSearch}
                   />
-                ) : null}
+                  {connectionValue ? (
+                    <button
+                      className="table-view-connection-selected"
+                      onClick={() => {
+                        setConnectionValue("");
+                        setFilterTouched(true);
+                        setPreview(null);
+                      }}
+                      type="button"
+                    >
+                      {selectedConnectionLabel ?? "Selected Record"} ×
+                    </button>
+                  ) : null}
+                  {connectionResults.slice(0, 50).map((result) => (
+                    <button
+                      className="table-view-connection-result"
+                      key={result.id}
+                      onClick={() => {
+                        setConnectionValue(result.id);
+                        setFilterTouched(true);
+                        setPreview(null);
+                      }}
+                      type="button"
+                    >
+                      {result.label}
+                    </button>
+                  ))}
+                </div>
+              ) : selectedProperty && !noValueOperators.has(operator) ? (
+                <input
+                  aria-label="Filter value"
+                  onChange={(event) => {
+                    setValue(event.currentTarget.value);
+                    setFilterTouched(true);
+                    setPreview(null);
+                  }}
+                  placeholder={operator === "between" ? "First value" : "Value"}
+                  value={value}
+                />
+              ) : null}
+              {operator === "between" ? (
+                <input
+                  aria-label="Second filter value"
+                  onChange={(event) => {
+                    setSecondValue(event.currentTarget.value);
+                    setFilterTouched(true);
+                    setPreview(null);
+                  }}
+                  placeholder="Second value"
+                  value={secondValue}
+                />
+              ) : null}
+              <label>
+                Match filters
+                <select
+                  onChange={(event) => {
+                    setFilterMatch(event.currentTarget.value as "all" | "any");
+                    setPreview(null);
+                  }}
+                  value={filterMatch}
+                >
+                  <option value="all">Every rule</option>
+                  <option value="any">Any rule</option>
+                </select>
+              </label>
+              {additionalFilters.map((filter, index) => {
+                const property = options.find(
+                  (option) => option.optionKey === filter.property,
+                );
+                const operators = property
+                  ? property.kind === "connection"
+                    ? connectionOperators()
+                    : fieldOperators(property.fieldType ?? "short_text")
+                  : [];
+                return (
+                  <div
+                    className="table-view-additional-rule"
+                    key={`${filter.property}:${index}`}
+                  >
+                    <label>
+                      Additional filter {index + 1}
+                      <select
+                        onChange={(event) =>
+                          setAdditionalFilterProperty(
+                            index,
+                            event.currentTarget.value,
+                          )
+                        }
+                        value={property?.optionKey ?? ""}
+                      >
+                        {options.map((option) => (
+                          <option
+                            key={option.optionKey}
+                            value={option.optionKey}
+                          >
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <select
+                      aria-label={`Rule for additional filter ${index + 1}`}
+                      onChange={(event) =>
+                        setAdditionalFilterOperator(
+                          index,
+                          event.currentTarget.value as FilterOperator,
+                        )
+                      }
+                      value={filter.operator}
+                    >
+                      {operators.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {!noValueOperators.has(filter.operator) ? (
+                      <input
+                        aria-label={`Value for additional filter ${index + 1}`}
+                        onChange={(event) =>
+                          setAdditionalFilterValue(
+                            index,
+                            event.currentTarget.value,
+                          )
+                        }
+                        placeholder={
+                          listOperators.has(filter.operator)
+                            ? "Values, separated by commas"
+                            : "Value"
+                        }
+                        value={filterValueText(filter)}
+                      />
+                    ) : null}
+                    <button
+                      aria-label={`Remove additional filter ${index + 1}`}
+                      onClick={() => {
+                        setAdditionalFilters((current) =>
+                          current.filter(
+                            (_, currentIndex) => currentIndex !== index,
+                          ),
+                        );
+                        setPreview(null);
+                      }}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+              {additionalFilters.length < 19 && options.length > 0 ? (
                 <button
-                  aria-label={`Remove additional filter ${index + 1}`}
                   onClick={() => {
-                    setAdditionalFilters((current) =>
-                      current.filter(
-                        (_, currentIndex) => currentIndex !== index,
-                      ),
-                    );
+                    const property = options[0]!;
+                    setAdditionalFilters((current) => [
+                      ...current,
+                      {
+                        property: property.optionKey,
+                        operator: defaultOperator(property),
+                      },
+                    ]);
                     setPreview(null);
                   }}
                   type="button"
                 >
-                  Remove
+                  Add another filter
                 </button>
-              </div>
-            );
-          })}
-          {additionalFilters.length < 19 && options.length > 0 ? (
-            <button
-              onClick={() => {
-                const property = options[0]!;
-                setAdditionalFilters((current) => [
-                  ...current,
-                  {
-                    property: property.optionKey,
-                    operator: defaultOperator(property),
-                  },
-                ]);
-                setPreview(null);
-              }}
-              type="button"
-            >
-              Add another filter
-            </button>
+              ) : null}
+            </>
           ) : null}
-          <label>
-            Sort by
-            <select
-              onChange={(event) => {
-                setSortOption(event.currentTarget.value);
-                setSortTouched(true);
-                setPreview(null);
-              }}
-              value={sortOption}
-            >
-              <option value="">Default order</option>
-              {sortableOptions.map((option) => (
-                <option key={option.optionKey} value={option.optionKey}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {sortOption ? (
-            <select
-              aria-label="Sort direction"
-              onChange={(event) => {
-                setSortDirection(
-                  event.currentTarget.value as "ascending" | "descending",
-                );
-                setSortTouched(true);
-                setPreview(null);
-              }}
-              value={sortDirection}
-            >
-              <option value="ascending">Ascending</option>
-              <option value="descending">Descending</option>
-            </select>
-          ) : null}
-          {additionalSorts.map((sort, index) => (
-            <div
-              className="table-view-additional-sort"
-              key={`${sort.property}:${index}`}
-            >
+          {activeSection === "sort" ? (
+            <>
               <label>
-                Then sort by {index + 2}
+                Sort by
                 <select
                   onChange={(event) => {
-                    setAdditionalSorts((current) =>
-                      current.map((candidate, currentIndex) =>
-                        currentIndex === index
-                          ? {
-                              property: event.currentTarget.value,
-                              direction: candidate.direction,
-                            }
-                          : candidate,
-                      ),
-                    );
+                    setSortOption(event.currentTarget.value);
+                    setSortTouched(true);
                     setPreview(null);
                   }}
-                  value={sort.property}
+                  value={sortOption}
                 >
+                  <option value="">Default order</option>
                   {sortableOptions.map((option) => (
                     <option key={option.optionKey} value={option.optionKey}>
                       {option.label}
@@ -1024,222 +1105,284 @@ export function TableViewControls({
                   ))}
                 </select>
               </label>
-              <select
-                aria-label={`Direction for sort ${index + 2}`}
-                onChange={(event) => {
-                  setAdditionalSorts((current) =>
-                    current.map((candidate, currentIndex) =>
-                      currentIndex === index
-                        ? {
-                            ...candidate,
-                            direction: event.currentTarget.value as
-                              "ascending" | "descending",
-                          }
-                        : candidate,
-                    ),
-                  );
-                  setPreview(null);
-                }}
-                value={sort.direction}
-              >
-                <option value="ascending">Ascending</option>
-                <option value="descending">Descending</option>
-              </select>
-              <button
-                aria-label={`Remove sort ${index + 2}`}
-                onClick={() => {
-                  setAdditionalSorts((current) =>
-                    current.filter((_, currentIndex) => currentIndex !== index),
-                  );
-                  setPreview(null);
-                }}
-                type="button"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          {additionalSorts.length + (sortOption ? 1 : 0) < 5 &&
-          sortableOptions.length > 0 ? (
-            <button
-              onClick={() => {
-                const fallback = sortableOptions.find(
-                  (option) =>
-                    option.optionKey !== sortOption &&
-                    !additionalSorts.some(
-                      (sort) => sort.property === option.optionKey,
-                    ),
-                );
-                if (!fallback) return;
-                setAdditionalSorts((current) => [
-                  ...current,
-                  { property: fallback.optionKey, direction: "ascending" },
-                ]);
-                setPreview(null);
-              }}
-              type="button"
-            >
-              Add another sort
-            </button>
-          ) : null}
-          <label>
-            Group by
-            <select
-              onChange={(event) => {
-                setGroupOption(event.currentTarget.value);
-                setPreview(null);
-              }}
-              value={groupOption}
-            >
-              <option value="">No grouping</option>
-              {groupableOptions.map((option) => (
-                <option key={option.optionKey} value={option.optionKey}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {connectedPropertyOptions.length > 0 ? (
-            <div className="table-view-connected-property">
-              <label>
-                Related property
+              {sortOption ? (
                 <select
-                  onChange={(event) =>
-                    setConnectedPropertyKey(event.currentTarget.value)
-                  }
-                  value={connectedPropertyKey}
+                  aria-label="Sort direction"
+                  onChange={(event) => {
+                    setSortDirection(
+                      event.currentTarget.value as "ascending" | "descending",
+                    );
+                    setSortTouched(true);
+                    setPreview(null);
+                  }}
+                  value={sortDirection}
                 >
-                  <option value="">Choose a related property</option>
-                  {connectedPropertyOptions.map((option) => {
-                    const optionKey = `${option.relationshipKey}:${option.direction}:${option.targetFieldKey}`;
-                    const alreadyShown = columns.some(
-                      (column) =>
-                        column.kind === "connected_field" &&
-                        column.relationship_key === option.relationshipKey &&
-                        column.direction === option.direction &&
-                        column.target_field_key === option.targetFieldKey,
+                  <option value="ascending">Ascending</option>
+                  <option value="descending">Descending</option>
+                </select>
+              ) : null}
+              {additionalSorts.map((sort, index) => (
+                <div
+                  className="table-view-additional-sort"
+                  key={`${sort.property}:${index}`}
+                >
+                  <label>
+                    Then sort by {index + 2}
+                    <select
+                      onChange={(event) => {
+                        setAdditionalSorts((current) =>
+                          current.map((candidate, currentIndex) =>
+                            currentIndex === index
+                              ? {
+                                  property: event.currentTarget.value,
+                                  direction: candidate.direction,
+                                }
+                              : candidate,
+                          ),
+                        );
+                        setPreview(null);
+                      }}
+                      value={sort.property}
+                    >
+                      {sortableOptions.map((option) => (
+                        <option key={option.optionKey} value={option.optionKey}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <select
+                    aria-label={`Direction for sort ${index + 2}`}
+                    onChange={(event) => {
+                      setAdditionalSorts((current) =>
+                        current.map((candidate, currentIndex) =>
+                          currentIndex === index
+                            ? {
+                                ...candidate,
+                                direction: event.currentTarget.value as
+                                  "ascending" | "descending",
+                              }
+                            : candidate,
+                        ),
+                      );
+                      setPreview(null);
+                    }}
+                    value={sort.direction}
+                  >
+                    <option value="ascending">Ascending</option>
+                    <option value="descending">Descending</option>
+                  </select>
+                  <button
+                    aria-label={`Remove sort ${index + 2}`}
+                    onClick={() => {
+                      setAdditionalSorts((current) =>
+                        current.filter(
+                          (_, currentIndex) => currentIndex !== index,
+                        ),
+                      );
+                      setPreview(null);
+                    }}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {additionalSorts.length + (sortOption ? 1 : 0) < 5 &&
+              sortableOptions.length > 0 ? (
+                <button
+                  onClick={() => {
+                    const fallback = sortableOptions.find(
+                      (option) =>
+                        option.optionKey !== sortOption &&
+                        !additionalSorts.some(
+                          (sort) => sort.property === option.optionKey,
+                        ),
                     );
-                    return (
-                      <option
-                        disabled={alreadyShown}
-                        key={optionKey}
-                        value={optionKey}
-                      >
-                        {option.label}
-                        {alreadyShown ? " (already shown)" : ""}
-                      </option>
-                    );
-                  })}
+                    if (!fallback) return;
+                    setAdditionalSorts((current) => [
+                      ...current,
+                      { property: fallback.optionKey, direction: "ascending" },
+                    ]);
+                    setPreview(null);
+                  }}
+                  type="button"
+                >
+                  Add another sort
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {activeSection === "group" ? (
+            <>
+              <label>
+                Group by
+                <select
+                  onChange={(event) => {
+                    setGroupOption(event.currentTarget.value);
+                    setPreview(null);
+                  }}
+                  value={groupOption}
+                >
+                  <option value="">No grouping</option>
+                  {groupableOptions.map((option) => (
+                    <option key={option.optionKey} value={option.optionKey}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
-              <button
-                disabled={saving || !connectedPropertyKey}
-                onClick={addConnectedProperty}
-                type="button"
-              >
-                Show related property
-              </button>
-              <small>
-                Related properties are one hop away and read-only here.
-              </small>
-            </div>
+            </>
           ) : null}
-          <fieldset className="table-view-column-picker">
-            <legend>Properties shown</legend>
-            {availableColumns.map((column) => {
-              const id = columnId(column);
-              const selectedIndex = columns.findIndex(
-                (item) => columnId(item) === id,
-              );
-              const isTitle =
-                column.kind === "field" &&
-                column.field_key === config.title_field;
-              return (
-                <div key={id}>
+          {activeSection === "properties" ? (
+            <>
+              {connectedPropertyOptions.length > 0 ? (
+                <div className="table-view-connected-property">
                   <label>
-                    <input
-                      checked={selectedIndex >= 0}
-                      disabled={isTitle}
-                      onChange={(event) => {
-                        setPreview(null);
-                        setColumns(
-                          event.currentTarget.checked
-                            ? [...columns, column]
-                            : columns.filter((item) => columnId(item) !== id),
+                    Related property
+                    <select
+                      onChange={(event) =>
+                        setConnectedPropertyKey(event.currentTarget.value)
+                      }
+                      value={connectedPropertyKey}
+                    >
+                      <option value="">Choose a related property</option>
+                      {connectedPropertyOptions.map((option) => {
+                        const optionKey = `${option.relationshipKey}:${option.direction}:${option.targetFieldKey}`;
+                        const alreadyShown = columns.some(
+                          (column) =>
+                            column.kind === "connected_field" &&
+                            column.relationship_key ===
+                              option.relationshipKey &&
+                            column.direction === option.direction &&
+                            column.target_field_key === option.targetFieldKey,
                         );
-                        if (!event.currentTarget.checked) {
-                          const widthKey = tableViewColumnWidthKey(column);
-                          setColumnWidths((current) => {
-                            const next = { ...current };
-                            delete next[widthKey];
-                            return next;
-                          });
-                        }
-                      }}
-                      type="checkbox"
-                    />{" "}
-                    {columnLabel(column)}
+                        return (
+                          <option
+                            disabled={alreadyShown}
+                            key={optionKey}
+                            value={optionKey}
+                          >
+                            {option.label}
+                            {alreadyShown ? " (already shown)" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </label>
-                  {selectedIndex >= 0 ? (
-                    <span>
-                      <button
-                        aria-label={`Move ${columnLabel(column)} earlier`}
-                        disabled={selectedIndex === 0}
-                        onClick={() => {
-                          const next = [...columns];
-                          const [item] = next.splice(selectedIndex, 1);
-                          if (item) next.splice(selectedIndex - 1, 0, item);
-                          setColumns(next);
-                          setPreview(null);
-                        }}
-                        type="button"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        aria-label={`Move ${columnLabel(column)} later`}
-                        disabled={selectedIndex === columns.length - 1}
-                        onClick={() => {
-                          const next = [...columns];
-                          const [item] = next.splice(selectedIndex, 1);
-                          if (item) next.splice(selectedIndex + 1, 0, item);
-                          setColumns(next);
-                          setPreview(null);
-                        }}
-                        type="button"
-                      >
-                        ↓
-                      </button>
-                      <label className="table-view-column-width">
-                        Width
-                        <input
-                          aria-label={`Width for ${columnLabel(column)}`}
-                          max={640}
-                          min={128}
-                          onChange={(event) => {
-                            const width = Number(event.currentTarget.value);
-                            if (!Number.isInteger(width)) return;
-                            setColumnWidths((current) => ({
-                              ...current,
-                              [tableViewColumnWidthKey(column)]: Math.max(
-                                128,
-                                Math.min(640, width),
-                              ),
-                            }));
-                            setPreview(null);
-                          }}
-                          type="number"
-                          value={
-                            columnWidths[tableViewColumnWidthKey(column)] ?? 220
-                          }
-                        />
-                      </label>
-                    </span>
-                  ) : null}
+                  <button
+                    disabled={saving || !connectedPropertyKey}
+                    onClick={addConnectedProperty}
+                    type="button"
+                  >
+                    Show related property
+                  </button>
+                  <small>
+                    Related properties are one hop away and read-only here.
+                  </small>
                 </div>
-              );
-            })}
-          </fieldset>
+              ) : null}
+              <fieldset className="table-view-column-picker">
+                <legend>Properties shown</legend>
+                {availableColumns.map((column) => {
+                  const id = columnId(column);
+                  const selectedIndex = columns.findIndex(
+                    (item) => columnId(item) === id,
+                  );
+                  const isTitle =
+                    column.kind === "field" &&
+                    column.field_key === config.title_field;
+                  return (
+                    <div key={id}>
+                      <label>
+                        <input
+                          checked={selectedIndex >= 0}
+                          disabled={isTitle}
+                          onChange={(event) => {
+                            setPreview(null);
+                            setColumns(
+                              event.currentTarget.checked
+                                ? [...columns, column]
+                                : columns.filter(
+                                    (item) => columnId(item) !== id,
+                                  ),
+                            );
+                            if (!event.currentTarget.checked) {
+                              const widthKey = tableViewColumnWidthKey(column);
+                              setColumnWidths((current) => {
+                                const next = { ...current };
+                                delete next[widthKey];
+                                return next;
+                              });
+                            }
+                          }}
+                          type="checkbox"
+                        />{" "}
+                        {columnLabel(column)}
+                      </label>
+                      {selectedIndex >= 0 ? (
+                        <span>
+                          <button
+                            aria-label={`Move ${columnLabel(column)} earlier`}
+                            disabled={selectedIndex === 0}
+                            onClick={() => {
+                              const next = [...columns];
+                              const [item] = next.splice(selectedIndex, 1);
+                              if (item) next.splice(selectedIndex - 1, 0, item);
+                              setColumns(next);
+                              setPreview(null);
+                            }}
+                            type="button"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            aria-label={`Move ${columnLabel(column)} later`}
+                            disabled={selectedIndex === columns.length - 1}
+                            onClick={() => {
+                              const next = [...columns];
+                              const [item] = next.splice(selectedIndex, 1);
+                              if (item) next.splice(selectedIndex + 1, 0, item);
+                              setColumns(next);
+                              setPreview(null);
+                            }}
+                            type="button"
+                          >
+                            ↓
+                          </button>
+                          <label className="table-view-column-width">
+                            Width
+                            <input
+                              aria-label={`Width for ${columnLabel(column)}`}
+                              max={640}
+                              min={128}
+                              onChange={(event) => {
+                                const width = Number(event.currentTarget.value);
+                                if (!Number.isInteger(width)) return;
+                                setColumnWidths((current) => ({
+                                  ...current,
+                                  [tableViewColumnWidthKey(column)]: Math.max(
+                                    128,
+                                    Math.min(640, width),
+                                  ),
+                                }));
+                                setPreview(null);
+                              }}
+                              type="number"
+                              value={
+                                columnWidths[tableViewColumnWidthKey(column)] ??
+                                220
+                              }
+                            />
+                          </label>
+                        </span>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </fieldset>
+            </>
+          ) : null}
           {preview ? (
             <div
               aria-label="Unsaved View preview"
@@ -1284,10 +1427,10 @@ export function TableViewControls({
               Refresh and recheck
             </button>
           ) : null}
-          {config.role === "saved" ? (
+          {config.role === "saved" && activeSection === "manage" ? (
             <div className="table-view-management-actions">
               <p>
-                Archiving removes this shared tab without deleting its history
+                Archiving removes this shared View without deleting its history
                 or source Table.
               </p>
               <button
@@ -1305,7 +1448,7 @@ export function TableViewControls({
                     ).then((result) => {
                       if (result.status === "success")
                         router.push(
-                          `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(result.value.viewKey)}#table-view-tab-${result.value.viewKey}`,
+                          `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(result.value.viewKey)}#table-view-selector-${result.value.viewKey}`,
                         );
                       else setFeedback(result.message);
                     });
@@ -1342,30 +1485,39 @@ export function TableViewControls({
           <div className="table-view-draft-actions">
             <button
               onClick={() => {
+                resetCandidate();
                 setOpen(false);
-                setPreview(null);
-                setFeedback(null);
               }}
               type="button"
             >
-              Discard
-            </button>
-            <button
-              disabled={saving || staleFeedback || !name.trim() || !preview}
-              onClick={() => save()}
-              type="button"
-            >
-              {saving ? "Saving…" : "Save view"}
+              Discard changes
             </button>
             {config.role === "saved" ? (
+              <>
+                <button
+                  disabled={saving || staleFeedback || !name.trim() || !preview}
+                  onClick={() => save()}
+                  type="button"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+                <button
+                  disabled={saving || staleFeedback || !name.trim() || !preview}
+                  onClick={() => save(true)}
+                  type="button"
+                >
+                  Save as new view
+                </button>
+              </>
+            ) : (
               <button
                 disabled={saving || staleFeedback || !name.trim() || !preview}
                 onClick={() => save(true)}
                 type="button"
               >
-                Save as new
+                {saving ? "Saving…" : "Save as new view"}
               </button>
-            ) : null}
+            )}
           </div>
         </div>
       ) : null}

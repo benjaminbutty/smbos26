@@ -75,6 +75,7 @@ function inputForColumn(
 export function TableBulkUpdateBar({
   columns,
   onApply,
+  onClearSelection,
   selection,
 }: Readonly<{
   columns: readonly EditorColumn[];
@@ -83,6 +84,7 @@ export function TableBulkUpdateBar({
     value: EditorValue,
     selection: readonly BulkUpdateSelection[],
   ) => Promise<void>;
+  onClearSelection: () => void;
   selection: readonly BulkUpdateSelection[];
 }>): ReactNode {
   const eligible = useMemo(() => columns.filter(eligibleColumn), [columns]);
@@ -126,7 +128,18 @@ export function TableBulkUpdateBar({
       aria-label="Update selected records"
       className="editor-bulk-update-bar"
     >
-      <strong>{selection.length} selected</strong>
+      <div className="editor-bulk-update-heading">
+        <strong>{selection.length} Records selected</strong>
+        <span>Only the loaded Records you checked will change.</span>
+      </div>
+      <button
+        className="editor-bulk-clear-selection"
+        disabled={saving}
+        onClick={onClearSelection}
+        type="button"
+      >
+        Clear selection
+      </button>
       <label>
         <span>Property</span>
         <select
@@ -152,7 +165,9 @@ export function TableBulkUpdateBar({
         onClick={() => void apply(false)}
         type="button"
       >
-        {saving ? "Updating…" : `Update ${selection.length} records`}
+        {saving
+          ? "Updating…"
+          : `Set ${field.label} for ${selection.length} Records`}
       </button>
       <button
         disabled={saving || selection.length > 100}

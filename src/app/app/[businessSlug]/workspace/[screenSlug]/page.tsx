@@ -51,7 +51,7 @@ import {
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
 import { updateInlineRecordCell } from "../../../../../runtime/views/actions";
 import { TableViewControls } from "../../../../../runtime/views/table-view-controls";
-import { TableViewTabs } from "../../../../../runtime/views/table-view-navigation";
+import { TableViewSelector } from "../../../../../runtime/views/table-view-navigation";
 import { ViewRenderer } from "../../../../../runtime/views/view-renderer";
 
 interface WorkspaceScreenPageProps {
@@ -493,28 +493,12 @@ export default async function WorkspaceScreenPage({
           connectionTargets={connectionTargets}
           existingConnections={existingConnections}
           headerContent={
-            <>
-              <TableViewTabs
-                businessSlug={businessSlug}
-                currentViewKey={bundle.definition.key}
-                views={tableViews}
-              />
-              <TableViewControls
-                availableColumns={availableSavedViewColumns}
-                businessSlug={businessSlug}
-                connectedPropertyOptions={connectedPropertyOptions}
-                config={normalizeTableViewConfig(bundle.config)}
-                currentness={currentness}
-                fields={bundle.fields}
-                key={`${bundle.definition.key}:${currentness?.expectedHeadRevision ?? "read-only"}`}
-                primaryViewKey={primaryView.key}
-                {...(bundle.relationships
-                  ? { relationships: bundle.relationships }
-                  : {})}
-                viewKey={bundle.definition.key}
-                viewName={bundle.definition.name}
-              />
-            </>
+            <TableViewSelector
+              businessSlug={businessSlug}
+              canCreateSavedViews={Boolean(currentness)}
+              currentViewKey={bundle.definition.key}
+              views={tableViews}
+            />
           }
           newRecordLabel={`New ${bundle.object.singular_label.toLocaleLowerCase("en")}`}
           recordTypeLabel={bundle.object.singular_label}
@@ -560,6 +544,23 @@ export default async function WorkspaceScreenPage({
             businessSlug,
           )}
           table={mapped.table}
+          viewControls={
+            <TableViewControls
+              availableColumns={availableSavedViewColumns}
+              businessSlug={businessSlug}
+              connectedPropertyOptions={connectedPropertyOptions}
+              config={normalizeTableViewConfig(bundle.config)}
+              currentness={currentness}
+              fields={bundle.fields}
+              key={`${bundle.definition.key}:${currentness?.expectedHeadRevision ?? "read-only"}`}
+              primaryViewKey={primaryView.key}
+              {...(bundle.relationships
+                ? { relationships: bundle.relationships }
+                : {})}
+              viewKey={bundle.definition.key}
+              viewName={bundle.definition.name}
+            />
+          }
         />
       </section>
     );
