@@ -76,6 +76,10 @@ export interface EditorTable {
   columns: readonly EditorColumn[];
   recordColumns?: readonly EditorColumn[];
   rows: readonly EditorRow[];
+  grouping?: {
+    propertyKey: string;
+    counts: readonly { value: EditorValue; count: number }[];
+  };
 }
 
 export interface EditorTablePreview {
@@ -89,6 +93,7 @@ export interface EditorCapabilities {
   canAddColumns: boolean;
   canAddConnections?: boolean;
   canInsertColumns?: boolean;
+  canDeleteColumns?: boolean;
   canRenameColumns: boolean;
   canChangeColumnTypes?: boolean;
   canUpdateColumnOptions: boolean;
@@ -101,6 +106,7 @@ export const defaultEditorCapabilities: EditorCapabilities = {
   rowCreation: "direct",
   canAddColumns: true,
   canInsertColumns: true,
+  canDeleteColumns: true,
   canRenameColumns: true,
   canChangeColumnTypes: true,
   canUpdateColumnOptions: true,
@@ -199,6 +205,7 @@ export interface TableEditorAdapter {
   ): Promise<EditorRow>;
   createColumn(input: CreateColumnInput): Promise<EditorColumn>;
   insertColumn?(input: InsertColumnInput): Promise<EditorColumn>;
+  archiveColumn?(columnKey: string): Promise<void>;
   renameColumn(columnKey: string, label: string): Promise<EditorColumn>;
   changeColumnType?(
     columnKey: string,

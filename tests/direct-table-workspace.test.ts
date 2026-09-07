@@ -309,6 +309,30 @@ describe("direct Table Workspace composer", () => {
       label: "Stage",
     });
 
+    const archived = composeDirectTableAction(snapshot, {
+      action: "archive_column",
+      viewKey: "contacts",
+      fieldKey: "status",
+    });
+    expect(archived.operations).toEqual([
+      expect.objectContaining({
+        op: "set_field",
+        key: "status",
+        is_active: false,
+      }),
+      expect.objectContaining({
+        op: "set_view",
+        config_json: expect.objectContaining({ fields: ["name"] }),
+      }),
+    ]);
+    expect(() =>
+      composeDirectTableAction(snapshot, {
+        action: "archive_column",
+        viewKey: "contacts",
+        fieldKey: "name",
+      }),
+    ).toThrow(DirectTableComposerError);
+
     const renamedTable = composeDirectTableAction(snapshot, {
       action: "rename_table",
       viewKey: "contacts",
@@ -407,6 +431,107 @@ describe("direct Table Workspace composer", () => {
         { kind: "field", field_key: "name" },
       ],
     });
+  });
+
+  it("removes obsolete column widths when archiving a visible property", () => {
+    const widthConfiguredSnapshot: ConfigurationSnapshotV1 = {
+      ...connectionTableSnapshot,
+      views: connectionTableSnapshot.views.map((view) => ({
+        ...view,
+        config_json: {
+          ...(view.config_json as Record<string, unknown>),
+          column_widths: { status: 240 },
+        },
+      })),
+    };
+
+    const archived = composeDirectTableAction(widthConfiguredSnapshot, {
+      action: "archive_column",
+      viewKey: "contacts",
+      fieldKey: "status",
+    });
+    const operation = archived.operations.find(
+      (candidate) => candidate.op === "set_view",
+    );
+
+    expect(operation).toMatchObject({
+      config_json: {
+        fields: ["name"],
+        columns: [
+          { kind: "field", field_key: "name" },
+          {
+            kind: "connection",
+            relationship_key: "contact_has_pet",
+            direction: "source",
+          },
+        ],
+      },
+    });
+    expect(
+      (operation as { config_json: { column_widths?: unknown } }).config_json
+        .column_widths,
+    ).toBeUndefined();
+  });
+
+  it("removes an archived property from every active Table View for its Object", () => {
+    const sourceView = connectionTableSnapshot.views[0]!;
+    const multipleViewsSnapshot: ConfigurationSnapshotV1 = {
+      ...connectionTableSnapshot,
+      views: [
+        {
+          ...sourceView,
+          config_json: {
+            ...(sourceView.config_json as Record<string, unknown>),
+            column_widths: { status: 240 },
+          },
+        },
+        {
+          ...sourceView,
+          id: "00000000-0000-4000-8000-000000000009",
+          key: "active_contacts",
+          name: "Active contacts",
+          config_json: {
+            ...(sourceView.config_json as Record<string, unknown>),
+            role: "saved",
+            filters: [
+              { property: "field:status", operator: "is", value: "Active" },
+            ],
+            column_widths: { status: 240 },
+          },
+        },
+      ],
+    };
+
+    const archived = composeDirectTableAction(multipleViewsSnapshot, {
+      action: "archive_column",
+      viewKey: "active_contacts",
+      fieldKey: "status",
+    });
+    const viewOperations = archived.operations.filter(
+      (operation) => operation.op === "set_view",
+    );
+
+    expect(viewOperations.map((operation) => operation.key).sort()).toEqual([
+      "active_contacts",
+      "contacts",
+    ]);
+    expect(viewOperations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "active_contacts",
+          config_json: expect.objectContaining({
+            fields: ["name"],
+            filters: [],
+          }),
+        }),
+      ]),
+    );
+    for (const operation of viewOperations) {
+      expect(
+        (operation as { config_json: { column_widths?: unknown } }).config_json
+          .column_widths,
+      ).toBeUndefined();
+    }
   });
 
   it("keeps a Table's configured create/edit Forms usable when adding or inserting a Field", () => {

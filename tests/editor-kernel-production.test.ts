@@ -490,6 +490,67 @@ describe("production editor Table mapping", () => {
 });
 
 describe("production editor adapter", () => {
+  it("persists drag widths with typed property identity and advances currentness", async () => {
+    const initial = mapExperienceViewBundleToEditorTable({
+      bundle: bundle(fields, config, []),
+    }).table;
+    const currentness = {
+      expectedBaseVersionId: crypto.randomUUID(),
+      expectedHeadRevision: 1,
+    };
+    const resizeColumn = vi.fn(
+      async (input: {
+        currentness: typeof currentness;
+        propertyKey: string;
+        width: number;
+      }) => ({
+        status: "success" as const,
+        value: {
+          table: {
+            ...initial,
+            columns: initial.columns.map((column) =>
+              column.key === "name"
+                ? { ...column, width: input.width }
+                : column,
+            ),
+          },
+          currentness: {
+            ...currentness,
+            expectedHeadRevision: input.currentness.expectedHeadRevision + 1,
+          },
+        },
+      }),
+    );
+    const adapter = createProductionTableAdapter(
+      initial,
+      {
+        updateCell: unavailableStructure,
+        createRow: unavailableStructure,
+        openRecord: unavailableStructure,
+        addColumn: unavailableStructure,
+        renameColumn: unavailableStructure,
+        updateColumnOptions: unavailableStructure,
+        reorderColumns: unavailableStructure,
+        renameTable: unavailableStructure,
+        resizeColumn,
+      },
+      currentness,
+    );
+    await adapter.resizeColumn("name", 360);
+    expect(resizeColumn).toHaveBeenLastCalledWith({
+      currentness,
+      propertyKey: "field:name",
+      width: 360,
+    });
+    expect(
+      adapter.getTable().columns.find((column) => column.key === "name")?.width,
+    ).toBe(360);
+    await adapter.resizeColumn("name", 400);
+    expect(
+      resizeColumn.mock.calls[1]?.[0].currentness.expectedHeadRevision,
+    ).toBe(2);
+  });
+
   it("forwards typed actions, stores authoritative rows, and preserves panel reads", async () => {
     const initial = mapExperienceViewBundleToEditorTable({
       bundle: bundle(fields, config, [

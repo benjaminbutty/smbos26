@@ -60,6 +60,7 @@ interface CreateEditorColumnsOptions {
       currency?: string;
     },
   ) => Promise<boolean>;
+  onArchiveColumn?: (columnKey: string) => Promise<boolean>;
   onMoveColumn?: (columnKey: string, direction: "left" | "right") => void;
   onReorderColumns?: (sourceColumnKey: string, targetColumnKey: string) => void;
   columnDragState?: ColumnDragState | null;
@@ -76,10 +77,13 @@ interface CreateEditorColumnsOptions {
     columnKey: string,
     primaryValue: string,
   ) => Promise<{ id: string; label: string }>;
+  onOpenConnectionCreate?: (columnKey: string, row: EditorRow) => void;
+  onOpenConnectionRecord?: (column: EditorColumn, recordId: string) => void;
   canRenameColumns?: boolean;
   canUpdateColumnOptions?: boolean;
   canChangeColumnTypes?: boolean;
   canInsertColumns?: boolean;
+  canDeleteColumns?: boolean;
   canReorderColumns?: boolean;
   canResizeColumns?: boolean;
   pendingEdit: PendingEdit | null;
@@ -177,6 +181,7 @@ function HeaderCell({
   canUpdateOptions,
   canChangeType,
   canInsert,
+  canArchive,
   isOpen,
   onOpen,
   onClose,
@@ -184,6 +189,7 @@ function HeaderCell({
   onUpdateOptions,
   onChangeType,
   onInsert,
+  onArchive,
   onMove,
   onReorder,
   dragState,
@@ -195,6 +201,7 @@ function HeaderCell({
   canUpdateOptions: boolean;
   canChangeType: boolean;
   canInsert: boolean;
+  canArchive: boolean;
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -218,6 +225,7 @@ function HeaderCell({
         },
       ) => Promise<boolean>)
     | undefined;
+  onArchive: (() => Promise<boolean>) | undefined;
   onMove: ((direction: "left" | "right") => void) | undefined;
   onReorder:
     ((sourceColumnKey: string, targetColumnKey: string) => void) | undefined;
@@ -320,6 +328,7 @@ function HeaderCell({
       {canRename ||
       canChangeType ||
       canInsert ||
+      canArchive ||
       (canUpdateOptions && canChangeOptions) ? (
         <>
           <button
@@ -341,12 +350,14 @@ function HeaderCell({
               anchorRef={anchorRef}
               canChangeType={canChangeType}
               canInsert={canInsert}
+              canArchive={canArchive}
               canRename={canRename}
               canUpdateOptions={canUpdateOptions}
               column={column}
               onChangeType={onChangeType}
               onClose={closeMenu}
               onInsert={onInsert}
+              onArchive={onArchive}
               onMove={onMove}
               onRename={onRename}
               onUpdateOptions={onUpdateOptions}
@@ -363,11 +374,13 @@ function ColumnMenu({
   canRename,
   canChangeType,
   canInsert,
+  canArchive,
   canUpdateOptions,
   column,
   onChangeType,
   onClose,
   onInsert,
+  onArchive,
   onMove,
   onRename,
   onUpdateOptions,
@@ -376,6 +389,7 @@ function ColumnMenu({
   canRename: boolean;
   canChangeType: boolean;
   canInsert: boolean;
+  canArchive: boolean;
   canUpdateOptions: boolean;
   column: EditorColumn;
   onChangeType:
@@ -396,6 +410,7 @@ function ColumnMenu({
         },
       ) => Promise<boolean>)
     | undefined;
+  onArchive: (() => Promise<boolean>) | undefined;
   onMove: ((direction: "left" | "right") => void) | undefined;
   onRename: (label: string) => Promise<boolean>;
   onUpdateOptions: (options: readonly string[]) => Promise<boolean>;
@@ -419,6 +434,7 @@ function ColumnMenu({
     | "insert-left"
     | "insert-right"
     | "shortcuts"
+    | "archive"
   >("main");
   const [submitting, setSubmitting] = useState(false);
   const canChangeOptions =
@@ -527,6 +543,16 @@ function ColumnMenu({
           >
             Keyboard shortcuts
           </button>
+          {canArchive && onArchive ? (
+            <button
+              className="editor-column-menu-action is-danger"
+              onClick={() => setMode("archive")}
+              role="menuitem"
+              type="button"
+            >
+              Delete property
+            </button>
+          ) : null}
         </Menu>
       ) : null}
       {mode === "rename" ? (
@@ -648,10 +674,31 @@ function ColumnMenu({
           }
         />
       ) : null}
+      {mode === "archive" && onArchive ? (
+        <div className="editor-column-menu-form">
+          <p className="editor-property-type-note">
+            This removes the property from all views of this Table and its
+            configured forms, including filters, sorting and grouping that use
+            it. Existing record values are retained. To hide it only in a saved
+            view, use Properties instead.
+          </p>
+          <button
+            className="editor-menu-submit is-danger"
+            disabled={submitting}
+            onClick={() => {
+              setSubmitting(true);
+              void onArchive().finally(() => setSubmitting(false));
+            }}
+            type="button"
+          >
+            {submitting ? "Removing…" : "Remove property"}
+          </button>
+        </div>
+      ) : null}
       {mode === "shortcuts" ? (
         <ShortcutSheet onClose={() => setMode("main")} />
       ) : null}
-      {mode !== "main" ? (
+      {mode !== "main" && mode !== "insert-left" && mode !== "insert-right" ? (
         <button
           className="editor-menu-back"
           onClick={() => setMode("main")}
@@ -681,12 +728,13 @@ function InsertColumnForm({
   const [options, setOptions] = useState<string[]>(["Option 1", "Option 2"]);
   const [currency, setCurrency] = useState("GBP");
   const [submitting, setSubmitting] = useState(false);
+  const hasLabel = Boolean(label.trim());
   return (
     <form
       className="editor-column-menu-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!label.trim() || submitting) return;
+        if (!hasLabel || submitting) return;
         setSubmitting(true);
         void onSubmit({
           label,
@@ -700,6 +748,7 @@ function InsertColumnForm({
         Property name
         <input
           autoFocus
+          required
           onChange={(event) => setLabel(event.currentTarget.value)}
           value={label}
         />
@@ -727,7 +776,7 @@ function InsertColumnForm({
       ) : null}
       <button
         className="editor-menu-submit"
-        disabled={submitting}
+        disabled={submitting || !hasLabel}
         type="submit"
       >
         {submitting ? "Adding…" : "Insert property"}
@@ -938,6 +987,7 @@ export function createEditorColumns({
   onUpdateColumnOptions,
   onChangeColumnType,
   onInsertColumn,
+  onArchiveColumn,
   onMoveColumn,
   onReorderColumns,
   columnDragState,
@@ -948,10 +998,13 @@ export function createEditorColumns({
   draftInputActive = false,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
+  onOpenConnectionCreate,
+  onOpenConnectionRecord,
   canRenameColumns = true,
   canUpdateColumnOptions = true,
   canChangeColumnTypes = true,
   canInsertColumns = true,
+  canDeleteColumns = true,
   canReorderColumns = true,
   canResizeColumns = true,
   pendingEdit,
@@ -982,6 +1035,12 @@ export function createEditorColumns({
         canUpdateOptions={canUpdateColumnOptions && !column.preview}
         canChangeType={canChangeColumnTypes && !column.preview}
         canInsert={canInsertColumns && !column.preview}
+        canArchive={
+          canDeleteColumns &&
+          !column.preview &&
+          !column.primary &&
+          column.kind !== "connection"
+        }
         isOpen={columnMenuKey === column.key}
         onOpen={() => onOpenColumnMenu(column.key)}
         onClose={() => onCloseColumnMenu?.()}
@@ -995,6 +1054,9 @@ export function createEditorColumns({
           onInsertColumn
             ? (position, input) => onInsertColumn(column.key, position, input)
             : undefined
+        }
+        onArchive={
+          onArchiveColumn ? () => onArchiveColumn(column.key) : undefined
         }
         onMove={
           onMoveColumn
@@ -1031,6 +1093,8 @@ export function createEditorColumns({
         {...props}
         columnDefinition={column}
         onCreateConnectionTarget={onCreateConnectionTarget}
+        onOpenConnectionCreate={onOpenConnectionCreate}
+        onOpenConnectionRecord={onOpenConnectionRecord}
         onSearchConnectionTargets={onSearchConnectionTargets}
         initialValue={
           pendingEdit?.rowId === props.row.id &&

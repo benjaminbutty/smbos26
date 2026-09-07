@@ -450,12 +450,12 @@ export function TableViewControls({
   ]);
 
   const openSection = (section: ViewControlSection): void => {
-    if (!open) setForceSaveAsNew(false);
+    if (!open && !hasMeaningfulDraft) setForceSaveAsNew(false);
     setActiveSection(section);
     setOpen(true);
   };
 
-  useUnsavedNavigationWarning(open && hasMeaningfulDraft && !saving);
+  useUnsavedNavigationWarning(hasMeaningfulDraft && !saving);
 
   useEffect(() => {
     setGridPreview(preview);
@@ -467,7 +467,7 @@ export function TableViewControls({
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         event.preventDefault();
-        resetCandidate();
+        if (!hasMeaningfulDraft) setPreview(null);
         setOpen(false);
       }
     };
@@ -478,7 +478,7 @@ export function TableViewControls({
         controlsRef.current &&
         !controlsRef.current.contains(target)
       ) {
-        resetCandidate();
+        if (!hasMeaningfulDraft) setPreview(null);
         setOpen(false);
       }
     };
@@ -488,7 +488,7 @@ export function TableViewControls({
       window.removeEventListener("keydown", closeOnEscape);
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
     };
-  }, [open, resetCandidate]);
+  }, [open, hasMeaningfulDraft]);
 
   useEffect(() => {
     const openRequestedView = (): void => {
@@ -682,13 +682,14 @@ export function TableViewControls({
   ]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !hasMeaningfulDraft) return;
     const request = previewRequestRef.current + 1;
     previewRequestRef.current = request;
     const timeout = window.setTimeout(() => {
       setFeedback(null);
       void previewProductionSavedViewAction(businessSlug, primaryViewKey, {
         columns,
+        columnWidths,
         query: draftQuery(),
       }).then((result) => {
         if (previewRequestRef.current !== request) return;
@@ -696,8 +697,19 @@ export function TableViewControls({
         else setFeedback(result.message);
       });
     }, 220);
-    return () => window.clearTimeout(timeout);
-  }, [businessSlug, columns, draftQuery, open, primaryViewKey]);
+    return () => {
+      window.clearTimeout(timeout);
+      previewRequestRef.current += 1;
+    };
+  }, [
+    businessSlug,
+    columns,
+    columnWidths,
+    draftQuery,
+    open,
+    hasMeaningfulDraft,
+    primaryViewKey,
+  ]);
 
   const save = (asNew = false): void => {
     const query = draftQuery();

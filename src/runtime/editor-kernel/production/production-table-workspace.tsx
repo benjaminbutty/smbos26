@@ -1,11 +1,14 @@
 "use client";
 
+import { ArchivedRecords } from "./archived-records";
+import { setProductionTableRecordArchivedAction } from "./production-table-actions";
 import { useRouter } from "next/navigation";
 import {
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
-  type FormEvent,
   type ReactNode,
 } from "react";
 
@@ -120,6 +123,13 @@ export function ProductionTableWorkspace({
   );
   const [hasMore, setHasMore] = useState(initialHasMore);
   const [loadingPage, setLoadingPage] = useState(false);
+  const [pendingWrites, setPendingWrites] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
+  const requestVersion = useRef(0);
+  const refreshRecords = useCallback(() => {
+    if (loadTablePage) setRefreshRevision((value) => value + 1);
+    else router.refresh();
+  }, [loadTablePage, router]);
   const [pageError, setPageError] = useState<string | null>(null);
   const [selectionResetToken, setSelectionResetToken] = useState(0);
   const [viewPreview, setViewPreview] = useState<EditorTablePreview | null>(
@@ -127,12 +137,20 @@ export function ProductionTableWorkspace({
   );
   if (table !== lastReceivedTable) {
     setLastReceivedTable(table);
-    setLoadedTable(table);
-    setSearch(initialSearch);
-    setAppliedSearch(initialSearch);
-    setTotalCount(initialTotalCount ?? table.rows.length);
-    setHasMore(initialHasMore);
+    if (table.key !== lastReceivedTable.key) {
+      setLoadedTable(table);
+      setSearch(initialSearch);
+      setAppliedSearch(initialSearch);
+      setTotalCount(initialTotalCount ?? table.rows.length);
+      setHasMore(initialHasMore);
+      setViewPreview(null);
+    } else {
+      setLoadedTable((current) =>
+        loadTablePage ? { ...table, rows: current.rows } : table,
+      );
+    }
     setPageError(null);
+    setRefreshRevision((value) => value + 1);
   }
   const updateViewPreview = useCallback(
     (preview: EditorTablePreview | null): void => setViewPreview(preview),
@@ -149,50 +167,88 @@ export function ProductionTableWorkspace({
       nextSearch: string,
       append: boolean,
     ): Promise<void> => {
-      if (!loadTablePage || loadingPage) return;
+      if (!loadTablePage || pendingWrites || viewPreview) return;
+      const version = ++requestVersion.current;
       if (!append) {
         setSelectionResetToken((current) => current + 1);
       }
       setLoadingPage(true);
       setPageError(null);
       try {
-        const result = await loadTablePage({ offset, search: nextSearch });
-        if (result.status === "error") throw new Error(result.message);
+        const targetCount =
+          append || nextSearch !== appliedSearch
+            ? 50
+            : Math.max(50, loadedTable.rows.length);
+        let pageOffset = offset;
+        const rows: EditorRow[] = [];
+        let result;
+        do {
+          result = await loadTablePage({
+            offset: pageOffset,
+            search: nextSearch,
+          });
+          if (version !== requestVersion.current) return;
+          if (result.status === "error") throw new Error(result.message);
+          rows.push(...result.value.rows);
+          pageOffset += result.value.rows.length;
+        } while (
+          !append &&
+          result.value.hasMore &&
+          rows.length < targetCount &&
+          result.value.rows.length > 0
+        );
+        const page = result.value;
         setLoadedTable((current) => ({
           ...current,
+          ...(page.grouping ? { grouping: page.grouping } : {}),
           rows: append
             ? [
                 ...current.rows,
-                ...result.value.rows.filter(
+                ...rows.filter(
                   (row) =>
                     !current.rows.some((existing) => existing.id === row.id),
                 ),
               ]
-            : [...result.value.rows],
+            : rows,
         }));
-        setAppliedSearch(result.value.search);
-        setTotalCount(result.value.totalCount);
-        setHasMore(result.value.hasMore);
+        setAppliedSearch(page.search);
+        setTotalCount(page.totalCount);
+        setHasMore(page.hasMore);
       } catch (error) {
+        if (version !== requestVersion.current) return;
         setPageError(
           error instanceof Error
             ? error.message
             : "Could not load more records. Try again.",
         );
       } finally {
-        setLoadingPage(false);
+        if (version === requestVersion.current) setLoadingPage(false);
       }
     },
-    [loadTablePage, loadingPage],
+    [
+      loadTablePage,
+      pendingWrites,
+      viewPreview,
+      appliedSearch,
+      loadedTable.rows.length,
+    ],
   );
 
-  const submitSearch = useCallback(
-    (event: FormEvent<HTMLFormElement>): void => {
-      event.preventDefault();
-      void loadPage(0, search.trim(), false);
-    },
-    [loadPage, search],
-  );
+  const loadPageRef = useRef(loadPage);
+  useEffect(() => {
+    loadPageRef.current = loadPage;
+  }, [loadPage]);
+  useEffect(() => {
+    if (!loadTablePage || pendingWrites || viewPreview) return;
+    const timer = window.setTimeout(
+      () => void loadPageRef.current(0, search.trim(), false),
+      180,
+    );
+    return () => {
+      window.clearTimeout(timer);
+      requestVersion.current += 1;
+    };
+  }, [search, refreshRevision, pendingWrites, viewPreview, loadTablePage]);
 
   const createConnection = useMemo(
     () =>
@@ -426,13 +482,14 @@ export function ProductionTableWorkspace({
 
   const workbenchToolbar = loadTablePage ? (
     <div className="table-workbench-toolbar">
-      <form className="table-workbench-search" onSubmit={submitSearch}>
+      <div className="table-workbench-search">
         <label htmlFor={`table-search-${table.key}`}>
           <span className="editor-sr-only">
             Search {recordTypeLabel ?? table.name}
           </span>
           <input
             id={`table-search-${table.key}`}
+            disabled={pendingWrites || Boolean(viewPreview)}
             maxLength={200}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={`Search ${(recordTypeLabel ?? table.name).toLocaleLowerCase("en")}…`}
@@ -440,33 +497,24 @@ export function ProductionTableWorkspace({
             value={search}
           />
         </label>
-        <button disabled={loadingPage} type="submit">
-          {loadingPage ? "Searching…" : "Search"}
-        </button>
-        {search ? (
-          <button
-            className="table-workbench-search-clear"
-            disabled={loadingPage}
-            onClick={() => {
-              setSearch("");
-              void loadPage(0, "", false);
-            }}
-            type="button"
-          >
-            Clear
-          </button>
-        ) : null}
-      </form>
+      </div>
       {viewControls}
+      {businessSlug && currentness && !readOnly ? (
+        <ArchivedRecords
+          businessSlug={businessSlug}
+          viewKey={table.key}
+          onChanged={refreshRecords}
+        />
+      ) : null}
       <div className="table-workbench-toolbar-status" role="status">
         <span>
-          {appliedSearch
-            ? `${totalCount} matching record${totalCount === 1 ? "" : "s"}`
-            : `${totalCount} record${totalCount === 1 ? "" : "s"}`}
+          {viewPreview
+            ? `${viewPreview.table.rows.length} of ${viewPreview.totalCount} preview records`
+            : `${loadedTable.rows.length} of ${totalCount}${appliedSearch ? " matching" : ""} records`}
         </span>
-        {hasMore ? (
+        {hasMore && !viewPreview ? (
           <button
-            disabled={loadingPage}
+            disabled={loadingPage || pendingWrites}
             onClick={() =>
               void loadPage(loadedTable.rows.length, appliedSearch, true)
             }
@@ -476,7 +524,12 @@ export function ProductionTableWorkspace({
           </button>
         ) : null}
         {pageError ? (
-          <span className="table-workbench-error">{pageError}</span>
+          <span className="table-workbench-error" role="alert">
+            {pageError}{" "}
+            <button type="button" onClick={refreshRecords}>
+              Retry
+            </button>
+          </span>
         ) : null}
       </div>
     </div>
@@ -488,6 +541,21 @@ export function ProductionTableWorkspace({
     <TableViewPreviewProvider value={{ setPreview: updateViewPreview }}>
       <EditorKernel
         adapter={adapter}
+        onRecordsChanged={refreshRecords}
+        {...(businessSlug && currentness && !readOnly
+          ? {
+              onArchiveRecord: async (recordId: string) => {
+                const result = await setProductionTableRecordArchivedAction(
+                  businessSlug,
+                  table.key,
+                  { recordId, archived: true },
+                );
+                if (result.status === "error") throw new Error(result.message);
+                refreshRecords();
+              },
+            }
+          : {})}
+        onPendingWritesChange={setPendingWrites}
         capabilities={capabilities}
         {...(businessSlug !== undefined ? { businessSlug } : {})}
         footer={footer}
@@ -505,6 +573,8 @@ export function ProductionTableWorkspace({
         onStructureChanged={() => router.refresh()}
         {...(bulkUpdate ? { bulkUpdate } : {})}
         serverSearchManaged={Boolean(loadTablePage)}
+        serverSearchText={search}
+        onClearServerSearch={() => setSearch("")}
         selectionResetToken={selectionResetToken}
         {...(connectionSource ? { connectionSource } : {})}
         {...(connectionTargets ? { connectionTargets } : {})}

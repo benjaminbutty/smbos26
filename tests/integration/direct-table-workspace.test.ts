@@ -1,3 +1,4 @@
+import { setTableRecordArchived } from "../../src/runtime/views/table-record-lifecycle";
 import {
   createClient,
   type SupabaseClient,
@@ -1987,5 +1988,82 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
       .single();
     expect(persisted.error).toBeNull();
     expect(persisted.data?.data_json).toEqual({ name: "Wash and trim" });
+  });
+  it("archives and restores a Table record without a Version and rejects another Table's record", async () => {
+    const setup = await currentness(owner);
+    const created = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: setup.currentness,
+        intent: { action: "create_table", title: "Archive acceptance" },
+      },
+    );
+    const viewKey = created.composed!.viewKey;
+    const formData = new FormData();
+    formData.set("name", "Restore me");
+    const record = await createDirectTableRow(
+      owner.client,
+      { businessId: business.id },
+      { viewKey, formData },
+    );
+    const before = (await currentness(owner)).currentness;
+    const archived = await setTableRecordArchived(
+      owner.client,
+      business.id,
+      viewKey,
+      record.id,
+      true,
+    );
+    expect(archived.record_status).toBe("archived");
+    expect(
+      (await queryTableViewRecords(owner.client, business.id, viewKey)).records,
+    ).toHaveLength(0);
+    const restored = await setTableRecordArchived(
+      owner.client,
+      business.id,
+      viewKey,
+      record.id,
+      false,
+    );
+    expect(restored.data_json).toEqual(record.data_json);
+    expect(
+      (
+        await queryTableViewRecords(owner.client, business.id, viewKey)
+      ).records.map((row) => row.id),
+    ).toEqual([record.id]);
+    expect((await currentness(owner)).currentness).toEqual(before);
+    const other = await applyDirectTableAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: before,
+        intent: { action: "create_table", title: "Different archive scope" },
+      },
+    );
+    await expect(
+      setTableRecordArchived(
+        owner.client,
+        business.id,
+        other.composed!.viewKey,
+        record.id,
+        true,
+      ),
+    ).rejects.toThrow("unavailable");
+    await expect(
+      setTableRecordArchived(
+        owner.client,
+        crypto.randomUUID(),
+        viewKey,
+        record.id,
+        true,
+      ),
+    ).rejects.toThrow();
+    const unchanged = await owner.client
+      .from("records")
+      .select("record_status")
+      .eq("id", record.id)
+      .single();
+    expect(unchanged.data?.record_status).toBe("active");
   });
 });

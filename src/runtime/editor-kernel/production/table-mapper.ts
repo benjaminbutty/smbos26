@@ -519,6 +519,26 @@ export function mapExperienceViewBundleToEditorTable({
     columns,
     recordColumns,
     rows,
+    ...(config.group
+      ? {
+          grouping: {
+            propertyKey: config.group,
+            counts: (bundle.query?.groups ?? []).flatMap((group) =>
+              group &&
+              typeof group === "object" &&
+              !Array.isArray(group) &&
+              typeof group.count === "number"
+                ? [
+                    {
+                      value: editorValueFromJson(group.value),
+                      count: group.count,
+                    },
+                  ]
+                : [],
+            ),
+          },
+        }
+      : {}),
   };
 
   return { table, visibleFields, recordFields };

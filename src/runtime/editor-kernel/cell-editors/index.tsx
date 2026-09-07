@@ -29,6 +29,8 @@ export function ConnectionPicker({
   onCommit,
   onSearch,
   onCreate,
+  onOpenRecord,
+  onOpenCreate,
   initiallyOpen = false,
   portal = false,
   value,
@@ -41,6 +43,8 @@ export function ConnectionPicker({
     search: string,
   ) => Promise<readonly { id: string; label: string }[]>;
   onCreate?: (primaryValue: string) => Promise<{ id: string; label: string }>;
+  onOpenRecord?: (recordId: string) => void;
+  onOpenCreate?: () => void;
   initiallyOpen?: boolean;
   portal?: boolean;
   value: EditorValue;
@@ -66,9 +70,11 @@ export function ConnectionPicker({
   const popoverRef = useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selected);
   const targetLabel = column.connection?.targetObjectLabel ?? column.label;
-  const createLabel = query.trim()
-    ? `+ Create “${query.trim()}” as a new ${targetLabel}`
-    : `+ Create new ${targetLabel}`;
+  const createLabel = onOpenCreate
+    ? `+ Create new ${targetLabel}`
+    : query.trim()
+      ? `+ Create “${query.trim()}” as a new ${targetLabel}`
+      : `+ Create new ${targetLabel}`;
   const isSearching =
     open && (searchState === "loading" || searchState === "idle");
 
@@ -124,7 +130,7 @@ export function ConnectionPicker({
   }, [open, portal]);
 
   useEffect(() => {
-    if (!open || !portal || typeof document === "undefined") return;
+    if (!open || typeof document === "undefined") return;
 
     const handleOutsideMouseDown = (event: MouseEvent): void => {
       const target = event.target;
@@ -143,7 +149,7 @@ export function ConnectionPicker({
     return () => {
       document.removeEventListener("mousedown", handleOutsideMouseDown, true);
     };
-  }, [onCancel, open, portal]);
+  }, [onCancel, open]);
 
   const commit = (next: readonly string[]): void => {
     onCommit(next);
@@ -278,7 +284,7 @@ export function ConnectionPicker({
           );
         })
       )}
-      {onCreate ? (
+      {onCreate || onOpenCreate ? (
         <>
           <div className="editor-connection-create-divider" />
           {createError ? (
@@ -293,7 +299,14 @@ export function ConnectionPicker({
           <button
             className="editor-connection-create"
             disabled={creating}
-            onClick={() => void create()}
+            onClick={() => {
+              if (onOpenCreate) {
+                setOpen(false);
+                onOpenCreate();
+                return;
+              }
+              void create();
+            }}
             type="button"
           >
             {creating ? "Creating…" : createLabel}
@@ -342,7 +355,29 @@ export function ConnectionPicker({
         {selectedLabels.length > 0 ? (
           <span className="editor-connection-selected-pills">
             {selectedLabels.map((item) => (
-              <span className="editor-connection-pill" key={item.id}>
+              <span
+                className={`editor-connection-pill${onOpenRecord ? " is-openable" : ""}`}
+                key={item.id}
+                onClick={(event) => {
+                  if (!onOpenRecord) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpen(false);
+                  onOpenRecord(item.id);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    !onOpenRecord ||
+                    (event.key !== "Enter" && event.key !== " ")
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpen(false);
+                  onOpenRecord(item.id);
+                }}
+                {...(onOpenRecord ? { role: "link", tabIndex: 0 } : {})}
+              >
                 <span>{item.label}</span>
                 <span
                   aria-hidden="true"
@@ -494,6 +529,8 @@ function ConnectionEditor({
   row,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
+  onOpenConnectionCreate,
+  onOpenConnectionRecord,
 }: CellEditorProps & {
   onSearchConnectionTargets?:
     | ((
@@ -507,6 +544,10 @@ function ConnectionEditor({
         primaryValue: string,
       ) => Promise<{ id: string; label: string }>)
     | undefined;
+  onOpenConnectionCreate?:
+    ((columnKey: string, row: EditorRow) => void) | undefined;
+  onOpenConnectionRecord?:
+    ((column: EditorColumn, recordId: string) => void) | undefined;
 }): React.ReactNode {
   const value = row.values[columnDefinition.key] ?? [];
   return (
@@ -527,6 +568,20 @@ function ConnectionEditor({
         ? {
             onCreate: (primaryValue: string) =>
               onCreateConnectionTarget(columnDefinition.key, primaryValue),
+          }
+        : {})}
+      {...(onOpenConnectionCreate
+        ? {
+            onOpenCreate: () => {
+              onClose();
+              onOpenConnectionCreate(columnDefinition.key, row);
+            },
+          }
+        : {})}
+      {...(onOpenConnectionRecord
+        ? {
+            onOpenRecord: (recordId: string) =>
+              onOpenConnectionRecord(columnDefinition, recordId),
           }
         : {})}
       portal
@@ -865,6 +920,10 @@ export function CellEditor(
           primaryValue: string,
         ) => Promise<{ id: string; label: string }>)
       | undefined;
+    onOpenConnectionCreate?:
+      ((columnKey: string, row: EditorRow) => void) | undefined;
+    onOpenConnectionRecord?:
+      ((column: EditorColumn, recordId: string) => void) | undefined;
   },
 ): React.ReactNode {
   switch (props.columnDefinition.kind) {

@@ -27,6 +27,7 @@ import {
 } from "../../../../../runtime/editor-kernel/production/table-mapper";
 import {
   addProductionTableColumnAction,
+  archiveProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
   createProductionTableConnectionTargetAction,
   createProductionTableRowAction,
@@ -96,6 +97,11 @@ function productionTableActions(
   viewKey: string,
 ): ProductionTableAdapterActions {
   return {
+    archiveColumn: archiveProductionTableColumnAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
     addColumn: addProductionTableColumnAction.bind(null, businessSlug, viewKey),
     insertColumn: insertProductionTableColumnAction.bind(
       null,

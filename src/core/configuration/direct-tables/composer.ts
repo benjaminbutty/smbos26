@@ -58,6 +58,7 @@ export const directTableErrorCodes = [
   "direct_table_key_unavailable",
   "direct_table_options_invalid",
   "direct_table_type_change_invalid",
+  "direct_table_column_archive_invalid",
   "direct_table_reorder_invalid",
   "direct_table_width_invalid",
   "direct_table_connection_invalid",
@@ -86,6 +87,8 @@ const directTableErrorMessages: Readonly<Record<DirectTableErrorCode, string>> =
       "Choice and Status columns need at least two different options.",
     direct_table_type_change_invalid:
       "That property type could not be changed safely. Nothing was changed.",
+    direct_table_column_archive_invalid:
+      "The primary property names each Record and cannot be removed.",
     direct_table_reorder_invalid:
       "Columns could not be reordered because the Table changed. Reload and try again.",
     direct_table_width_invalid:
@@ -277,10 +280,26 @@ function configWithColumns(
   config: TableViewConfigV2,
   columns: readonly TableViewColumn[],
 ): TableViewConfigV2 {
+  const { column_widths: previousColumnWidths, ...configWithoutWidths } =
+    config;
+  const visibleWidthKeys = new Set(
+    columns.map((column) => tableViewColumnWidthKey(column)),
+  );
+  const columnWidths = previousColumnWidths
+    ? Object.fromEntries(
+        Object.entries(previousColumnWidths).filter(([key]) =>
+          visibleWidthKeys.has(key),
+        ),
+      )
+    : undefined;
+
   return normalizeTableViewConfig({
-    ...config,
+    ...configWithoutWidths,
     columns,
     fields: fieldKeysFromColumns(columns),
+    ...(columnWidths && Object.keys(columnWidths).length > 0
+      ? { column_widths: columnWidths }
+      : {}),
   });
 }
 
@@ -559,6 +578,100 @@ function tableOwnedFormOperations(
       );
     }
   });
+}
+
+function objectFieldRemovalOperations(
+  snapshot: ConfigurationSnapshotV1,
+  table: ReturnType<typeof activeTable>,
+  fieldKey: string,
+): FormOperation[] {
+  return snapshot.forms.flatMap((form) => {
+    if (
+      !form.is_active ||
+      form.object_key !== table.object.key ||
+      form.object_definition_id !== table.object.id
+    ) {
+      return [];
+    }
+
+    try {
+      const config = formConfigSchema.parse(form.config_json);
+      if (!config.fields.some((field) => field.field === fieldKey)) {
+        return [];
+      }
+      return [
+        setFormOperationSchema.parse({
+          op: "set_form",
+          key: form.key,
+          name: form.name,
+          object_key: form.object_key,
+          mode: form.mode,
+          config_json: {
+            ...config,
+            fields: config.fields.filter((field) => field.field !== fieldKey),
+          },
+          audience: form.audience,
+          is_active: form.is_active,
+        }),
+      ];
+    } catch (error) {
+      throw new DirectTableComposerError(
+        "direct_table_snapshot_invalid",
+        error,
+      );
+    }
+  });
+}
+
+function tableViewsWithField(
+  snapshot: ConfigurationSnapshotV1,
+  table: ReturnType<typeof activeTable>,
+  fieldKey: string,
+): Array<{ view: ViewSource; config: TableViewConfigV2 }> {
+  return snapshot.views.flatMap((view) => {
+    if (
+      !view.is_active ||
+      view.audience !== "internal" ||
+      view.view_type !== "table" ||
+      view.object_key !== table.object.key ||
+      view.object_definition_id !== table.object.id
+    ) {
+      return [];
+    }
+
+    try {
+      const config = normalizeTableViewConfig(
+        view.config_json,
+        deterministicTableRole(snapshot, view.key, table.object.id),
+      );
+      return config.fields.includes(fieldKey) ? [{ view, config }] : [];
+    } catch (error) {
+      throw new DirectTableComposerError(
+        "direct_table_snapshot_invalid",
+        error,
+      );
+    }
+  });
+}
+
+function configWithoutField(
+  config: TableViewConfigV2,
+  fieldKey: string,
+): TableViewConfigV2 {
+  const propertyKey = tableViewFieldPropertyKey(fieldKey);
+  return configWithColumns(
+    {
+      ...config,
+      filters: config.filters.filter(
+        (filter) => filter.property !== propertyKey,
+      ),
+      sorts: config.sorts.filter((sort) => sort.property !== propertyKey),
+      group: config.group === propertyKey ? null : config.group,
+    },
+    config.columns.filter(
+      (column) => column.kind !== "field" || column.field_key !== fieldKey,
+    ),
+  );
 }
 
 function objectOperation(values: Omit<ObjectOperation, "op">): ObjectOperation {
@@ -1314,6 +1427,37 @@ function composeTableMutation(
         }),
       ];
       title = `Rename ${intent.label}`;
+      break;
+    }
+    case "archive_column": {
+      const current = tableField(snapshot, table, intent.fieldKey);
+      if (table.config.title_field === current.key) {
+        throw new DirectTableComposerError(
+          "direct_table_column_archive_invalid",
+        );
+      }
+      const affectedViews = tableViewsWithField(snapshot, table, current.key);
+      operations = [
+        fieldOperation({
+          object_key: current.object_key,
+          key: current.key,
+          label: current.label,
+          field_type: current.field_type,
+          required: current.required,
+          default_value: current.default_value,
+          settings_json: current.settings_json,
+          position: current.position,
+          is_active: false,
+        }),
+        ...objectFieldRemovalOperations(snapshot, table, current.key),
+        ...affectedViews.map(({ view, config }) =>
+          tableMutationViewOperation(
+            view,
+            configWithoutField(config, current.key),
+          ),
+        ),
+      ];
+      title = `Remove ${current.label}`;
       break;
     }
     case "change_column_type": {

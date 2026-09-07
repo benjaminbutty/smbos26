@@ -27,6 +27,8 @@ import {
 import { ProductionTableWorkspace } from "../../../../../runtime/editor-kernel/production/production-table-workspace";
 import {
   addExistingProductionTableConnectionAction,
+  archiveProductionTableColumnAction,
+  resizeProductionTableColumnAction,
   bulkUpdateProductionTableRecordsAction,
   addProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
@@ -382,6 +384,16 @@ export default async function WorkspaceScreenPage({
             bundle.definition.key,
           )}
           actions={{
+            resizeColumn: resizeProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
+            archiveColumn: archiveProductionTableColumnAction.bind(
+              null,
+              businessSlug,
+              bundle.definition.key,
+            ),
             addExistingConnection:
               addExistingProductionTableConnectionAction.bind(
                 null,
@@ -473,6 +485,7 @@ export default async function WorkspaceScreenPage({
               currentness && bundle.object.kind === "custom",
             ),
             canInsertColumns: Boolean(currentness),
+            canDeleteColumns: Boolean(currentness),
             canRenameColumns: Boolean(currentness),
             canChangeColumnTypes: Boolean(currentness),
             canUpdateColumnOptions: Boolean(currentness),

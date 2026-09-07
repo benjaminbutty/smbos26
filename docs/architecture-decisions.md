@@ -3564,3 +3564,10 @@ complete-View search/paging, atomic loaded-Record bulk set/clear and one-hop
 read-only related Field projection without a spreadsheet primitive, copied
 data, arbitrary query language or a new runtime. This amends ADR-036's prior
 bulk/spreadsheet deferral only. See [ADR-051](./ADR-051.md).
+
+### ADR-051 completion note
+
+The 7 September completion pass adds grouped presentation, retained View
+candidates, query-preserving operational refresh, independent failed-cell
+recovery, persistent drag widths, and Owner/Admin single-record archive/restore
+over existing graph operations. See the completion section in [ADR-051](./ADR-051.md).

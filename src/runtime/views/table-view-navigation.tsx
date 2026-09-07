@@ -69,13 +69,13 @@ export function TableViewSelector({
       ref={selectorRef}
     >
       <button
+        aria-label={`Current view: ${currentView?.name ?? "Table"}`}
         aria-expanded={open}
         aria-haspopup="menu"
         className="table-view-selector-trigger"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
-        <span className="table-view-selector-label">Current view</span>
         <strong>{currentView?.name ?? "Table"}</strong>
         <span aria-hidden="true" className="table-view-selector-chevron">
           ⌄

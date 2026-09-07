@@ -260,6 +260,12 @@ async function configureScenario(
   }
 
   for (const connection of fixture.connections) {
+    const direction =
+      connection.currentMultiplicity === "several" ||
+      (connection.currentMultiplicity === "one" &&
+        connection.targetMultiplicity === "one")
+        ? "source"
+        : "target";
     const created = await applyAction(state, {
       action: "create_connection_property",
       viewKey: state.tableViews.get(connection.sourceTableKey)!,
@@ -285,7 +291,7 @@ async function configureScenario(
     );
     state.connectionProperties.set(
       tableMapKey(connection.sourceTableKey, connection.label),
-      { key: relationship.key, direction: "source" },
+      { key: relationship.key, direction },
     );
   }
 
@@ -507,6 +513,12 @@ async function connectScenarioRecords(
     );
     if (!relationKey)
       throw new Error(`Missing relationship ${link.connectionLabel}.`);
+    const connection = state.connectionProperties.get(
+      tableMapKey(link.sourceTableKey, link.connectionLabel),
+    );
+    if (!connection) {
+      throw new Error(`Missing connection ${link.connectionLabel}.`);
+    }
     const sourceRecord = state.records.get(
       tableMapKey(link.sourceTableKey, link.sourceRecordLabel),
     );
@@ -520,7 +532,7 @@ async function connectScenarioRecords(
       viewKey: sourceViewKey,
       recordId: sourceRecord.id,
       relationshipKey: relationKey,
-      direction: "source",
+      direction: connection.direction,
       targetRecordIds: targetRecords.map((record) => record!.id),
     });
     const firstTargetLabel = link.targetRecordLabels[0];
@@ -535,7 +547,7 @@ async function connectScenarioRecords(
       {
         viewKey: sourceViewKey,
         relationshipKey: relationKey,
-        direction: "source",
+        direction: connection.direction,
         search: firstTargetLabel,
         limit: 50,
       },
@@ -550,7 +562,7 @@ async function connectScenarioRecords(
     );
     const queriedConnectionValues =
       queried.connectionValues[sourceRecord.id]?.[
-        `connection:${relationKey}:source`
+        `connection:${relationKey}:${connection.direction}`
       ] ?? [];
     expect(queriedConnectionValues.map((target) => target.label)).toEqual(
       [...link.targetRecordLabels].sort(),
@@ -714,11 +726,14 @@ describe("Internal Workspace Engine four-business proof", () => {
       const firstSource = state.records.get(
         tableMapKey(firstLink.sourceTableKey, firstLink.sourceRecordLabel),
       )!;
+      const firstConnection = state.connectionProperties.get(
+        tableMapKey(firstLink.sourceTableKey, firstLink.connectionLabel),
+      )!;
       await setTableRecordConnectionValues(owner.client, state.business.id, {
         viewKey: state.tableViews.get(firstLink.sourceTableKey)!,
         recordId: firstSource.id,
         relationshipKey: firstRelation,
-        direction: "source",
+        direction: firstConnection.direction,
         targetRecordIds: [],
       });
       const afterOperationalWrite = await loadDirectTableConfiguration(
@@ -865,13 +880,16 @@ describe("Internal Workspace Engine four-business proof", () => {
     const firstSource = first.records.get(
       tableMapKey(firstLink.sourceTableKey, firstLink.sourceRecordLabel),
     )!;
+    const firstConnection = first.connectionProperties.get(
+      tableMapKey(firstLink.sourceTableKey, firstLink.connectionLabel),
+    )!;
     const foreignTarget = second.records.values().next().value as RecordRow;
     await expect(
       setTableRecordConnectionValues(owner.client, first.business.id, {
         viewKey: first.tableViews.get(firstLink.sourceTableKey)!,
         recordId: firstSource.id,
         relationshipKey: firstRelation,
-        direction: "source",
+        direction: firstConnection.direction,
         targetRecordIds: [foreignTarget.id],
       }),
     ).rejects.toThrow();

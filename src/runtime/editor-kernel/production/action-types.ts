@@ -76,6 +76,7 @@ export interface ProductionTablePage {
   offset: number;
   hasMore: boolean;
   search: string;
+  grouping?: EditorTable["grouping"];
 }
 
 export interface ProductionBulkUpdateInput {
@@ -168,6 +169,11 @@ export interface ProductionRenameColumnInput {
   label: string;
 }
 
+export interface ProductionArchiveColumnInput {
+  currentness: ProductionConfigurationCurrentness;
+  fieldKey: string;
+}
+
 export interface ProductionChangeColumnTypeInput {
   currentness: ProductionConfigurationCurrentness;
   fieldKey: string;
@@ -237,6 +243,7 @@ export interface ProductionConfiguredSavedView {
 }
 
 export interface ProductionPreviewSavedViewInput {
+  columnWidths?: Record<string, number>;
   columns: readonly TableViewColumn[];
   query: TableViewQuery;
 }
@@ -353,6 +360,10 @@ export type ProductionInsertColumnAction = (
 
 export type ProductionRenameColumnAction = (
   input: ProductionRenameColumnInput,
+) => Promise<ProductionActionResult<ProductionTableStructureState>>;
+
+export type ProductionArchiveColumnAction = (
+  input: ProductionArchiveColumnInput,
 ) => Promise<ProductionActionResult<ProductionTableStructureState>>;
 
 export type ProductionChangeColumnTypeAction = (

@@ -30,6 +30,7 @@ export const directTableActionKindSchema = z.enum([
   "add_column",
   "insert_column",
   "rename_column",
+  "archive_column",
   "change_column_type",
   "update_column_options",
   "reorder_columns",
@@ -177,6 +178,14 @@ const renameColumnIntentSchema = z
     viewKey: graphKeySchema,
     fieldKey: graphKeySchema,
     label: directTableLabelSchema,
+  })
+  .strict();
+
+const archiveColumnIntentSchema = z
+  .object({
+    action: z.literal("archive_column"),
+    viewKey: graphKeySchema,
+    fieldKey: graphKeySchema,
   })
   .strict();
 
@@ -381,6 +390,7 @@ export const directTableIntentSchema = z.discriminatedUnion("action", [
   addColumnIntentSchema,
   insertColumnIntentSchema,
   renameColumnIntentSchema,
+  archiveColumnIntentSchema,
   changeColumnTypeIntentSchema,
   updateColumnOptionsIntentSchema,
   reorderColumnsIntentSchema,

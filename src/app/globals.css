@@ -3522,7 +3522,7 @@ textarea {
 }
 
 .page-editor-draft-conflict .button {
-  justify-self: start;
+  justify-self: center;
 }
 
 .page-editor-controls {
@@ -7797,19 +7797,21 @@ textarea {
 .workspace-table-page .table-view-selector {
   position: relative;
   display: inline-flex;
-  min-width: min(100%, 19rem);
+  width: min(100%, 12.5rem);
+  min-width: 0;
+  justify-self: start;
 }
 
 .workspace-table-page .table-view-selector-trigger {
-  display: grid;
+  display: flex;
   width: 100%;
-  min-height: 3.1rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "label chevron"
-    "name chevron";
-  gap: 0.12rem var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  height: 2.25rem;
+  min-height: 2.25rem;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.35rem var(--space-2);
   color: var(--text-primary);
   text-align: left;
   background: var(--surface-base);
@@ -7824,26 +7826,20 @@ textarea {
 }
 
 .table-view-selector-label {
-  grid-area: label;
-  color: var(--text-tertiary);
-  font-size: 0.62rem;
-  font-weight: 750;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  display: none;
 }
 
 .workspace-table-page .table-view-selector-trigger strong {
-  grid-area: name;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .table-view-selector-chevron {
-  grid-area: chevron;
-  align-self: center;
+  flex: 0 0 auto;
   color: var(--text-tertiary);
 }
 
@@ -7975,7 +7971,7 @@ textarea {
 
 .workspace-table-page .table-view-toolbar-controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-1);
 }
@@ -8066,7 +8062,76 @@ textarea {
 .workspace-table-page
   .editor-grid
   [role="gridcell"]:has(input[type="checkbox"]) {
-  justify-content: center;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.workspace-table-page .editor-grid input.editor-grid-selection-checkbox {
+  display: grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  inline-size: 16px;
+  block-size: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  min-inline-size: 16px;
+  min-block-size: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  max-inline-size: 16px;
+  max-block-size: 16px;
+  flex: 0 0 16px;
+  margin: 0;
+  appearance: none;
+  background: var(--surface-base) !important;
+  border: var(--border-width-thin) solid var(--border-strong) !important;
+  border-radius: 2px;
+  cursor: pointer;
+  transform: scale(0.6153846154, 0.7018505);
+  transform-origin: center;
+}
+
+.workspace-table-page .editor-grid input.editor-grid-selection-checkbox::after {
+  width: 0.3rem;
+  height: 0.55rem;
+  border: solid var(--surface-base);
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: rotate(45deg) scale(0);
+  transform-origin: center;
+}
+
+.workspace-table-page .editor-grid input.editor-grid-selection-checkbox:checked,
+.workspace-table-page
+  .editor-grid
+  input.editor-grid-selection-checkbox:indeterminate {
+  background: var(--coral-700) !important;
+  border-color: var(--coral-700) !important;
+}
+
+.workspace-table-page
+  .editor-grid
+  input.editor-grid-selection-checkbox:checked::after {
+  transform: rotate(45deg) scale(1);
+}
+
+.workspace-table-page
+  .editor-grid
+  input.editor-grid-selection-checkbox:indeterminate::after {
+  width: 0.5rem;
+  height: 0;
+  border-width: 0 0 2px;
+  transform: none;
+}
+
+.workspace-table-page
+  .editor-grid
+  input.editor-grid-selection-checkbox:focus-visible {
+  outline: 2px solid var(--coral-500);
+  outline-offset: 2px;
 }
 
 .editor-header-cell.is-dragging-source {
@@ -8186,6 +8251,8 @@ textarea {
 /* Stage 1 Table Workbench: quiet complete-View controls above the shared grid. */
 .workspace-table-page .table-workbench-search {
   display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: end;
   gap: var(--space-2) var(--space-3);
@@ -8201,14 +8268,31 @@ textarea {
 
 .workspace-table-page .table-workbench-search label {
   display: grid;
-  flex: 1 1 14rem;
+  width: min(12.5rem, 100%);
+  flex: 0 1 12.5rem;
   gap: 0.25rem;
   color: var(--text-secondary);
   font-size: 0.68rem;
   font-weight: 750;
 }
 
+.workspace-table-page
+  .contextual-record-create-actions
+  .button:not(.button-secondary) {
+  color: var(--surface-base);
+  background: var(--coral-600);
+  border-color: var(--coral-600);
+}
+
+.workspace-table-page
+  .contextual-record-create-actions
+  .button:not(.button-secondary):hover {
+  background: var(--coral-700);
+  border-color: var(--coral-700);
+}
+
 .workspace-table-page .table-workbench-search input {
+  width: 100%;
   min-height: 2.35rem;
   padding: 0.5rem 0.65rem;
   color: var(--text-primary);
@@ -8336,6 +8420,11 @@ textarea {
   .workspace-table-page .table-workbench-search form {
     display: grid;
     width: 100%;
+  }
+
+  .workspace-table-page .table-workbench-search label {
+    width: 100%;
+    flex: 1 1 auto;
   }
 
   .workspace-table-page .table-workbench-search button,
@@ -10790,6 +10879,127 @@ textarea {
   border-left: 1px solid var(--border-subtle);
 }
 
+/* Record details stay in context without changing the grid's available width. */
+.workspace-table-page .editor-record-panel-scrim {
+  position: fixed;
+  z-index: 75;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, var(--text-primary) 18%, transparent);
+}
+
+.workspace-table-page .editor-record-panel-scrim .editor-record-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(42rem, 100%);
+  max-height: min(48rem, calc(100dvh - 2 * var(--space-4)));
+  margin: 0;
+  padding: var(--space-6);
+  overflow: auto;
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-overlay);
+  transform: translate(-50%, -50%);
+}
+
+@media (max-width: 48rem) {
+  .workspace-table-page .editor-record-panel-scrim {
+    padding: 0;
+  }
+
+  .workspace-table-page .editor-record-panel-scrim .editor-record-panel {
+    position: static;
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+/* Compact the desktop workbench controls into two deliberate 40px bands. */
+@media (min-width: 48.01rem) {
+  main.workspace-main
+    .workspace-table-page
+    .editor-kernel-page:has(.editor-workbench-toolbar-content):not(
+      :has(.editor-bulk-update-bar)
+    ):not(:has(.editor-selection-notice)) {
+    grid-template-rows: auto 2.5rem 2.5rem minmax(0, 1fr);
+  }
+
+  main.workspace-main .workspace-table-page .editor-header-content {
+    box-sizing: border-box;
+    height: 2.5rem;
+    min-height: 2.5rem;
+    margin-block: 0;
+    align-items: center;
+  }
+
+  main.workspace-main .workspace-table-page .table-view-selector {
+    align-self: center;
+    justify-self: start;
+  }
+
+  main.workspace-main .workspace-table-page .editor-lab-meta {
+    box-sizing: border-box;
+    min-height: 2.5rem;
+    height: 2.5rem;
+    flex-wrap: nowrap;
+    padding-block: 0;
+    align-items: center;
+  }
+
+  main.workspace-main .workspace-table-page .editor-workbench-toolbar-content {
+    display: flex;
+    height: 100%;
+    align-items: center;
+  }
+
+  main.workspace-main .workspace-table-page .table-workbench-toolbar {
+    height: auto;
+    min-height: 0;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  main.workspace-main .workspace-table-page .table-workbench-search {
+    height: auto;
+    margin: 0;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  main.workspace-main .workspace-table-page .table-workbench-search input,
+  main.workspace-main .workspace-table-page .table-view-selector-trigger {
+    min-height: 2rem;
+    height: 2rem;
+  }
+
+  main.workspace-main .workspace-table-page .table-view-query-summary {
+    box-sizing: border-box;
+    min-height: 2.5rem;
+    height: 2.5rem;
+    padding-block: 0;
+  }
+}
+
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-action.is-danger {
+  margin-top: var(--space-2);
+  color: var(--trust-destructive-error-text);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.editor-column-menu[data-viewport-safe="true"]
+  .editor-column-menu-action.is-danger:hover {
+  color: var(--trust-destructive-error-text);
+  background: var(--trust-destructive-error-surface);
+}
+
 .workspace-table-page .editor-record-panel h2 {
   color: var(--text-primary);
   font-size: 1.25rem;
@@ -10917,14 +11127,25 @@ textarea {
   min-width: 0;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.18rem 0.36rem;
+  padding: 0;
   color: var(--text-primary);
-  background: var(--surface-subtle);
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.35rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   font-size: 0.68rem;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+.editor-connection-pill.is-openable {
+  cursor: pointer;
+}
+
+.editor-connection-pill.is-openable:hover,
+.editor-connection-pill.is-openable:focus-visible {
+  color: var(--coral-700);
+  outline: none;
+  text-decoration: underline;
 }
 
 .editor-connection-pill > span:first-child {
@@ -10971,20 +11192,20 @@ textarea {
   display: inline-flex;
   width: 100%;
   max-width: 100%;
-  min-height: 1.8rem;
+  min-height: 1.5rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.35rem;
-  padding: 0.2rem 0.32rem;
+  padding: 0;
   color: var(--text-primary);
-  background: var(--surface-base);
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.35rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .workspace-table-page .editor-connection-trigger:hover,
 .workspace-table-page .editor-connection-trigger[aria-expanded="true"] {
-  border-color: var(--coral-500);
+  color: var(--coral-700);
   filter: none;
 }
 
@@ -17472,4 +17693,68 @@ textarea {
 .workspace-table-page .editor-add-column-button[aria-expanded="true"] {
   color: var(--coral-700);
   background: var(--coral-50);
+}
+
+/* Table completion: compact recovery and reversible record cleanup. */
+.editor-cell-failure,
+.editor-record-archive,
+.table-archive-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 0.85rem;
+}
+.editor-cell-failure {
+  color: var(--color-danger, #a12a24);
+  background: #fff4f2;
+}
+.table-archive-dialog {
+  width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 3rem);
+  overflow: auto;
+  border: 1px solid var(--color-border, #dedbd6);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+.table-archive-dialog::backdrop {
+  background: rgb(0 0 0 / 25%);
+}
+.table-archive-row {
+  justify-content: space-between;
+  border-bottom: 1px solid #eee;
+}
+.table-archive-row span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.editor-group-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  font-weight: 600;
+}
+.editor-mobile-groups {
+  display: none;
+}
+@media (max-width: 48rem) {
+  .editor-mobile-groups {
+    display: block;
+  }
+  .editor-mobile-groups .editor-mobile-record-list {
+    display: block;
+  }
+}
+.editor-mobile-create {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+}
+.editor-mobile-create label {
+  width: 100%;
+}
+.editor-mobile-create input {
+  width: 100%;
 }
