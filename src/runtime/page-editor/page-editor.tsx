@@ -56,6 +56,18 @@ type RenamePageAction = (input: {
   title: string;
 }) => Promise<DirectPageActionResult>;
 
+type PageLifecycleAction = (input: {
+  currentness: DirectPageCurrentness;
+  pageKey: string;
+}) => Promise<DirectPageActionResult>;
+
+type CreateChecklistAction = (input: {
+  currentness: DirectPageCurrentness;
+  pageKey: string;
+  name: string;
+  afterBlockId?: string;
+}) => Promise<DirectPageActionResult>;
+
 type PublishPageChangesAction = (input: {
   currentness: DirectPageCurrentness;
   title: string;
@@ -71,8 +83,13 @@ export interface PageEditorProps {
   currentness: DirectPageCurrentness;
   views: Readonly<Record<string, PageEditorViewEmbed>>;
   availableViews: readonly PageViewOption[];
+  availablePages?: readonly { slug: string; title: string }[];
   applyPageBlockAction: ApplyPageBlockAction;
   renamePageAction: RenamePageAction;
+  duplicatePageAction?: PageLifecycleAction;
+  archivePageAction?: PageLifecycleAction;
+  restorePageAction?: PageLifecycleAction;
+  createChecklistAction?: CreateChecklistAction;
   previewBookings?: Readonly<
     Record<string, { catalogue: PublicBookingCatalogue }>
   >;
@@ -159,6 +176,8 @@ function blockLabel(block: PageBlock): string {
       return "Booking";
     case "preorder":
       return "Preorder";
+    case "collapsible":
+      return "Section";
   }
 }
 
@@ -205,7 +224,10 @@ function localBlockFromInput(input: DirectPageBlockInput): PageBlock | null {
       return { type: "divider" };
     case "view":
       return null;
+    case "collapsible":
+      return null;
   }
+  return null;
 }
 
 function applyPublishedSiteCandidateIntent(
@@ -372,6 +394,9 @@ function SavedViewBlock({
         )}
         currentness={tableEmbed.currentness}
         creationFallbackHref={tableEmbed.creationFallbackHref}
+        {...(tableEmbed.loadTablePage
+          ? { loadTablePage: tableEmbed.loadTablePage }
+          : {})}
         {...(tableEmbed.createConnectedRecordTarget
           ? {
               createConnectedRecordTarget:
@@ -587,9 +612,18 @@ function PageBlockView({
       );
     case "image":
       return (
-        <figure className="page-image-block">
+        <figure
+          className={`page-image-block page-image-${block.presentation ?? "content"}`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt={block.alt} src={block.src} />
+          <img
+            alt={block.alt}
+            src={
+              block.asset_id
+                ? `/api/app/${encodeURIComponent(businessSlug)}/pages/assets/${block.asset_id}`
+                : block.src
+            }
+          />
           {block.caption ? <figcaption>{block.caption}</figcaption> : null}
         </figure>
       );
@@ -639,6 +673,17 @@ function PageBlockView({
           {blockLabel(block)} content can be viewed from the existing Page
           runtime.
         </div>
+      );
+    case "collapsible":
+      return (
+        <details className="page-collapsible-block" open={block.open}>
+          <summary>{block.summary}</summary>
+          <PageRenderer
+            layout={{ blocks: block.blocks }}
+            previewMode
+            publicMode={false}
+          />
+        </details>
       );
   }
 }

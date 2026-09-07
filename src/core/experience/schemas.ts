@@ -896,12 +896,33 @@ const textBlockSchema = z
 const imageBlockSchema = z
   .object({
     type: z.literal("image"),
-    src: z.httpUrl().max(2048),
-    alt: z.string().trim().min(1).max(300),
+    /** Historical Pages use `src`; new Pages may point at a private asset. */
+    src: z.httpUrl().max(2048).optional(),
+    asset_id: z.uuid().optional(),
+    alt: z.string().trim().max(300).default(""),
     caption: z.string().trim().min(1).max(500).optional(),
+    presentation: z.enum(["content", "wide"]).optional(),
     id: pageBlockIdSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((image, context) => {
+    const hasSource = Boolean(image.src);
+    const hasAsset = Boolean(image.asset_id);
+    if (hasSource === hasAsset) {
+      context.addIssue({
+        code: "custom",
+        message: "An image must reference one external URL or private asset.",
+        path: ["src"],
+      });
+    }
+    if (hasSource && image.alt.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "External images need an image description.",
+        path: ["alt"],
+      });
+    }
+  });
 
 const buttonBlockSchema = z
   .object({
@@ -918,6 +939,13 @@ const viewBlockSchema = z
     type: z.literal("view"),
     view_key: graphKeySchema,
     read_only: z.boolean().optional(),
+    checklist: z
+      .object({
+        label_field: graphKeySchema,
+        completed_field: graphKeySchema,
+      })
+      .strict()
+      .optional(),
     id: pageBlockIdSchema.optional(),
   })
   .strict();
@@ -1043,7 +1071,12 @@ const richTextBlockSchema = z
   })
   .strict();
 
-export const pageBlockSchema = z.discriminatedUnion("type", [
+/**
+ * A collapsible section deliberately accepts the same authorable blocks as a
+ * document, except another collapsible section. This keeps the grammar one
+ * level deep while allowing useful content such as images and live Views.
+ */
+const containedPageBlockSchema = z.discriminatedUnion("type", [
   headingBlockSchema,
   textBlockSchema,
   imageBlockSchema,
@@ -1058,15 +1091,57 @@ export const pageBlockSchema = z.discriminatedUnion("type", [
   richTextBlockSchema,
 ]);
 
+const collapsibleBlockSchema = z
+  .object({
+    type: z.literal("collapsible"),
+    summary: z.string().trim().min(1).max(200),
+    blocks: z.array(containedPageBlockSchema).max(50),
+    open: z.boolean().default(true),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict();
+
+export const pageBlockSchema = z.discriminatedUnion("type", [
+  headingBlockSchema,
+  textBlockSchema,
+  imageBlockSchema,
+  buttonBlockSchema,
+  viewBlockSchema,
+  formBlockSchema,
+  publicFormBlockSchema,
+  bookingBlockSchema,
+  preorderBlockSchema,
+  dividerBlockSchema,
+  calloutBlockSchema,
+  richTextBlockSchema,
+  collapsibleBlockSchema,
+]);
+
 export const pageLayoutSchema = z
   .object({
     blocks: z.array(pageBlockSchema).max(100),
   })
   .strict()
   .superRefine((layout, context) => {
-    const ids = layout.blocks.flatMap((block) =>
-      "id" in block && block.id ? [block.id] : [],
-    );
+    const ids: string[] = [];
+    let blockCount = 0;
+    const collect = (blocks: readonly PageBlock[]): void => {
+      for (const block of blocks) {
+        blockCount += 1;
+        if ("id" in block && block.id) ids.push(block.id);
+        if (block.type === "collapsible") {
+          collect(block.blocks as readonly PageBlock[]);
+        }
+      }
+    };
+    collect(layout.blocks);
+    if (blockCount > 100) {
+      context.addIssue({
+        code: "custom",
+        message: "A Page can contain at most 100 blocks, including sections.",
+        path: ["blocks"],
+      });
+    }
     if (new Set(ids).size !== ids.length) {
       context.addIssue({
         code: "custom",

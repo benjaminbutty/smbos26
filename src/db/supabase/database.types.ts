@@ -904,6 +904,53 @@ export type Database = {
           },
         ];
       };
+      media_assets: {
+        Row: {
+          business_id: string;
+          byte_size: number;
+          created_at: string;
+          created_by: string;
+          height: number;
+          id: string;
+          mime_type: string;
+          storage_key: string;
+          updated_at: string;
+          width: number;
+        };
+        Insert: {
+          business_id: string;
+          byte_size: number;
+          created_at?: string;
+          created_by?: string;
+          height: number;
+          id?: string;
+          mime_type: string;
+          storage_key: string;
+          updated_at?: string;
+          width: number;
+        };
+        Update: {
+          business_id?: string;
+          byte_size?: number;
+          created_at?: string;
+          created_by?: string;
+          height?: number;
+          id?: string;
+          mime_type?: string;
+          storage_key?: string;
+          updated_at?: string;
+          width?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "media_assets_business_id_fkey";
+            columns: ["business_id"];
+            isOneToOne: false;
+            referencedRelation: "businesses";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       marketing_waitlist_signups: {
         Row: {
           business_type: string | null;

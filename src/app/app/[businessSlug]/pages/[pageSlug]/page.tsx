@@ -14,6 +14,10 @@ import {
   normalizeTableViewConfig,
   type TableViewConfig,
 } from "../../../../../core/experience/schemas";
+import {
+  pageBlockReferencesForm,
+  pageBlockReferencesView,
+} from "../../../../../core/experience/page-blocks";
 import { createServerClient } from "../../../../../db/supabase/server";
 import {
   readSearchParam,
@@ -42,10 +46,14 @@ import {
   updateProductionTableCellAction,
   updateProductionTableConnectionAction,
   updateProductionTableColumnOptionsAction,
+  loadProductionTablePageAction,
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
 import {
   applyPageBlockAction,
+  archivePageAction,
+  createChecklistAction,
+  duplicatePageAction,
   renamePageAction,
 } from "../../../../../runtime/pages/direct-actions";
 import {
@@ -192,6 +200,11 @@ function tableEmbedContext(
   bundle: ExperienceViewBundle,
 ) {
   return {
+    loadTablePage: loadProductionTablePageAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
     recordTypeLabel: bundle.object.singular_label,
     recordCountLabel: `${bundle.query?.totalCount ?? bundle.records.length} ${bundle.object.plural_label.toLocaleLowerCase("en")}`,
     fullRecordPath: `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(viewKey)}`,
@@ -230,26 +243,20 @@ export default async function InternalPage({
     readSearchParam(searchParams, "message"),
   ]);
 
-  const { page, views, forms, tableViews } = await (async () => {
+  const { page, views, forms, tableViews, navigation } = await (async () => {
     try {
       const page = await experience.loadPage(pageSlug, "internal");
-      const tableViews = await experience.listTableViews();
-      const referencedViewKeys = page.layout.blocks.flatMap((block) =>
-        block.type === "view" ? [block.view_key] : [],
-      );
-      const viewKeys = [
-        ...new Set([
-          ...referencedViewKeys,
-          ...(canEdit ? tableViews.map((view) => view.key) : []),
-        ]),
-      ];
-      const formKeys = [
-        ...new Set(
-          page.layout.blocks.flatMap((block) =>
-            block.type === "form" ? [block.form_key] : [],
-          ),
-        ),
-      ];
+      const [tableViews, navigation] = await Promise.all([
+        experience.listTableViews(),
+        experience.listNavigation(),
+      ]);
+      const referencedViewKeys = pageBlockReferencesView(page.layout);
+      // Keep chooser metadata separate from the live Record bundles. Loading
+      // only referenced Views keeps the Page shell light and ensures every
+      // newly selected View goes through the same tenant checked route
+      // resolution after its document save.
+      const viewKeys = [...new Set(referencedViewKeys)];
+      const formKeys = [...new Set(pageBlockReferencesForm(page.layout))];
       const [viewResults, formResults] = await Promise.all([
         Promise.allSettled(
           viewKeys.map(
@@ -291,7 +298,7 @@ export default async function InternalPage({
           };
         }
       }
-      return { forms, page, tableViews, views };
+      return { forms, navigation, page, tableViews, views };
     } catch {
       notFound();
     }
@@ -443,6 +450,11 @@ export default async function InternalPage({
   }
 
   const editorProps: PageEditorProps = {
+    availablePages: navigation.pages
+      .filter(
+        (candidate) => candidate.audience === "internal" && candidate.is_active,
+      )
+      .map((candidate) => ({ slug: candidate.slug, title: candidate.title })),
     availableViews: tableViews.map((view) => {
       const tableName = editorViews[view.key]?.bundle.object.plural_label;
       return {
@@ -460,7 +472,22 @@ export default async function InternalPage({
     ),
     businessSlug,
     canEdit,
+    archivePageAction: archivePageAction.bind(
+      null,
+      businessSlug,
+      page.definition.key,
+    ),
+    createChecklistAction: createChecklistAction.bind(
+      null,
+      businessSlug,
+      page.definition.key,
+    ),
     currentness: directConfiguration.currentness,
+    duplicatePageAction: duplicatePageAction.bind(
+      null,
+      businessSlug,
+      page.definition.key,
+    ),
     layout: page.layout,
     pageKey: page.definition.key,
     renamePageAction: renamePageAction.bind(

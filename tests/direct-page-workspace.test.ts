@@ -77,6 +77,38 @@ const snapshot: ConfigurationSnapshotV1 = {
   preorder_experience_locations: [],
 };
 
+const checklistSnapshot: ConfigurationSnapshotV1 = {
+  ...snapshot,
+  field_definitions: [
+    {
+      id: "00000000-0000-4000-8000-000000000007",
+      object_definition_id: objectId,
+      object_key: "contacts",
+      key: "name",
+      label: "Name",
+      field_type: "short_text",
+      required: true,
+      default_value: null,
+      settings_json: {},
+      position: 0,
+      is_active: true,
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000008",
+      object_definition_id: objectId,
+      object_key: "contacts",
+      key: "completed",
+      label: "Completed",
+      field_type: "boolean",
+      required: false,
+      default_value: false,
+      settings_json: {},
+      position: 1,
+      is_active: true,
+    },
+  ],
+};
+
 describe("Page grammar and direct Workspace composer", () => {
   it("accepts empty Pages, bounded Callouts, and read-only Views", () => {
     const layout = pageLayoutSchema.parse({
@@ -192,6 +224,31 @@ describe("Page grammar and direct Workspace composer", () => {
         layout_json: { blocks: [] },
       }),
     ]);
+  });
+
+  it("composes checklist creation as one bounded page-aware change", () => {
+    const result = composeDirectPageAction(checklistSnapshot, {
+      action: "create_checklist",
+      pageKey: "workspace",
+      name: "Opening tasks",
+    });
+
+    expect(result.actionKind).toBe("create_checklist");
+    expect(result.operations.map((operation) => operation.op)).toEqual([
+      "set_object",
+      "set_field",
+      "set_field",
+      "set_view",
+      "set_page",
+    ]);
+    const page = result.operations.at(-1);
+    expect(page).toMatchObject({ op: "set_page", key: "workspace" });
+    if (page?.op === "set_page") {
+      expect(page.layout_json.blocks.at(-1)).toMatchObject({
+        type: "view",
+        checklist: { label_field: "name", completed_field: "completed" },
+      });
+    }
   });
 
   it("preserves historical block IDs on rename and assigns IDs on layout save", () => {

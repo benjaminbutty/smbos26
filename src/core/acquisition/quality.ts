@@ -1,4 +1,5 @@
 import { bookingConfigSchema } from "../booking/schemas";
+import { walkPageBlocks } from "../experience/page-blocks";
 import { parseViewConfig } from "../experience/schemas";
 import type { ConfigurationOperation } from "../configuration/schemas";
 import {
@@ -993,7 +994,7 @@ function validatePages(
     if (page.layout_json.blocks.length === 0) {
       fail("page_without_blocks", `Page ${page.key} has no usable content.`);
     }
-    for (const block of page.layout_json.blocks) {
+    for (const block of walkPageBlocks(page.layout_json)) {
       if (block.type === "view") {
         if (!views.has(block.view_key))
           fail(

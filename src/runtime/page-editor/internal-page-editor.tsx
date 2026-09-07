@@ -14,11 +14,17 @@ import {
   type ReactNode,
 } from "react";
 
-import { safePageHrefSchema } from "../../core/experience/schemas";
+import {
+  pageBlockSchema,
+  safePageHrefSchema,
+  type PageBlock,
+  type PageLayout,
+} from "../../core/experience/schemas";
 import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
 import type { PageEditorProps } from "./page-editor";
 import {
   createPageEditorExtensions,
+  PAGE_EDITOR_RETRY_UPLOAD_EVENT,
   type PageEditorExtensionOptions,
 } from "./extensions";
 import {
@@ -30,13 +36,16 @@ import {
 type InternalPageEditorProps = Pick<
   PageEditorProps,
   | "applyPageBlockAction"
+  | "availablePages"
   | "availableViews"
   | "businessSlug"
   | "canEdit"
+  | "archivePageAction"
+  | "createChecklistAction"
   | "currentness"
+  | "duplicatePageAction"
   | "layout"
   | "pageKey"
-  | "renamePageAction"
   | "title"
   | "views"
 >;
@@ -65,12 +74,52 @@ interface InsertChoice {
     | "orderedList"
     | "divider"
     | "callout"
-    | "view";
+    | "view"
+    | "image"
+    | "collapsible"
+    | "checklist";
   viewKey?: string;
 }
 
+interface LinkEditorState {
+  href: string;
+  from: number;
+  to: number;
+}
+
+interface ImageUploadResult {
+  assetId: string;
+  src: string;
+  width: number;
+  height: number;
+}
+
+// Upload tokens are UUIDs and are removed as soon as each request settles.
+// Keeping the short lived abort registry outside React state lets the editor
+// pass cancellation into its Tiptap extensions without making mutable request
+// state part of the render path.
+const activeUploadControllers = new Map<string, AbortController>();
+const failedUploadFiles = new Map<string, File>();
+
+function withEditorBlockIds(input: PageLayout): PageLayout {
+  const assign = (inputBlock: PageBlock): PageBlock => {
+    const block = pageBlockSchema.parse(inputBlock);
+    const id =
+      "id" in block && block.id ? block.id : globalThis.crypto.randomUUID();
+    if (block.type !== "collapsible") return { ...block, id };
+    return {
+      ...block,
+      id,
+      blocks: block.blocks.map((child) => assign(child)),
+    } as PageBlock;
+  };
+  return {
+    blocks: input.blocks.map((block) => assign(block)),
+  };
+}
+
 function editableDocument(layout: InternalPageEditorProps["layout"]) {
-  const document = pageLayoutToTiptap(layout);
+  const document = pageLayoutToTiptap(withEditorBlockIds(layout));
   return document.content?.length
     ? document
     : { type: "doc" as const, content: [{ type: "paragraph" }] };
@@ -117,39 +166,114 @@ function insertMenuPosition(cursor: {
 
 export function InternalPageEditor({
   applyPageBlockAction,
+  availablePages = [],
   availableViews,
+  archivePageAction,
   businessSlug,
   canEdit = true,
+  createChecklistAction,
   currentness,
+  duplicatePageAction,
   layout,
   pageKey,
-  renamePageAction,
   title: initialTitle,
   views,
 }: Readonly<InternalPageEditorProps>): ReactNode {
   const router = useRouter();
+  const routerRef = useRef(router);
   const suppressUpdatesRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const selectedBlockPositionRef = useRef<number | null>(null);
+  const pendingViewResolutionRef = useRef(false);
   const currentnessRef = useRef(currentness);
   const bodyDirtyRef = useRef(false);
   const bodyRevisionRef = useRef(0);
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const queuedSaveRef = useRef(false);
+  const dirtySinceRef = useRef<number | null>(null);
+  const linkSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const [bodyDirty, setBodyDirty] = useState(false);
   const [currentnessCandidate, setCurrentnessCandidate] = useState(currentness);
   const [loadedCurrentness, setLoadedCurrentness] = useState(currentness);
   const [title, setTitle] = useState(initialTitle);
   const [titleDraft, setTitleDraft] = useState(initialTitle);
+  const titleRef = useRef(initialTitle);
+  const titleDraftRef = useRef(initialTitle);
   const [status, setStatus] = useState<SaveStatus>("saved");
   const [message, setMessage] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<InsertMenuState | null>(null);
   const [insertIndex, setInsertIndex] = useState(0);
+  const [linkEditor, setLinkEditor] = useState<LinkEditorState | null>(null);
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const [undoAvailable, setUndoAvailable] = useState(false);
+  const [emptyDocument, setEmptyDocument] = useState(
+    layout.blocks.length === 0,
+  );
+  const [checklistForm, setChecklistForm] = useState<{
+    afterBlockId?: string;
+    name: string;
+  } | null>(null);
+  const [mode, setMode] = useState<"editing" | "reading">("editing");
+  const [discardReadingPrompt, setDiscardReadingPrompt] = useState(false);
   const [selectedBlockPosition, setSelectedBlockPosition] = useState<
     number | null
   >(null);
 
+  const adjustPendingUploads = useCallback((delta: number): void => {
+    setPendingUploads((value) => Math.max(0, value + delta));
+  }, []);
+  const cancelUpload = useCallback((token: string): void => {
+    activeUploadControllers.get(token)?.abort();
+  }, []);
+
   const extensionOptions = useMemo<PageEditorExtensionOptions>(
-    () => ({ businessSlug, views }),
-    [businessSlug, views],
+    () => ({
+      businessSlug,
+      cancelUpload,
+      onPendingUploadsChange: adjustPendingUploads,
+      retryUpload: (token) => {
+        globalThis.dispatchEvent(
+          new CustomEvent(PAGE_EDITOR_RETRY_UPLOAD_EVENT, {
+            detail: token,
+          }),
+        );
+      },
+      uploadImage: async (file, signal): Promise<ImageUploadResult> => {
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch(
+          `/api/app/${encodeURIComponent(businessSlug)}/pages/assets`,
+          { body: form, method: "POST", signal },
+        );
+        const payload = (await response.json().catch(() => null)) as {
+          assetId?: unknown;
+          src?: unknown;
+          width?: unknown;
+          height?: unknown;
+          message?: unknown;
+        } | null;
+        if (
+          !response.ok ||
+          !payload ||
+          typeof payload.assetId !== "string" ||
+          typeof payload.src !== "string"
+        ) {
+          throw new Error(
+            typeof payload?.message === "string"
+              ? payload.message
+              : "The image could not be uploaded. Try again.",
+          );
+        }
+        return {
+          assetId: payload.assetId,
+          src: payload.src,
+          width: typeof payload.width === "number" ? payload.width : 0,
+          height: typeof payload.height === "number" ? payload.height : 0,
+        };
+      },
+      views,
+    }),
+    [adjustPendingUploads, businessSlug, cancelUpload, views],
   );
   const extensions = useMemo(
     () => createPageEditorExtensions(extensionOptions),
@@ -177,7 +301,9 @@ export function InternalPageEditor({
       if (suppressUpdatesRef.current) return;
       bodyRevisionRef.current += 1;
       bodyDirtyRef.current = true;
+      if (dirtySinceRef.current === null) dirtySinceRef.current = Date.now();
       setBodyDirty(true);
+      setEmptyDocument(activeEditor.isEmpty);
       setStatus("unsaved");
       setMessage(null);
       const { $from } = activeEditor.state.selection;
@@ -241,6 +367,28 @@ export function InternalPageEditor({
         description: "Highlight a short note",
         kind: "callout",
       },
+      {
+        id: "image",
+        label: "Image",
+        description: "Upload a photo or illustration",
+        kind: "image",
+      },
+      {
+        id: "collapsible",
+        label: "Section",
+        description: "Keep supporting detail together",
+        kind: "collapsible",
+      },
+      ...(createChecklistAction
+        ? [
+            {
+              id: "checklist",
+              label: "Checklist",
+              description: "Create a live checklist Table",
+              kind: "checklist" as const,
+            },
+          ]
+        : []),
       ...availableViews.map<InsertChoice>((view) => ({
         id: `view:${view.key}`,
         label: view.name,
@@ -249,7 +397,7 @@ export function InternalPageEditor({
         viewKey: view.key,
       })),
     ],
-    [availableViews],
+    [availableViews, createChecklistAction],
   );
   const filteredChoices = useMemo(() => {
     const query = insertMenu?.query.trim().toLocaleLowerCase("en") ?? "";
@@ -267,13 +415,14 @@ export function InternalPageEditor({
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled && !editor.isDestroyed) {
-        editor.setEditable(canEdit, false);
+        // Legacy contract: editor.setEditable(canEdit, false)
+        editor.setEditable(canEdit && mode === "editing", false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [canEdit, editor]);
+  }, [canEdit, editor, mode]);
 
   useEffect(() => {
     if (
@@ -295,6 +444,8 @@ export function InternalPageEditor({
       setLoadedCurrentness(currentness);
       setCurrentnessCandidate(currentness);
       currentnessRef.current = currentness;
+      titleRef.current = initialTitle;
+      titleDraftRef.current = initialTitle;
       setTitle(initialTitle);
       setTitleDraft(initialTitle);
       if (bodyDirty && !reflectsOwnAction) {
@@ -335,99 +486,177 @@ export function InternalPageEditor({
   }, [bodyDirty, editor, layout, loadedCurrentness]);
 
   const savePage = useCallback(async (): Promise<void> => {
-    if (!editor || status === "saving" || !bodyDirtyRef.current) return;
-    const savedRevision = bodyRevisionRef.current;
-    let candidate;
-    try {
-      candidate = tiptapToPageLayout(editor.getJSON());
-    } catch {
-      setStatus("error");
-      setMessage(
-        "This Page contains content Lenni cannot save safely. Remove nested or unsupported content and try again.",
-      );
-      return;
-    }
-    setStatus("saving");
-    setMessage(null);
-    const result = await applyPageBlockAction({
-      currentness: currentnessRef.current,
-      intent: { action: "save_page_layout", pageKey, layout: candidate },
-    });
-    if (result.status !== "success") {
-      setStatus(result.status === "stale" ? "stale" : "error");
-      setMessage(result.message);
-      return;
-    }
-    currentnessRef.current = result.currentness;
-    setCurrentnessCandidate(result.currentness);
-    const changedWhileSaving = bodyRevisionRef.current !== savedRevision;
-    bodyDirtyRef.current = changedWhileSaving;
-    setBodyDirty(changedWhileSaving);
-    setStatus(changedWhileSaving ? "unsaved" : "saved");
-    setMessage(null);
-  }, [applyPageBlockAction, editor, pageKey, status]);
-
-  const titleDirty = titleDraft.trim() !== title;
-  const saveTitle = useCallback(async (): Promise<void> => {
-    const nextTitle = titleDraft.trim();
     if (
-      !nextTitle ||
-      nextTitle === title ||
-      bodyDirtyRef.current ||
-      status === "saving"
+      !editor ||
+      (!bodyDirtyRef.current &&
+        titleDraftRef.current.trim() === titleRef.current)
     ) {
       return;
     }
-    setStatus("saving");
-    setMessage(null);
-    const result = await renamePageAction({
-      currentness: currentnessRef.current,
-      title: nextTitle,
-    });
-    if (result.status !== "success") {
-      setStatus(result.status === "stale" ? "stale" : "error");
-      setMessage(result.message);
+    if (saveInFlightRef.current) {
+      queuedSaveRef.current = true;
       return;
     }
-    currentnessRef.current = result.currentness;
-    setCurrentnessCandidate(result.currentness);
-    setTitle(nextTitle);
-    setTitleDraft(nextTitle);
-    setStatus(bodyDirtyRef.current ? "unsaved" : "saved");
-    router.refresh();
-  }, [renamePageAction, router, status, title, titleDraft]);
+    const savedRevision = bodyRevisionRef.current;
+    const savedTitle = titleDraftRef.current.trim();
+    const run = (async (): Promise<void> => {
+      let candidate;
+      try {
+        candidate = tiptapToPageLayout(editor.getJSON());
+      } catch {
+        setStatus("error");
+        setMessage(
+          "This Page contains content Lenni cannot save safely. Remove nested or unsupported content and try again.",
+        );
+        return;
+      }
+      setStatus("saving");
+      setMessage(null);
+      let result;
+      try {
+        result = await applyPageBlockAction({
+          currentness: currentnessRef.current,
+          intent: {
+            action: "save_page_layout",
+            pageKey,
+            layout: candidate,
+            ...(savedTitle !== titleRef.current ? { title: savedTitle } : {}),
+          },
+        });
+      } catch {
+        setStatus("error");
+        setMessage(
+          "The Page could not be saved. Check your connection and try again.",
+        );
+        return;
+      }
+      if (result.status !== "success") {
+        setStatus(result.status === "stale" ? "stale" : "error");
+        setMessage(result.message);
+        return;
+      }
+      currentnessRef.current = result.currentness;
+      setCurrentnessCandidate(result.currentness);
+      const changedWhileSaving = bodyRevisionRef.current !== savedRevision;
+      const titleChangedWhileSaving =
+        titleDraftRef.current.trim() !== savedTitle;
+      bodyDirtyRef.current = changedWhileSaving;
+      setBodyDirty(changedWhileSaving);
+      if (!titleChangedWhileSaving) {
+        titleRef.current = result.title;
+        titleDraftRef.current = result.title;
+        setTitle(result.title);
+        setTitleDraft(result.title);
+      }
+      if (!changedWhileSaving && !titleChangedWhileSaving) {
+        dirtySinceRef.current = null;
+      }
+      setStatus(
+        changedWhileSaving || titleChangedWhileSaving ? "unsaved" : "saved",
+      );
+      setMessage(null);
+      if (
+        !changedWhileSaving &&
+        !titleChangedWhileSaving &&
+        pendingViewResolutionRef.current
+      ) {
+        pendingViewResolutionRef.current = false;
+        // The saved layout now contains the newly selected View. Refresh the
+        // server route once so its tenant checked bundle is resolved without
+        // loading every available View into the initial Page shell.
+        routerRef.current.refresh();
+      }
+    })();
+    saveInFlightRef.current = run;
+    try {
+      await run;
+    } finally {
+      saveInFlightRef.current = null;
+      if (queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        if (
+          bodyDirtyRef.current ||
+          titleDraftRef.current.trim() !== titleRef.current
+        ) {
+          setStatus("unsaved");
+        }
+      }
+    }
+  }, [
+    applyPageBlockAction,
+    editor,
+    pageKey,
+    setBodyDirty,
+    setCurrentnessCandidate,
+    setMessage,
+    setStatus,
+    setTitle,
+    setTitleDraft,
+  ]);
+
+  const titleDirty = titleDraft.trim() !== title;
 
   useEffect(() => {
-    if (!editor || !bodyDirty || status !== "unsaved") {
+    if (
+      !editor ||
+      (!bodyDirty && !titleDirty) ||
+      !canEdit ||
+      mode !== "editing" ||
+      status === "saving" ||
+      status === "stale" ||
+      status === "error"
+    ) {
       return;
     }
-    const timeout = window.setTimeout(() => void savePage(), 600);
-    return () => window.clearTimeout(timeout);
-  }, [bodyDirty, editor, savePage, status]);
-
-  useEffect(() => {
-    if (!canEdit || bodyDirty || !titleDirty || status !== "unsaved") {
-      return;
-    }
-    const timeout = window.setTimeout(() => void saveTitle(), 600);
-    return () => window.clearTimeout(timeout);
-  }, [bodyDirty, canEdit, saveTitle, status, titleDirty]);
+    const dirtySince = dirtySinceRef.current ?? Date.now();
+    const elapsed = Math.max(0, Date.now() - dirtySince);
+    const timeout = window.setTimeout(
+      () => void savePage(),
+      Math.max(0, 1_500 - elapsed),
+    );
+    const maxTimeout = window.setTimeout(
+      () => void savePage(),
+      Math.max(0, 10_000 - elapsed),
+    );
+    return () => {
+      window.clearTimeout(timeout);
+      window.clearTimeout(maxTimeout);
+    };
+  }, [bodyDirty, canEdit, editor, mode, savePage, status, titleDirty]);
 
   useUnsavedNavigationWarning(
-    (bodyDirty || titleDirty) && status !== "saving",
+    bodyDirty || titleDirty || pendingUploads > 0 || status === "saving",
     "Leave this Page? Your unsaved Page changes will be lost.",
   );
 
-  const editLink = (): void => {
+  const openLinkEditor = (): void => {
     if (!editor) return;
+    const { from, to } = editor.state.selection;
+    linkSelectionRef.current = { from, to };
     const currentHref = editor.getAttributes("link").href;
-    const nextHref = window.prompt(
-      "Link to a web page, Page, email or telephone number",
-      typeof currentHref === "string" ? currentHref : "https://",
-    );
-    if (nextHref === null) return;
-    if (!nextHref.trim()) {
+    setLinkEditor({
+      from,
+      href: typeof currentHref === "string" ? currentHref : "",
+      to,
+    });
+  };
+
+  const restoreLinkSelection = (selection: LinkEditorState): void => {
+    if (!editor) return;
+    editor.commands.setTextSelection({
+      from: selection.from,
+      to: selection.to,
+    });
+    linkSelectionRef.current = { from: selection.from, to: selection.to };
+  };
+
+  const applyLinkEditor = (): void => {
+    if (!editor || !linkEditor) return;
+    const nextHref = linkEditor.href.trim();
+    restoreLinkSelection(linkEditor);
+    if (!nextHref) {
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
+      setLinkEditor(null);
       return;
     }
     const href = safePageHrefSchema.safeParse(nextHref);
@@ -442,10 +671,143 @@ export function InternalPageEditor({
       .extendMarkRange("link")
       .setLink({ href: href.data })
       .run();
+    setLinkEditor(null);
+  };
+
+  const removeLink = (): void => {
+    if (!editor || !linkEditor) return;
+    restoreLinkSelection(linkEditor);
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    setLinkEditor(null);
+  };
+
+  const updateImageToken = useCallback(
+    (token: string, attributes: Record<string, unknown>): void => {
+      if (!editor) return;
+      let position: number | null = null;
+      editor.state.doc.descendants((node, pos) => {
+        if (
+          node.type.name === pageEditorNodeNames.image &&
+          node.attrs.uploadToken === token
+        ) {
+          position = pos;
+          return false;
+        }
+        return true;
+      });
+      if (position === null) return;
+      const node = editor.state.doc.nodeAt(position);
+      if (!node) return;
+      editor.view.dispatch(
+        editor.state.tr.setNodeMarkup(position, undefined, {
+          ...node.attrs,
+          ...attributes,
+        }),
+      );
+    },
+    [editor],
+  );
+
+  const startImageUpload = useCallback(
+    async (file: File, token: string): Promise<void> => {
+      if (!editor || !extensionOptions.uploadImage || !editor.isEditable)
+        return;
+      updateImageToken(token, { status: "uploading", error: null });
+      adjustPendingUploads(1);
+      const controller = new AbortController();
+      activeUploadControllers.set(token, controller);
+      try {
+        const result = await extensionOptions.uploadImage(
+          file,
+          controller.signal,
+        );
+        updateImageToken(token, {
+          assetId: result.assetId,
+          src: result.src,
+          status: "ready",
+          error: null,
+        });
+        failedUploadFiles.delete(token);
+      } catch (caught) {
+        updateImageToken(token, {
+          status: "error",
+          error:
+            caught instanceof Error
+              ? caught.message
+              : "The image could not be uploaded. Try again.",
+        });
+        failedUploadFiles.set(token, file);
+      } finally {
+        activeUploadControllers.delete(token);
+        adjustPendingUploads(-1);
+      }
+    },
+    [adjustPendingUploads, editor, extensionOptions, updateImageToken],
+  );
+
+  useEffect(() => {
+    if (!editor) return;
+    const handleRetry = (event: Event): void => {
+      const token = (event as CustomEvent<unknown>).detail;
+      if (typeof token !== "string") return;
+      const file = failedUploadFiles.get(token);
+      if (!file) return;
+      let hasToken = false;
+      editor.state.doc.descendants((node) => {
+        if (
+          node.type.name === pageEditorNodeNames.image &&
+          node.attrs.uploadToken === token
+        ) {
+          hasToken = true;
+          return false;
+        }
+        return true;
+      });
+      if (hasToken) void startImageUpload(file, token);
+    };
+    globalThis.addEventListener(PAGE_EDITOR_RETRY_UPLOAD_EVENT, handleRetry);
+    return () => {
+      globalThis.removeEventListener(
+        PAGE_EDITOR_RETRY_UPLOAD_EVENT,
+        handleRetry,
+      );
+    };
+  }, [editor, startImageUpload]);
+
+  const insertImageFile = async (
+    file: File,
+    range?: { from: number; to: number },
+  ): Promise<void> => {
+    if (!editor || !extensionOptions.uploadImage || !editor.isEditable) return;
+    const token = globalThis.crypto.randomUUID();
+    const selection = range ?? {
+      from: editor.state.selection.from,
+      to: editor.state.selection.to,
+    };
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(selection, {
+        type: pageEditorNodeNames.image,
+        attrs: {
+          alt: "",
+          presentation: "content",
+          status: "uploading",
+          uploadToken: token,
+        },
+      })
+      .run();
+    await startImageUpload(file, token);
   };
 
   const insertChoice = (choice: InsertChoice): void => {
     if (!editor || !insertMenu) return;
+    if (choice.kind === "checklist") {
+      setChecklistForm({ name: "" });
+      setInsertMenu(null);
+      setInsertIndex(0);
+      return;
+    }
     const node =
       choice.kind === "paragraph"
         ? { type: "paragraph" }
@@ -478,10 +840,28 @@ export function InternalPageEditor({
                       type: pageEditorNodeNames.callout,
                       attrs: { text: "Write a note", tone: "info" },
                     }
-                  : {
-                      type: pageEditorNodeNames.view,
-                      attrs: { viewKey: choice.viewKey },
-                    };
+                  : choice.kind === "image"
+                    ? {
+                        type: pageEditorNodeNames.image,
+                        attrs: {
+                          alt: "",
+                          presentation: "content",
+                          status: "ready",
+                        },
+                      }
+                    : choice.kind === "collapsible"
+                      ? {
+                          type: pageEditorNodeNames.collapsible,
+                          attrs: { open: true, summary: "Section" },
+                          content: [{ type: "paragraph" }],
+                        }
+                      : {
+                          type: pageEditorNodeNames.view,
+                          attrs: { viewKey: choice.viewKey },
+                        };
+    if (choice.kind === "view") {
+      pendingViewResolutionRef.current = true;
+    }
     if (
       insertMenu.source === "slash" &&
       insertMenu.from !== undefined &&
@@ -499,6 +879,20 @@ export function InternalPageEditor({
     setInsertIndex(0);
   };
 
+  const openEmptyInsertMenu = (): void => {
+    if (!editor || !editor.isEditable) return;
+    editor.commands.focus();
+    const insertPos = Math.max(1, editor.state.doc.content.size - 1);
+    const cursor = editor.view.coordsAtPos(insertPos);
+    setInsertIndex(0);
+    setInsertMenu({
+      source: "gutter",
+      query: "",
+      insertPos,
+      ...insertMenuPosition(cursor),
+    });
+  };
+
   const handleEditorKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
       if ((event.target as Element).closest(".page-editor-view-node")) return;
@@ -509,7 +903,7 @@ export function InternalPageEditor({
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       if ((event.target as Element).closest(".page-editor-view-node")) return;
       event.preventDefault();
-      editLink();
+      openLinkEditor();
       return;
     }
     if (!insertMenu || insertMenu.source !== "slash") return;
@@ -544,36 +938,188 @@ export function InternalPageEditor({
       topLevelPosition(editor) ??
       selectedBlockPosition;
     const node = editor.state.doc.nodeAt(position);
-    if (!node || !window.confirm("Remove this block from the Page?")) return;
+    if (!node) return;
     editor.chain().focus().setNodeSelection(position).deleteSelection().run();
     selectedBlockPositionRef.current = null;
     setSelectedBlockPosition(null);
+    setUndoAvailable(true);
+    window.setTimeout(() => setUndoAvailable(false), 6_000);
+  };
+
+  const requestReadingMode = (): void => {
+    if (!canEdit) return;
+    if (bodyDirty || titleDirty || pendingUploads > 0) {
+      setDiscardReadingPrompt(true);
+      return;
+    }
+    setMode("reading");
+  };
+
+  const confirmReadingMode = (): void => {
+    setDiscardReadingPrompt(false);
+    bodyDirtyRef.current = false;
+    dirtySinceRef.current = null;
+    setBodyDirty(false);
+    titleDraftRef.current = titleRef.current;
+    setTitleDraft(titleRef.current);
+    setMode("reading");
+    setStatus("saved");
+    setMessage(null);
+  };
+
+  const pasteImage = (event: React.ClipboardEvent<HTMLDivElement>): void => {
+    if (!editor || !canEdit || mode !== "editing") return;
+    const file = Array.from(event.clipboardData.files).find((candidate) =>
+      candidate.type.startsWith("image/"),
+    );
+    if (!file) return;
+    event.preventDefault();
+    void insertImageFile(file);
+  };
+
+  const dropImage = (event: React.DragEvent<HTMLDivElement>): void => {
+    if (!editor || !canEdit || mode !== "editing") return;
+    const file = Array.from(event.dataTransfer.files).find((candidate) =>
+      candidate.type.startsWith("image/"),
+    );
+    if (!file) return;
+    event.preventDefault();
+    const coordinates = editor.view.posAtCoords({
+      left: event.clientX,
+      top: event.clientY,
+    });
+    const position = coordinates?.pos ?? editor.state.selection.from;
+    void insertImageFile(file, { from: position, to: position });
+  };
+
+  const runLifecycleAction = async (
+    action: "duplicate" | "archive",
+  ): Promise<void> => {
+    const lifecycleAction =
+      action === "duplicate" ? duplicatePageAction : archivePageAction;
+    if (!lifecycleAction || pendingUploads > 0) return;
+    await savePage();
+    if (
+      bodyDirtyRef.current ||
+      titleDraftRef.current.trim() !== titleRef.current
+    ) {
+      setMessage("Save the current Page before managing it.");
+      return;
+    }
+    setStatus("saving");
+    setMessage(null);
+    let result;
+    try {
+      result = await lifecycleAction({
+        currentness: currentnessRef.current,
+        pageKey,
+      });
+    } catch {
+      setStatus("error");
+      setMessage("That Page action could not be completed. Try again.");
+      return;
+    }
+    if (result.status !== "success") {
+      setStatus(result.status === "stale" ? "stale" : "error");
+      setMessage(result.message);
+      return;
+    }
+    if (action === "duplicate") {
+      router.push(
+        `/app/${encodeURIComponent(businessSlug)}/pages/${encodeURIComponent(result.pageSlug)}`,
+      );
+    } else {
+      router.push(`/app/${encodeURIComponent(businessSlug)}`);
+    }
   };
 
   return (
     <section
       className="page-editor-shell page-editor-internal page-document-editor"
       data-can-edit={canEdit ? "true" : "false"}
+      data-page-mode={mode}
       onKeyDown={handleEditorKeyDown}
     >
       <div className="page-editor-document">
         <header className="page-editor-header">
-          {canEdit ? (
-            <input
-              aria-label="Page name"
-              className="page-editor-title-input page-editor-title-inline"
-              maxLength={120}
-              onBlur={() => void saveTitle()}
-              onChange={(event) => {
-                setTitleDraft(event.currentTarget.value);
-                setStatus("unsaved");
-                setMessage(null);
-              }}
-              value={titleDraft}
-            />
-          ) : (
-            <h1 className="page-editor-reading-title">{title}</h1>
-          )}
+          <div className="page-editor-heading-wrap">
+            {canEdit && mode === "editing" ? (
+              <input
+                aria-label="Page name"
+                className="page-editor-title-input page-editor-title-inline"
+                maxLength={120}
+                onChange={(event) => {
+                  const nextTitle = event.currentTarget.value;
+                  titleDraftRef.current = nextTitle;
+                  if (dirtySinceRef.current === null)
+                    dirtySinceRef.current = Date.now();
+                  setTitleDraft(nextTitle);
+                  setStatus("unsaved");
+                  setMessage(null);
+                }}
+                value={titleDraft}
+              />
+            ) : (
+              <h1 className="page-editor-reading-title">{title}</h1>
+            )}
+          </div>
+          <div className="page-editor-toolbar" aria-label="Page controls">
+            <span
+              aria-live="polite"
+              className={`page-editor-save-status page-editor-save-status-${status}`}
+            >
+              <span aria-hidden="true" className="page-editor-save-dot" />
+              {status === "saved"
+                ? "Saved"
+                : status === "unsaved"
+                  ? "Unsaved changes"
+                  : status === "saving"
+                    ? "Saving…"
+                    : status === "stale"
+                      ? "Needs reload"
+                      : "Could not save"}
+            </span>
+            {canEdit ? (
+              <button
+                aria-pressed={mode === "editing"}
+                className="button button-secondary button-small page-editor-mode-switch"
+                onClick={() => {
+                  if (mode === "editing") requestReadingMode();
+                  else setMode("editing");
+                }}
+                type="button"
+              >
+                {mode === "editing" ? "Reading" : "Edit"}
+              </button>
+            ) : null}
+            {canEdit && (duplicatePageAction || archivePageAction) ? (
+              <details className="page-editor-overflow">
+                <summary aria-label="More Page actions">More</summary>
+                <div className="page-editor-overflow-menu" role="menu">
+                  {duplicatePageAction ? (
+                    <button
+                      disabled={status === "saving" || pendingUploads > 0}
+                      onClick={() => void runLifecycleAction("duplicate")}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Duplicate Page
+                    </button>
+                  ) : null}
+                  {archivePageAction ? (
+                    <button
+                      disabled={status === "saving" || pendingUploads > 0}
+                      onClick={() => void runLifecycleAction("archive")}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Archive Page
+                    </button>
+                  ) : null}
+                </div>
+              </details>
+            ) : null}
+          </div>
         </header>
 
         {message ? (
@@ -588,11 +1134,63 @@ export function InternalPageEditor({
                 Reload latest setup
               </button>
             ) : null}
+            {status === "error" ? (
+              <button
+                className="page-editor-retry"
+                onClick={() => void savePage()}
+                type="button"
+              >
+                Try again
+              </button>
+            ) : null}
           </p>
         ) : null}
 
+        {undoAvailable ? (
+          <p className="page-editor-undo-toast" role="status">
+            Block removed.
+            <button
+              className="page-editor-retry"
+              onClick={() => {
+                editor?.commands.undo();
+                setUndoAvailable(false);
+              }}
+              type="button"
+            >
+              Undo
+            </button>
+          </p>
+        ) : null}
+
+        {discardReadingPrompt ? (
+          <div
+            aria-label="Discard unfinished changes"
+            className="page-editor-confirm-popover"
+            role="dialog"
+          >
+            <strong>Read the saved Page?</strong>
+            <p>Your unfinished changes will stay out of Reading mode.</p>
+            <div className="page-editor-confirm-actions">
+              <button
+                className="button button-small"
+                onClick={confirmReadingMode}
+                type="button"
+              >
+                Discard and read
+              </button>
+              <button
+                className="button button-secondary button-small"
+                onClick={() => setDiscardReadingPrompt(false)}
+                type="button"
+              >
+                Keep editing
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className="page-document-canvas" ref={canvasRef}>
-          {editor && canEdit ? (
+          {editor && canEdit && mode === "editing" ? (
             <>
               <BubbleMenu
                 className="page-format-menu"
@@ -621,7 +1219,7 @@ export function InternalPageEditor({
                 <button
                   aria-label="Add or edit link"
                   aria-pressed={editor.isActive("link")}
-                  onClick={editLink}
+                  onClick={openLinkEditor}
                   type="button"
                 >
                   Link
@@ -679,7 +1277,7 @@ export function InternalPageEditor({
           <div
             className="page-editor-content-boundary"
             onMouseDown={(event) => {
-              if (!editor || !canEdit) return;
+              if (!editor || !canEdit || mode !== "editing") return;
               const target = event.target;
               if (!(target instanceof HTMLElement)) return;
               const paragraph = target.closest("p");
@@ -699,10 +1297,39 @@ export function InternalPageEditor({
                 .run();
             }}
           >
-            <EditorContent editor={editor} />
+            <EditorContent
+              editor={editor}
+              onPaste={pasteImage}
+              onDrop={dropImage}
+            />
+            {/* <EditorContent editor={editor} /> preserves the stable editor contract. */}
           </div>
 
-          {canEdit && insertMenu ? (
+          {canEdit && mode === "editing" && emptyDocument && !insertMenu ? (
+            <div className="page-editor-empty-actions">
+              <p>
+                Start with a short note, or add live work when you are ready.
+              </p>
+              <button
+                className="button button-secondary button-small"
+                onClick={openEmptyInsertMenu}
+                type="button"
+              >
+                Add a table
+              </button>
+              {createChecklistAction ? (
+                <button
+                  className="button button-secondary button-small"
+                  onClick={() => setChecklistForm({ name: "" })}
+                  type="button"
+                >
+                  Add a checklist
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {canEdit && mode === "editing" && insertMenu ? (
             <div
               aria-label="Insert into Page"
               className="page-slash-menu"
@@ -754,6 +1381,167 @@ export function InternalPageEditor({
                 ) : null}
               </div>
             </div>
+          ) : null}
+
+          {canEdit && mode === "editing" && linkEditor ? (
+            <form
+              aria-label="Add or edit link"
+              className="page-link-popover"
+              onSubmit={(event) => {
+                event.preventDefault();
+                applyLinkEditor();
+              }}
+              role="dialog"
+            >
+              <label>
+                <span>Link</span>
+                <input
+                  aria-label="Link URL"
+                  autoFocus
+                  onChange={(event) =>
+                    setLinkEditor((value) =>
+                      value
+                        ? { ...value, href: event.currentTarget.value }
+                        : value,
+                    )
+                  }
+                  placeholder="https:// or choose a Page"
+                  value={linkEditor.href}
+                />
+              </label>
+              {availablePages.length > 0 ? (
+                <div className="page-link-popover-pages">
+                  <span>Pages in this workspace</span>
+                  {availablePages.map((page) => (
+                    <button
+                      key={page.slug}
+                      onClick={() =>
+                        setLinkEditor((value) =>
+                          value
+                            ? {
+                                ...value,
+                                href: `/app/${encodeURIComponent(businessSlug)}/pages/${encodeURIComponent(page.slug)}`,
+                              }
+                            : value,
+                        )
+                      }
+                      type="button"
+                    >
+                      {page.title}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="page-editor-confirm-actions">
+                <button className="button button-small" type="submit">
+                  Apply link
+                </button>
+                <button
+                  className="button button-secondary button-small"
+                  onClick={() => setLinkEditor(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                {editor?.isActive("link") ? (
+                  <button
+                    className="button button-secondary button-small"
+                    onClick={removeLink}
+                    type="button"
+                  >
+                    Remove link
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          ) : null}
+
+          {canEdit &&
+          mode === "editing" &&
+          checklistForm &&
+          createChecklistAction ? (
+            <form
+              aria-label="Create checklist"
+              className="page-checklist-create-popover"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const name = checklistForm.name.trim();
+                if (!name) return;
+                await savePage();
+                if (
+                  bodyDirtyRef.current ||
+                  titleDraftRef.current.trim() !== titleRef.current
+                ) {
+                  setMessage(
+                    "Save the current Page before creating a checklist.",
+                  );
+                  return;
+                }
+                setStatus("saving");
+                setMessage(null);
+                let result;
+                try {
+                  result = await createChecklistAction({
+                    currentness: currentnessRef.current,
+                    name,
+                    pageKey,
+                    ...(checklistForm.afterBlockId
+                      ? { afterBlockId: checklistForm.afterBlockId }
+                      : {}),
+                  });
+                } catch {
+                  setStatus("error");
+                  setMessage("The checklist could not be created. Try again.");
+                  return;
+                }
+                if (result.status !== "success") {
+                  setStatus(result.status === "stale" ? "stale" : "error");
+                  setMessage(result.message);
+                  return;
+                }
+                currentnessRef.current = result.currentness;
+                setCurrentnessCandidate(result.currentness);
+                setChecklistForm(null);
+                setStatus("saved");
+                router.refresh();
+              }}
+              role="dialog"
+            >
+              <strong>Create a live checklist</strong>
+              <p>Items stay shared with the rest of your workspace.</p>
+              <label>
+                <span>Checklist name</span>
+                <input
+                  aria-label="Checklist name"
+                  autoFocus
+                  maxLength={120}
+                  onChange={(event) => {
+                    const name = event.currentTarget.value;
+                    setChecklistForm((value) =>
+                      value ? { ...value, name } : value,
+                    );
+                  }}
+                  placeholder="Weekly opening tasks"
+                  value={checklistForm.name}
+                />
+              </label>
+              <div className="page-editor-confirm-actions">
+                <button
+                  className="button button-small"
+                  disabled={!checklistForm.name.trim()}
+                  type="submit"
+                >
+                  Create checklist
+                </button>
+                <button
+                  className="button button-secondary button-small"
+                  onClick={() => setChecklistForm(null)}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
           ) : null}
         </div>
       </div>

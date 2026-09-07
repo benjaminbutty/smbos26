@@ -11,6 +11,8 @@ export const pageEditorNodeNames = {
   divider: "pageDivider",
   callout: "pageCallout",
   view: "pageView",
+  image: "pageImage",
+  collapsible: "pageCollapsible",
   legacy: "pageLegacy",
 } as const;
 
@@ -42,6 +44,70 @@ function legacyNode(block: PageBlock): JSONContent {
       blockJson: JSON.stringify(block),
     },
   };
+}
+
+function blockToTiptap(block: PageBlock): JSONContent {
+  switch (block.type) {
+    case "heading":
+      return {
+        type: "heading",
+        attrs: { ...blockIdAttrs(block), level: block.level },
+        content: textContent(block.text),
+      };
+    case "text":
+      return {
+        type: "paragraph",
+        attrs: blockIdAttrs(block),
+        content: textContent(block.text),
+      };
+    case "rich_text":
+      return richTextToTiptap(block);
+    case "divider":
+      return { type: pageEditorNodeNames.divider, attrs: blockIdAttrs(block) };
+    case "callout":
+      return {
+        type: pageEditorNodeNames.callout,
+        attrs: { ...blockIdAttrs(block), text: block.text, tone: block.tone },
+      };
+    case "view":
+      return {
+        type: pageEditorNodeNames.view,
+        attrs: {
+          ...blockIdAttrs(block),
+          viewKey: block.view_key,
+          readOnly: block.read_only ?? false,
+          checklist: block.checklist ?? null,
+        },
+      };
+    case "image":
+      return {
+        type: pageEditorNodeNames.image,
+        attrs: {
+          ...blockIdAttrs(block),
+          assetId: block.asset_id ?? null,
+          src: block.src ?? null,
+          alt: block.alt,
+          caption: block.caption ?? "",
+          presentation: block.presentation,
+        },
+      };
+    case "collapsible":
+      return {
+        type: pageEditorNodeNames.collapsible,
+        attrs: {
+          ...blockIdAttrs(block),
+          summary: block.summary,
+          open: block.open,
+        },
+        content: block.blocks.map(blockToTiptap),
+      };
+    case "button":
+    case "form":
+    case "public_form":
+    case "booking":
+    case "preorder":
+      return legacyNode(block);
+  }
 }
 
 function tiptapMarks(
@@ -95,54 +161,7 @@ function richTextToTiptap(block: RichTextBlock): JSONContent {
 
 export function pageLayoutToTiptap(layoutInput: unknown): PageEditorDocument {
   const layout = pageLayoutSchema.parse(layoutInput);
-  const content = layout.blocks.map<JSONContent>((block) => {
-    switch (block.type) {
-      case "heading":
-        return {
-          type: "heading",
-          attrs: { ...blockIdAttrs(block), level: block.level },
-          content: textContent(block.text),
-        };
-      case "text":
-        return {
-          type: "paragraph",
-          attrs: blockIdAttrs(block),
-          content: textContent(block.text),
-        };
-      case "rich_text":
-        return richTextToTiptap(block);
-      case "divider":
-        return {
-          type: pageEditorNodeNames.divider,
-          attrs: blockIdAttrs(block),
-        };
-      case "callout":
-        return {
-          type: pageEditorNodeNames.callout,
-          attrs: {
-            ...blockIdAttrs(block),
-            text: block.text,
-            tone: block.tone,
-          },
-        };
-      case "view":
-        return {
-          type: pageEditorNodeNames.view,
-          attrs: {
-            ...blockIdAttrs(block),
-            viewKey: block.view_key,
-            readOnly: block.read_only ?? null,
-          },
-        };
-      case "image":
-      case "button":
-      case "form":
-      case "public_form":
-      case "booking":
-      case "preorder":
-        return legacyNode(block);
-    }
-  });
+  const content = layout.blocks.map<JSONContent>(blockToTiptap);
   return { type: "doc", content };
 }
 
@@ -281,8 +300,41 @@ function canonicalBlock(node: JSONContent): PageBlock | null {
         type: "view",
         view_key: node.attrs?.viewKey,
         ...(readOnly ? { read_only: true } : {}),
+        ...(node.attrs?.checklist ? { checklist: node.attrs.checklist } : {}),
       }),
     );
+    return result.success ? result.data : null;
+  }
+  if (node.type === pageEditorNodeNames.image) {
+    const assetId =
+      typeof node.attrs?.assetId === "string" ? node.attrs.assetId : undefined;
+    const src =
+      typeof node.attrs?.src === "string" ? node.attrs.src : undefined;
+    const source = assetId ? { asset_id: assetId } : src ? { src } : {};
+    const result = pageBlockSchema.safeParse({
+      type: "image",
+      ...source,
+      alt: typeof node.attrs?.alt === "string" ? node.attrs.alt : "",
+      ...(typeof node.attrs?.caption === "string" && node.attrs.caption
+        ? { caption: node.attrs.caption }
+        : {}),
+      presentation: node.attrs?.presentation === "wide" ? "wide" : "content",
+      ...(id ? { id } : {}),
+    });
+    return result.success ? result.data : null;
+  }
+  if (node.type === pageEditorNodeNames.collapsible) {
+    const children = (node.content ?? []).map((child) => canonicalBlock(child));
+    if (children.some((child) => !child || child.type === "collapsible")) {
+      throw new Error("Nested collapsible sections are not allowed.");
+    }
+    const result = pageBlockSchema.safeParse({
+      type: "collapsible",
+      summary:
+        typeof node.attrs?.summary === "string" ? node.attrs.summary : "",
+      blocks: children.filter((child): child is PageBlock => child !== null),
+      ...(id ? { id } : {}),
+    });
     return result.success ? result.data : null;
   }
   if (node.type === pageEditorNodeNames.legacy) {

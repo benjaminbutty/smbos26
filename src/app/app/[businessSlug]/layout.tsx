@@ -13,6 +13,7 @@ import { experienceKeyToPath } from "../../../runtime/routing";
 import { PagesSidebar } from "../../../runtime/navigation/pages-sidebar";
 import { TablesSidebar } from "../../../runtime/navigation/tables-sidebar";
 import { createPageAction } from "../../../runtime/pages/direct-actions";
+import { restorePageAction } from "../../../runtime/pages/direct-actions";
 import { createDirectTableAction } from "../../../runtime/views/direct-actions";
 
 interface TenantLayoutProps {
@@ -110,11 +111,26 @@ export default async function TenantLayout({
             }
             businessSlug={businessSlug}
             currentness={canManageConfiguration ? currentness : null}
+            archivedPages={
+              canManageConfiguration
+                ? navigation.archivedPages.map((page) => ({
+                    id: page.id,
+                    key: page.key,
+                    slug: page.slug,
+                    title: page.title,
+                  }))
+                : []
+            }
             pages={navigation.pages.map((page) => ({
               id: page.id,
               slug: page.slug,
               title: page.title,
             }))}
+            restoreAction={
+              canManageConfiguration
+                ? restorePageAction.bind(null, businessSlug)
+                : undefined
+            }
           />
           {navigation.publicPages.length > 0 ? (
             <section aria-label="Sites" className="workspace-sites-group">
@@ -191,9 +207,20 @@ export default async function TenantLayout({
         {children}
       </main>
       <WorkspaceMobileNav
+        archivedPages={
+          canManageConfiguration
+            ? navigation.archivedPages.map((page) => ({
+                id: page.id,
+                key: page.key,
+                slug: page.slug,
+                title: page.title,
+              }))
+            : []
+        }
         businessName={tenant.business.name}
         businessSlug={businessSlug}
         canManageConfiguration={canManageConfiguration}
+        currentness={canManageConfiguration ? currentness : null}
         pages={navigation.pages.map((page) => ({
           slug: page.slug,
           title: page.title,

@@ -315,6 +315,25 @@ describe("workspace foundation direct Page actions", () => {
     expect(saved.changeSet.base_head_revision).toBe(
       renamed.changeSet.base_head_revision + 1,
     );
+
+    const titleOnly = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: saved.currentness,
+        intent: {
+          action: "save_page_layout",
+          pageKey: created.composed.pageKey,
+          title: "Catering Requests — Today",
+          layout: savedPage?.layout_json ?? { blocks: [] },
+        },
+      },
+    );
+    expect(
+      titleOnly.snapshot.pages.find(
+        (page) => page.key === created.composed.pageKey,
+      ),
+    ).toMatchObject({ title: "Catering Requests — Today" });
   });
 
   it("saves a completed long-distance Page reorder in exactly one Version", async () => {
@@ -454,6 +473,86 @@ describe("workspace foundation direct Page actions", () => {
       versions: before.versions + 1,
       changes: before.changes + 1,
       revision: before.revision + 1,
+    });
+  });
+
+  it("creates a checklist with an exact composite beside nested Page content", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `checklist_page_${suffix}`;
+    const created = await applyConfigurationOperations(
+      [
+        {
+          op: "set_page",
+          key: pageKey,
+          title: "Opening checklist Page",
+          slug: `opening-checklist-${suffix}`,
+          audience: "internal",
+          layout_json: {
+            blocks: [
+              {
+                type: "collapsible",
+                summary: "Keep this close",
+                open: true,
+                blocks: [{ type: "text", text: "Opening routine" }],
+              },
+            ],
+          },
+          status: "draft",
+          is_active: true,
+        },
+      ],
+      `Create ${pageKey}`,
+    );
+
+    const checklistName = `Opening tasks ${suffix}`;
+    const checklist = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "create_checklist",
+          pageKey,
+          name: checklistName,
+        },
+      },
+    );
+    const page = checklist.snapshot.pages.find(
+      (candidate) => candidate.key === pageKey,
+    );
+    const object = checklist.snapshot.object_definitions.find(
+      (candidate) => candidate.plural_label === checklistName,
+    );
+    const view = checklist.snapshot.views.find(
+      (candidate) => candidate.key === object?.key,
+    );
+    const checklistOperations = checklist.changeSet
+      .operations_json as unknown as ConfigurationOperation[];
+
+    expect(checklistOperations.map((operation) => operation.op)).toEqual([
+      "set_object",
+      "set_field",
+      "set_field",
+      "set_view",
+      "set_page",
+    ]);
+    expect(page?.layout_json.blocks).toHaveLength(2);
+    expect(page?.layout_json.blocks[0]).toMatchObject({
+      type: "collapsible",
+      summary: "Keep this close",
+      blocks: [{ type: "text", text: "Opening routine" }],
+    });
+    expect(page?.layout_json.blocks[1]).toMatchObject({
+      type: "view",
+      view_key: object?.key,
+      checklist: { label_field: "name", completed_field: "completed" },
+    });
+    expect(view).toMatchObject({
+      key: object?.key,
+      name: checklistName,
+      view_type: "table",
+      audience: "internal",
+      is_active: true,
     });
   });
 
@@ -870,5 +969,49 @@ describe("workspace foundation direct Page actions", () => {
 
     const after = await currentness(owner);
     expect(after.currentness).toEqual(before.currentness);
+  });
+
+  it("walks contained blocks and enforces private asset ownership at the database boundary", async () => {
+    const nestedPrivateLayout = {
+      blocks: [
+        {
+          type: "collapsible",
+          summary: "Private work",
+          blocks: [{ type: "view", view_key: "not_public" }],
+          open: true,
+        },
+      ],
+    };
+    await expect(
+      sql`
+        select private.assert_valid_experience_page(
+          ${business.id}::uuid,
+          'public'::public.experience_audience,
+          ${sql.json(nestedPrivateLayout)}::jsonb,
+          'published'::public.experience_page_status
+        )
+      `,
+    ).rejects.toThrow(
+      /Published public Pages cannot expose generic Records or Forms/,
+    );
+
+    await expect(
+      sql`
+        select private.assert_valid_experience_page(
+          ${business.id}::uuid,
+          'internal'::public.experience_audience,
+          ${sql.json({
+            blocks: [
+              {
+                type: "image",
+                asset_id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+                alt: "",
+              },
+            ],
+          })}::jsonb,
+          'draft'::public.experience_page_status
+        )
+      `,
+    ).rejects.toThrow(/Page media reference is invalid/);
   });
 });

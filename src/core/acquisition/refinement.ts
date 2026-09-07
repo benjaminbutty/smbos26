@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 
 import { pageLayoutSchema, parseViewConfig } from "../experience/schemas";
+import { mapPageBlocks, walkPageBlocks } from "../experience/page-blocks";
 import {
   setFormOperationSchema,
   setPageOperationSchema,
@@ -350,13 +351,19 @@ function removeExplicitOperations(
       }
     }
     if (operation.op === "set_page") {
-      const blocks = operation.layout_json.blocks.filter((block) => {
-        if (block.type === "view") return !removedViewKeys.has(block.view_key);
-        if (block.type === "form" || block.type === "public_form") {
-          return !removedFormKeys.has(block.form_key);
+      const layout = mapPageBlocks(operation.layout_json, (block) => {
+        if (block.type === "view" && removedViewKeys.has(block.view_key)) {
+          return null;
         }
-        return true;
+        if (
+          (block.type === "form" || block.type === "public_form") &&
+          removedFormKeys.has(block.form_key)
+        ) {
+          return null;
+        }
+        return block;
       });
+      const blocks = layout.blocks;
       if (blocks.length === 0) {
         removedKeys.add(operationKey(operation));
         continue;
@@ -364,7 +371,7 @@ function removeExplicitOperations(
       result.push(
         setPageOperationSchema.parse({
           ...operation,
-          layout_json: pageLayoutSchema.parse({ blocks }),
+          layout_json: pageLayoutSchema.parse(layout),
         }),
       );
       continue;
@@ -434,7 +441,7 @@ function addDependencies(
         }
       }
       if (operation.op === "set_page") {
-        for (const block of operation.layout_json.blocks) {
+        for (const block of walkPageBlocks(operation.layout_json)) {
           if (block.type !== "booking") continue;
           requiredObjects.add(block.config.booking_object_key);
           requiredObjects.add(block.config.customer_object_key);
@@ -693,20 +700,27 @@ function removeRelationshipScalarDuplicates(
 
   return firstPass.flatMap<ConfigurationOperation>((operation) => {
     if (operation.op !== "set_page") return [operation];
-    const blocks = operation.layout_json.blocks.filter((block) => {
-      if (block.type === "view") return !removedViewKeys.has(block.view_key);
-      if (block.type === "form" || block.type === "public_form") {
-        return !removedFormKeys.has(block.form_key);
+    const layout = mapPageBlocks(operation.layout_json, (block) => {
+      if (block.type === "view" && removedViewKeys.has(block.view_key)) {
+        return null;
       }
-      return true;
+      if (
+        (block.type === "form" || block.type === "public_form") &&
+        removedFormKeys.has(block.form_key)
+      ) {
+        return null;
+      }
+      return block;
     });
+    const blocks = layout.blocks;
     if (blocks.length === 0) return [];
-    if (blocks.length === operation.layout_json.blocks.length)
+    if (JSON.stringify(layout) === JSON.stringify(operation.layout_json)) {
       return [operation];
+    }
     return [
       setPageOperationSchema.parse({
         ...operation,
-        layout_json: pageLayoutSchema.parse({ blocks }),
+        layout_json: pageLayoutSchema.parse(layout),
       }),
     ];
   });

@@ -36,7 +36,7 @@ export type SourcedFormDefinition = Tables<"forms"> & {
 
 export interface ConfigurationDefinitionSource {
   readonly kind: "live" | "snapshot";
-  listPages(): Promise<PageDefinition[]>;
+  listPages(includeInactive?: boolean): Promise<PageDefinition[]>;
   listViews(): Promise<SourcedViewDefinition[]>;
   listRelationships(): Promise<RelationshipDefinition[]>;
   getPageByKey(pageKey: string): Promise<PageDefinition | null>;
@@ -325,13 +325,14 @@ export function createActiveConfigurationDefinitionSource(
   return {
     kind: "live",
 
-    async listPages() {
-      const { data, error } = await client
+    async listPages(includeInactive = false) {
+      let query = client
         .from("pages")
         .select("*")
         .eq("business_id", businessId)
-        .eq("is_active", true)
         .order("created_at");
+      if (!includeInactive) query = query.eq("is_active", true);
+      const { data, error } = await query;
       return requireRows(data, error, "Could not load configured Pages.");
     },
 
@@ -613,15 +614,14 @@ export function createSnapshotConfigurationDefinitionSource(
       created_at: snapshotTimestamp,
       updated_at: snapshotTimestamp,
     }));
-  const pages: PageDefinition[] = snapshot.pages
-    .filter((definition) => definition.is_active)
-    .map((definition) => ({
-      ...definition,
-      business_id: businessId,
-      layout_json: definition.layout_json as Json,
-      created_at: snapshotTimestamp,
-      updated_at: snapshotTimestamp,
-    }));
+  const allPages: PageDefinition[] = snapshot.pages.map((definition) => ({
+    ...definition,
+    business_id: businessId,
+    layout_json: definition.layout_json as Json,
+    created_at: snapshotTimestamp,
+    updated_at: snapshotTimestamp,
+  }));
+  const pages = allPages.filter((definition) => definition.is_active);
   const preorders: PreorderDefinition[] = snapshot.preorder_experiences
     .filter((definition) => definition.is_active)
     .map((definition) => ({
@@ -683,8 +683,8 @@ export function createSnapshotConfigurationDefinitionSource(
   return {
     kind: "snapshot",
 
-    async listPages() {
-      return pages;
+    async listPages(includeInactive = false) {
+      return includeInactive ? allPages : pages;
     },
     async listViews() {
       return views;

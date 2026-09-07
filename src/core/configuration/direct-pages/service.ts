@@ -166,6 +166,7 @@ export async function applyDirectPageAction(
   input: { currentness: unknown; intent: unknown },
 ): Promise<AppliedDirectPageAction> {
   const parsedContext = parseContext(context);
+  const configuration = new ConfigurationChangeService(client, parsedContext);
   const expected = directPageCurrentnessSchema.parse(input.currentness);
   const intent = directPageIntentSchema.parse(input.intent);
   const state = await configurationState(client, parsedContext);
@@ -199,11 +200,26 @@ export async function applyDirectPageAction(
     return rpcError("Could not apply the Page change.", error);
   }
   const changeSet = trustedChangeSet(data, parsedContext);
-  const next = await configurationState(client, parsedContext);
+  // The RPC returns the Version committed by this action. Read that exact
+  // immutable snapshot so a concurrent later change cannot be mistaken for
+  // this caller's acknowledgement.
+  const appliedVersionId = changeSet.applied_version_id;
+  if (!appliedVersionId) {
+    throw new DirectPageServiceError(
+      "The Page change response did not include its committed Version.",
+      { message: "direct_page_response_invalid" },
+    );
+  }
+  const committedVersion = await configuration.getVersion(appliedVersionId);
   return {
     changeSet,
     composed,
-    currentness: next.currentness,
-    snapshot: next.snapshot,
+    currentness: {
+      expectedBaseVersionId: committedVersion.id,
+      expectedHeadRevision: changeSet.base_head_revision + 1,
+    },
+    snapshot: configurationSnapshotV1Schema.parse(
+      committedVersion.snapshot_json,
+    ),
   };
 }

@@ -305,6 +305,22 @@ function snapshot(): ConfigurationSnapshotV1 {
               text: "Choose a collection location and tell us what you need.",
             },
             {
+              type: "collapsible",
+              summary: "Collection details",
+              open: false,
+              blocks: [
+                { type: "text", text: "Bring your order reference." },
+                {
+                  type: "view",
+                  view_key: "orders",
+                  checklist: {
+                    label_field: "name",
+                    completed_field: "completed",
+                  },
+                },
+              ],
+            },
+            {
               type: "image",
               src: `https://${urlMarkers.username}:${urlMarkers.password}@${urlMarkers.hostname}/${urlMarkers.pathname}?${urlMarkers.query}#${urlMarkers.fragment}`,
               alt: "A boxed preorder",
@@ -681,6 +697,19 @@ describe("AI-safe Business model context projection", () => {
       label: "External details",
       destination_kind: "external_web",
       style: "secondary",
+    });
+    expect(projectedBlocks).toContainEqual({
+      type: "collapsible",
+      summary: "Collection details",
+      open: false,
+      blocks: [
+        { type: "text", text: "Bring your order reference." },
+        {
+          type: "view",
+          view_key: "orders",
+          checklist: { label_field: "name", completed_field: "completed" },
+        },
+      ],
     });
     expect(projectedBlocks).toContainEqual({
       type: "button",
