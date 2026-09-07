@@ -1,4 +1,4 @@
-import { useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type {
   Column,
   RenderCellProps,
@@ -28,6 +28,11 @@ export interface PendingEdit {
   value: EditorValue;
 }
 
+export interface ColumnDragState {
+  sourceKey: string;
+  targetKey: string | null;
+}
+
 interface CreateEditorColumnsOptions {
   columns: readonly EditorColumn[];
   columnMenuKey: string | null;
@@ -55,10 +60,15 @@ interface CreateEditorColumnsOptions {
       currency?: string;
     },
   ) => Promise<boolean>;
+  onArchiveColumn?: (columnKey: string) => Promise<boolean>;
   onMoveColumn?: (columnKey: string, direction: "left" | "right") => void;
   onReorderColumns?: (sourceColumnKey: string, targetColumnKey: string) => void;
+  columnDragState?: ColumnDragState | null;
+  onColumnDragStateChange?: (state: ColumnDragState | null) => void;
   onOpenRecord: (rowId: string, columnKey: string) => void;
-  onActivateDraft: (rowIdx: number, columnIdx: number) => void;
+  draftInputActive?: boolean;
+  onActivateDraft: () => void;
+  onCancelDraftInput?: () => void;
   onSearchConnectionTargets?: (
     columnKey: string,
     search: string,
@@ -67,10 +77,13 @@ interface CreateEditorColumnsOptions {
     columnKey: string,
     primaryValue: string,
   ) => Promise<{ id: string; label: string }>;
+  onOpenConnectionCreate?: (columnKey: string, row: EditorRow) => void;
+  onOpenConnectionRecord?: (column: EditorColumn, recordId: string) => void;
   canRenameColumns?: boolean;
   canUpdateColumnOptions?: boolean;
   canChangeColumnTypes?: boolean;
   canInsertColumns?: boolean;
+  canDeleteColumns?: boolean;
   canReorderColumns?: boolean;
   canResizeColumns?: boolean;
   pendingEdit: PendingEdit | null;
@@ -168,6 +181,7 @@ function HeaderCell({
   canUpdateOptions,
   canChangeType,
   canInsert,
+  canArchive,
   isOpen,
   onOpen,
   onClose,
@@ -175,8 +189,11 @@ function HeaderCell({
   onUpdateOptions,
   onChangeType,
   onInsert,
+  onArchive,
   onMove,
   onReorder,
+  dragState,
+  onDragStateChange,
 }: Readonly<{
   column: EditorColumn;
   canReorder: boolean;
@@ -184,6 +201,7 @@ function HeaderCell({
   canUpdateOptions: boolean;
   canChangeType: boolean;
   canInsert: boolean;
+  canArchive: boolean;
   isOpen: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -207,38 +225,81 @@ function HeaderCell({
         },
       ) => Promise<boolean>)
     | undefined;
+  onArchive: (() => Promise<boolean>) | undefined;
   onMove: ((direction: "left" | "right") => void) | undefined;
   onReorder:
     ((sourceColumnKey: string, targetColumnKey: string) => void) | undefined;
+  dragState: ColumnDragState | null | undefined;
+  onDragStateChange: ((state: ColumnDragState | null) => void) | undefined;
 }>): React.ReactNode {
   const anchorRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const dragInProgressRef = useRef(false);
   const canChangeOptions = column.kind === "select" || column.kind === "status";
   const closeMenu = (): void => {
     onClose();
     window.requestAnimationFrame(() => menuButtonRef.current?.focus());
   };
   const reorderFromHandle = (
-    event: React.PointerEvent<HTMLButtonElement>,
+    event:
+      | React.PointerEvent<HTMLButtonElement>
+      | React.MouseEvent<HTMLButtonElement>,
   ): void => {
-    if (!onReorder) return;
+    if (!onReorder || !onDragStateChange || dragInProgressRef.current) return;
+    dragInProgressRef.current = true;
+    const reorder = onReorder;
+    const updateDragState = onDragStateChange;
     event.preventDefault();
     event.stopPropagation();
+    const handle = event.currentTarget;
+    const pointerId = "pointerId" in event ? event.pointerId : undefined;
     const sourceColumnKey = column.key;
-    const finish = (releaseEvent: PointerEvent): void => {
-      const target = document
-        .elementFromPoint(releaseEvent.clientX, releaseEvent.clientY)
-        ?.closest<HTMLElement>("[data-editor-column-key]")
-        ?.dataset.editorColumnKey;
-      if (target && target !== sourceColumnKey) {
-        onReorder(sourceColumnKey, target);
-      }
+    const targetAt = (clientX: number, clientY: number): string | null =>
+      document
+        .elementFromPoint(clientX, clientY)
+        ?.closest<HTMLElement>("[data-editor-column-key]")?.dataset
+        .editorColumnKey ?? null;
+    const updateTarget = (
+      moveEvent: PointerEvent | MouseEvent,
+    ): string | null => {
+      const target = targetAt(moveEvent.clientX, moveEvent.clientY);
+      updateDragState({ sourceKey: sourceColumnKey, targetKey: target });
+      return target;
     };
-    window.addEventListener("pointerup", finish, { once: true });
+    function cleanUp(): void {
+      dragInProgressRef.current = false;
+      window.removeEventListener("pointermove", updateTarget);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("mousemove", updateTarget);
+      window.removeEventListener("mouseup", finish);
+      if (pointerId !== undefined) handle.releasePointerCapture?.(pointerId);
+    }
+    function finish(releaseEvent: PointerEvent | MouseEvent): void {
+      if (!dragInProgressRef.current) return;
+      const target = updateTarget(releaseEvent);
+      updateDragState(null);
+      cleanUp();
+      if (target && target !== sourceColumnKey) {
+        reorder(sourceColumnKey, target);
+      }
+    }
+    function cancel(): void {
+      if (!dragInProgressRef.current) return;
+      updateDragState(null);
+      cleanUp();
+    }
+    if (pointerId !== undefined) handle.setPointerCapture?.(pointerId);
+    updateDragState({ sourceKey: sourceColumnKey, targetKey: sourceColumnKey });
+    window.addEventListener("pointermove", updateTarget);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("mousemove", updateTarget);
+    window.addEventListener("mouseup", finish);
   };
   return (
     <div
-      className={`editor-header-cell${canReorder ? " is-reorderable" : ""}`}
+      className={`editor-header-cell${canReorder ? " is-reorderable" : ""}${dragState?.sourceKey === column.key ? " is-dragging-source" : ""}${dragState?.targetKey === column.key && dragState.sourceKey !== column.key ? " is-drag-drop-target" : ""}`}
       data-reorderable={canReorder ? "true" : "false"}
       data-editor-column-key={column.key}
       data-preview-column={column.preview ? "true" : undefined}
@@ -249,6 +310,7 @@ function HeaderCell({
         <button
           aria-label={`Drag ${column.label} to reorder`}
           className="editor-column-drag-affordance"
+          onMouseDown={reorderFromHandle}
           onPointerDown={reorderFromHandle}
           type="button"
         >
@@ -266,6 +328,7 @@ function HeaderCell({
       {canRename ||
       canChangeType ||
       canInsert ||
+      canArchive ||
       (canUpdateOptions && canChangeOptions) ? (
         <>
           <button
@@ -287,12 +350,14 @@ function HeaderCell({
               anchorRef={anchorRef}
               canChangeType={canChangeType}
               canInsert={canInsert}
+              canArchive={canArchive}
               canRename={canRename}
               canUpdateOptions={canUpdateOptions}
               column={column}
               onChangeType={onChangeType}
               onClose={closeMenu}
               onInsert={onInsert}
+              onArchive={onArchive}
               onMove={onMove}
               onRename={onRename}
               onUpdateOptions={onUpdateOptions}
@@ -309,11 +374,13 @@ function ColumnMenu({
   canRename,
   canChangeType,
   canInsert,
+  canArchive,
   canUpdateOptions,
   column,
   onChangeType,
   onClose,
   onInsert,
+  onArchive,
   onMove,
   onRename,
   onUpdateOptions,
@@ -322,6 +389,7 @@ function ColumnMenu({
   canRename: boolean;
   canChangeType: boolean;
   canInsert: boolean;
+  canArchive: boolean;
   canUpdateOptions: boolean;
   column: EditorColumn;
   onChangeType:
@@ -342,6 +410,7 @@ function ColumnMenu({
         },
       ) => Promise<boolean>)
     | undefined;
+  onArchive: (() => Promise<boolean>) | undefined;
   onMove: ((direction: "left" | "right") => void) | undefined;
   onRename: (label: string) => Promise<boolean>;
   onUpdateOptions: (options: readonly string[]) => Promise<boolean>;
@@ -365,6 +434,7 @@ function ColumnMenu({
     | "insert-left"
     | "insert-right"
     | "shortcuts"
+    | "archive"
   >("main");
   const [submitting, setSubmitting] = useState(false);
   const canChangeOptions =
@@ -473,6 +543,16 @@ function ColumnMenu({
           >
             Keyboard shortcuts
           </button>
+          {canArchive && onArchive ? (
+            <button
+              className="editor-column-menu-action is-danger"
+              onClick={() => setMode("archive")}
+              role="menuitem"
+              type="button"
+            >
+              Delete property
+            </button>
+          ) : null}
         </Menu>
       ) : null}
       {mode === "rename" ? (
@@ -594,10 +674,31 @@ function ColumnMenu({
           }
         />
       ) : null}
+      {mode === "archive" && onArchive ? (
+        <div className="editor-column-menu-form">
+          <p className="editor-property-type-note">
+            This removes the property from all views of this Table and its
+            configured forms, including filters, sorting and grouping that use
+            it. Existing record values are retained. To hide it only in a saved
+            view, use Properties instead.
+          </p>
+          <button
+            className="editor-menu-submit is-danger"
+            disabled={submitting}
+            onClick={() => {
+              setSubmitting(true);
+              void onArchive().finally(() => setSubmitting(false));
+            }}
+            type="button"
+          >
+            {submitting ? "Removing…" : "Remove property"}
+          </button>
+        </div>
+      ) : null}
       {mode === "shortcuts" ? (
         <ShortcutSheet onClose={() => setMode("main")} />
       ) : null}
-      {mode !== "main" ? (
+      {mode !== "main" && mode !== "insert-left" && mode !== "insert-right" ? (
         <button
           className="editor-menu-back"
           onClick={() => setMode("main")}
@@ -627,12 +728,13 @@ function InsertColumnForm({
   const [options, setOptions] = useState<string[]>(["Option 1", "Option 2"]);
   const [currency, setCurrency] = useState("GBP");
   const [submitting, setSubmitting] = useState(false);
+  const hasLabel = Boolean(label.trim());
   return (
     <form
       className="editor-column-menu-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!label.trim() || submitting) return;
+        if (!hasLabel || submitting) return;
         setSubmitting(true);
         void onSubmit({
           label,
@@ -646,6 +748,7 @@ function InsertColumnForm({
         Property name
         <input
           autoFocus
+          required
           onChange={(event) => setLabel(event.currentTarget.value)}
           value={label}
         />
@@ -673,7 +776,7 @@ function InsertColumnForm({
       ) : null}
       <button
         className="editor-menu-submit"
-        disabled={submitting}
+        disabled={submitting || !hasLabel}
         type="submit"
       >
         {submitting ? "Adding…" : "Insert property"}
@@ -686,22 +789,56 @@ function InsertColumnForm({
 }
 
 function NewRecordCell({
-  columnIdx,
+  active,
+  inputLabel,
   label,
   onActivate,
-  rowIdx,
+  onCancel,
+  onCommit,
 }: Readonly<{
-  columnIdx: number;
+  active: boolean;
+  inputLabel: string;
   label: string;
-  onActivate: (rowIdx: number, columnIdx: number) => void;
-  rowIdx: number;
+  onActivate: () => void;
+  onCancel: () => void;
+  onCommit: (name: string) => void;
 }>): React.ReactNode {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState("");
+
+  useEffect(() => {
+    if (active) inputRef.current?.focus();
+  }, [active]);
+
+  if (active) {
+    return (
+      <input
+        aria-label={`Edit ${inputLabel}`}
+        className="editor-cell-editor"
+        onChange={(event) => setValue(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const name = value.trim();
+            if (name) onCommit(name);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        ref={inputRef}
+        type="text"
+        value={value}
+      />
+    );
+  }
+
   return (
     <button
       aria-label="New record"
       className="editor-new-record-trigger"
       data-testid="new-record-trigger"
-      onClick={() => onActivate(rowIdx, columnIdx)}
+      onClick={onActivate}
       tabIndex={-1}
       type="button"
     >
@@ -716,21 +853,25 @@ function NewRecordCell({
 export function EditorCell({
   column,
   newRecordLabel = "New record",
+  draftInputActive,
   onOpenRecord,
   onActivateDraft,
+  onCancelDraftInput,
   props,
 }: Readonly<{
   column: EditorColumn;
   newRecordLabel?: string;
+  draftInputActive?: boolean;
   onOpenRecord: (rowId: string, columnKey: string) => void;
-  onActivateDraft: (rowIdx: number, columnIdx: number) => void;
+  onActivateDraft: () => void;
+  onCancelDraftInput?: () => void;
   onSearchConnectionTargets?: (
     columnKey: string,
     search: string,
   ) => Promise<readonly { id: string; label: string }[]>;
   props: RenderCellProps<EditorRow>;
 }>): React.ReactNode {
-  const { row, rowIdx, tabIndex, onRowChange } = props;
+  const { row, tabIndex, onRowChange } = props;
   if (column.preview) {
     return (
       <div className="editor-preview-cell" data-testid="proposed-property-cell">
@@ -742,10 +883,18 @@ export function EditorCell({
   if (row.isDraft) {
     return column.primary && column.editable !== false ? (
       <NewRecordCell
-        columnIdx={props.column.idx}
+        active={Boolean(draftInputActive)}
+        inputLabel={column.label}
+        key={draftInputActive ? "active-draft-input" : "idle-draft-input"}
         label={newRecordLabel}
         onActivate={onActivateDraft}
-        rowIdx={rowIdx}
+        onCancel={onCancelDraftInput ?? (() => undefined)}
+        onCommit={(name) =>
+          onRowChange({
+            ...row,
+            values: { ...row.values, [column.key]: name },
+          })
+        }
       />
     ) : (
       <span>—</span>
@@ -838,16 +987,24 @@ export function createEditorColumns({
   onUpdateColumnOptions,
   onChangeColumnType,
   onInsertColumn,
+  onArchiveColumn,
   onMoveColumn,
   onReorderColumns,
+  columnDragState,
+  onColumnDragStateChange,
   onOpenRecord,
   onActivateDraft,
+  onCancelDraftInput = () => undefined,
+  draftInputActive = false,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
+  onOpenConnectionCreate,
+  onOpenConnectionRecord,
   canRenameColumns = true,
   canUpdateColumnOptions = true,
   canChangeColumnTypes = true,
   canInsertColumns = true,
+  canDeleteColumns = true,
   canReorderColumns = true,
   canResizeColumns = true,
   pendingEdit,
@@ -859,7 +1016,7 @@ export function createEditorColumns({
     minWidth: 128,
     maxWidth: 640,
     resizable: canResizeColumns && !column.preview,
-    draggable: canReorderColumns && !column.preview,
+    draggable: false,
     frozen: column.primary,
     editable: (row: EditorRow) =>
       !column.preview &&
@@ -878,6 +1035,12 @@ export function createEditorColumns({
         canUpdateOptions={canUpdateColumnOptions && !column.preview}
         canChangeType={canChangeColumnTypes && !column.preview}
         canInsert={canInsertColumns && !column.preview}
+        canArchive={
+          canDeleteColumns &&
+          !column.preview &&
+          !column.primary &&
+          column.kind !== "connection"
+        }
         isOpen={columnMenuKey === column.key}
         onOpen={() => onOpenColumnMenu(column.key)}
         onClose={() => onCloseColumnMenu?.()}
@@ -892,6 +1055,9 @@ export function createEditorColumns({
             ? (position, input) => onInsertColumn(column.key, position, input)
             : undefined
         }
+        onArchive={
+          onArchiveColumn ? () => onArchiveColumn(column.key) : undefined
+        }
         onMove={
           onMoveColumn
             ? (direction) => onMoveColumn(column.key, direction)
@@ -903,6 +1069,8 @@ export function createEditorColumns({
                 onReorderColumns(sourceColumnKey, targetColumnKey)
             : undefined
         }
+        dragState={columnDragState}
+        onDragStateChange={onColumnDragStateChange}
         onRename={(label) => onRenameColumn(column.key, label)}
         onUpdateOptions={(options) =>
           onUpdateColumnOptions(column.key, options)
@@ -912,8 +1080,10 @@ export function createEditorColumns({
     renderCell: (props: RenderCellProps<EditorRow>) => (
       <EditorCell
         column={column}
+        draftInputActive={draftInputActive}
         newRecordLabel={newRecordLabel}
         onActivateDraft={onActivateDraft}
+        onCancelDraftInput={onCancelDraftInput}
         onOpenRecord={onOpenRecord}
         props={props}
       />
@@ -923,6 +1093,8 @@ export function createEditorColumns({
         {...props}
         columnDefinition={column}
         onCreateConnectionTarget={onCreateConnectionTarget}
+        onOpenConnectionCreate={onOpenConnectionCreate}
+        onOpenConnectionRecord={onOpenConnectionRecord}
         onSearchConnectionTargets={onSearchConnectionTargets}
         initialValue={
           pendingEdit?.rowId === props.row.id &&

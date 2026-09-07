@@ -65,6 +65,26 @@ export interface ProductionRecordReadInput {
   recordId: string;
 }
 
+export interface ProductionTablePageInput {
+  offset: number;
+  search: string;
+}
+
+export interface ProductionTablePage {
+  rows: readonly EditorRow[];
+  totalCount: number;
+  offset: number;
+  hasMore: boolean;
+  search: string;
+  grouping?: EditorTable["grouping"];
+}
+
+export interface ProductionBulkUpdateInput {
+  fieldKey: string;
+  value: EditorValue;
+  records: readonly { recordId: string; expectedUpdatedAt: string }[];
+}
+
 export interface ProductionRecordPanelContext {
   columns: readonly EditorColumn[];
   fullRecordPath: string;
@@ -149,6 +169,11 @@ export interface ProductionRenameColumnInput {
   label: string;
 }
 
+export interface ProductionArchiveColumnInput {
+  currentness: ProductionConfigurationCurrentness;
+  fieldKey: string;
+}
+
 export interface ProductionChangeColumnTypeInput {
   currentness: ProductionConfigurationCurrentness;
   fieldKey: string;
@@ -190,6 +215,14 @@ export interface ProductionAddExistingConnectionInput {
   label: string;
 }
 
+export interface ProductionAddConnectedPropertyInput {
+  currentness: ProductionConfigurationCurrentness;
+  relationshipKey: string;
+  direction: "source" | "target";
+  targetFieldKey: string;
+  label?: string;
+}
+
 export interface ProductionSavedViewQueryInput {
   currentness: ProductionConfigurationCurrentness;
   query: TableViewQuery;
@@ -200,6 +233,7 @@ export interface ProductionConfigureSavedViewInput {
   viewKey?: string;
   name: string;
   columns: readonly TableViewColumn[];
+  columnWidths?: Readonly<Record<string, number>>;
   query: TableViewQuery;
 }
 
@@ -209,6 +243,7 @@ export interface ProductionConfiguredSavedView {
 }
 
 export interface ProductionPreviewSavedViewInput {
+  columnWidths?: Record<string, number>;
   columns: readonly TableViewColumn[];
   query: TableViewQuery;
 }
@@ -265,6 +300,14 @@ export type ProductionRecordReadAction = (
   input: ProductionRecordReadInput,
 ) => Promise<ProductionActionResult<EditorRow | null>>;
 
+export type ProductionTablePageAction = (
+  input: ProductionTablePageInput,
+) => Promise<ProductionActionResult<ProductionTablePage>>;
+
+export type ProductionBulkUpdateAction = (
+  input: ProductionBulkUpdateInput,
+) => Promise<ProductionActionResult<readonly EditorRow[]>>;
+
 export type ProductionRecordPanelContextAction = (
   viewKey: string,
   input: ProductionRecordReadInput,
@@ -319,6 +362,10 @@ export type ProductionRenameColumnAction = (
   input: ProductionRenameColumnInput,
 ) => Promise<ProductionActionResult<ProductionTableStructureState>>;
 
+export type ProductionArchiveColumnAction = (
+  input: ProductionArchiveColumnInput,
+) => Promise<ProductionActionResult<ProductionTableStructureState>>;
+
 export type ProductionChangeColumnTypeAction = (
   input: ProductionChangeColumnTypeInput,
 ) => Promise<ProductionActionResult<ProductionTableStructureState>>;
@@ -341,4 +388,8 @@ export type ProductionCreateConnectionAction = (
 
 export type ProductionAddExistingConnectionAction = (
   input: ProductionAddExistingConnectionInput,
+) => Promise<ProductionActionResult<ProductionTableStructureState>>;
+
+export type ProductionAddConnectedPropertyAction = (
+  input: ProductionAddConnectedPropertyInput,
 ) => Promise<ProductionActionResult<ProductionTableStructureState>>;

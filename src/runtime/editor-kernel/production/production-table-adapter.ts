@@ -11,6 +11,7 @@ import type {
 } from "../contracts";
 import type {
   ProductionAddColumnAction,
+  ProductionArchiveColumnAction,
   ProductionAddExistingConnectionAction,
   ProductionChangeColumnTypeAction,
   ProductionConfigurationCurrentness,
@@ -35,6 +36,15 @@ import {
 } from "../../../core/experience/schemas";
 
 export interface ProductionTableAdapterActions {
+  resizeColumn?: (input: {
+    currentness: ProductionConfigurationCurrentness;
+    propertyKey: string;
+    width: number;
+  }) => Promise<
+    import("./action-types").ProductionActionResult<
+      import("./action-types").ProductionTableStructureState
+    >
+  >;
   createConnection?: ProductionCreateConnectionAction;
   addExistingConnection?: ProductionAddExistingConnectionAction;
   updateCell: ProductionCellEditAction;
@@ -44,6 +54,7 @@ export interface ProductionTableAdapterActions {
   createRow: ProductionRowCreateAction;
   openRecord: ProductionRecordReadAction;
   addColumn: ProductionAddColumnAction;
+  archiveColumn?: ProductionArchiveColumnAction;
   insertColumn?: ProductionInsertColumnAction;
   renameColumn: ProductionRenameColumnAction;
   changeColumnType?: ProductionChangeColumnTypeAction;
@@ -379,6 +390,17 @@ export class ProductionTableAdapter implements TableEditorAdapter {
     return cloneColumn(column);
   }
 
+  async archiveColumn(columnKey: string): Promise<void> {
+    if (!this.actions.archiveColumn) {
+      return unavailable();
+    }
+    const result = await this.actions.archiveColumn({
+      currentness: this.requireCurrentness(),
+      fieldKey: columnKey,
+    });
+    this.applyStructure(result);
+  }
+
   async changeColumnType(
     columnKey: string,
     kind: EditorColumnKind,
@@ -454,6 +476,19 @@ export class ProductionTableAdapter implements TableEditorAdapter {
     );
     if (!column) {
       throw new Error("That column is no longer available.");
+    }
+    if (this.actions.resizeColumn) {
+      const result = await this.actions.resizeColumn({
+        currentness: this.requireCurrentness(),
+        propertyKey:
+          column.kind === "connection" ||
+          column.key.startsWith("connected_field:")
+            ? column.key
+            : tableViewFieldPropertyKey(column.key),
+        width: Math.max(128, Math.min(640, Math.round(width))),
+      });
+      const table = this.applyStructure(result);
+      return cloneColumn(table.columns.find((item) => item.key === columnKey)!);
     }
     const nextColumn = {
       ...column,
@@ -533,7 +568,9 @@ export class ProductionTableAdapter implements TableEditorAdapter {
       throw new Error(result.message);
     }
     const localWidths = new Map(
-      this.table.columns.map((column) => [column.key, column.width]),
+      this.actions.resizeColumn
+        ? []
+        : this.table.columns.map((column) => [column.key, column.width]),
     );
     const nextTable = cloneTable(result.value.table);
     this.table = {

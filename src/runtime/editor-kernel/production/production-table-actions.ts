@@ -1,5 +1,6 @@
 "use server";
 
+import { setTableRecordArchived } from "../../views/table-record-lifecycle";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
@@ -26,6 +27,7 @@ import { createExperienceService } from "../../../core/experience/service";
 import {
   normalizeTableViewConfig,
   tableViewColumnSchema,
+  tableViewColumnWidthKeySchema,
   tableViewPropertyKeySchema,
   tableViewQuerySchema,
 } from "../../../core/experience/schemas";
@@ -38,6 +40,7 @@ import {
 } from "../../forms/submission";
 import { experienceKeyToPath } from "../../routing";
 import {
+  queryTableViewRecords,
   searchTableConnectionTargets,
   previewTableViewRecords,
   setTableRecordConnectionValues,
@@ -53,8 +56,10 @@ import {
 import { displayEditorValue, type EditorRow } from "../contracts";
 import type {
   ProductionActionResult,
+  ProductionArchiveColumnInput,
   ProductionAddColumnInput,
   ProductionAddExistingConnectionInput,
+  ProductionAddConnectedPropertyInput,
   ProductionChangeColumnTypeInput,
   ProductionCellEditInput,
   ProductionConnectionCreateInput,
@@ -66,6 +71,7 @@ import type {
   ProductionConfiguredSavedView,
   ProductionDuplicateSavedViewInput,
   ProductionArchiveSavedViewInput,
+  ProductionBulkUpdateInput,
   ProductionConfigurationCurrentness,
   ProductionCreateConnectionInput,
   ProductionInsertColumnInput,
@@ -75,6 +81,8 @@ import type {
   ProductionPreviewSavedViewInput,
   ProductionRecordPanelContext,
   ProductionRecordReadInput,
+  ProductionTablePage,
+  ProductionTablePageInput,
   ProductionRenameColumnInput,
   ProductionRenameTableInput,
   ProductionReorderColumnsInput,
@@ -180,6 +188,41 @@ const rowInputSchema = z
   })
   .strict();
 const recordInputSchema = z.object({ recordId: z.uuid() }).strict();
+const tablePageInputSchema = z
+  .object({
+    offset: z.number().int().min(0).max(1_000_000),
+    search: z.string().trim().max(200),
+  })
+  .strict();
+const bulkUpdateInputSchema = z
+  .object({
+    fieldKey: viewKeySchema,
+    value: editorValueSchema,
+    records: z
+      .array(
+        z
+          .object({
+            recordId: z.uuid(),
+            expectedUpdatedAt: z.string().datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      new Set(input.records.map((record) => record.recordId)).size !==
+      input.records.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Each selected Record can be updated once.",
+        path: ["records"],
+      });
+    }
+  });
 const addColumnInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
@@ -265,6 +308,12 @@ const renameColumnInputSchema = z
     currentness: structureCurrentnessSchema,
     fieldKey: viewKeySchema,
     label: z.string().trim().min(1).max(120),
+  })
+  .strict();
+const archiveColumnInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    fieldKey: viewKeySchema,
   })
   .strict();
 const changeColumnTypeInputSchema = z
@@ -353,6 +402,15 @@ const addExistingConnectionInputSchema = z
     label: z.string().trim().min(1).max(120),
   })
   .strict();
+const addConnectedPropertyInputSchema = z
+  .object({
+    currentness: structureCurrentnessSchema,
+    relationshipKey: viewKeySchema,
+    direction: z.enum(["source", "target"]),
+    targetFieldKey: viewKeySchema,
+    label: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict();
 const savedViewQueryInputSchema = z
   .object({
     currentness: structureCurrentnessSchema,
@@ -365,6 +423,9 @@ const configureSavedViewInputSchema = z
     viewKey: viewKeySchema.optional(),
     name: z.string().trim().min(1).max(120),
     columns: z.array(tableViewColumnSchema).min(1).max(50),
+    columnWidths: z
+      .record(tableViewColumnWidthKeySchema, z.number().int().min(128).max(640))
+      .optional(),
     query: tableViewQuerySchema,
   })
   .strict();
@@ -579,6 +640,165 @@ export async function loadMappedTable(
   });
 }
 
+/**
+ * Loads one bounded page through the authoritative Table query. The browser
+ * supplies only transient search and paging values; the route derives the
+ * Business and View scope before the RPC runs.
+ */
+export async function loadProductionTablePageAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionTablePageInput,
+): Promise<ProductionActionResult<ProductionTablePage>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = tablePageInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That Table page is not available.");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  try {
+    const [mapped, query] = await Promise.all([
+      loadMappedTable(supabase, tenant.business.id, context.viewKey),
+      queryTableViewRecords(supabase, tenant.business.id, context.viewKey, {
+        limit: 50,
+        offset: parsed.data.offset,
+        search: parsed.data.search,
+      }),
+    ]);
+    return {
+      status: "success",
+      value: {
+        rows: query.records.map((record) =>
+          mapProductionRecordToEditorRow(
+            mapped.table,
+            record,
+            query.connectionValues[record.id],
+            query.projectionValues[record.id],
+          ),
+        ),
+        ...(mapped.table.grouping
+          ? {
+              grouping: {
+                ...mapped.table.grouping,
+                counts: query.groups.flatMap((group) =>
+                  group &&
+                  typeof group === "object" &&
+                  !Array.isArray(group) &&
+                  typeof group.count === "number"
+                    ? [
+                        {
+                          value: editorValueFromJson(group.value),
+                          count: group.count,
+                        },
+                      ]
+                    : [],
+                ),
+              },
+            }
+          : {}),
+        totalCount: query.totalCount,
+        offset: query.offset,
+        hasMore: query.hasMore,
+        search: parsed.data.search,
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function bulkUpdateProductionTableRecordsAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionBulkUpdateInput,
+): Promise<ProductionActionResult<readonly EditorRow[]>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = bulkUpdateInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError(
+      "Choose up to 100 current Records and one editable property.",
+    );
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  try {
+    const mapped = await loadMappedTable(
+      supabase,
+      tenant.business.id,
+      context.viewKey,
+    );
+    const field = mapped.recordFields.find(
+      (candidate) =>
+        candidate.key === parsed.data.fieldKey && candidate.is_active,
+    );
+    if (
+      !field ||
+      parsed.data.fieldKey === mapped.table.primaryColumnKey ||
+      ![
+        "short_text",
+        "long_text",
+        "number",
+        "currency",
+        "boolean",
+        "date",
+        "datetime",
+        "email",
+        "phone",
+        "url",
+        "select",
+        "status",
+        "multi_select",
+      ].includes(field.field_type)
+    ) {
+      return resultError(
+        "That property cannot be updated across selected Records.",
+      );
+    }
+    const { data, error } = await supabase.rpc("bulk_update_table_records", {
+      expected_business_id: tenant.business.id,
+      requested_view_key: context.viewKey,
+      requested_field_key: parsed.data.fieldKey,
+      requested_value: parsed.data.value as Json,
+      requested_records: parsed.data.records.map((record) => ({
+        record_id: record.recordId,
+        expected_updated_at: record.expectedUpdatedAt,
+      })) as Json,
+    });
+    if (error || data === null) {
+      throw new ExperienceSubmissionError(
+        "Selected Records changed or could not be updated. Nothing was changed.",
+      );
+    }
+    const response = z
+      .object({ record_ids: z.array(z.uuid()).min(1).max(100) })
+      .strict()
+      .parse(data);
+    const { data: records, error: recordsError } = await supabase
+      .from("records")
+      .select("*")
+      .eq("business_id", tenant.business.id)
+      .in("id", response.record_ids);
+    if (
+      recordsError ||
+      !records ||
+      records.length !== response.record_ids.length
+    ) {
+      throw new ExperienceSubmissionError(
+        "Records were updated but could not be reloaded safely.",
+      );
+    }
+    return {
+      status: "success",
+      value: records.map((record) =>
+        mapProductionRecordToEditorRow(mapped.table, record),
+      ),
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
 async function applyProductionStructuralAction(
   businessSlug: string,
   viewKey: string,
@@ -703,6 +923,31 @@ export async function addExistingProductionTableConnectionAction(
   );
 }
 
+export async function addProductionTableConnectedPropertyAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionAddConnectedPropertyInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = addConnectedPropertyInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That related property could not be shown safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "add_connected_property",
+      viewKey: context.viewKey,
+      relationshipKey: parsed.data.relationshipKey,
+      direction: parsed.data.direction,
+      targetFieldKey: parsed.data.targetFieldKey,
+      ...(parsed.data.label ? { label: parsed.data.label } : {}),
+    },
+  );
+}
+
 export async function insertProductionTableColumnAction(
   businessSlugInput: string,
   viewKeyInput: string,
@@ -749,6 +994,28 @@ export async function renameProductionTableColumnAction(
       viewKey: context.viewKey,
       fieldKey: parsed.data.fieldKey,
       label: parsed.data.label,
+    },
+  );
+}
+
+export async function archiveProductionTableColumnAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: ProductionArchiveColumnInput,
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = archiveColumnInputSchema.safeParse(input);
+  if (!context || !parsed.success) {
+    return resultError("That property could not be removed safely.");
+  }
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "archive_column",
+      viewKey: context.viewKey,
+      fieldKey: parsed.data.fieldKey,
     },
   );
 }
@@ -969,6 +1236,9 @@ export async function configureProductionSavedViewAction(
           ...(parsed.data.viewKey ? { viewKey: parsed.data.viewKey } : {}),
           name: parsed.data.name,
           columns: parsed.data.columns,
+          ...(parsed.data.columnWidths
+            ? { columnWidths: parsed.data.columnWidths }
+            : {}),
           query: parsed.data.query,
         },
       },
@@ -1030,6 +1300,9 @@ export async function previewProductionSavedViewAction(
       fields: parsed.data.columns.flatMap((column) =>
         column.kind === "field" ? [column.field_key] : [],
       ),
+      ...(parsed.data.columnWidths
+        ? { column_widths: parsed.data.columnWidths }
+        : {}),
       ...parsed.data.query,
     });
     const mapped = mapExperienceViewBundleToEditorTable({
@@ -1038,6 +1311,7 @@ export async function previewProductionSavedViewAction(
         config,
         records: query.records,
         connectionValues: query.connectionValues,
+        projectionValues: query.projectionValues,
         query: {
           totalCount: query.totalCount,
           limit: query.limit,
@@ -1054,6 +1328,13 @@ export async function previewProductionSavedViewAction(
         table: {
           ...mapped.table,
           columns: mapped.table.columns.map((column) => ({
+            ...column,
+            editable: false,
+            readOnlyReason: "Save this View before operating Records here.",
+          })),
+          recordColumns: (
+            mapped.table.recordColumns ?? mapped.table.columns
+          ).map((column) => ({
             ...column,
             editable: false,
             readOnlyReason: "Save this View before operating Records here.",
@@ -1194,7 +1475,6 @@ export async function updateProductionTableCellAction(
       { businessId: tenant.business.id },
       cellInput,
     );
-    revalidatePath(routePath(businessSlug, viewKey), "page");
     return {
       status: "success",
       value: mapProductionRecordToEditorRow(mapped.table, record),
@@ -1251,7 +1531,6 @@ export async function updateProductionTableConnectionAction(
     if (!row) {
       return resultError("That Record is no longer available.");
     }
-    revalidatePath(routePath(businessSlug, viewKey), "page");
     return { status: "success", value: row };
   } catch (error) {
     return resultError(safeError(error));
@@ -1551,8 +1830,6 @@ export async function createProductionTableContextualRecordAction(
     const label = primary
       ? displayEditorValue(primary, editorValueFromJson(data[primary.key]))
       : state.targetBundle.object.singular_label;
-    revalidatePath(routePath(businessSlug, viewKey), "page");
-    revalidatePath(routePath(businessSlug, state.targetView.key), "page");
     return { status: "success", value: { id: record.id, label } };
   } catch (error) {
     return resultError(safeError(error));
@@ -1628,7 +1905,6 @@ export async function createProductionTableConnectionTargetAction(
         { businessId: tenant.business.id },
         { formKey: availability.formKey, formData },
       );
-      revalidatePath(routePath(businessSlug, targetView.key), "page");
       return {
         status: "success",
         value: { id: record.id, label: parsed.data.primaryValue },
@@ -1643,7 +1919,6 @@ export async function createProductionTableConnectionTargetAction(
     if (created.status === "error") {
       return created;
     }
-    revalidatePath(routePath(businessSlug, targetView.key), "page");
     return {
       status: "success",
       value: { id: created.value.id, label: parsed.data.primaryValue },
@@ -1693,7 +1968,6 @@ export async function pasteProductionTableAction(
         "Paste was saved, but the updated Records could not be reloaded.",
       );
     }
-    revalidatePath(routePath(businessSlug, viewKey), "page");
     return {
       status: "success",
       value: {
@@ -1755,7 +2029,6 @@ export async function createProductionTableRowAction(
       { businessId: tenant.business.id },
       { viewKey, formData },
     );
-    revalidatePath(routePath(businessSlug, viewKey), "page");
     return {
       status: "success",
       value: mapProductionRecordToEditorRow(mapped.table, record),
@@ -1819,6 +2092,137 @@ export async function readProductionRecordPanelContextAction(
         recordTypeLabel: bundle.object.singular_label,
         row,
         tableName: mapped.table.name,
+      },
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function resizeProductionTableColumnAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: {
+    currentness: ProductionConfigurationCurrentness;
+    propertyKey: string;
+    width: number;
+  },
+): Promise<ProductionActionResult<ProductionTableStructureState>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = z
+    .object({
+      currentness: directTableCurrentnessSchema,
+      propertyKey: z.string().min(1).max(240),
+      width: z.number().int().min(128).max(640),
+    })
+    .strict()
+    .safeParse(input);
+  if (!context || !parsed.success)
+    return resultError("That column width is not valid.");
+  return applyProductionStructuralAction(
+    context.businessSlug,
+    context.viewKey,
+    parsed.data.currentness,
+    {
+      action: "resize_column",
+      viewKey: context.viewKey,
+      propertyKey: parsed.data.propertyKey,
+      width: parsed.data.width,
+    },
+  );
+}
+
+export async function setProductionTableRecordArchivedAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  input: { recordId: string; archived: boolean },
+): Promise<ProductionActionResult<EditorRow>> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  const parsed = z
+    .object({ recordId: z.uuid(), archived: z.boolean() })
+    .strict()
+    .safeParse(input);
+  if (!context || !parsed.success)
+    return resultError("That record is unavailable.");
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  if (!hasConfigurationCapability(tenant.membership.role))
+    return resultError(
+      "Owner or Admin access is required to archive or restore records.",
+    );
+  try {
+    const mapped = await loadMappedTable(
+      supabase,
+      tenant.business.id,
+      context.viewKey,
+    );
+    const record = await setTableRecordArchived(
+      supabase,
+      tenant.business.id,
+      context.viewKey,
+      parsed.data.recordId,
+      parsed.data.archived,
+    );
+    return {
+      status: "success",
+      value: mapProductionRecordToEditorRow(mapped.table, record),
+    };
+  } catch (error) {
+    return resultError(safeError(error));
+  }
+}
+
+export async function listProductionArchivedRecordsAction(
+  businessSlugInput: string,
+  viewKeyInput: string,
+  offset: number,
+): Promise<
+  ProductionActionResult<{
+    records: { id: string; label: string }[];
+    hasMore: boolean;
+  }>
+> {
+  const context = structureContext(businessSlugInput, viewKeyInput);
+  if (
+    !context ||
+    !z.number().int().min(0).max(1_000_000).safeParse(offset).success
+  )
+    return resultError("That archive is unavailable.");
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(context.businessSlug, supabase);
+  if (!hasConfigurationCapability(tenant.membership.role))
+    return resultError(
+      "Owner or Admin access is required to open the archive.",
+    );
+  try {
+    const view = await createExperienceService(supabase, {
+      businessId: tenant.business.id,
+    }).loadView(context.viewKey, "internal");
+    if (view.definition.view_type !== "table")
+      return resultError("That archive is unavailable.");
+    const config = normalizeTableViewConfig(view.config);
+    const { data, error } = await supabase
+      .from("records")
+      .select("id,data_json")
+      .eq("business_id", tenant.business.id)
+      .eq("object_definition_id", view.object.id)
+      .eq("record_status", "archived")
+      .order("updated_at", { ascending: false })
+      .order("id")
+      .range(offset, offset + 50);
+    if (error || !data) throw new Error("Could not load archived records.");
+    return {
+      status: "success",
+      value: {
+        records: data.slice(0, 50).map((record) => ({
+          id: record.id,
+          label: String(
+            (record.data_json as Record<string, unknown>)[
+              config.title_field ?? "name"
+            ] ?? "Unnamed record",
+          ),
+        })),
+        hasMore: data.length > 50,
       },
     };
   } catch (error) {

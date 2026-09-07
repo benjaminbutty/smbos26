@@ -71,6 +71,37 @@ export interface InternalWorkspaceProofFixture {
   queries: readonly InternalWorkspaceProofQueryFixture[];
 }
 
+const milkRoundCustomerLabels = Array.from(
+  { length: 20 },
+  (_, index) => `Customer ${String(index + 1).padStart(2, "0")}`,
+);
+
+const milkRoundCustomerRecords: readonly InternalWorkspaceProofRecordFixture[] =
+  milkRoundCustomerLabels.map((label, index) => ({
+    tableKey: "customers",
+    label,
+    fields: { Status: index < 16 ? "Active" : "Paused" },
+  }));
+
+const milkRoundStandingOrderRecords: readonly InternalWorkspaceProofRecordFixture[] =
+  milkRoundCustomerLabels.map((_, index) => ({
+    tableKey: "standing_orders",
+    label: `Standing order ${String(index + 1).padStart(2, "0")}`,
+    fields: {
+      Status: index < 16 ? "Open" : "Paused",
+      "Delivery date": `2026-08-${String(index + 1).padStart(2, "0")}`,
+    },
+  }));
+
+const milkRoundCustomerLinks: readonly InternalWorkspaceProofLinkFixture[] =
+  milkRoundCustomerLabels.map((label, index) => ({
+    sourceTableKey: "standing_orders",
+    targetTableKey: "customers",
+    connectionLabel: "Customer",
+    sourceRecordLabel: `Standing order ${String(index + 1).padStart(2, "0")}`,
+    targetRecordLabels: [label],
+  }));
+
 export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixture[] =
   [
     {
@@ -111,52 +142,38 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "standing_orders",
           targetTableKey: "customers",
           label: "Customer",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "standing_order_lines",
           targetTableKey: "standing_orders",
           label: "Standing order",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "standing_order_lines",
           targetTableKey: "products",
           label: "Product",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
       ],
       records: [
-        {
-          tableKey: "customers",
-          label: "Beth Carter",
-          fields: { Status: "Active" },
-        },
+        ...milkRoundCustomerRecords,
         { tableKey: "products", label: "Whole milk" },
-        {
-          tableKey: "standing_orders",
-          label: "Beth's Monday order",
-          fields: { Status: "Open", "Delivery date": "2026-08-17" },
-        },
+        ...milkRoundStandingOrderRecords,
         { tableKey: "standing_order_lines", label: "Two bottles" },
       ],
       links: [
-        {
-          sourceTableKey: "standing_orders",
-          targetTableKey: "customers",
-          connectionLabel: "Customer",
-          sourceRecordLabel: "Beth's Monday order",
-          targetRecordLabels: ["Beth Carter"],
-        },
+        ...milkRoundCustomerLinks,
         {
           sourceTableKey: "standing_order_lines",
           targetTableKey: "standing_orders",
           connectionLabel: "Standing order",
           sourceRecordLabel: "Two bottles",
-          targetRecordLabels: ["Beth's Monday order"],
+          targetRecordLabels: ["Standing order 01"],
         },
         {
           sourceTableKey: "standing_order_lines",
@@ -174,12 +191,7 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sort: { fieldLabel: "Delivery date", direction: "ascending" },
           groupFieldLabel: "Status",
         },
-        {
-          tableKey: "standing_orders",
-          name: "Orders by Customer",
-          sort: { fieldLabel: "Customer", direction: "ascending" },
-          groupFieldLabel: "Customer",
-        },
+        { tableKey: "standing_orders", name: "Orders by Customer" },
         {
           tableKey: "customers",
           name: "Active Customers",
@@ -227,15 +239,15 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "pets",
           targetTableKey: "customers",
           label: "Customer",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "appointments",
           targetTableKey: "pets",
           label: "Pet",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "appointments",
@@ -339,22 +351,22 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "enquiries",
           targetTableKey: "contacts",
           label: "Contact",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "events",
           targetTableKey: "enquiries",
           label: "Enquiry",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "quotes",
           targetTableKey: "enquiries",
           label: "Enquiry",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
       ],
       records: [
@@ -459,15 +471,15 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sourceTableKey: "jobs",
           targetTableKey: "customers",
           label: "Customer",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
         {
           sourceTableKey: "tasks",
           targetTableKey: "jobs",
           label: "Job",
-          currentMultiplicity: "several",
-          targetMultiplicity: "one",
+          currentMultiplicity: "one",
+          targetMultiplicity: "several",
         },
       ],
       records: [
@@ -507,12 +519,7 @@ export const internalWorkspaceProofFixtures: readonly InternalWorkspaceProofFixt
           sort: { fieldLabel: "Start date", direction: "ascending" },
           groupFieldLabel: "Status",
         },
-        {
-          tableKey: "tasks",
-          name: "Tasks by Job",
-          sort: { fieldLabel: "Job", direction: "ascending" },
-          groupFieldLabel: "Job",
-        },
+        { tableKey: "tasks", name: "Tasks by Job" },
       ],
     },
   ] as const;

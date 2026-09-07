@@ -200,6 +200,7 @@ export async function applyDirectTableAction(
     "create_connection_property",
     "add_existing_connection_property",
     "rename_connection_property",
+    "add_connected_property",
     "create_saved_view",
     "duplicate_saved_view",
     "rename_saved_view",
@@ -216,11 +217,17 @@ export async function applyDirectTableAction(
     "change_column_type",
     "reorder_columns",
   ]);
-  const { data, error } = internalWorkspaceAction
-    ? await client.rpc("apply_internal_workspace_configuration_change", args)
-    : lenniStructuralActionKinds.has(composed.actionKind)
-      ? await client.rpc("apply_lenni_direct_configuration_change", args)
-      : await client.rpc("apply_direct_configuration_change", args);
+  const { data, error } =
+    composed.actionKind === "archive_column"
+      ? await client.rpc("apply_lenni_table_property_archive", args)
+      : internalWorkspaceAction
+        ? await client.rpc(
+            "apply_internal_workspace_configuration_change",
+            args,
+          )
+        : lenniStructuralActionKinds.has(composed.actionKind)
+          ? await client.rpc("apply_lenni_direct_configuration_change", args)
+          : await client.rpc("apply_direct_configuration_change", args);
   if (error || !data) {
     return rpcError("Could not apply the Table change.", error);
   }

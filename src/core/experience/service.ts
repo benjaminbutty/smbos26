@@ -105,6 +105,7 @@ export interface ExperienceViewBundle {
   /** Connections owned by a configured transactional capability remain visible and navigable, but are not free-form editable. */
   protectedConnectionRelationshipKeys?: readonly string[];
   connectionValues?: TableQueryResult["connectionValues"];
+  projectionValues?: TableQueryResult["projectionValues"];
   query?: Pick<
     TableQueryResult,
     "totalCount" | "limit" | "offset" | "hasMore" | "group" | "groups"
@@ -348,7 +349,7 @@ export function createExperienceService(
       definition.audience === "internal" &&
       definition.view_type === "table"
         ? queryTableViewRecords(client, businessId, definition.key, {
-            limit: 250,
+            limit: 50,
           })
         : null;
     const [
@@ -417,6 +418,7 @@ export function createExperienceService(
       ...(queriedTable
         ? {
             connectionValues: queriedTable.connectionValues,
+            projectionValues: queriedTable.projectionValues,
             query: {
               totalCount: queriedTable.totalCount,
               limit: queriedTable.limit,

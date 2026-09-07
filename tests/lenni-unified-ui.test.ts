@@ -26,7 +26,7 @@ import { AcquisitionProposalCard } from "../src/components/acquisition-proposal"
 import { AcquisitionSetupSummary } from "../src/components/acquisition-setup-summary";
 import { BuilderResultPanel } from "../src/components/builder-ui";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
-import { TableViewTabs } from "../src/runtime/views/table-view-navigation";
+import { TableViewSelector } from "../src/runtime/views/table-view-navigation";
 import { TableViewControls } from "../src/runtime/views/table-view-controls";
 
 describe("Lenni unified workspace presentation", () => {
@@ -637,10 +637,11 @@ describe("Lenni unified workspace presentation", () => {
     expect(shellSource).toContain('href="/start"');
   });
 
-  it("keeps saved Views inside a Table tab strip", () => {
+  it("keeps saved Views inside the Table View selector", () => {
     const html = renderToStaticMarkup(
-      createElement(TableViewTabs, {
+      createElement(TableViewSelector, {
         businessSlug: "bakery",
+        canCreateSavedViews: true,
         currentViewKey: "customers",
         views: [
           {
@@ -660,10 +661,19 @@ describe("Lenni unified workspace presentation", () => {
     );
 
     expect(html).toContain('aria-label="Table views"');
+    expect(html).toContain("Current view");
     expect(html).toContain("All");
-    expect(html).toContain("Active");
-    expect(html).toContain('aria-current="page"');
-    expect(html).toContain("Saved");
+    expect(html).not.toContain("Saved");
+    const selectorSource = readFileSync(
+      new URL(
+        "../src/runtime/views/table-view-navigation.tsx",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(selectorSource).toContain("orderedViews.map");
+    expect(selectorSource).toContain('aria-current={current ? "page"');
+    expect(selectorSource).toContain("Create new view");
   });
 
   it("shows the Table-local Saved View control only with structural access", () => {
@@ -700,8 +710,9 @@ describe("Lenni unified workspace presentation", () => {
     const staff = renderToStaticMarkup(
       createElement(TableViewControls, props as never),
     );
-    expect(owner).toContain('aria-label="Create saved view"');
-    expect(staff).not.toContain("Create saved view");
+    expect(owner).toContain("Filter");
+    expect(owner).toContain("Properties");
+    expect(staff).not.toContain("Filter");
   });
 
   it("keeps the production Table action and empty-state contract explicit", () => {
@@ -759,8 +770,9 @@ describe("Lenni unified workspace presentation", () => {
     expect(editorSource).toContain('aria-label="Search this Table"');
     expect(editorSource).toContain('data-testid="editor-grid-no-matches"');
     expect(editorSource).toContain('data-testid="editor-mobile-record-list"');
-    expect(editorSource).toContain('aria-label="Working property"');
-    expect(editorSource).toContain("onEditRecord");
+    expect(editorSource).not.toContain('aria-label="Working property"');
+    expect(editorSource).toContain("aria-label={`Open record");
+    expect(editorSource).toContain("onOpenRecord");
     expect(editorSource).toContain("cancelFailedSave");
     expect(editorSource).toContain("gridCoordinatesForCell");
     expect(editorSource).toContain('status: "stale"');
@@ -769,9 +781,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(recordPanelSource).toContain('aria-modal="true"');
     expect(recordPanelSource).toContain('role="dialog"');
     expect(recordPanelSource).toContain("focusableSelector");
-    expect(viewControlsSource).toContain("Filtered by");
-    expect(viewControlsSource).toContain("Sorted by");
-    expect(viewControlsSource).toContain("Grouped by");
+    expect(viewControlsSource).toContain("Discard changes");
+    expect(viewControlsSource).toContain("Save changes");
+    expect(viewControlsSource).toContain("Save as new view");
+    expect(viewControlsSource).toContain("Unsaved changes");
     expect(viewControlsSource).toContain("setGridPreview(preview)");
     expect(viewControlsSource).toContain(
       "The unsaved filter, sort, group and Property order are live in",
@@ -781,9 +794,16 @@ describe("Lenni unified workspace presentation", () => {
     expect(viewControlsSource).not.toContain("Filter {config.filters.length}");
     expect(viewControlsSource).toContain("useUnsavedNavigationWarning");
     expect(viewControlsSource).toContain("config.filters.slice(1)");
-    expect(viewControlsSource).toContain("filter_match: config.filter_match");
+    expect(viewControlsSource).toContain("filter_match: filterMatch");
     expect(viewControlsSource).toContain("config.sorts.slice(1)");
     expect(editorSource).toContain("useUnsavedNavigationWarning");
+    expect(editorSource).toContain("SelectColumn");
+    expect(editorSource).toContain("onSelectedRowsChange");
+    expect(editorSource).toContain("enableEditor: true");
+    expect(connectionEditorSource).toContain("Create new ${targetLabel}");
+    expect(connectionEditorSource).toContain(
+      "Create “${query.trim()}” as a new ${targetLabel}",
+    );
     expect(unsavedWarningSource).toContain('"beforeunload"');
     expect(unsavedWarningSource).toContain("window.confirm(message)");
     expect(productionActionsSource).toContain("submitExperienceForm");

@@ -24,6 +24,7 @@ interface RecordPanelProps {
   tableName: string;
   onBack?: (() => void) | undefined;
   onClose: () => void;
+  onArchive?: () => Promise<void>;
   onCommitCell: (rowId: string, columnKey: string, value: EditorValue) => void;
   onFollowConnectedRecord?:
     ((targetViewKey: string, recordId: string) => void) | undefined;
@@ -229,6 +230,7 @@ export function RecordPanel({
   tableName,
   onBack,
   onClose,
+  onArchive,
   onCommitCell,
   onFollowConnectedRecord,
   onSearchConnectionTargets,
@@ -236,9 +238,20 @@ export function RecordPanel({
   onAddRelatedRecord,
 }: Readonly<RecordPanelProps>): React.ReactNode {
   const [draftValues, setDraftValues] = useState(row.values);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [receivedValues, setReceivedValues] = useState(row.values);
   const [editingKey, setEditingKey] = useState<string | null>(
     initialEditingColumnKey ?? null,
   );
+  if (receivedValues !== row.values) {
+    setReceivedValues(row.values);
+    setDraftValues((current) => ({
+      ...row.values,
+      ...(editingKey ? { [editingKey]: current[editingKey] ?? null } : {}),
+    }));
+  }
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const primaryColumn = columns.find((column) => column.primary) ?? columns[0];
@@ -351,6 +364,51 @@ export function RecordPanel({
         </button>
       </div>
 
+      {onArchive ? (
+        <div className="editor-record-archive">
+          {confirmArchive ? (
+            <>
+              <p>
+                Archive this record? Its values and connections are retained.
+                You can restore it from Archived records.
+              </p>
+              <button
+                type="button"
+                disabled={archiving}
+                onClick={async () => {
+                  setArchiving(true);
+                  setArchiveError(null);
+                  try {
+                    await onArchive();
+                  } catch (error) {
+                    setArchiveError(
+                      error instanceof Error
+                        ? error.message
+                        : "Could not archive record.",
+                    );
+                  } finally {
+                    setArchiving(false);
+                  }
+                }}
+              >
+                {archiving ? "Archiving…" : "Archive record"}
+              </button>
+              <button
+                type="button"
+                disabled={archiving}
+                onClick={() => setConfirmArchive(false)}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => setConfirmArchive(true)}>
+              Archive record…
+            </button>
+          )}
+          {archiveError ? <p role="alert">{archiveError}</p> : null}
+        </div>
+      ) : null}
       <div className="editor-record-properties">
         {propertyColumns.map((column) => {
           const value = draftValues[column.key] ?? null;

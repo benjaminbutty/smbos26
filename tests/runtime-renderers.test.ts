@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type {
   ExperienceFormBundle,
@@ -12,6 +12,14 @@ import { FormRenderer } from "../src/runtime/forms/form-renderer";
 import { PageRenderer } from "../src/runtime/pages/page-renderer";
 import type { InlineEditAction } from "../src/runtime/views/inline-edit-contract";
 import { ViewRenderer } from "../src/runtime/views/view-renderer";
+
+vi.mock(
+  "../src/runtime/editor-kernel/production/production-table-actions",
+  () => ({
+    listProductionArchivedRecordsAction: vi.fn(),
+    setProductionTableRecordArchivedAction: vi.fn(),
+  }),
+);
 
 const businessId = crypto.randomUUID();
 const objectId = crypto.randomUUID();

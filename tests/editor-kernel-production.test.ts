@@ -13,6 +13,7 @@ import {
   createProductionTableAdapter,
   ProductionTableAdapter,
 } from "../src/runtime/editor-kernel/production/production-table-adapter";
+import { selectionForRows } from "../src/runtime/editor-kernel/bulk-update-bar";
 import {
   mapExperienceViewBundleToEditorTable,
   mapProductionRecordToEditorRow,
@@ -162,6 +163,33 @@ const unavailableStructure = async () => ({
 });
 
 describe("production editor Table mapping", () => {
+  it("only offers current loaded Records to the bounded bulk boundary", () => {
+    expect(
+      selectionForRows([
+        {
+          id: "30000000-0000-4000-8000-000000000020",
+          updatedAt: now,
+          values: { name: "Current" },
+        },
+        {
+          id: "30000000-0000-4000-8000-000000000021",
+          values: { name: "Missing marker" },
+        },
+        {
+          id: "__new_record__",
+          updatedAt: now,
+          isDraft: true,
+          values: { name: "Draft" },
+        },
+      ]),
+    ).toEqual([
+      {
+        recordId: "30000000-0000-4000-8000-000000000020",
+        expectedUpdatedAt: now,
+      },
+    ]);
+  });
+
   it("preserves live order, metadata, nulls, and read-only unsupported properties", () => {
     const active = record("30000000-0000-4000-8000-000000000001", {
       name: "Ava Bakery",
@@ -376,9 +404,153 @@ describe("production editor Table mapping", () => {
       },
     ]);
   });
+
+  it("maps a one-hop related property as read-only and keeps its Record navigation available", () => {
+    const petObjectId = "20000000-0000-4000-8000-000000000002";
+    const projectedConfig: TableViewConfig = {
+      schema_version: 2,
+      role: "primary",
+      columns: [
+        { kind: "field", field_key: "name" },
+        {
+          kind: "connected_field",
+          relationship_key: "appointment_has_pet",
+          direction: "source",
+          target_field_key: "name",
+          label: "Pet · Name",
+        },
+      ],
+      fields: ["name"],
+      title_field: "name",
+      include_archived: false,
+      filters: [],
+      filter_match: "all",
+      sorts: [],
+      group: null,
+      column_widths: {
+        "connected_field:appointment_has_pet:source:name": 300,
+      },
+    };
+    const sourceRecord = record("30000000-0000-4000-8000-000000000009", {
+      name: "Wash and trim",
+    });
+    const mapped = mapExperienceViewBundleToEditorTable({
+      bundle: {
+        ...bundle(
+          fields,
+          projectedConfig,
+          [sourceRecord],
+          [
+            relationship(
+              "appointment_has_pet",
+              objectId,
+              petObjectId,
+              "one_to_one",
+            ),
+          ],
+        ),
+        connectionValues: {
+          [sourceRecord.id]: {
+            "connection:appointment_has_pet:source": [
+              { id: "30000000-0000-4000-8000-000000000010", label: "Mabel" },
+            ],
+          },
+        },
+        projectionValues: {
+          [sourceRecord.id]: {
+            "connected_field:appointment_has_pet:source:name": "Mabel",
+          },
+        },
+      },
+      connectedFieldLabelByStorageKey: {
+        "connected_field:appointment_has_pet:source:name": "Pet · Name",
+      },
+      targetViewKeyByObjectId: { [petObjectId]: "pets" },
+    }).table;
+
+    expect(mapped.columns[1]).toMatchObject({
+      key: "connected_field:appointment_has_pet:source:name",
+      label: "Pet · Name",
+      editable: false,
+      width: 300,
+    });
+    expect(mapped.rows[0]?.values).toMatchObject({
+      "connected_field:appointment_has_pet:source:name": "Mabel",
+    });
+    expect(mapped.recordColumns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "connection:appointment_has_pet:source",
+          kind: "connection",
+          connection: expect.objectContaining({ targetViewKey: "pets" }),
+        }),
+      ]),
+    );
+  });
 });
 
 describe("production editor adapter", () => {
+  it("persists drag widths with typed property identity and advances currentness", async () => {
+    const initial = mapExperienceViewBundleToEditorTable({
+      bundle: bundle(fields, config, []),
+    }).table;
+    const currentness = {
+      expectedBaseVersionId: crypto.randomUUID(),
+      expectedHeadRevision: 1,
+    };
+    const resizeColumn = vi.fn(
+      async (input: {
+        currentness: typeof currentness;
+        propertyKey: string;
+        width: number;
+      }) => ({
+        status: "success" as const,
+        value: {
+          table: {
+            ...initial,
+            columns: initial.columns.map((column) =>
+              column.key === "name"
+                ? { ...column, width: input.width }
+                : column,
+            ),
+          },
+          currentness: {
+            ...currentness,
+            expectedHeadRevision: input.currentness.expectedHeadRevision + 1,
+          },
+        },
+      }),
+    );
+    const adapter = createProductionTableAdapter(
+      initial,
+      {
+        updateCell: unavailableStructure,
+        createRow: unavailableStructure,
+        openRecord: unavailableStructure,
+        addColumn: unavailableStructure,
+        renameColumn: unavailableStructure,
+        updateColumnOptions: unavailableStructure,
+        reorderColumns: unavailableStructure,
+        renameTable: unavailableStructure,
+        resizeColumn,
+      },
+      currentness,
+    );
+    await adapter.resizeColumn("name", 360);
+    expect(resizeColumn).toHaveBeenLastCalledWith({
+      currentness,
+      propertyKey: "field:name",
+      width: 360,
+    });
+    expect(
+      adapter.getTable().columns.find((column) => column.key === "name")?.width,
+    ).toBe(360);
+    await adapter.resizeColumn("name", 400);
+    expect(
+      resizeColumn.mock.calls[1]?.[0].currentness.expectedHeadRevision,
+    ).toBe(2);
+  });
+
   it("forwards typed actions, stores authoritative rows, and preserves panel reads", async () => {
     const initial = mapExperienceViewBundleToEditorTable({
       bundle: bundle(fields, config, [

@@ -27,7 +27,7 @@ Table title; Staff sees the operational Record lane without those structural
 controls. Type changes preserve Field identity and Record values, inspect
 active and archived Records, and create one configuration Version only on
 success. Requiredness is existing Field metadata, not a new editor control.
-Column resizing is local to the workspace and is never persisted.
+Column resizing persists through the existing currentness-checked resize intent after a short debounce.
 
 The kernel also owns rectangular selection, bounded clipboard copy/paste and
 optional-value clearing. Paste delegates to a tenant-safe operational batch
@@ -40,10 +40,7 @@ The Interaction Quality Reset keeps that runtime and tightens its presentation
 contract. Cell saves are optimistic; a failed save retains the attempted value
 and offers working Retry and Cancel actions, while an adapter refresh restores
 the selected cell. Desktop and tablet keep every Property at a readable width
-inside the grid's own horizontal scroll. At phone width the same kernel becomes
-a Record-first surface with one explicit working-Property chooser: tapping its
-value opens that Property directly in the full-screen Record editor, while the
-Record name still opens the complete Record.
+inside the grid's own horizontal scroll. At phone width the same kernel becomes a Record-first card surface with grouped headings where configured. Tapping a Record opens its full-screen editor; New record exposes a direct name-entry form.
 
 Shared Saved View configuration remains a separate, currentness-checked action.
 The view controls publish an unsaved preview through a local React context so

@@ -29,6 +29,8 @@ export function ConnectionPicker({
   onCommit,
   onSearch,
   onCreate,
+  onOpenRecord,
+  onOpenCreate,
   initiallyOpen = false,
   portal = false,
   value,
@@ -41,6 +43,8 @@ export function ConnectionPicker({
     search: string,
   ) => Promise<readonly { id: string; label: string }[]>;
   onCreate?: (primaryValue: string) => Promise<{ id: string; label: string }>;
+  onOpenRecord?: (recordId: string) => void;
+  onOpenCreate?: () => void;
   initiallyOpen?: boolean;
   portal?: boolean;
   value: EditorValue;
@@ -65,6 +69,12 @@ export function ConnectionPicker({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selected);
+  const targetLabel = column.connection?.targetObjectLabel ?? column.label;
+  const createLabel = onOpenCreate
+    ? `+ Create new ${targetLabel}`
+    : query.trim()
+      ? `+ Create “${query.trim()}” as a new ${targetLabel}`
+      : `+ Create new ${targetLabel}`;
   const isSearching =
     open && (searchState === "loading" || searchState === "idle");
 
@@ -120,7 +130,7 @@ export function ConnectionPicker({
   }, [open, portal]);
 
   useEffect(() => {
-    if (!open || !portal || typeof document === "undefined") return;
+    if (!open || typeof document === "undefined") return;
 
     const handleOutsideMouseDown = (event: MouseEvent): void => {
       const target = event.target;
@@ -139,26 +149,35 @@ export function ConnectionPicker({
     return () => {
       document.removeEventListener("mousedown", handleOutsideMouseDown, true);
     };
-  }, [onCancel, open, portal]);
+  }, [onCancel, open]);
 
   const commit = (next: readonly string[]): void => {
     onCommit(next);
     if (!column.connection?.multiple) {
       setOpen(false);
+      window.requestAnimationFrame(() => triggerRef.current?.focus());
     }
   };
   const selectedLabels = (labels ?? []).filter((item) =>
     selectedSet.has(item.id),
   );
   const create = async (): Promise<void> => {
-    if (!onCreate || !query.trim() || creating) return;
+    if (!onCreate || creating) return;
+    if (!query.trim()) {
+      setCreateError(`Enter a name before creating a new ${targetLabel}.`);
+      return;
+    }
     setCreating(true);
     setCreateError(null);
     setCreationNotice(null);
     try {
       const created = await onCreate(query.trim());
       commit(
-        column.connection?.multiple ? [...selected, created.id] : [created.id],
+        column.connection?.multiple
+          ? selectedSet.has(created.id)
+            ? selected
+            : [...selected, created.id]
+          : [created.id],
       );
       setCreationNotice(`${created.label} added to ${column.label}.`);
     } catch (error) {
@@ -194,22 +213,25 @@ export function ConnectionPicker({
       }
     >
       <input
-        aria-label={`Search ${column.label}`}
+        aria-label={`Search ${targetLabel}`}
         autoFocus
         className="editor-choice-search"
         onChange={(event) => {
+          setCreateError(null);
+          setCreationNotice(null);
           setSearchState("loading");
           setQuery(event.currentTarget.value);
         }}
-        placeholder="Search records"
+        placeholder={`Search ${targetLabel.toLocaleLowerCase("en")}s`}
         value={query}
       />
       <div className="editor-connection-popover-heading">
-        <strong>Connect to {column.label}</strong>
+        <strong>Connect to {targetLabel}</strong>
         <span>
           {column.connection?.multiple ? "Several records" : "One record"}
         </span>
       </div>
+      <p className="editor-connection-results-heading">Existing matches</p>
       {searchState === "unavailable" ? (
         <div
           aria-live="polite"
@@ -262,13 +284,9 @@ export function ConnectionPicker({
           );
         })
       )}
-      {onCreate ? (
+      {onCreate || onOpenCreate ? (
         <>
-          {!query.trim() ? (
-            <p className="editor-connection-create-hint">
-              Type a name to enable quick-create.
-            </p>
-          ) : null}
+          <div className="editor-connection-create-divider" />
           {createError ? (
             <p
               aria-live="polite"
@@ -279,15 +297,19 @@ export function ConnectionPicker({
             </p>
           ) : null}
           <button
-            aria-disabled={!query.trim() || creating}
             className="editor-connection-create"
-            disabled={!query.trim() || creating}
-            onClick={() => void create()}
+            disabled={creating}
+            onClick={() => {
+              if (onOpenCreate) {
+                setOpen(false);
+                onOpenCreate();
+                return;
+              }
+              void create();
+            }}
             type="button"
           >
-            {creating
-              ? "Creating…"
-              : `+ Create ${column.label.toLocaleLowerCase("en")}`}
+            {creating ? "Creating…" : createLabel}
           </button>
         </>
       ) : null}
@@ -333,7 +355,29 @@ export function ConnectionPicker({
         {selectedLabels.length > 0 ? (
           <span className="editor-connection-selected-pills">
             {selectedLabels.map((item) => (
-              <span className="editor-connection-pill" key={item.id}>
+              <span
+                className={`editor-connection-pill${onOpenRecord ? " is-openable" : ""}`}
+                key={item.id}
+                onClick={(event) => {
+                  if (!onOpenRecord) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpen(false);
+                  onOpenRecord(item.id);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    !onOpenRecord ||
+                    (event.key !== "Enter" && event.key !== " ")
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpen(false);
+                  onOpenRecord(item.id);
+                }}
+                {...(onOpenRecord ? { role: "link", tabIndex: 0 } : {})}
+              >
                 <span>{item.label}</span>
                 <span
                   aria-hidden="true"
@@ -410,6 +454,7 @@ function useSeedInitialValue({
 function TextLikeEditor({
   columnDefinition,
   initialValue,
+  onClose,
   onRowChange,
   row,
 }: CellEditorProps): React.ReactNode {
@@ -438,6 +483,15 @@ function TextLikeEditor({
           ? "tel"
           : "text";
 
+  const commitDraft = (): void => {
+    const next = value.trim();
+    if (!next) {
+      onClose(false, true);
+      return;
+    }
+    onRowChange(rowWithValue(row, columnDefinition.key, value), true);
+  };
+
   return (
     <input
       ref={ref}
@@ -446,7 +500,21 @@ function TextLikeEditor({
       onChange={(event) => {
         const next = event.currentTarget.value;
         setValue(next);
-        onRowChange(rowWithValue(row, columnDefinition.key, next));
+        if (!row.isDraft) {
+          onRowChange(rowWithValue(row, columnDefinition.key, next));
+        }
+      }}
+      onKeyDown={(event) => {
+        if (!row.isDraft) return;
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          event.stopPropagation();
+          commitDraft();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose(false, true);
+        }
       }}
       type={inputType}
       value={value}
@@ -461,6 +529,8 @@ function ConnectionEditor({
   row,
   onSearchConnectionTargets,
   onCreateConnectionTarget,
+  onOpenConnectionCreate,
+  onOpenConnectionRecord,
 }: CellEditorProps & {
   onSearchConnectionTargets?:
     | ((
@@ -474,6 +544,10 @@ function ConnectionEditor({
         primaryValue: string,
       ) => Promise<{ id: string; label: string }>)
     | undefined;
+  onOpenConnectionCreate?:
+    ((columnKey: string, row: EditorRow) => void) | undefined;
+  onOpenConnectionRecord?:
+    ((column: EditorColumn, recordId: string) => void) | undefined;
 }): React.ReactNode {
   const value = row.values[columnDefinition.key] ?? [];
   return (
@@ -494,6 +568,20 @@ function ConnectionEditor({
         ? {
             onCreate: (primaryValue: string) =>
               onCreateConnectionTarget(columnDefinition.key, primaryValue),
+          }
+        : {})}
+      {...(onOpenConnectionCreate
+        ? {
+            onOpenCreate: () => {
+              onClose();
+              onOpenConnectionCreate(columnDefinition.key, row);
+            },
+          }
+        : {})}
+      {...(onOpenConnectionRecord
+        ? {
+            onOpenRecord: (recordId: string) =>
+              onOpenConnectionRecord(columnDefinition, recordId),
           }
         : {})}
       portal
@@ -832,6 +920,10 @@ export function CellEditor(
           primaryValue: string,
         ) => Promise<{ id: string; label: string }>)
       | undefined;
+    onOpenConnectionCreate?:
+      ((columnKey: string, row: EditorRow) => void) | undefined;
+    onOpenConnectionRecord?:
+      ((column: EditorColumn, recordId: string) => void) | undefined;
   },
 ): React.ReactNode {
   switch (props.columnDefinition.kind) {
