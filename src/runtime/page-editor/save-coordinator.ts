@@ -29,6 +29,7 @@ export interface SerialSaveCoordinatorOptions<T> {
   save: (input: {
     candidate: T;
     revision: number;
+    requestId: object;
   }) => Promise<SaveCoordinatorResult<T>>;
   onStateChange?: (state: SaveCoordinatorState) => void;
 }
@@ -66,6 +67,7 @@ export class SerialSaveCoordinator<T> {
   #status: SaveCoordinatorStatus = "saved";
   #timer: unknown = null;
   #inFlight: Promise<SaveCoordinatorResult<T>> | null = null;
+  #activeRequestId: object | null = null;
   #requestEpoch = 0;
   #disposed = false;
 
@@ -112,6 +114,20 @@ export class SerialSaveCoordinator<T> {
       !this.#disposed &&
       this.#revision === revision &&
       this.#candidate === candidate
+    );
+  }
+
+  /**
+   * Return whether the callback for a particular request may apply its
+   * acknowledgement. Blocking, accepting a replacement baseline, disposing
+   * the editor, or replacing the coordinator invalidates the token while a
+   * network response may still be settling.
+   */
+  isRequestActive(requestId: object): boolean {
+    return (
+      !this.#disposed &&
+      this.#blocked === null &&
+      this.#activeRequestId === requestId
     );
   }
 
@@ -163,6 +179,7 @@ export class SerialSaveCoordinator<T> {
   acknowledge(canonical: T): void {
     if (this.#disposed) return;
     this.#requestEpoch += 1;
+    this.#activeRequestId = null;
     this.#acknowledged = canonical;
     this.#candidate = canonical;
     this.#acknowledgedRevision = this.#revision;
@@ -177,6 +194,7 @@ export class SerialSaveCoordinator<T> {
   block(status: SaveCoordinatorFailure): void {
     if (this.#disposed) return;
     this.#requestEpoch += 1;
+    this.#activeRequestId = null;
     this.#blocked = status;
     this.#clearTimer();
     this.#setStatus(status);
@@ -293,9 +311,11 @@ export class SerialSaveCoordinator<T> {
     }
     const candidate = this.#candidate;
     const revision = this.#revision;
+    const requestId = {};
     const requestEpoch = this.#requestEpoch;
+    this.#activeRequestId = requestId;
     this.#setStatus("saving");
-    const request = this.#save({ candidate, revision })
+    const request = this.#save({ candidate, revision, requestId })
       .catch((error): SaveCoordinatorResult<T> => ({
         status: "error",
         message:
@@ -305,7 +325,12 @@ export class SerialSaveCoordinator<T> {
       }))
       .then((result) => {
         if (this.#disposed || requestEpoch !== this.#requestEpoch) {
-          if (this.#inFlight === request) this.#inFlight = null;
+          if (this.#inFlight === request) {
+            this.#inFlight = null;
+            if (this.#activeRequestId === requestId) {
+              this.#activeRequestId = null;
+            }
+          }
           return {
             canonical: this.#acknowledged,
             status: "success",
@@ -314,7 +339,12 @@ export class SerialSaveCoordinator<T> {
         if (result.status !== "success") {
           this.#blocked = result.status;
           this.#setStatus(result.status);
-          if (this.#inFlight === request) this.#inFlight = null;
+          if (this.#inFlight === request) {
+            this.#inFlight = null;
+            if (this.#activeRequestId === requestId) {
+              this.#activeRequestId = null;
+            }
+          }
           return result;
         }
         this.#acknowledged = result.canonical;
@@ -346,7 +376,12 @@ export class SerialSaveCoordinator<T> {
         // candidate from the acknowledgement continuation; leaving this
         // marker for a separate finally microtask makes that synchronous
         // recovery look like a still-running save.
-        if (this.#inFlight === request) this.#inFlight = null;
+        if (this.#inFlight === request) {
+          this.#inFlight = null;
+          if (this.#activeRequestId === requestId) {
+            this.#activeRequestId = null;
+          }
+        }
         return result;
       });
     this.#inFlight = request;

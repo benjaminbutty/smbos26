@@ -264,4 +264,38 @@ describe("Internal Page draft and save integration", () => {
     expect(coordinator.state.status).toBe("stale");
     expect(coordinator.hasUnacknowledgedWork).toBe(true);
   });
+
+  it("does not apply a response after a route conflict invalidates its request", async () => {
+    const initial = draft("Opening guide", "Opening note");
+    const first = deferred<{
+      canonical: PageDraft;
+      status: "success";
+    }>();
+    const applied: PageDraft[] = [];
+    const coordinator = new SerialSaveCoordinator<PageDraft>({
+      equals: pageDraftEquals,
+      initialValue: initial,
+      save: async ({ candidate, requestId }) => {
+        const result = await first.promise;
+        if (coordinator.isRequestActive(requestId)) applied.push(candidate);
+        return result;
+      },
+    });
+
+    const pending = draft("Opening guide", "Pending save");
+    coordinator.update(pending);
+    const flush = coordinator.flush();
+    await Promise.resolve();
+    expect(coordinator.inFlight).toBe(true);
+
+    // The route reconciliation blocks the request while its action is still
+    // waiting. Its eventual response must not update the editor baseline.
+    coordinator.block("stale");
+    first.resolve({ canonical: pending, status: "success" });
+    await flush;
+
+    expect(applied).toEqual([]);
+    expect(coordinator.state.status).toBe("stale");
+    expect(coordinator.candidate).toEqual(pending);
+  });
 });

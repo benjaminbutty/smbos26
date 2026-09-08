@@ -384,6 +384,7 @@ export function InternalPageEditor({
     (input: {
       candidate: PageDraft;
       revision: number;
+      requestId: object;
     }) => Promise<SaveCoordinatorResult<PageDraft>>
   >(() =>
     Promise.resolve({
@@ -801,9 +802,11 @@ export function InternalPageEditor({
     async ({
       candidate,
       revision,
+      requestId,
     }: {
       candidate: PageDraft;
       revision: number;
+      requestId: object;
     }): Promise<SaveCoordinatorResult<PageDraft>> => {
       setMessage(null);
       let result;
@@ -838,10 +841,16 @@ export function InternalPageEditor({
         layout: withEditorBlockIds(result.layout),
         title: result.title,
       };
+      const coordinator = saveCoordinatorRef.current;
+      if (!coordinator || !coordinator.isRequestActive(requestId)) {
+        // A conflict, replacement baseline, unmount, or a refreshed editor
+        // can invalidate a request after its server action returns. Let the
+        // coordinator discard this response without touching editor state.
+        return { canonical, status: "success" };
+      }
       acknowledgedDraftRef.current = canonical;
       currentnessRef.current = result.currentness;
       setCurrentnessCandidate(result.currentness);
-      const coordinator = saveCoordinatorRef.current;
       const latestCandidate = candidateRef.current ?? candidate;
       const acknowledgement = resolvePageSaveAcknowledgement({
         candidateAtRequest: candidate,
