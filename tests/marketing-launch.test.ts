@@ -47,6 +47,11 @@ describe("Lenni marketing launch", () => {
     expect(markup).toContain("marketing-frame");
     expect(markup).toContain("Outgrown spreadsheets");
     expect(markup).toContain("Join early access");
+    expect(
+      markup.match(
+        /href="\/guides\/what-software-does-my-small-business-need"/g,
+      ),
+    ).toHaveLength(1);
     expect(markup).not.toContain('href="/sign-in"');
     expect(markup).not.toContain('href="/start"');
     expect(markup).not.toContain("SMBOS");
@@ -67,16 +72,23 @@ describe("Lenni marketing launch", () => {
     });
   });
 
-  it("publishes exactly the two marketing URLs in crawler resources", () => {
+  it("publishes exactly the three marketing URLs in crawler resources", () => {
     expect(sitemap()).toEqual([
       { url: "https://uselenni.com/" },
+      {
+        url: "https://uselenni.com/guides/what-software-does-my-small-business-need",
+      },
       { url: "https://uselenni.com/outgrown-spreadsheets" },
     ]);
     expect(robots()).toMatchObject({
       host: "https://uselenni.com",
       sitemap: "https://uselenni.com/sitemap.xml",
       rules: {
-        allow: ["/", "/outgrown-spreadsheets"],
+        allow: [
+          "/",
+          "/guides/what-software-does-my-small-business-need",
+          "/outgrown-spreadsheets",
+        ],
       },
     });
   });
@@ -93,6 +105,8 @@ describe("Lenni marketing launch", () => {
 
     for (const pathname of [
       "/",
+      "/guides/what-software-does-my-small-business-need",
+      "/guides/what-software-does-my-small-business-need/",
       "/outgrown-spreadsheets",
       "/outgrown-spreadsheets/",
       "/robots.txt",

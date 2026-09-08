@@ -93,6 +93,580 @@
     "Segoe UI", sans-serif;
 }
 
+/* Marketing guide: choosing small-business software ---------------------- */
+
+.software-guide {
+  color: var(--marketing-ink);
+}
+
+.software-guide h1,
+.software-guide h2,
+.software-guide h3,
+.software-guide p {
+  color: inherit;
+}
+
+.software-guide-hero,
+.software-guide-section-inner {
+  width: min(calc(100% - 3rem), 72rem);
+  margin-inline: auto;
+}
+
+.software-guide-hero {
+  display: grid;
+  min-height: min(46rem, calc(100vh - 4.8rem));
+  align-items: center;
+  gap: clamp(3rem, 6vw, 5.5rem);
+  padding-block: clamp(5rem, 9vw, 8rem);
+  grid-template-columns: minmax(0, 1.15fr) minmax(18rem, 0.85fr);
+}
+
+.software-guide-hero h1 {
+  max-width: 12ch;
+  margin: 0;
+  font-size: clamp(3.6rem, 6.6vw, 6rem);
+  font-weight: 760;
+  letter-spacing: -0.072em;
+  line-height: 0.96;
+}
+
+.software-guide-hero h1 span {
+  color: var(--marketing-coral-600);
+}
+
+.software-guide-lede {
+  max-width: 42rem;
+  margin: 2rem 0;
+  color: var(--marketing-muted) !important;
+  font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+  line-height: 1.65;
+}
+
+.software-guide-note {
+  margin: 1rem 0 0;
+  color: var(--marketing-tertiary) !important;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.software-guide-answer {
+  padding: clamp(1.5rem, 3vw, 2rem);
+  background: var(--marketing-coral-50);
+  border: 1px solid var(--marketing-coral-200);
+  border-radius: 0.9rem;
+}
+
+.software-guide-answer > span,
+.software-guide-map-node > span,
+.software-guide-choice-lenni > span,
+.software-guide-prompt > div > span {
+  color: var(--marketing-coral-900);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.software-guide-answer strong {
+  display: block;
+  margin-top: 0.9rem;
+  font-size: clamp(1.4rem, 2.4vw, 1.8rem);
+  letter-spacing: -0.035em;
+  line-height: 1.25;
+}
+
+.software-guide-answer p {
+  margin: 1rem 0 0;
+  color: var(--marketing-muted) !important;
+  font-size: 0.94rem;
+  line-height: 1.65;
+}
+
+.software-guide-section {
+  padding-block: clamp(5rem, 9vw, 8rem);
+  border-top: 1px solid var(--marketing-border);
+}
+
+.software-guide-section-quiet {
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.software-guide-section-heading {
+  max-width: 46rem;
+  margin-bottom: clamp(2.5rem, 5vw, 4rem);
+}
+
+.software-guide-section-heading h2,
+.software-guide-closing h2 {
+  max-width: 16ch;
+  margin: 0;
+  font-size: clamp(2.4rem, 4.8vw, 4.5rem);
+  font-weight: 750;
+  letter-spacing: -0.065em;
+  line-height: 0.99;
+}
+
+.software-guide-section-heading > p:not(.marketing-kicker) {
+  max-width: 42rem;
+  margin: 1.4rem 0 0;
+  color: var(--marketing-muted) !important;
+  font-size: 1.02rem;
+  line-height: 1.7;
+}
+
+.software-guide-foundations {
+  display: grid;
+  border-block: 1px solid var(--marketing-strong);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.software-guide-foundations article {
+  padding: 1.7rem 1.4rem;
+  border-left: 1px solid var(--marketing-strong);
+}
+
+.software-guide-foundations article:first-child {
+  border-left: 0;
+}
+
+.software-guide-foundations article > span {
+  color: var(--marketing-coral-700);
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.software-guide-foundations h3 {
+  margin: 1.4rem 0 0.55rem;
+  font-size: 1.15rem;
+  letter-spacing: -0.025em;
+}
+
+.software-guide-foundations p {
+  margin: 0;
+  color: var(--marketing-muted) !important;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.software-guide-example-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-bottom: 1.4rem;
+}
+
+.software-guide-example-tabs button {
+  min-height: 2.75rem;
+  padding: 0.65rem 0.95rem;
+  color: var(--marketing-ink);
+  background: var(--marketing-canvas);
+  border: 1px solid var(--marketing-strong);
+  border-radius: 0.55rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.software-guide-example-tabs button[aria-selected="true"] {
+  color: var(--marketing-coral-900);
+  background: var(--marketing-coral-100);
+  border-color: var(--marketing-coral-300);
+  font-weight: 750;
+}
+
+.software-guide-business-map {
+  display: grid;
+  align-items: stretch;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.software-guide-map-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.software-guide-map-step:first-child {
+  grid-template-columns: 1fr;
+}
+
+.software-guide-map-arrow {
+  align-self: center;
+  margin-right: 1rem;
+  color: var(--marketing-coral-700);
+  font-size: 1.45rem;
+}
+
+.software-guide-map-node {
+  min-height: 10rem;
+  padding: 1.35rem;
+  background: var(--marketing-surface);
+  border: 1px solid var(--marketing-strong);
+  border-radius: 0.75rem;
+}
+
+.software-guide-map-node > span {
+  color: var(--marketing-tertiary);
+}
+
+.software-guide-map-node strong {
+  display: block;
+  margin-top: 1rem;
+  font-size: 1.35rem;
+  letter-spacing: -0.03em;
+}
+
+.software-guide-map-node p {
+  margin: 0.5rem 0 0;
+  color: var(--marketing-muted) !important;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.software-guide-choices {
+  display: grid;
+  border-top: 1px solid var(--marketing-strong);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.software-guide-choices article {
+  padding: 1.8rem 1.8rem 1.8rem 0;
+  border-bottom: 1px solid var(--marketing-strong);
+}
+
+.software-guide-choices article:nth-child(even) {
+  padding-left: 1.8rem;
+  border-left: 1px solid var(--marketing-strong);
+}
+
+.software-guide-choices article > span {
+  color: var(--marketing-tertiary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.software-guide-choices h3 {
+  margin: 0.65rem 0 0.5rem;
+  font-size: 1.3rem;
+  letter-spacing: -0.025em;
+}
+
+.software-guide-choices p {
+  margin: 0;
+  color: var(--marketing-muted) !important;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.software-guide-choices .software-guide-choice-lenni {
+  padding-inline: 1.8rem;
+  background: var(--marketing-coral-50);
+}
+
+.software-guide-product-proof {
+  display: grid;
+  align-items: stretch;
+  gap: 1.5rem;
+  grid-template-columns: minmax(16rem, 0.78fr) minmax(0, 1.22fr);
+}
+
+.software-guide-prompt,
+.software-guide-workspace {
+  overflow: hidden;
+  background: var(--marketing-surface);
+  border: 1px solid var(--marketing-strong);
+  border-radius: 0.85rem;
+}
+
+.software-guide-prompt {
+  display: flex;
+  min-height: 22rem;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.7rem;
+}
+
+.software-guide-prompt blockquote {
+  margin: 1.3rem 0 2rem;
+  color: var(--marketing-ink);
+  font-size: 1.25rem;
+  font-weight: 560;
+  letter-spacing: -0.025em;
+  line-height: 1.5;
+}
+
+.software-guide-prompt small {
+  color: var(--marketing-tertiary);
+  font-size: 0.76rem;
+}
+
+.software-guide-workspace-bar {
+  display: flex;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-inline: 1rem;
+  color: var(--marketing-tertiary);
+  border-bottom: 1px solid var(--marketing-border);
+  font-size: 0.7rem;
+}
+
+.software-guide-workspace-body {
+  display: grid;
+  min-height: 20rem;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+}
+
+.software-guide-workspace-body > aside {
+  padding: 1.2rem 0.8rem;
+  background: var(--marketing-subtle);
+  border-right: 1px solid var(--marketing-border);
+}
+
+.software-guide-workspace-body > aside strong,
+.software-guide-workspace-body > aside span {
+  display: block;
+}
+
+.software-guide-workspace-body > aside strong {
+  margin-bottom: 1rem;
+  color: var(--marketing-ink);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.software-guide-workspace-body > aside span {
+  margin-bottom: 0.16rem;
+  padding: 0.44rem 0.5rem;
+  color: var(--marketing-muted);
+  border-radius: 0.4rem;
+  font-size: 0.68rem;
+}
+
+.software-guide-workspace-body > aside .software-guide-workspace-active {
+  color: var(--marketing-coral-900);
+  background: var(--marketing-coral-100);
+  font-weight: 750;
+}
+
+.software-guide-workspace-main {
+  min-width: 0;
+  padding: 1.6rem;
+}
+
+.software-guide-workspace-main h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  letter-spacing: -0.035em;
+}
+
+.software-guide-workspace-main > p {
+  margin: 0.3rem 0 1.25rem;
+  color: var(--marketing-tertiary) !important;
+  font-size: 0.74rem;
+}
+
+.software-guide-table {
+  border-top: 1px solid var(--marketing-strong);
+}
+
+.software-guide-table-row {
+  display: grid;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 0.2rem;
+  border-bottom: 1px solid var(--marketing-border);
+  font-size: 0.72rem;
+  grid-template-columns: 1.3fr 1fr 0.75fr;
+}
+
+.software-guide-table-head {
+  color: var(--marketing-tertiary);
+  font-size: 0.62rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.software-guide-status {
+  width: fit-content;
+  padding: 0.25rem 0.42rem;
+  color: #6a4518;
+  background: #fff0cf;
+  border-radius: 0.35rem;
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.software-guide-faq {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.software-guide-faq article {
+  padding: 1.4rem;
+  background: var(--marketing-surface);
+  border: 1px solid var(--marketing-strong);
+  border-radius: 0.7rem;
+}
+
+.software-guide-faq h3 {
+  margin: 0 0 0.8rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.software-guide-faq p {
+  margin: 0;
+  color: var(--marketing-muted) !important;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.software-guide-closing {
+  display: grid;
+  justify-items: center;
+  padding: clamp(5rem, 9vw, 8rem) 1.5rem;
+  text-align: center;
+  background: var(--marketing-coral-100);
+  border-top: 1px solid var(--marketing-coral-200);
+}
+
+.software-guide-closing h2 {
+  max-width: 17ch;
+}
+
+.software-guide-closing p {
+  max-width: 40rem;
+  margin: 1.4rem 0 2rem;
+  color: var(--marketing-muted) !important;
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+@media (max-width: 56rem) {
+  .software-guide-hero,
+  .software-guide-product-proof {
+    grid-template-columns: 1fr;
+  }
+
+  .software-guide-hero {
+    min-height: auto;
+  }
+
+  .software-guide-answer {
+    max-width: 40rem;
+  }
+
+  .software-guide-foundations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .software-guide-foundations article:nth-child(3) {
+    border-left: 0;
+  }
+
+  .software-guide-foundations article:nth-child(n + 3) {
+    border-top: 1px solid var(--marketing-strong);
+  }
+
+  .software-guide-business-map {
+    grid-template-columns: 1fr;
+  }
+
+  .software-guide-map-step,
+  .software-guide-map-step:first-child {
+    grid-template-columns: 1fr;
+  }
+
+  .software-guide-map-arrow {
+    margin: 0 0 0.8rem;
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+}
+
+@media (max-width: 42rem) {
+  .software-guide-hero,
+  .software-guide-section-inner {
+    width: min(calc(100% - 2rem), 72rem);
+  }
+
+  .software-guide-hero {
+    gap: 2rem;
+    padding-block: 4rem;
+  }
+
+  .software-guide-hero h1 {
+    font-size: clamp(3rem, 15vw, 4.5rem);
+  }
+
+  .software-guide-section {
+    padding-block: 4.25rem;
+  }
+
+  .software-guide-section-heading h2,
+  .software-guide-closing h2 {
+    font-size: clamp(2.35rem, 11vw, 3.5rem);
+  }
+
+  .software-guide-foundations,
+  .software-guide-choices,
+  .software-guide-faq {
+    grid-template-columns: 1fr;
+  }
+
+  .software-guide-foundations article,
+  .software-guide-foundations article:first-child,
+  .software-guide-foundations article:nth-child(3),
+  .software-guide-choices article,
+  .software-guide-choices article:nth-child(even) {
+    padding: 1.5rem 0;
+    border-left: 0;
+  }
+
+  .software-guide-foundations article:not(:first-child),
+  .software-guide-choices article:not(:first-child) {
+    border-top: 1px solid var(--marketing-strong);
+  }
+
+  .software-guide-choices .software-guide-choice-lenni {
+    padding-inline: 1.25rem;
+  }
+
+  .software-guide-product-proof {
+    gap: 1rem;
+  }
+
+  .software-guide-workspace-body {
+    grid-template-columns: 1fr;
+  }
+
+  .software-guide-workspace-body > aside {
+    display: none;
+  }
+
+  .software-guide-workspace-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.15rem;
+    padding-block: 0.7rem;
+  }
+
+  .software-guide-table-row {
+    grid-template-columns: minmax(0, 1.25fr) minmax(4rem, 0.75fr);
+  }
+
+  .software-guide-table-row > span:nth-child(2) {
+    display: none;
+  }
+}
+
 /* Milestone 15A direct Table Workspace */
 .sidebar-section {
   display: grid;
@@ -6584,6 +7158,11 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.7rem;
+}
+
+.marketing-footer .marketing-footer-links {
+  justify-content: flex-end;
+  gap: 1.25rem;
 }
 
 .marketing-footer .marketing-brand {

@@ -6,7 +6,11 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
       userAgent: "*",
-      allow: ["/", "/outgrown-spreadsheets"],
+      allow: [
+        "/",
+        "/guides/what-software-does-my-small-business-need",
+        "/outgrown-spreadsheets",
+      ],
       disallow: [
         "/app/",
         "/start/",

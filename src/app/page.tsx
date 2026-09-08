@@ -203,6 +203,12 @@ export default function HomePage(): ReactNode {
             <a className="marketing-text-button" href="/outgrown-spreadsheets">
               Outgrown spreadsheets? Read more <span aria-hidden="true">↘</span>
             </a>
+            <a
+              className="marketing-text-button"
+              href="/guides/what-software-does-my-small-business-need"
+            >
+              Choosing software? Start here <span aria-hidden="true">↘</span>
+            </a>
           </div>
           <p className="marketing-hero-note">
             Join early access to see Lenni when it&apos;s ready.
