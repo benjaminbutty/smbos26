@@ -47,6 +47,7 @@ import {
   resolvePageSaveAcknowledgement,
   type PageDraft,
 } from "./page-draft-state";
+import { PageConflictPanel } from "./page-conflict-panel";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -1334,39 +1335,51 @@ export function InternalPageEditor({
   };
 
   const handleEditorKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
+    const target = event.target;
+    const isInsideView =
+      target instanceof Element && target.closest(".page-editor-view-node");
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
-      if ((event.target as Element).closest(".page-editor-view-node")) return;
+      if (isInsideView) return;
       event.preventDefault();
+      event.stopPropagation();
       void savePage();
       return;
     }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-      if ((event.target as Element).closest(".page-editor-view-node")) return;
+      if (isInsideView) return;
       event.preventDefault();
+      event.stopPropagation();
       openLinkEditor();
       return;
     }
     if (!insertMenu) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      event.stopPropagation();
       setInsertIndex((value) =>
         filteredChoices.length ? (value + 1) % filteredChoices.length : 0,
       );
+      return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      event.stopPropagation();
       setInsertIndex((value) =>
         filteredChoices.length
           ? (value - 1 + filteredChoices.length) % filteredChoices.length
           : 0,
       );
+      return;
     }
     if (event.key === "Enter" && filteredChoices[insertIndex]) {
       event.preventDefault();
+      event.stopPropagation();
       insertChoice(filteredChoices[insertIndex]);
+      return;
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       setInsertMenu(null);
     }
   };
@@ -1620,6 +1633,10 @@ export function InternalPageEditor({
     selectedChecklistLabelField?.editable === false ||
     selectedChecklistCompletedField?.editable === false,
   );
+  const localConflictDraft: PageDraft = {
+    layout: readingLayout,
+    title: titleDraft,
+  };
 
   return (
     <section
@@ -1644,7 +1661,7 @@ export function InternalPageEditor({
         event.preventDefault();
         void flushBeforeNavigation(href);
       }}
-      onKeyDown={handleEditorKeyDown}
+      onKeyDownCapture={handleEditorKeyDown}
     >
       <div className="page-editor-document">
         <header className="page-editor-header">
@@ -1727,7 +1744,7 @@ export function InternalPageEditor({
           </div>
         </header>
 
-        {message ? (
+        {message && !conflict ? (
           <p className="page-editor-status-message" role="alert">
             {message}
             {status === "stale" ? (
@@ -1770,33 +1787,16 @@ export function InternalPageEditor({
         ) : null}
 
         {conflict ? (
-          <div
-            aria-label="Page changed elsewhere"
-            className="page-editor-conflict-popover"
-            role="dialog"
-          >
-            <strong>This Page changed elsewhere</strong>
-            <p>
-              Your draft is preserved. Use the latest Page to replace your
-              draft, or keep your version and save it as a new revision.
-            </p>
-            <div className="page-editor-confirm-actions">
-              <button
-                className="button button-small"
-                onClick={useLatestConflict}
-                type="button"
-              >
-                Use latest
-              </button>
-              <button
-                className="button button-secondary button-small"
-                onClick={keepMyConflict}
-                type="button"
-              >
-                Keep my version
-              </button>
-            </div>
-          </div>
+          <PageConflictPanel
+            businessSlug={businessSlug}
+            latest={{
+              layout: conflict.layout,
+              title: conflict.title,
+            }}
+            local={localConflictDraft}
+            onKeepMyVersion={keepMyConflict}
+            onUseLatest={useLatestConflict}
+          />
         ) : null}
 
         <div className="page-document-canvas" ref={canvasRef}>
@@ -2036,11 +2036,10 @@ export function InternalPageEditor({
                   aria-label="Search Page blocks"
                   autoFocus
                   onChange={(event) => {
+                    const query = event.currentTarget.value;
                     setInsertIndex(0);
                     setInsertMenu((value) =>
-                      value
-                        ? { ...value, query: event.currentTarget.value }
-                        : value,
+                      value ? { ...value, query } : value,
                     );
                   }}
                   placeholder="Search blocks…"
@@ -2108,13 +2107,12 @@ export function InternalPageEditor({
                 <input
                   aria-label="Link URL"
                   autoFocus
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const href = event.currentTarget.value;
                     setLinkEditor((value) =>
-                      value
-                        ? { ...value, href: event.currentTarget.value }
-                        : value,
-                    )
-                  }
+                      value ? { ...value, href } : value,
+                    );
+                  }}
                   placeholder="https:// or choose a Page"
                   value={linkEditor.href}
                 />
@@ -2289,9 +2287,9 @@ export function InternalPageEditor({
                       aria-label="Checklist Table"
                       autoFocus
                       onChange={(event) => {
+                        const viewKey = event.currentTarget.value;
                         const view = availableViews.find(
-                          (candidate) =>
-                            candidate.key === event.currentTarget.value,
+                          (candidate) => candidate.key === viewKey,
                         );
                         const textField = view?.checklistFields?.find(
                           (field) => field.kind === "text",
@@ -2305,7 +2303,7 @@ export function InternalPageEditor({
                                 ...value,
                                 completedField: booleanField?.key,
                                 labelField: textField?.key,
-                                viewKey: event.currentTarget.value,
+                                viewKey,
                               }
                             : value,
                         );
@@ -2339,16 +2337,17 @@ export function InternalPageEditor({
                           <span>Item label</span>
                           <select
                             aria-label="Checklist label field"
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              const labelField = event.currentTarget.value;
                               setChecklistForm((value) =>
                                 value
                                   ? {
                                       ...value,
-                                      labelField: event.currentTarget.value,
+                                      labelField,
                                     }
                                   : value,
-                              )
-                            }
+                              );
+                            }}
                             value={checklistForm.labelField ?? ""}
                           >
                             {fields
@@ -2367,16 +2366,17 @@ export function InternalPageEditor({
                           <span>Completion field</span>
                           <select
                             aria-label="Checklist completion field"
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              const completedField = event.currentTarget.value;
                               setChecklistForm((value) =>
                                 value
                                   ? {
                                       ...value,
-                                      completedField: event.currentTarget.value,
+                                      completedField,
                                     }
                                   : value,
-                              )
-                            }
+                              );
+                            }}
                             value={checklistForm.completedField ?? ""}
                           >
                             {fields
@@ -2397,16 +2397,17 @@ export function InternalPageEditor({
                   <label className="page-checklist-readonly-choice">
                     <input
                       checked={checklistForm.readOnly === true}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const readOnly = event.currentTarget.checked;
                         setChecklistForm((value) =>
                           value
                             ? {
                                 ...value,
-                                readOnly: event.currentTarget.checked,
+                                readOnly,
                               }
                             : value,
-                        )
-                      }
+                        );
+                      }}
                       type="checkbox"
                     />
                     Read-only on this Page

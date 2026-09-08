@@ -18707,3 +18707,181 @@ textarea {
     justify-content: flex-start;
   }
 }
+
+.page-editor-conflict-panel {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-lg);
+}
+
+.page-editor-conflict-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.page-editor-conflict-heading h2 {
+  margin: 0.15rem 0 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  letter-spacing: -0.015em;
+}
+
+.page-editor-conflict-heading p:last-child {
+  max-width: 46rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.page-editor-conflict-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.page-editor-conflict-version {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.page-editor-conflict-version-header {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.page-editor-conflict-version-label {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.page-editor-conflict-version-header strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-editor-conflict-version-body {
+  max-height: 14rem;
+  min-height: 3.5rem;
+  overflow: auto;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.page-editor-conflict-version-body .runtime-page-blocks {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.page-editor-conflict-version-body h1,
+.page-editor-conflict-version-body h2,
+.page-editor-conflict-version-body h3,
+.page-editor-conflict-version-body p,
+.page-editor-conflict-version-body ul,
+.page-editor-conflict-version-body ol {
+  margin: 0;
+}
+
+.page-editor-conflict-version-body h1,
+.page-editor-conflict-version-body h2,
+.page-editor-conflict-version-body h3 {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.page-editor-conflict-version-body .page-text-block,
+.page-editor-conflict-version-body li,
+.page-editor-conflict-version-body aside,
+.page-editor-conflict-version-body summary,
+.page-editor-conflict-version-body figcaption {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.page-editor-conflict-version-body ul,
+.page-editor-conflict-version-body ol {
+  padding-left: 1.15rem;
+}
+
+.page-editor-conflict-version-body .page-image-block {
+  margin: 0;
+}
+
+.page-editor-conflict-version-body .page-image-block img {
+  display: block;
+  max-width: 100%;
+  max-height: 8rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.page-editor-conflict-version-body .runtime-unavailable {
+  margin: 0;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+}
+
+.page-editor-conflict-empty,
+.page-editor-conflict-preview-note,
+.page-editor-conflict-consequence {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.page-editor-conflict-preview-note {
+  padding-top: var(--space-1);
+}
+
+.page-editor-conflict-consequence {
+  max-width: 54rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.page-editor-conflict-consequence strong {
+  color: var(--text-primary);
+}
+
+.page-editor-conflict-panel .page-editor-confirm-actions {
+  justify-content: flex-start;
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 48rem) {
+  .page-editor-conflict-panel {
+    padding: var(--space-4);
+  }
+
+  .page-editor-conflict-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-editor-conflict-panel .page-editor-confirm-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .page-editor-conflict-panel .page-editor-confirm-actions .button {
+    width: 100%;
+  }
+}
