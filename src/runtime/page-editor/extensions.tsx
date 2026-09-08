@@ -102,6 +102,7 @@ export interface PageEditorExtensionOptions {
  */
 export interface PageEditorRuntimeContextValue {
   availableViews: readonly PageViewOption[];
+  currentness?: ProductionConfigurationCurrentness;
   views: Readonly<Record<string, PageEditorViewEmbed>>;
 }
 
@@ -223,7 +224,7 @@ function PageViewNodeView({
       instanceId,
       businessSlug: options.businessSlug,
       capabilities,
-      currentness: embed.table.currentness,
+      currentness: runtime?.currentness ?? embed.table.currentness,
       creationFallbackHref: embed.table.creationFallbackHref,
       ...(embed.table.fullRecordPath
         ? { fullRecordPath: embed.table.fullRecordPath }

@@ -1563,14 +1563,16 @@ export function InternalPageEditor({
     () =>
       Object.fromEntries(
         Object.entries(views).flatMap(([key, embed]) =>
-          embed.table ? [[key, embed.table]] : [],
+          embed.table
+            ? [[key, { ...embed.table, currentness: currentnessCandidate }]]
+            : [],
         ),
       ) as Readonly<Record<string, PageEditorTableEmbed>>,
-    [views],
+    [currentnessCandidate, views],
   );
   const editorRuntimeContext = useMemo(
-    () => ({ availableViews, views }),
-    [availableViews, views],
+    () => ({ availableViews, currentness: currentnessCandidate, views }),
+    [availableViews, currentnessCandidate, views],
   );
   const checklistViews = useMemo(
     () =>
