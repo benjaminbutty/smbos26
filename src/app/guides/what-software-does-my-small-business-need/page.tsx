@@ -118,7 +118,7 @@ const choices = [
 
 export default function SoftwareGuidePage(): ReactNode {
   return (
-    <main className="software-guide">
+    <main id="main" className="software-guide" tabIndex={-1}>
       <script
         dangerouslySetInnerHTML={{
           __html: JSON.stringify([guideJsonLd, faqJsonLd]).replaceAll(

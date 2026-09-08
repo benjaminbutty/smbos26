@@ -2,18 +2,17 @@ import type { Metadata } from "next";
 
 export const MARKETING_ORIGIN = "https://uselenni.com";
 
-const pageTitle = "Your business, in one calm workspace. · Lenni";
+const pageTitle = "For the business only you could build. · Lenni";
 const pageDescription =
-  "Lenni is a flexible business workspace for small businesses, shaped around how you actually work.";
+  "A flexible workspace shaped around how you work. Your customers, your plans, your next big thing.";
 
 export const marketingMetadata: Metadata = {
   metadataBase: new URL(MARKETING_ORIGIN),
   title: {
-    default: "Your business, in one calm workspace.",
+    default: "For the business only you could build.",
     template: "%s · Lenni",
   },
-  description:
-    "Lenni is a flexible business workspace for small businesses, shaped around how you actually work.",
+  description: pageDescription,
   alternates: {
     canonical: "/",
   },
