@@ -155,6 +155,7 @@ function ensureEditorBlockIds(editor: Editor): void {
       (parent.type.name === "doc" ||
         parent.type.name === pageEditorNodeNames.collapsible) &&
       isPageBlockNode(node) &&
+      !(node.type.name === "paragraph" && node.content.size === 0) &&
       typeof node.attrs?.blockId !== "string"
     ) {
       transaction.setNodeMarkup(position, undefined, {
