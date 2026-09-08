@@ -34,6 +34,14 @@ evidence; it does not replace its baseline claims.
   `Saved`; choosing Heading inserted at the command and a fresh reload retained
   the following prose. This is the browser reproduction for the duplicate block
   ID autosave regression.
+- Slash-menu follow-through: desktop wheel scrolling reached the final choice
+  and remained independent of later keyboard movement; first/last keyboard
+  wrapping kept the active option visible. At 1024 × 700 after a desktop
+  resize, the menu stayed within its 8 px viewport edge and revealed its final
+  choice. At 390 × 500 the mobile sheet fit with its active choice visible.
+  External Page scrolling dismissed the menu after its source anchor left the
+  screen. This verification restored the user’s original `/` draft without
+  leaving document changes.
 - Formatting save/undo and reading-mode flush were exercised. A live checklist
   committed exactly once, although its post-commit response remained in
   `Saving` for several minutes before a fresh navigation recovered the

@@ -55,6 +55,10 @@ import {
 } from "./checklist-form-state";
 import styles from "./internal-page-editor.module.css";
 import { resolveSlashInsertionRange } from "./slash-insertion";
+import {
+  positionSlashMenu,
+  slashMenuScrollTopForActiveOption,
+} from "./slash-menu-layout";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -287,30 +291,10 @@ function insertMenuPosition(cursor: {
   left: number;
   top: number;
 }): Pick<InsertMenuState, "left" | "top" | "maxHeight"> {
-  const gap = 8;
-  const minimumMenuHeight = 176;
-  const preferredMenuHeight = 384;
-  const menuWidth = 336;
-  const availableBelow = window.innerHeight - cursor.bottom - gap;
-  const availableAbove = cursor.top - gap;
-  const openAbove =
-    availableBelow < minimumMenuHeight && availableAbove > availableBelow;
-  const availableHeight = openAbove ? availableAbove : availableBelow;
-  const maxHeight = Math.max(
-    160,
-    Math.min(preferredMenuHeight, availableHeight),
-  );
-
-  return {
-    left: Math.min(
-      Math.max(gap, cursor.left),
-      Math.max(gap, window.innerWidth - menuWidth - gap),
-    ),
-    top: openAbove
-      ? Math.max(gap, cursor.top - maxHeight - gap)
-      : cursor.bottom + gap,
-    maxHeight,
-  };
+  return positionSlashMenu(cursor, {
+    height: window.innerHeight,
+    width: window.innerWidth,
+  });
 }
 
 function insertChoiceGroupLabel(
@@ -343,6 +327,7 @@ export function InternalPageEditor({
   const routerRef = useRef(router);
   const suppressUpdatesRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
   const selectedBlockPositionRef = useRef<number | null>(null);
   const pendingViewResolutionRef = useRef(false);
   const currentnessRef = useRef(currentness);
@@ -645,6 +630,82 @@ export function InternalPageEditor({
         )
       : insertChoices;
   }, [insertChoices, insertMenu?.query]);
+
+  const insertMenuOpen = insertMenu !== null;
+  const insertMenuHeight = insertMenu?.maxHeight;
+  const insertMenuQuery = insertMenu?.query;
+  const insertMenuSource = insertMenu?.source;
+
+  useEffect(() => {
+    if (!insertMenuOpen) return;
+    const options = slashMenuRef.current?.querySelector<HTMLElement>(
+      ".page-slash-menu-options",
+    );
+    const activeChoice = options?.querySelector<HTMLElement>(
+      '[role="option"][aria-selected="true"]',
+    );
+    if (!options || !activeChoice) return;
+    const optionsRect = options.getBoundingClientRect();
+    const activeChoiceRect = activeChoice.getBoundingClientRect();
+    const optionTop =
+      activeChoiceRect.top - optionsRect.top + options.scrollTop;
+    const nextScrollTop = slashMenuScrollTopForActiveOption({
+      clientHeight: options.clientHeight,
+      optionBottom: optionTop + activeChoiceRect.height,
+      optionTop,
+      scrollTop: options.scrollTop,
+    });
+    if (nextScrollTop !== options.scrollTop) options.scrollTop = nextScrollTop;
+  }, [
+    insertIndex,
+    insertMenuHeight,
+    insertMenuOpen,
+    insertMenuQuery,
+    insertMenuSource,
+  ]);
+
+  useEffect(() => {
+    if (!editor || !insertMenu) return;
+
+    const reposition = (): void => {
+      const anchor =
+        insertMenu.source === "slash" ? insertMenu.to : insertMenu.insertPos;
+      if (typeof anchor !== "number") {
+        setInsertMenu(null);
+        return;
+      }
+      let cursor: { bottom: number; left: number; top: number };
+      try {
+        cursor = editor.view.coordsAtPos(anchor);
+      } catch {
+        setInsertMenu(null);
+        return;
+      }
+      if (cursor.bottom < 0 || cursor.top > window.innerHeight) {
+        setInsertMenu(null);
+        return;
+      }
+      setInsertMenu((current) =>
+        current ? { ...current, ...insertMenuPosition(cursor) } : current,
+      );
+    };
+    const onScroll = (event: Event): void => {
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".page-slash-menu")
+      ) {
+        return;
+      }
+      reposition();
+    };
+
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [editor, insertMenu]);
 
   useEffect(() => {
     if (!editor) return;
@@ -2057,6 +2118,7 @@ export function InternalPageEditor({
             <div
               aria-label="Insert into Page"
               className="page-slash-menu"
+              ref={slashMenuRef}
               role="listbox"
               style={{
                 left: insertMenu.left,
