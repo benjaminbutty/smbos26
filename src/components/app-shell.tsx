@@ -56,6 +56,10 @@ function MarketingShell({ children }: Readonly<AppShellProps>): ReactNode {
 export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
   const pathname = usePathname();
 
+  if (pathname.startsWith("/reference/")) {
+    return <div className="app-frame reference-frame">{children}</div>;
+  }
+
   if (pathname.startsWith("/app/")) {
     return <div className="app-frame workspace-frame">{children}</div>;
   }

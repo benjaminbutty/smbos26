@@ -1,39 +1,35 @@
 # SMBOS
 
-SMBOS is an AI-native operating system for small physical businesses. The
-repository currently contains the Milestone 4 vertical slice, the Milestone 5
-Phase 5B explicit Changes lifecycle interface, the Milestone 6 Phase 4C
-Terra-medium planning qualification and reliability gate, and the engineering-
-only Milestone 8 Phase 8A drafting qualification/reliability gates after
-bounded real-model
-planning diagnostics, deterministic manual setup amendments,
-data-minimised Business context and strict non-executing Business-request
-planning, plus Milestone 8 Phase 8B authenticated server-only Builder
-orchestration, the minimal Milestone 8 Phase 8C authenticated Owner/Admin
-Builder surface, and bounded Milestone 9 Phase 9A Builder-generated preorder
-amendments: a
-multi-location bakery preorder capability over the tenant-safe graph and
-experience runtime whose configuration is installed, previewed and explained
-through immutable change sets and forward-only versions, with deliberate
-Owner/Admin validation, application, abandonment and rollback preparation.
-Milestone 9 is complete and merged at the current repository head. Milestones
-10, 12 and 13, together with Milestone 14 Phase 14A, are also merged at the
-current repository head. Milestone 15 Phase 15A is the current unmerged direct
-Table Workspace foundation work on this branch. The bounded Lenni Table
-interaction engine is implemented on top of that foundation; final unified
-Lenni UI refinement remains planned.
-The AI execution boundary is server-only and per-Business accounting is
-disabled by default. OpenAI Responses is the first external adapter, but it is
-also server-disabled by default; the Phase 8C route does not invoke providers
-unless the existing server-side gates allow the request.
+SMBOS is an AI-native operating system for small physical businesses. It uses
+tenant-safe, metadata-driven Tables, Records, Views, Forms and Pages, with
+reviewed configuration changes and a deterministic runtime. The first proof is
+preorder; it remains a regression slice rather than the product category.
+
+The Internal Pages redesign PR #75
+(`6896ee82958c4993f5cb0c08ffb14a0fa3bb0859`) was the cleanup baseline verified
+on 8 September 2026. Its Page grammar, autosave, private media, live Table and
+checklist boundaries are accepted implementation work. Current owner-facing
+refinement follows the Lenni v2 design guidance and must establish browser
+visual and interaction evidence before it is presented as complete.
+
+The AI execution boundary is server-only and disabled by default. OpenAI
+Responses is the first external adapter; it cannot invoke providers unless the
+existing server-side gates permit the request.
 
 The product and architecture sources of truth are:
 
 - [`docs/PRODUCT-NORTH-STAR.md`](docs/PRODUCT-NORTH-STAR.md)
+- [`docs/LENNI-DESIGN-GUIDANCE-V2.md`](docs/LENNI-DESIGN-GUIDANCE-V2.md) for
+  current Lenni visual and interaction work
 - [`docs/SMBOS-v0.1-Build-Spec.md`](docs/SMBOS-v0.1-Build-Spec.md)
 - [`docs/architecture-decisions.md`](docs/architecture-decisions.md)
 - [`docs/configuration-mutation-boundary.md`](docs/configuration-mutation-boundary.md)
 - [`AGENTS.md`](AGENTS.md)
+
+For owner-facing changes, read in this order: product north star, current Lenni
+design guidance, relevant ADRs and requirements, then the affected tests. The
+older Lenni redesign reports remain historical evidence; the v2 guide records
+which visual direction supersedes them.
 
 Milestone 12 is complete and merged at the current repository head. Phase 12A
 generic Record creation is merged through PR #17. Phase 12B adds one bounded
@@ -66,11 +62,12 @@ authoritative: the existing public URL stays unavailable until Apply. No AI is
 involved and publication changes no Product, availability, Customer, Order,
 submission or other operational data.
 
-Milestone 15 Phase 15A is the current unmerged direct Table Workspace feature
-work on this branch. It adds a deterministic Owner/Admin Tables sidebar and
-bounded structural Table actions over the existing configuration primitives.
+## Capability ledger
 
-## Current scope
+The following is a cumulative capability ledger, retained for implementation
+context. It is historical where it refers to an earlier milestone as current,
+unmerged or planned; the source-of-truth list above determines the current
+baseline and priority.
 
 Included:
 

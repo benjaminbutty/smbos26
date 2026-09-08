@@ -35,6 +35,8 @@ const serviceMessages: Readonly<Record<string, string>> = {
     "This Page changed after it was loaded. Reload and try again.",
   direct_configuration_change_incompatible:
     "That Page change could not be applied safely. Reload and try again.",
+  direct_configuration_timeout:
+    "Saving took too long. Your edits are still here. Try again.",
   direct_page_action_shape_invalid:
     "That Page change was not a permitted Page Workspace action.",
 };
@@ -44,12 +46,16 @@ function errorCode(error: unknown): string {
     typeof error === "object" && error !== null && "message" in error
       ? String((error as { message?: unknown }).message)
       : "";
-  return (
+  const code =
     message.match(/(?:direct|configuration)_[a-z0-9_]+/)?.[0] ??
     (typeof error === "object" && error !== null && "code" in error
       ? String((error as { code?: unknown }).code)
-      : "direct_page_request_failed")
-  );
+      : "direct_page_request_failed");
+
+  // PostgreSQL's statement-timeout code is safe to expose as a stable Page
+  // action outcome. The transaction rolls back, and the editor keeps its
+  // candidate, so an owner can retry without losing the change.
+  return code === "57014" ? "direct_configuration_timeout" : code;
 }
 
 export class DirectPageServiceError extends Error {
