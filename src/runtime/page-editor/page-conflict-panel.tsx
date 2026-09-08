@@ -113,9 +113,9 @@ export function PageConflictPanel({
         />
       </div>
       <p className="page-editor-conflict-consequence">
-        <strong>Use latest</strong> replaces your local draft with the latest
-        title and content. <strong>Keep my version</strong> saves your draft
-        over the latest Page as a new revision.
+        Using the latest choice replaces your local draft with the latest title
+        and content. Keeping your draft saves it over the latest Page as a new
+        revision.
       </p>
       <div className="page-editor-confirm-actions">
         <button

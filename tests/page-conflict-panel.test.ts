@@ -47,6 +47,7 @@ describe("Page conflict recovery surface", () => {
     expect(html).toContain("Your draft body");
     expect(html).toContain("Latest body");
     expect(html).toContain("replaces your local draft");
+    expect(html.match(/Keep my version/g) ?? []).toHaveLength(1);
     expect(html).not.toContain("&quot;blocks&quot;");
   });
 
