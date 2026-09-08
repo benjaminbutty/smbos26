@@ -1750,12 +1750,10 @@ export function InternalPageEditor({
             {status === "stale" ? (
               <button
                 className="page-editor-retry"
-                onClick={() =>
-                  conflict ? keepMyConflict() : routerRef.current.refresh()
-                }
+                onClick={() => routerRef.current.refresh()}
                 type="button"
               >
-                {conflict ? "Keep my version" : "Reload latest setup"}
+                Reload latest setup
               </button>
             ) : null}
             {status === "error" ? (
