@@ -20,6 +20,10 @@ describe("public marketing landing page", () => {
     expect(markup).toContain("Show me what Lenni would build");
     expect(markup).toContain('href="/outgrown-spreadsheets"');
     expect(markup).toContain("Outgrown spreadsheets? Read more");
+    expect(markup).toContain(
+      'href="/guides/what-software-does-my-small-business-need"',
+    );
+    expect(markup).toContain("Choosing software? Start here");
     expect(markup).not.toContain('href="/start"');
     expect(markup).not.toContain('href="/sign-up"');
     expect(markup).toContain("Tell Lenni");

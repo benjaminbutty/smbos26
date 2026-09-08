@@ -46,7 +46,12 @@ function MarketingShell({ children }: Readonly<AppShellProps>): ReactNode {
           </Link>
           <span>Your business, in one calm workspace.</span>
         </div>
-        <Link href="/#early-access">Join early access</Link>
+        <div className="marketing-footer-links">
+          <Link href="/guides/what-software-does-my-small-business-need">
+            Choosing software
+          </Link>
+          <Link href="/#early-access">Join early access</Link>
+        </div>
       </footer>
     </div>
   );
@@ -91,7 +96,11 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
     );
   }
 
-  if (pathname === "/" || pathname === "/outgrown-spreadsheets") {
+  if (
+    pathname === "/" ||
+    pathname === "/outgrown-spreadsheets" ||
+    pathname.startsWith("/guides/")
+  ) {
     return <MarketingShell>{children}</MarketingShell>;
   }
 
