@@ -97,7 +97,7 @@ export function WorkspaceTopbar({
     <header className="workspace-topbar">
       <div className="workspace-topbar-leading">
         <Link className="workspace-topbar-brand" href={rootPath}>
-          <LenniBrand />
+          <LenniBrand variant="symbol" />
         </Link>
         <nav aria-label="Breadcrumb" className="workspace-topbar-context">
           {breadcrumbs.map((breadcrumb, index) => (

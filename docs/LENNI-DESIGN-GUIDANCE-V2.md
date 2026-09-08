@@ -11,13 +11,14 @@ System and UX Constitution v2**. It preserves the decisions supplied in the
 including its later Master Design System prompt. That prompt is a derived,
 usable restatement; it is not represented here as the original constitution.
 
-The original source document, an approved logo file, and an approved logo-use
-specification are not present in the repository, its reachable Git history, or
-the targeted local project materials inspected on 8 September. The only
-approved brand asset currently available in source is the textual name
-**Lenni**. Use the shared textual wordmark component. Do not draw, imply or
-substitute a logo symbol until its approved source asset and usage rules are
-provided.
+The supplied [Lenni logo specification v1](./brand/lenni-logo-specification-v1.pdf)
+is the authority for logo geometry, lockups, colour pairings and placement. It
+was added to the repository from the owner-provided `Lenni Logo.pdf` on 8
+September 2026. The `public/brand/` SVGs preserve the canonical two-arch mark
+and extract the outlined wordmark from that PDF; the custom coral i-dot means
+the wordmark must never be replaced by live Satoshi text. The referenced
+`Brand Naming and Design` conversation remains the source for the broader v2
+product direction, not an original constitution.
 
 This guidance governs product presentation and interaction. It does not change
 the product north star, platform primitives, configuration lifecycle,
@@ -75,6 +76,26 @@ success, error or AI colour.
 Use explicit semantic state labels and their existing semantic tokens for
 success, warning, error, preview and published state. Do not use coral as a
 semantic substitute.
+
+### Logo
+
+Use the supplied lowercase **lenni** artwork. The horizontal lockup is the
+default: coral-500 arches sit on the wordmark baseline, the outlined wordmark
+is ink `#171A1D`, and its i-dot remains coral-500. The canonical mark is two
+6-unit butt-capped, miter-joined arches in a `48 × 48` grid with an optical
+crop of `4.5 12.5 39 23`; its small cut uses a 7-unit stroke and crop
+`4 12 40 24` below 20px. Use the shared `LenniBrand` component and the
+canonical `public/brand/` assets rather than creating a new representation.
+Where the supplied PDF's stated geometry and its illustrated artwork differ,
+follow the stated geometry: retain the extracted outlined letter paths while
+re-cutting the tittle to the required one-stem-width clearance.
+
+The sidebar uses the horizontal lockup with a 34px-wide mark, inset 16px from
+its top and left edges. Use the mark alone for compact app/tab contexts. Keep
+the logo to one visible instance per screen, preserve the specified clear
+space, and do not tint, outline, recolour, stretch, round its caps, or replace
+the outlined wordmark with webfont text. Coral-500 is logo-only; primary
+controls stay coral-700 for contrast.
 
 ### Type, spacing and shape
 

@@ -1758,7 +1758,6 @@ export function InternalPageEditor({
             </span>
             {canEdit ? (
               <button
-                aria-pressed={mode === "editing"}
                 className="button button-secondary button-small page-editor-mode-switch"
                 onClick={() => {
                   if (mode === "editing") requestReadingMode();
