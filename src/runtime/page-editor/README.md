@@ -9,8 +9,9 @@ action. Raw Tiptap JSON is never persisted.
 The internal editor is one continuous `EditorContent` surface. Each candidate
 is translated and committed through the serial quiet autosave coordinator as
 one `save_page_layout` action; Cmd/Ctrl+S and intentional internal navigation
-flush the same queue. Reading mode renders the current local candidate through
-the shared `PageRenderer` and returns to editing without discarding work. It
+flush the same queue. Authors with the Page editing capability remain in this
+surface; viewers automatically receive the current local candidate through the
+shared read-only `PageRenderer`. It
 supports paragraphs, three heading levels, bold, italic, safe links, flat
 bulleted/numbered lists, dividers, bounded Callouts, managed private images,
 collapsible sections and live internal View blocks, including the shared

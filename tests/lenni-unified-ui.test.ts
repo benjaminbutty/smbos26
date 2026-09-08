@@ -284,7 +284,10 @@ describe("Lenni unified workspace presentation", () => {
     expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(pageEditorCssSource).toContain(".page-editor-mode-switch");
+    expect(pageEditorCssSource).toContain(
+      ".page-editor-keyboard-block-actions",
+    );
+    expect(pageEditorCssSource).toContain(".page-editor-drop-indicator");
     expect(pageEditorCssSource).toContain("min-height: 2.75rem");
   });
 

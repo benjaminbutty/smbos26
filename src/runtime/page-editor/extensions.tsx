@@ -936,6 +936,11 @@ export function createPageEditorExtensions(
       code: false,
       codeBlock: false,
       document: false,
+      dropcursor: {
+        class: "page-editor-drop-indicator",
+        color: "#E9483C",
+        width: 2,
+      },
       hardBreak: false,
       italic: {},
       link: {

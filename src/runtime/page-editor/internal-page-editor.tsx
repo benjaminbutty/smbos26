@@ -1,7 +1,10 @@
 "use client";
 
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
+import type { NestedOptions } from "@tiptap/extension-drag-handle";
+import { flip, offset, shift } from "@floating-ui/dom";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Selection, TextSelection } from "@tiptap/pm/state";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { useRouter } from "next/navigation";
@@ -36,6 +39,13 @@ import {
   pageLayoutToTiptap,
   tiptapToPageLayout,
 } from "./page-translator";
+import {
+  movePageBlock,
+  pageBlockLocationForTarget,
+  pageBlockTargetAtPosition,
+  type PageBlockTarget,
+} from "./block-actions";
+import { positionPageBlockMenu } from "./block-menu-layout";
 import { ensureEditorBlockIds, withEditorBlockIds } from "./block-identities";
 import {
   SerialSaveCoordinator,
@@ -59,6 +69,7 @@ import {
   positionSlashMenu,
   slashMenuScrollTopForActiveOption,
 } from "./slash-menu-layout";
+import { pageEditorDragScrollDelta } from "./drag-scroll";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -88,6 +99,7 @@ interface InsertMenuState {
   left?: number;
   top?: number;
   maxHeight?: number;
+  targetBlockId?: string;
 }
 
 interface InsertChoice {
@@ -149,6 +161,34 @@ function isPageBlockNode(node: ProseMirrorNode): boolean {
     node.type.name === pageEditorNodeNames.legacy
   );
 }
+
+const pageDragHandleOptions = {
+  defaultRules: false,
+  edgeDetection: "none",
+  rules: [
+    {
+      id: "page-blocks-only",
+      evaluate: ({ node, parent }) =>
+        isPageBlockNode(node) &&
+        (parent?.type.name === "doc" ||
+          parent?.type.name === pageEditorNodeNames.collapsible)
+          ? 0
+          : 1000,
+    },
+  ],
+} satisfies NestedOptions;
+
+const pageDragHandlePosition = {
+  placement: "left-start" as const,
+  middleware: [
+    offset(8),
+    flip({
+      fallbackPlacements: ["top-start", "bottom-start"],
+      padding: 8,
+    }),
+    shift({ padding: 8 }),
+  ],
+};
 
 function reconcileCanonicalIds(
   editor: Editor,
@@ -231,39 +271,6 @@ function topLevelPosition(editor: Editor): number | null {
   return null;
 }
 
-interface SelectedBlockDetails {
-  index: number;
-  node: ProseMirrorNode;
-  parent: ProseMirrorNode;
-  position: number;
-}
-
-function blockAtPosition(
-  editor: Editor,
-  position: number,
-): SelectedBlockDetails | null {
-  let selected: SelectedBlockDetails | null = null;
-  editor.state.doc.descendants((node, nodePosition, parent) => {
-    if (nodePosition !== position || !parent) return true;
-    let index = -1;
-    let cursor = 0;
-    parent.forEach((candidate) => {
-      if (candidate === node) index = cursor;
-      cursor += 1;
-    });
-    if (index >= 0) {
-      selected = {
-        index,
-        node,
-        parent,
-        position: nodePosition,
-      };
-    }
-    return false;
-  });
-  return selected;
-}
-
 function duplicateWithFreshBlockIds(
   editor: Editor,
   node: ProseMirrorNode,
@@ -328,7 +335,14 @@ export function InternalPageEditor({
   const suppressUpdatesRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
-  const selectedBlockPositionRef = useRef<number | null>(null);
+  const blockMenuRef = useRef<HTMLDivElement>(null);
+  const blockHandleButtonRef = useRef<HTMLButtonElement>(null);
+  const dragHandleTargetRef = useRef<PageBlockTarget | null>(null);
+  const blockMenuTargetRef = useRef<PageBlockTarget | null>(null);
+  const blockMenuReturnFocusRef = useRef<HTMLElement | null>(null);
+  const blockTargetLockedRef = useRef(false);
+  const blockDraggingRef = useRef(false);
+  const dragScrollFrameRef = useRef<number | null>(null);
   const pendingViewResolutionRef = useRef(false);
   const currentnessRef = useRef(currentness);
   const bodyDirtyRef = useRef(false);
@@ -377,8 +391,13 @@ export function InternalPageEditor({
     null,
   );
   const [isChecklistSubmitting, setIsChecklistSubmitting] = useState(false);
-  const [mode, setMode] = useState<"editing" | "reading">("editing");
-  const [blockMenuOpen, setBlockMenuOpen] = useState(false);
+  const [blockMenuTarget, setBlockMenuTarget] =
+    useState<PageBlockTarget | null>(null);
+  const [blockMenuPlacement, setBlockMenuPlacement] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const [isBlockDragging, setIsBlockDragging] = useState(false);
   const [conflict, setConflict] = useState<{
     currentness: typeof currentness;
     layout: PageLayout;
@@ -387,9 +406,6 @@ export function InternalPageEditor({
   const [readingLayout, setReadingLayout] = useState<PageLayout>(() =>
     withEditorBlockIds(layout),
   );
-  const [selectedBlockPosition, setSelectedBlockPosition] = useState<
-    number | null
-  >(null);
 
   const adjustPendingUploads = useCallback((delta: number): void => {
     setPendingUploads((value) => Math.max(0, value + delta));
@@ -508,14 +524,10 @@ export function InternalPageEditor({
     editorProps: {
       attributes: {
         "aria-label": `${initialTitle} Page body`,
+        "aria-keyshortcuts": "Shift+F10",
         class: "page-editor-content",
         spellcheck: "true",
       },
-    },
-    onSelectionUpdate: ({ editor: activeEditor }) => {
-      const position = topLevelPosition(activeEditor);
-      selectedBlockPositionRef.current = position;
-      setSelectedBlockPosition(position);
     },
     onUpdate: ({ editor: activeEditor }) => {
       if (suppressUpdatesRef.current) return;
@@ -712,13 +724,13 @@ export function InternalPageEditor({
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled && !editor.isDestroyed) {
-        editor.setEditable(canEdit && mode === "editing", false);
+        editor.setEditable(canEdit, false);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [canEdit, editor, mode]);
+  }, [canEdit, editor]);
 
   useEffect(() => {
     if (
@@ -948,7 +960,14 @@ export function InternalPageEditor({
       }
       return { canonical, status: "success" };
     },
-    [applyPageBlockAction, editor, pageKey],
+    [
+      applyPageBlockAction,
+      editor,
+      pageKey,
+      setBodyDirty,
+      setCurrentnessCandidate,
+      setMessage,
+    ],
   );
   useEffect(() => {
     performPageSaveRef.current = performPageSave;
@@ -1250,23 +1269,22 @@ export function InternalPageEditor({
       let afterBlockId: string | null | undefined;
       let containerBlockId: string | undefined;
       if (menu.source === "gutter") {
-        const selected =
-          selectedBlockPositionRef.current ?? selectedBlockPosition;
-        const node =
-          selected === null ? null : editor.state.doc.nodeAt(selected);
-        const id = node?.attrs?.blockId;
-        let selectedIndex = -1;
-        let cursor = 0;
-        editor.state.doc.forEach((_candidate, position) => {
-          if (position === selected) selectedIndex = cursor;
-          cursor += 1;
-        });
-        afterBlockId =
-          typeof id === "string"
-            ? id
-            : selectedIndex >= 0
-              ? `legacy:${selectedIndex}`
-              : undefined;
+        const selectedPosition = topLevelPosition(editor);
+        const target = menu.targetBlockId
+          ? { blockId: menu.targetBlockId }
+          : selectedPosition === null
+            ? null
+            : pageBlockTargetAtPosition(editor.state.doc, selectedPosition);
+        const selected = target
+          ? pageBlockLocationForTarget(editor.state.doc, target)
+          : null;
+        afterBlockId = selected?.blockId;
+        if (
+          selected?.parent.type.name === pageEditorNodeNames.collapsible &&
+          typeof selected.parent.attrs?.blockId === "string"
+        ) {
+          containerBlockId = selected.parent.attrs.blockId;
+        }
       } else if (slashRange) {
         // The menu owns the insertion range. The chooser takes focus, and a
         // route refresh can otherwise move the editor selection before the
@@ -1426,6 +1444,209 @@ export function InternalPageEditor({
     });
   };
 
+  const targetForCurrentSelection = useCallback((): PageBlockTarget | null => {
+    if (!editor) return null;
+    const position = topLevelPosition(editor);
+    return position === null || position === undefined
+      ? null
+      : pageBlockTargetAtPosition(editor.state.doc, position);
+  }, [editor]);
+
+  const updateBlockMenuPlacement = useCallback(
+    (target: PageBlockTarget): boolean => {
+      if (!editor) return false;
+      const block = pageBlockLocationForTarget(editor.state.doc, target);
+      if (!block) return false;
+      let coords: { left: number; top: number };
+      try {
+        coords = editor.view.coordsAtPos(block.position);
+      } catch {
+        return false;
+      }
+      const menu = blockMenuRef.current;
+      const next = positionPageBlockMenu(
+        coords,
+        { height: window.innerHeight, width: window.innerWidth },
+        {
+          height: menu?.offsetHeight || 168,
+          width: menu?.offsetWidth || 184,
+        },
+      );
+      setBlockMenuPlacement((current) =>
+        current?.left === next.left && current.top === next.top
+          ? current
+          : next,
+      );
+      return true;
+    },
+    [editor],
+  );
+
+  const setDragHandleLocked = useCallback(
+    (locked: boolean): void => {
+      if (!editor) return;
+      editor.view.dispatch(editor.state.tr.setMeta("lockDragHandle", locked));
+    },
+    [editor],
+  );
+
+  const closeBlockMenu = useCallback(
+    (restoreFocus = false): void => {
+      const returnFocus = blockMenuReturnFocusRef.current;
+      blockMenuReturnFocusRef.current = null;
+      blockMenuTargetRef.current = null;
+      blockTargetLockedRef.current = blockDraggingRef.current;
+      setBlockMenuTarget(null);
+      setBlockMenuPlacement(null);
+      if (!blockDraggingRef.current) setDragHandleLocked(false);
+      if (restoreFocus) {
+        window.setTimeout(() => {
+          returnFocus?.focus();
+        });
+      }
+    },
+    [setDragHandleLocked],
+  );
+
+  const openBlockMenu = useCallback(
+    (target?: PageBlockTarget | null): void => {
+      const nextTarget =
+        target ?? dragHandleTargetRef.current ?? targetForCurrentSelection();
+      if (!nextTarget || !editor) return;
+      if (!updateBlockMenuPlacement(nextTarget)) return;
+      blockTargetLockedRef.current = true;
+      blockMenuTargetRef.current = nextTarget;
+      blockMenuReturnFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : blockHandleButtonRef.current;
+      setBlockMenuTarget(nextTarget);
+      setDragHandleLocked(true);
+    },
+    [
+      editor,
+      setDragHandleLocked,
+      targetForCurrentSelection,
+      updateBlockMenuPlacement,
+    ],
+  );
+
+  const activeBlockTarget = useCallback((): PageBlockTarget | null => {
+    return (
+      blockMenuTargetRef.current ??
+      dragHandleTargetRef.current ??
+      targetForCurrentSelection()
+    );
+  }, [targetForCurrentSelection]);
+
+  const activeBlockDetails = useCallback(() => {
+    const target = activeBlockTarget();
+    return editor && target
+      ? pageBlockLocationForTarget(editor.state.doc, target)
+      : null;
+  }, [activeBlockTarget, editor]);
+
+  const focusPagePosition = useCallback(
+    (position: number): void => {
+      if (!editor) return;
+      const safePosition = Math.min(
+        Math.max(0, position),
+        editor.state.doc.content.size,
+      );
+      const selection = Selection.near(
+        editor.state.doc.resolve(safePosition),
+        1,
+      );
+      editor.view.dispatch(
+        editor.state.tr
+          .setSelection(selection)
+          .setMeta("addToHistory", false)
+          .scrollIntoView(),
+      );
+      editor.view.focus();
+    },
+    [editor],
+  );
+
+  const focusBlockTarget = useCallback(
+    (target: PageBlockTarget): void => {
+      if (!editor) return;
+      const block = pageBlockLocationForTarget(editor.state.doc, target);
+      if (block) focusPagePosition(block.position);
+    },
+    [editor, focusPagePosition],
+  );
+
+  const removeSelected = (): void => {
+    const selected = activeBlockDetails();
+    if (!selected || !editor) return;
+    editor
+      .chain()
+      .focus()
+      .setNodeSelection(selected.position)
+      .deleteSelection()
+      .run();
+    focusPagePosition(selected.position);
+    closeBlockMenu();
+    setUndoAvailable(true);
+    window.setTimeout(() => setUndoAvailable(false), 6_000);
+  };
+
+  const selectedBlockDetails = useMemo(() => {
+    if (!editor || !blockMenuTarget) return null;
+    return pageBlockLocationForTarget(editor.state.doc, blockMenuTarget);
+  }, [blockMenuTarget, editor]);
+  const selectedBlockIndex = selectedBlockDetails?.index ?? null;
+  const selectedBlockCount = selectedBlockDetails?.parent.childCount ?? null;
+
+  const duplicateSelected = useCallback((): void => {
+    const selected = activeBlockDetails();
+    if (!selected || !editor) return;
+    const duplicate = duplicateWithFreshBlockIds(editor, selected.node);
+    const transaction = editor.state.tr.insert(
+      selected.position + selected.node.nodeSize,
+      duplicate,
+    );
+    transaction.setMeta("addToHistory", true);
+    editor.view.dispatch(transaction);
+    const duplicateBlockId = duplicate.attrs.blockId;
+    if (typeof duplicateBlockId === "string") {
+      focusBlockTarget({ blockId: duplicateBlockId });
+    }
+    closeBlockMenu();
+  }, [activeBlockDetails, closeBlockMenu, editor, focusBlockTarget]);
+
+  const moveSelected = useCallback(
+    (direction: "up" | "down"): void => {
+      const target = activeBlockTarget();
+      if (!target || !editor) return;
+      const transaction = editor.state.tr;
+      if (!movePageBlock(transaction, target, direction)) return;
+      editor.view.dispatch(transaction);
+      focusBlockTarget(target);
+      closeBlockMenu();
+    },
+    [activeBlockTarget, closeBlockMenu, editor, focusBlockTarget],
+  );
+
+  const openBlockInsertMenu = useCallback((): void => {
+    if (!editor || !editor.isEditable) return;
+    const target = dragHandleTargetRef.current ?? targetForCurrentSelection();
+    if (!target) return;
+    const selected = pageBlockLocationForTarget(editor.state.doc, target);
+    if (!selected) return;
+    const insertPos = selected.position + selected.node.nodeSize;
+    const cursor = editor.view.coordsAtPos(insertPos);
+    setInsertIndex(0);
+    setInsertMenu({
+      source: "gutter",
+      query: "",
+      insertPos,
+      targetBlockId: target.blockId,
+      ...insertMenuPosition(cursor),
+    });
+  }, [editor, targetForCurrentSelection]);
+
   const handleEditorKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
     const target = event.target;
     const isInsideView =
@@ -1442,6 +1663,17 @@ export function InternalPageEditor({
       event.preventDefault();
       event.stopPropagation();
       openLinkEditor();
+      return;
+    }
+    if (event.shiftKey && event.key === "F10") {
+      const isInsideEditor =
+        target instanceof HTMLElement && target.closest(".page-editor-content");
+      if (isInsideView || !isInsideEditor) return;
+      const targetForMenu = targetForCurrentSelection();
+      if (!targetForMenu) return;
+      event.preventDefault();
+      event.stopPropagation();
+      openBlockMenu(targetForMenu);
       return;
     }
     if (!insertMenu) return;
@@ -1476,102 +1708,90 @@ export function InternalPageEditor({
     }
   };
 
-  const removeSelected = (): void => {
-    if (!editor || selectedBlockPosition === null) return;
-    const position =
-      selectedBlockPositionRef.current ??
-      topLevelPosition(editor) ??
-      selectedBlockPosition;
-    const node = editor.state.doc.nodeAt(position);
-    if (!node) return;
-    editor.chain().focus().setNodeSelection(position).deleteSelection().run();
-    selectedBlockPositionRef.current = null;
-    setSelectedBlockPosition(null);
-    setUndoAvailable(true);
-    window.setTimeout(() => setUndoAvailable(false), 6_000);
-  };
-
-  const selectedBlock = useCallback(() => {
-    if (!editor) return null;
-    const position =
-      selectedBlockPositionRef.current ??
-      topLevelPosition(editor) ??
-      selectedBlockPosition;
-    if (position === null || position === undefined) return null;
-    return blockAtPosition(editor, position);
-  }, [editor, selectedBlockPosition]);
-
-  const selectedBlockDetails = useMemo(() => {
-    if (!editor || selectedBlockPosition === null) return null;
-    return blockAtPosition(editor, selectedBlockPosition);
-  }, [editor, selectedBlockPosition]);
-  const selectedBlockIndex = selectedBlockDetails?.index ?? null;
-  const selectedBlockCount = selectedBlockDetails?.parent.childCount ?? null;
-
-  const duplicateSelected = useCallback((): void => {
-    const selected = selectedBlock();
-    if (!selected || !editor) return;
-    const duplicate = duplicateWithFreshBlockIds(editor, selected.node);
-    const transaction = editor.state.tr.insert(
-      selected.position + selected.node.nodeSize,
-      duplicate,
-    );
-    transaction.setMeta("addToHistory", true);
-    editor.view.dispatch(transaction);
-    setBlockMenuOpen(false);
-  }, [editor, selectedBlock]);
-
-  const moveSelected = useCallback(
-    (direction: "up" | "down"): void => {
-      const selected = selectedBlock();
-      if (!selected || !editor) return;
-      if (
-        (direction === "up" && selected.index <= 0) ||
-        (direction === "down" &&
-          selected.index >= selected.parent.childCount - 1)
-      ) {
-        return;
-      }
-      const adjacent = selected.parent.child(
-        direction === "up" ? selected.index - 1 : selected.index + 1,
-      );
-      const transaction = editor.state.tr.delete(
-        selected.position,
-        selected.position + selected.node.nodeSize,
-      );
-      const insertionPosition =
-        direction === "up"
-          ? selected.position - adjacent.nodeSize
-          : transaction.mapping.map(
-              selected.position + selected.node.nodeSize,
-              1,
-            ) + adjacent.nodeSize;
-      transaction.insert(insertionPosition, selected.node);
-      transaction.setMeta("addToHistory", true);
-      editor.view.dispatch(transaction);
-      setBlockMenuOpen(false);
+  const onDragHandleNodeChange = useCallback(
+    ({ node, pos }: { node: ProseMirrorNode | null; pos: number }): void => {
+      if (blockTargetLockedRef.current) return;
+      const blockId = node?.attrs?.blockId;
+      dragHandleTargetRef.current =
+        typeof blockId === "string" && pos >= 0 ? { blockId } : null;
     },
-    [editor, selectedBlock],
+    [],
   );
 
-  const requestReadingMode = (): void => {
-    if (!canEdit) return;
-    if (pendingUploads > 0) {
-      setMessage("Finish the image upload before opening Reading mode.");
-      return;
+  const onBlockDragStart = useCallback((): void => {
+    if (!dragHandleTargetRef.current) return;
+    blockTargetLockedRef.current = true;
+    blockDraggingRef.current = true;
+    setIsBlockDragging(true);
+  }, []);
+
+  const onBlockDragEnd = useCallback((): void => {
+    blockTargetLockedRef.current = blockMenuTargetRef.current !== null;
+    blockDraggingRef.current = false;
+    setIsBlockDragging(false);
+    // The React wrapper leaves the native plugin's current-node cache intact
+    // after drag end. Reset it through the plugin metadata so re-entering the
+    // same block after a cancelled drop can show its handle again.
+    editor?.view.dispatch(editor.state.tr.setMeta("hideDragHandle", true));
+    if (dragScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragScrollFrameRef.current);
+      dragScrollFrameRef.current = null;
     }
-    void (async () => {
-      if (bodyDirty || titleDirty || saveCoordinatorRef.current?.inFlight) {
-        const saved = await savePage();
-        if (!saved) return;
+  }, [editor]);
+
+  const onBlockDragOver = useCallback(
+    (event: React.DragEvent<HTMLElement>): void => {
+      if (!blockDraggingRef.current || dragScrollFrameRef.current !== null) {
+        return;
       }
-      setMode("reading");
-      setMessage(null);
-    })();
-  };
+      const delta = pageEditorDragScrollDelta({
+        clientY: event.clientY,
+        viewportHeight: window.innerHeight,
+      });
+      if (!delta) return;
+      dragScrollFrameRef.current = window.requestAnimationFrame(() => {
+        window.scrollBy(0, delta);
+        dragScrollFrameRef.current = null;
+      });
+    },
+    [],
+  );
+
+  useEffect(
+    () => () => {
+      if (dragScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragScrollFrameRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!blockMenuTarget) return;
+    if (!updateBlockMenuPlacement(blockMenuTarget)) return;
+    const focusTimer = window.setTimeout(() => {
+      blockMenuRef.current
+        ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+        ?.focus();
+    });
+    return () => window.clearTimeout(focusTimer);
+  }, [blockMenuTarget, updateBlockMenuPlacement]);
+
+  useEffect(() => {
+    if (!blockMenuTarget) return;
+    const reposition = (): void => {
+      if (!updateBlockMenuPlacement(blockMenuTarget)) closeBlockMenu();
+    };
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [blockMenuTarget, closeBlockMenu, updateBlockMenuPlacement]);
 
   const pasteImage = (event: React.ClipboardEvent<HTMLDivElement>): void => {
-    if (!editor || !canEdit || mode !== "editing") return;
+    if (!editor || !canEdit) return;
     const file = Array.from(event.clipboardData.files).find((candidate) =>
       candidate.type.startsWith("image/"),
     );
@@ -1581,7 +1801,7 @@ export function InternalPageEditor({
   };
 
   const dropImage = (event: React.DragEvent<HTMLDivElement>): void => {
-    if (!editor || !canEdit || mode !== "editing") return;
+    if (!editor || !canEdit) return;
     const file = Array.from(event.dataTransfer.files).find((candidate) =>
       candidate.type.startsWith("image/"),
     );
@@ -1734,7 +1954,8 @@ export function InternalPageEditor({
     <section
       className={`page-editor-shell page-editor-internal page-document-editor ${styles.pageDocumentEditor}`}
       data-can-edit={canEdit ? "true" : "false"}
-      data-page-mode={mode}
+      data-page-mode={canEdit ? "editing" : "reading"}
+      data-block-dragging={isBlockDragging ? "true" : "false"}
       onClickCapture={(event) => {
         const target = event.target;
         if (!(target instanceof HTMLElement)) return;
@@ -1758,7 +1979,7 @@ export function InternalPageEditor({
       <div className="page-editor-document">
         <header className="page-editor-header">
           <div className="page-editor-heading-wrap">
-            {canEdit && mode === "editing" ? (
+            {canEdit ? (
               <input
                 aria-label="Page name"
                 className="page-editor-title-input page-editor-title-inline"
@@ -1798,18 +2019,6 @@ export function InternalPageEditor({
                       ? "Needs reload"
                       : "Could not save"}
             </span>
-            {canEdit ? (
-              <button
-                className="button button-secondary button-small page-editor-mode-switch"
-                onClick={() => {
-                  if (mode === "editing") requestReadingMode();
-                  else setMode("editing");
-                }}
-                type="button"
-              >
-                {mode === "editing" ? "Reading" : "Edit"}
-              </button>
-            ) : null}
             {canEdit && (duplicatePageAction || archivePageAction) ? (
               <details className="page-editor-overflow">
                 <summary aria-label="More Page actions">More</summary>
@@ -1894,15 +2103,19 @@ export function InternalPageEditor({
         ) : null}
 
         <div className="page-document-canvas" ref={canvasRef}>
-          {editor && canEdit && mode === "editing" ? (
+          {editor && canEdit ? (
             <>
               <BubbleMenu
                 className="page-format-menu"
                 editor={editor}
-                shouldShow={({ editor: activeEditor }) =>
-                  !activeEditor.state.selection.empty &&
-                  !activeEditor.isActive(pageEditorNodeNames.view)
-                }
+                shouldShow={({ editor: activeEditor }) => {
+                  const { selection } = activeEditor.state;
+                  return (
+                    selection instanceof TextSelection &&
+                    !selection.empty &&
+                    !activeEditor.isActive(pageEditorNodeNames.view)
+                  );
+                }}
               >
                 <button
                   aria-label="Bold"
@@ -1953,105 +2166,126 @@ export function InternalPageEditor({
               </BubbleMenu>
               <DragHandle
                 className="page-document-gutter"
+                computePositionConfig={pageDragHandlePosition}
                 editor={editor}
-                onNodeChange={({ node, pos }) => {
-                  if (node) {
-                    selectedBlockPositionRef.current = pos;
-                    setSelectedBlockPosition(pos);
-                  }
-                }}
+                nested={pageDragHandleOptions}
+                onElementDragEnd={onBlockDragEnd}
+                onElementDragStart={onBlockDragStart}
+                onNodeChange={onDragHandleNodeChange}
               >
                 <button
                   aria-label="Add a block below"
-                  onClick={() => {
-                    if (selectedBlockPosition === null) return;
-                    const node = editor.state.doc.nodeAt(selectedBlockPosition);
-                    if (!node) return;
-                    const cursor = editor.view.coordsAtPos(
-                      selectedBlockPosition + node.nodeSize,
-                    );
-                    setInsertIndex(0);
-                    setInsertMenu({
-                      source: "gutter",
-                      query: "",
-                      insertPos: selectedBlockPosition + node.nodeSize,
-                      ...insertMenuPosition(cursor),
-                    });
+                  draggable={false}
+                  onClick={openBlockInsertMenu}
+                  onDragStart={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                   }}
                   type="button"
                 >
                   +
                 </button>
                 <button
-                  aria-label="Drag block to move it"
-                  title="Drag to move this block"
+                  aria-controls="page-editor-block-menu"
+                  aria-expanded={blockMenuTarget !== null}
+                  aria-label="Drag this block or open block actions"
+                  onClick={() => openBlockMenu()}
+                  ref={blockHandleButtonRef}
+                  title="Drag to move, or click for block actions"
                   type="button"
                 >
                   ⋮⋮
                 </button>
-                <details
-                  className="page-editor-block-actions"
-                  onToggle={(event) =>
-                    setBlockMenuOpen(event.currentTarget.open)
-                  }
-                  open={blockMenuOpen}
-                >
-                  <summary aria-label="Block actions">•••</summary>
-                  <div className="page-editor-block-menu" role="menu">
-                    <button
-                      disabled={
-                        selectedBlockIndex === null || selectedBlockIndex === 0
-                      }
-                      onClick={() => moveSelected("up")}
-                      role="menuitem"
-                      type="button"
-                    >
-                      Move up
-                    </button>
-                    <button
-                      disabled={
-                        selectedBlockIndex === null ||
-                        selectedBlockCount === null ||
-                        selectedBlockIndex >= selectedBlockCount - 1
-                      }
-                      onClick={() => moveSelected("down")}
-                      role="menuitem"
-                      type="button"
-                    >
-                      Move down
-                    </button>
-                    <button
-                      onClick={duplicateSelected}
-                      role="menuitem"
-                      type="button"
-                    >
-                      Duplicate block
-                    </button>
-                    <button
-                      className="page-editor-block-remove"
-                      onClick={removeSelected}
-                      role="menuitem"
-                      type="button"
-                    >
-                      Remove block
-                    </button>
-                  </div>
-                </details>
-                <button
-                  aria-label="Delete block"
-                  onClick={removeSelected}
-                  type="button"
-                >
-                  ×
-                </button>
               </DragHandle>
+              {blockMenuTarget && blockMenuPlacement ? (
+                <div
+                  aria-label="Block actions"
+                  className="page-editor-block-menu"
+                  id="page-editor-block-menu"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      closeBlockMenu(true);
+                      return;
+                    }
+                    if (
+                      !["ArrowDown", "ArrowUp", "Home", "End"].includes(
+                        event.key,
+                      )
+                    ) {
+                      return;
+                    }
+                    const items = Array.from(
+                      blockMenuRef.current?.querySelectorAll<HTMLButtonElement>(
+                        "button:not(:disabled)",
+                      ) ?? [],
+                    );
+                    if (!items.length) return;
+                    event.preventDefault();
+                    const current = items.indexOf(
+                      document.activeElement as HTMLButtonElement,
+                    );
+                    const nextIndex =
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? items.length - 1
+                          : event.key === "ArrowUp"
+                            ? (current - 1 + items.length) % items.length
+                            : (current + 1) % items.length;
+                    items[nextIndex]?.focus();
+                  }}
+                  ref={blockMenuRef}
+                  role="menu"
+                  style={blockMenuPlacement}
+                >
+                  <button
+                    disabled={
+                      selectedBlockIndex === null || selectedBlockIndex === 0
+                    }
+                    onClick={() => moveSelected("up")}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    disabled={
+                      selectedBlockIndex === null ||
+                      selectedBlockCount === null ||
+                      selectedBlockIndex >= selectedBlockCount - 1
+                    }
+                    onClick={() => moveSelected("down")}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Move down
+                  </button>
+                  <button
+                    onClick={duplicateSelected}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Duplicate block
+                  </button>
+                  <button
+                    className="page-editor-block-remove"
+                    onClick={removeSelected}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Remove block
+                  </button>
+                </div>
+              ) : null}
             </>
           ) : null}
 
           <div
             className="page-editor-content-boundary"
+            onDragOver={onBlockDragOver}
             onMouseDown={(event) => {
-              if (!editor || !canEdit || mode !== "editing") return;
+              if (!editor || !canEdit) return;
               const target = event.target;
               if (!(target instanceof HTMLElement)) return;
               const paragraph = target.closest("p");
@@ -2071,7 +2305,7 @@ export function InternalPageEditor({
                 .run();
             }}
           >
-            {mode === "reading" ? (
+            {!canEdit ? (
               <PageRenderer
                 businessSlug={businessSlug}
                 layout={readingLayout}
@@ -2090,7 +2324,17 @@ export function InternalPageEditor({
             )}
           </div>
 
-          {canEdit && mode === "editing" && emptyDocument && !insertMenu ? (
+          {canEdit ? (
+            <button
+              className="page-editor-keyboard-block-actions"
+              onClick={() => openBlockMenu(targetForCurrentSelection())}
+              type="button"
+            >
+              Open actions for the current block
+            </button>
+          ) : null}
+
+          {canEdit && emptyDocument && !insertMenu ? (
             <div className="page-editor-empty-actions">
               <p>
                 Start with a short note, or add live work when you are ready.
@@ -2114,7 +2358,7 @@ export function InternalPageEditor({
             </div>
           ) : null}
 
-          {canEdit && mode === "editing" && insertMenu ? (
+          {canEdit && insertMenu ? (
             <div
               aria-label="Insert into Page"
               className="page-slash-menu"
@@ -2187,7 +2431,7 @@ export function InternalPageEditor({
             </div>
           ) : null}
 
-          {canEdit && mode === "editing" && linkEditor ? (
+          {canEdit && linkEditor ? (
             <form
               aria-label="Add or edit link"
               className="page-link-popover"
@@ -2259,7 +2503,7 @@ export function InternalPageEditor({
             </form>
           ) : null}
 
-          {canEdit && mode === "editing" && checklistForm ? (
+          {canEdit && checklistForm ? (
             <form
               aria-label="Add checklist"
               className="page-checklist-create-popover"
@@ -2579,7 +2823,7 @@ export function InternalPageEditor({
         </div>
       </div>
 
-      {canEdit && mode === "editing" ? (
+      {canEdit ? (
         <p className="page-editor-footer">
           Changes save automatically. Type naturally, use / for blocks, or
           select text to format it.
