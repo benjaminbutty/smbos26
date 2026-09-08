@@ -1,5 +1,10 @@
 # READY FOR PRE-MERGE REVIEW
 
+Parent review 4's caret and checklist slash insertion corrections are complete
+and verified locally and at the exact pushed head. See `parent-review-4.md` for
+the original production-route reproductions; the coordinating agent's latest
+route-level recheck remains an independent pre-merge acceptance step.
+
 The second and third parent-review implementation corrections are complete and
 their local and exact-head checks are green. The coordinating agent's final
 browser acceptance remains an independent pre-merge review step; this marker
@@ -11,9 +16,9 @@ PR: [#75](https://github.com/benjaminbutty/smbos26/pull/75) — open and
 unmerged.
 
 The current implementation and evidence head is commit
-`a5b7c418eb87627ea75f5262966cc8bad8bf490e`. Its exact-head CI
-[34188998394](https://github.com/benjaminbutty/smbos26/actions/runs/34188998394)
-completed successfully in 18m54s. Earlier green exact-head runs for the
+`95f629bd2c746799e6acb6b01190273de34701ac`. Its exact-head CI
+[34192784872](https://github.com/benjaminbutty/smbos26/actions/runs/34192784872)
+completed successfully in 18m42s. Earlier green exact-head runs for the
 opaque request-token and documentation corrections remain listed below.
 
 ## Requirement and implementation checklist
@@ -105,13 +110,34 @@ browser recheck is retained as an independent pre-merge review step.
   production-route chooser, keyboard and conflict journeys remain the
   coordinating agent's browser evidence.
 
+## Parent-review-4 correction status
+
+- Canonical route refreshes now preserve the live Tiptap document, selection and
+  undo history when the latest Page matches both the acknowledged draft and
+  the editor's current canonical layout. A server action that adds a new block
+  still refreshes the editor because its live document is deliberately not yet
+  equal to the returned canonical Page.
+- Checklist slash insertion resolves the captured menu range rather than the
+  selection after the chooser takes focus. It removes only the slash command
+  while retaining surrounding prose, removes a command-only paragraph as one
+  block, and derives the action placement from that captured block. Empty
+  fallback paragraphs remain transient so a sole command can be removed safely.
+- Collapsible sections retain their closed state through the canonical editor
+  round-trip, preventing a semantically equal refresh from reopening content.
+- `tests/page-editor-draft-integration.test.ts` now covers the canonical
+  refresh preservation decision, and `tests/page-editor-translator.test.ts`
+  covers closed-section round-tripping. The parent-controlled production-route
+  Alpha → quiet-save → Beta, undo and slash placement captures remain an
+  independent browser acceptance step; this document makes no unexecuted
+  browser claim.
+
 ## Exact verification results
 
 Local verification on implementation/evidence head
-`a5b7c418eb87627ea75f5262966cc8bad8bf490e`:
+`95f629bd2c746799e6acb6b01190273de34701ac`:
 
-- `npm test -- --reporter=dot`: **103 files, 1060 tests passed**.
-- Focused editor/conflict suites: **3 files, 19 tests passed**.
+- `npm test -- --reporter=dot`: **103 files, 1062 tests passed**.
+- Focused editor/translator/conflict suites: **4 files, 28 tests passed**.
 - `npm run format:check`: **passed**.
 - `npm run typecheck`: **passed**.
 - `npm run lint`: **passed with zero warnings/errors**.
@@ -127,9 +153,9 @@ Local verification on implementation/evidence head
    reset. Clean seeded integration and RLS runs passed in the exact-head CI.
 
 Exact-head CI for the final implementation/evidence head
-a5b7c418eb87627ea75f5262966cc8bad8bf490e:
+95f629bd2c746799e6acb6b01190273de34701ac:
 
-- [CI run 34188998394](https://github.com/benjaminbutty/smbos26/actions/runs/34188998394): **green, validate completed in 18m54s**.
+- [CI run 34192784872](https://github.com/benjaminbutty/smbos26/actions/runs/34192784872): **green, validate completed in 18m42s**.
 - Formatting, typecheck, lint, unit tests, application build, migration
   immutability, clean migration application, all configured deterministic and
   authenticated acceptance suites, full PostgreSQL integration, PostgreSQL
