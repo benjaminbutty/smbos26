@@ -70,8 +70,22 @@ query/count, connection and action context and gives each embedded block an
 independent instance identity. Read-only View state removes writes while
 retaining read/search/paging behaviour.
 
-The final local Page was left clean: one collapsible section and the
+At the end of the recorded browser run, the local Page was left clean: one
+collapsible section and the
 `Weekly opening tasks` checklist View remain, with temporary two-View and
 image exercises removed through the UI and the saved Page reloaded. Archived
 demo records created solely for the query journey remain out of the active
 View and do not affect the Page.
+
+## State reconciliation after the recorded run
+
+The checklist journey and the `staff-page-*`/`staff-table-*` captures were
+executed against the Page state in which `Weekly opening tasks` was configured
+as a checklist View. During a later read-only parent inspection of the same
+local route, that block loaded as a standard Table. No database or browser
+mutation was used to make the two observations agree. The checklist row above
+therefore records the earlier executed Staff journey and its supporting
+captures; it does not claim that the current inspected `daily-operations`
+state still presents that block as a checklist. The Page-aware checklist
+boundary and zero-Version completion behaviour remain covered by the named
+automated integration and RLS tests.
