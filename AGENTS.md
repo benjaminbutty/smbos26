@@ -5,9 +5,14 @@
 Before implementing any feature, read:
 
 1. `docs/PRODUCT-NORTH-STAR.md`
-2. `docs/SMBOS-v0.1-Build-Spec.md`
-3. `docs/architecture-decisions.md`
-4. relevant existing tests
+2. `docs/LENNI-DESIGN-GUIDANCE-V2.md` for any owner-facing visual or interaction work
+3. `docs/SMBOS-v0.1-Build-Spec.md`
+4. `docs/architecture-decisions.md` and relevant ADRs
+5. relevant existing tests
+
+`docs/LENNI-DESIGN-GUIDANCE-V2.md` is the current visual authority. Historical
+Lenni redesign documents are evidence and implementation history unless that
+guide explicitly preserves one of their boundaries.
 
 Do not silently diverge from these decisions. When implementation evidence conflicts with the spec, explain the conflict and propose the smallest architecture change before coding around it.
 
@@ -44,10 +49,16 @@ For each task:
 
 1. State the intended implementation approach.
 2. Identify files, tables and interfaces affected.
-3. Implement the smallest complete change.
-4. Add or update tests.
-5. Run typecheck, lint and tests.
-6. Summarise changes, commands run and any architectural tension discovered.
+3. Reconcile the checked-out SHA, merged baseline and local preview before
+   treating prior work as a new review target.
+4. Implement the smallest complete change.
+5. Add or update tests.
+6. Run typecheck, lint and tests.
+7. For owner-facing visual or interaction changes, capture browser-rendered
+   desktop, tablet and mobile states and execute the affected keyboard/focus
+   journeys. Source assertions, unit tests and coordinator tests do not alone
+   establish product acceptance.
+8. Summarise changes, commands run and any architectural tension discovered.
 
 ## Security
 

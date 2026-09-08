@@ -9,6 +9,7 @@ import { createServerClient } from "../../../db/supabase/server";
 import { WorkspaceNavLink } from "../../../components/workspace-nav-link";
 import { WorkspaceMobileNav } from "../../../components/workspace-mobile-nav";
 import { WorkspaceTopbar } from "../../../components/workspace-topbar";
+import { LenniBrand } from "../../../components/lenni-brand";
 import { experienceKeyToPath } from "../../../runtime/routing";
 import { PagesSidebar } from "../../../runtime/navigation/pages-sidebar";
 import { TablesSidebar } from "../../../runtime/navigation/tables-sidebar";
@@ -64,7 +65,7 @@ export default async function TenantLayout({
       <aside className="workspace-sidebar">
         <div className="workspace-sidebar-header">
           <Link className="workspace-brand" href={`/app/${businessSlug}`}>
-            Lenni
+            <LenniBrand />
           </Link>
           <Link
             aria-label={`Switch business from ${tenant.business.name}`}
