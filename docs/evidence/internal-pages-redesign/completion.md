@@ -1,22 +1,20 @@
-# INCOMPLETE — SECOND PARENT REVIEW CORRECTIONS REQUIRED
+# READY FOR PRE-MERGE REVIEW
 
-The second parent review found editor integration defects; see
-[parent-review-2.md](./parent-review-2.md). The earlier readiness claim below is
-superseded until the corrections and their regression checks pass.
+The second and third parent-review implementation corrections are complete and
+their local and exact-head checks are green. The coordinating agent's final
+browser acceptance remains an independent pre-merge review step; this marker
+records that the implementation is ready for it.
 
 Date: 8 September 2026
 
 PR: [#75](https://github.com/benjaminbutty/smbos26/pull/75) — open and
 unmerged.
 
-The implementation code tested for the second-review corrections is now commit
-`e63432ad34d373048b901c55c3f2c9aff7e4293a`. Its exact-head CI
-[34185959239](https://github.com/benjaminbutty/smbos26/actions/runs/34185959239)
-completed successfully. The current documentation head
-`6625a1e5bfad3f40ed4f852cc0d925b9b586301f` also has green exact-head CI
-[34186044557](https://github.com/benjaminbutty/smbos26/actions/runs/34186044557).
-Readiness remains withheld until the coordinating agent completes its
-independent browser recheck and accepts this record.
+The current implementation and evidence head is commit
+`a5b7c418eb87627ea75f5262966cc8bad8bf490e`. Its exact-head CI
+[34188998394](https://github.com/benjaminbutty/smbos26/actions/runs/34188998394)
+completed successfully in 18m54s. Earlier green exact-head runs for the
+opaque request-token and documentation corrections remain listed below.
 
 ## Requirement and implementation checklist
 
@@ -29,7 +27,7 @@ independent browser recheck and accepts this record.
 | 5. Private images | Authenticated Owner/Admin upload and asset routes validate tenant membership before bounded request buffering, accept JPEG/PNG/WebP within the 3 MiB/20 MP limits, decode/re-encode with metadata removal and encoded-size checks, and use private Storage. Placeholder progress, cancel, retry, replace, remove, presentation and failure states are implemented. Cleanup retains historical-Version references and removes only eligible old failed/unreferenced assets. |
 | 6. Workbench Views and checklists | Embedded Views reuse `ProductionTableWorkspace` with tenant, currentness, query/search/paging/counts, Connections, connected Record panels, contextual creation, permitted bulk/lifecycle actions and independent block-instance state. Checklist blocks use normal Record data, support create/use-existing source selection, text/boolean mapping, placement, paging/search, label edits and Page-aware role/read-only validation; ticks create zero Page Versions. |
 | 7. Page lifecycle and roles | Create opens a uniquely named untitled Page with selected title; rename preserves slug; duplicate creates fresh block IDs while sharing operational references; archive/restore preserves Page identity and references. Owner and Administrator edit/read/archive/restore; Staff receives shared read/operate content with permitted checklist writes and no document mutations. |
-| 8. Verification and evidence | The full local checks and exact-head CI below are green. The browser ledger records the direct role journeys and durable screenshots for the executed Page workflows, while explicitly identifying controlled behavioural coverage for delayed-save and competing-save cases and the automated screenshot-paste boundary. It also records the later Table/checklist state reconciliation. This record stays INCOMPLETE until the coordinating agent's remaining browser checks and acceptance are complete. No production reset or live AI evaluation was used. |
+| 8. Verification and evidence | The full local checks and exact-head CI below are green. The browser ledger records the direct role journeys and durable screenshots for the executed Page workflows, while explicitly identifying controlled behavioural coverage for delayed-save and competing-save cases and the automated screenshot-paste boundary. It also records the later Table/checklist state reconciliation. The implementation is READY FOR PRE-MERGE REVIEW; the coordinating agent's final browser recheck is retained as an independent review step. No production reset or live AI evaluation was used. |
 
 ## Parent-review-1 correction checklist
 
@@ -87,17 +85,33 @@ independent browser recheck and accepts this record.
   the blocked local candidate intact.
 
 This section records code and behavioural checks only. The parent-controlled
-browser recheck and final acceptance remain outstanding, so the marker above
-is intentionally INCOMPLETE.
+browser recheck is retained as an independent pre-merge review step.
+
+## Parent-review-3 correction status
+
+- The existing-checklist chooser snapshots the selected View and field values
+  before deferred React state updates, including the name, label field,
+  completion field and read-only controls. Link and slash-menu search inputs
+  use the same event-value boundary.
+- Active slash-menu Arrow, Enter and Escape keys run through the document
+  capture handler before Tiptap. Normal editor keys continue through when the
+  menu is closed.
+- Stale recovery is one compact surface with one Use latest/Keep my version
+  action pair. It renders bounded local and latest title/body previews through
+  the shared safe Page renderer and states the replacement consequence without
+  exposing JSON.
+- tests/page-conflict-panel.test.ts covers the action count, readable
+  comparison, no-JSON surface and bounded layout preview. The exact
+  production-route chooser, keyboard and conflict journeys remain the
+  coordinating agent's browser evidence.
 
 ## Exact verification results
 
-Local verification on the tested implementation commit
-`e63432ad34d373048b901c55c3f2c9aff7e4293a`:
+Local verification on implementation/evidence head
+`a5b7c418eb87627ea75f5262966cc8bad8bf490e`:
 
-- `npm test -- --reporter=dot`: **102 files, 1058 tests passed**.
-- Focused Page/editor suites: **4 files, 67 tests passed**, plus
-  `tests/page-editor-draft-integration.test.ts` (**8 tests passed**).
+- `npm test -- --reporter=dot`: **103 files, 1060 tests passed**.
+- Focused editor/conflict suites: **3 files, 19 tests passed**.
 - `npm run format:check`: **passed**.
 - `npm run typecheck`: **passed**.
 - `npm run lint`: **passed with zero warnings/errors**.
@@ -110,7 +124,16 @@ Local verification on the tested implementation commit
   191 tests passed, 96 skipped**. Seven suites were blocked by the deliberate
   local fixture guard because the already-populated Connection demo has
   configuration history beyond Version 2; the populated database was not
-  reset. Clean seeded integration and RLS runs passed in the exact-head CI.
+   reset. Clean seeded integration and RLS runs passed in the exact-head CI.
+
+Exact-head CI for the final implementation/evidence head
+a5b7c418eb87627ea75f5262966cc8bad8bf490e:
+
+- [CI run 34188998394](https://github.com/benjaminbutty/smbos26/actions/runs/34188998394): **green, validate completed in 18m54s**.
+- Formatting, typecheck, lint, unit tests, application build, migration
+  immutability, clean migration application, all configured deterministic and
+  authenticated acceptance suites, full PostgreSQL integration, PostgreSQL
+  RLS integration and production dependency audit all completed successfully.
 
 Exact-head CI for `ca0d6c9a8dd2d09dd1ae01eed0ff10d542a7aecf`:
 
