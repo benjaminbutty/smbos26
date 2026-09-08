@@ -10,10 +10,9 @@ PR: [#75](https://github.com/benjaminbutty/smbos26/pull/75) — open and
 unmerged.
 
 The implementation code tested for the second-review corrections is now commit
-`067358a56e8db485b842233b9e9d04c831c84cbe`. The preceding correction head
-`c24227672db676a58839a856711502e23203c4b7` has exact-head CI
-[34185501471](https://github.com/benjaminbutty/smbos26/actions/runs/34185501471)
-still running; readiness remains withheld until the latest head is green and
+`e63432ad34d373048b901c55c3f2c9aff7e4293a`. Its exact-head CI
+[34185959239](https://github.com/benjaminbutty/smbos26/actions/runs/34185959239)
+is still running; readiness remains withheld until the latest head is green and
 the coordinating agent completes its independent browser recheck and accepts
 this record.
 
@@ -92,7 +91,7 @@ is intentionally INCOMPLETE.
 ## Exact verification results
 
 Local verification on the tested implementation commit
-`067358a56e8db485b842233b9e9d04c831c84cbe`:
+`e63432ad34d373048b901c55c3f2c9aff7e4293a`:
 
 - `npm test -- --reporter=dot`: **102 files, 1058 tests passed**.
 - Focused Page/editor suites: **4 files, 67 tests passed**, plus
@@ -132,6 +131,11 @@ Exact-head CI for the invalidated-response correction head
 `c24227672db676a58839a856711502e23203c4b7`:
 
 - [CI run 34185501471](https://github.com/benjaminbutty/smbos26/actions/runs/34185501471): **in progress** while this incomplete record is being updated.
+
+Exact-head CI for the opaque request-token head
+`e63432ad34d373048b901c55c3f2c9aff7e4293a`:
+
+- [CI run 34185959239](https://github.com/benjaminbutty/smbos26/actions/runs/34185959239): **in progress** while this incomplete record is being updated.
 
 ## Browser evidence
 
