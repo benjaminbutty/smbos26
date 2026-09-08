@@ -325,4 +325,28 @@ describe("Page editor canonical translator", () => {
     });
     expect(tiptapToPageLayout(document)).toEqual(layout);
   });
+
+  it("preserves a collapsed contained section through an editor round-trip", () => {
+    const layout = {
+      blocks: [
+        {
+          type: "collapsible" as const,
+          summary: "Closed details",
+          blocks: [{ type: "text" as const, text: "Hidden guidance" }],
+          open: false,
+        },
+      ],
+    };
+
+    expect(tiptapToPageLayout(pageLayoutToTiptap(layout))).toEqual({
+      blocks: [
+        {
+          type: "collapsible",
+          summary: "Closed details",
+          blocks: [{ type: "text", text: "Hidden guidance" }],
+          open: false,
+        },
+      ],
+    });
+  });
 });

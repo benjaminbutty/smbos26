@@ -333,6 +333,7 @@ function canonicalBlock(node: JSONContent): PageBlock | null {
       summary:
         typeof node.attrs?.summary === "string" ? node.attrs.summary : "",
       blocks: children.filter((child): child is PageBlock => child !== null),
+      open: node.attrs?.open !== false,
       ...(id ? { id } : {}),
     });
     return result.success ? result.data : null;
