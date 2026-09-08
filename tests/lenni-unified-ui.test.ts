@@ -242,7 +242,16 @@ describe("Lenni unified workspace presentation", () => {
       }),
     );
     expect(publicHtml).toContain("This information is not available publicly.");
-    expect(cssSource).toContain("grid-template-rows: auto minmax(0, 1fr);");
+    const pageEditorCssSource = readFileSync(
+      new URL(
+        "../src/runtime/page-editor/internal-page-editor.module.css",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(pageEditorCssSource).toMatch(
+      /\.pageDocumentEditor :global\(\.page-slash-menu\) \{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\);/,
+    );
     expect(cssSource).toContain("position: fixed;");
     expect(pageRouteSource).toContain("key={page.definition.key}");
     expect(pageRouteSource).toContain("canEdit,");
@@ -265,19 +274,18 @@ describe("Lenni unified workspace presentation", () => {
       "!configuredFieldKeys.has(field.key)",
     );
 
-    expect(cssSource).toContain("/* C5 Page canvas presentation.");
-    expect(cssSource).toContain(".page-document-canvas .tiptap");
-    expect(cssSource).toContain(".page-document-gutter");
-    expect(cssSource).toContain(".page-format-menu");
-    expect(cssSource).toContain(".page-slash-menu");
+    expect(pageEditorCssSource).toContain(".page-editor-content-boundary");
+    expect(pageEditorCssSource).toContain(".page-document-gutter");
+    expect(pageEditorCssSource).toContain(".page-format-menu");
+    expect(pageEditorCssSource).toContain(".page-slash-menu");
     expect(cssSource).toContain(
       ".editor-kernel-embedded .editor-mobile-record-list",
     );
     expect(cssSource).toContain(".editor-kernel-embedded .editor-record-panel");
     expect(cssSource).toContain("overflow-x: auto");
     expect(cssSource).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(cssSource).toContain(".page-editor-mode-switch");
-    expect(cssSource).toContain("min-height: 2.75rem");
+    expect(pageEditorCssSource).toContain(".page-editor-mode-switch");
+    expect(pageEditorCssSource).toContain("min-height: 2.75rem");
   });
 
   it("keeps the canonical Lenni token families in the current CSS source", () => {
@@ -361,8 +369,8 @@ describe("Lenni unified workspace presentation", () => {
       "--semantic-danger": "var(--trust-destructive-error-text)",
       "--semantic-info": "var(--trust-preview-text)",
       "--surface": "color-mix(in srgb, var(--surface-base) 78%, transparent)",
-      "--accent": "var(--trust-live-applied-text)",
-      "--accent-soft": "var(--trust-live-applied-surface)",
+      "--accent": "var(--coral-700)",
+      "--accent-soft": "var(--coral-50)",
     } as const;
 
     for (const [token, value] of Object.entries(compatibilityAliases)) {

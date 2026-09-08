@@ -52,7 +52,10 @@ vi.mock("../src/core/configuration/direct-pages/composer", () => ({
   })),
 }));
 
-import { applyDirectPageAction } from "../src/core/configuration/direct-pages/service";
+import {
+  applyDirectPageAction,
+  DirectPageServiceError,
+} from "../src/core/configuration/direct-pages/service";
 
 const businessId = "00000000-0000-4000-8000-000000000001";
 const actorId = "00000000-0000-4000-8000-000000000002";
@@ -88,6 +91,21 @@ const committedSnapshot = {
 };
 
 describe("direct Page acknowledgement", () => {
+  it("keeps a timed-out Page candidate retryable", () => {
+    const error = new DirectPageServiceError(
+      "Could not apply the Page change.",
+      {
+        code: "57014",
+        message: "canceling statement due to statement timeout",
+      },
+    );
+
+    expect(error.code).toBe("direct_configuration_timeout");
+    expect(error.message).toBe(
+      "Saving took too long. Your edits are still here. Try again.",
+    );
+  });
+
   it("returns the immutable Version committed by the action", async () => {
     mocks.state.activeHead = {
       active_version_id: baseVersionId,

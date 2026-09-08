@@ -308,46 +308,54 @@ function PageViewNodeView({
             <div>
               <p className="eyebrow">Table</p>
               <strong>{embed.bundle.definition.name}</strong>
+              <span className="page-editor-view-source">
+                From {embed.bundle.object.plural_label}
+              </span>
               {readOnly ? (
                 <span className="page-editor-view-readonly">Read-only</span>
               ) : null}
             </div>
-            {editor.isEditable ? (
-              <div className="page-editor-view-controls">
-                <label>
-                  <span className="editor-sr-only">Replace saved View</span>
-                  <select
-                    aria-label="Replace saved View"
-                    onChange={(event) =>
-                      updateAttributes({
-                        checklist: null,
-                        viewKey: event.currentTarget.value,
-                      })
-                    }
-                    value={viewKey}
-                  >
-                    {viewOptions.map((candidate) => (
-                      <option key={candidate.key} value={candidate.key}>
-                        {candidate.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  className="button button-secondary button-small"
-                  onClick={() => updateAttributes({ readOnly: !readOnly })}
-                  type="button"
-                >
-                  {readOnly ? "Allow edits" : "Make read-only"}
-                </button>
-              </div>
-            ) : null}
-            <a
-              className="button button-secondary button-small"
-              href={tableHref}
-            >
-              Open table
-            </a>
+            <div className="page-editor-view-actions">
+              {editor.isEditable ? (
+                <details className="page-editor-view-settings">
+                  <summary>View options</summary>
+                  <div className="page-editor-view-controls">
+                    <label>
+                      <span className="editor-sr-only">Replace saved View</span>
+                      <select
+                        aria-label="Replace saved View"
+                        onChange={(event) =>
+                          updateAttributes({
+                            checklist: null,
+                            viewKey: event.currentTarget.value,
+                          })
+                        }
+                        value={viewKey}
+                      >
+                        {viewOptions.map((candidate) => (
+                          <option key={candidate.key} value={candidate.key}>
+                            {candidate.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="button button-secondary button-small"
+                      onClick={() => updateAttributes({ readOnly: !readOnly })}
+                      type="button"
+                    >
+                      {readOnly ? "Allow edits" : "Make read-only"}
+                    </button>
+                  </div>
+                </details>
+              ) : null}
+              <a
+                className="button button-secondary button-small"
+                href={tableHref}
+              >
+                Open table
+              </a>
+            </div>
           </div>
           {checklist &&
           typeof checklist.label_field === "string" &&
@@ -407,34 +415,37 @@ function PageViewNodeView({
           showHeading={false}
         />
         {editor.isEditable ? (
-          <div className="page-editor-view-controls">
-            <label>
-              <span className="editor-sr-only">Replace saved View</span>
-              <select
-                aria-label="Replace saved View"
-                onChange={(event) =>
-                  updateAttributes({
-                    checklist: null,
-                    viewKey: event.currentTarget.value,
-                  })
-                }
-                value={viewKey}
+          <details className="page-editor-view-settings page-editor-view-settings-standalone">
+            <summary>View options</summary>
+            <div className="page-editor-view-controls">
+              <label>
+                <span className="editor-sr-only">Replace saved View</span>
+                <select
+                  aria-label="Replace saved View"
+                  onChange={(event) =>
+                    updateAttributes({
+                      checklist: null,
+                      viewKey: event.currentTarget.value,
+                    })
+                  }
+                  value={viewKey}
+                >
+                  {viewOptions.map((candidate) => (
+                    <option key={candidate.key} value={candidate.key}>
+                      {candidate.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="button button-secondary button-small"
+                onClick={() => updateAttributes({ readOnly: !readOnly })}
+                type="button"
               >
-                {viewOptions.map((candidate) => (
-                  <option key={candidate.key} value={candidate.key}>
-                    {candidate.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              className="button button-secondary button-small"
-              onClick={() => updateAttributes({ readOnly: !readOnly })}
-              type="button"
-            >
-              {readOnly ? "Allow edits" : "Make read-only"}
-            </button>
-          </div>
+                {readOnly ? "Allow edits" : "Make read-only"}
+              </button>
+            </div>
+          </details>
         ) : null}
       </div>
     </NodeViewWrapper>

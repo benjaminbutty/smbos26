@@ -349,7 +349,7 @@ export function PageRenderer({
             >
               <header className="page-view-block-header">
                 <div>
-                  <p className="eyebrow">Saved View</p>
+                  <p className="eyebrow">Table</p>
                   <strong>{bundle.definition.name}</strong>
                   <span>From {bundle.object.plural_label}</span>
                 </div>

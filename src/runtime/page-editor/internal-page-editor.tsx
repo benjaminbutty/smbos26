@@ -36,7 +36,7 @@ import {
   pageLayoutToTiptap,
   tiptapToPageLayout,
 } from "./page-translator";
-import { withEditorBlockIds } from "./block-identities";
+import { ensureEditorBlockIds, withEditorBlockIds } from "./block-identities";
 import {
   SerialSaveCoordinator,
   type SaveCoordinatorResult,
@@ -53,6 +53,8 @@ import {
   checklistFormForMode,
   type ChecklistFormState,
 } from "./checklist-form-state";
+import styles from "./internal-page-editor.module.css";
+import { resolveSlashInsertionRange } from "./slash-insertion";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -142,38 +144,6 @@ function isPageBlockNode(node: ProseMirrorNode): boolean {
     node.type.name === pageEditorNodeNames.collapsible ||
     node.type.name === pageEditorNodeNames.legacy
   );
-}
-
-/**
- * Tiptap creates new paragraphs and headings with their default null block ID.
- * Assigning an ID in the first transaction keeps an edit stable while a save
- * is in flight, so a later acknowledgement cannot cause the same block to be
- * treated as a new object again.
- */
-function ensureEditorBlockIds(editor: Editor): void {
-  const transaction = editor.state.tr;
-  let changed = false;
-  editor.state.doc.descendants((node, position, parent) => {
-    if (
-      parent &&
-      (parent.type.name === "doc" ||
-        parent.type.name === pageEditorNodeNames.collapsible) &&
-      isPageBlockNode(node) &&
-      !(node.type.name === "paragraph" && node.content.size === 0) &&
-      typeof node.attrs?.blockId !== "string"
-    ) {
-      transaction.setNodeMarkup(position, undefined, {
-        ...node.attrs,
-        blockId: globalThis.crypto.randomUUID(),
-      });
-      changed = true;
-    }
-    return true;
-  });
-  if (!changed) return;
-  transaction.setMeta("addToHistory", false);
-  transaction.setMeta("preventUpdate", true);
-  editor.view.dispatch(transaction);
 }
 
 function reconcileCanonicalIds(
@@ -421,6 +391,7 @@ export function InternalPageEditor({
   const [checklistForm, setChecklistForm] = useState<ChecklistFormState | null>(
     null,
   );
+  const [isChecklistSubmitting, setIsChecklistSubmitting] = useState(false);
   const [mode, setMode] = useState<"editing" | "reading">("editing");
   const [blockMenuOpen, setBlockMenuOpen] = useState(false);
   const [conflict, setConflict] = useState<{
@@ -1197,6 +1168,23 @@ export function InternalPageEditor({
   const insertChoice = (choice: InsertChoice): void => {
     if (!editor || !insertMenu) return;
     const menu = insertMenu;
+    const slashRange =
+      menu.source === "slash"
+        ? resolveSlashInsertionRange({
+            documentSize: editor.state.doc.content.size,
+            query: menu.query,
+            ...(menu.from !== undefined ? { requestedFrom: menu.from } : {}),
+            ...(menu.to !== undefined ? { requestedTo: menu.to } : {}),
+            textBetween: (from, to) => editor.state.doc.textBetween(from, to),
+          })
+        : null;
+
+    if (menu.source === "slash" && !slashRange) {
+      setInsertMenu(null);
+      setInsertIndex(0);
+      return;
+    }
+
     if (choice.kind === "checklist") {
       let afterBlockId: string | null | undefined;
       let containerBlockId: string | undefined;
@@ -1218,16 +1206,12 @@ export function InternalPageEditor({
             : selectedIndex >= 0
               ? `legacy:${selectedIndex}`
               : undefined;
-      } else if (menu.from !== undefined && menu.to !== undefined) {
+      } else if (slashRange) {
         // The menu owns the insertion range. The chooser takes focus, and a
         // route refresh can otherwise move the editor selection before the
-        // user confirms the checklist. Resolve the captured position against
-        // the current document and remove only the command range so prose
-        // around it survives.
-        const { from, to } = menu;
-        if (from < 1 || to < from || to > editor.state.doc.content.size) {
-          return;
-        }
+        // user confirms the checklist. The already-validated command range
+        // can be removed without touching surrounding prose.
+        const { from, to } = slashRange;
         let $from;
         try {
           $from = editor.state.doc.resolve(from);
@@ -1358,16 +1342,8 @@ export function InternalPageEditor({
     if (choice.kind === "view") {
       pendingViewResolutionRef.current = true;
     }
-    if (
-      insertMenu.source === "slash" &&
-      insertMenu.from !== undefined &&
-      insertMenu.to !== undefined
-    ) {
-      editor
-        .chain()
-        .focus()
-        .insertContentAt({ from: insertMenu.from, to: insertMenu.to }, node)
-        .run();
+    if (slashRange) {
+      editor.chain().focus().insertContentAt(slashRange, node).run();
     } else if (insertMenu.insertPos !== undefined) {
       editor.chain().focus().insertContentAt(insertMenu.insertPos, node).run();
     }
@@ -1695,7 +1671,7 @@ export function InternalPageEditor({
 
   return (
     <section
-      className="page-editor-shell page-editor-internal page-document-editor"
+      className={`page-editor-shell page-editor-internal page-document-editor ${styles.pageDocumentEditor}`}
       data-can-edit={canEdit ? "true" : "false"}
       data-page-mode={mode}
       onClickCapture={(event) => {
@@ -1728,6 +1704,11 @@ export function InternalPageEditor({
                 autoFocus
                 maxLength={120}
                 onFocus={(event) => event.currentTarget.select()}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  editor?.chain().focus().setTextSelection(1).run();
+                }}
                 onChange={(event) => {
                   const nextTitle = event.currentTarget.value;
                   titleDraftRef.current = nextTitle;
@@ -2222,6 +2203,7 @@ export function InternalPageEditor({
               className="page-checklist-create-popover"
               onSubmit={async (event) => {
                 event.preventDefault();
+                if (isChecklistSubmitting) return;
                 const isExisting = checklistForm.mode === "existing";
                 const name = checklistForm.name.trim();
                 if (
@@ -2233,10 +2215,12 @@ export function InternalPageEditor({
                 ) {
                   return;
                 }
+                setIsChecklistSubmitting(true);
                 if (!(await savePage())) {
                   setMessage(
                     "Save the current Page before adding a checklist.",
                   );
+                  setIsChecklistSubmitting(false);
                   return;
                 }
                 setStatus("saving");
@@ -2283,11 +2267,13 @@ export function InternalPageEditor({
                 } catch {
                   setStatus("error");
                   setMessage("The checklist could not be created. Try again.");
+                  setIsChecklistSubmitting(false);
                   return;
                 }
                 if (result.status !== "success") {
                   setStatus(result.status === "stale" ? "stale" : "error");
                   setMessage(result.message);
+                  setIsChecklistSubmitting(false);
                   return;
                 }
                 currentnessRef.current = result.currentness;
@@ -2304,6 +2290,7 @@ export function InternalPageEditor({
                 setBodyDirty(false);
                 setChecklistForm(null);
                 setStatus("saved");
+                setIsChecklistSubmitting(false);
                 router.refresh();
               }}
               role="dialog"
@@ -2477,13 +2464,14 @@ export function InternalPageEditor({
                 <button
                   className="button button-small"
                   disabled={
-                    checklistForm.mode === "create"
+                    isChecklistSubmitting ||
+                    (checklistForm.mode === "create"
                       ? !checklistForm.name.trim() || !createChecklistAction
                       : !checklistForm.viewKey ||
                         !checklistForm.labelField ||
                         !checklistForm.completedField ||
                         (selectedChecklistNeedsReadOnly &&
-                          checklistForm.readOnly !== true)
+                          checklistForm.readOnly !== true))
                   }
                   type="submit"
                 >
@@ -2529,7 +2517,7 @@ export function InternalPageEditor({
         </div>
       </div>
 
-      {canEdit ? (
+      {canEdit && mode === "editing" ? (
         <p className="page-editor-footer">
           Changes save automatically. Type naturally, use / for blocks, or
           select text to format it.

@@ -3,6 +3,81 @@ import {
   type PageBlock,
   type PageLayout,
 } from "../../core/experience/schemas";
+import type { Editor } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+
+import { pageEditorNodeNames } from "./page-translator";
+
+function isPageBlockNode(node: ProseMirrorNode): boolean {
+  return (
+    node.type.name === "paragraph" ||
+    node.type.name === "heading" ||
+    node.type.name === "bulletList" ||
+    node.type.name === "orderedList" ||
+    node.type.name === pageEditorNodeNames.divider ||
+    node.type.name === pageEditorNodeNames.callout ||
+    node.type.name === pageEditorNodeNames.view ||
+    node.type.name === pageEditorNodeNames.image ||
+    node.type.name === pageEditorNodeNames.collapsible ||
+    node.type.name === pageEditorNodeNames.legacy
+  );
+}
+
+/**
+ * ProseMirror copies attributes when it splits a block. Page block IDs are
+ * identities, so the original keeps its ID and the newly split sibling must
+ * receive a new one before the draft is translated for autosave. Empty, brand
+ * new paragraphs remain unassigned, but an empty paragraph that inherited a
+ * duplicate ID is repaired immediately.
+ */
+export function ensureEditorBlockIds(editor: Editor): void {
+  const transaction = editor.state.tr;
+  const seenBlockIds = new Set<string>();
+  let changed = false;
+
+  const nextBlockId = (): string => {
+    let blockId = globalThis.crypto.randomUUID();
+    while (seenBlockIds.has(blockId)) blockId = globalThis.crypto.randomUUID();
+    seenBlockIds.add(blockId);
+    return blockId;
+  };
+
+  editor.state.doc.descendants((node, position, parent) => {
+    const isTopLevelPageBlock =
+      parent &&
+      (parent.type.name === "doc" ||
+        parent.type.name === pageEditorNodeNames.collapsible) &&
+      isPageBlockNode(node);
+    if (!isTopLevelPageBlock) return true;
+
+    const blockId = node.attrs?.blockId;
+    const hasBlockId = typeof blockId === "string";
+    const duplicateBlockId = hasBlockId && seenBlockIds.has(blockId);
+    const isEmptyParagraph =
+      node.type.name === "paragraph" && node.content.size === 0;
+
+    if (hasBlockId && !duplicateBlockId) {
+      seenBlockIds.add(blockId);
+      return true;
+    }
+
+    // Leave a brand new empty paragraph out of the document grammar. A split
+    // paragraph, however, arrives with a copied ID and must be disambiguated
+    // even before the owner types the slash command into it.
+    if (isEmptyParagraph && !duplicateBlockId) return true;
+
+    transaction.setNodeMarkup(position, undefined, {
+      ...node.attrs,
+      blockId: nextBlockId(),
+    });
+    changed = true;
+    return true;
+  });
+  if (!changed) return;
+  transaction.setMeta("addToHistory", false);
+  transaction.setMeta("preventUpdate", true);
+  editor.view.dispatch(transaction);
+}
 
 /**
  * Older Page layouts may not have persisted block IDs. The editor needs a
