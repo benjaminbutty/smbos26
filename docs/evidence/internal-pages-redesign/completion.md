@@ -1,9 +1,11 @@
 # READY FOR PRE-MERGE REVIEW
 
-Parent review 4's caret and checklist slash insertion corrections are complete
-and verified locally and at the exact pushed head. See `parent-review-4.md` for
-the original production-route reproductions; the coordinating agent's latest
-route-level recheck remains an independent pre-merge acceptance step.
+Parent review 4's caret, checklist slash insertion and chooser placement
+corrections are complete and verified locally and at the exact pushed head.
+The chooser now retains the captured insertion placement through both create →
+existing and existing → create mode switches. See `parent-review-4.md` for the
+original production-route reproduction and the parent-controlled browser
+recheck boundary.
 
 The second and third parent-review implementation corrections are complete and
 their local and exact-head checks are green. The coordinating agent's final
@@ -16,9 +18,9 @@ PR: [#75](https://github.com/benjaminbutty/smbos26/pull/75) — open and
 unmerged.
 
 The current implementation and evidence head is commit
-`95f629bd2c746799e6acb6b01190273de34701ac`. Its exact-head CI
-[34192784872](https://github.com/benjaminbutty/smbos26/actions/runs/34192784872)
-completed successfully in 18m42s. Earlier green exact-head runs for the
+`a25783007621117477711fefd808804d18ada52b`. Its exact-head CI
+[34196558706](https://github.com/benjaminbutty/smbos26/actions/runs/34196558706)
+completed successfully in 22m29s. Earlier green exact-head runs for the
 opaque request-token and documentation corrections remain listed below.
 
 ## Requirement and implementation checklist
@@ -122,6 +124,10 @@ browser recheck is retained as an independent pre-merge review step.
   while retaining surrounding prose, removes a command-only paragraph as one
   block, and derives the action placement from that captured block. Empty
   fallback paragraphs remain transient so a sole command can be removed safely.
+- Switching between the create and existing checklist chooser modes retains the
+  captured `afterBlockId` and `containerBlockId` placement while resetting
+  mode-specific fields. Both directions are covered by a behavioral state
+  transition regression in `tests/page-editor-draft-integration.test.ts`.
 - Collapsible sections retain their closed state through the canonical editor
   round-trip, preventing a semantically equal refresh from reopening content.
 - `tests/page-editor-draft-integration.test.ts` now covers the canonical
@@ -134,10 +140,10 @@ browser recheck is retained as an independent pre-merge review step.
 ## Exact verification results
 
 Local verification on implementation/evidence head
-`95f629bd2c746799e6acb6b01190273de34701ac`:
+`a25783007621117477711fefd808804d18ada52b`:
 
-- `npm test -- --reporter=dot`: **103 files, 1062 tests passed**.
-- Focused editor/translator/conflict suites: **4 files, 28 tests passed**.
+- `npm test`: **103 files, 1063 tests passed**.
+- Focused editor/translator/conflict suites: **4 files, 29 tests passed**.
 - `npm run format:check`: **passed**.
 - `npm run typecheck`: **passed**.
 - `npm run lint`: **passed with zero warnings/errors**.
@@ -153,9 +159,9 @@ Local verification on implementation/evidence head
    reset. Clean seeded integration and RLS runs passed in the exact-head CI.
 
 Exact-head CI for the final implementation/evidence head
-95f629bd2c746799e6acb6b01190273de34701ac:
+a25783007621117477711fefd808804d18ada52b:
 
-- [CI run 34192784872](https://github.com/benjaminbutty/smbos26/actions/runs/34192784872): **green, validate completed in 18m42s**.
+- [CI run 34196558706](https://github.com/benjaminbutty/smbos26/actions/runs/34196558706): **green, validate completed in 22m29s**.
 - Formatting, typecheck, lint, unit tests, application build, migration
   immutability, clean migration application, all configured deterministic and
   authenticated acceptance suites, full PostgreSQL integration, PostgreSQL
