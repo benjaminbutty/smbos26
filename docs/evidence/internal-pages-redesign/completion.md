@@ -1,5 +1,11 @@
 # READY FOR PRE-MERGE REVIEW
 
+The coordinating agent has completed the independent implementation review.
+All identified blocking findings passed their final rechecks; see
+[parent-review-final.md](./parent-review-final.md). Required checks on the final
+documentation/evidence commit remain the last pre-merge gate. PR #75 remains
+unmerged.
+
 Parent review 4's caret, checklist slash insertion and chooser placement
 corrections are complete and verified locally and at the exact pushed head.
 The chooser now retains the captured insertion placement through both create →
