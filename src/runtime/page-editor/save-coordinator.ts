@@ -104,20 +104,6 @@ export class SerialSaveCoordinator<T> {
   }
 
   /**
-   * Return whether a save callback is still acknowledging the latest
-   * candidate. The object identity is intentional: every editor candidate is
-   * a new immutable envelope, so this distinguishes a later edit even when
-   * it happens to serialize to the same value as an earlier one.
-   */
-  isCurrent(candidate: T, revision: number): boolean {
-    return (
-      !this.#disposed &&
-      this.#revision === revision &&
-      this.#candidate === candidate
-    );
-  }
-
-  /**
    * Return whether the callback for a particular request may apply its
    * acknowledgement. Blocking, accepting a replacement baseline, disposing
    * the editor, or replacing the coordinator invalidates the token while a
@@ -242,6 +228,7 @@ export class SerialSaveCoordinator<T> {
   dispose(): void {
     this.#disposed = true;
     this.#requestEpoch += 1;
+    this.#activeRequestId = null;
     this.#clearTimer();
   }
 
