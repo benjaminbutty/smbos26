@@ -384,7 +384,7 @@ export function InternalPageEditor({
     (input: {
       candidate: PageDraft;
       revision: number;
-      requestId: object;
+      requestId: symbol;
     }) => Promise<SaveCoordinatorResult<PageDraft>>
   >(() =>
     Promise.resolve({
@@ -806,7 +806,7 @@ export function InternalPageEditor({
     }: {
       candidate: PageDraft;
       revision: number;
-      requestId: object;
+      requestId: symbol;
     }): Promise<SaveCoordinatorResult<PageDraft>> => {
       setMessage(null);
       let result;

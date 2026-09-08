@@ -29,7 +29,7 @@ export interface SerialSaveCoordinatorOptions<T> {
   save: (input: {
     candidate: T;
     revision: number;
-    requestId: object;
+    requestId: symbol;
   }) => Promise<SaveCoordinatorResult<T>>;
   onStateChange?: (state: SaveCoordinatorState) => void;
 }
@@ -67,7 +67,7 @@ export class SerialSaveCoordinator<T> {
   #status: SaveCoordinatorStatus = "saved";
   #timer: unknown = null;
   #inFlight: Promise<SaveCoordinatorResult<T>> | null = null;
-  #activeRequestId: object | null = null;
+  #activeRequestId: symbol | null = null;
   #requestEpoch = 0;
   #disposed = false;
 
@@ -109,7 +109,7 @@ export class SerialSaveCoordinator<T> {
    * the editor, or replacing the coordinator invalidates the token while a
    * network response may still be settling.
    */
-  isRequestActive(requestId: object): boolean {
+  isRequestActive(requestId: symbol): boolean {
     return (
       !this.#disposed &&
       this.#blocked === null &&
@@ -298,7 +298,7 @@ export class SerialSaveCoordinator<T> {
     }
     const candidate = this.#candidate;
     const revision = this.#revision;
-    const requestId = {};
+    const requestId = Symbol("page-save-request");
     const requestEpoch = this.#requestEpoch;
     this.#activeRequestId = requestId;
     this.#setStatus("saving");
