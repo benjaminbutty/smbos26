@@ -14,6 +14,9 @@ import type {
 import type { ProductionConfigurationCurrentness } from "../editor-kernel/production/action-types";
 import type {
   ProductionRecordPanelContextAction,
+  ProductionBulkUpdateAction,
+  ProductionScopedContextualRecordCreateAction,
+  ProductionScopedContextualRecordCreateStateAction,
   ProductionScopedCellEditAction,
   ProductionScopedConnectionCreateAction,
   ProductionScopedConnectionEditAction,
@@ -28,6 +31,11 @@ import { CandidateTableWorkspace } from "../../components/candidate-table-worksp
 import { experienceKeyToPath } from "../routing";
 import type { InlineEditAction } from "../views/inline-edit-contract";
 import { ViewRenderer } from "../views/view-renderer";
+import { ChecklistWorkspace } from "../page-editor/checklist-workspace";
+import type {
+  PageChecklistCellAction,
+  PageChecklistRowAction,
+} from "../page-editor/checklist-workspace";
 
 interface ResolvedFormBlock {
   action?: FormAction;
@@ -49,6 +57,7 @@ interface ResolvedPreorderBlock {
 interface PageRendererProps {
   layout: PageLayout;
   pageTitle?: string;
+  pageKey?: string;
   businessSlug?: string;
   views?: Readonly<Record<string, ExperienceViewBundle>>;
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
@@ -70,6 +79,7 @@ export interface CandidatePreviewTableEmbed {
 
 export interface PageRendererTableEmbed {
   table: EditorTable;
+  instanceId?: string;
   actions: ProductionTableAdapterActions;
   capabilities: EditorCapabilities;
   currentness?: ProductionConfigurationCurrentness | undefined;
@@ -82,6 +92,18 @@ export interface PageRendererTableEmbed {
   updateConnectedRecordConnection?: ProductionScopedConnectionEditAction;
   searchConnectedRecordTargets?: ProductionScopedConnectionSearchAction;
   createConnectedRecordTarget?: ProductionScopedConnectionCreateAction;
+  loadTablePage?: import("../editor-kernel/production/action-types").ProductionTablePageAction;
+  bulkUpdate?: ProductionBulkUpdateAction;
+  initialSearch?: string;
+  initialTotalCount?: number;
+  initialHasMore?: boolean;
+  connectionSource?: import("../editor-kernel/production/production-table-workspace").ProductionTableWorkspaceProps["connectionSource"];
+  connectionTargets?: import("../editor-kernel/production/production-table-workspace").ProductionTableWorkspaceProps["connectionTargets"];
+  existingConnections?: import("../editor-kernel/production/production-table-workspace").ProductionTableWorkspaceProps["existingConnections"];
+  loadContextualRecordCreateState?: ProductionScopedContextualRecordCreateStateAction;
+  createContextualRecord?: ProductionScopedContextualRecordCreateAction;
+  checklistUpdateCell?: PageChecklistCellAction;
+  checklistCreateRow?: PageChecklistRowAction;
 }
 
 function MissingBlock({ message }: Readonly<{ message: string }>): ReactNode {
@@ -141,6 +163,7 @@ function RichTextBlock({ block }: Readonly<{ block: RichTextPageBlock }>) {
 export function PageRenderer({
   layout,
   pageTitle,
+  pageKey,
   businessSlug,
   views = {},
   forms = {},
@@ -152,387 +175,501 @@ export function PageRenderer({
   tableEmbeds = {},
   candidateTables = {},
 }: Readonly<PageRendererProps>): ReactNode {
-  return (
-    <div className="runtime-page-blocks">
-      {layout.blocks.map((block, index) => {
-        const key = block.id ?? `${index}-${block.type}`;
+  const renderBlocks = (
+    blocks: readonly PageLayout["blocks"][number][],
+    path = "",
+  ): ReactNode[] =>
+    blocks.map((block, index) => {
+      const blockPath = `${path}${index}`;
+      const key = block.id ?? `page-block:${blockPath}`;
 
-        switch (block.type) {
-          case "heading":
-            if (
-              publicMode &&
-              block.level === 1 &&
-              pageTitle !== undefined &&
-              block.text.trim().toLocaleLowerCase("en") ===
-                pageTitle.trim().toLocaleLowerCase("en")
-            ) {
-              return null;
-            }
-            if (block.level === 1) {
-              return publicMode ? (
-                <h2 key={key}>{block.text}</h2>
-              ) : (
-                <h1 key={key}>{block.text}</h1>
-              );
-            }
-            if (block.level === 3) {
-              return <h3 key={key}>{block.text}</h3>;
-            }
-            return <h2 key={key}>{block.text}</h2>;
-          case "text":
-            return (
-              <p className="page-text-block" key={key}>
-                {block.text}
-              </p>
-            );
-          case "rich_text":
-            return <RichTextBlock block={block} key={key} />;
-          case "image":
-            return (
-              <figure className="page-image-block" key={key}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img alt={block.alt} src={block.src} />
-                {block.caption ? (
-                  <figcaption>{block.caption}</figcaption>
-                ) : null}
-              </figure>
-            );
-          case "button":
-            return (
-              <p className="page-button-block" key={key}>
-                {previewMode ? (
-                  <span
-                    aria-disabled="true"
-                    className={
-                      block.style === "secondary"
-                        ? "button button-secondary"
-                        : "button"
-                    }
-                  >
-                    {block.label}
-                  </span>
-                ) : (
-                  <a
-                    className={
-                      block.style === "secondary"
-                        ? "button button-secondary"
-                        : "button"
-                    }
-                    href={block.href}
-                  >
-                    {block.label}
-                  </a>
-                )}
-              </p>
-            );
-          case "divider":
-            return <hr className="page-divider" key={key} />;
-          case "callout":
-            return (
-              <aside
-                className={`page-callout page-callout-${block.tone}`}
-                key={key}
-                role="note"
-              >
-                {block.text}
-              </aside>
-            );
-          case "view": {
-            if (publicMode && !previewMode) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="This information is not available publicly."
-                />
-              );
-            }
-            const candidateTable = candidateTables[block.view_key];
-            if (candidateTable && previewMode) {
-              return (
-                <section className="page-view-block" key={key}>
-                  <header className="page-view-block-header">
-                    <div>
-                      <p className="eyebrow">Table</p>
-                      <strong>{candidateTable.name}</strong>
-                      <span>Example {candidateTable.objectLabel}</span>
-                    </div>
-                  </header>
-                  <CandidateTableWorkspace
-                    recordTypeLabel={candidateTable.recordTypeLabel}
-                    table={candidateTable.table}
-                  />
-                </section>
-              );
-            }
-            const bundle = views[block.view_key];
-            const tableEmbed = tableEmbeds[block.view_key];
-            if (tableEmbed && bundle?.definition.view_type === "table") {
-              const capabilities: EditorCapabilities = {
-                ...tableEmbed.capabilities,
-                ...(block.read_only
-                  ? {
-                      rowCreation: "unavailable" as const,
-                      rowCreationMessage:
-                        "This Table is read-only on this Page.",
-                    }
-                  : {}),
-              };
-              const tablePath =
-                tableEmbed.fullRecordPath ??
-                `/app/${encodeURIComponent(
-                  businessSlug ?? "",
-                )}/workspace/${experienceKeyToPath(tableEmbed.table.key)}`;
-              return (
-                <section className="page-view-block" key={key}>
-                  <header className="page-view-block-header">
-                    <div>
-                      <p className="eyebrow">Saved View</p>
-                      <strong>{bundle.definition.name}</strong>
-                      <span>From {bundle.object.plural_label}</span>
-                    </div>
-                    <a
-                      className="button button-secondary button-small"
-                      href={tablePath}
-                    >
-                      Open Table
-                    </a>
-                  </header>
-                  <ProductionTableWorkspace
-                    actions={tableEmbed.actions}
-                    {...(businessSlug !== undefined ? { businessSlug } : {})}
-                    capabilities={capabilities}
-                    currentness={tableEmbed.currentness}
-                    creationFallbackHref={tableEmbed.creationFallbackHref}
-                    {...(tableEmbed.createConnectedRecordTarget
-                      ? {
-                          createConnectedRecordTarget:
-                            tableEmbed.createConnectedRecordTarget,
-                        }
-                      : {})}
-                    fullRecordPath={tablePath}
-                    key={`${key}-table`}
-                    {...(tableEmbed.recordCountLabel
-                      ? { recordCountLabel: tableEmbed.recordCountLabel }
-                      : {})}
-                    {...(tableEmbed.recordTypeLabel
-                      ? { recordTypeLabel: tableEmbed.recordTypeLabel }
-                      : {})}
-                    {...(tableEmbed.readConnectedRecord
-                      ? { readConnectedRecord: tableEmbed.readConnectedRecord }
-                      : {})}
-                    readOnly={block.read_only ?? false}
-                    {...(tableEmbed.searchConnectedRecordTargets
-                      ? {
-                          searchConnectedRecordTargets:
-                            tableEmbed.searchConnectedRecordTargets,
-                        }
-                      : {})}
-                    surface="embedded"
-                    table={tableEmbed.table}
-                    {...(tableEmbed.updateConnectedRecordCell
-                      ? {
-                          updateConnectedRecordCell:
-                            tableEmbed.updateConnectedRecordCell,
-                        }
-                      : {})}
-                    {...(tableEmbed.updateConnectedRecordConnection
-                      ? {
-                          updateConnectedRecordConnection:
-                            tableEmbed.updateConnectedRecordConnection,
-                        }
-                      : {})}
-                  />
-                </section>
-              );
-            }
-            return bundle && businessSlug ? (
-              <ViewRenderer
-                bundle={bundle}
-                businessSlug={businessSlug}
-                key={key}
-                preview={previewMode}
-                readOnly={block.read_only ?? false}
-                showHeading={false}
-                {...(!previewMode && inlineEditAction
-                  ? { inlineEditAction }
-                  : {})}
-              />
-            ) : (
-              <MissingBlock
-                key={key}
-                message="This section is temporarily unavailable."
-              />
-            );
-          }
-          case "form": {
-            if (publicMode && !previewMode) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="Online submissions are not available on this page."
-                />
-              );
-            }
-            const resolvedForm = forms[block.form_key];
-            if (!resolvedForm) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="This form is temporarily unavailable."
-                />
-              );
-            }
-            return previewMode ? (
-              <FormRenderer
-                bundle={resolvedForm.bundle}
-                key={key}
-                mode="preview"
-                showHeading={false}
-              />
-            ) : resolvedForm.action ? (
-              <FormRenderer
-                action={resolvedForm.action}
-                bundle={resolvedForm.bundle}
-                key={key}
-                showHeading={false}
-              />
-            ) : (
-              <MissingBlock
-                key={key}
-                message="This form is temporarily unavailable."
-              />
-            );
-          }
-          case "public_form": {
-            if (!publicMode && !previewMode) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="This public Form is only available on its Site."
-                />
-              );
-            }
-            const resolvedForm = forms[block.form_key];
-            if (!resolvedForm) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="This public Form is temporarily unavailable."
-                />
-              );
-            }
-            return previewMode ? (
-              <FormRenderer
-                bundle={resolvedForm.bundle}
-                key={key}
-                mode="preview"
-                showHeading={false}
-              />
-            ) : resolvedForm.action ? (
-              <FormRenderer
-                action={resolvedForm.action}
-                bundle={resolvedForm.bundle}
-                key={key}
-                showHeading={false}
-                {...(resolvedForm.hiddenFields
-                  ? { hiddenFields: resolvedForm.hiddenFields }
-                  : {})}
-                {...(resolvedForm.honeypotName
-                  ? { honeypotName: resolvedForm.honeypotName }
-                  : {})}
-              />
-            ) : (
-              <MissingBlock
-                key={key}
-                message="This public Form is temporarily unavailable."
-              />
-            );
-          }
-          case "booking": {
-            if (!publicMode && !previewMode) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="This Booking Site is only available publicly."
-                />
-              );
-            }
-            const resolvedBooking = bookings[block.booking_key];
-            if (!resolvedBooking) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message={
-                    previewMode
-                      ? "This draft Booking Site will be available to customers after publication."
-                      : "This Booking Site is temporarily unavailable."
-                  }
-                />
-              );
-            }
-            return previewMode ? (
-              <BookingExperience
-                catalogue={resolvedBooking.catalogue}
-                key={key}
-                mode="preview"
-              />
-            ) : resolvedBooking.endpoint ? (
-              <BookingExperience
-                catalogue={resolvedBooking.catalogue}
-                endpoint={resolvedBooking.endpoint}
-                key={key}
-                mode="live"
-              />
-            ) : (
-              <MissingBlock
-                key={key}
-                message={
-                  previewMode
-                    ? "This draft Booking Site will be available to customers after publication."
-                    : "This Booking Site is temporarily unavailable."
-                }
-              />
-            );
-          }
-          case "preorder": {
-            if (!publicMode && !previewMode) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="Preorder checkout is available only on the published customer page."
-                />
-              );
-            }
-            const resolvedPreorder = preorders[block.preorder_key];
-            if (!resolvedPreorder) {
-              return (
-                <MissingBlock
-                  key={key}
-                  message="Preordering is temporarily unavailable."
-                />
-              );
-            }
-            return previewMode ? (
-              <PreorderExperience
-                catalogue={resolvedPreorder.catalogue}
-                key={key}
-                mode="preview"
-              />
-            ) : resolvedPreorder.endpoint ? (
-              <PreorderExperience
-                catalogue={resolvedPreorder.catalogue}
-                endpoint={resolvedPreorder.endpoint}
-                key={key}
-              />
-            ) : (
-              <MissingBlock
-                key={key}
-                message="Preordering is temporarily unavailable."
-              />
-            );
-          }
+      if (block.type === "collapsible") {
+        return (
+          <Fragment key={key}>
+            <details
+              className="page-collapsible-block"
+              {...(block.open ? { open: true } : {})}
+            >
+              <summary>{block.summary}</summary>
+              <div className="page-collapsible-content">
+                {renderBlocks(block.blocks, `${blockPath}.`)}
+              </div>
+            </details>
+          </Fragment>
+        );
+      }
+
+      return <Fragment key={key}>{renderBlock(block, key, key)}</Fragment>;
+    });
+
+  const renderBlock = (
+    block: Exclude<PageLayout["blocks"][number], { type: "collapsible" }>,
+    key: string,
+    blockId: string,
+  ): ReactNode => {
+    switch (block.type) {
+      case "heading":
+        if (
+          publicMode &&
+          block.level === 1 &&
+          pageTitle !== undefined &&
+          block.text.trim().toLocaleLowerCase("en") ===
+            pageTitle.trim().toLocaleLowerCase("en")
+        ) {
+          return null;
         }
-      })}
-    </div>
+        if (block.level === 1) {
+          return publicMode ? (
+            <h2 key={key}>{block.text}</h2>
+          ) : (
+            <h1 key={key}>{block.text}</h1>
+          );
+        }
+        if (block.level === 3) {
+          return <h3 key={key}>{block.text}</h3>;
+        }
+        return <h2 key={key}>{block.text}</h2>;
+      case "text":
+        return (
+          <p className="page-text-block" key={key}>
+            {block.text}
+          </p>
+        );
+      case "rich_text":
+        return <RichTextBlock block={block} key={key} />;
+      case "image":
+        return (
+          <figure
+            className={`page-image-block page-image-${block.presentation ?? "content"}`}
+            key={key}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt={block.alt}
+              src={
+                block.asset_id && businessSlug
+                  ? `/api/app/${encodeURIComponent(businessSlug)}/pages/assets/${block.asset_id}`
+                  : block.src
+              }
+            />
+            {block.caption ? <figcaption>{block.caption}</figcaption> : null}
+          </figure>
+        );
+      case "button":
+        return (
+          <p className="page-button-block" key={key}>
+            {previewMode ? (
+              <span
+                aria-disabled="true"
+                className={
+                  block.style === "secondary"
+                    ? "button button-secondary"
+                    : "button"
+                }
+              >
+                {block.label}
+              </span>
+            ) : (
+              <a
+                className={
+                  block.style === "secondary"
+                    ? "button button-secondary"
+                    : "button"
+                }
+                href={block.href}
+              >
+                {block.label}
+              </a>
+            )}
+          </p>
+        );
+      case "divider":
+        return <hr className="page-divider" key={key} />;
+      case "callout":
+        return (
+          <aside
+            className={`page-callout page-callout-${block.tone}`}
+            key={key}
+            role="note"
+          >
+            {block.text}
+          </aside>
+        );
+      case "view": {
+        if (publicMode && !previewMode) {
+          return (
+            <MissingBlock
+              key={key}
+              message="This information is not available publicly."
+            />
+          );
+        }
+        const candidateTable = candidateTables[block.view_key];
+        if (candidateTable && previewMode) {
+          return (
+            <section
+              className={`page-view-block${block.checklist ? " page-view-block-checklist" : ""}`}
+              key={key}
+            >
+              <header className="page-view-block-header">
+                <div>
+                  <p className="eyebrow">Table</p>
+                  <strong>{candidateTable.name}</strong>
+                  <span>Example {candidateTable.objectLabel}</span>
+                </div>
+              </header>
+              <CandidateTableWorkspace
+                recordTypeLabel={candidateTable.recordTypeLabel}
+                table={candidateTable.table}
+              />
+            </section>
+          );
+        }
+        const bundle = views[block.view_key];
+        const tableEmbed = tableEmbeds[block.view_key];
+        if (tableEmbed && bundle?.definition.view_type === "table") {
+          const capabilities: EditorCapabilities = {
+            ...tableEmbed.capabilities,
+            ...(block.read_only
+              ? {
+                  rowCreation: "unavailable" as const,
+                  rowCreationMessage: "This Table is read-only on this Page.",
+                }
+              : {}),
+          };
+          const tablePath =
+            tableEmbed.fullRecordPath ??
+            `/app/${encodeURIComponent(
+              businessSlug ?? "",
+            )}/workspace/${experienceKeyToPath(tableEmbed.table.key)}`;
+          return (
+            <section
+              className={`page-view-block${block.checklist ? " page-view-block-checklist" : ""}`}
+              key={key}
+            >
+              <header className="page-view-block-header">
+                <div>
+                  <p className="eyebrow">Saved View</p>
+                  <strong>{bundle.definition.name}</strong>
+                  <span>From {bundle.object.plural_label}</span>
+                </div>
+                <a
+                  className="button button-secondary button-small"
+                  href={tablePath}
+                >
+                  Open Table
+                </a>
+              </header>
+              {block.checklist && businessSlug ? (
+                <ChecklistWorkspace
+                  actions={tableEmbed.actions}
+                  businessSlug={businessSlug}
+                  completedField={block.checklist.completed_field}
+                  {...(pageKey ? { blockId } : {})}
+                  {...(tableEmbed.checklistCreateRow
+                    ? { pageAwareCreateRow: tableEmbed.checklistCreateRow }
+                    : {})}
+                  {...(tableEmbed.checklistUpdateCell
+                    ? { pageAwareUpdateCell: tableEmbed.checklistUpdateCell }
+                    : {})}
+                  labelField={block.checklist.label_field}
+                  {...(tableEmbed.creationFallbackHref
+                    ? { creationFallbackHref: tableEmbed.creationFallbackHref }
+                    : {})}
+                  {...(tableEmbed.initialHasMore !== undefined
+                    ? { initialHasMore: tableEmbed.initialHasMore }
+                    : {})}
+                  {...(tableEmbed.initialSearch !== undefined
+                    ? { initialSearch: tableEmbed.initialSearch }
+                    : {})}
+                  {...(tableEmbed.initialTotalCount !== undefined
+                    ? { initialTotalCount: tableEmbed.initialTotalCount }
+                    : {})}
+                  {...(tableEmbed.loadTablePage
+                    ? { loadTablePage: tableEmbed.loadTablePage }
+                    : {})}
+                  canCreate={tableEmbed.capabilities.rowCreation === "direct"}
+                  readOnly={block.read_only === true}
+                  table={tableEmbed.table}
+                  viewKey={block.view_key}
+                />
+              ) : (
+                <ProductionTableWorkspace
+                  actions={tableEmbed.actions}
+                  {...(tableEmbed.instanceId
+                    ? { instanceId: `${tableEmbed.instanceId}-${blockId}` }
+                    : { instanceId: blockId })}
+                  {...(businessSlug !== undefined ? { businessSlug } : {})}
+                  {...(tableEmbed.bulkUpdate
+                    ? { bulkUpdate: tableEmbed.bulkUpdate }
+                    : {})}
+                  capabilities={capabilities}
+                  {...(tableEmbed.connectionSource
+                    ? { connectionSource: tableEmbed.connectionSource }
+                    : {})}
+                  {...(tableEmbed.connectionTargets
+                    ? { connectionTargets: tableEmbed.connectionTargets }
+                    : {})}
+                  currentness={tableEmbed.currentness}
+                  creationFallbackHref={tableEmbed.creationFallbackHref}
+                  {...(tableEmbed.existingConnections
+                    ? { existingConnections: tableEmbed.existingConnections }
+                    : {})}
+                  {...(tableEmbed.createConnectedRecordTarget
+                    ? {
+                        createConnectedRecordTarget:
+                          tableEmbed.createConnectedRecordTarget,
+                      }
+                    : {})}
+                  fullRecordPath={tablePath}
+                  {...(tableEmbed.initialHasMore !== undefined
+                    ? { initialHasMore: tableEmbed.initialHasMore }
+                    : {})}
+                  {...(tableEmbed.initialSearch !== undefined
+                    ? { initialSearch: tableEmbed.initialSearch }
+                    : {})}
+                  {...(tableEmbed.initialTotalCount !== undefined
+                    ? { initialTotalCount: tableEmbed.initialTotalCount }
+                    : {})}
+                  key={`${key}-table`}
+                  {...(tableEmbed.loadTablePage
+                    ? { loadTablePage: tableEmbed.loadTablePage }
+                    : {})}
+                  {...(tableEmbed.loadContextualRecordCreateState
+                    ? {
+                        loadContextualRecordCreateState:
+                          tableEmbed.loadContextualRecordCreateState,
+                      }
+                    : {})}
+                  {...(tableEmbed.createContextualRecord
+                    ? {
+                        createContextualRecord:
+                          tableEmbed.createContextualRecord,
+                      }
+                    : {})}
+                  {...(tableEmbed.recordCountLabel
+                    ? { recordCountLabel: tableEmbed.recordCountLabel }
+                    : {})}
+                  {...(tableEmbed.recordTypeLabel
+                    ? { recordTypeLabel: tableEmbed.recordTypeLabel }
+                    : {})}
+                  {...(tableEmbed.readConnectedRecord
+                    ? { readConnectedRecord: tableEmbed.readConnectedRecord }
+                    : {})}
+                  readOnly={block.read_only ?? false}
+                  {...(tableEmbed.searchConnectedRecordTargets
+                    ? {
+                        searchConnectedRecordTargets:
+                          tableEmbed.searchConnectedRecordTargets,
+                      }
+                    : {})}
+                  surface="embedded"
+                  table={tableEmbed.table}
+                  {...(tableEmbed.updateConnectedRecordCell
+                    ? {
+                        updateConnectedRecordCell:
+                          tableEmbed.updateConnectedRecordCell,
+                      }
+                    : {})}
+                  {...(tableEmbed.updateConnectedRecordConnection
+                    ? {
+                        updateConnectedRecordConnection:
+                          tableEmbed.updateConnectedRecordConnection,
+                      }
+                    : {})}
+                />
+              )}
+            </section>
+          );
+        }
+        return bundle && businessSlug ? (
+          <ViewRenderer
+            bundle={bundle}
+            businessSlug={businessSlug}
+            key={key}
+            preview={previewMode}
+            readOnly={block.read_only ?? false}
+            showHeading={false}
+            {...(!previewMode && inlineEditAction ? { inlineEditAction } : {})}
+          />
+        ) : (
+          <MissingBlock
+            key={key}
+            message="This section is temporarily unavailable."
+          />
+        );
+      }
+      case "form": {
+        if (publicMode && !previewMode) {
+          return (
+            <MissingBlock
+              key={key}
+              message="Online submissions are not available on this page."
+            />
+          );
+        }
+        const resolvedForm = forms[block.form_key];
+        if (!resolvedForm) {
+          return (
+            <MissingBlock
+              key={key}
+              message="This form is temporarily unavailable."
+            />
+          );
+        }
+        return previewMode ? (
+          <FormRenderer
+            bundle={resolvedForm.bundle}
+            key={key}
+            mode="preview"
+            showHeading={false}
+          />
+        ) : resolvedForm.action ? (
+          <FormRenderer
+            action={resolvedForm.action}
+            bundle={resolvedForm.bundle}
+            key={key}
+            showHeading={false}
+          />
+        ) : (
+          <MissingBlock
+            key={key}
+            message="This form is temporarily unavailable."
+          />
+        );
+      }
+      case "public_form": {
+        if (!publicMode && !previewMode) {
+          return (
+            <MissingBlock
+              key={key}
+              message="This public Form is only available on its Site."
+            />
+          );
+        }
+        const resolvedForm = forms[block.form_key];
+        if (!resolvedForm) {
+          return (
+            <MissingBlock
+              key={key}
+              message="This public Form is temporarily unavailable."
+            />
+          );
+        }
+        return previewMode ? (
+          <FormRenderer
+            bundle={resolvedForm.bundle}
+            key={key}
+            mode="preview"
+            showHeading={false}
+          />
+        ) : resolvedForm.action ? (
+          <FormRenderer
+            action={resolvedForm.action}
+            bundle={resolvedForm.bundle}
+            key={key}
+            showHeading={false}
+            {...(resolvedForm.hiddenFields
+              ? { hiddenFields: resolvedForm.hiddenFields }
+              : {})}
+            {...(resolvedForm.honeypotName
+              ? { honeypotName: resolvedForm.honeypotName }
+              : {})}
+          />
+        ) : (
+          <MissingBlock
+            key={key}
+            message="This public Form is temporarily unavailable."
+          />
+        );
+      }
+      case "booking": {
+        if (!publicMode && !previewMode) {
+          return (
+            <MissingBlock
+              key={key}
+              message="This Booking Site is only available publicly."
+            />
+          );
+        }
+        const resolvedBooking = bookings[block.booking_key];
+        if (!resolvedBooking) {
+          return (
+            <MissingBlock
+              key={key}
+              message={
+                previewMode
+                  ? "This draft Booking Site will be available to customers after publication."
+                  : "This Booking Site is temporarily unavailable."
+              }
+            />
+          );
+        }
+        return previewMode ? (
+          <BookingExperience
+            catalogue={resolvedBooking.catalogue}
+            key={key}
+            mode="preview"
+          />
+        ) : resolvedBooking.endpoint ? (
+          <BookingExperience
+            catalogue={resolvedBooking.catalogue}
+            endpoint={resolvedBooking.endpoint}
+            key={key}
+            mode="live"
+          />
+        ) : (
+          <MissingBlock
+            key={key}
+            message={
+              previewMode
+                ? "This draft Booking Site will be available to customers after publication."
+                : "This Booking Site is temporarily unavailable."
+            }
+          />
+        );
+      }
+      case "preorder": {
+        if (!publicMode && !previewMode) {
+          return (
+            <MissingBlock
+              key={key}
+              message="Preorder checkout is available only on the published customer page."
+            />
+          );
+        }
+        const resolvedPreorder = preorders[block.preorder_key];
+        if (!resolvedPreorder) {
+          return (
+            <MissingBlock
+              key={key}
+              message="Preordering is temporarily unavailable."
+            />
+          );
+        }
+        return previewMode ? (
+          <PreorderExperience
+            catalogue={resolvedPreorder.catalogue}
+            key={key}
+            mode="preview"
+          />
+        ) : resolvedPreorder.endpoint ? (
+          <PreorderExperience
+            catalogue={resolvedPreorder.catalogue}
+            endpoint={resolvedPreorder.endpoint}
+            key={key}
+          />
+        ) : (
+          <MissingBlock
+            key={key}
+            message="Preordering is temporarily unavailable."
+          />
+        );
+      }
+    }
+  };
+
+  return (
+    <div className="runtime-page-blocks">{renderBlocks(layout.blocks)}</div>
   );
 }

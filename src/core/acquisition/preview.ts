@@ -11,6 +11,7 @@ import {
   type FormConfig,
   type PageLayout,
 } from "../experience/schemas";
+import { walkPageBlocks } from "../experience/page-blocks";
 import { connectionColumnStorageKey } from "../experience/table-query";
 import type { AcquisitionBuildPayload } from "./schemas";
 import { acquisitionBuildPayloadSchema } from "./schemas";
@@ -693,7 +694,7 @@ export function buildCandidatePreviewModel(
       operation.op === "set_preorder_experience" && operation.is_active,
   );
   for (const page of pages) {
-    for (const block of page.layout.blocks) {
+    for (const block of walkPageBlocks(page.layout)) {
       if (block.type === "booking") {
         bookings[block.booking_key] = {
           catalogue: bookingCatalogue(block.config, page, objects),

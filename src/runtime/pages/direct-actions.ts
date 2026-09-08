@@ -204,6 +204,88 @@ export async function publishPageChangesAction(
   });
 }
 
+export async function duplicatePageAction(
+  businessSlug: string,
+  pageKey: string,
+  input: { currentness: unknown },
+): Promise<DirectPageActionResult> {
+  return applyPageIntent(businessSlug, pageKey, input.currentness, {
+    action: "duplicate_page",
+    pageKey,
+  });
+}
+
+export async function archivePageAction(
+  businessSlug: string,
+  pageKey: string,
+  input: { currentness: unknown },
+): Promise<DirectPageActionResult> {
+  return applyPageIntent(businessSlug, pageKey, input.currentness, {
+    action: "archive_page",
+    pageKey,
+  });
+}
+
+export async function restorePageAction(
+  businessSlug: string,
+  pageKey: string,
+  input: { currentness: unknown },
+): Promise<DirectPageActionResult> {
+  return applyPageIntent(businessSlug, pageKey, input.currentness, {
+    action: "restore_page",
+    pageKey,
+  });
+}
+
+export async function createChecklistAction(
+  businessSlug: string,
+  pageKey: string,
+  input: {
+    currentness: unknown;
+    name: unknown;
+    afterBlockId?: unknown;
+    containerBlockId?: unknown;
+  },
+): Promise<DirectPageActionResult> {
+  const hasPlacement = Object.prototype.hasOwnProperty.call(
+    input,
+    "afterBlockId",
+  );
+  const name = z.string().trim().min(1).max(120).safeParse(input.name);
+  const afterBlockIdResult =
+    input.afterBlockId === undefined || input.afterBlockId === null
+      ? { success: true as const, data: input.afterBlockId }
+      : z.string().safeParse(input.afterBlockId);
+  if (!name.success || !afterBlockIdResult.success) {
+    return {
+      status: "error",
+      message: !name.success
+        ? "Checklist names must be 1–120 characters."
+        : "That checklist placement is no longer available.",
+    };
+  }
+  const afterBlockId = afterBlockIdResult.data;
+  const containerBlockIdResult =
+    input.containerBlockId === undefined
+      ? { success: true as const, data: undefined }
+      : z.string().safeParse(input.containerBlockId);
+  if (!containerBlockIdResult.success) {
+    return {
+      status: "error",
+      message: "That checklist placement is no longer available.",
+    };
+  }
+  return applyPageIntent(businessSlug, pageKey, input.currentness, {
+    action: "create_checklist",
+    pageKey,
+    name: name.data,
+    ...(hasPlacement ? { afterBlockId } : {}),
+    ...(containerBlockIdResult.data !== undefined
+      ? { containerBlockId: containerBlockIdResult.data }
+      : {}),
+  });
+}
+
 export async function createPageAction(
   businessSlugInput: string,
   currentnessInput: unknown,
@@ -212,6 +294,6 @@ export async function createPageAction(
   const title = formData.get("title");
   return applyPageIntent(businessSlugInput, "new_page", currentnessInput, {
     action: "create_page",
-    title: typeof title === "string" ? title : "",
+    title: typeof title === "string" && title.trim() ? title : "Untitled page",
   });
 }

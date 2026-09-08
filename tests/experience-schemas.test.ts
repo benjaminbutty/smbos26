@@ -6,6 +6,12 @@ import {
   pageLayoutSchema,
   parseViewConfig,
 } from "../src/core/experience/schemas";
+import {
+  pageBlockReferencesForm,
+  pageBlockReferencesMedia,
+  pageBlockReferencesPreorder,
+  pageBlockReferencesView,
+} from "../src/core/experience/page-blocks";
 
 describe("experience configuration grammar", () => {
   it("accepts the smallest supported configuration for every View type", () => {
@@ -112,5 +118,94 @@ describe("experience configuration grammar", () => {
         ],
       }),
     ).toThrow();
+  });
+
+  it("bounds one-level sections and validates managed checklist images", () => {
+    const assetId = crypto.randomUUID();
+    const layout = pageLayoutSchema.parse({
+      blocks: [
+        {
+          type: "collapsible",
+          summary: "Opening routine",
+          open: false,
+          blocks: [
+            {
+              type: "image",
+              asset_id: assetId,
+              alt: "The opening checklist beside the till",
+              presentation: "wide",
+            },
+            {
+              type: "view",
+              view_key: "opening_tasks",
+              checklist: {
+                label_field: "name",
+                completed_field: "completed",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(layout.blocks[0]).toMatchObject({
+      type: "collapsible",
+      open: false,
+    });
+    expect(() =>
+      pageLayoutSchema.parse({
+        blocks: [
+          {
+            type: "collapsible",
+            summary: "Nested",
+            blocks: [
+              {
+                type: "collapsible",
+                summary: "No",
+                blocks: [],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      pageLayoutSchema.parse({
+        blocks: [
+          {
+            type: "image",
+            src: "https://example.test/photo.jpg",
+          },
+        ],
+      }),
+    ).toThrow(/description/);
+  });
+
+  it("collects references inside contained sections", () => {
+    const layout = pageLayoutSchema.parse({
+      blocks: [
+        {
+          type: "collapsible",
+          summary: "Live work",
+          blocks: [
+            { type: "view", view_key: "orders" },
+            { type: "form", form_key: "enquiry" },
+            { type: "preorder", preorder_key: "preorder" },
+            {
+              type: "image",
+              asset_id: "00000000-0000-4000-8000-000000000031",
+              alt: "A private guide image",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(pageBlockReferencesView(layout)).toEqual(["orders"]);
+    expect(pageBlockReferencesForm(layout)).toEqual(["enquiry"]);
+    expect(pageBlockReferencesPreorder(layout)).toEqual(["preorder"]);
+    expect(pageBlockReferencesMedia(layout)).toEqual([
+      "00000000-0000-4000-8000-000000000031",
+    ]);
   });
 });

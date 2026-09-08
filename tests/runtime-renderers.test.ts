@@ -456,6 +456,39 @@ describe("generic experience renderers", () => {
     expect(html).toContain("Add enquiry");
   });
 
+  it("renders contained blocks recursively with independent fallback identity", () => {
+    const html = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        businessSlug: "bedford-bakery",
+        layout: {
+          blocks: [
+            {
+              type: "collapsible",
+              id: "00000000-0000-4000-8000-000000000201",
+              summary: "Opening guide",
+              open: false,
+              blocks: [
+                { type: "text", text: "Check the front door." },
+                {
+                  type: "view",
+                  view_key: "missing_private_view",
+                  read_only: true,
+                },
+              ],
+            },
+          ],
+        },
+        publicMode: true,
+      }),
+    );
+
+    expect(html).toContain('class="page-collapsible-block"');
+    expect(html).toContain(">Opening guide</summary>");
+    expect(html).toContain("Check the front door.");
+    expect(html).toContain("This information is not available publicly.");
+    expect(html).not.toContain("missing_private_view");
+  });
+
   it("reuses Page, View and Form renderers without links or actions in preview", () => {
     const html = renderToStaticMarkup(
       createElement(PageRenderer, {

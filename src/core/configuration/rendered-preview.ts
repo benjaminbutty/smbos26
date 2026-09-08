@@ -9,6 +9,11 @@ import type {
   ExperienceViewBundle,
 } from "../experience/service";
 import { createExperienceService } from "../experience/service";
+import {
+  pageBlockReferencesForm,
+  pageBlockReferencesPreorder,
+  pageBlockReferencesView,
+} from "../experience/page-blocks";
 import { graphKeySchema } from "../graph/schemas";
 import type { PublicPreorderCatalogue } from "../preorder/schemas";
 import { resolveConfigurationPreviewPreorder } from "../preorder/service";
@@ -122,27 +127,9 @@ export async function loadRenderedConfigurationPreview(
     candidatePage.audience,
   );
   await dependencies.afterCandidatePageLoaded?.();
-  const viewKeys = [
-    ...new Set(
-      page.layout.blocks.flatMap((block) =>
-        block.type === "view" ? [block.view_key] : [],
-      ),
-    ),
-  ];
-  const formKeys = [
-    ...new Set(
-      page.layout.blocks.flatMap((block) =>
-        block.type === "form" ? [block.form_key] : [],
-      ),
-    ),
-  ];
-  const preorderKeys = [
-    ...new Set(
-      page.layout.blocks.flatMap((block) =>
-        block.type === "preorder" ? [block.preorder_key] : [],
-      ),
-    ),
-  ];
+  const viewKeys = [...new Set(pageBlockReferencesView(page.layout))];
+  const formKeys = [...new Set(pageBlockReferencesForm(page.layout))];
+  const preorderKeys = [...new Set(pageBlockReferencesPreorder(page.layout))];
 
   const [viewBundles, formBundles, preorderCatalogues] = await Promise.all([
     Promise.all(

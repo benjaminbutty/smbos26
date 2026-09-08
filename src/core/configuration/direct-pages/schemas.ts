@@ -38,6 +38,40 @@ const directPageViewBlockSchema = z
     type: z.literal("view"),
     viewKey: graphKeySchema,
     readOnly: z.boolean().optional(),
+    checklist: z
+      .object({
+        labelField: graphKeySchema,
+        completedField: graphKeySchema,
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const directPageImageBlockSchema = z
+  .object({
+    type: z.literal("image"),
+    src: z.httpUrl().max(2048).optional(),
+    assetId: z.uuid().optional(),
+    alt: z.string().trim().max(300).default(""),
+    caption: z.string().trim().min(1).max(500).optional(),
+    presentation: z.enum(["content", "wide"]).default("content"),
+  })
+  .strict()
+  .superRefine((image, context) => {
+    if (Boolean(image.src) === Boolean(image.assetId)) {
+      context.addIssue({
+        code: "custom",
+        message: "Choose one image source.",
+        path: ["src"],
+      });
+    }
+  });
+
+const directPageCollapsibleBlockSchema = z
+  .object({
+    type: z.literal("collapsible"),
+    summary: z.string().trim().min(1).max(200),
   })
   .strict();
 
@@ -46,6 +80,8 @@ export const directPageBlockInputSchema = z.discriminatedUnion("type", [
   directPageTextBlockSchema,
   directPageDividerBlockSchema,
   directPageViewBlockSchema,
+  directPageImageBlockSchema,
+  directPageCollapsibleBlockSchema,
 ]);
 
 const addPageBlockIntentSchema = z
@@ -54,6 +90,7 @@ const addPageBlockIntentSchema = z
     pageKey: graphKeySchema,
     block: directPageBlockInputSchema,
     afterBlockId: directPageBlockIdSchema.nullable().optional(),
+    containerBlockId: directPageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -88,6 +125,10 @@ export const directPageActionKindSchema = z.enum([
   "rename_page",
   "save_page_layout",
   "publish_page_changes",
+  "duplicate_page",
+  "archive_page",
+  "restore_page",
+  "create_checklist",
 ]);
 
 const createPageIntentSchema = z
@@ -110,6 +151,7 @@ const savePageLayoutIntentSchema = z
     action: z.literal("save_page_layout"),
     pageKey: graphKeySchema,
     layout: pageLayoutSchema,
+    title: directPageTitleSchema.optional(),
   })
   .strict();
 
@@ -122,11 +164,46 @@ const publishPageChangesIntentSchema = z
   })
   .strict();
 
+const duplicatePageIntentSchema = z
+  .object({
+    action: z.literal("duplicate_page"),
+    pageKey: graphKeySchema,
+  })
+  .strict();
+
+const archivePageIntentSchema = z
+  .object({
+    action: z.literal("archive_page"),
+    pageKey: graphKeySchema,
+  })
+  .strict();
+
+const restorePageIntentSchema = z
+  .object({
+    action: z.literal("restore_page"),
+    pageKey: graphKeySchema,
+  })
+  .strict();
+
+const createChecklistIntentSchema = z
+  .object({
+    action: z.literal("create_checklist"),
+    pageKey: graphKeySchema,
+    name: directPageTitleSchema,
+    afterBlockId: directPageBlockIdSchema.nullable().optional(),
+    containerBlockId: directPageBlockIdSchema.optional(),
+  })
+  .strict();
+
 export const directPageIntentSchema = z.discriminatedUnion("action", [
   createPageIntentSchema,
   renamePageIntentSchema,
   savePageLayoutIntentSchema,
   publishPageChangesIntentSchema,
+  duplicatePageIntentSchema,
+  archivePageIntentSchema,
+  restorePageIntentSchema,
+  createChecklistIntentSchema,
   addPageBlockIntentSchema,
   updatePageBlockIntentSchema,
   removePageBlockIntentSchema,

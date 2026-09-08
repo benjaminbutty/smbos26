@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   useEffect,
   useRef,
@@ -9,6 +9,8 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+
+import type { DirectPageActionResult } from "../runtime/pages/direct-actions";
 
 type SheetKind = "tables" | "pages" | "more";
 
@@ -23,12 +25,28 @@ interface WorkspacePageDestination {
   title: string;
 }
 
+interface WorkspaceArchivedPageDestination extends WorkspacePageDestination {
+  id: string;
+  key: string;
+}
+
 interface WorkspaceMobileNavProps {
   businessSlug: string;
   businessName: string;
   canManageConfiguration: boolean;
+  currentness?: {
+    expectedBaseVersionId: string;
+    expectedHeadRevision: number;
+  } | null;
   tables: ReadonlyArray<WorkspaceTableDestination>;
   pages: ReadonlyArray<WorkspacePageDestination>;
+  archivedPages?: ReadonlyArray<WorkspaceArchivedPageDestination>;
+  restoreAction?:
+    | ((
+        pageKey: string,
+        input: { currentness: unknown },
+      ) => Promise<DirectPageActionResult>)
+    | undefined;
   sites?: ReadonlyArray<WorkspacePageDestination>;
 }
 
@@ -62,16 +80,22 @@ function sheetTitle(sheet: SheetKind): string {
 }
 
 export function WorkspaceMobileNav({
+  archivedPages = [],
   businessName,
   businessSlug,
   canManageConfiguration,
+  currentness = null,
   pages,
+  restoreAction,
   sites = [],
   tables,
 }: Readonly<WorkspaceMobileNavProps>): ReactNode {
   const pathname = usePathname();
+  const router = useRouter();
   const rootPath = `/app/${encodeURIComponent(businessSlug)}`;
   const [sheet, setSheet] = useState<SheetKind | null>(null);
+  const [archiveMessage, setArchiveMessage] = useState<string | null>(null);
+  const [restoringPageKey, setRestoringPageKey] = useState<string | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const triggerRefs = useRef<
     Partial<Record<SheetKind, HTMLButtonElement | null>>
@@ -150,6 +174,26 @@ export function WorkspaceMobileNav({
 
   const closeSheet = (): void => setSheet(null);
   const title = sheet ? sheetTitle(sheet) : "";
+  const restoreArchivedPage = async (
+    page: WorkspaceArchivedPageDestination,
+  ): Promise<void> => {
+    if (!restoreAction || restoringPageKey) return;
+    setRestoringPageKey(page.key);
+    setArchiveMessage(null);
+    try {
+      if (!currentness) return;
+      const result = await restoreAction(page.key, { currentness });
+      if (result.status === "success") {
+        setSheet(null);
+        router.push(`${rootPath}/pages/${encodeURIComponent(result.pageSlug)}`);
+        router.refresh();
+      } else {
+        setArchiveMessage(result.message);
+      }
+    } finally {
+      setRestoringPageKey(null);
+    }
+  };
 
   return (
     <>
@@ -312,6 +356,37 @@ export function WorkspaceMobileNav({
                     ))}
                   </div>
                 </section>
+              ) : null}
+              {canManageConfiguration && restoreAction && currentness ? (
+                <details className="workspace-mobile-archived-pages">
+                  <summary>Archived Pages</summary>
+                  {archivedPages.length > 0 ? (
+                    <div className="workspace-mobile-archived-list">
+                      {archivedPages.map((page) => (
+                        <div
+                          className="workspace-mobile-archived-row"
+                          key={page.id}
+                        >
+                          <span>{page.title}</span>
+                          <button
+                            disabled={restoringPageKey !== null}
+                            onClick={() => void restoreArchivedPage(page)}
+                            type="button"
+                          >
+                            {restoringPageKey === page.key
+                              ? "Restoring…"
+                              : "Restore"}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="workspace-mobile-sheet-empty">
+                      No archived Pages.
+                    </p>
+                  )}
+                  {archiveMessage ? <p role="alert">{archiveMessage}</p> : null}
+                </details>
               ) : null}
             </div>
           ) : null}

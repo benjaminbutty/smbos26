@@ -128,6 +128,7 @@ export interface ExperiencePageBundle {
 }
 
 export interface ExperienceNavigation {
+  archivedPages: Tables<"pages">[];
   pages: Tables<"pages">[];
   publicPages: Tables<"pages">[];
   views: Tables<"views">[];
@@ -518,7 +519,7 @@ export function createExperienceService(
     async listNavigation() {
       const [sourcedViews, pages] = await Promise.all([
         source.listViews(),
-        source.listPages(),
+        source.listPages(true),
       ]);
 
       const internalViews = sourcedViews.filter(
@@ -550,15 +551,22 @@ export function createExperienceService(
       );
 
       return {
+        archivedPages: pages.filter(
+          (page) => page.audience === "internal" && !page.is_active,
+        ),
         views: views.map(({ object_key: objectKey, ...view }) => {
           void objectKey;
           return view;
         }),
         pages: pages.filter(
           (page) =>
-            page.audience === "internal" && !wrapperPageKeys.has(page.key),
+            page.audience === "internal" &&
+            page.is_active &&
+            !wrapperPageKeys.has(page.key),
         ),
-        publicPages: pages.filter((page) => page.audience === "public"),
+        publicPages: pages.filter(
+          (page) => page.audience === "public" && page.is_active,
+        ),
       };
     },
 

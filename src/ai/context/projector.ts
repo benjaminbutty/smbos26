@@ -17,6 +17,7 @@ import {
   authoritativePageBlockTypes,
   authoritativeRelationshipCardinalities,
   authoritativeViewTypes,
+  type AiContextPageBlock,
   type AiBusinessModelContextV1,
 } from "./schemas";
 
@@ -150,21 +151,27 @@ export function classifyAiPageDestination(
 
 function projectPageBlock(
   block: ConfigurationSnapshotV1["pages"][number]["layout_json"]["blocks"][number],
-) {
+): AiContextPageBlock {
   switch (block.type) {
     case "heading":
       return { type: block.type, text: block.text, level: block.level };
     case "text":
       return { type: block.type, text: block.text };
     case "image": {
-      if (classifyAiPageDestination(block.src) !== "external_web") {
+      if (block.src) {
+        if (classifyAiPageDestination(block.src) !== "external_web") {
+          throw new AiBusinessContextError("ai_context_inconsistent");
+        }
+      } else if (!block.asset_id) {
         throw new AiBusinessContextError("ai_context_inconsistent");
       }
       return {
         type: block.type,
         alt: block.alt,
         ...(block.caption ? { caption: block.caption } : {}),
-        source_kind: "external_web" as const,
+        source_kind: block.src
+          ? ("external_web" as const)
+          : ("private_asset" as const),
       };
     }
     case "button":
@@ -175,7 +182,11 @@ function projectPageBlock(
         destination_kind: classifyAiPageDestination(block.href),
       };
     case "view":
-      return { type: block.type, view_key: block.view_key };
+      return {
+        type: block.type,
+        view_key: block.view_key,
+        ...(block.checklist ? { checklist: block.checklist } : {}),
+      };
     case "form":
       return { type: block.type, form_key: block.form_key };
     case "public_form":
@@ -192,6 +203,15 @@ function projectPageBlock(
       return { type: block.type };
     case "callout":
       return { type: block.type, text: block.text, tone: block.tone };
+    case "collapsible":
+      return {
+        type: block.type,
+        summary: block.summary,
+        open: block.open,
+        blocks: block.blocks.map(projectPageBlock),
+      };
+    default:
+      throw new AiBusinessContextError("ai_context_inconsistent");
   }
 }
 

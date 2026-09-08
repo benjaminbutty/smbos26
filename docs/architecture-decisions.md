@@ -3571,3 +3571,11 @@ The 7 September completion pass adds grouped presentation, retained View
 candidates, query-preserving operational refresh, independent failed-cell
 recovery, persistent drag widths, and Owner/Admin single-record archive/restore
 over existing graph operations. See the completion section in [ADR-051](./ADR-051.md).
+
+## ADR-052: Internal Pages document workspace and bounded operational content
+
+Accepted for the Internal Pages redesign. Internal Pages use a bounded
+Tiptap document candidate, serial quiet autosave, private managed media,
+collapsible content, Page-aware checklist Record writes and the shared
+`PageRenderer`. The existing Page, Table and immutable configuration primitives
+remain the persistence boundary. See [ADR-052](./ADR-052.md).

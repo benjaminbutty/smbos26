@@ -13,6 +13,7 @@ import {
   type ConfigurationOperation,
 } from "../schemas";
 import type { ConfigurationChangeService } from "../service";
+import { walkPageBlocks } from "../../experience/page-blocks";
 import { graphKeySchema } from "../../graph/schemas";
 import {
   preorderPublicFieldSchema,
@@ -169,7 +170,7 @@ function linkedPageTitle(
     .filter(
       (page) =>
         page.is_active &&
-        page.layout_json.blocks.some(
+        walkPageBlocks(page.layout_json).some(
           (block) =>
             block.type === "preorder" && block.preorder_key === preorderKey,
         ),

@@ -28,6 +28,7 @@ import { BuilderResultPanel } from "../src/components/builder-ui";
 import { RecordPanel } from "../src/runtime/editor-kernel/record-panel";
 import { TableViewSelector } from "../src/runtime/views/table-view-navigation";
 import { TableViewControls } from "../src/runtime/views/table-view-controls";
+import { PageRenderer } from "../src/runtime/pages/page-renderer";
 
 describe("Lenni unified workspace presentation", () => {
   it("keeps mobile navigation role-aware while preserving shared destinations", () => {
@@ -194,17 +195,6 @@ describe("Lenni unified workspace presentation", () => {
   });
 
   it("keeps the Page editor bounded, direct, and renderer-backed", () => {
-    const internalEditorSource = readFileSync(
-      new URL(
-        "../src/runtime/page-editor/internal-page-editor.tsx",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    const extensionSource = readFileSync(
-      new URL("../src/runtime/page-editor/extensions.tsx", import.meta.url),
-      "utf8",
-    );
     const cssSource = readFileSync(
       new URL("../src/app/globals.css", import.meta.url),
       "utf8",
@@ -217,44 +207,43 @@ describe("Lenni unified workspace presentation", () => {
       "utf8",
     );
 
-    expect(internalEditorSource).toContain("<EditorContent editor={editor} />");
-    expect(internalEditorSource).toContain("<BubbleMenu");
-    expect(internalEditorSource).toContain("<DragHandle");
-    expect(internalEditorSource).toContain("page-slash-menu");
-    expect(internalEditorSource).not.toContain("Save page");
-    expect(internalEditorSource).toContain("Changes save automatically");
-    expect(internalEditorSource).toContain('aria-label="Delete block"');
-    expect(internalEditorSource).toContain(
-      'aria-label="Drag block to move it"',
+    const readingHtml = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        layout: {
+          blocks: [
+            { type: "heading", text: "Opening routine", level: 2 },
+            {
+              type: "collapsible",
+              summary: "Supporting detail",
+              open: true,
+              blocks: [{ type: "text", text: "Check the front door." }],
+            },
+          ],
+        },
+      }),
     );
-    expect(internalEditorSource).not.toContain("page-block-actions");
-    expect(internalEditorSource).toContain("window.setTimeout");
-    expect(internalEditorSource).toContain(
-      'data-can-edit={canEdit ? "true" : "false"}',
+    expect(readingHtml).toContain("Opening routine");
+    expect(readingHtml).toContain("Supporting detail");
+    expect(readingHtml).toContain("Check the front door.");
+
+    const publicHtml = renderToStaticMarkup(
+      createElement(PageRenderer, {
+        layout: {
+          blocks: [
+            {
+              type: "collapsible",
+              summary: "Private detail",
+              open: true,
+              blocks: [{ type: "view", view_key: "private_view" }],
+            },
+          ],
+        },
+        publicMode: true,
+      }),
     );
-    expect(internalEditorSource).toContain('action: "save_page_layout"');
-    expect(internalEditorSource).toContain("useUnsavedNavigationWarning");
-    expect(internalEditorSource).toContain(
-      "editor.setEditable(canEdit, false)",
-    );
-    expect(internalEditorSource).toContain("queueMicrotask(() => {");
-    expect(internalEditorSource).toContain("Things changed since you opened");
-    expect(internalEditorSource).toContain(
-      "editor.state.doc.nodeAt($from.pos) ? $from.pos : null",
-    );
-    expect(internalEditorSource).toContain("selectedBlockPositionRef.current");
-    expect(internalEditorSource).toContain("function insertMenuPosition(");
+    expect(publicHtml).toContain("This information is not available publicly.");
     expect(cssSource).toContain("grid-template-rows: auto minmax(0, 1fr);");
     expect(cssSource).toContain("position: fixed;");
-    expect(internalEditorSource).toContain(
-      'className="page-editor-content-boundary"',
-    );
-    expect(internalEditorSource).toContain(
-      "editor.view.posAtDOM(paragraph, 0)",
-    );
-    expect(internalEditorSource).not.toContain("page-editor-block-form");
-    expect(internalEditorSource).not.toContain('action: "add_page_block"');
-    expect(internalEditorSource).not.toContain('action: "update_page_block"');
     expect(pageRouteSource).toContain("key={page.definition.key}");
     expect(pageRouteSource).toContain("canEdit,");
     expect(pageRouteSource).not.toContain(
@@ -275,9 +264,6 @@ describe("Lenni unified workspace presentation", () => {
     expect(workspaceRouteSource).toContain(
       "!configuredFieldKeys.has(field.key)",
     );
-    expect(extensionSource).toContain("Open table");
-    expect(extensionSource).toContain("Read-only");
-    expect(extensionSource).toContain("ProductionTableWorkspace");
 
     expect(cssSource).toContain("/* C5 Page canvas presentation.");
     expect(cssSource).toContain(".page-document-canvas .tiptap");

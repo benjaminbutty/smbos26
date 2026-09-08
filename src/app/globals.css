@@ -460,12 +460,72 @@
   background: transparent;
 }
 
+/* A Page View already owns the name, source label and Open table action. Keep
+   the shared workbench's duplicate title/status band out of that document
+   surface while retaining its complete query and record controls below. */
+.page-document-canvas .editor-kernel-embedded .editor-lab-header {
+  display: none;
+}
+
 .editor-kernel-embedded .editor-lab-header {
   padding: 0.25rem 0;
 }
 
 .editor-kernel-embedded .editor-lab-meta {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  min-height: 2.25rem;
+  padding: 0.35rem 0;
+  border-block: 1px solid rgba(39, 49, 44, 0.1);
+}
+
+.editor-kernel-embedded .editor-workbench-toolbar-content {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.editor-kernel-embedded .table-workbench-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.editor-kernel-embedded .table-workbench-search {
+  display: flex;
+  min-width: min(100%, 12rem);
+  flex: 1 1 12rem;
+  align-items: center;
+}
+
+.editor-kernel-embedded .table-workbench-search label {
+  display: block;
+  width: 100%;
+}
+
+.editor-kernel-embedded .table-workbench-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--lenni-text);
+  background: var(--lenni-surface);
+  border: 1px solid rgba(39, 49, 44, 0.14);
+  border-radius: 0.35rem;
+}
+
+.editor-kernel-embedded .table-workbench-toolbar-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+  color: #7b857e;
+  font-size: 0.68rem;
+}
+
+.editor-kernel-embedded .editor-lab-meta-actions {
+  margin-left: auto;
 }
 
 .editor-kernel-embedded .editor-grid-footnote {
@@ -3966,6 +4026,30 @@ textarea {
 .page-view-block-header span {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+/* A checklist is operational content inside the document. Keep its live
+   records compact and visually continuous with surrounding writing. */
+.runtime-page-blocks .page-view-block-checklist {
+  margin-block: 0.5rem;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.runtime-page-blocks .page-view-block-checklist .page-view-block-header {
+  margin-bottom: 0.5rem;
+  padding-inline: 0;
+}
+
+.runtime-page-blocks .page-view-block-checklist .page-checklist-workspace {
+  padding-inline: 0;
+  background: transparent;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
 }
 
 .page-editor-view-header {
@@ -10421,6 +10505,651 @@ textarea {
 }
 
 /* Lenni review corrections — keep nested controls aligned with the workspace UI. */
+.page-editor-heading-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.page-editor-document > .page-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.page-editor-title-inline {
+  width: 100%;
+  min-height: 3rem;
+  margin: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-size: clamp(2rem, 4.5vw, 3.25rem);
+  font-weight: 720;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+}
+
+.page-editor-title-inline:focus {
+  border-bottom-color: var(--coral-500);
+  outline: 0;
+}
+
+.page-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.page-editor-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2rem;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.page-editor-save-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  background: var(--trust-published-text);
+  border-radius: 50%;
+}
+
+.page-editor-save-status-unsaved .page-editor-save-dot,
+.page-editor-save-status-saving .page-editor-save-dot {
+  background: var(--trust-warning-needs-review-text);
+}
+
+.page-editor-save-status-error .page-editor-save-dot,
+.page-editor-save-status-stale .page-editor-save-dot {
+  background: var(--trust-destructive-error-text);
+}
+
+.page-editor-overflow {
+  position: relative;
+}
+
+.page-editor-overflow summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.35rem;
+  padding: 0 var(--space-3);
+  color: var(--text-secondary);
+  border: var(--border-width-thin) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 700;
+  list-style: none;
+}
+
+.page-editor-overflow summary::-webkit-details-marker {
+  display: none;
+}
+
+.page-editor-overflow summary:hover,
+.page-editor-overflow summary:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-subtle);
+}
+
+.page-editor-overflow-menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 25;
+  display: grid;
+  width: 12rem;
+  padding: var(--space-2);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-panel);
+}
+
+.page-editor-overflow-menu button {
+  min-height: 2.65rem;
+  padding: 0 var(--space-2);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.page-editor-overflow-menu button:hover:not(:disabled),
+.page-editor-overflow-menu button:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-subtle);
+}
+
+.page-editor-confirm-popover,
+.page-link-popover,
+.page-checklist-create-popover {
+  position: relative;
+  z-index: 26;
+  display: grid;
+  gap: var(--space-3);
+  width: min(100%, 30rem);
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elevation-panel);
+}
+
+.page-editor-confirm-popover p,
+.page-checklist-create-popover p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+}
+
+.page-editor-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.page-link-popover label,
+.page-checklist-create-popover label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.page-link-popover input,
+.page-checklist-create-popover input {
+  width: 100%;
+}
+
+.page-link-popover-pages {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.page-link-popover-pages > span {
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.page-link-popover-pages button {
+  min-height: 2.45rem;
+  padding: 0 var(--space-2);
+  color: var(--coral-800);
+  background: var(--coral-50);
+  border: 0;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.page-link-popover-pages button:hover,
+.page-link-popover-pages button:focus-visible {
+  background: var(--coral-100);
+}
+
+.page-editor-undo-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.page-editor-content-boundary {
+  min-width: 0;
+}
+
+.page-editor-content-boundary .ProseMirror {
+  display: grid;
+  gap: var(--space-4);
+  min-height: 12rem;
+  outline: 0;
+}
+
+.page-editor-content-boundary .ProseMirror > * {
+  min-width: 0;
+  margin: 0;
+}
+
+.page-editor-content-boundary .ProseMirror > p {
+  max-width: 45rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.page-editor-content-boundary .ProseMirror > h1,
+.page-editor-content-boundary .ProseMirror > h2,
+.page-editor-content-boundary .ProseMirror > h3 {
+  max-width: 45rem;
+  color: var(--text-primary);
+  line-height: 1.14;
+}
+
+.page-editor-content-boundary .ProseMirror > h1 {
+  font-size: clamp(1.9rem, 4vw, 2.75rem);
+}
+
+.page-editor-content-boundary .ProseMirror > h2 {
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+}
+
+.page-editor-content-boundary .ProseMirror > h3 {
+  font-size: 1.25rem;
+}
+
+.page-editor-content-boundary
+  .ProseMirror
+  > p.is-editor-empty:first-child::before {
+  float: left;
+  height: 0;
+  color: var(--text-tertiary);
+  content: "Start writing…";
+  pointer-events: none;
+}
+
+.page-editor-image-node {
+  display: grid;
+  gap: var(--space-2);
+  width: min(100%, 46rem);
+  padding: var(--space-2);
+  border: var(--border-width-thin) solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.page-editor-image-node.ProseMirror-selectednode {
+  border-color: var(--coral-400);
+  background: var(--coral-50);
+}
+
+.page-editor-image-preview {
+  display: grid;
+  min-height: 8rem;
+  overflow: hidden;
+  background: var(--surface-subtle);
+  border-radius: var(--radius-md);
+}
+
+.page-editor-image-preview img {
+  display: block;
+  width: 100%;
+  max-height: 34rem;
+  object-fit: contain;
+}
+
+.page-editor-image-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 8rem;
+  padding: var(--space-5);
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.page-editor-image-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 10rem;
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.page-editor-image-controls label {
+  display: grid;
+  gap: 0.25rem;
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.page-editor-image-controls input,
+.page-editor-image-controls select {
+  min-height: 2.35rem;
+  width: 100%;
+}
+
+.page-editor-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  grid-column: 1 / -1;
+}
+
+.page-editor-image-options {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.page-editor-image-options summary {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.page-editor-image-options-toggle {
+  justify-self: start;
+}
+
+.page-editor-image-options > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 10rem;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.page-editor-view-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.page-editor-view-controls select {
+  min-height: 2.35rem;
+  max-width: 14rem;
+}
+
+.page-editor-image-actions label.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.page-editor-image-error,
+.page-checklist-error,
+.page-checklist-item-error {
+  margin: 0;
+  color: var(--trust-destructive-error-text);
+  font-size: 0.76rem;
+}
+
+.page-editor-collapsible-node {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.page-editor-collapsible-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.page-editor-collapsible-summary input {
+  width: 100%;
+  min-height: 2.4rem;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  font-weight: 700;
+}
+
+.page-editor-collapsible-summary input:focus {
+  border-bottom-color: var(--coral-500);
+  outline: 0;
+}
+
+.page-editor-collapsible-toggle {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font-size: 1.2rem;
+}
+
+.page-editor-collapsible-toggle:hover,
+.page-editor-collapsible-toggle:focus-visible {
+  background: var(--surface-base);
+}
+
+.page-editor-collapsible-content.is-collapsed {
+  display: none;
+}
+
+.page-collapsible-block {
+  max-width: 48rem;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-subtle);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.page-collapsible-block summary {
+  min-height: 2.5rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.page-collapsible-content {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.page-checklist-workspace {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.page-document-canvas .page-checklist-workspace {
+  padding-inline: 0;
+  background: transparent;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+
+.page-checklist-items {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.page-checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.page-checklist-item:hover {
+  background: var(--surface-subtle);
+}
+
+.page-checklist-item-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 2.75rem;
+  color: var(--text-primary);
+}
+
+.page-checklist-item input {
+  width: 1.15rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+}
+
+.page-checklist-item span:not(.page-checklist-item-error) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-checklist-item.is-complete .page-checklist-item-check {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.page-checklist-label {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-checklist-label:hover:not(:disabled),
+.page-checklist-label:focus-visible {
+  color: var(--coral-800);
+  text-decoration: underline;
+}
+
+.page-checklist-item.is-complete .page-checklist-label {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.page-checklist-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.76rem;
+}
+
+.page-checklist-toolbar input {
+  min-height: 2.35rem;
+  max-width: 16rem;
+}
+
+.page-checklist-load-more,
+.page-checklist-add-link {
+  justify-self: start;
+}
+
+.page-checklist-add {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--border-width-thin) solid var(--border-subtle);
+}
+
+.page-checklist-add input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.page-checklist-empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 48rem) {
+  .page-editor-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-document-editor .page-editor-title-inline {
+    font-size: clamp(1.65rem, 7.5vw, 1.85rem);
+    letter-spacing: -0.05em;
+  }
+
+  .page-editor-toolbar {
+    justify-content: flex-start;
+  }
+
+  .page-editor-toolbar .page-editor-mode-switch {
+    min-height: 2.75rem;
+  }
+
+  .page-editor-image-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .page-editor-image-actions {
+    grid-column: auto;
+  }
+
+  .page-editor-image-options {
+    grid-column: auto;
+  }
+
+  .page-editor-image-options > div {
+    grid-template-columns: 1fr;
+  }
+
+  .page-editor-collapsible-node {
+    padding-inline: var(--space-2);
+  }
+
+  .page-checklist-add {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .page-checklist-add .button {
+    width: 100%;
+  }
+}
+
+/* Internal document title: keep the writing surface proportionate on wide
+   screens while retaining a touch-friendly mobile scale. */
+.page-document-editor .page-editor-title-inline,
+.page-document-editor .page-editor-reading-title {
+  font-size: clamp(2rem, 3.6vw, 2.5rem);
+}
+
+@media (max-width: 48rem) {
+  .page-document-editor .page-editor-title-inline,
+  .page-document-editor .page-editor-reading-title {
+    font-size: clamp(1.75rem, 7.5vw, 1.875rem);
+  }
+}
+
 .workspace-navigation .sidebar-add-button {
   min-height: 1.55rem;
   line-height: 1;
@@ -16782,7 +17511,7 @@ textarea {
   border: 0;
   border-bottom: var(--border-width-thin) solid transparent;
   border-radius: 0;
-  font-size: clamp(2.4rem, 5vw, 4.5rem);
+  font-size: clamp(2rem, 3.6vw, 2.5rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 1.08;
@@ -16971,6 +17700,15 @@ textarea {
   gap: 0.1rem;
   padding: var(--space-2);
   overflow-y: auto;
+}
+
+.page-editor-choice-group-label {
+  margin: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .page-slash-menu-options button {
@@ -17462,6 +18200,34 @@ textarea {
   min-block-size: 14rem;
 }
 
+.page-document-canvas .page-view-block-checklist {
+  margin-block: 1.5rem;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+}
+
+.page-document-canvas .page-view-block-checklist .page-view-block-header {
+  margin-bottom: var(--space-2);
+  padding-inline: 0;
+}
+
+.page-document-canvas .page-editor-checklist-node {
+  margin-block: 1.5rem;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.page-document-canvas .page-editor-checklist-node .page-editor-view-header {
+  margin-bottom: var(--space-2);
+  padding-inline: 0;
+  background: transparent;
+  border-bottom: 0;
+}
+
 .page-document-editor.is-reading .page-document-canvas .tiptap {
   cursor: default;
 }
@@ -17757,4 +18523,365 @@ textarea {
 }
 .editor-mobile-create input {
   width: 100%;
+}
+
+/* Internal Page archive: keep lifecycle management close to navigation. */
+.workspace-navigation .sidebar-section {
+  position: relative;
+}
+.sidebar-archive-link {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  min-height: 2.5rem;
+  margin: 0.35rem 0 0.25rem;
+  padding: 0.45rem 0.65rem;
+  color: var(--text-secondary, #615d58);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar-archive-link:hover,
+.sidebar-archive-link:focus-visible {
+  color: var(--coral-700, #a94e3f);
+  background: var(--coral-50, #fff0ec);
+}
+.sidebar-archive-dialog {
+  position: absolute;
+  z-index: 20;
+  inset-inline-start: 0.75rem;
+  inset-block-start: 3.75rem;
+  width: min(23rem, calc(100vw - 2rem));
+  max-height: min(32rem, calc(100dvh - 5rem));
+  overflow: auto;
+  padding: 1.1rem;
+  color: var(--text-primary, #2d2926);
+  background: var(--surface-raised, #fffdf9);
+  border: 1px solid var(--color-border, #dedbd6);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgb(47 37 31 / 18%);
+}
+.sidebar-archive-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.sidebar-archive-dialog-heading h3 {
+  margin: 0.1rem 0 0;
+  font-size: 1.05rem;
+}
+.sidebar-archive-close {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  color: var(--text-secondary, #615d58);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+.sidebar-archive-close:hover,
+.sidebar-archive-close:focus-visible {
+  color: var(--coral-700, #a94e3f);
+  background: var(--coral-50, #fff0ec);
+}
+.sidebar-archive-list {
+  display: grid;
+  gap: 0.45rem;
+}
+.sidebar-archive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface-subtle, #f8f5f0);
+  border: 1px solid var(--color-border, #dedbd6);
+  border-radius: 10px;
+}
+.sidebar-archive-row > span {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+.sidebar-archive-row strong,
+.sidebar-archive-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-archive-row small {
+  color: var(--text-tertiary, #857e77);
+}
+@media (max-width: 48rem) {
+  .sidebar-archive-dialog {
+    position: fixed;
+    inset-inline: 1rem;
+    inset-block-start: 5rem;
+    width: auto;
+    max-height: calc(100dvh - 6rem);
+  }
+}
+.workspace-mobile-archived-pages {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border, #dedbd6);
+}
+.workspace-mobile-archived-pages summary {
+  min-height: 2.75rem;
+  padding: 0.7rem 0;
+  color: var(--text-secondary, #615d58);
+  font-weight: 600;
+  cursor: pointer;
+}
+.workspace-mobile-archived-list {
+  display: grid;
+  gap: 0.4rem;
+}
+.workspace-mobile-archived-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+}
+.workspace-mobile-archived-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-mobile-archived-row button {
+  min-height: 2.5rem;
+  padding: 0.45rem 0.75rem;
+  color: var(--coral-700, #a94e3f);
+  background: transparent;
+  border: 1px solid currentcolor;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.workspace-mobile-archived-row button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.page-editor-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.2rem 0 1.1rem;
+}
+.page-editor-empty-actions p {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--text-tertiary, #857e77);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 48rem) {
+  .page-document-editor .page-editor-title-input,
+  .page-document-editor .page-editor-reading-title {
+    font-size: clamp(1.75rem, 7.5vw, 1.875rem);
+    letter-spacing: -0.05em;
+  }
+}
+
+@media (min-width: 49rem) and (max-width: 70rem) {
+  .page-document-editor .page-editor-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-document-editor .page-editor-toolbar {
+    justify-content: flex-start;
+  }
+}
+
+.page-editor-conflict-panel {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  color: var(--trust-warning-needs-review-text);
+  background: var(--trust-warning-needs-review-surface);
+  border: var(--border-width-thin) solid var(--coral-200);
+  border-radius: var(--radius-lg);
+}
+
+.page-editor-conflict-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.page-editor-conflict-heading h2 {
+  margin: 0.15rem 0 0;
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  letter-spacing: -0.015em;
+}
+
+.page-editor-conflict-heading p:last-child {
+  max-width: 46rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.page-editor-conflict-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.page-editor-conflict-version {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.page-editor-conflict-version-header {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.page-editor-conflict-version-label {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.page-editor-conflict-version-header strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-editor-conflict-version-body {
+  max-height: 14rem;
+  min-height: 3.5rem;
+  overflow: auto;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.page-editor-conflict-version-body .runtime-page-blocks {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.page-editor-conflict-version-body h1,
+.page-editor-conflict-version-body h2,
+.page-editor-conflict-version-body h3,
+.page-editor-conflict-version-body p,
+.page-editor-conflict-version-body ul,
+.page-editor-conflict-version-body ol {
+  margin: 0;
+}
+
+.page-editor-conflict-version-body h1,
+.page-editor-conflict-version-body h2,
+.page-editor-conflict-version-body h3 {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.page-editor-conflict-version-body .page-text-block,
+.page-editor-conflict-version-body li,
+.page-editor-conflict-version-body aside,
+.page-editor-conflict-version-body summary,
+.page-editor-conflict-version-body figcaption {
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.page-editor-conflict-version-body ul,
+.page-editor-conflict-version-body ol {
+  padding-left: 1.15rem;
+}
+
+.page-editor-conflict-version-body .page-image-block {
+  margin: 0;
+}
+
+.page-editor-conflict-version-body .page-image-block img {
+  display: block;
+  max-width: 100%;
+  max-height: 8rem;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.page-editor-conflict-version-body .runtime-unavailable {
+  margin: 0;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
+}
+
+.page-editor-conflict-empty,
+.page-editor-conflict-preview-note,
+.page-editor-conflict-consequence {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.page-editor-conflict-preview-note {
+  padding-top: var(--space-1);
+}
+
+.page-editor-conflict-consequence {
+  max-width: 54rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.page-editor-conflict-consequence strong {
+  color: var(--text-primary);
+}
+
+.page-editor-conflict-panel .page-editor-confirm-actions {
+  justify-content: flex-start;
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 48rem) {
+  .page-editor-conflict-panel {
+    padding: var(--space-4);
+  }
+
+  .page-editor-conflict-comparison {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .page-editor-conflict-panel .page-editor-confirm-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .page-editor-conflict-panel .page-editor-confirm-actions .button {
+    width: 100%;
+  }
 }

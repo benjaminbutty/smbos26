@@ -18,6 +18,7 @@ import {
   publicPreorderPublicationFormSchema,
   type PublicPreorderPublicationForm,
 } from "./schemas";
+import { pageBlockReferencesPreorder } from "../../experience/page-blocks";
 
 type ConfigurationChangeSet = Tables<"configuration_change_sets">;
 type SnapshotPage = ConfigurationSnapshotV1["pages"][number];
@@ -85,9 +86,8 @@ function resolvePublication(
       .map((preorder) => preorder.key),
   );
   const pages = snapshot.pages.filter((page) =>
-    page.layout_json.blocks.some(
-      (block) =>
-        block.type === "preorder" && activePreorderKeys.has(block.preorder_key),
+    pageBlockReferencesPreorder(page.layout_json).some((key) =>
+      activePreorderKeys.has(key),
     ),
   );
 

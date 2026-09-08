@@ -14,6 +14,7 @@ import {
   formConfigSchema,
   pageLayoutSchema,
 } from "../experience/schemas";
+import { mapPageBlocks, walkPageBlocks } from "../experience/page-blocks";
 import { bookingConfigSchema, bookingBlockSchema } from "../booking/schemas";
 import {
   acquisitionBuildPayloadSchema,
@@ -401,15 +402,20 @@ function removeSeparateService(
     if (operation.op === "set_page") {
       return setPageOperationSchema.parse({
         ...operation,
-        layout_json: pageLayoutSchema.parse({
-          blocks: operation.layout_json.blocks.filter((block) => {
-            if (block.type === "view")
-              return !removedViewKeys.has(block.view_key);
-            if (block.type === "form")
-              return !removedFormKeys.has(block.form_key);
-            return true;
+        layout_json: pageLayoutSchema.parse(
+          mapPageBlocks(operation.layout_json, (block) => {
+            if (block.type === "view" && removedViewKeys.has(block.view_key)) {
+              return null;
+            }
+            if (
+              (block.type === "form" || block.type === "public_form") &&
+              removedFormKeys.has(block.form_key)
+            ) {
+              return null;
+            }
+            return block;
           }),
-        }),
+        ),
       });
     }
     if (operation.op !== "set_view" || operation.view_type !== "table") {
@@ -500,7 +506,7 @@ function addPublicEnquirySurface(
     (operation): operation is PageOperation =>
       operation.op === "set_page" &&
       operation.audience === "public" &&
-      operation.layout_json.blocks.some(
+      walkPageBlocks(operation.layout_json).some(
         (block) => block.type === "public_form" && block.form_key === formKey,
       ),
   );
@@ -921,7 +927,7 @@ function addBookingSurface(
     (operation): operation is PageOperation =>
       operation.op === "set_page" &&
       operation.audience === "public" &&
-      operation.layout_json.blocks.some(
+      walkPageBlocks(operation.layout_json).some(
         (block) => block.type === "booking" && block.booking_key === "booking",
       ),
   );

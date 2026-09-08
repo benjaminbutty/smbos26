@@ -16,6 +16,7 @@ import {
   pageLayoutSchema,
   type PageLayout,
 } from "../experience/schemas";
+import { walkPageBlocks } from "../experience/page-blocks";
 import type { ExperienceFormBundle } from "../experience/service";
 import { callPublicRpc } from "./rpc";
 
@@ -138,14 +139,12 @@ export async function loadPublicPageRuntime(
 
   const resolvedPage = publicPageResolverSchema.parse(pageResult.data);
   const layout = pageLayoutSchema.parse(resolvedPage.page.layout);
-  const formKeys = layout.blocks.flatMap((block) =>
+  const blocks = walkPageBlocks(layout);
+  const formKeys = blocks.flatMap((block) =>
     block.type === "public_form" ? [block.form_key] : [],
   );
-  const bookingBlocks = layout.blocks.filter(
-    (
-      block,
-    ): block is Extract<PageLayout["blocks"][number], { type: "booking" }> =>
-      block.type === "booking",
+  const bookingKeys = blocks.flatMap((block) =>
+    block.type === "booking" ? [block.booking_key] : [],
   );
 
   const forms = await Promise.all(
@@ -175,16 +174,23 @@ export async function loadPublicPageRuntime(
     }),
   );
   const bookings = await Promise.all(
-    bookingBlocks.map(async (block) => {
+    [...new Set(bookingKeys)].map(async (bookingKey) => {
+      const block = blocks.find(
+        (candidate) =>
+          candidate.type === "booking" && candidate.booking_key === bookingKey,
+      );
+      if (!block || block.type !== "booking") {
+        throw new Error("The public Booking is not available.");
+      }
       bookingConfigSchema.parse(block.config);
       const catalogue = await resolvePublicBooking(
         supabase,
         businessSlug,
         pageSlug,
-        block.booking_key,
+        bookingKey,
       );
       if (!catalogue) throw new Error("The public Booking is not available.");
-      return [block.booking_key, catalogue] as const;
+      return [bookingKey, catalogue] as const;
     }),
   );
 

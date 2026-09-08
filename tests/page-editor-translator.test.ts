@@ -41,6 +41,7 @@ describe("Page editor canonical translator", () => {
           src: "https://example.com/image.png",
           alt: "A retained image",
           caption: "Historical content",
+          presentation: "content" as const,
           id: "00000000-0000-4000-8000-000000000006",
         },
         {
@@ -70,13 +71,14 @@ describe("Page editor canonical translator", () => {
       "pageDivider",
       "pageCallout",
       "pageView",
-      "pageLegacy",
+      "pageImage",
       "pageLegacy",
       "pageLegacy",
       "pageLegacy",
     ]);
     expect(document.content?.[5]?.attrs).toMatchObject({
-      blockType: "image",
+      alt: "A retained image",
+      src: "https://example.com/image.png",
     });
     expect(tiptapToPageLayout(document)).toEqual(layout);
   });
@@ -277,5 +279,74 @@ describe("Page editor canonical translator", () => {
         ],
       }),
     ).toThrow("Nested or unsupported Page lists");
+  });
+
+  it("round-trips managed images, checklists, and contained sections", () => {
+    const layout = {
+      blocks: [
+        {
+          type: "collapsible" as const,
+          summary: "Opening routine",
+          blocks: [
+            {
+              type: "image" as const,
+              asset_id: "00000000-0000-4000-8000-000000000021",
+              alt: "Opening routine",
+              presentation: "wide" as const,
+            },
+            {
+              type: "view" as const,
+              view_key: "opening_tasks",
+              checklist: {
+                label_field: "name",
+                completed_field: "completed",
+              },
+            },
+          ],
+          open: true,
+          id: "00000000-0000-4000-8000-000000000022",
+        },
+      ],
+    };
+
+    const document = pageLayoutToTiptap(layout);
+    expect(document.content?.[0]).toMatchObject({
+      type: "pageCollapsible",
+      content: [
+        {
+          type: "pageImage",
+          attrs: { assetId: layout.blocks[0]!.blocks[0]!.asset_id },
+        },
+        {
+          type: "pageView",
+          attrs: { checklist: layout.blocks[0]!.blocks[1]!.checklist },
+        },
+      ],
+    });
+    expect(tiptapToPageLayout(document)).toEqual(layout);
+  });
+
+  it("preserves a collapsed contained section through an editor round-trip", () => {
+    const layout = {
+      blocks: [
+        {
+          type: "collapsible" as const,
+          summary: "Closed details",
+          blocks: [{ type: "text" as const, text: "Hidden guidance" }],
+          open: false,
+        },
+      ],
+    };
+
+    expect(tiptapToPageLayout(pageLayoutToTiptap(layout))).toEqual({
+      blocks: [
+        {
+          type: "collapsible",
+          summary: "Closed details",
+          blocks: [{ type: "text", text: "Hidden guidance" }],
+          open: false,
+        },
+      ],
+    });
   });
 });

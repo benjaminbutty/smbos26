@@ -193,11 +193,20 @@ const aiContextTextBlockSchema = z
 const aiContextImageBlockSchema = z
   .object({
     type: z.literal("image"),
-    alt: z.string().trim().min(1).max(300),
+    alt: z.string().trim().max(300),
     caption: z.string().trim().min(1).max(500).optional(),
-    source_kind: z.literal("external_web"),
+    source_kind: z.enum(["external_web", "private_asset"]),
   })
-  .strict();
+  .strict()
+  .superRefine((image, context) => {
+    if (image.source_kind === "external_web" && image.alt.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "External images need an image description.",
+        path: ["alt"],
+      });
+    }
+  });
 
 const aiContextButtonBlockSchema = z
   .object({
@@ -217,6 +226,13 @@ const aiContextViewBlockSchema = z
   .object({
     type: z.literal("view"),
     view_key: graphKeySchema,
+    checklist: z
+      .object({
+        label_field: graphKeySchema,
+        completed_field: graphKeySchema,
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -263,7 +279,40 @@ const aiContextCalloutBlockSchema = z
   })
   .strict();
 
-export const aiContextPageBlockSchema = z.discriminatedUnion("type", [
+type AiContextPageBlock =
+  | z.infer<typeof aiContextHeadingBlockSchema>
+  | z.infer<typeof aiContextTextBlockSchema>
+  | z.infer<typeof aiContextImageBlockSchema>
+  | z.infer<typeof aiContextButtonBlockSchema>
+  | z.infer<typeof aiContextViewBlockSchema>
+  | z.infer<typeof aiContextFormBlockSchema>
+  | z.infer<typeof aiContextPublicFormBlockSchema>
+  | z.infer<typeof aiContextBookingBlockSchema>
+  | z.infer<typeof aiContextPreorderBlockSchema>
+  | z.infer<typeof aiContextDividerBlockSchema>
+  | z.infer<typeof aiContextCalloutBlockSchema>
+  | {
+      type: "collapsible";
+      summary: string;
+      open: boolean;
+      blocks: AiContextPageBlock[];
+    };
+
+const aiContextCollapsibleBlockSchema: z.ZodType<
+  Extract<AiContextPageBlock, { type: "collapsible" }>
+> = z
+  .object({
+    type: z.literal("collapsible"),
+    summary: z.string().trim().min(1).max(240),
+    open: z.boolean(),
+    blocks: z
+      .array(z.lazy(() => aiContextPageBlockSchema))
+      .min(1)
+      .max(50),
+  })
+  .strict();
+
+export const aiContextPageBlockSchema: z.ZodType<AiContextPageBlock> = z.union([
   aiContextHeadingBlockSchema,
   aiContextTextBlockSchema,
   aiContextImageBlockSchema,
@@ -275,7 +324,10 @@ export const aiContextPageBlockSchema = z.discriminatedUnion("type", [
   aiContextPreorderBlockSchema,
   aiContextDividerBlockSchema,
   aiContextCalloutBlockSchema,
+  aiContextCollapsibleBlockSchema,
 ]);
+
+export type { AiContextPageBlock };
 
 export const aiContextPageSchema = z
   .object({
@@ -369,6 +421,7 @@ export const aiContextPlatformCapabilitiesSchema = z
         "preorder",
         "divider",
         "callout",
+        "collapsible",
       ]),
     ),
     configuration_operation_names: z.array(
@@ -448,6 +501,7 @@ export const authoritativePageBlockTypes = [
   "preorder",
   "divider",
   "callout",
+  "collapsible",
 ] as const;
 export const authoritativeConfigurationOperationNames =
   configurationOperationSchema.options.map((schema) => schema.shape.op.value);

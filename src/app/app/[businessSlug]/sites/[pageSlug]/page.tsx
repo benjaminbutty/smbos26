@@ -11,6 +11,7 @@ import type { PublicBookingCatalogue } from "../../../../../core/booking/schemas
 import { resolveDraftBooking } from "../../../../../core/booking/preview";
 import { resolvePublicBooking } from "../../../../../core/booking/service";
 import { createExperienceService } from "../../../../../core/experience/service";
+import { walkPageBlocks } from "../../../../../core/experience/page-blocks";
 import { ConfigurationChangeService } from "../../../../../core/configuration/service";
 import { createServerClient } from "../../../../../db/supabase/server";
 import { PageRenderer } from "../../../../../runtime/pages/page-renderer";
@@ -100,9 +101,10 @@ export default async function SitePage({
     notFound();
   }
 
+  const pageBlocks = walkPageBlocks(page.layout);
   const publicFormKeys = [
     ...new Set(
-      page.layout.blocks.flatMap((block) =>
+      pageBlocks.flatMap((block) =>
         block.type === "public_form" ? [block.form_key] : [],
       ),
     ),
@@ -122,7 +124,7 @@ export default async function SitePage({
     }
   }
 
-  const bookingBlocks = page.layout.blocks.filter(
+  const bookingBlocks = pageBlocks.filter(
     (
       block,
     ): block is Extract<

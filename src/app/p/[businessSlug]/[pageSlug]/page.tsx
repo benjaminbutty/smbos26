@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { loadPublicPageRuntime } from "../../../../core/public/page";
+import { pageBlockReferencesPreorder } from "../../../../core/experience/page-blocks";
 import { resolvePublicPreorder } from "../../../../core/preorder/service";
 import type { PublicPreorderCatalogue } from "../../../../core/preorder/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
@@ -31,11 +32,7 @@ export default async function PublicPage({
   }
 
   const preorderKeys = [
-    ...new Set(
-      runtime.page.layout.blocks.flatMap((block) =>
-        block.type === "preorder" ? [block.preorder_key] : [],
-      ),
-    ),
+    ...new Set(pageBlockReferencesPreorder(runtime.page.layout)),
   ];
   const preorders: Record<
     string,

@@ -56,6 +56,19 @@ type RenamePageAction = (input: {
   title: string;
 }) => Promise<DirectPageActionResult>;
 
+type PageLifecycleAction = (input: {
+  currentness: DirectPageCurrentness;
+  pageKey: string;
+}) => Promise<DirectPageActionResult>;
+
+type CreateChecklistAction = (input: {
+  currentness: DirectPageCurrentness;
+  pageKey: string;
+  name: string;
+  afterBlockId?: string | null;
+  containerBlockId?: string;
+}) => Promise<DirectPageActionResult>;
+
 type PublishPageChangesAction = (input: {
   currentness: DirectPageCurrentness;
   title: string;
@@ -71,8 +84,13 @@ export interface PageEditorProps {
   currentness: DirectPageCurrentness;
   views: Readonly<Record<string, PageEditorViewEmbed>>;
   availableViews: readonly PageViewOption[];
+  availablePages?: readonly { slug: string; title: string }[];
   applyPageBlockAction: ApplyPageBlockAction;
   renamePageAction: RenamePageAction;
+  duplicatePageAction?: PageLifecycleAction;
+  archivePageAction?: PageLifecycleAction;
+  restorePageAction?: PageLifecycleAction;
+  createChecklistAction?: CreateChecklistAction;
   previewBookings?: Readonly<
     Record<string, { catalogue: PublicBookingCatalogue }>
   >;
@@ -159,6 +177,8 @@ function blockLabel(block: PageBlock): string {
       return "Booking";
     case "preorder":
       return "Preorder";
+    case "collapsible":
+      return "Section";
   }
 }
 
@@ -205,7 +225,10 @@ function localBlockFromInput(input: DirectPageBlockInput): PageBlock | null {
       return { type: "divider" };
     case "view":
       return null;
+    case "collapsible":
+      return null;
   }
+  return null;
 }
 
 function applyPublishedSiteCandidateIntent(
@@ -310,10 +333,12 @@ function embeddedCapabilities(
 
 function SavedViewBlock({
   block,
+  blockIdentifier,
   businessSlug,
   embed,
 }: Readonly<{
   block: Extract<PageBlock, { type: "view" }>;
+  blockIdentifier?: string | null;
   businessSlug: string;
   embed: PageEditorViewEmbed | undefined;
 }>): ReactNode {
@@ -366,12 +391,27 @@ function SavedViewBlock({
       <ProductionTableWorkspace
         actions={tableEmbed.actions}
         businessSlug={businessSlug}
+        {...(tableEmbed.bulkUpdate
+          ? { bulkUpdate: tableEmbed.bulkUpdate }
+          : {})}
         capabilities={embeddedCapabilities(
           tableEmbed.capabilities,
           block.read_only === true,
         )}
+        {...(tableEmbed.connectionSource
+          ? { connectionSource: tableEmbed.connectionSource }
+          : {})}
+        {...(tableEmbed.connectionTargets
+          ? { connectionTargets: tableEmbed.connectionTargets }
+          : {})}
         currentness={tableEmbed.currentness}
         creationFallbackHref={tableEmbed.creationFallbackHref}
+        {...(tableEmbed.existingConnections
+          ? { existingConnections: tableEmbed.existingConnections }
+          : {})}
+        {...(tableEmbed.loadTablePage
+          ? { loadTablePage: tableEmbed.loadTablePage }
+          : {})}
         {...(tableEmbed.createConnectedRecordTarget
           ? {
               createConnectedRecordTarget:
@@ -379,6 +419,27 @@ function SavedViewBlock({
             }
           : {})}
         fullRecordPath={tablePath}
+        {...((tableEmbed.instanceId ?? blockIdentifier)
+          ? { instanceId: tableEmbed.instanceId ?? blockIdentifier! }
+          : {})}
+        {...(tableEmbed.initialHasMore !== undefined
+          ? { initialHasMore: tableEmbed.initialHasMore }
+          : {})}
+        {...(tableEmbed.initialSearch !== undefined
+          ? { initialSearch: tableEmbed.initialSearch }
+          : {})}
+        {...(tableEmbed.initialTotalCount !== undefined
+          ? { initialTotalCount: tableEmbed.initialTotalCount }
+          : {})}
+        {...(tableEmbed.loadContextualRecordCreateState
+          ? {
+              loadContextualRecordCreateState:
+                tableEmbed.loadContextualRecordCreateState,
+            }
+          : {})}
+        {...(tableEmbed.createContextualRecord
+          ? { createContextualRecord: tableEmbed.createContextualRecord }
+          : {})}
         {...(tableEmbed.recordCountLabel
           ? { recordCountLabel: tableEmbed.recordCountLabel }
           : {})}
@@ -570,6 +631,7 @@ function PageBlockView({
       return (
         <SavedViewBlock
           block={block}
+          blockIdentifier={blockIdentifier}
           businessSlug={businessSlug}
           embed={embed}
         />
@@ -587,9 +649,18 @@ function PageBlockView({
       );
     case "image":
       return (
-        <figure className="page-image-block">
+        <figure
+          className={`page-image-block page-image-${block.presentation ?? "content"}`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt={block.alt} src={block.src} />
+          <img
+            alt={block.alt}
+            src={
+              block.asset_id
+                ? `/api/app/${encodeURIComponent(businessSlug)}/pages/assets/${block.asset_id}`
+                : block.src
+            }
+          />
           {block.caption ? <figcaption>{block.caption}</figcaption> : null}
         </figure>
       );
@@ -639,6 +710,17 @@ function PageBlockView({
           {blockLabel(block)} content can be viewed from the existing Page
           runtime.
         </div>
+      );
+    case "collapsible":
+      return (
+        <details className="page-collapsible-block" open={block.open}>
+          <summary>{block.summary}</summary>
+          <PageRenderer
+            layout={{ blocks: block.blocks }}
+            previewMode
+            publicMode={false}
+          />
+        </details>
       );
   }
 }
