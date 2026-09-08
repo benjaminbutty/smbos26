@@ -37,6 +37,26 @@ edge scrolling during dragover and has focused unit coverage for its direction
 and no-op middle/invalid-viewport cases; this is not presented as prolonged
 pointer-hold browser evidence.
 
+## Transient-menu follow-through
+
+Parent repeated this browser review on the main-worktree preview at port 3003
+after the block-action menu fix:
+
+| Journey | Observed result |
+| --- | --- |
+| Block actions, outside pointer | Shift+F10 on a heading opened the action menu. Clicking the Page name closed it and focused the name input. |
+| Block actions, Escape | Escape closed the action menu and restored focus to the editable Page body. |
+| Block actions, embedded target | Opening the grip menu then clicking an embedded checklist Search control closed the menu and focused the search box. |
+| Slash chooser, internal and outside pointers | A `+` chooser stayed open when its internal search input was clicked. Clicking the Page name closed it and focused the title input. |
+
+No document content was edited in these journeys. The listener is registered
+at capture phase (with focused unit coverage); the browser check confirms an
+embedded target receives focus while the menu dismisses. The listener does not
+prevent the outside target's pointer, click, or focus behavior. Link dialog
+Escape restores the captured link selection and editor focus; the same
+outside-pointer rule dismisses the dialog without forcing focus away from its
+target.
+
 ## Checks
 
 The following completed against this source after the interaction changes:
@@ -52,8 +72,10 @@ node ./node_modules/vitest/vitest.mjs run \
   tests/page-editor-block-actions.test.ts \
   tests/page-editor-block-menu-layout.test.ts \
   tests/page-editor-drag-scroll.test.ts \
+  tests/page-editor-slash-menu-layout.test.ts \
+  tests/page-editor-transient-pointer-dismissal.test.ts \
   tests/lenni-unified-ui.test.ts
-  4 files, 30 tests                                   PASS
+  6 files, 38 tests                                   PASS
 
 node ./node_modules/prettier/bin/prettier.cjs --check [touched files]
   formatting                                           PASS
@@ -66,3 +88,8 @@ changes, direct sibling movement in both directions, an atom/Table-like block,
 boundary no-ops, and actual ProseMirror history undo. Menu-layout tests cover
 desktop and narrow/short viewport clamping. These are regression support; the
 browser results above remain the product-interaction evidence.
+
+Transient-pointer regression coverage verifies internal and outside-target
+classification, that dismissal does not call `preventDefault`, and capture-phase
+listener registration and cleanup. Browser review remains the evidence for
+actual focus transfer and Escape behavior.

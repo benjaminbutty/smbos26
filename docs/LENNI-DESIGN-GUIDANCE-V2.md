@@ -159,6 +159,10 @@ compact checklist/live Table, mobile, selected and insertion states. Capture
 1440px, 1024px and 390px evidence. Pair screenshots with real keyboard/caret,
 formatting, insertion, movement, undo, autosave and recovery journeys; source
 assertions and coordinator tests do not establish interaction acceptance.
+For every transient menu, popover or sheet touched, also prove outside
+pointer/tap dismissal does not consume the intended target interaction, Escape
+closes it with the appropriate focus return, and its keyboard route remains
+usable.
 
 ## Historical documents
 

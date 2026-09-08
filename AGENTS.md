@@ -58,7 +58,11 @@ For each task:
    desktop, tablet and mobile states and execute the affected keyboard/focus
    journeys. Source assertions, unit tests and coordinator tests do not alone
    establish product acceptance.
-8. Summarise changes, commands run and any architectural tension discovered.
+8. For every transient menu, popover or sheet changed, verify an outside
+   pointer/tap dismisses it without preventing the intended target action or
+   stealing its focus, Escape closes it with the appropriate focus return, and
+   keyboard access remains usable.
+9. Summarise changes, commands run and any architectural tension discovered.
 
 ## Security
 

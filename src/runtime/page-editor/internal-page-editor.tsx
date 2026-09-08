@@ -70,6 +70,10 @@ import {
   slashMenuScrollTopForActiveOption,
 } from "./slash-menu-layout";
 import { pageEditorDragScrollDelta } from "./drag-scroll";
+import {
+  createTransientPointerDismissal,
+  registerCapturePointerDismissal,
+} from "./transient-pointer-dismissal";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -336,6 +340,7 @@ export function InternalPageEditor({
   const canvasRef = useRef<HTMLDivElement>(null);
   const slashMenuRef = useRef<HTMLDivElement>(null);
   const blockMenuRef = useRef<HTMLDivElement>(null);
+  const linkPopoverRef = useRef<HTMLFormElement>(null);
   const blockHandleButtonRef = useRef<HTMLButtonElement>(null);
   const dragHandleTargetRef = useRef<PageBlockTarget | null>(null);
   const blockMenuTargetRef = useRef<PageBlockTarget | null>(null);
@@ -1705,6 +1710,7 @@ export function InternalPageEditor({
       event.preventDefault();
       event.stopPropagation();
       setInsertMenu(null);
+      editor?.commands.focus();
     }
   };
 
@@ -1789,6 +1795,41 @@ export function InternalPageEditor({
       window.removeEventListener("scroll", reposition, true);
     };
   }, [blockMenuTarget, closeBlockMenu, updateBlockMenuPlacement]);
+
+  useEffect(() => {
+    if (!blockMenuTarget && !insertMenu && !linkEditor) return;
+    const closeOnOutsidePointer = createTransientPointerDismissal(
+      (target): target is Node => target instanceof Node,
+      [
+        {
+          contains: (target) =>
+            Boolean(
+              blockMenuRef.current?.contains(target) ||
+              blockHandleButtonRef.current?.contains(target) ||
+              (target instanceof Element &&
+                target.closest(".page-document-gutter")),
+            ),
+          dismiss: closeBlockMenu,
+          open: blockMenuTarget !== null,
+        },
+        {
+          contains: (target) => Boolean(slashMenuRef.current?.contains(target)),
+          dismiss: () => {
+            setInsertMenu(null);
+            setInsertIndex(0);
+          },
+          open: insertMenu !== null,
+        },
+        {
+          contains: (target) =>
+            Boolean(linkPopoverRef.current?.contains(target)),
+          dismiss: () => setLinkEditor(null),
+          open: linkEditor !== null,
+        },
+      ],
+    );
+    return registerCapturePointerDismissal(document, closeOnOutsidePointer);
+  }, [blockMenuTarget, closeBlockMenu, insertMenu, linkEditor]);
 
   const pasteImage = (event: React.ClipboardEvent<HTMLDivElement>): void => {
     if (!editor || !canEdit) return;
@@ -2435,10 +2476,18 @@ export function InternalPageEditor({
             <form
               aria-label="Add or edit link"
               className="page-link-popover"
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.preventDefault();
+                restoreLinkSelection(linkEditor);
+                editor?.commands.focus();
+                setLinkEditor(null);
+              }}
               onSubmit={(event) => {
                 event.preventDefault();
                 applyLinkEditor();
               }}
+              ref={linkPopoverRef}
               role="dialog"
             >
               <label>
