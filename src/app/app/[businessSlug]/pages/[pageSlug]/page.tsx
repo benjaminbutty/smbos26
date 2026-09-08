@@ -67,6 +67,7 @@ import {
 import { PageRenderer } from "../../../../../runtime/pages/page-renderer";
 import { updateInlineRecordCell } from "../../../../../runtime/views/actions";
 import type { EditorCapabilities } from "../../../../../runtime/editor-kernel/contracts";
+import type { ProductionConfigurationCurrentness } from "../../../../../runtime/editor-kernel/production/action-types";
 import type { ProductionTableAdapterActions } from "../../../../../runtime/editor-kernel/production/production-table-adapter";
 import type { PageEditorViewEmbed } from "../../../../../runtime/page-editor/extensions";
 import type { PageRendererTableEmbed } from "../../../../../runtime/pages/page-renderer";
@@ -363,6 +364,7 @@ function tableEmbedContext(
       plural_label: string;
     }
   >,
+  currentness?: ProductionConfigurationCurrentness,
 ) {
   const connectionContext = tableConnectionContext(
     allTableViews,
@@ -379,6 +381,7 @@ function tableEmbedContext(
       pluralLabel: bundle.object.plural_label,
       singularLabel: bundle.object.singular_label,
     },
+    ...(currentness ? { currentness } : {}),
     ...connectionContext,
     initialHasMore: bundle.query?.hasMore ?? false,
     initialSearch: "",
@@ -670,6 +673,7 @@ export default async function InternalPage({
             bundle,
             tableViews,
             tableObjectById,
+            directConfiguration.currentness,
           ),
           creationFallbackHref: availability.formKey
             ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(key)}/new`
