@@ -35,7 +35,9 @@ evidence; it does not replace its baseline claims.
   the following prose. This is the browser reproduction for the duplicate block
   ID autosave regression.
 - Formatting save/undo and reading-mode flush were exercised. A live checklist
-  committed once, its toggle updated the shared Table Record, and `Open table`
+  committed exactly once, although its post-commit response remained in
+  `Saving` for several minutes before a fresh navigation recovered the
+  checklist. Its toggle updated the shared Table Record, and `Open table`
   reached the same Record.
 - Image upload completed. One initial Page configuration request rolled back on
   PostgreSQL timeout; the retained draft was manually retried successfully,
@@ -60,8 +62,8 @@ Incomplete because of the local test environment:
   (long checkpoints, delayed autovacuum and realtime scheduler delays). Its
   suites stopped in setup; do not read this as a passing RLS/integration run.
 - `npm run build` compiled successfully in 44 seconds, then stalled in Next’s
-  post-compile TypeScript/page phase while that same local database remained
-  unhealthy. It was stopped rather than reported as a successful build.
+  post-compile TypeScript/page phase. Its cause was not confirmed, so it was
+  stopped rather than reported as a successful build.
 
 ## Remaining browser coverage
 
