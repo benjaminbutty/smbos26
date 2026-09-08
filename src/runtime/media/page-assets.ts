@@ -93,7 +93,32 @@ export async function decodePageAsset(input: {
           : (mimeType.slice(6) as "png" | "webp"),
       )
       .toBuffer();
-    return { bytes: encoded, height, mimeType, width };
+    if (encoded.byteLength > PAGE_ASSET_MAX_BYTES) {
+      throw new PageAssetError("too_large", assetErrorMessage("too_large"));
+    }
+    const encodedMetadata = await sharp(encoded, {
+      failOn: "error",
+    }).metadata();
+    const encodedWidth = encodedMetadata.width ?? 0;
+    const encodedHeight = encodedMetadata.height ?? 0;
+    if (!encodedWidth || !encodedHeight) {
+      throw new PageAssetError(
+        "invalid_image",
+        assetErrorMessage("invalid_image"),
+      );
+    }
+    if (encodedWidth * encodedHeight > PAGE_ASSET_MAX_PIXELS) {
+      throw new PageAssetError(
+        "too_many_pixels",
+        assetErrorMessage("too_many_pixels"),
+      );
+    }
+    return {
+      bytes: encoded,
+      height: encodedHeight,
+      mimeType,
+      width: encodedWidth,
+    };
   } catch (error) {
     if (error instanceof PageAssetError) throw error;
     throw new PageAssetError(

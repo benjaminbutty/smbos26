@@ -1428,6 +1428,27 @@ try {
       "Could not ensure the Connection demo membership.",
     );
   }
+  requireData(
+    await admin
+      .from("business_memberships")
+      .upsert(
+        [
+          {
+            business_id: connectionDemoBusiness.id,
+            user_id: administratorUser.id,
+            role: "admin",
+          },
+          {
+            business_id: connectionDemoBusiness.id,
+            user_id: staffUser.id,
+            role: "staff",
+          },
+        ],
+        { onConflict: "business_id,user_id" },
+      )
+      .select("id"),
+    "Could not ensure the Connection demo staff memberships.",
+  );
   await ensureConnectionDemoVersionTwo({
     admin,
     owner,

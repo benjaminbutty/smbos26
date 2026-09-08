@@ -144,7 +144,7 @@ async function configurationCounts() {
 }
 
 async function expectShapeRejected(
-  actionKind: "rename_page" | "save_page_layout",
+  actionKind: "rename_page" | "save_page_layout" | "create_checklist",
   baseSnapshot: Json,
   candidateSnapshot: Json,
   operations: Json,
@@ -334,6 +334,26 @@ describe("workspace foundation direct Page actions", () => {
         (page) => page.key === created.composed.pageKey,
       ),
     ).toMatchObject({ title: "Catering Requests — Today" });
+
+    const beforeNoOp = await configurationCounts();
+    await expect(
+      applyDirectPageAction(
+        owner.client,
+        { businessId: business.id, actorId: owner.user.id },
+        {
+          currentness: titleOnly.currentness,
+          intent: {
+            action: "save_page_layout",
+            pageKey: created.composed.pageKey,
+            title: "Catering Requests — Today",
+            layout: titleOnly.snapshot.pages.find(
+              (page) => page.key === created.composed.pageKey,
+            )?.layout_json ?? { blocks: [] },
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "configuration_proposal_no_changes" });
+    expect(await configurationCounts()).toEqual(beforeNoOp);
   });
 
   it("saves a completed long-distance Page reorder in exactly one Version", async () => {
@@ -493,7 +513,13 @@ describe("workspace foundation direct Page actions", () => {
                 type: "collapsible",
                 summary: "Keep this close",
                 open: true,
-                blocks: [{ type: "text", text: "Opening routine" }],
+                blocks: [
+                  {
+                    id: crypto.randomUUID(),
+                    type: "text",
+                    text: "Opening routine",
+                  },
+                ],
               },
             ],
           },
@@ -553,6 +579,142 @@ describe("workspace foundation direct Page actions", () => {
       view_type: "table",
       audience: "internal",
       is_active: true,
+    });
+
+    const baseSnapshot = created.snapshot as unknown as Json;
+    const candidateSnapshot = checklist.changeSet.candidate_snapshot_json;
+    const operations = checklist.changeSet.operations_json;
+    await expect(
+      sql`
+        select private.assert_direct_page_action_shape_v1(
+          ${"create_checklist"},
+          ${sql.json(baseSnapshot)}::jsonb,
+          ${sql.json(candidateSnapshot)}::jsonb,
+          ${sql.json(operations)}::jsonb
+        )
+      `,
+    ).resolves.toBeDefined();
+
+    const extraObject = structuredClone(candidateSnapshot) as {
+      object_definitions: Record<string, unknown>[];
+    };
+    extraObject.object_definitions.push({ key: "unexpected_object" });
+    await expectShapeRejected(
+      "create_checklist",
+      baseSnapshot,
+      extraObject as unknown as Json,
+      operations,
+    );
+
+    const changedContainedBlock = structuredClone(candidateSnapshot) as {
+      pages: { key: string; layout_json: { blocks: unknown[] } }[];
+    };
+    const targetPage = changedContainedBlock.pages.find(
+      (candidatePage) => candidatePage.key === pageKey,
+    );
+    const section = targetPage?.layout_json.blocks[0] as {
+      blocks?: { text?: string }[];
+    };
+    if (!targetPage || !section?.blocks?.[0]) {
+      throw new Error("Expected the checklist source section.");
+    }
+    section.blocks[0] = { ...section.blocks[0], text: "Changed elsewhere" };
+    await expectShapeRejected(
+      "create_checklist",
+      baseSnapshot,
+      changedContainedBlock as unknown as Json,
+      operations,
+    );
+
+    const replacedIdentity = structuredClone(candidateSnapshot) as {
+      pages: { key: string; layout_json: { blocks: unknown[] } }[];
+    };
+    const identityPage = replacedIdentity.pages.find(
+      (candidatePage) => candidatePage.key === pageKey,
+    );
+    const identitySection = identityPage?.layout_json.blocks[0] as {
+      blocks?: { id?: string }[];
+    };
+    if (!identitySection?.blocks?.[0]) {
+      throw new Error("Expected the checklist source block identity.");
+    }
+    identitySection.blocks[0] = {
+      ...identitySection.blocks[0],
+      id: crypto.randomUUID(),
+    };
+    await expectShapeRejected(
+      "create_checklist",
+      baseSnapshot,
+      replacedIdentity as unknown as Json,
+      operations,
+    );
+  });
+
+  it("creates a checklist after a contained block without widening the composite", async () => {
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const pageKey = `nested_checklist_${suffix}`;
+    const nestedBlockId = crypto.randomUUID();
+    const created = await applyConfigurationOperations(
+      [
+        {
+          op: "set_page",
+          key: pageKey,
+          title: "Nested checklist Page",
+          slug: `nested-checklist-${suffix}`,
+          audience: "internal",
+          layout_json: {
+            blocks: [
+              {
+                id: crypto.randomUUID(),
+                type: "collapsible",
+                summary: "Opening routine",
+                open: true,
+                blocks: [
+                  { id: nestedBlockId, type: "text", text: "Unlock door" },
+                ],
+              },
+            ],
+          },
+          status: "draft",
+          is_active: true,
+        },
+      ],
+      `Create ${pageKey}`,
+    );
+    const before = await configurationCounts();
+    const checklist = await applyDirectPageAction(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        currentness: created.currentness,
+        intent: {
+          action: "create_checklist",
+          pageKey,
+          name: `Nested tasks ${suffix}`,
+          afterBlockId: nestedBlockId,
+        },
+      },
+    );
+    const after = await configurationCounts();
+    const page = checklist.snapshot.pages.find(
+      (entry) => entry.key === pageKey,
+    );
+    const section = page?.layout_json.blocks[0];
+
+    expect(after).toEqual({
+      versions: before.versions + 1,
+      changes: before.changes + 1,
+      revision: before.revision + 1,
+    });
+    expect(section).toMatchObject({
+      type: "collapsible",
+      blocks: [
+        { id: nestedBlockId, type: "text", text: "Unlock door" },
+        {
+          type: "view",
+          checklist: { label_field: "name", completed_field: "completed" },
+        },
+      ],
     });
   });
 

@@ -47,6 +47,8 @@ import { TableViewPreviewProvider } from "../../views/table-view-preview-context
 
 export interface ProductionTableWorkspaceProps {
   table: EditorTable;
+  /** Stable identity for a mounted embed; View keys may appear more than once. */
+  instanceId?: string;
   capabilities: EditorCapabilities;
   actions: ProductionTableAdapterActions;
   businessSlug?: string;
@@ -112,6 +114,7 @@ export function ProductionTableWorkspace({
   existingConnections,
   surface = "workspace",
   table,
+  instanceId,
 }: Readonly<ProductionTableWorkspaceProps>): ReactNode {
   const router = useRouter();
   const [loadedTable, setLoadedTable] = useState(table);
@@ -483,12 +486,12 @@ export function ProductionTableWorkspace({
   const workbenchToolbar = loadTablePage ? (
     <div className="table-workbench-toolbar">
       <div className="table-workbench-search">
-        <label htmlFor={`table-search-${table.key}`}>
+        <label htmlFor={`table-search-${instanceId ?? table.key}`}>
           <span className="editor-sr-only">
             Search {recordTypeLabel ?? table.name}
           </span>
           <input
-            id={`table-search-${table.key}`}
+            id={`table-search-${instanceId ?? table.key}`}
             disabled={pendingWrites || Boolean(viewPreview)}
             maxLength={200}
             onChange={(event) => setSearch(event.target.value)}
@@ -541,6 +544,7 @@ export function ProductionTableWorkspace({
     <TableViewPreviewProvider value={{ setPreview: updateViewPreview }}>
       <EditorKernel
         adapter={adapter}
+        {...(instanceId ? { instanceId } : {})}
         onRecordsChanged={refreshRecords}
         {...(businessSlug && currentness && !readOnly
           ? {

@@ -1,10 +1,12 @@
 "use client";
 
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { useRouter } from "next/navigation";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useMemo,
@@ -15,16 +17,18 @@ import {
 } from "react";
 
 import {
-  pageBlockSchema,
   safePageHrefSchema,
   type PageBlock,
   type PageLayout,
 } from "../../core/experience/schemas";
 import { useUnsavedNavigationWarning } from "../unsaved-navigation-warning";
+import { PageRenderer } from "../pages/page-renderer";
 import type { PageEditorProps } from "./page-editor";
 import {
   createPageEditorExtensions,
   PAGE_EDITOR_RETRY_UPLOAD_EVENT,
+  PageEditorRuntimeContext,
+  type PageEditorTableEmbed,
   type PageEditorExtensionOptions,
 } from "./extensions";
 import {
@@ -32,6 +36,11 @@ import {
   pageLayoutToTiptap,
   tiptapToPageLayout,
 } from "./page-translator";
+import { withEditorBlockIds } from "./block-identities";
+import {
+  SerialSaveCoordinator,
+  type SaveCoordinatorResult,
+} from "./save-coordinator";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -94,29 +103,41 @@ interface ImageUploadResult {
   height: number;
 }
 
+interface PageDraft {
+  layout: PageLayout;
+  title: string;
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function pageDraftEquals(left: PageDraft, right: PageDraft): boolean {
+  return (
+    left.title.trim() === right.title.trim() &&
+    stableSerialize(left.layout) === stableSerialize(right.layout)
+  );
+}
+
+function pageLayoutEquals(left: PageLayout, right: PageLayout): boolean {
+  return stableSerialize(left) === stableSerialize(right);
+}
+
 // Upload tokens are UUIDs and are removed as soon as each request settles.
 // Keeping the short lived abort registry outside React state lets the editor
 // pass cancellation into its Tiptap extensions without making mutable request
 // state part of the render path.
 const activeUploadControllers = new Map<string, AbortController>();
 const failedUploadFiles = new Map<string, File>();
-
-function withEditorBlockIds(input: PageLayout): PageLayout {
-  const assign = (inputBlock: PageBlock): PageBlock => {
-    const block = pageBlockSchema.parse(inputBlock);
-    const id =
-      "id" in block && block.id ? block.id : globalThis.crypto.randomUUID();
-    if (block.type !== "collapsible") return { ...block, id };
-    return {
-      ...block,
-      id,
-      blocks: block.blocks.map((child) => assign(child)),
-    } as PageBlock;
-  };
-  return {
-    blocks: input.blocks.map((block) => assign(block)),
-  };
-}
 
 function editableDocument(layout: InternalPageEditorProps["layout"]) {
   const document = pageLayoutToTiptap(withEditorBlockIds(layout));
@@ -125,12 +146,186 @@ function editableDocument(layout: InternalPageEditorProps["layout"]) {
     : { type: "doc" as const, content: [{ type: "paragraph" }] };
 }
 
+function isPageBlockNode(node: ProseMirrorNode): boolean {
+  return (
+    node.type.name === "paragraph" ||
+    node.type.name === "heading" ||
+    node.type.name === "bulletList" ||
+    node.type.name === "orderedList" ||
+    node.type.name === pageEditorNodeNames.divider ||
+    node.type.name === pageEditorNodeNames.callout ||
+    node.type.name === pageEditorNodeNames.view ||
+    node.type.name === pageEditorNodeNames.image ||
+    node.type.name === pageEditorNodeNames.collapsible ||
+    node.type.name === pageEditorNodeNames.legacy
+  );
+}
+
+/**
+ * Tiptap creates new paragraphs and headings with their default null block ID.
+ * Assigning an ID in the first transaction keeps an edit stable while a save
+ * is in flight, so a later acknowledgement cannot cause the same block to be
+ * treated as a new object again.
+ */
+function ensureEditorBlockIds(editor: Editor): void {
+  const transaction = editor.state.tr;
+  let changed = false;
+  editor.state.doc.descendants((node, position, parent) => {
+    if (
+      parent &&
+      (parent.type.name === "doc" ||
+        parent.type.name === pageEditorNodeNames.collapsible) &&
+      isPageBlockNode(node) &&
+      typeof node.attrs?.blockId !== "string"
+    ) {
+      transaction.setNodeMarkup(position, undefined, {
+        ...node.attrs,
+        blockId: globalThis.crypto.randomUUID(),
+      });
+      changed = true;
+    }
+    return true;
+  });
+  if (!changed) return;
+  transaction.setMeta("addToHistory", false);
+  transaction.setMeta("preventUpdate", true);
+  editor.view.dispatch(transaction);
+}
+
+function reconcileCanonicalIds(
+  editor: Editor,
+  candidate: PageLayout,
+  canonical: PageLayout,
+): void {
+  const transaction = editor.state.tr;
+  let changed = false;
+  const reconcile = (
+    node: ProseMirrorNode,
+    candidateBlocks: readonly PageBlock[],
+    canonicalBlocks: readonly PageBlock[],
+    position: number,
+  ): void => {
+    const candidateBlock = candidateBlocks[0];
+    const canonicalBlock = canonicalBlocks[0];
+    const candidateId =
+      candidateBlock && "id" in candidateBlock ? candidateBlock.id : undefined;
+    const canonicalId =
+      canonicalBlock && "id" in canonicalBlock ? canonicalBlock.id : undefined;
+    if (
+      candidateBlock &&
+      canonicalBlock &&
+      canonicalId &&
+      node.attrs?.blockId !== canonicalId &&
+      (node.attrs?.blockId === candidateId || !candidateId)
+    ) {
+      transaction.setNodeMarkup(position, undefined, {
+        ...node.attrs,
+        blockId: canonicalId,
+      });
+      changed = true;
+    }
+    if (node.type.name !== pageEditorNodeNames.collapsible) return;
+    const candidateChildren =
+      candidateBlock?.type === "collapsible" ? candidateBlock.blocks : [];
+    const canonicalChildren =
+      canonicalBlock?.type === "collapsible" ? canonicalBlock.blocks : [];
+    let childOffset = 0;
+    node.forEach((child, offset) => {
+      reconcile(
+        child,
+        candidateChildren.slice(childOffset, childOffset + 1),
+        canonicalChildren.slice(childOffset, childOffset + 1),
+        position + 1 + offset,
+      );
+      childOffset += 1;
+    });
+  };
+
+  let index = 0;
+  editor.state.doc.forEach((node, position) => {
+    reconcile(
+      node,
+      candidate.blocks.slice(index, index + 1),
+      canonical.blocks.slice(index, index + 1),
+      position,
+    );
+    index += 1;
+  });
+  if (!changed) return;
+  transaction.setMeta("addToHistory", false);
+  transaction.setMeta("preventUpdate", true);
+  editor.view.dispatch(transaction);
+}
+
 function topLevelPosition(editor: Editor): number | null {
   const { $from } = editor.state.selection;
-  if ($from.depth === 0) {
-    return editor.state.doc.nodeAt($from.pos) ? $from.pos : null;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth);
+    const parent = $from.node(depth - 1);
+    if (
+      isPageBlockNode(node) &&
+      (parent.type.name === "doc" ||
+        parent.type.name === pageEditorNodeNames.collapsible)
+    ) {
+      return $from.before(depth);
+    }
   }
-  return $from.before(1);
+  return null;
+}
+
+interface SelectedBlockDetails {
+  index: number;
+  node: ProseMirrorNode;
+  parent: ProseMirrorNode;
+  position: number;
+}
+
+function blockAtPosition(
+  editor: Editor,
+  position: number,
+): SelectedBlockDetails | null {
+  let selected: SelectedBlockDetails | null = null;
+  editor.state.doc.descendants((node, nodePosition, parent) => {
+    if (nodePosition !== position || !parent) return true;
+    let index = -1;
+    let cursor = 0;
+    parent.forEach((candidate) => {
+      if (candidate === node) index = cursor;
+      cursor += 1;
+    });
+    if (index >= 0) {
+      selected = {
+        index,
+        node,
+        parent,
+        position: nodePosition,
+      };
+    }
+    return false;
+  });
+  return selected;
+}
+
+function duplicateWithFreshBlockIds(
+  editor: Editor,
+  node: ProseMirrorNode,
+): ProseMirrorNode {
+  const json = node.toJSON() as {
+    attrs?: Record<string, unknown>;
+    content?: { attrs?: Record<string, unknown>; content?: unknown[] }[];
+    [key: string]: unknown;
+  };
+  const assign = (value: typeof json): typeof json => {
+    const next = { ...value };
+    if (next.attrs && typeof next.attrs.blockId === "string") {
+      next.attrs = { ...next.attrs, blockId: globalThis.crypto.randomUUID() };
+    }
+    if (Array.isArray(next.content)) {
+      next.content = next.content.map((child) => assign(child as typeof json));
+    }
+    return next;
+  };
+  return editor.schema.nodeFromJSON(assign(json));
 }
 
 function insertMenuPosition(cursor: {
@@ -164,6 +359,17 @@ function insertMenuPosition(cursor: {
   };
 }
 
+function insertChoiceGroupLabel(
+  choice: InsertChoice,
+  availableViews: readonly { key: string; tableName?: string }[],
+): string | null {
+  if (choice.kind !== "view" || !choice.viewKey) return null;
+  const view = availableViews.find(
+    (candidate) => candidate.key === choice.viewKey,
+  );
+  return view?.tableName ?? "Saved Views";
+}
+
 export function InternalPageEditor({
   applyPageBlockAction,
   availablePages = [],
@@ -188,9 +394,27 @@ export function InternalPageEditor({
   const currentnessRef = useRef(currentness);
   const bodyDirtyRef = useRef(false);
   const bodyRevisionRef = useRef(0);
-  const saveInFlightRef = useRef<Promise<void> | null>(null);
-  const queuedSaveRef = useRef(false);
-  const dirtySinceRef = useRef<number | null>(null);
+  const saveBlockedRef = useRef<"stale" | "error" | null>(null);
+  const candidateRef = useRef<PageDraft | null>(null);
+  const acknowledgedDraftRef = useRef<PageDraft>({
+    layout: withEditorBlockIds(layout),
+    title: initialTitle,
+  });
+  const saveCoordinatorRef = useRef<SerialSaveCoordinator<PageDraft> | null>(
+    null,
+  );
+  const performPageSaveRef = useRef<
+    (input: {
+      candidate: PageDraft;
+      revision: number;
+    }) => Promise<SaveCoordinatorResult<PageDraft>>
+  >(() =>
+    Promise.resolve({
+      canonical: { layout: withEditorBlockIds(layout), title: initialTitle },
+      status: "success",
+    }),
+  );
+  const navigationPendingRef = useRef(false);
   const linkSelectionRef = useRef<{ from: number; to: number } | null>(null);
   const [bodyDirty, setBodyDirty] = useState(false);
   const [currentnessCandidate, setCurrentnessCandidate] = useState(currentness);
@@ -210,11 +434,25 @@ export function InternalPageEditor({
     layout.blocks.length === 0,
   );
   const [checklistForm, setChecklistForm] = useState<{
-    afterBlockId?: string;
+    afterBlockId?: string | null | undefined;
+    completedField?: string | undefined;
+    containerBlockId?: string | undefined;
+    labelField?: string | undefined;
+    mode: "create" | "existing";
     name: string;
+    readOnly?: boolean | undefined;
+    viewKey?: string | undefined;
   } | null>(null);
   const [mode, setMode] = useState<"editing" | "reading">("editing");
-  const [discardReadingPrompt, setDiscardReadingPrompt] = useState(false);
+  const [blockMenuOpen, setBlockMenuOpen] = useState(false);
+  const [conflict, setConflict] = useState<{
+    currentness: typeof currentness;
+    layout: PageLayout;
+    title: string;
+  } | null>(null);
+  const [readingLayout, setReadingLayout] = useState<PageLayout>(() =>
+    withEditorBlockIds(layout),
+  );
   const [selectedBlockPosition, setSelectedBlockPosition] = useState<
     number | null
   >(null);
@@ -229,6 +467,8 @@ export function InternalPageEditor({
   const extensionOptions = useMemo<PageEditorExtensionOptions>(
     () => ({
       businessSlug,
+      pageKey,
+      availableViews,
       cancelUpload,
       onPendingUploadsChange: adjustPendingUploads,
       retryUpload: (token) => {
@@ -273,13 +513,49 @@ export function InternalPageEditor({
       },
       views,
     }),
-    [adjustPendingUploads, businessSlug, cancelUpload, views],
+    [
+      adjustPendingUploads,
+      availableViews,
+      businessSlug,
+      cancelUpload,
+      pageKey,
+      views,
+    ],
   );
   const extensions = useMemo(
     () => createPageEditorExtensions(extensionOptions),
     [extensionOptions],
   );
   const initialDocument = useMemo(() => editableDocument(layout), [layout]);
+
+  const noteCandidate = useCallback(
+    (activeEditor: Editor, nextTitle: string): void => {
+      let nextLayout: PageLayout;
+      try {
+        nextLayout = tiptapToPageLayout(activeEditor.getJSON());
+      } catch {
+        return;
+      }
+      const candidate = { layout: nextLayout, title: nextTitle };
+      candidateRef.current = candidate;
+      setReadingLayout(nextLayout);
+      const bodyChanged =
+        JSON.stringify(nextLayout) !==
+        JSON.stringify(acknowledgedDraftRef.current.layout);
+      bodyDirtyRef.current = bodyChanged;
+      setBodyDirty(bodyChanged);
+      saveCoordinatorRef.current?.update(candidate);
+      if (saveBlockedRef.current) {
+        setStatus(saveBlockedRef.current);
+      } else if (saveCoordinatorRef.current?.inFlight) {
+        setStatus("saving");
+      } else {
+        setStatus("unsaved");
+        setMessage(null);
+      }
+    },
+    [setBodyDirty, setMessage, setReadingLayout, setStatus],
+  );
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -299,13 +575,15 @@ export function InternalPageEditor({
     },
     onUpdate: ({ editor: activeEditor }) => {
       if (suppressUpdatesRef.current) return;
+      suppressUpdatesRef.current = true;
+      try {
+        ensureEditorBlockIds(activeEditor);
+      } finally {
+        suppressUpdatesRef.current = false;
+      }
       bodyRevisionRef.current += 1;
-      bodyDirtyRef.current = true;
-      if (dirtySinceRef.current === null) dirtySinceRef.current = Date.now();
-      setBodyDirty(true);
       setEmptyDocument(activeEditor.isEmpty);
-      setStatus("unsaved");
-      setMessage(null);
+      noteCandidate(activeEditor, titleDraftRef.current);
       const { $from } = activeEditor.state.selection;
       if ($from.parent.type.name !== "paragraph") {
         setInsertMenu((value) => (value?.source === "slash" ? null : value));
@@ -415,7 +693,6 @@ export function InternalPageEditor({
     let cancelled = false;
     queueMicrotask(() => {
       if (!cancelled && !editor.isDestroyed) {
-        // Legacy contract: editor.setEditable(canEdit, false)
         editor.setEditable(canEdit && mode === "editing", false);
       }
     });
@@ -438,25 +715,77 @@ export function InternalPageEditor({
         currentness.expectedBaseVersionId &&
       currentnessCandidate.expectedHeadRevision ===
         currentness.expectedHeadRevision;
+    const hasLocalDraft =
+      bodyDirtyRef.current ||
+      titleDraftRef.current.trim() !== titleRef.current.trim();
+    const latestLayout = withEditorBlockIds(layout);
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
       setLoadedCurrentness(currentness);
+      if (hasLocalDraft && reflectsOwnAction) {
+        // A route refresh after our own acknowledgement can arrive while a
+        // later title/body candidate is still in memory. Keep that candidate
+        // in the editor and advance only the currentness token; replacing it
+        // with the route payload would silently discard the newer edit.
+        setCurrentnessCandidate(currentness);
+        currentnessRef.current = currentness;
+        return;
+      }
+      if (hasLocalDraft) {
+        const latestMatchesAcknowledged =
+          initialTitle.trim() === acknowledgedDraftRef.current.title.trim() &&
+          pageLayoutEquals(latestLayout, acknowledgedDraftRef.current.layout);
+        if (latestMatchesAcknowledged) {
+          // Only the workspace head moved. The Page itself is still the
+          // acknowledged baseline, so its currentness can be safely rebased.
+          setCurrentnessCandidate(currentness);
+          currentnessRef.current = currentness;
+          saveCoordinatorRef.current?.rebase();
+          if (!saveBlockedRef.current) {
+            setStatus("unsaved");
+            setMessage(null);
+          }
+        } else {
+          // Keep both candidates visible. The latest route payload is never
+          // adopted while local Page work is still unacknowledged.
+          setConflict({
+            currentness,
+            layout: latestLayout,
+            title: initialTitle,
+          });
+          saveBlockedRef.current = "stale";
+          saveCoordinatorRef.current?.block("stale");
+          setStatus("stale");
+          setMessage(
+            "This Page changed elsewhere. Choose Use latest or Keep my version before saving.",
+          );
+        }
+        return;
+      }
       setCurrentnessCandidate(currentness);
       currentnessRef.current = currentness;
       titleRef.current = initialTitle;
       titleDraftRef.current = initialTitle;
       setTitle(initialTitle);
       setTitleDraft(initialTitle);
-      if (bodyDirty && !reflectsOwnAction) {
-        setStatus("stale");
-        setMessage(
-          "Things changed since you opened this Page. Your draft is still here; review it, then save again.",
-        );
-      } else {
-        setStatus(bodyDirty ? "unsaved" : "saved");
-        setMessage(null);
+      acknowledgedDraftRef.current = {
+        layout: latestLayout,
+        title: initialTitle,
+      };
+      candidateRef.current = acknowledgedDraftRef.current;
+      setReadingLayout(latestLayout);
+      if (editor && !editor.isDestroyed) {
+        suppressUpdatesRef.current = true;
+        editor.commands.setContent(editableDocument(latestLayout), {
+          emitUpdate: false,
+        });
+        suppressUpdatesRef.current = false;
       }
+      saveBlockedRef.current = null;
+      saveCoordinatorRef.current?.acknowledge(acknowledgedDraftRef.current);
+      setStatus("saved");
+      setMessage(null);
     });
     return () => {
       cancelled = true;
@@ -465,52 +794,20 @@ export function InternalPageEditor({
     bodyDirty,
     currentness,
     currentnessCandidate,
+    editor,
     initialTitle,
+    layout,
     loadedCurrentness,
   ]);
 
-  useEffect(() => {
-    if (!editor || bodyDirty) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled || editor.isDestroyed) return;
-      suppressUpdatesRef.current = true;
-      editor.commands.setContent(editableDocument(layout), {
-        emitUpdate: false,
-      });
-      suppressUpdatesRef.current = false;
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [bodyDirty, editor, layout, loadedCurrentness]);
-
-  const savePage = useCallback(async (): Promise<void> => {
-    if (
-      !editor ||
-      (!bodyDirtyRef.current &&
-        titleDraftRef.current.trim() === titleRef.current)
-    ) {
-      return;
-    }
-    if (saveInFlightRef.current) {
-      queuedSaveRef.current = true;
-      return;
-    }
-    const savedRevision = bodyRevisionRef.current;
-    const savedTitle = titleDraftRef.current.trim();
-    const run = (async (): Promise<void> => {
-      let candidate;
-      try {
-        candidate = tiptapToPageLayout(editor.getJSON());
-      } catch {
-        setStatus("error");
-        setMessage(
-          "This Page contains content Lenni cannot save safely. Remove nested or unsupported content and try again.",
-        );
-        return;
-      }
-      setStatus("saving");
+  const performPageSave = useCallback(
+    async ({
+      candidate,
+      revision,
+    }: {
+      candidate: PageDraft;
+      revision: number;
+    }): Promise<SaveCoordinatorResult<PageDraft>> => {
       setMessage(null);
       let result;
       try {
@@ -519,41 +816,55 @@ export function InternalPageEditor({
           intent: {
             action: "save_page_layout",
             pageKey,
-            layout: candidate,
-            ...(savedTitle !== titleRef.current ? { title: savedTitle } : {}),
+            layout: candidate.layout,
+            ...(candidate.title.trim() !== titleRef.current.trim()
+              ? { title: candidate.title.trim() }
+              : {}),
           },
         });
       } catch {
-        setStatus("error");
-        setMessage(
-          "The Page could not be saved. Check your connection and try again.",
-        );
-        return;
+        const message =
+          "The Page could not be saved. Check your connection and try again.";
+        setMessage(message);
+        return { message, status: "error" };
       }
       if (result.status !== "success") {
-        setStatus(result.status === "stale" ? "stale" : "error");
         setMessage(result.message);
-        return;
+        if (result.status === "stale") routerRef.current.refresh();
+        return {
+          message: result.message,
+          status: result.status === "stale" ? "stale" : "error",
+        };
       }
+
+      const canonical: PageDraft = {
+        layout: withEditorBlockIds(result.layout),
+        title: result.title,
+      };
+      acknowledgedDraftRef.current = canonical;
       currentnessRef.current = result.currentness;
       setCurrentnessCandidate(result.currentness);
-      const changedWhileSaving = bodyRevisionRef.current !== savedRevision;
+      const changedWhileSaving = bodyRevisionRef.current !== revision;
       const titleChangedWhileSaving =
-        titleDraftRef.current.trim() !== savedTitle;
-      bodyDirtyRef.current = changedWhileSaving;
-      setBodyDirty(changedWhileSaving);
-      if (!titleChangedWhileSaving) {
-        titleRef.current = result.title;
-        titleDraftRef.current = result.title;
-        setTitle(result.title);
-        setTitleDraft(result.title);
-      }
+        titleDraftRef.current.trim() !== candidate.title.trim();
       if (!changedWhileSaving && !titleChangedWhileSaving) {
-        dirtySinceRef.current = null;
+        reconcileCanonicalIds(editor!, candidate.layout, canonical.layout);
+        candidateRef.current = canonical;
+        setReadingLayout(canonical.layout);
+        bodyDirtyRef.current = false;
+        setBodyDirty(false);
+        titleRef.current = canonical.title;
+        titleDraftRef.current = canonical.title;
+        setTitle(canonical.title);
+        setTitleDraft(canonical.title);
+      } else {
+        bodyDirtyRef.current =
+          JSON.stringify(candidateRef.current?.layout) !==
+          JSON.stringify(canonical.layout);
+        setBodyDirty(bodyDirtyRef.current);
       }
-      setStatus(
-        changedWhileSaving || titleChangedWhileSaving ? "unsaved" : "saved",
-      );
+      setConflict(null);
+      saveBlockedRef.current = null;
       setMessage(null);
       if (
         !changedWhileSaving &&
@@ -561,72 +872,115 @@ export function InternalPageEditor({
         pendingViewResolutionRef.current
       ) {
         pendingViewResolutionRef.current = false;
-        // The saved layout now contains the newly selected View. Refresh the
-        // server route once so its tenant checked bundle is resolved without
-        // loading every available View into the initial Page shell.
         routerRef.current.refresh();
       }
-    })();
-    saveInFlightRef.current = run;
-    try {
-      await run;
-    } finally {
-      saveInFlightRef.current = null;
-      if (queuedSaveRef.current) {
-        queuedSaveRef.current = false;
-        if (
-          bodyDirtyRef.current ||
-          titleDraftRef.current.trim() !== titleRef.current
-        ) {
-          setStatus("unsaved");
-        }
-      }
+      return { canonical, status: "success" };
+    },
+    [applyPageBlockAction, editor, pageKey],
+  );
+  useEffect(() => {
+    performPageSaveRef.current = performPageSave;
+  }, [performPageSave]);
+
+  const savePage = useCallback(async (): Promise<boolean> => {
+    if (!editor || !saveCoordinatorRef.current) return false;
+    const result = await saveCoordinatorRef.current.flush();
+    if (result?.status === "error" || result?.status === "stale") {
+      saveBlockedRef.current = result.status;
+      return false;
     }
-  }, [
-    applyPageBlockAction,
-    editor,
-    pageKey,
-    setBodyDirty,
-    setCurrentnessCandidate,
-    setMessage,
-    setStatus,
-    setTitle,
-    setTitleDraft,
-  ]);
+    return !saveCoordinatorRef.current.hasUnacknowledgedWork;
+  }, [editor]);
+
+  const retrySave = useCallback(async (): Promise<void> => {
+    const result = await saveCoordinatorRef.current?.retry();
+    if (result?.status === "error" || result?.status === "stale") {
+      saveBlockedRef.current = result.status;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!editor || saveCoordinatorRef.current) return;
+    let initialCandidate: PageDraft;
+    try {
+      initialCandidate = {
+        layout: tiptapToPageLayout(editor.getJSON()),
+        title: titleRef.current,
+      };
+    } catch {
+      initialCandidate = {
+        layout: withEditorBlockIds(layout),
+        title: titleRef.current,
+      };
+    }
+    const pendingCandidate = candidateRef.current;
+    if (!pendingCandidate) {
+      acknowledgedDraftRef.current = initialCandidate;
+      candidateRef.current = initialCandidate;
+      setReadingLayout(initialCandidate.layout);
+    }
+    const coordinator = new SerialSaveCoordinator<PageDraft>({
+      equals: pageDraftEquals,
+      initialValue: acknowledgedDraftRef.current,
+      onStateChange: (next) => {
+        if (next.status === "error" || next.status === "stale") {
+          saveBlockedRef.current = next.status;
+        } else if (next.status === "saved") {
+          saveBlockedRef.current = null;
+        }
+        setStatus(next.status);
+      },
+      save: (input) => performPageSaveRef.current(input),
+    });
+    saveCoordinatorRef.current = coordinator;
+    if (
+      pendingCandidate &&
+      !pageDraftEquals(pendingCandidate, acknowledgedDraftRef.current)
+    ) {
+      coordinator.update(pendingCandidate);
+    }
+    return () => {
+      coordinator.dispose();
+      saveCoordinatorRef.current = null;
+    };
+  }, [editor, layout]);
 
   const titleDirty = titleDraft.trim() !== title;
 
-  useEffect(() => {
-    if (
-      !editor ||
-      (!bodyDirty && !titleDirty) ||
-      !canEdit ||
-      mode !== "editing" ||
-      status === "saving" ||
-      status === "stale" ||
-      status === "error"
-    ) {
-      return;
-    }
-    const dirtySince = dirtySinceRef.current ?? Date.now();
-    const elapsed = Math.max(0, Date.now() - dirtySince);
-    const timeout = window.setTimeout(
-      () => void savePage(),
-      Math.max(0, 1_500 - elapsed),
-    );
-    const maxTimeout = window.setTimeout(
-      () => void savePage(),
-      Math.max(0, 10_000 - elapsed),
-    );
-    return () => {
-      window.clearTimeout(timeout);
-      window.clearTimeout(maxTimeout);
-    };
-  }, [bodyDirty, canEdit, editor, mode, savePage, status, titleDirty]);
+  const flushBeforeNavigation = useCallback(
+    async (href: string): Promise<void> => {
+      if (navigationPendingRef.current) return;
+      navigationPendingRef.current = true;
+      if (pendingUploads > 0) {
+        navigationPendingRef.current = false;
+        setMessage(
+          "Finish the image upload before leaving this Page. Your draft is still here.",
+        );
+        return;
+      }
+      const saved = await savePage();
+      navigationPendingRef.current = false;
+      if (!saved) {
+        setMessage(
+          "Save the current Page before opening that workspace. Your draft is still here.",
+        );
+        return;
+      }
+      routerRef.current.push(href);
+    },
+    [pendingUploads, savePage, setMessage],
+  );
+  const handleInternalNavigation = useCallback(
+    (href: string): void => {
+      void flushBeforeNavigation(href);
+    },
+    [flushBeforeNavigation],
+  );
 
   useUnsavedNavigationWarning(
     bodyDirty || titleDirty || pendingUploads > 0 || status === "saving",
     "Leave this Page? Your unsaved Page changes will be lost.",
+    handleInternalNavigation,
   );
 
   const openLinkEditor = (): void => {
@@ -803,7 +1157,69 @@ export function InternalPageEditor({
   const insertChoice = (choice: InsertChoice): void => {
     if (!editor || !insertMenu) return;
     if (choice.kind === "checklist") {
-      setChecklistForm({ name: "" });
+      let afterBlockId: string | null | undefined;
+      let containerBlockId: string | undefined;
+      if (insertMenu.source === "gutter") {
+        const selected =
+          selectedBlockPositionRef.current ?? selectedBlockPosition;
+        const node =
+          selected === null ? null : editor.state.doc.nodeAt(selected);
+        const id = node?.attrs?.blockId;
+        let selectedIndex = -1;
+        let cursor = 0;
+        editor.state.doc.forEach((_candidate, position) => {
+          if (position === selected) selectedIndex = cursor;
+          cursor += 1;
+        });
+        afterBlockId =
+          typeof id === "string"
+            ? id
+            : selectedIndex >= 0
+              ? `legacy:${selectedIndex}`
+              : undefined;
+      } else {
+        const { $from } = editor.state.selection;
+        const containerDepth = Array.from(
+          { length: $from.depth },
+          (_, index) => $from.depth - index,
+        ).find(
+          (depth) =>
+            $from.node(depth).type.name === pageEditorNodeNames.collapsible,
+        );
+        const currentDepth = containerDepth ? containerDepth + 1 : 1;
+        const position = $from.before(currentDepth);
+        const current = editor.state.doc.nodeAt(position);
+        const parent = $from.node(currentDepth - 1);
+        const currentIndex = $from.index(currentDepth - 1);
+        if (containerDepth) {
+          const container = $from.node(containerDepth);
+          if (typeof container.attrs?.blockId === "string") {
+            containerBlockId = container.attrs.blockId;
+          }
+        }
+        const previousId =
+          currentIndex > 0
+            ? parent.child(currentIndex - 1).attrs?.blockId
+            : undefined;
+        afterBlockId =
+          currentIndex > 0
+            ? typeof previousId === "string"
+              ? previousId
+              : `legacy:${currentIndex - 1}`
+            : undefined;
+        if (currentIndex === 0) afterBlockId = null;
+        if (current && current.type.name === "paragraph") {
+          editor.view.dispatch(
+            editor.state.tr.delete(position, position + current.nodeSize),
+          );
+        }
+      }
+      setChecklistForm({
+        ...(afterBlockId !== undefined ? { afterBlockId } : {}),
+        ...(containerBlockId ? { containerBlockId } : {}),
+        mode: "create",
+        name: "",
+      });
       setInsertMenu(null);
       setInsertIndex(0);
       return;
@@ -857,7 +1273,11 @@ export function InternalPageEditor({
                         }
                       : {
                           type: pageEditorNodeNames.view,
-                          attrs: { viewKey: choice.viewKey },
+                          attrs: {
+                            checklist: null,
+                            readOnly: false,
+                            viewKey: choice.viewKey,
+                          },
                         };
     if (choice.kind === "view") {
       pendingViewResolutionRef.current = true;
@@ -906,7 +1326,7 @@ export function InternalPageEditor({
       openLinkEditor();
       return;
     }
-    if (!insertMenu || insertMenu.source !== "slash") return;
+    if (!insertMenu) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setInsertIndex((value) =>
@@ -946,25 +1366,83 @@ export function InternalPageEditor({
     window.setTimeout(() => setUndoAvailable(false), 6_000);
   };
 
+  const selectedBlock = useCallback(() => {
+    if (!editor) return null;
+    const position =
+      selectedBlockPositionRef.current ??
+      topLevelPosition(editor) ??
+      selectedBlockPosition;
+    if (position === null || position === undefined) return null;
+    return blockAtPosition(editor, position);
+  }, [editor, selectedBlockPosition]);
+
+  const selectedBlockDetails = useMemo(() => {
+    if (!editor || selectedBlockPosition === null) return null;
+    return blockAtPosition(editor, selectedBlockPosition);
+  }, [editor, selectedBlockPosition]);
+  const selectedBlockIndex = selectedBlockDetails?.index ?? null;
+  const selectedBlockCount = selectedBlockDetails?.parent.childCount ?? null;
+
+  const duplicateSelected = useCallback((): void => {
+    const selected = selectedBlock();
+    if (!selected || !editor) return;
+    const duplicate = duplicateWithFreshBlockIds(editor, selected.node);
+    const transaction = editor.state.tr.insert(
+      selected.position + selected.node.nodeSize,
+      duplicate,
+    );
+    transaction.setMeta("addToHistory", true);
+    editor.view.dispatch(transaction);
+    setBlockMenuOpen(false);
+  }, [editor, selectedBlock]);
+
+  const moveSelected = useCallback(
+    (direction: "up" | "down"): void => {
+      const selected = selectedBlock();
+      if (!selected || !editor) return;
+      if (
+        (direction === "up" && selected.index <= 0) ||
+        (direction === "down" &&
+          selected.index >= selected.parent.childCount - 1)
+      ) {
+        return;
+      }
+      const adjacent = selected.parent.child(
+        direction === "up" ? selected.index - 1 : selected.index + 1,
+      );
+      const transaction = editor.state.tr.delete(
+        selected.position,
+        selected.position + selected.node.nodeSize,
+      );
+      const insertionPosition =
+        direction === "up"
+          ? selected.position - adjacent.nodeSize
+          : transaction.mapping.map(
+              selected.position + selected.node.nodeSize,
+              1,
+            ) + adjacent.nodeSize;
+      transaction.insert(insertionPosition, selected.node);
+      transaction.setMeta("addToHistory", true);
+      editor.view.dispatch(transaction);
+      setBlockMenuOpen(false);
+    },
+    [editor, selectedBlock],
+  );
+
   const requestReadingMode = (): void => {
     if (!canEdit) return;
-    if (bodyDirty || titleDirty || pendingUploads > 0) {
-      setDiscardReadingPrompt(true);
+    if (pendingUploads > 0) {
+      setMessage("Finish the image upload before opening Reading mode.");
       return;
     }
-    setMode("reading");
-  };
-
-  const confirmReadingMode = (): void => {
-    setDiscardReadingPrompt(false);
-    bodyDirtyRef.current = false;
-    dirtySinceRef.current = null;
-    setBodyDirty(false);
-    titleDraftRef.current = titleRef.current;
-    setTitleDraft(titleRef.current);
-    setMode("reading");
-    setStatus("saved");
-    setMessage(null);
+    void (async () => {
+      if (bodyDirty || titleDirty || saveCoordinatorRef.current?.inFlight) {
+        const saved = await savePage();
+        if (!saved) return;
+      }
+      setMode("reading");
+      setMessage(null);
+    })();
   };
 
   const pasteImage = (event: React.ClipboardEvent<HTMLDivElement>): void => {
@@ -998,7 +1476,10 @@ export function InternalPageEditor({
     const lifecycleAction =
       action === "duplicate" ? duplicatePageAction : archivePageAction;
     if (!lifecycleAction || pendingUploads > 0) return;
-    await savePage();
+    if (!(await savePage())) {
+      setMessage("Save the current Page before managing it.");
+      return;
+    }
     if (
       bodyDirtyRef.current ||
       titleDraftRef.current.trim() !== titleRef.current
@@ -1033,11 +1514,114 @@ export function InternalPageEditor({
     }
   };
 
+  const useLatestConflict = (): void => {
+    if (!conflict || !editor) return;
+    const latest = {
+      layout: withEditorBlockIds(conflict.layout),
+      title: conflict.title,
+    };
+    suppressUpdatesRef.current = true;
+    editor.commands.setContent(editableDocument(latest.layout), {
+      emitUpdate: false,
+    });
+    suppressUpdatesRef.current = false;
+    acknowledgedDraftRef.current = latest;
+    candidateRef.current = latest;
+    setReadingLayout(latest.layout);
+    bodyDirtyRef.current = false;
+    setBodyDirty(false);
+    titleRef.current = latest.title;
+    titleDraftRef.current = latest.title;
+    setTitle(latest.title);
+    setTitleDraft(latest.title);
+    currentnessRef.current = conflict.currentness;
+    setCurrentnessCandidate(conflict.currentness);
+    saveBlockedRef.current = null;
+    saveCoordinatorRef.current?.acknowledge(latest);
+    setConflict(null);
+    setStatus("saved");
+    setMessage(null);
+  };
+
+  const keepMyConflict = (): void => {
+    if (!conflict) return;
+    currentnessRef.current = conflict.currentness;
+    setCurrentnessCandidate(conflict.currentness);
+    setConflict(null);
+    saveBlockedRef.current = null;
+    void retrySave();
+  };
+
+  const readingViews = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(views).map(([key, embed]) => [key, embed.bundle]),
+      ),
+    [views],
+  );
+  const readingTables = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(views).flatMap(([key, embed]) =>
+          embed.table ? [[key, embed.table]] : [],
+        ),
+      ) as Readonly<Record<string, PageEditorTableEmbed>>,
+    [views],
+  );
+  const editorRuntimeContext = useMemo(
+    () => ({ availableViews, views }),
+    [availableViews, views],
+  );
+  const checklistViews = useMemo(
+    () =>
+      availableViews.filter(
+        (view) =>
+          view.viewType === "table" &&
+          view.checklistFields?.some((field) => field.kind === "text") &&
+          view.checklistFields?.some((field) => field.kind === "boolean"),
+      ),
+    [availableViews],
+  );
+  const selectedChecklistView =
+    checklistForm?.mode === "existing"
+      ? availableViews.find((view) => view.key === checklistForm.viewKey)
+      : undefined;
+  const selectedChecklistLabelField =
+    selectedChecklistView?.checklistFields?.find(
+      (field) => field.key === checklistForm?.labelField,
+    );
+  const selectedChecklistCompletedField =
+    selectedChecklistView?.checklistFields?.find(
+      (field) => field.key === checklistForm?.completedField,
+    );
+  const selectedChecklistNeedsReadOnly = Boolean(
+    selectedChecklistLabelField?.editable === false ||
+    selectedChecklistCompletedField?.editable === false,
+  );
+
   return (
     <section
       className="page-editor-shell page-editor-internal page-document-editor"
       data-can-edit={canEdit ? "true" : "false"}
       data-page-mode={mode}
+      onClickCapture={(event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const anchor = target.closest("a[href]");
+        if (!(anchor instanceof HTMLAnchorElement)) return;
+        const href = anchor.getAttribute("href");
+        if (!href || !href.startsWith("/")) return;
+        if (
+          !bodyDirtyRef.current &&
+          titleDraftRef.current.trim() === titleRef.current.trim() &&
+          pendingUploads === 0 &&
+          !saveCoordinatorRef.current?.inFlight
+        ) {
+          return;
+        }
+        event.preventDefault();
+        void flushBeforeNavigation(href);
+      }}
       onKeyDown={handleEditorKeyDown}
     >
       <div className="page-editor-document">
@@ -1047,15 +1631,14 @@ export function InternalPageEditor({
               <input
                 aria-label="Page name"
                 className="page-editor-title-input page-editor-title-inline"
+                autoFocus
                 maxLength={120}
+                onFocus={(event) => event.currentTarget.select()}
                 onChange={(event) => {
                   const nextTitle = event.currentTarget.value;
                   titleDraftRef.current = nextTitle;
-                  if (dirtySinceRef.current === null)
-                    dirtySinceRef.current = Date.now();
                   setTitleDraft(nextTitle);
-                  setStatus("unsaved");
-                  setMessage(null);
+                  if (editor) noteCandidate(editor, nextTitle);
                 }}
                 value={titleDraft}
               />
@@ -1128,16 +1711,18 @@ export function InternalPageEditor({
             {status === "stale" ? (
               <button
                 className="page-editor-retry"
-                onClick={() => router.refresh()}
+                onClick={() =>
+                  conflict ? keepMyConflict() : routerRef.current.refresh()
+                }
                 type="button"
               >
-                Reload latest setup
+                {conflict ? "Keep my version" : "Reload latest setup"}
               </button>
             ) : null}
             {status === "error" ? (
               <button
                 className="page-editor-retry"
-                onClick={() => void savePage()}
+                onClick={() => void retrySave()}
                 type="button"
               >
                 Try again
@@ -1162,28 +1747,31 @@ export function InternalPageEditor({
           </p>
         ) : null}
 
-        {discardReadingPrompt ? (
+        {conflict ? (
           <div
-            aria-label="Discard unfinished changes"
-            className="page-editor-confirm-popover"
+            aria-label="Page changed elsewhere"
+            className="page-editor-conflict-popover"
             role="dialog"
           >
-            <strong>Read the saved Page?</strong>
-            <p>Your unfinished changes will stay out of Reading mode.</p>
+            <strong>This Page changed elsewhere</strong>
+            <p>
+              Your draft is preserved. Use the latest Page to replace your
+              draft, or keep your version and save it as a new revision.
+            </p>
             <div className="page-editor-confirm-actions">
               <button
                 className="button button-small"
-                onClick={confirmReadingMode}
+                onClick={useLatestConflict}
                 type="button"
               >
-                Discard and read
+                Use latest
               </button>
               <button
                 className="button button-secondary button-small"
-                onClick={() => setDiscardReadingPrompt(false)}
+                onClick={keepMyConflict}
                 type="button"
               >
-                Keep editing
+                Keep my version
               </button>
             </div>
           </div>
@@ -1224,6 +1812,28 @@ export function InternalPageEditor({
                 >
                   Link
                 </button>
+                {editor.isActive("heading") ? (
+                  <label className="page-editor-heading-level-control">
+                    <span className="editor-sr-only">Heading level</span>
+                    <select
+                      aria-label="Heading level"
+                      onChange={(event) =>
+                        editor
+                          .chain()
+                          .focus()
+                          .setNode("heading", {
+                            level: Number(event.currentTarget.value),
+                          })
+                          .run()
+                      }
+                      value={String(editor.getAttributes("heading").level ?? 2)}
+                    >
+                      <option value="1">Heading 1</option>
+                      <option value="2">Heading 2</option>
+                      <option value="3">Heading 3</option>
+                    </select>
+                  </label>
+                ) : null}
               </BubbleMenu>
               <DragHandle
                 className="page-document-gutter"
@@ -1263,6 +1873,54 @@ export function InternalPageEditor({
                 >
                   ⋮⋮
                 </button>
+                <details
+                  className="page-editor-block-actions"
+                  onToggle={(event) =>
+                    setBlockMenuOpen(event.currentTarget.open)
+                  }
+                  open={blockMenuOpen}
+                >
+                  <summary aria-label="Block actions">•••</summary>
+                  <div className="page-editor-block-menu" role="menu">
+                    <button
+                      disabled={
+                        selectedBlockIndex === null || selectedBlockIndex === 0
+                      }
+                      onClick={() => moveSelected("up")}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Move up
+                    </button>
+                    <button
+                      disabled={
+                        selectedBlockIndex === null ||
+                        selectedBlockCount === null ||
+                        selectedBlockIndex >= selectedBlockCount - 1
+                      }
+                      onClick={() => moveSelected("down")}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Move down
+                    </button>
+                    <button
+                      onClick={duplicateSelected}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Duplicate block
+                    </button>
+                    <button
+                      className="page-editor-block-remove"
+                      onClick={removeSelected}
+                      role="menuitem"
+                      type="button"
+                    >
+                      Remove block
+                    </button>
+                  </div>
+                </details>
                 <button
                   aria-label="Delete block"
                   onClick={removeSelected}
@@ -1297,12 +1955,23 @@ export function InternalPageEditor({
                 .run();
             }}
           >
-            <EditorContent
-              editor={editor}
-              onPaste={pasteImage}
-              onDrop={dropImage}
-            />
-            {/* <EditorContent editor={editor} /> preserves the stable editor contract. */}
+            {mode === "reading" ? (
+              <PageRenderer
+                businessSlug={businessSlug}
+                layout={readingLayout}
+                pageKey={pageKey}
+                tableEmbeds={readingTables}
+                views={readingViews}
+              />
+            ) : (
+              <PageEditorRuntimeContext.Provider value={editorRuntimeContext}>
+                <EditorContent
+                  editor={editor}
+                  onPaste={pasteImage}
+                  onDrop={dropImage}
+                />
+              </PageEditorRuntimeContext.Provider>
+            )}
           </div>
 
           {canEdit && mode === "editing" && emptyDocument && !insertMenu ? (
@@ -1320,7 +1989,7 @@ export function InternalPageEditor({
               {createChecklistAction ? (
                 <button
                   className="button button-secondary button-small"
-                  onClick={() => setChecklistForm({ name: "" })}
+                  onClick={() => setChecklistForm({ mode: "create", name: "" })}
                   type="button"
                 >
                   Add a checklist
@@ -1362,20 +2031,39 @@ export function InternalPageEditor({
                 </div>
               )}
               <div className="page-slash-menu-options">
-                {filteredChoices.map((choice, index) => (
-                  <button
-                    aria-selected={insertIndex === index}
-                    className={insertIndex === index ? "is-active" : ""}
-                    key={choice.id}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => insertChoice(choice)}
-                    role="option"
-                    type="button"
-                  >
-                    <strong>{choice.label}</strong>
-                    <span>{choice.description}</span>
-                  </button>
-                ))}
+                {filteredChoices.map((choice, index) => {
+                  const groupLabel = insertChoiceGroupLabel(
+                    choice,
+                    availableViews,
+                  );
+                  const previousGroupLabel =
+                    index > 0
+                      ? insertChoiceGroupLabel(
+                          filteredChoices[index - 1]!,
+                          availableViews,
+                        )
+                      : null;
+                  return (
+                    <Fragment key={choice.id}>
+                      {groupLabel && groupLabel !== previousGroupLabel ? (
+                        <p className="page-editor-choice-group-label">
+                          {groupLabel}
+                        </p>
+                      ) : null}
+                      <button
+                        aria-selected={insertIndex === index}
+                        className={insertIndex === index ? "is-active" : ""}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => insertChoice(choice)}
+                        role="option"
+                        type="button"
+                      >
+                        <strong>{choice.label}</strong>
+                        <span>{choice.description}</span>
+                      </button>
+                    </Fragment>
+                  );
+                })}
                 {filteredChoices.length === 0 ? (
                   <p>No matching Page blocks.</p>
                 ) : null}
@@ -1456,24 +2144,26 @@ export function InternalPageEditor({
             </form>
           ) : null}
 
-          {canEdit &&
-          mode === "editing" &&
-          checklistForm &&
-          createChecklistAction ? (
+          {canEdit && mode === "editing" && checklistForm ? (
             <form
-              aria-label="Create checklist"
+              aria-label="Add checklist"
               className="page-checklist-create-popover"
               onSubmit={async (event) => {
                 event.preventDefault();
+                const isExisting = checklistForm.mode === "existing";
                 const name = checklistForm.name.trim();
-                if (!name) return;
-                await savePage();
                 if (
-                  bodyDirtyRef.current ||
-                  titleDraftRef.current.trim() !== titleRef.current
+                  (!isExisting && (!name || !createChecklistAction)) ||
+                  (isExisting &&
+                    (!checklistForm.viewKey ||
+                      !checklistForm.labelField ||
+                      !checklistForm.completedField))
                 ) {
+                  return;
+                }
+                if (!(await savePage())) {
                   setMessage(
-                    "Save the current Page before creating a checklist.",
+                    "Save the current Page before adding a checklist.",
                   );
                   return;
                 }
@@ -1481,14 +2171,43 @@ export function InternalPageEditor({
                 setMessage(null);
                 let result;
                 try {
-                  result = await createChecklistAction({
-                    currentness: currentnessRef.current,
-                    name,
-                    pageKey,
-                    ...(checklistForm.afterBlockId
-                      ? { afterBlockId: checklistForm.afterBlockId }
-                      : {}),
-                  });
+                  result = isExisting
+                    ? await applyPageBlockAction({
+                        currentness: currentnessRef.current,
+                        intent: {
+                          action: "add_page_block",
+                          afterBlockId: checklistForm.afterBlockId,
+                          block: {
+                            type: "view",
+                            viewKey: checklistForm.viewKey!,
+                            ...(checklistForm.readOnly
+                              ? { readOnly: true }
+                              : {}),
+                            checklist: {
+                              completedField: checklistForm.completedField!,
+                              labelField: checklistForm.labelField!,
+                            },
+                          },
+                          ...(checklistForm.containerBlockId
+                            ? {
+                                containerBlockId:
+                                  checklistForm.containerBlockId,
+                              }
+                            : {}),
+                          pageKey,
+                        },
+                      })
+                    : await createChecklistAction!({
+                        currentness: currentnessRef.current,
+                        name,
+                        pageKey,
+                        ...(checklistForm.afterBlockId !== undefined
+                          ? { afterBlockId: checklistForm.afterBlockId }
+                          : {}),
+                        ...(checklistForm.containerBlockId
+                          ? { containerBlockId: checklistForm.containerBlockId }
+                          : {}),
+                      });
                 } catch {
                   setStatus("error");
                   setMessage("The checklist could not be created. Try again.");
@@ -1501,38 +2220,223 @@ export function InternalPageEditor({
                 }
                 currentnessRef.current = result.currentness;
                 setCurrentnessCandidate(result.currentness);
+                acknowledgedDraftRef.current = {
+                  layout: withEditorBlockIds(result.layout),
+                  title: result.title,
+                };
+                candidateRef.current = acknowledgedDraftRef.current;
+                saveCoordinatorRef.current?.acknowledge(
+                  acknowledgedDraftRef.current,
+                );
+                bodyDirtyRef.current = false;
+                setBodyDirty(false);
                 setChecklistForm(null);
                 setStatus("saved");
                 router.refresh();
               }}
               role="dialog"
             >
-              <strong>Create a live checklist</strong>
+              <strong>
+                {checklistForm.mode === "existing"
+                  ? "Use an existing Table"
+                  : "Create a live checklist"}
+              </strong>
               <p>Items stay shared with the rest of your workspace.</p>
-              <label>
-                <span>Checklist name</span>
-                <input
-                  aria-label="Checklist name"
-                  autoFocus
-                  maxLength={120}
-                  onChange={(event) => {
-                    const name = event.currentTarget.value;
-                    setChecklistForm((value) =>
-                      value ? { ...value, name } : value,
+              {checklistForm.mode === "create" ? (
+                <label>
+                  <span>Checklist name</span>
+                  <input
+                    aria-label="Checklist name"
+                    autoFocus
+                    maxLength={120}
+                    onChange={(event) => {
+                      const name = event.currentTarget.value;
+                      setChecklistForm((value) =>
+                        value ? { ...value, name } : value,
+                      );
+                    }}
+                    placeholder="Weekly opening tasks"
+                    value={checklistForm.name}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label>
+                    <span>Table or saved View</span>
+                    <select
+                      aria-label="Checklist Table"
+                      autoFocus
+                      onChange={(event) => {
+                        const view = availableViews.find(
+                          (candidate) =>
+                            candidate.key === event.currentTarget.value,
+                        );
+                        const textField = view?.checklistFields?.find(
+                          (field) => field.kind === "text",
+                        );
+                        const booleanField = view?.checklistFields?.find(
+                          (field) => field.kind === "boolean",
+                        );
+                        setChecklistForm((value) =>
+                          value
+                            ? {
+                                ...value,
+                                completedField: booleanField?.key,
+                                labelField: textField?.key,
+                                viewKey: event.currentTarget.value,
+                              }
+                            : value,
+                        );
+                      }}
+                      value={checklistForm.viewKey ?? ""}
+                    >
+                      <option disabled value="">
+                        Choose a Table
+                      </option>
+                      {checklistViews.map((view) => (
+                        <option key={view.key} value={view.key}>
+                          {view.tableName ?? view.name} · {view.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {checklistViews.length === 0 ? (
+                    <p role="status">
+                      No saved Table has both a text item field and a boolean
+                      completion field.
+                    </p>
+                  ) : null}
+                  {(() => {
+                    const view = availableViews.find(
+                      (candidate) => candidate.key === checklistForm.viewKey,
                     );
-                  }}
-                  placeholder="Weekly opening tasks"
-                  value={checklistForm.name}
-                />
-              </label>
+                    const fields = view?.checklistFields ?? [];
+                    return (
+                      <>
+                        <label>
+                          <span>Item label</span>
+                          <select
+                            aria-label="Checklist label field"
+                            onChange={(event) =>
+                              setChecklistForm((value) =>
+                                value
+                                  ? {
+                                      ...value,
+                                      labelField: event.currentTarget.value,
+                                    }
+                                  : value,
+                              )
+                            }
+                            value={checklistForm.labelField ?? ""}
+                          >
+                            {fields
+                              .filter((field) => field.kind === "text")
+                              .map((field) => (
+                                <option key={field.key} value={field.key}>
+                                  {field.label}
+                                  {field.editable === false
+                                    ? " · read-only"
+                                    : ""}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span>Completion field</span>
+                          <select
+                            aria-label="Checklist completion field"
+                            onChange={(event) =>
+                              setChecklistForm((value) =>
+                                value
+                                  ? {
+                                      ...value,
+                                      completedField: event.currentTarget.value,
+                                    }
+                                  : value,
+                              )
+                            }
+                            value={checklistForm.completedField ?? ""}
+                          >
+                            {fields
+                              .filter((field) => field.kind === "boolean")
+                              .map((field) => (
+                                <option key={field.key} value={field.key}>
+                                  {field.label}
+                                  {field.editable === false
+                                    ? " · read-only"
+                                    : ""}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </>
+                    );
+                  })()}
+                  <label className="page-checklist-readonly-choice">
+                    <input
+                      checked={checklistForm.readOnly === true}
+                      onChange={(event) =>
+                        setChecklistForm((value) =>
+                          value
+                            ? {
+                                ...value,
+                                readOnly: event.currentTarget.checked,
+                              }
+                            : value,
+                        )
+                      }
+                      type="checkbox"
+                    />
+                    Read-only on this Page
+                  </label>
+                  {selectedChecklistNeedsReadOnly &&
+                  checklistForm.readOnly !== true ? (
+                    <p role="alert">
+                      One or more selected fields are read-only in this View.
+                      Mark this checklist read-only before adding it.
+                    </p>
+                  ) : null}
+                </>
+              )}
               <div className="page-editor-confirm-actions">
                 <button
                   className="button button-small"
-                  disabled={!checklistForm.name.trim()}
+                  disabled={
+                    checklistForm.mode === "create"
+                      ? !checklistForm.name.trim() || !createChecklistAction
+                      : !checklistForm.viewKey ||
+                        !checklistForm.labelField ||
+                        !checklistForm.completedField ||
+                        (selectedChecklistNeedsReadOnly &&
+                          checklistForm.readOnly !== true)
+                  }
                   type="submit"
                 >
-                  Create checklist
+                  {checklistForm.mode === "create"
+                    ? "Create checklist"
+                    : "Add existing Table"}
                 </button>
+                {checklistForm.mode === "create" ? (
+                  <button
+                    className="button button-secondary button-small"
+                    onClick={() =>
+                      setChecklistForm({ mode: "existing", name: "" })
+                    }
+                    type="button"
+                  >
+                    Use existing Table
+                  </button>
+                ) : (
+                  <button
+                    className="button button-secondary button-small"
+                    onClick={() =>
+                      setChecklistForm({ mode: "create", name: "" })
+                    }
+                    type="button"
+                  >
+                    Create new checklist
+                  </button>
+                )}
                 <button
                   className="button button-secondary button-small"
                   onClick={() => setChecklistForm(null)}

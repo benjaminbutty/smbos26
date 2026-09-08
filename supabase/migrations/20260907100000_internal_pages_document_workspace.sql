@@ -59,7 +59,7 @@ for select
 to authenticated
 using (
   bucket_id = 'page-assets'
-  and private.configuration_uuid_is_valid((storage.foldername(name))[1])
+  and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   and private.is_business_member(((storage.foldername(name))[1])::uuid)
 );
 
@@ -70,7 +70,7 @@ for insert
 to authenticated
 with check (
   bucket_id = 'page-assets'
-  and private.configuration_uuid_is_valid((storage.foldername(name))[1])
+  and (storage.foldername(name))[1] ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
   and private.can_manage_tenant(((storage.foldername(name))[1])::uuid)
 );
 
@@ -932,8 +932,14 @@ begin
   elsif action_kind = 'save_page_layout' then
     if candidate_page ->> 'title' <> operation ->> 'title'
       or candidate_page -> 'layout_json' <> operation -> 'layout_json'
-      or (candidate_page - 'layout_json') <> (base_page - 'layout_json')
-      or private.direct_page_layouts_equal_v1(base_page -> 'layout_json', operation -> 'layout_json')
+      or (candidate_page - 'title' - 'layout_json') <>
+        (base_page - 'title' - 'layout_json')
+      or (
+        candidate_page ->> 'title' = base_page ->> 'title'
+        and private.direct_page_layouts_equal_v1(
+          base_page -> 'layout_json', operation -> 'layout_json'
+        )
+      )
     then raise exception 'direct_page_action_shape_invalid' using errcode = '22023'; end if;
   elsif action_kind in ('archive_page', 'restore_page') then
     if base_page ->> 'audience' <> 'internal'

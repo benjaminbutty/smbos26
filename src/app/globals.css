@@ -460,12 +460,72 @@
   background: transparent;
 }
 
+/* A Page View already owns the name, source label and Open table action. Keep
+   the shared workbench's duplicate title/status band out of that document
+   surface while retaining its complete query and record controls below. */
+.page-document-canvas .editor-kernel-embedded .editor-lab-header {
+  display: none;
+}
+
 .editor-kernel-embedded .editor-lab-header {
   padding: 0.25rem 0;
 }
 
 .editor-kernel-embedded .editor-lab-meta {
-  display: none;
+  display: flex;
+  flex-wrap: wrap;
+  min-height: 2.25rem;
+  padding: 0.35rem 0;
+  border-block: 1px solid rgba(39, 49, 44, 0.1);
+}
+
+.editor-kernel-embedded .editor-workbench-toolbar-content {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.editor-kernel-embedded .table-workbench-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.editor-kernel-embedded .table-workbench-search {
+  display: flex;
+  min-width: min(100%, 12rem);
+  flex: 1 1 12rem;
+  align-items: center;
+}
+
+.editor-kernel-embedded .table-workbench-search label {
+  display: block;
+  width: 100%;
+}
+
+.editor-kernel-embedded .table-workbench-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.4rem 0.6rem;
+  color: var(--lenni-text);
+  background: var(--lenni-surface);
+  border: 1px solid rgba(39, 49, 44, 0.14);
+  border-radius: 0.35rem;
+}
+
+.editor-kernel-embedded .table-workbench-toolbar-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+  color: #7b857e;
+  font-size: 0.68rem;
+}
+
+.editor-kernel-embedded .editor-lab-meta-actions {
+  margin-left: auto;
 }
 
 .editor-kernel-embedded .editor-grid-footnote {
@@ -3966,6 +4026,30 @@ textarea {
 .page-view-block-header span {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+/* A checklist is operational content inside the document. Keep its live
+   records compact and visually continuous with surrounding writing. */
+.runtime-page-blocks .page-view-block-checklist {
+  margin-block: 0.5rem;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.runtime-page-blocks .page-view-block-checklist .page-view-block-header {
+  margin-bottom: 0.5rem;
+  padding-inline: 0;
+}
+
+.runtime-page-blocks .page-view-block-checklist .page-checklist-workspace {
+  padding-inline: 0;
+  background: transparent;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
 }
 
 .page-editor-view-header {
@@ -10747,6 +10831,44 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.page-editor-image-options {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.page-editor-image-options summary {
+  display: inline-flex;
+  min-height: 2.35rem;
+  align-items: center;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.page-editor-image-options-toggle {
+  justify-self: start;
+}
+
+.page-editor-image-options > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 10rem;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.page-editor-view-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.page-editor-view-controls select {
+  min-height: 2.35rem;
+  max-width: 14rem;
+}
+
 .page-editor-image-actions label.button {
   display: inline-flex;
   align-items: center;
@@ -10848,6 +10970,14 @@ textarea {
   border-radius: var(--radius-md);
 }
 
+.page-document-canvas .page-checklist-workspace {
+  padding-inline: 0;
+  background: transparent;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+
 .page-checklist-items {
   display: grid;
   gap: 0.15rem;
@@ -10867,7 +10997,7 @@ textarea {
   background: var(--surface-subtle);
 }
 
-.page-checklist-item label {
+.page-checklist-item-check {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -10888,9 +11018,54 @@ textarea {
   text-overflow: ellipsis;
 }
 
-.page-checklist-item.is-complete label > span {
+.page-checklist-item.is-complete .page-checklist-item-check {
   color: var(--text-tertiary);
   text-decoration: line-through;
+}
+
+.page-checklist-label {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-checklist-label:hover:not(:disabled),
+.page-checklist-label:focus-visible {
+  color: var(--coral-800);
+  text-decoration: underline;
+}
+
+.page-checklist-item.is-complete .page-checklist-label {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+}
+
+.page-checklist-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.76rem;
+}
+
+.page-checklist-toolbar input {
+  min-height: 2.35rem;
+  max-width: 16rem;
+}
+
+.page-checklist-load-more,
+.page-checklist-add-link {
+  justify-self: start;
 }
 
 .page-checklist-add {
@@ -10939,6 +11114,14 @@ textarea {
     grid-column: auto;
   }
 
+  .page-editor-image-options {
+    grid-column: auto;
+  }
+
+  .page-editor-image-options > div {
+    grid-template-columns: 1fr;
+  }
+
   .page-editor-collapsible-node {
     padding-inline: var(--space-2);
   }
@@ -10950,6 +11133,20 @@ textarea {
 
   .page-checklist-add .button {
     width: 100%;
+  }
+}
+
+/* Internal document title: keep the writing surface proportionate on wide
+   screens while retaining a touch-friendly mobile scale. */
+.page-document-editor .page-editor-title-inline,
+.page-document-editor .page-editor-reading-title {
+  font-size: clamp(2rem, 3.6vw, 2.5rem);
+}
+
+@media (max-width: 48rem) {
+  .page-document-editor .page-editor-title-inline,
+  .page-document-editor .page-editor-reading-title {
+    font-size: clamp(1.75rem, 7.5vw, 1.875rem);
   }
 }
 
@@ -17314,7 +17511,7 @@ textarea {
   border: 0;
   border-bottom: var(--border-width-thin) solid transparent;
   border-radius: 0;
-  font-size: clamp(2.4rem, 5vw, 4.5rem);
+  font-size: clamp(2rem, 3.6vw, 2.5rem);
   font-weight: 800;
   letter-spacing: -0.045em;
   line-height: 1.08;
@@ -17503,6 +17700,15 @@ textarea {
   gap: 0.1rem;
   padding: var(--space-2);
   overflow-y: auto;
+}
+
+.page-editor-choice-group-label {
+  margin: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .page-slash-menu-options button {
@@ -17994,6 +18200,34 @@ textarea {
   min-block-size: 14rem;
 }
 
+.page-document-canvas .page-view-block-checklist {
+  margin-block: 1.5rem;
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+}
+
+.page-document-canvas .page-view-block-checklist .page-view-block-header {
+  margin-bottom: var(--space-2);
+  padding-inline: 0;
+}
+
+.page-document-canvas .page-editor-checklist-node {
+  margin-block: 1.5rem;
+  overflow: visible;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.page-document-canvas .page-editor-checklist-node .page-editor-view-header {
+  margin-bottom: var(--space-2);
+  padding-inline: 0;
+  background: transparent;
+  border-bottom: 0;
+}
+
 .page-document-editor.is-reading .page-document-canvas .tiptap {
   cursor: default;
 }
@@ -18456,8 +18690,9 @@ textarea {
 }
 
 @media (max-width: 48rem) {
-  .page-document-editor .page-editor-title-input {
-    font-size: clamp(1.65rem, 7.5vw, 1.85rem);
+  .page-document-editor .page-editor-title-input,
+  .page-document-editor .page-editor-reading-title {
+    font-size: clamp(1.75rem, 7.5vw, 1.875rem);
     letter-spacing: -0.05em;
   }
 }

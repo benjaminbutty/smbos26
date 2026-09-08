@@ -4,6 +4,13 @@ export interface PageViewOption {
   tableKey?: string;
   tableName?: string;
   viewType: "table" | "list" | "cards" | "detail";
+  audience?: "internal" | "public";
+  checklistFields?: readonly {
+    key: string;
+    label: string;
+    kind: "text" | "boolean";
+    editable?: boolean;
+  }[];
 }
 
 export interface PageViewTableOption {

@@ -2,13 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { DirectPageActionResult } from "../pages/direct-actions";
 
@@ -118,13 +112,12 @@ export function PagesSidebar({
     }
   };
 
-  const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
-    event.preventDefault();
+  const createPage = async (): Promise<void> => {
     if (!action) return;
     setPending(true);
     setMessage(null);
     try {
-      const result = await action(new FormData(event.currentTarget));
+      const result = await action(new FormData());
       if (result.status === "success") {
         setOpen(false);
         router.push(
@@ -160,27 +153,21 @@ export function PagesSidebar({
         ) : null}
       </div>
       {open && action && currentness ? (
-        <form className="sidebar-create-form" onSubmit={submit}>
-          <label>
-            Page name
-            <input
-              autoFocus
-              defaultValue="Untitled page"
-              maxLength={120}
-              minLength={1}
-              name="title"
-              required
-            />
-          </label>
-          <button disabled={pending} type="submit">
-            {pending ? "Creating…" : "Create Page"}
+        <div className="sidebar-create-form sidebar-create-one-action">
+          <p>Create a fresh Page and start writing.</p>
+          <button
+            disabled={pending}
+            onClick={() => void createPage()}
+            type="button"
+          >
+            {pending ? "Creating…" : "New Page"}
           </button>
           {message ? (
             <p className="inline-cell-error" role="alert">
               {message}
             </p>
           ) : null}
-        </form>
+        </div>
       ) : null}
       {routeSegment === "pages" && restoreAction && currentness ? (
         <button

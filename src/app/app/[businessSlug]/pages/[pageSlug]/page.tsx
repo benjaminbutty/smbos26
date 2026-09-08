@@ -14,6 +14,7 @@ import {
   normalizeTableViewConfig,
   type TableViewConfig,
 } from "../../../../../core/experience/schemas";
+import { isDirectTableEditableFieldType } from "../../../../../core/experience/inline-edit";
 import {
   pageBlockReferencesForm,
   pageBlockReferencesView,
@@ -34,6 +35,7 @@ import {
   archiveProductionTableColumnAction,
   changeProductionTableColumnTypeAction,
   createProductionTableConnectionTargetAction,
+  createProductionTableContextualRecordAction,
   createProductionTableRowAction,
   insertProductionTableColumnAction,
   pasteProductionTableAction,
@@ -47,6 +49,8 @@ import {
   updateProductionTableConnectionAction,
   updateProductionTableColumnOptionsAction,
   loadProductionTablePageAction,
+  bulkUpdateProductionTableRecordsAction,
+  getProductionTableContextualRecordCreateStateAction,
 } from "../../../../../runtime/editor-kernel/production/production-table-actions";
 import { getDirectTableRowCreationAvailability } from "../../../../../runtime/views/direct-table-record-service";
 import {
@@ -66,6 +70,10 @@ import type { EditorCapabilities } from "../../../../../runtime/editor-kernel/co
 import type { ProductionTableAdapterActions } from "../../../../../runtime/editor-kernel/production/production-table-adapter";
 import type { PageEditorViewEmbed } from "../../../../../runtime/page-editor/extensions";
 import type { PageRendererTableEmbed } from "../../../../../runtime/pages/page-renderer";
+import {
+  createPageChecklistRowAction,
+  updatePageChecklistCellAction,
+} from "../../../../../runtime/page-editor/checklist-actions";
 
 interface InternalPageProps {
   params: Promise<{ businessSlug: string; pageSlug: string }>;
@@ -194,12 +202,187 @@ function targetViewKeyByObjectId(
     }, {});
 }
 
-function tableEmbedContext(
-  businessSlug: string,
-  viewKey: string,
+function checklistFieldOptions(
+  fields: readonly {
+    object_definition_id: string;
+    key: string;
+    label: string;
+    field_type: Parameters<typeof isDirectTableEditableFieldType>[0];
+    is_active?: boolean;
+  }[],
+  objectDefinitionId: string,
+  columns: readonly { key: string; editable?: boolean }[] = [],
+  visibleFieldKeys: readonly string[] = [],
+): readonly {
+  key: string;
+  label: string;
+  kind: "text" | "boolean";
+  editable?: boolean;
+}[] {
+  return fields
+    .filter(
+      (field) =>
+        field.object_definition_id === objectDefinitionId &&
+        field.is_active !== false &&
+        (visibleFieldKeys.length === 0 ||
+          visibleFieldKeys.includes(field.key)) &&
+        (field.field_type === "short_text" ||
+          field.field_type === "long_text" ||
+          field.field_type === "email" ||
+          field.field_type === "phone" ||
+          field.field_type === "url" ||
+          field.field_type === "boolean"),
+    )
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map((field) => {
+      const configuredColumn = columns.find(
+        (column) => column.key === field.key,
+      );
+      const editable =
+        configuredColumn?.editable ??
+        isDirectTableEditableFieldType(field.field_type);
+      return {
+        key: field.key,
+        label: field.label,
+        kind: field.field_type === "boolean" ? "boolean" : ("text" as const),
+        ...(editable !== undefined ? { editable } : {}),
+      };
+    });
+}
+
+function tableConnectionContext(
+  allTableViews: readonly {
+    key: string;
+    name: string;
+    object_definition_id: string;
+    config_json: unknown;
+  }[],
+  tableObjectById: ReadonlyMap<
+    string,
+    {
+      kind: string;
+      singular_label: string;
+      plural_label: string;
+    }
+  >,
   bundle: ExperienceViewBundle,
 ) {
+  const targetViewKeys = targetViewKeyByObjectId(allTableViews);
+  const connectionTargets = [...allTableViews]
+    .filter(
+      (view) =>
+        targetViewKeys[view.object_definition_id] === view.key &&
+        view.object_definition_id !== bundle.definition.object_definition_id,
+    )
+    .flatMap((view) => {
+      const object = tableObjectById.get(view.object_definition_id);
+      if (!object || object.kind !== "custom") return [];
+      return [
+        {
+          viewKey: view.key,
+          label: view.name,
+          singularLabel: object.singular_label,
+          pluralLabel: object.plural_label,
+        },
+      ];
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
+
+  const configuredConnectionKeys = new Set(
+    normalizeTableViewConfig(bundle.config).columns.flatMap((column) =>
+      column.kind === "connection"
+        ? [`${column.relationship_key}:${column.direction}`]
+        : [],
+    ),
+  );
+  const existingConnections = (bundle.relationships ?? [])
+    .flatMap((relationship) => {
+      if (!relationship.is_active) return [];
+      const direction =
+        relationship.source_object_definition_id ===
+        bundle.definition.object_definition_id
+          ? ("source" as const)
+          : ("target" as const);
+      if (configuredConnectionKeys.has(`${relationship.key}:${direction}`)) {
+        return [];
+      }
+      const otherObjectId =
+        direction === "source"
+          ? relationship.target_object_definition_id
+          : relationship.source_object_definition_id;
+      const otherObject = tableObjectById.get(otherObjectId);
+      const targetViewKey = targetViewKeys[otherObjectId];
+      if (!otherObject || otherObject.kind !== "custom" || !targetViewKey) {
+        return [];
+      }
+      const currentMultiplicity =
+        relationship.cardinality === "many_to_many" ||
+        (relationship.cardinality === "one_to_many" && direction === "target")
+          ? ("several" as const)
+          : ("one" as const);
+      const targetMultiplicity =
+        relationship.cardinality === "many_to_many" ||
+        (relationship.cardinality === "one_to_many" && direction === "source")
+          ? ("several" as const)
+          : ("one" as const);
+      return [
+        {
+          relationshipKey: relationship.key,
+          direction,
+          label:
+            direction === "source"
+              ? relationship.source_label
+              : relationship.target_label,
+          otherTableLabel: otherObject.plural_label,
+          targetViewKey,
+          currentMultiplicity,
+          targetMultiplicity,
+        },
+      ];
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
+  return { connectionTargets, existingConnections };
+}
+
+function tableEmbedContext(
+  businessSlug: string,
+  pageKey: string,
+  viewKey: string,
+  bundle: ExperienceViewBundle,
+  allTableViews: readonly {
+    key: string;
+    name: string;
+    object_definition_id: string;
+    config_json: unknown;
+  }[],
+  tableObjectById: ReadonlyMap<
+    string,
+    {
+      kind: string;
+      singular_label: string;
+      plural_label: string;
+    }
+  >,
+) {
+  const connectionContext = tableConnectionContext(
+    allTableViews,
+    tableObjectById,
+    bundle,
+  );
   return {
+    bulkUpdate: bulkUpdateProductionTableRecordsAction.bind(
+      null,
+      businessSlug,
+      viewKey,
+    ),
+    connectionSource: {
+      pluralLabel: bundle.object.plural_label,
+      singularLabel: bundle.object.singular_label,
+    },
+    ...connectionContext,
+    initialHasMore: bundle.query?.hasMore ?? false,
+    initialSearch: "",
+    initialTotalCount: bundle.query?.totalCount ?? bundle.records.length,
     loadTablePage: loadProductionTablePageAction.bind(
       null,
       businessSlug,
@@ -224,6 +407,27 @@ function tableEmbedContext(
       searchProductionTableConnectionTargetsAction.bind(null, businessSlug),
     createConnectedRecordTarget:
       createProductionTableConnectionTargetAction.bind(null, businessSlug),
+    createContextualRecord: createProductionTableContextualRecordAction.bind(
+      null,
+      businessSlug,
+    ),
+    loadContextualRecordCreateState:
+      getProductionTableContextualRecordCreateStateAction.bind(
+        null,
+        businessSlug,
+      ),
+    checklistCreateRow: createPageChecklistRowAction.bind(
+      null,
+      businessSlug,
+      pageKey,
+      viewKey,
+    ),
+    checklistUpdateCell: updatePageChecklistCellAction.bind(
+      null,
+      businessSlug,
+      pageKey,
+      viewKey,
+    ),
   };
 }
 
@@ -305,6 +509,14 @@ export default async function InternalPage({
   })();
 
   const primaryViewKeyByObjectId = targetViewKeyByObjectId(tableViews);
+  const { data: tableObjects } = await supabase
+    .from("object_definitions")
+    .select("id, singular_label, plural_label, kind")
+    .eq("business_id", tenant.business.id)
+    .eq("is_active", true);
+  const tableObjectById = new Map(
+    (tableObjects ?? []).map((object) => [object.id, object]),
+  );
 
   if (!canEdit) {
     const tableEmbeds: Record<string, PageRendererTableEmbed> = {};
@@ -340,7 +552,14 @@ export default async function InternalPage({
             canResizeColumns: false,
             canRenameTable: false,
           },
-          ...tableEmbedContext(businessSlug, key, bundle),
+          ...tableEmbedContext(
+            businessSlug,
+            page.definition.key,
+            key,
+            bundle,
+            tableViews,
+            tableObjectById,
+          ),
           creationFallbackHref: availability.formKey
             ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(key)}/new`
             : undefined,
@@ -369,6 +588,7 @@ export default async function InternalPage({
           forms={forms}
           inlineEditAction={updateInlineRecordCell.bind(null, businessSlug)}
           layout={page.layout}
+          pageKey={page.definition.key}
           tableEmbeds={tableEmbeds}
           views={views}
         />
@@ -380,6 +600,11 @@ export default async function InternalPage({
     businessId: tenant.business.id,
     actorId: tenant.user.id,
   });
+  const { data: checklistFields } = await supabase
+    .from("field_definitions")
+    .select("object_definition_id,key,label,field_type,is_active")
+    .eq("business_id", tenant.business.id)
+    .eq("is_active", true);
   const editorViews: Record<string, PageEditorViewEmbed> = {};
   for (const [key, bundle] of Object.entries(views)) {
     if (bundle.definition.view_type !== "table") {
@@ -438,7 +663,14 @@ export default async function InternalPage({
           table: mapped.table,
           capabilities,
           actions: productionTableActions(businessSlug, key),
-          ...tableEmbedContext(businessSlug, key, bundle),
+          ...tableEmbedContext(
+            businessSlug,
+            page.definition.key,
+            key,
+            bundle,
+            tableViews,
+            tableObjectById,
+          ),
           creationFallbackHref: availability.formKey
             ? `/app/${encodeURIComponent(businessSlug)}/workspace/${experienceKeyToPath(key)}/new`
             : undefined,
@@ -455,16 +687,30 @@ export default async function InternalPage({
         (candidate) => candidate.audience === "internal" && candidate.is_active,
       )
       .map((candidate) => ({ slug: candidate.slug, title: candidate.title })),
-    availableViews: tableViews.map((view) => {
-      const tableName = editorViews[view.key]?.bundle.object.plural_label;
-      return {
-        key: view.key,
-        name: view.name,
-        tableKey: view.object_definition_id,
-        viewType: view.view_type,
-        ...(tableName ? { tableName } : {}),
-      };
-    }),
+    availableViews: tableViews
+      .filter((view) => view.audience === "internal")
+      .map((view) => {
+        const tableName = editorViews[view.key]?.bundle.object.plural_label;
+        return {
+          key: view.key,
+          name: view.name,
+          tableKey: view.object_definition_id,
+          viewType: view.view_type,
+          audience: view.audience,
+          ...(tableName ? { tableName } : {}),
+          ...(checklistFields
+            ? {
+                checklistFields: checklistFieldOptions(
+                  checklistFields,
+                  view.object_definition_id,
+                  editorViews[view.key]?.table?.table.recordColumns ??
+                    editorViews[view.key]?.table?.table.columns,
+                  normalizeTableViewConfig(view.config_json).fields,
+                ),
+              }
+            : {}),
+        };
+      }),
     applyPageBlockAction: applyPageBlockAction.bind(
       null,
       businessSlug,

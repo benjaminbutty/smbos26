@@ -14,6 +14,9 @@ import type {
 import type { ProductionConfigurationCurrentness } from "../editor-kernel/production/action-types";
 import type {
   ProductionRecordPanelContextAction,
+  ProductionBulkUpdateAction,
+  ProductionScopedContextualRecordCreateAction,
+  ProductionScopedContextualRecordCreateStateAction,
   ProductionScopedCellEditAction,
   ProductionScopedConnectionCreateAction,
   ProductionScopedConnectionEditAction,
@@ -29,6 +32,10 @@ import { experienceKeyToPath } from "../routing";
 import type { InlineEditAction } from "../views/inline-edit-contract";
 import { ViewRenderer } from "../views/view-renderer";
 import { ChecklistWorkspace } from "../page-editor/checklist-workspace";
+import type {
+  PageChecklistCellAction,
+  PageChecklistRowAction,
+} from "../page-editor/checklist-workspace";
 
 interface ResolvedFormBlock {
   action?: FormAction;
@@ -50,6 +57,7 @@ interface ResolvedPreorderBlock {
 interface PageRendererProps {
   layout: PageLayout;
   pageTitle?: string;
+  pageKey?: string;
   businessSlug?: string;
   views?: Readonly<Record<string, ExperienceViewBundle>>;
   forms?: Readonly<Record<string, ResolvedFormBlock>>;
@@ -71,6 +79,7 @@ export interface CandidatePreviewTableEmbed {
 
 export interface PageRendererTableEmbed {
   table: EditorTable;
+  instanceId?: string;
   actions: ProductionTableAdapterActions;
   capabilities: EditorCapabilities;
   currentness?: ProductionConfigurationCurrentness | undefined;
@@ -84,6 +93,17 @@ export interface PageRendererTableEmbed {
   searchConnectedRecordTargets?: ProductionScopedConnectionSearchAction;
   createConnectedRecordTarget?: ProductionScopedConnectionCreateAction;
   loadTablePage?: import("../editor-kernel/production/action-types").ProductionTablePageAction;
+  bulkUpdate?: ProductionBulkUpdateAction;
+  initialSearch?: string;
+  initialTotalCount?: number;
+  initialHasMore?: boolean;
+  connectionSource?: import("../editor-kernel/production/production-table-workspace").ProductionTableWorkspaceProps["connectionSource"];
+  connectionTargets?: import("../editor-kernel/production/production-table-workspace").ProductionTableWorkspaceProps["connectionTargets"];
+  existingConnections?: import("../editor-kernel/production/production-table-workspace").ProductionTableWorkspaceProps["existingConnections"];
+  loadContextualRecordCreateState?: ProductionScopedContextualRecordCreateStateAction;
+  createContextualRecord?: ProductionScopedContextualRecordCreateAction;
+  checklistUpdateCell?: PageChecklistCellAction;
+  checklistCreateRow?: PageChecklistRowAction;
 }
 
 function MissingBlock({ message }: Readonly<{ message: string }>): ReactNode {
@@ -143,6 +163,7 @@ function RichTextBlock({ block }: Readonly<{ block: RichTextPageBlock }>) {
 export function PageRenderer({
   layout,
   pageTitle,
+  pageKey,
   businessSlug,
   views = {},
   forms = {},
@@ -156,31 +177,35 @@ export function PageRenderer({
 }: Readonly<PageRendererProps>): ReactNode {
   const renderBlocks = (
     blocks: readonly PageLayout["blocks"][number][],
+    path = "",
   ): ReactNode[] =>
     blocks.map((block, index) => {
-      const key = block.id ?? `${index}-${block.type}`;
+      const blockPath = `${path}${index}`;
+      const key = block.id ?? `page-block:${blockPath}`;
 
       if (block.type === "collapsible") {
         return (
-          <details
-            className="page-collapsible-block"
-            key={key}
-            open={block.open}
-          >
-            <summary>{block.summary}</summary>
-            <div className="page-collapsible-content">
-              {renderBlocks(block.blocks)}
-            </div>
-          </details>
+          <Fragment key={key}>
+            <details
+              className="page-collapsible-block"
+              {...(block.open ? { open: true } : {})}
+            >
+              <summary>{block.summary}</summary>
+              <div className="page-collapsible-content">
+                {renderBlocks(block.blocks, `${blockPath}.`)}
+              </div>
+            </details>
+          </Fragment>
         );
       }
 
-      return renderBlock(block, key);
+      return <Fragment key={key}>{renderBlock(block, key, key)}</Fragment>;
     });
 
   const renderBlock = (
     block: Exclude<PageLayout["blocks"][number], { type: "collapsible" }>,
     key: string,
+    blockId: string,
   ): ReactNode => {
     switch (block.type) {
       case "heading":
@@ -282,7 +307,10 @@ export function PageRenderer({
         const candidateTable = candidateTables[block.view_key];
         if (candidateTable && previewMode) {
           return (
-            <section className="page-view-block" key={key}>
+            <section
+              className={`page-view-block${block.checklist ? " page-view-block-checklist" : ""}`}
+              key={key}
+            >
               <header className="page-view-block-header">
                 <div>
                   <p className="eyebrow">Table</p>
@@ -315,7 +343,10 @@ export function PageRenderer({
               businessSlug ?? "",
             )}/workspace/${experienceKeyToPath(tableEmbed.table.key)}`;
           return (
-            <section className="page-view-block" key={key}>
+            <section
+              className={`page-view-block${block.checklist ? " page-view-block-checklist" : ""}`}
+              key={key}
+            >
               <header className="page-view-block-header">
                 <div>
                   <p className="eyebrow">Saved View</p>
@@ -334,7 +365,30 @@ export function PageRenderer({
                   actions={tableEmbed.actions}
                   businessSlug={businessSlug}
                   completedField={block.checklist.completed_field}
+                  {...(pageKey ? { blockId } : {})}
+                  {...(tableEmbed.checklistCreateRow
+                    ? { pageAwareCreateRow: tableEmbed.checklistCreateRow }
+                    : {})}
+                  {...(tableEmbed.checklistUpdateCell
+                    ? { pageAwareUpdateCell: tableEmbed.checklistUpdateCell }
+                    : {})}
                   labelField={block.checklist.label_field}
+                  {...(tableEmbed.creationFallbackHref
+                    ? { creationFallbackHref: tableEmbed.creationFallbackHref }
+                    : {})}
+                  {...(tableEmbed.initialHasMore !== undefined
+                    ? { initialHasMore: tableEmbed.initialHasMore }
+                    : {})}
+                  {...(tableEmbed.initialSearch !== undefined
+                    ? { initialSearch: tableEmbed.initialSearch }
+                    : {})}
+                  {...(tableEmbed.initialTotalCount !== undefined
+                    ? { initialTotalCount: tableEmbed.initialTotalCount }
+                    : {})}
+                  {...(tableEmbed.loadTablePage
+                    ? { loadTablePage: tableEmbed.loadTablePage }
+                    : {})}
+                  canCreate={tableEmbed.capabilities.rowCreation === "direct"}
                   readOnly={block.read_only === true}
                   table={tableEmbed.table}
                   viewKey={block.view_key}
@@ -342,10 +396,25 @@ export function PageRenderer({
               ) : (
                 <ProductionTableWorkspace
                   actions={tableEmbed.actions}
+                  {...(tableEmbed.instanceId
+                    ? { instanceId: `${tableEmbed.instanceId}-${blockId}` }
+                    : { instanceId: blockId })}
                   {...(businessSlug !== undefined ? { businessSlug } : {})}
+                  {...(tableEmbed.bulkUpdate
+                    ? { bulkUpdate: tableEmbed.bulkUpdate }
+                    : {})}
                   capabilities={capabilities}
+                  {...(tableEmbed.connectionSource
+                    ? { connectionSource: tableEmbed.connectionSource }
+                    : {})}
+                  {...(tableEmbed.connectionTargets
+                    ? { connectionTargets: tableEmbed.connectionTargets }
+                    : {})}
                   currentness={tableEmbed.currentness}
                   creationFallbackHref={tableEmbed.creationFallbackHref}
+                  {...(tableEmbed.existingConnections
+                    ? { existingConnections: tableEmbed.existingConnections }
+                    : {})}
                   {...(tableEmbed.createConnectedRecordTarget
                     ? {
                         createConnectedRecordTarget:
@@ -353,9 +422,30 @@ export function PageRenderer({
                       }
                     : {})}
                   fullRecordPath={tablePath}
+                  {...(tableEmbed.initialHasMore !== undefined
+                    ? { initialHasMore: tableEmbed.initialHasMore }
+                    : {})}
+                  {...(tableEmbed.initialSearch !== undefined
+                    ? { initialSearch: tableEmbed.initialSearch }
+                    : {})}
+                  {...(tableEmbed.initialTotalCount !== undefined
+                    ? { initialTotalCount: tableEmbed.initialTotalCount }
+                    : {})}
                   key={`${key}-table`}
                   {...(tableEmbed.loadTablePage
                     ? { loadTablePage: tableEmbed.loadTablePage }
+                    : {})}
+                  {...(tableEmbed.loadContextualRecordCreateState
+                    ? {
+                        loadContextualRecordCreateState:
+                          tableEmbed.loadContextualRecordCreateState,
+                      }
+                    : {})}
+                  {...(tableEmbed.createContextualRecord
+                    ? {
+                        createContextualRecord:
+                          tableEmbed.createContextualRecord,
+                      }
                     : {})}
                   {...(tableEmbed.recordCountLabel
                     ? { recordCountLabel: tableEmbed.recordCountLabel }

@@ -13,6 +13,7 @@ import {
   type ConfigurationOperation,
 } from "../schemas";
 import {
+  normalizeTableViewConfig,
   pageBlockSchema,
   pageLayoutSchema,
   type PageLayout,
@@ -283,48 +284,230 @@ function assertChecklistViewFields(
   viewKey: string,
   labelField: string,
   completedField: string,
+  readOnly = false,
 ): void {
   assertEligibleSavedView(snapshot, viewKey);
   const view = snapshot.views.find((candidate) => candidate.key === viewKey);
+  if (!view) {
+    throw new DirectPageComposerError("direct_page_checklist_unavailable");
+  }
   const object = snapshot.object_definitions.find(
     (candidate) => candidate.id === view?.object_definition_id,
   );
   const fields = snapshot.field_definitions.filter(
     (field) => field.object_definition_id === object?.id && field.is_active,
   );
+  const viewConfig = normalizeTableViewConfig(view.config_json);
+  const visibleFieldKeys = new Set(viewConfig.fields);
   const label = fields.find((field) => field.key === labelField);
   const completed = fields.find((field) => field.key === completedField);
+  const editForm = viewConfig.edit_form_key
+    ? snapshot.forms.find(
+        (form) =>
+          form.key === viewConfig.edit_form_key &&
+          form.object_definition_id === object?.id &&
+          form.mode === "edit" &&
+          form.is_active,
+      )
+    : undefined;
+  const writableFieldKeys = editForm
+    ? new Set(
+        editForm.config_json.fields
+          .filter((field) => !field.hidden)
+          .map((field) => field.field),
+      )
+    : null;
   if (
     !label ||
+    !visibleFieldKeys.has(label.key) ||
     !new Set(["short_text", "long_text", "email", "phone", "url"]).has(
       label.field_type,
     ) ||
     !completed ||
-    completed.field_type !== "boolean"
+    !visibleFieldKeys.has(completed.key) ||
+    completed.field_type !== "boolean" ||
+    (!readOnly &&
+      writableFieldKeys !== null &&
+      (!writableFieldKeys.has(label.key) ||
+        !writableFieldKeys.has(completed.key)))
   ) {
     throw new DirectPageComposerError("direct_page_checklist_unavailable");
   }
 }
 
-function blockById(
-  layout: PageLayout,
+type PageBlockItem = PageLayout["blocks"][number];
+
+function blockMatches(
+  block: PageBlockItem,
   blockId: string,
-): { block: PageLayout["blocks"][number]; index: number } {
-  let index = layout.blocks.findIndex(
-    (candidate) => "id" in candidate && candidate.id === blockId,
+  index: number,
+  allowLegacyId: boolean,
+): boolean {
+  if ("id" in block && block.id === blockId) return true;
+  if (!allowLegacyId) return false;
+  const legacyIndex = /^legacy:(\d+)$/.exec(blockId)?.[1];
+  return legacyIndex !== undefined && Number(legacyIndex) === index;
+}
+
+function insertAfterBlock(
+  blocks: readonly PageBlockItem[],
+  afterBlockId: string,
+  nextBlock: PageBlockItem,
+  allowLegacyId: boolean,
+): PageBlockItem[] | null {
+  const index = blocks.findIndex((block, candidateIndex) =>
+    blockMatches(block, afterBlockId, candidateIndex, allowLegacyId),
   );
-  if (index < 0) {
-    const legacyIndex = /^legacy:(\d+)$/.exec(blockId)?.[1];
-    if (legacyIndex !== undefined) {
-      const parsedIndex = Number(legacyIndex);
-      if (Number.isSafeInteger(parsedIndex)) index = parsedIndex;
+  if (index >= 0) {
+    return [
+      ...blocks.slice(0, index + 1),
+      nextBlock,
+      ...blocks.slice(index + 1),
+    ];
+  }
+  for (let childIndex = 0; childIndex < blocks.length; childIndex += 1) {
+    const block = blocks[childIndex];
+    if (block?.type !== "collapsible") continue;
+    const children = insertAfterBlock(
+      block.blocks,
+      afterBlockId,
+      nextBlock,
+      false,
+    );
+    if (!children) continue;
+    return blocks.map((candidate, candidateIndex) =>
+      candidateIndex === childIndex
+        ? ({ ...block, blocks: children } as PageBlockItem)
+        : candidate,
+    );
+  }
+  return null;
+}
+
+function insertIntoContainer(
+  blocks: readonly PageBlockItem[],
+  containerBlockId: string,
+  afterBlockId: string | null | undefined,
+  nextBlock: PageBlockItem,
+): PageBlockItem[] | null {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
+    if ("id" in block && block.id === containerBlockId) {
+      if (block.type !== "collapsible") return null;
+      let children: PageBlockItem[] | null;
+      if (afterBlockId === null) {
+        children = [nextBlock, ...block.blocks];
+      } else if (afterBlockId === undefined) {
+        children = [...block.blocks, nextBlock];
+      } else {
+        children = insertAfterBlock(
+          block.blocks,
+          afterBlockId,
+          nextBlock,
+          false,
+        );
+      }
+      if (!children) return null;
+      return blocks.map((candidate, candidateIndex) =>
+        candidateIndex === index
+          ? ({ ...block, blocks: children } as PageBlockItem)
+          : candidate,
+      );
     }
+    if (block.type !== "collapsible") continue;
+    const nested = insertIntoContainer(
+      block.blocks,
+      containerBlockId,
+      afterBlockId,
+      nextBlock,
+    );
+    if (!nested) continue;
+    return blocks.map((candidate, candidateIndex) =>
+      candidateIndex === index
+        ? ({ ...block, blocks: nested } as PageBlockItem)
+        : candidate,
+    );
   }
-  const block = layout.blocks[index];
-  if (!block) {
-    throw new DirectPageComposerError("direct_page_block_not_found");
+  return null;
+}
+
+function rewriteBlock(
+  blocks: readonly PageBlockItem[],
+  blockId: string,
+  transform: (block: PageBlockItem) => PageBlockItem | null,
+  allowLegacyId: boolean,
+): { blocks: PageBlockItem[]; found: boolean } {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (!block) continue;
+    if (blockMatches(block, blockId, index, allowLegacyId)) {
+      const replacement = transform(block);
+      return {
+        blocks:
+          replacement === null
+            ? [...blocks.slice(0, index), ...blocks.slice(index + 1)]
+            : blocks.map((candidate, candidateIndex) =>
+                candidateIndex === index ? replacement : candidate,
+              ),
+        found: true,
+      };
+    }
+    if (block.type !== "collapsible") continue;
+    const nested = rewriteBlock(block.blocks, blockId, transform, false);
+    if (!nested.found) continue;
+    return {
+      blocks: blocks.map((candidate, candidateIndex) =>
+        candidateIndex === index
+          ? ({ ...block, blocks: nested.blocks } as PageBlockItem)
+          : candidate,
+      ),
+      found: true,
+    };
   }
-  return { block, index };
+  return { blocks: [...blocks], found: false };
+}
+
+function moveBlock(
+  blocks: readonly PageBlockItem[],
+  blockId: string,
+  direction: "up" | "down",
+  allowLegacyId: boolean,
+): { blocks: PageBlockItem[]; found: boolean; moved: boolean } {
+  const index = blocks.findIndex((block, candidateIndex) =>
+    blockMatches(block, blockId, candidateIndex, allowLegacyId),
+  );
+  if (index >= 0) {
+    const nextIndex = direction === "up" ? index - 1 : index + 1;
+    if (nextIndex < 0 || nextIndex >= blocks.length) {
+      return { blocks: [...blocks], found: true, moved: false };
+    }
+    const next = [...blocks];
+    const current = next[index];
+    const adjacent = next[nextIndex];
+    if (!current || !adjacent) {
+      return { blocks: [...blocks], found: true, moved: false };
+    }
+    next[index] = adjacent;
+    next[nextIndex] = current;
+    return { blocks: next, found: true, moved: true };
+  }
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+    if (block?.type !== "collapsible") continue;
+    const nested = moveBlock(block.blocks, blockId, direction, false);
+    if (!nested.found) continue;
+    return {
+      blocks: blocks.map((candidate, candidateIndex) =>
+        candidateIndex === index
+          ? ({ ...block, blocks: nested.blocks } as PageBlockItem)
+          : candidate,
+      ),
+      found: true,
+      moved: nested.moved,
+    };
+  }
+  return { blocks: [...blocks], found: false, moved: false };
 }
 
 function pageOperation(values: Omit<PageOperation, "op">): PageOperation {
@@ -401,27 +584,31 @@ function composeCreatePage(
   snapshot: ConfigurationSnapshotV1,
   title: string,
 ): ComposedDirectPageAction {
-  if (pageTitleConflict(snapshot, title, undefined, "internal")) {
+  const resolvedTitle =
+    normalizeLabel(title) === normalizeLabel("Untitled page")
+      ? allocateUniquePageTitle(snapshot, "Untitled page")
+      : title;
+  if (pageTitleConflict(snapshot, resolvedTitle, undefined, "internal")) {
     throw new DirectPageComposerError("direct_page_title_conflict");
   }
 
   const pageKey = allocateKey(
     snapshot.pages.map((page) => page.key),
-    title,
+    resolvedTitle,
     "page",
   );
   const pageSlug = allocateSlug(
     snapshot.pages.map((page) => page.slug),
-    title,
+    resolvedTitle,
   );
   return finalizeAction(
     "create_page",
-    `Create ${title}`,
+    `Create ${resolvedTitle}`,
     pageKey,
     pageSlug,
     pageOperation({
       key: pageKey,
-      title,
+      title: resolvedTitle,
       slug: pageSlug,
       audience: "internal",
       layout_json: { blocks: [] },
@@ -543,12 +730,31 @@ function composePageMutation(
       checklist: { label_field: "name", completed_field: "completed" },
       id: globalThis.crypto.randomUUID(),
     };
-    const blocks = [...stableLayout.blocks];
-    if (intent.afterBlockId === null) blocks.unshift(block);
+    let blocks = [...stableLayout.blocks];
+    if (intent.containerBlockId) {
+      const inserted = insertIntoContainer(
+        blocks,
+        intent.containerBlockId,
+        intent.afterBlockId,
+        block,
+      );
+      if (!inserted) {
+        throw new DirectPageComposerError("direct_page_block_not_found");
+      }
+      blocks = inserted;
+    } else if (intent.afterBlockId === null) blocks.unshift(block);
     else if (intent.afterBlockId === undefined) blocks.push(block);
     else {
-      const { index } = blockById(stableLayout, intent.afterBlockId);
-      blocks.splice(index + 1, 0, block);
+      const inserted = insertAfterBlock(
+        blocks,
+        intent.afterBlockId,
+        block,
+        true,
+      );
+      if (!inserted) {
+        throw new DirectPageComposerError("direct_page_block_not_found");
+      }
+      blocks = inserted;
     }
     const operations: ConfigurationOperation[] = [
       {
@@ -741,6 +947,7 @@ function composePageMutation(
           intent.block.viewKey,
           intent.block.checklist.labelField,
           intent.block.checklist.completedField,
+          intent.block.readOnly === true,
         );
       }
     }
@@ -748,42 +955,64 @@ function composePageMutation(
       ...pageBlockFromInput(intent.block),
       id: globalThis.crypto.randomUUID(),
     };
-    if (intent.afterBlockId === undefined) {
+    if (intent.containerBlockId) {
+      const inserted = insertIntoContainer(
+        nextBlocks,
+        intent.containerBlockId,
+        intent.afterBlockId,
+        nextBlock,
+      );
+      if (!inserted) {
+        throw new DirectPageComposerError("direct_page_block_not_found");
+      }
+      nextBlocks = inserted;
+    } else if (intent.afterBlockId === undefined) {
       nextBlocks.push(nextBlock);
     } else if (intent.afterBlockId === null) {
       nextBlocks.unshift(nextBlock);
     } else {
-      const { index } = blockById(stableLayout, intent.afterBlockId);
-      nextBlocks.splice(index + 1, 0, nextBlock);
+      const inserted = insertAfterBlock(
+        nextBlocks,
+        intent.afterBlockId,
+        nextBlock,
+        true,
+      );
+      if (!inserted) {
+        throw new DirectPageComposerError("direct_page_block_not_found");
+      }
+      nextBlocks = inserted;
     }
   } else if (intent.action === "update_page_block") {
-    const { index, block } = blockById(stableLayout, intent.blockId);
-    if (block.type !== intent.block.type) {
+    let existingBlock: PageBlockItem | null = null;
+    let existingBlockTypeMatches = false;
+    const updated = rewriteBlock(
+      nextBlocks,
+      intent.blockId,
+      (block) => {
+        existingBlock = block;
+        if (block.type !== intent.block.type) return null;
+        existingBlockTypeMatches = true;
+        const stableId = "id" in block && block.id ? block.id : intent.blockId;
+        return { ...pageBlockFromInput(intent.block), id: stableId };
+      },
+      true,
+    );
+    if (!updated.found || !existingBlock || !existingBlockTypeMatches) {
       throw new DirectPageComposerError("direct_page_block_not_found");
     }
-    const stableId = "id" in block && block.id ? block.id : intent.blockId;
-    nextBlocks[index] = {
-      ...pageBlockFromInput(intent.block),
-      id: stableId,
-    };
+    nextBlocks = updated.blocks;
   } else if (intent.action === "remove_page_block") {
-    const { index } = blockById(stableLayout, intent.blockId);
-    nextBlocks = nextBlocks.filter(
-      (_, candidateIndex) => candidateIndex !== index,
-    );
+    const removed = rewriteBlock(nextBlocks, intent.blockId, () => null, true);
+    if (!removed.found) {
+      throw new DirectPageComposerError("direct_page_block_not_found");
+    }
+    nextBlocks = removed.blocks;
   } else {
-    const { index } = blockById(stableLayout, intent.blockId);
-    const nextIndex = intent.direction === "up" ? index - 1 : index + 1;
-    if (nextIndex < 0 || nextIndex >= nextBlocks.length) {
+    const moved = moveBlock(nextBlocks, intent.blockId, intent.direction, true);
+    if (!moved.found || !moved.moved) {
       throw new DirectPageComposerError("direct_page_block_unchanged");
     }
-    const current = nextBlocks[index];
-    const adjacent = nextBlocks[nextIndex];
-    if (!current || !adjacent) {
-      throw new DirectPageComposerError("direct_page_block_not_found");
-    }
-    nextBlocks[index] = adjacent;
-    nextBlocks[nextIndex] = current;
+    nextBlocks = moved.blocks;
   }
 
   return finalizeAction(

@@ -68,4 +68,22 @@ describe("managed Page asset boundary", () => {
       decodePageAsset({ bytes: source, mimeType: "image/png" }),
     ).rejects.toMatchObject({ code: "too_many_pixels" });
   });
+
+  it("reports dimensions after EXIF orientation is applied", async () => {
+    const source = await sharp({
+      create: {
+        width: 12,
+        height: 8,
+        channels: 3,
+        background: { r: 50, g: 100, b: 150 },
+      },
+    })
+      .png()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+
+    await expect(
+      decodePageAsset({ bytes: source, mimeType: "image/png" }),
+    ).resolves.toMatchObject({ width: 8, height: 12 });
+  });
 });

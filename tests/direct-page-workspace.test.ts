@@ -8,7 +8,10 @@ import {
   composeDirectPageAction,
   DirectPageComposerError,
 } from "../src/core/configuration/direct-pages/composer";
-import type { ConfigurationSnapshotV1 } from "../src/core/configuration/definition-source";
+import {
+  configurationSnapshotV1Schema,
+  type ConfigurationSnapshotV1,
+} from "../src/core/configuration/definition-source";
 import {
   pageLayoutSchema,
   type PageLayout,
@@ -20,6 +23,8 @@ const viewId = "00000000-0000-4000-8000-000000000003";
 const headingBlockId = "00000000-0000-4000-8000-000000000004";
 const viewBlockId = "00000000-0000-4000-8000-000000000005";
 const siteButtonBlockId = "00000000-0000-4000-8000-000000000006";
+const sectionBlockId = "00000000-0000-4000-8000-000000000009";
+const nestedHeadingBlockId = "00000000-0000-4000-8000-00000000000a";
 
 const snapshot: ConfigurationSnapshotV1 = {
   schema_version: 1,
@@ -128,6 +133,38 @@ describe("Page grammar and direct Workspace composer", () => {
       type: "view",
       view_key: "contacts",
       read_only: true,
+    });
+  });
+
+  it("projects contained Page blocks through the historical snapshot grammar", () => {
+    const historical = configurationSnapshotV1Schema.parse({
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          layout_json: {
+            blocks: [
+              {
+                type: "collapsible",
+                summary: "Opening",
+                blocks: [
+                  {
+                    type: "view",
+                    view_key: "contacts",
+                    read_only: true,
+                  },
+                ],
+                open: false,
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(historical.pages[0]?.layout_json.blocks[0]).toMatchObject({
+      type: "collapsible",
+      blocks: [{ type: "view", view_key: "contacts", read_only: true }],
     });
   });
 
@@ -249,6 +286,95 @@ describe("Page grammar and direct Workspace composer", () => {
         checklist: { label_field: "name", completed_field: "completed" },
       });
     }
+  });
+
+  it("requires existing checklist mappings to be visible in the saved View", () => {
+    expect(() =>
+      composeDirectPageAction(
+        {
+          ...checklistSnapshot,
+          pages: [
+            {
+              ...checklistSnapshot.pages[0]!,
+              layout_json: { blocks: [] },
+            },
+          ],
+          views: checklistSnapshot.views.map((view) => ({
+            ...view,
+            config_json: {
+              ...view.config_json,
+              fields: ["name"],
+            },
+          })),
+        },
+        {
+          action: "add_page_block",
+          pageKey: "workspace",
+          block: {
+            type: "view",
+            viewKey: "contacts",
+            checklist: { labelField: "name", completedField: "completed" },
+          },
+        },
+      ),
+    ).toThrow(DirectPageComposerError);
+  });
+
+  it("rejects writable checklist mappings hidden by the saved edit screen", () => {
+    const hiddenByEditForm = {
+      ...checklistSnapshot,
+      views: checklistSnapshot.views.map((view) => ({
+        ...view,
+        config_json: {
+          ...view.config_json,
+          fields: ["name", "completed"],
+          edit_form_key: "contacts_edit",
+        },
+      })),
+      forms: [
+        {
+          id: "00000000-0000-4000-8000-00000000000b",
+          key: "contacts_edit",
+          name: "Edit contact",
+          object_definition_id: objectId,
+          object_key: "contacts",
+          mode: "edit" as const,
+          config_json: {
+            fields: [
+              { field: "name", hidden: true, default_value: "Untitled" },
+              { field: "completed", hidden: false },
+            ],
+          },
+          audience: "internal" as const,
+          is_active: true,
+        },
+      ],
+    };
+
+    expect(() =>
+      composeDirectPageAction(hiddenByEditForm, {
+        action: "add_page_block",
+        pageKey: "workspace",
+        block: {
+          type: "view",
+          viewKey: "contacts",
+          checklist: { labelField: "name", completedField: "completed" },
+        },
+      }),
+    ).toThrow(DirectPageComposerError);
+
+    expect(() =>
+      composeDirectPageAction(hiddenByEditForm, {
+        action: "add_page_block",
+        pageKey: "workspace",
+        block: {
+          type: "view",
+          viewKey: "contacts",
+          readOnly: true,
+          checklist: { labelField: "name", completedField: "completed" },
+        },
+      }),
+    ).not.toThrow();
   });
 
   it("preserves historical block IDs on rename and assigns IDs on layout save", () => {
@@ -474,6 +600,110 @@ describe("Page grammar and direct Workspace composer", () => {
       .layout_json;
     expect(removedLayout.blocks).toHaveLength(1);
     expect(removedLayout.blocks[0]?.type).toBe("heading");
+  });
+
+  it("keeps insertion and block controls inside a collapsible section", () => {
+    const nestedSnapshot: ConfigurationSnapshotV1 = {
+      ...snapshot,
+      pages: [
+        {
+          ...snapshot.pages[0]!,
+          layout_json: {
+            blocks: [
+              {
+                id: sectionBlockId,
+                type: "collapsible",
+                summary: "Opening",
+                open: true,
+                blocks: [
+                  {
+                    id: nestedHeadingBlockId,
+                    type: "heading",
+                    text: "Before",
+                    level: 2,
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const inserted = composeDirectPageAction(nestedSnapshot, {
+      action: "add_page_block",
+      pageKey: "workspace",
+      afterBlockId: nestedHeadingBlockId,
+      block: { type: "text", text: "Inside" },
+    });
+    const insertedSection = (
+      inserted.operations[0] as { layout_json: PageLayout }
+    ).layout_json.blocks[0];
+    expect(insertedSection).toMatchObject({
+      type: "collapsible",
+      blocks: [
+        { id: nestedHeadingBlockId, text: "Before" },
+        { type: "text", text: "Inside" },
+      ],
+    });
+
+    const updated = composeDirectPageAction(nestedSnapshot, {
+      action: "update_page_block",
+      pageKey: "workspace",
+      blockId: nestedHeadingBlockId,
+      block: { type: "heading", text: "Updated", level: 1 },
+    });
+    expect(
+      (
+        (updated.operations[0] as { layout_json: PageLayout }).layout_json
+          .blocks[0] as Extract<
+          PageLayout["blocks"][number],
+          { type: "collapsible" }
+        >
+      ).blocks[0],
+    ).toMatchObject({ id: nestedHeadingBlockId, text: "Updated", level: 1 });
+
+    const moved = composeDirectPageAction(
+      {
+        ...nestedSnapshot,
+        pages: [
+          {
+            ...nestedSnapshot.pages[0]!,
+            layout_json: {
+              blocks: [
+                {
+                  id: sectionBlockId,
+                  type: "collapsible",
+                  summary: "Opening",
+                  open: true,
+                  blocks: [
+                    {
+                      id: nestedHeadingBlockId,
+                      type: "heading",
+                      text: "Before",
+                      level: 2,
+                    },
+                    { type: "text", text: "After" },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        action: "move_page_block",
+        pageKey: "workspace",
+        blockId: nestedHeadingBlockId,
+        direction: "down",
+      },
+    );
+    const movedSection = (moved.operations[0] as { layout_json: PageLayout })
+      .layout_json.blocks[0];
+    expect(movedSection).toMatchObject({
+      type: "collapsible",
+      blocks: [{ text: "After" }, { id: nestedHeadingBlockId }],
+    });
   });
 
   it("fails closed when a Page block references an unavailable View", () => {

@@ -1,0 +1,89 @@
+{
+  "date": "2026-09-08",
+  "route": "http://localhost:3000/app/lenni-connections-demo/pages/daily-operations",
+  "browser": "Google Chrome DevTools Protocol against an isolated local profile",
+  "credentials": "Seeded local demo accounts from scripts/demo-seed.mjs",
+  "results": [
+    {
+      "role": "owner",
+      "viewport": "1440x900",
+      "innerWidth": 1440,
+      "innerHeight": 900,
+      "documentScrollWidth": 1440,
+      "canEdit": true,
+      "readingControl": true
+    },
+    {
+      "role": "owner",
+      "viewport": "1024x768",
+      "innerWidth": 1024,
+      "innerHeight": 768,
+      "documentScrollWidth": 1024,
+      "canEdit": true,
+      "readingControl": true
+    },
+    {
+      "role": "owner",
+      "viewport": "390x844",
+      "innerWidth": 390,
+      "innerHeight": 844,
+      "documentScrollWidth": 390,
+      "canEdit": true,
+      "readingControl": true
+    },
+    {
+      "role": "admin",
+      "viewport": "1440x900",
+      "innerWidth": 1440,
+      "innerHeight": 900,
+      "documentScrollWidth": 1440,
+      "canEdit": true,
+      "readingControl": true
+    },
+    {
+      "role": "admin",
+      "viewport": "1024x768",
+      "innerWidth": 1024,
+      "innerHeight": 768,
+      "documentScrollWidth": 1024,
+      "canEdit": true,
+      "readingControl": true
+    },
+    {
+      "role": "admin",
+      "viewport": "390x844",
+      "innerWidth": 390,
+      "innerHeight": 844,
+      "documentScrollWidth": 390,
+      "canEdit": true,
+      "readingControl": true
+    },
+    {
+      "role": "staff",
+      "viewport": "1440x900",
+      "innerWidth": 1440,
+      "innerHeight": 900,
+      "documentScrollWidth": 1440,
+      "canEdit": false,
+      "readingControl": false
+    },
+    {
+      "role": "staff",
+      "viewport": "1024x768",
+      "innerWidth": 1024,
+      "innerHeight": 768,
+      "documentScrollWidth": 1024,
+      "canEdit": false,
+      "readingControl": false
+    },
+    {
+      "role": "staff",
+      "viewport": "390x844",
+      "innerWidth": 390,
+      "innerHeight": 844,
+      "documentScrollWidth": 390,
+      "canEdit": false,
+      "readingControl": false
+    }
+  ]
+}

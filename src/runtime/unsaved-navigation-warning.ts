@@ -28,6 +28,7 @@ function navigationAnchor(event: MouseEvent): HTMLAnchorElement | null {
 export function useUnsavedNavigationWarning(
   active: boolean,
   message = defaultMessage,
+  onInternalNavigation?: (href: string) => void,
 ): void {
   useEffect(() => {
     if (!active) return;
@@ -36,7 +37,21 @@ export function useUnsavedNavigationWarning(
       event.returnValue = true;
     };
     const beforeLinkNavigation = (event: MouseEvent): void => {
-      if (!navigationAnchor(event) || window.confirm(message)) return;
+      const anchor = navigationAnchor(event);
+      if (!anchor) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (
+        onInternalNavigation &&
+        destination.origin === window.location.origin
+      ) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onInternalNavigation(
+          `${destination.pathname}${destination.search}${destination.hash}`,
+        );
+        return;
+      }
+      if (window.confirm(message)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -46,5 +61,5 @@ export function useUnsavedNavigationWarning(
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("click", beforeLinkNavigation, true);
     };
-  }, [active, message]);
+  }, [active, message, onInternalNavigation]);
 }

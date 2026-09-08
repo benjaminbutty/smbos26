@@ -10,6 +10,8 @@ import {
   assetErrorMessage,
   decodePageAsset,
   PAGE_ASSET_BUCKET,
+  PAGE_ASSET_MAX_BYTES,
+  PAGE_ASSET_MAX_PIXELS,
   type PageAssetMimeType,
 } from "../../../../../../runtime/media/page-assets";
 
@@ -19,6 +21,44 @@ interface AssetRouteProps {
 
 function errorResponse(message: string, status = 400): NextResponse {
   return NextResponse.json({ ok: false, message }, { status });
+}
+
+const PAGE_ASSET_MULTIPART_OVERHEAD = 64 * 1024;
+const PAGE_ASSET_REQUEST_MAX_BYTES =
+  PAGE_ASSET_MAX_BYTES + PAGE_ASSET_MULTIPART_OVERHEAD;
+
+class AssetRequestTooLargeError extends Error {}
+
+async function readBoundedFormData(request: Request): Promise<FormData> {
+  if (!request.body) return request.formData();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > PAGE_ASSET_REQUEST_MAX_BYTES) {
+        await reader.cancel();
+        throw new AssetRequestTooLargeError();
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new Request(request.url, {
+    body: bytes,
+    headers: request.headers,
+    method: request.method,
+  }).formData();
 }
 
 export async function POST(
@@ -40,21 +80,60 @@ export async function POST(
     );
   }
 
-  const form = await request.formData();
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null) {
+    const parsedLength = Number(contentLength);
+    if (
+      !Number.isSafeInteger(parsedLength) ||
+      parsedLength < 1 ||
+      parsedLength > PAGE_ASSET_REQUEST_MAX_BYTES
+    ) {
+      return errorResponse("Images must be 3 MiB or smaller.", 413);
+    }
+  }
+
+  let form: FormData;
+  try {
+    form = await readBoundedFormData(request);
+  } catch (error) {
+    if (error instanceof AssetRequestTooLargeError) {
+      return errorResponse("Images must be 3 MiB or smaller.", 413);
+    }
+    return errorResponse("Choose a valid image upload.", 400);
+  }
   const uploaded = form.get("file");
   if (!(uploaded instanceof File)) {
     return errorResponse("Choose an image to upload.");
+  }
+  if (uploaded.size > PAGE_ASSET_MAX_BYTES) {
+    return errorResponse("Images must be 3 MiB or smaller.", 413);
   }
   try {
     const decoded = await decodePageAsset({
       bytes: new Uint8Array(await uploaded.arrayBuffer()),
       mimeType: uploaded.type,
     });
+    if (decoded.bytes.byteLength > PAGE_ASSET_MAX_BYTES) {
+      return errorResponse("Images must be 3 MiB or smaller.", 413);
+    }
+    if (
+      !Number.isSafeInteger(decoded.width) ||
+      !Number.isSafeInteger(decoded.height) ||
+      decoded.width < 1 ||
+      decoded.height < 1 ||
+      decoded.width * decoded.height > PAGE_ASSET_MAX_PIXELS
+    ) {
+      return errorResponse(
+        "That image is too large to place on a Page. Choose an image under 20 megapixels.",
+        413,
+      );
+    }
     const assetId = randomUUID();
     const extension =
       decoded.mimeType === "image/jpeg" ? "jpg" : decoded.mimeType.slice(6);
     const storageKey = `${tenant.business.id}/${assetId}.${extension}`;
-    const upload = await supabase.storage
+    const admin = createAdminClient();
+    const upload = await admin.storage
       .from(PAGE_ASSET_BUCKET)
       .upload(storageKey, decoded.bytes, {
         cacheControl: "private, max-age=0, no-store",
@@ -64,17 +143,16 @@ export async function POST(
     if (upload.error) {
       throw new Error(upload.error.message);
     }
-    const { error: registryError } = await supabase
-      .from("media_assets")
-      .insert({
-        business_id: tenant.business.id,
-        byte_size: decoded.bytes.byteLength,
-        height: decoded.height,
-        id: assetId,
-        mime_type: decoded.mimeType as PageAssetMimeType,
-        storage_key: storageKey,
-        width: decoded.width,
-      });
+    const { error: registryError } = await admin.from("media_assets").insert({
+      business_id: tenant.business.id,
+      byte_size: decoded.bytes.byteLength,
+      created_by: tenant.user.id,
+      height: decoded.height,
+      id: assetId,
+      mime_type: decoded.mimeType as PageAssetMimeType,
+      storage_key: storageKey,
+      width: decoded.width,
+    });
     if (registryError) {
       try {
         await createAdminClient()

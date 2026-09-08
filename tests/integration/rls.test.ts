@@ -551,6 +551,35 @@ describe("tenant row level security", () => {
     expect(businessUpdate).toEqual([]);
   });
 
+  it("keeps private Page media writes inside the validated server lane", async () => {
+    const assetId = crypto.randomUUID();
+    const directRegistryInsert = await ownerA.client
+      .from("media_assets")
+      .insert({
+        business_id: businessA.id,
+        byte_size: 3,
+        created_by: ownerA.user.id,
+        height: 1,
+        id: assetId,
+        mime_type: "image/png",
+        storage_key: `${businessA.id}/${assetId}.png`,
+        width: 1,
+      });
+    expect(directRegistryInsert.error?.code).toBe("42501");
+
+    const storageKey = `${businessA.id}/${crypto.randomUUID()}.png`;
+    const directStorageUpload = await ownerA.client.storage
+      .from("page-assets")
+      .upload(storageKey, new Uint8Array([1, 2, 3]), {
+        contentType: "image/png",
+        upsert: false,
+      });
+    expect(directStorageUpload.error).toBeTruthy();
+    if (!directStorageUpload.error) {
+      await admin.storage.from("page-assets").remove([storageKey]);
+    }
+  });
+
   it("lets one user legitimately access both of their businesses", async () => {
     const { data, error } = await dualMember.client
       .from("businesses")

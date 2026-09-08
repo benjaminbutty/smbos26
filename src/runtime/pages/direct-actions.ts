@@ -244,8 +244,13 @@ export async function createChecklistAction(
     currentness: unknown;
     name: unknown;
     afterBlockId?: unknown;
+    containerBlockId?: unknown;
   },
 ): Promise<DirectPageActionResult> {
+  const hasPlacement = Object.prototype.hasOwnProperty.call(
+    input,
+    "afterBlockId",
+  );
   const name = z.string().trim().min(1).max(120).safeParse(input.name);
   const afterBlockIdResult =
     input.afterBlockId === undefined || input.afterBlockId === null
@@ -260,12 +265,23 @@ export async function createChecklistAction(
     };
   }
   const afterBlockId = afterBlockIdResult.data;
+  const containerBlockIdResult =
+    input.containerBlockId === undefined
+      ? { success: true as const, data: undefined }
+      : z.string().safeParse(input.containerBlockId);
+  if (!containerBlockIdResult.success) {
+    return {
+      status: "error",
+      message: "That checklist placement is no longer available.",
+    };
+  }
   return applyPageIntent(businessSlug, pageKey, input.currentness, {
     action: "create_checklist",
     pageKey,
     name: name.data,
-    ...(afterBlockId === undefined || afterBlockId === null
-      ? { afterBlockId }
+    ...(hasPlacement ? { afterBlockId } : {}),
+    ...(containerBlockIdResult.data !== undefined
+      ? { containerBlockId: containerBlockIdResult.data }
       : {}),
   });
 }
@@ -278,6 +294,6 @@ export async function createPageAction(
   const title = formData.get("title");
   return applyPageIntent(businessSlugInput, "new_page", currentnessInput, {
     action: "create_page",
-    title: typeof title === "string" ? title : "",
+    title: typeof title === "string" && title.trim() ? title : "Untitled page",
   });
 }

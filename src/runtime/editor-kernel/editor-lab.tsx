@@ -96,6 +96,8 @@ export interface EditorRecordContext {
 
 export interface EditorKernelProps {
   adapter: TableEditorAdapter;
+  /** Stable identity for a mounted embed; View keys may appear more than once. */
+  instanceId?: string;
   onRecordsChanged?: () => void;
   onArchiveRecord?: (recordId: string) => Promise<void>;
   onPendingWritesChange?: (pending: boolean) => void;
@@ -1359,6 +1361,7 @@ export function AddColumnPopover({
 
 export function EditorKernel({
   adapter,
+  instanceId,
   onRecordsChanged,
   onArchiveRecord,
   onPendingWritesChange,
@@ -3291,6 +3294,7 @@ export function EditorKernel({
       className={`editor-kernel-page ${variant === "embedded" ? "editor-kernel-embedded" : "editor-kernel-workspace"}`}
       data-read-only={readOnly ? "true" : "false"}
       data-row-creation={capabilities.rowCreation}
+      data-instance-id={instanceId}
     >
       <header className="editor-lab-header">
         <div className="editor-table-title-block">

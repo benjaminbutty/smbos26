@@ -90,6 +90,7 @@ const addPageBlockIntentSchema = z
     pageKey: graphKeySchema,
     block: directPageBlockInputSchema,
     afterBlockId: directPageBlockIdSchema.nullable().optional(),
+    containerBlockId: directPageBlockIdSchema.optional(),
   })
   .strict();
 
@@ -190,6 +191,7 @@ const createChecklistIntentSchema = z
     pageKey: graphKeySchema,
     name: directPageTitleSchema,
     afterBlockId: directPageBlockIdSchema.nullable().optional(),
+    containerBlockId: directPageBlockIdSchema.optional(),
   })
   .strict();
 

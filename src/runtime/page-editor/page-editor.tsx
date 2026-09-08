@@ -65,7 +65,8 @@ type CreateChecklistAction = (input: {
   currentness: DirectPageCurrentness;
   pageKey: string;
   name: string;
-  afterBlockId?: string;
+  afterBlockId?: string | null;
+  containerBlockId?: string;
 }) => Promise<DirectPageActionResult>;
 
 type PublishPageChangesAction = (input: {
@@ -332,10 +333,12 @@ function embeddedCapabilities(
 
 function SavedViewBlock({
   block,
+  blockIdentifier,
   businessSlug,
   embed,
 }: Readonly<{
   block: Extract<PageBlock, { type: "view" }>;
+  blockIdentifier?: string | null;
   businessSlug: string;
   embed: PageEditorViewEmbed | undefined;
 }>): ReactNode {
@@ -388,12 +391,24 @@ function SavedViewBlock({
       <ProductionTableWorkspace
         actions={tableEmbed.actions}
         businessSlug={businessSlug}
+        {...(tableEmbed.bulkUpdate
+          ? { bulkUpdate: tableEmbed.bulkUpdate }
+          : {})}
         capabilities={embeddedCapabilities(
           tableEmbed.capabilities,
           block.read_only === true,
         )}
+        {...(tableEmbed.connectionSource
+          ? { connectionSource: tableEmbed.connectionSource }
+          : {})}
+        {...(tableEmbed.connectionTargets
+          ? { connectionTargets: tableEmbed.connectionTargets }
+          : {})}
         currentness={tableEmbed.currentness}
         creationFallbackHref={tableEmbed.creationFallbackHref}
+        {...(tableEmbed.existingConnections
+          ? { existingConnections: tableEmbed.existingConnections }
+          : {})}
         {...(tableEmbed.loadTablePage
           ? { loadTablePage: tableEmbed.loadTablePage }
           : {})}
@@ -404,6 +419,27 @@ function SavedViewBlock({
             }
           : {})}
         fullRecordPath={tablePath}
+        {...((tableEmbed.instanceId ?? blockIdentifier)
+          ? { instanceId: tableEmbed.instanceId ?? blockIdentifier! }
+          : {})}
+        {...(tableEmbed.initialHasMore !== undefined
+          ? { initialHasMore: tableEmbed.initialHasMore }
+          : {})}
+        {...(tableEmbed.initialSearch !== undefined
+          ? { initialSearch: tableEmbed.initialSearch }
+          : {})}
+        {...(tableEmbed.initialTotalCount !== undefined
+          ? { initialTotalCount: tableEmbed.initialTotalCount }
+          : {})}
+        {...(tableEmbed.loadContextualRecordCreateState
+          ? {
+              loadContextualRecordCreateState:
+                tableEmbed.loadContextualRecordCreateState,
+            }
+          : {})}
+        {...(tableEmbed.createContextualRecord
+          ? { createContextualRecord: tableEmbed.createContextualRecord }
+          : {})}
         {...(tableEmbed.recordCountLabel
           ? { recordCountLabel: tableEmbed.recordCountLabel }
           : {})}
@@ -595,6 +631,7 @@ function PageBlockView({
       return (
         <SavedViewBlock
           block={block}
+          blockIdentifier={blockIdentifier}
           businessSlug={businessSlug}
           embed={embed}
         />

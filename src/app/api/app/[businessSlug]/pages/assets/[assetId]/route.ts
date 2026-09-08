@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 import { resolveTenant } from "../../../../../../../auth/authorization";
 import { createServerClient } from "../../../../../../../db/supabase/server";
@@ -13,6 +14,12 @@ export async function GET(
   { params }: Readonly<AssetRouteProps>,
 ): Promise<Response> {
   const { assetId, businessSlug } = await params;
+  if (!z.uuid().safeParse(assetId).success) {
+    return NextResponse.json(
+      { message: "Image unavailable." },
+      { status: 404 },
+    );
+  }
   const supabase = await createServerClient();
   let tenant;
   try {
