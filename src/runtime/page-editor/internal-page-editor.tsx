@@ -41,6 +41,12 @@ import {
   SerialSaveCoordinator,
   type SaveCoordinatorResult,
 } from "./save-coordinator";
+import {
+  pageDraftEquals,
+  pageLayoutEquals,
+  resolvePageSaveAcknowledgement,
+  type PageDraft,
+} from "./page-draft-state";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -101,35 +107,6 @@ interface ImageUploadResult {
   src: string;
   width: number;
   height: number;
-}
-
-interface PageDraft {
-  layout: PageLayout;
-  title: string;
-}
-
-function stableSerialize(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stableSerialize(item)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function pageDraftEquals(left: PageDraft, right: PageDraft): boolean {
-  return (
-    left.title.trim() === right.title.trim() &&
-    stableSerialize(left.layout) === stableSerialize(right.layout)
-  );
-}
-
-function pageLayoutEquals(left: PageLayout, right: PageLayout): boolean {
-  return stableSerialize(left) === stableSerialize(right);
 }
 
 // Upload tokens are UUIDs and are removed as soon as each request settles.
@@ -393,9 +370,9 @@ export function InternalPageEditor({
   const pendingViewResolutionRef = useRef(false);
   const currentnessRef = useRef(currentness);
   const bodyDirtyRef = useRef(false);
-  const bodyRevisionRef = useRef(0);
   const saveBlockedRef = useRef<"stale" | "error" | null>(null);
   const candidateRef = useRef<PageDraft | null>(null);
+  const initialLayoutRef = useRef(layout);
   const acknowledgedDraftRef = useRef<PageDraft>({
     layout: withEditorBlockIds(layout),
     title: initialTitle,
@@ -544,14 +521,24 @@ export function InternalPageEditor({
         JSON.stringify(acknowledgedDraftRef.current.layout);
       bodyDirtyRef.current = bodyChanged;
       setBodyDirty(bodyChanged);
-      saveCoordinatorRef.current?.update(candidate);
-      if (saveBlockedRef.current) {
-        setStatus(saveBlockedRef.current);
-      } else if (saveCoordinatorRef.current?.inFlight) {
-        setStatus("saving");
+      const coordinator = saveCoordinatorRef.current;
+      if (coordinator) {
+        coordinator.update(candidate);
+        if (
+          coordinator.state.status !== "stale" &&
+          coordinator.state.status !== "error"
+        ) {
+          setMessage(null);
+        }
       } else {
-        setStatus("unsaved");
-        setMessage(null);
+        setStatus(
+          bodyChanged || nextTitle.trim() !== titleRef.current.trim()
+            ? "unsaved"
+            : "saved",
+        );
+        if (bodyChanged || nextTitle.trim() !== titleRef.current.trim()) {
+          setMessage(null);
+        }
       }
     },
     [setBodyDirty, setMessage, setReadingLayout, setStatus],
@@ -581,7 +568,6 @@ export function InternalPageEditor({
       } finally {
         suppressUpdatesRef.current = false;
       }
-      bodyRevisionRef.current += 1;
       setEmptyDocument(activeEditor.isEmpty);
       noteCandidate(activeEditor, titleDraftRef.current);
       const { $from } = activeEditor.state.selection;
@@ -718,11 +704,22 @@ export function InternalPageEditor({
     const hasLocalDraft =
       bodyDirtyRef.current ||
       titleDraftRef.current.trim() !== titleRef.current.trim();
+    const hasInFlightSave = saveCoordinatorRef.current?.inFlight ?? false;
     const latestLayout = withEditorBlockIds(layout);
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
       setLoadedCurrentness(currentness);
+      if (hasInFlightSave && !hasLocalDraft) {
+        // A route refresh can arrive while a request is still settling (for
+        // example after an edit is undone to the old baseline). Keep the
+        // serial coordinator and its in-flight acknowledgement authoritative;
+        // adopting the route payload here would cancel that request and let a
+        // later refresh recreate a blocked/dirty state.
+        setCurrentnessCandidate(currentness);
+        currentnessRef.current = currentness;
+        return;
+      }
       if (hasLocalDraft && reflectsOwnAction) {
         // A route refresh after our own acknowledgement can arrive while a
         // later title/body candidate is still in memory. Keep that candidate
@@ -844,33 +841,47 @@ export function InternalPageEditor({
       acknowledgedDraftRef.current = canonical;
       currentnessRef.current = result.currentness;
       setCurrentnessCandidate(result.currentness);
-      const changedWhileSaving = bodyRevisionRef.current !== revision;
-      const titleChangedWhileSaving =
-        titleDraftRef.current.trim() !== candidate.title.trim();
-      if (!changedWhileSaving && !titleChangedWhileSaving) {
-        reconcileCanonicalIds(editor!, candidate.layout, canonical.layout);
-        candidateRef.current = canonical;
+      const coordinator = saveCoordinatorRef.current;
+      const latestCandidate = candidateRef.current ?? candidate;
+      const acknowledgement = resolvePageSaveAcknowledgement({
+        candidateAtRequest: candidate,
+        canonical,
+        latestCandidate,
+        latestRevision: coordinator?.state.revision ?? revision,
+        requestRevision: revision,
+      });
+      const changedWhileSaving = !acknowledgement.candidateIsCurrent;
+      const preserveLocalCandidate = acknowledgement.preserveLocalCandidate;
+
+      // Always advance the acknowledged title baseline. When a newer local
+      // candidate exists, keep its draft value in the input while baselining
+      // dirty-state comparisons against the title that was actually saved.
+      titleRef.current = canonical.title;
+      setTitle(canonical.title);
+      if (!preserveLocalCandidate) {
+        reconcileCanonicalIds(
+          editor!,
+          acknowledgement.candidate.layout,
+          canonical.layout,
+        );
+        candidateRef.current = acknowledgement.candidate;
         setReadingLayout(canonical.layout);
         bodyDirtyRef.current = false;
         setBodyDirty(false);
-        titleRef.current = canonical.title;
         titleDraftRef.current = canonical.title;
-        setTitle(canonical.title);
         setTitleDraft(canonical.title);
       } else {
-        bodyDirtyRef.current =
-          JSON.stringify(candidateRef.current?.layout) !==
-          JSON.stringify(canonical.layout);
+        bodyDirtyRef.current = !pageLayoutEquals(
+          acknowledgement.candidate.layout,
+          canonical.layout,
+        );
         setBodyDirty(bodyDirtyRef.current);
+        setReadingLayout(acknowledgement.candidate.layout);
       }
       setConflict(null);
       saveBlockedRef.current = null;
       setMessage(null);
-      if (
-        !changedWhileSaving &&
-        !titleChangedWhileSaving &&
-        pendingViewResolutionRef.current
-      ) {
+      if (!changedWhileSaving && pendingViewResolutionRef.current) {
         pendingViewResolutionRef.current = false;
         routerRef.current.refresh();
       }
@@ -909,7 +920,7 @@ export function InternalPageEditor({
       };
     } catch {
       initialCandidate = {
-        layout: withEditorBlockIds(layout),
+        layout: withEditorBlockIds(initialLayoutRef.current),
         title: titleRef.current,
       };
     }
@@ -943,7 +954,7 @@ export function InternalPageEditor({
       coordinator.dispose();
       saveCoordinatorRef.current = null;
     };
-  }, [editor, layout]);
+  }, [editor]);
 
   const titleDirty = titleDraft.trim() !== title;
 

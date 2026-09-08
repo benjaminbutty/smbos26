@@ -101,6 +101,20 @@ export class SerialSaveCoordinator<T> {
     return this.#candidate;
   }
 
+  /**
+   * Return whether a save callback is still acknowledging the latest
+   * candidate. The object identity is intentional: every editor candidate is
+   * a new immutable envelope, so this distinguishes a later edit even when
+   * it happens to serialize to the same value as an earlier one.
+   */
+  isCurrent(candidate: T, revision: number): boolean {
+    return (
+      !this.#disposed &&
+      this.#revision === revision &&
+      this.#candidate === candidate
+    );
+  }
+
   update(candidate: T): void {
     if (this.#disposed) return;
     this.#candidate = candidate;
@@ -182,18 +196,29 @@ export class SerialSaveCoordinator<T> {
   async flush(): Promise<SaveCoordinatorResult<T> | null> {
     if (this.#disposed) return null;
     this.#clearTimer();
-    if (this.#inFlight) {
-      const inFlight = this.#inFlight;
-      await inFlight;
-      if (this.#inFlight === inFlight) this.#inFlight = null;
-    }
-    if (this.#blocked || !this.hasUnacknowledgedWork) {
-      if (!this.#blocked && !this.hasUnacknowledgedWork) {
-        this.#setStatus("saved");
+    let lastResult: SaveCoordinatorResult<T> | null = null;
+    while (!this.#disposed) {
+      if (this.#inFlight) {
+        const inFlight = this.#inFlight;
+        const result = await inFlight;
+        if (this.#inFlight === inFlight) this.#inFlight = null;
+        lastResult = result;
+        if (result.status !== "success") return result;
       }
-      return null;
+      this.#clearTimer();
+      if (this.#blocked || !this.hasUnacknowledgedWork) {
+        if (!this.#blocked && !this.hasUnacknowledgedWork) {
+          this.#setStatus("saved");
+        }
+        return lastResult;
+      }
+      // A request may have been started by this very flush call, so keep
+      // looping after its acknowledgement. This drains edits queued during
+      // that request before navigation or lifecycle actions continue.
+      lastResult = await this.#runSave();
+      if (lastResult.status !== "success") return lastResult;
     }
-    return this.#runSave();
+    return lastResult;
   }
 
   dispose(): void {
