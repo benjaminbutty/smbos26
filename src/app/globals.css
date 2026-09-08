@@ -667,6 +667,51 @@
   }
 }
 
+/* The supplied Lenni logo uses an outlined wordmark and a currentColor mark.
+   Keep their placement in one component rather than recreating logo text in
+   individual shells. */
+.lenni-brand-lockup {
+  --lenni-brand-mark-width: 2.125rem;
+
+  display: inline-flex;
+  align-items: flex-end;
+  gap: calc(var(--lenni-brand-mark-width) * 0.27);
+  color: var(--coral-500);
+  line-height: 0;
+  vertical-align: middle;
+}
+
+.lenni-brand-symbol {
+  display: block;
+  width: var(--lenni-brand-mark-width);
+  height: auto;
+  overflow: visible;
+  flex: 0 0 auto;
+}
+
+.lenni-brand-wordmark {
+  display: block;
+  width: auto;
+  /* The full SVG includes the custom raised tittle. At this height the
+     outlined letter cap-height, rather than its bounding box, equals the
+     optical height of the mark. */
+  height: calc(var(--lenni-brand-mark-width) * 0.751);
+  flex: 0 0 auto;
+  user-select: none;
+}
+
+.lenni-brand-lockup-symbol {
+  gap: 0;
+}
+
+.workspace-brand .lenni-brand-lockup {
+  --lenni-brand-mark-width: 2.125rem;
+}
+
+.workspace-topbar-brand .lenni-brand-lockup {
+  --lenni-brand-mark-width: 1.5rem;
+}
+
 /* Milestone 15A direct Table Workspace */
 .sidebar-section {
   display: grid;
@@ -6043,13 +6088,7 @@ textarea {
   min-height: 100vh;
   overflow-x: hidden;
   color: var(--marketing-ink);
-  background:
-    radial-gradient(
-      circle at 92% 6%,
-      rgba(255, 201, 194, 0.42),
-      transparent 27rem
-    ),
-    var(--marketing-canvas);
+  background: var(--marketing-canvas);
   font-family:
     Satoshi,
     Inter,
@@ -6063,20 +6102,24 @@ textarea {
 
 .marketing-frame .site-header,
 .marketing-frame .site-footer {
-  width: min(calc(100% - 3rem), 80rem);
+  width: min(calc(100% - 8rem), 90rem);
   margin-inline: auto;
 }
 
 .marketing-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
   position: relative;
   z-index: 2;
-  min-height: 4.8rem;
-  padding-block: 1rem;
-  border-bottom: 1px solid var(--marketing-border);
+  min-height: 100px;
+  padding-block: 0;
+  border-bottom: 0;
   background: transparent;
 }
 
 .marketing-brand {
+  justify-self: start;
   color: var(--marketing-ink);
   font-size: 1rem;
   font-weight: 800;
@@ -6087,14 +6130,15 @@ textarea {
 .marketing-nav {
   display: flex;
   align-items: center;
-  gap: clamp(0.85rem, 2vw, 1.75rem);
+  gap: 2rem;
+  justify-self: center;
 }
 
 .marketing-nav a,
 .marketing-footer a {
   color: var(--marketing-muted);
-  font-size: 0.82rem;
-  font-weight: 650;
+  font-size: 0.875rem;
+  font-weight: 500;
   text-decoration: none;
 }
 
@@ -6105,19 +6149,48 @@ textarea {
 
 .marketing-nav .marketing-header-action,
 .marketing-header-action {
-  min-height: 2.75rem;
-  padding: 0.7rem 1rem;
-  color: #fff;
-  background: var(--marketing-coral-700);
-  border: 1px solid var(--marketing-coral-700);
-  border-radius: 0.65rem;
-  box-shadow: 0 0.35rem 0.75rem rgba(216, 58, 47, 0.16);
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 0;
+  padding: 12px 0;
+  color: var(--marketing-ink);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--marketing-ink);
+  border-radius: 0;
+  box-shadow: none;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .marketing-nav .marketing-header-action:hover,
 .marketing-header-action:hover {
+  color: var(--marketing-ink);
+  background: transparent;
+  border-bottom-color: var(--marketing-coral-700);
+}
+
+.marketing-header-action span {
+  color: var(--marketing-ink);
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.marketing-skip-link {
+  position: absolute;
+  top: -100px;
+  left: 16px;
+  z-index: 20;
+  padding: 16px;
   color: #fff;
-  background: var(--marketing-coral-900);
+  background: var(--marketing-ink);
+}
+
+.marketing-skip-link:focus {
+  top: 10px;
 }
 
 .marketing-nav-mobile {
@@ -7389,11 +7462,15 @@ textarea {
 
 @media (max-width: 56rem) {
   .marketing-nav-desktop {
+    display: flex;
+  }
+
+  .marketing-nav-desktop a:not(.marketing-header-action) {
     display: none;
   }
 
   .marketing-nav-mobile {
-    display: block;
+    display: none;
   }
 
   .marketing-hero,
@@ -7566,6 +7643,33 @@ textarea {
   .marketing-article-section-heading h2,
   .marketing-article-closing h2 {
     font-size: clamp(2.25rem, 11vw, 3.6rem);
+  }
+}
+
+@media (max-width: 38.75rem) {
+  .marketing-frame .site-header,
+  .marketing-frame .site-footer {
+    width: min(calc(100% - 2.5rem), 90rem);
+  }
+
+  .marketing-header {
+    min-height: 80px;
+  }
+
+  .marketing-header-action {
+    gap: 12px;
+    padding-block: 10px;
+    font-size: 0.6875rem !important;
+  }
+
+  .marketing-header-action span {
+    font-size: 18px;
+  }
+
+  .marketing-footer > div:last-child {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.35rem;
   }
 }
 

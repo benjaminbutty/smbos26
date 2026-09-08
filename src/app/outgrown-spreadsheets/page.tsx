@@ -37,7 +37,7 @@ function EarlyAccessLink({ className }: { className?: string }): ReactNode {
 
 export default function OutgrownSpreadsheetsPage(): ReactNode {
   return (
-    <main className="marketing-article">
+    <main id="main" className="marketing-article" tabIndex={-1}>
       <section
         className="marketing-article-hero"
         aria-labelledby="article-title"

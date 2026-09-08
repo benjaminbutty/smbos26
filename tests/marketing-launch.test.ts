@@ -36,6 +36,8 @@ describe("Lenni marketing launch", () => {
     expect(markup).toContain("The business runs from normal software.");
     expect(markup).toContain("Show me what Lenni would build");
     expect(markup).toContain('href="/#early-access"');
+    expect(markup).toContain('id="main"');
+    expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain("Lenni is not generally available yet.");
   });
 
@@ -46,6 +48,7 @@ describe("Lenni marketing launch", () => {
 
     expect(markup).toContain("marketing-frame");
     expect(markup).toContain("Outgrown spreadsheets");
+    expect(markup).toContain('href="/outgrown-spreadsheets"');
     expect(markup).toContain("Join early access");
     expect(
       markup.match(

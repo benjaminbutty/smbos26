@@ -12,6 +12,9 @@ describe("Lenni small-business software guide", () => {
   it("renders the decision guide, product proof and early-access path", () => {
     const markup = renderToStaticMarkup(createElement(SoftwareGuidePage));
 
+    expect(markup).toContain('id="main"');
+    expect(markup).toContain('tabindex="-1"');
+
     expect(markup).toContain(
       "What software does your small business <span>actually need?</span>",
     );

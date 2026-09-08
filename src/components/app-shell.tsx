@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
+import { LenniBrand } from "./lenni-brand";
+
 interface AppShellProps {
   children: ReactNode;
 }
@@ -11,46 +13,40 @@ interface AppShellProps {
 function MarketingShell({ children }: Readonly<AppShellProps>): ReactNode {
   return (
     <div className="app-frame marketing-frame">
+      <a className="marketing-skip-link" href="#main">
+        Skip to content
+      </a>
       <header className="site-header marketing-header">
         <Link className="marketing-brand" href="/" aria-label="Lenni home">
-          Lenni
+          <LenniBrand />
         </Link>
 
         <nav
           className="marketing-nav marketing-nav-desktop"
           aria-label="Primary"
         >
-          <Link href="/outgrown-spreadsheets">Outgrown spreadsheets</Link>
-          <Link href="/#early-access">Early access</Link>
-          <Link className="marketing-header-action" href="/#early-access">
-            Join early access
-          </Link>
+          <Link href="/#possibilities">Meet Lenni</Link>
+          <Link href="/#why">Why we&apos;re building it</Link>
         </nav>
-
-        <details className="marketing-nav-mobile">
-          <summary>Menu</summary>
-          <nav aria-label="Mobile primary">
-            <Link href="/outgrown-spreadsheets">Outgrown spreadsheets</Link>
-            <Link href="/#early-access">Early access</Link>
-            <Link href="/#early-access">Join early access</Link>
-          </nav>
-        </details>
+        <Link className="marketing-header-action" href="/#early-access">
+          Join early access <span aria-hidden="true">↗</span>
+        </Link>
       </header>
 
       {children}
 
       <footer className="site-footer marketing-footer">
         <div>
-          <Link className="marketing-brand" href="/">
-            Lenni
-          </Link>
-          <span>Your business, in one calm workspace.</span>
+          <span>Made for the independently minded.</span>
+          <span>Lenni © 2026</span>
         </div>
         <div className="marketing-footer-links">
           <Link href="/guides/what-software-does-my-small-business-need">
             Choosing software
           </Link>
+          <Link href="/outgrown-spreadsheets">Outgrown spreadsheets</Link>
           <Link href="/#early-access">Join early access</Link>
+          <Link href="#main">Back to top ↑</Link>
         </div>
       </footer>
     </div>

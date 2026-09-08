@@ -5,7 +5,15 @@ import { useActionState } from "react";
 import { joinEarlyAccess } from "../app/actions/marketing";
 import { EARLY_ACCESS_INITIAL_STATE } from "./early-access-form-state";
 
-export function EarlyAccessForm() {
+interface EarlyAccessFormProps {
+  readonly className?: string | undefined;
+  readonly showBusinessType?: boolean;
+}
+
+export function EarlyAccessForm({
+  className,
+  showBusinessType = true,
+}: Readonly<EarlyAccessFormProps>) {
   const [state, formAction, pending] = useActionState(
     joinEarlyAccess,
     EARLY_ACCESS_INITIAL_STATE,
@@ -26,7 +34,11 @@ export function EarlyAccessForm() {
   }
 
   return (
-    <form className="early-access-form" action={formAction} noValidate>
+    <form
+      className={`early-access-form${className ? ` ${className}` : ""}`}
+      action={formAction}
+      noValidate
+    >
       <div className="early-access-field">
         <label htmlFor="early-access-email">Email</label>
         <input
@@ -39,20 +51,23 @@ export function EarlyAccessForm() {
           aria-describedby="early-access-note"
         />
       </div>
-      <div className="early-access-field">
-        <label htmlFor="early-access-business-type">
-          What kind of business do you run? <span>(optional)</span>
-        </label>
-        <input
-          id="early-access-business-type"
-          name="businessType"
-          type="text"
-          autoComplete="organization-title"
-          placeholder="Bakery, mobile service, retailer…"
-        />
-      </div>
+      {showBusinessType ? (
+        <div className="early-access-field">
+          <label htmlFor="early-access-business-type">
+            What kind of business do you run? <span>(optional)</span>
+          </label>
+          <input
+            id="early-access-business-type"
+            name="businessType"
+            type="text"
+            autoComplete="organization-title"
+            placeholder="Bakery, mobile service, retailer…"
+          />
+        </div>
+      ) : null}
       <button className="marketing-button" type="submit" disabled={pending}>
         {pending ? "Joining…" : "Join early access"}
+        <span aria-hidden="true">↗</span>
       </button>
       <p className="early-access-note" id="early-access-note">
         We&apos;ll only use this to contact you about early access. No account
