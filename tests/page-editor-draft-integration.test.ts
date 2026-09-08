@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PageLayout } from "../src/core/experience/schemas";
+import { checklistFormForMode } from "../src/runtime/page-editor/checklist-form-state";
 import {
   pageDraftEquals,
   resolvePageSaveAcknowledgement,
@@ -26,6 +27,38 @@ function deferred<T>() {
 }
 
 describe("Internal Page draft and save integration", () => {
+  it("retains slash insertion placement when switching checklist modes", () => {
+    const createForm = {
+      afterBlockId: null,
+      containerBlockId: "section-1",
+      mode: "create" as const,
+      name: "Weekly opening tasks",
+    };
+    expect(checklistFormForMode(createForm, "existing")).toEqual({
+      afterBlockId: null,
+      containerBlockId: "section-1",
+      mode: "existing",
+      name: "",
+    });
+
+    const existingForm = {
+      afterBlockId: "paragraph-1",
+      containerBlockId: "section-1",
+      completedField: "done",
+      labelField: "label",
+      mode: "existing" as const,
+      name: "",
+      readOnly: true,
+      viewKey: "weekly-tasks",
+    };
+    expect(checklistFormForMode(existingForm, "create")).toEqual({
+      afterBlockId: "paragraph-1",
+      containerBlockId: "section-1",
+      mode: "create",
+      name: "",
+    });
+  });
+
   it("preserves the live editor document only for an equal canonical refresh", () => {
     const acknowledged = draft("Opening guide", "Opening note");
 

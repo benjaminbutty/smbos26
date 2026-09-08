@@ -49,6 +49,10 @@ import {
   type PageDraft,
 } from "./page-draft-state";
 import { PageConflictPanel } from "./page-conflict-panel";
+import {
+  checklistFormForMode,
+  type ChecklistFormState,
+} from "./checklist-form-state";
 
 type InternalPageEditorProps = Pick<
   PageEditorProps,
@@ -414,16 +418,9 @@ export function InternalPageEditor({
   const [emptyDocument, setEmptyDocument] = useState(
     layout.blocks.length === 0,
   );
-  const [checklistForm, setChecklistForm] = useState<{
-    afterBlockId?: string | null | undefined;
-    completedField?: string | undefined;
-    containerBlockId?: string | undefined;
-    labelField?: string | undefined;
-    mode: "create" | "existing";
-    name: string;
-    readOnly?: boolean | undefined;
-    viewKey?: string | undefined;
-  } | null>(null);
+  const [checklistForm, setChecklistForm] = useState<ChecklistFormState | null>(
+    null,
+  );
   const [mode, setMode] = useState<"editing" | "reading">("editing");
   const [blockMenuOpen, setBlockMenuOpen] = useState(false);
   const [conflict, setConflict] = useState<{
@@ -2499,7 +2496,9 @@ export function InternalPageEditor({
                   <button
                     className="button button-secondary button-small"
                     onClick={() =>
-                      setChecklistForm({ mode: "existing", name: "" })
+                      setChecklistForm((value) =>
+                        value ? checklistFormForMode(value, "existing") : value,
+                      )
                     }
                     type="button"
                   >
@@ -2509,7 +2508,9 @@ export function InternalPageEditor({
                   <button
                     className="button button-secondary button-small"
                     onClick={() =>
-                      setChecklistForm({ mode: "create", name: "" })
+                      setChecklistForm((value) =>
+                        value ? checklistFormForMode(value, "create") : value,
+                      )
                     }
                     type="button"
                   >
