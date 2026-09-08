@@ -61,6 +61,10 @@ Incomplete because of the local test environment:
   but `supabase_db_smbos26` was unhealthy after local resource starvation
   (long checkpoints, delayed autovacuum and realtime scheduler delays). Its
   suites stopped in setup; do not read this as a passing RLS/integration run.
+- After one non-destructive local container restart, the final authenticated
+  Page preview rendered its logo, body, Table, and the shared unchecked
+  checklist Record. A final bounded direct-Page/checklist/RLS retry was stopped
+  when the database became unhealthy again; no assertions completed.
 - `npm run build` compiled successfully in 44 seconds, then stalled in Next’s
   post-compile TypeScript/page phase. Its cause was not confirmed, so it was
   stopped rather than reported as a successful build.
