@@ -29,6 +29,24 @@ export function pageLayoutEquals(left: PageLayout, right: PageLayout): boolean {
   return stableSerialize(left) === stableSerialize(right);
 }
 
+/**
+ * Keep the live Tiptap document when a route refresh reflects the same
+ * acknowledged Page and the editor already contains that document. Calling
+ * setContent for this no-op refresh would move the caret and reset undo
+ * history; a different canonical document still needs to be applied.
+ */
+export function shouldPreserveEditorDocument(input: {
+  acknowledged: PageDraft;
+  editor: PageDraft | null;
+  latest: PageDraft;
+}): boolean {
+  return (
+    pageDraftEquals(input.latest, input.acknowledged) &&
+    input.editor !== null &&
+    pageDraftEquals(input.editor, input.latest)
+  );
+}
+
 export interface PageSaveAcknowledgement {
   acknowledged: PageDraft;
   candidate: PageDraft;

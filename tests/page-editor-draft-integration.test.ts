@@ -4,6 +4,7 @@ import type { PageLayout } from "../src/core/experience/schemas";
 import {
   pageDraftEquals,
   resolvePageSaveAcknowledgement,
+  shouldPreserveEditorDocument,
   type PageDraft,
 } from "../src/runtime/page-editor/page-draft-state";
 import { SerialSaveCoordinator } from "../src/runtime/page-editor/save-coordinator";
@@ -25,6 +26,39 @@ function deferred<T>() {
 }
 
 describe("Internal Page draft and save integration", () => {
+  it("preserves the live editor document only for an equal canonical refresh", () => {
+    const acknowledged = draft("Opening guide", "Opening note");
+
+    expect(
+      shouldPreserveEditorDocument({
+        acknowledged,
+        editor: acknowledged,
+        latest: acknowledged,
+      }),
+    ).toBe(true);
+    expect(
+      shouldPreserveEditorDocument({
+        acknowledged,
+        editor: acknowledged,
+        latest: draft("Opening guide", "Server edit"),
+      }),
+    ).toBe(false);
+    expect(
+      shouldPreserveEditorDocument({
+        acknowledged,
+        editor: draft("Opening guide", "Local edit"),
+        latest: acknowledged,
+      }),
+    ).toBe(false);
+    expect(
+      shouldPreserveEditorDocument({
+        acknowledged,
+        editor: null,
+        latest: acknowledged,
+      }),
+    ).toBe(false);
+  });
+
   it("acknowledges a title-only save for Reading and lifecycle operations", async () => {
     const initial = draft("Untitled page", "Opening note");
     const acknowledgements: ReturnType<

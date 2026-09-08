@@ -45,6 +45,7 @@ import {
   pageDraftEquals,
   pageLayoutEquals,
   resolvePageSaveAcknowledgement,
+  shouldPreserveEditorDocument,
   type PageDraft,
 } from "./page-draft-state";
 import { PageConflictPanel } from "./page-conflict-panel";
@@ -768,13 +769,33 @@ export function InternalPageEditor({
       titleDraftRef.current = initialTitle;
       setTitle(initialTitle);
       setTitleDraft(initialTitle);
+      let editorDraft: PageDraft | null = null;
+      if (editor && !editor.isDestroyed) {
+        try {
+          editorDraft = {
+            layout: withEditorBlockIds(tiptapToPageLayout(editor.getJSON())),
+            title: initialTitle,
+          };
+        } catch {
+          editorDraft = null;
+        }
+      }
+      const latestDraft: PageDraft = {
+        layout: latestLayout,
+        title: initialTitle,
+      };
+      const preserveEditorDocument = shouldPreserveEditorDocument({
+        acknowledged: acknowledgedDraftRef.current,
+        editor: editorDraft,
+        latest: latestDraft,
+      });
       acknowledgedDraftRef.current = {
         layout: latestLayout,
         title: initialTitle,
       };
       candidateRef.current = acknowledgedDraftRef.current;
       setReadingLayout(latestLayout);
-      if (editor && !editor.isDestroyed) {
+      if (editor && !editor.isDestroyed && !preserveEditorDocument) {
         suppressUpdatesRef.current = true;
         editor.commands.setContent(editableDocument(latestLayout), {
           emitUpdate: false,
@@ -1177,10 +1198,11 @@ export function InternalPageEditor({
 
   const insertChoice = (choice: InsertChoice): void => {
     if (!editor || !insertMenu) return;
+    const menu = insertMenu;
     if (choice.kind === "checklist") {
       let afterBlockId: string | null | undefined;
       let containerBlockId: string | undefined;
-      if (insertMenu.source === "gutter") {
+      if (menu.source === "gutter") {
         const selected =
           selectedBlockPositionRef.current ?? selectedBlockPosition;
         const node =
@@ -1198,8 +1220,22 @@ export function InternalPageEditor({
             : selectedIndex >= 0
               ? `legacy:${selectedIndex}`
               : undefined;
-      } else {
-        const { $from } = editor.state.selection;
+      } else if (menu.from !== undefined && menu.to !== undefined) {
+        // The menu owns the insertion range. The chooser takes focus, and a
+        // route refresh can otherwise move the editor selection before the
+        // user confirms the checklist. Resolve the captured position against
+        // the current document and remove only the command range so prose
+        // around it survives.
+        const { from, to } = menu;
+        if (from < 1 || to < from || to > editor.state.doc.content.size) {
+          return;
+        }
+        let $from;
+        try {
+          $from = editor.state.doc.resolve(from);
+        } catch {
+          return;
+        }
         const containerDepth = Array.from(
           { length: $from.depth },
           (_, index) => $from.depth - index,
@@ -1222,18 +1258,38 @@ export function InternalPageEditor({
           currentIndex > 0
             ? parent.child(currentIndex - 1).attrs?.blockId
             : undefined;
-        afterBlockId =
+        const previousBlockId =
           currentIndex > 0
             ? typeof previousId === "string"
               ? previousId
               : `legacy:${currentIndex - 1}`
             : undefined;
-        if (currentIndex === 0) afterBlockId = null;
+        const currentId = current?.attrs?.blockId;
+        const commandIsWholeParagraph =
+          current?.type.name === "paragraph" &&
+          from === $from.start(currentDepth) &&
+          to === $from.end(currentDepth) &&
+          to - from === current.textContent.length;
+        afterBlockId = commandIsWholeParagraph
+          ? currentIndex === 0
+            ? null
+            : previousBlockId
+          : typeof currentId === "string"
+            ? currentId
+            : currentIndex >= 0
+              ? `legacy:${currentIndex}`
+              : undefined;
         if (current && current.type.name === "paragraph") {
-          editor.view.dispatch(
-            editor.state.tr.delete(position, position + current.nodeSize),
-          );
+          const removeFrom = commandIsWholeParagraph ? position : from;
+          const removeTo = commandIsWholeParagraph
+            ? position + current.nodeSize
+            : to;
+          editor.view.dispatch(editor.state.tr.delete(removeFrom, removeTo));
+        } else {
+          editor.view.dispatch(editor.state.tr.delete(from, to));
         }
+      } else {
+        return;
       }
       setChecklistForm({
         ...(afterBlockId !== undefined ? { afterBlockId } : {}),
