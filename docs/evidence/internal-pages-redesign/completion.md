@@ -9,11 +9,13 @@ Date: 8 September 2026
 PR: [#75](https://github.com/benjaminbutty/smbos26/pull/75) — open and
 unmerged.
 
-The implementation code tested for the second-review corrections is commit
-`9124e7b14fa4a519f6ca87cfdb622d1a4942c13f`. Its exact-head GitHub Actions run
-is [34182312578](https://github.com/benjaminbutty/smbos26/actions/runs/34182312578)
-and completed successfully. Readiness remains withheld until the coordinating
-agent completes its independent browser recheck and accepts this record.
+The implementation code tested for the second-review corrections is now commit
+`067358a56e8db485b842233b9e9d04c831c84cbe`. The preceding correction head
+`c24227672db676a58839a856711502e23203c4b7` has exact-head CI
+[34185501471](https://github.com/benjaminbutty/smbos26/actions/runs/34185501471)
+still running; readiness remains withheld until the latest head is green and
+the coordinating agent completes its independent browser recheck and accepts
+this record.
 
 ## Requirement and implementation checklist
 
@@ -78,6 +80,10 @@ agent completes its independent browser recheck and accepts this record.
   all revisions queued during an in-flight request are acknowledged; deferred
   success, error and conflict refresh scenarios verify no overlap or automatic
   retry of blocked work.
+- A request token invalidates editor acknowledgement side effects when a
+  conflict, replacement baseline, disposal or coordinator replacement occurs
+  while the server action is settling. The deferred conflict regression keeps
+  the blocked local candidate intact.
 
 This section records code and behavioural checks only. The parent-controlled
 browser recheck and final acceptance remain outstanding, so the marker above
@@ -85,11 +91,12 @@ is intentionally INCOMPLETE.
 
 ## Exact verification results
 
-Local verification on the tested implementation commit:
+Local verification on the tested implementation commit
+`067358a56e8db485b842233b9e9d04c831c84cbe`:
 
-- `npm test -- --reporter=dot`: **102 files, 1057 tests passed**.
+- `npm test -- --reporter=dot`: **102 files, 1058 tests passed**.
 - Focused Page/editor suites: **4 files, 67 tests passed**, plus
-  `tests/page-editor-draft-integration.test.ts` (**7 tests passed**).
+  `tests/page-editor-draft-integration.test.ts` (**8 tests passed**).
 - `npm run format:check`: **passed**.
 - `npm run typecheck`: **passed**.
 - `npm run lint`: **passed with zero warnings/errors**.
@@ -120,6 +127,11 @@ Exact-head CI for correction commit
   immutability, clean migration application, all configured deterministic and
   authenticated acceptance suites, full PostgreSQL integration, PostgreSQL
   RLS integration and production dependency audit all completed successfully.
+
+Exact-head CI for the invalidated-response correction head
+`c24227672db676a58839a856711502e23203c4b7`:
+
+- [CI run 34185501471](https://github.com/benjaminbutty/smbos26/actions/runs/34185501471): **in progress** while this incomplete record is being updated.
 
 ## Browser evidence
 
