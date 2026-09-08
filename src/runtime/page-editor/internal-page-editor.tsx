@@ -1266,11 +1266,12 @@ export function InternalPageEditor({
               : `legacy:${currentIndex - 1}`
             : undefined;
         const currentId = current?.attrs?.blockId;
+        const commandLength = to - from;
         const commandIsWholeParagraph =
           current?.type.name === "paragraph" &&
           from === $from.start(currentDepth) &&
-          to === $from.end(currentDepth) &&
-          to - from === current.textContent.length;
+          commandLength <= current.textContent.length &&
+          current.textContent.slice(commandLength).trim() === "";
         afterBlockId = commandIsWholeParagraph
           ? currentIndex === 0
             ? null
