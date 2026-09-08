@@ -12,9 +12,11 @@ unmerged.
 The implementation code tested for the second-review corrections is now commit
 `e63432ad34d373048b901c55c3f2c9aff7e4293a`. Its exact-head CI
 [34185959239](https://github.com/benjaminbutty/smbos26/actions/runs/34185959239)
-is still running; readiness remains withheld until the latest head is green and
-the coordinating agent completes its independent browser recheck and accepts
-this record.
+completed successfully. The current documentation head
+`6625a1e5bfad3f40ed4f852cc0d925b9b586301f` also has green exact-head CI
+[34186044557](https://github.com/benjaminbutty/smbos26/actions/runs/34186044557).
+Readiness remains withheld until the coordinating agent completes its
+independent browser recheck and accepts this record.
 
 ## Requirement and implementation checklist
 
@@ -130,12 +132,17 @@ Exact-head CI for correction commit
 Exact-head CI for the invalidated-response correction head
 `c24227672db676a58839a856711502e23203c4b7`:
 
-- [CI run 34185501471](https://github.com/benjaminbutty/smbos26/actions/runs/34185501471): **in progress** while this incomplete record is being updated.
+- [CI run 34185501471](https://github.com/benjaminbutty/smbos26/actions/runs/34185501471): **green, validate completed**.
 
 Exact-head CI for the opaque request-token head
 `e63432ad34d373048b901c55c3f2c9aff7e4293a`:
 
-- [CI run 34185959239](https://github.com/benjaminbutty/smbos26/actions/runs/34185959239): **in progress** while this incomplete record is being updated.
+- [CI run 34185959239](https://github.com/benjaminbutty/smbos26/actions/runs/34185959239): **green, validate completed**.
+
+Exact-head CI for the current documentation head
+`6625a1e5bfad3f40ed4f852cc0d925b9b586301f`:
+
+- [CI run 34186044557](https://github.com/benjaminbutty/smbos26/actions/runs/34186044557): **green, validate completed**.
 
 ## Browser evidence
 
