@@ -937,7 +937,14 @@ describe("Lenni Sites C1 database foundation", () => {
         expectedDraftRevision: staffState.draft_revision,
         draft: siteDraft([recordId, recordTwoId]),
       }),
-    ).rejects.toMatchObject({ code: "configuration_owner_or_admin_required" });
+    ).rejects.toMatchObject({
+      code: "42501",
+      cause: expect.objectContaining({
+        message: expect.stringContaining(
+          "configuration_owner_or_admin_required",
+        ),
+      }),
+    });
 
     const adminState = await currentSiteState();
     const adminSaved = await saveSiteDraft(
