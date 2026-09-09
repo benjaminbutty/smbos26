@@ -10,7 +10,16 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-function MarketingShell({ children }: Readonly<AppShellProps>): ReactNode {
+interface MarketingShellProps extends AppShellProps {
+  isFitPage: boolean;
+}
+
+function MarketingShell({
+  children,
+  isFitPage,
+}: Readonly<MarketingShellProps>): ReactNode {
+  const earlyAccessHref = isFitPage ? "#early-access" : "/#early-access";
+
   return (
     <div className="app-frame marketing-frame">
       <a className="marketing-skip-link" href="#main">
@@ -19,17 +28,28 @@ function MarketingShell({ children }: Readonly<AppShellProps>): ReactNode {
       <header className="site-header marketing-header">
         <Link className="marketing-brand" href="/" aria-label="Lenni home">
           <LenniBrand />
+          {isFitPage ? (
+            <span className="marketing-page-label">Business software</span>
+          ) : null}
         </Link>
 
         <nav
           className="marketing-nav marketing-nav-desktop"
           aria-label="Primary"
         >
-          <Link href="/#possibilities">Meet Lenni</Link>
-          <Link href="/#why">Why we&apos;re building it</Link>
+          <Link href={isFitPage ? "#fit-details" : "/#possibilities"}>
+            {isFitPage ? "Find your fit" : "Meet Lenni"}
+          </Link>
+          <Link href={isFitPage ? "#room-to-grow" : "/#why"}>
+            {isFitPage ? "Room to grow" : "Why we&apos;re building it"}
+          </Link>
         </nav>
-        <Link className="marketing-header-action" href="/#early-access">
-          Join early access <span aria-hidden="true">↗</span>
+        <Link
+          className={`marketing-header-action${isFitPage ? " marketing-fit-header-action" : ""}`}
+          href={earlyAccessHref}
+        >
+          {isFitPage ? "Get early access" : "Join early access"}{" "}
+          <span aria-hidden="true">↗</span>
         </Link>
       </header>
 
@@ -44,8 +64,9 @@ function MarketingShell({ children }: Readonly<AppShellProps>): ReactNode {
           <Link href="/guides/what-software-does-my-small-business-need">
             Choosing software
           </Link>
+          <Link href="/business-software-that-fits">Software that fits</Link>
           <Link href="/outgrown-spreadsheets">Outgrown spreadsheets</Link>
-          <Link href="/#early-access">Join early access</Link>
+          <Link href={earlyAccessHref}>Join early access</Link>
           <Link href="#main">Back to top ↑</Link>
         </div>
       </footer>
@@ -98,10 +119,15 @@ export function AppShell({ children }: Readonly<AppShellProps>): ReactNode {
 
   if (
     pathname === "/" ||
+    pathname === "/business-software-that-fits" ||
     pathname === "/outgrown-spreadsheets" ||
     pathname.startsWith("/guides/")
   ) {
-    return <MarketingShell>{children}</MarketingShell>;
+    return (
+      <MarketingShell isFitPage={pathname === "/business-software-that-fits"}>
+        {children}
+      </MarketingShell>
+    );
   }
 
   return (

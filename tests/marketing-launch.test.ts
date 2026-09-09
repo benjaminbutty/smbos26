@@ -75,9 +75,10 @@ describe("Lenni marketing launch", () => {
     });
   });
 
-  it("publishes exactly the three marketing URLs in crawler resources", () => {
+  it("publishes exactly the four marketing URLs in crawler resources", () => {
     expect(sitemap()).toEqual([
       { url: "https://uselenni.com/" },
+      { url: "https://uselenni.com/business-software-that-fits" },
       {
         url: "https://uselenni.com/guides/what-software-does-my-small-business-need",
       },
@@ -89,6 +90,7 @@ describe("Lenni marketing launch", () => {
       rules: {
         allow: [
           "/",
+          "/business-software-that-fits",
           "/guides/what-software-does-my-small-business-need",
           "/outgrown-spreadsheets",
         ],
@@ -108,6 +110,8 @@ describe("Lenni marketing launch", () => {
 
     for (const pathname of [
       "/",
+      "/business-software-that-fits",
+      "/business-software-that-fits/",
       "/guides/what-software-does-my-small-business-need",
       "/guides/what-software-does-my-small-business-need/",
       "/outgrown-spreadsheets",
@@ -121,6 +125,20 @@ describe("Lenni marketing launch", () => {
           true,
         ),
       ).toBeNull();
+    }
+
+    for (const pathname of [
+      "/app/example",
+      "/start",
+      "/sign-in",
+      "/p/public-page",
+    ]) {
+      expect(
+        rejectMarketingOnlyRoute(
+          new NextRequest(`https://uselenni.com${pathname}`),
+          true,
+        )?.status,
+      ).toBe(404);
     }
   });
 });

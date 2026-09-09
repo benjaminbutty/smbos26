@@ -8,6 +8,7 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: [
         "/",
+        "/business-software-that-fits",
         "/guides/what-software-does-my-small-business-need",
         "/outgrown-spreadsheets",
       ],
