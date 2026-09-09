@@ -255,7 +255,7 @@ async function createBusiness(
 }
 
 async function currentSiteState() {
-  const database = admin as unknown as SiteStateQueryClient;
+  const database = owner.client as unknown as SiteStateQueryClient;
   const result = await database
     .from("site_states")
     .select("*")
@@ -266,7 +266,7 @@ async function currentSiteState() {
 }
 
 async function versionCount(): Promise<number> {
-  const result = await admin
+  const result = await owner.client
     .from("configuration_versions")
     .select("id", { count: "exact", head: true })
     .eq("business_id", business.id);
@@ -634,11 +634,17 @@ describe("Lenni Sites C1 database foundation", () => {
   afterAll(async () => {
     try {
       if (admin && createdBusinessIds.length > 0) {
-        await admin.from("businesses").delete().in("id", createdBusinessIds);
+        const deletedBusinesses = await admin
+          .from("businesses")
+          .delete()
+          .in("id", createdBusinessIds);
+        if (deletedBusinesses.error) throw deletedBusinesses.error;
       }
       if (admin) {
-        for (const userId of createdUserIds)
-          await admin.auth.admin.deleteUser(userId);
+        for (const userId of createdUserIds) {
+          const deletedUser = await admin.auth.admin.deleteUser(userId);
+          if (deletedUser.error) throw deletedUser.error;
+        }
       }
     } finally {
       if (fixtureSql) await fixtureSql.end();
