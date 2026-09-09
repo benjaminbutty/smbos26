@@ -81,6 +81,8 @@ let admin: Client;
 let anonymous: Client;
 let fixtureSql: Sql;
 let owner: Identity;
+let concurrentOwnerA: Client;
+let concurrentOwnerB: Client;
 let otherOwner: Identity;
 let administrator: Identity;
 let staff: Identity;
@@ -220,7 +222,29 @@ async function createIdentity(label: string): Promise<Identity> {
   return { client, email, user: created.data.user };
 }
 
-async function createAdditionalSession(identity: Identity): Promise<Client> {
+function fixtureDeadlineFetch(stage: string, timeoutMs: number): typeof fetch {
+  return async (input, init) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(`Sites C1 fixture timed out during ${stage}.`, {
+          cause: error,
+        });
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+}
+
+async function createAdditionalSession(
+  identity: Identity,
+  label: string,
+): Promise<Client> {
   const client = createClient<Database>(
     settings.apiUrl,
     settings.publishableKey,
@@ -230,6 +254,7 @@ async function createAdditionalSession(identity: Identity): Promise<Client> {
         detectSessionInUrl: false,
         persistSession: false,
       },
+      global: { fetch: fixtureDeadlineFetch(`${label} sign-in`, 5_000) },
     },
   );
   const signedIn = await client.auth.signInWithPassword({
@@ -237,7 +262,26 @@ async function createAdditionalSession(identity: Identity): Promise<Client> {
     password,
   });
   if (signedIn.error) throw signedIn.error;
-  return client;
+  if (!signedIn.data.session) {
+    throw new Error(`Sites C1 fixture did not create ${label}'s session.`);
+  }
+  const rpcClient = createClient<Database>(
+    settings.apiUrl,
+    settings.publishableKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+      global: {
+        fetch: fixtureDeadlineFetch(`${label} concurrent RPC`, 8_000),
+      },
+    },
+  );
+  const restored = await rpcClient.auth.setSession(signedIn.data.session);
+  if (restored.error) throw restored.error;
+  return rpcClient;
 }
 
 async function createBusiness(
@@ -468,6 +512,8 @@ describe("Lenni Sites C1 database foundation", () => {
       createIdentity("administrator"),
       createIdentity("staff"),
     ]);
+    concurrentOwnerA = await createAdditionalSession(owner, "owner A");
+    concurrentOwnerB = await createAdditionalSession(owner, "owner B");
     business = await createBusiness(owner, `Sites C1 ${crypto.randomUUID()}`);
     otherBusiness = await createBusiness(
       otherOwner,
@@ -874,10 +920,13 @@ describe("Lenni Sites C1 database foundation", () => {
     });
     const candidateB = await prepareCurrentRelease();
     expect(candidateB.id).not.toBe(candidateA.id);
-    const concurrentOwnerClient = await createAdditionalSession(owner);
     const concurrentResults = await Promise.allSettled([
-      publishCurrentRelease(candidateA.id),
-      publishSiteRelease(concurrentOwnerClient, siteContext(), {
+      publishSiteRelease(concurrentOwnerA, siteContext(), {
+        siteId,
+        candidateId: candidateA.id,
+        ...siteCurrentness(state),
+      }),
+      publishSiteRelease(concurrentOwnerB, siteContext(), {
         siteId,
         candidateId: candidateB.id,
         ...siteCurrentness(state),
@@ -907,14 +956,13 @@ describe("Lenni Sites C1 database foundation", () => {
 
   it("uses draft revision CAS and preserves Site RLS across anonymous, Staff, Admin, and tenant boundaries", async () => {
     const state = await currentSiteState();
-    const competingSession = await createAdditionalSession(owner);
     const competing = await Promise.allSettled([
-      saveSiteDraft(owner.client, siteContext(), {
+      saveSiteDraft(concurrentOwnerA, siteContext(), {
         siteId,
         expectedDraftRevision: state.draft_revision,
         draft: siteDraft([recordId, recordTwoId], { accent: "clay" }),
       }),
-      saveSiteDraft(competingSession, siteContext(), {
+      saveSiteDraft(concurrentOwnerB, siteContext(), {
         siteId,
         expectedDraftRevision: state.draft_revision,
         draft: siteDraft([recordId, recordTwoId], { accent: "ocean" }),
