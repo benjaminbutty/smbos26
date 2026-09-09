@@ -1015,10 +1015,10 @@ describe("Lenni Sites C1 database foundation", () => {
     const [
       anonymousStates,
       anonymousReleases,
+      crossTenantReleases,
       staffStates,
       staffReleases,
       adminReleases,
-      crossTenantReleases,
     ] = await Promise.all([
       siteReads(anonymous)
         .from("site_states")
