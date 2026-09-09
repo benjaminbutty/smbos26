@@ -117,7 +117,9 @@ function fixtureRpcDiagnostic(operation: string, error: unknown): Error {
         : [];
     })
     .join("; ");
-  return new Error(`${operation} fixture RPC failed${summary ? `: ${summary}` : ""}`);
+  return new Error(
+    `${operation} fixture RPC failed${summary ? `: ${summary}` : ""}`,
+  );
 }
 
 function siteReads(client: Client): SiteReadClient {

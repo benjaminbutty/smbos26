@@ -643,10 +643,10 @@ begin
       and collection_block.block ? 'detail_page_id'
       and 1 <> (
         select count(*)
-        from private.site_draft_blocks_v1(draft) as detail_value
-        where detail_value.block ->> 'type' = 'record_detail'
-          and detail_value.block ->> 'collection_block_id' = collection_block.block ->> 'id'
-          and detail_value.page_id = (collection_block.block ->> 'detail_page_id')::uuid
+        from private.site_draft_blocks_v1(draft) as detail_block
+        where detail_block.block ->> 'type' = 'record_detail'
+          and detail_block.block ->> 'collection_block_id' = collection_block.block ->> 'id'
+          and detail_block.page_id = (collection_block.block ->> 'detail_page_id')::uuid
       )
   ) then
     raise exception 'site_draft_invalid' using errcode = '22023';
