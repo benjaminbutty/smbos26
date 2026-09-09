@@ -8,6 +8,11 @@ const firstParagraph = "Browser proof first paragraph";
 const secondParagraph = "Browser proof second paragraph";
 const imageDescription = "A one pixel browser proof image";
 
+type ImageInsertionHooks = {
+  beforeFileSelection?: () => Promise<void> | void;
+  afterFileSelection?: () => Promise<void> | void;
+};
+
 async function expectSatoshi(page: Page): Promise<void> {
   await page.waitForFunction(async () => {
     await document.fonts.ready;
@@ -290,6 +295,7 @@ async function verifyTransientDismissal(
 async function insertAndDescribeImage(
   page: Page,
   editor: Locator,
+  hooks: ImageInsertionHooks = {},
 ): Promise<void> {
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -313,6 +319,7 @@ async function insertAndDescribeImage(
   await expect(chooseImageInput).toHaveAttribute("type", "file");
   await expect(chooseImageInput.locator("xpath=..")).toBeVisible();
   await expect(chooseImageInput.locator("xpath=..")).toHaveText("Choose image");
+  await hooks.beforeFileSelection?.();
   await chooseImageInput.setInputFiles({
     buffer: Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4H+X7HwAGqAKm8BxW3QAAAABJRU5ErkJggg==",
@@ -321,6 +328,7 @@ async function insertAndDescribeImage(
     mimeType: "image/png",
     name: "browser-proof.png",
   });
+  await hooks.afterFileSelection?.();
 
   const image = page.locator('img[src*="/pages/assets/"]');
   await expect(image).toBeVisible();
@@ -447,7 +455,54 @@ test("owner creates, edits, moves, archives, and revisits a Page in Chromium", a
   await nativeMoveFirstHeadingAfterSecond(page);
   await keyboardMoveFirstHeadingUp(page);
   await verifyTransientDismissal(page, editor);
-  await insertAndDescribeImage(page, editor);
+  const uploadRoute = new URL(
+    `/api/app/${business.slug}/pages/assets`,
+    page.url(),
+  ).toString();
+  let uploadStarted!: () => void;
+  let uploadResponseReady!: () => void;
+  let releaseUpload!: () => void;
+  const uploadHasStarted = new Promise<void>((resolve) => {
+    uploadStarted = resolve;
+  });
+  const uploadHasResponse = new Promise<void>((resolve) => {
+    uploadResponseReady = resolve;
+  });
+  const uploadRelease = new Promise<void>((resolve) => {
+    releaseUpload = resolve;
+  });
+  await page.route(uploadRoute, async (route) => {
+    uploadStarted();
+    const response = await route.fetch();
+    uploadResponseReady();
+    await uploadRelease;
+    await route.fulfill({ response });
+  });
+  let pageSaveResponse!: Promise<unknown>;
+  await insertAndDescribeImage(page, editor, {
+    beforeFileSelection: () => {
+      pageSaveResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response
+            .url()
+            .endsWith(`/app/${business.slug}/pages/untitled-page`) &&
+          response.status() === 200,
+      );
+    },
+    afterFileSelection: async () => {
+      await Promise.all([
+        uploadHasStarted,
+        uploadHasResponse,
+        pageSaveResponse,
+      ]);
+      await expect(
+        page.locator('[data-upload-status="uploading"]'),
+      ).toBeVisible();
+      releaseUpload();
+    },
+  });
+  await page.unroute(uploadRoute);
   await expect(page.getByText("Saved", { exact: true })).toBeVisible();
 
   const pageUrl = page.url();
