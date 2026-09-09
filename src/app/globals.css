@@ -6124,12 +6124,25 @@ textarea {
 }
 
 .marketing-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
   justify-self: start;
   color: var(--marketing-ink);
   font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-decoration: none;
+}
+
+.marketing-page-label {
+  padding-left: 0.9rem;
+  color: var(--marketing-tertiary);
+  border-left: 1px solid var(--marketing-strong);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
 }
 
 .marketing-nav {
@@ -6182,6 +6195,25 @@ textarea {
   color: var(--marketing-ink);
   font-size: 20px;
   font-weight: 400;
+}
+
+.marketing-fit-header-action {
+  min-height: 2.8rem;
+  padding: 0.72rem 1.05rem;
+  color: #fff;
+  background: var(--marketing-coral-700);
+  border: 1px solid var(--marketing-coral-700);
+  border-radius: 0.5rem;
+}
+
+.marketing-fit-header-action span {
+  color: #fff;
+}
+
+.marketing-fit-header-action:hover {
+  color: #fff;
+  background: var(--marketing-coral-900);
+  border-bottom-color: var(--marketing-coral-900);
 }
 
 .marketing-skip-link {
@@ -7665,6 +7697,10 @@ textarea {
     gap: 12px;
     padding-block: 10px;
     font-size: 0.6875rem !important;
+  }
+
+  .marketing-page-label {
+    display: none;
   }
 
   .marketing-header-action span {

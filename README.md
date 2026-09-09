@@ -995,12 +995,14 @@ receives it and cannot execute the write RPC directly.
 
 Set `MARKETING_ONLY_MODE=true` only on the Lenni marketing deployment. In that
 mode the proxy returns a controlled 404 for application routes and permits only
-`/`, `/outgrown-spreadsheets`, `/robots.txt`, `/sitemap.xml`, framework/static
-assets, and the Server Actions posted by the two marketing pages. The default
-is `false`, so local development and tests continue to run the full
-application. Marketing-only production still requires the public Supabase
-values and `SUPABASE_SERVICE_ROLE_KEY` for waitlist submissions; it does not
-require the preorder or acquisition rate-limit secrets.
+`/`, `/business-software-that-fits`, `/outgrown-spreadsheets`,
+`/guides/what-software-does-my-small-business-need`, `/robots.txt`,
+`/sitemap.xml`, framework/static assets, and the Server Actions posted by the
+marketing pages. The default is `false`, so local development and tests
+continue to run the full application. Marketing-only production still requires
+the public Supabase values and `SUPABASE_SERVICE_ROLE_KEY` for waitlist
+submissions; it does not require the preorder or acquisition rate-limit
+secrets.
 
 `AI_PROVIDER` accepts only blank/`disabled` or `openai`. OpenAI mode requires
 `OPENAI_API_KEY`; provider, endpoint, model, attempts, timeout, token maximum,
