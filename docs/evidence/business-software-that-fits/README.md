@@ -12,6 +12,7 @@ for review only; it does not use a production signup or a test route.
 - [Narrow mobile, 360 × 800](mobile-360x800.png)
 - [Opaque non-modal sample-record sheet](record-sheet-1440x900.png)
 - [Trades labels and connected work](trades-connected-1440x900.png)
+- [Closing early-access form](closing-early-access-1440x900.png)
 
 The machine-readable browser record is
 [browser-acceptance-2026-09-09.json](browser-acceptance-2026-09-09.json).
@@ -23,10 +24,16 @@ filter type at 11px, left-aligned record rows, reduced-motion duration of
 The keyboard journeys verify skip-link focus, arrow-key tab movement, preview
 focus, Names Apply/Cancel return to the name input, Stage Cancel returns to Add
 stage, Reset returns to Reset example, and Escape returns to the record
-trigger. The sample-record sheet has `role="dialog"`, `aria-modal="false"`,
-and an opaque white computed background. An actual outside pointer on the
-header's Find your fit link closes the sheet, follows `#fit-details`, and keeps
-focus on that link.
+trigger. Native keyboard type-ahead changes the open record's Stage from Brief
+received to Waiting for reply and then Ready to scope while focus remains on
+the Stage select after each update. The sample-record sheet has `role="dialog"`,
+`aria-modal="false"`, and an opaque white computed background. An actual
+outside pointer on the header's Find your fit link closes the sheet, follows
+`#fit-details`, and keeps focus on that link.
+
+The closing screenshot and browser record confirm that the shared early-access
+button keeps its white, 750-weight, 13.76px treatment and its existing flex
+layout/gap after the page-local control resets.
 
 The same run checks the Trades and Consultancy descriptors/work labels. It
 records no local demo write request. A delayed POST to `jamp.io/api/main` is
@@ -45,10 +52,13 @@ signup was sent during browser evidence capture.
 
 ## Checks after the security maintenance
 
+- `npm ci --ignore-scripts` — passed with the narrowed lockfile.
 - `npm run check` — 113 test files, 1,094 tests passed.
 - `npm run build` — passed; the route is static.
 - `npm audit --omit=dev --audit-level=high` — 0 vulnerabilities.
 - Focused marketing, form, and transient-pointer tests — 10 passed.
 
-The package maintenance pins Next and its ESLint plugin to 16.3.3, direct
-Tiptap packages to 3.30.5, and the Sharp override to 0.35.4.
+The narrowed lock retains the existing Vite 6.4.3, esbuild 0.25, and other
+unrelated dependency resolutions. It pins Next and its ESLint plugin to 16.3.3,
+direct Tiptap packages plus the existing optional bubble/floating-menu
+extensions to 3.30.5, and the Sharp override to 0.35.4.

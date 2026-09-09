@@ -1,6 +1,6 @@
 {
   "browser": "Chrome/152.0.7977.83",
-  "capturedAt": "2026-09-09T16:44:04.855Z",
+  "capturedAt": "2026-09-09T17:07:01.146Z",
   "consoleMessages": [],
   "exceptions": [],
   "interactions": {
@@ -101,8 +101,35 @@
         "background": "rgb(255, 255, 255)",
         "role": "dialog"
       },
+      "stageChanges": {
+        "afterFirst": {
+          "focus": {
+            "id": "fit-record-stage",
+            "role": "",
+            "tag": "SELECT",
+            "text": "Brief receivedWaiting for replyReady to scope"
+          },
+          "value": "Waiting for reply"
+        },
+        "afterSecond": {
+          "focus": {
+            "id": "fit-record-stage",
+            "role": "",
+            "tag": "SELECT",
+            "text": "Brief receivedWaiting for replyReady to scope"
+          },
+          "value": "Ready to scope"
+        }
+      },
       "tradesLabels": true,
       "consultancyLabels": true
+    },
+    "earlyAccessButton": {
+      "color": "rgb(255, 255, 255)",
+      "display": "flex",
+      "fontSize": "13.76px",
+      "fontWeight": "750",
+      "gap": "normal"
     },
     "invalidForm": {
       "error": "Enter a valid email address to join early access."
@@ -130,21 +157,13 @@
       ],
       "summary": [
         {
-          "count": 4,
-          "request": "GET http://localhost:3013 Fetch"
-        },
-        {
           "count": 1,
           "request": "POST http://localhost:3013 Fetch"
-        },
-        {
-          "count": 1,
-          "request": "GET http://localhost:3013 Script"
         }
       ]
     },
     "initialAndResponsive": {
-      "requestCount": 163,
+      "requestCount": 165,
       "summary": [
         {
           "count": 6,
@@ -175,7 +194,7 @@
           "request": "GET https://cdn.fontshare.com Font"
         },
         {
-          "count": 7,
+          "count": 9,
           "request": "POST https://jamp.io Fetch"
         },
         {
@@ -188,28 +207,28 @@
   "responsive": {
     "1440x900": {
       "clientWidth": 1440,
-      "scrollHeight": 3441,
+      "scrollHeight": 3439,
       "scrollWidth": 1440,
       "viewportHeight": 900,
       "viewportWidth": 1440
     },
     "1024x768": {
       "clientWidth": 1024,
-      "scrollHeight": 3479,
+      "scrollHeight": 3477,
       "scrollWidth": 1024,
       "viewportHeight": 768,
       "viewportWidth": 1024
     },
     "390x844": {
       "clientWidth": 390,
-      "scrollHeight": 4753,
+      "scrollHeight": 4751,
       "scrollWidth": 390,
       "viewportHeight": 844,
       "viewportWidth": 390
     },
     "360x800": {
       "clientWidth": 360,
-      "scrollHeight": 4801,
+      "scrollHeight": 4799,
       "scrollWidth": 360,
       "viewportHeight": 800,
       "viewportWidth": 360
@@ -221,7 +240,8 @@
     "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/mobile-390x844.png",
     "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/mobile-360x800.png",
     "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/record-sheet-1440x900.png",
-    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/trades-connected-1440x900.png"
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/trades-connected-1440x900.png",
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/closing-early-access-1440x900.png"
   ],
   "consoleErrors": []
 }

@@ -1442,14 +1442,24 @@ export function FitRecordDialog() {
   const content = dialog ? dialogContent(workspace, dialog) : undefined;
 
   useEffect(() => {
-    const element = dialogRef.current;
-    if (!dialog || !element) {
+    if (!dialog) {
       return;
     }
 
     const focusFrame = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus();
     });
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [dialog]);
+
+  useEffect(() => {
+    const element = dialogRef.current;
+    if (!dialog || !element) {
+      return;
+    }
+
     const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
@@ -1497,7 +1507,6 @@ export function FitRecordDialog() {
 
     document.addEventListener("keydown", dismissOnEscape);
     return () => {
-      window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", dismissOnEscape);
       unregisterPointerDismissal();
     };

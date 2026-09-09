@@ -28,11 +28,11 @@
   margin: 0;
 }
 
-.page :where(button, input, select) {
+:where(.page button, .page input, .page select) {
   font: inherit;
 }
 
-.page :where(button, a, summary) {
+:where(.page button, .page a, .page summary) {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -42,7 +42,7 @@
   text-decoration: none;
 }
 
-.page :where(button) {
+:where(.page button) {
   color: inherit;
   cursor: pointer;
 }
