@@ -62,6 +62,79 @@ async function clearEditorCommand(page: Page, editor: Locator): Promise<void> {
   await page.keyboard.press("Backspace");
 }
 
+async function editorCaretReadiness(editor: Locator): Promise<{
+  editorFocused: boolean;
+  selectionCollapsed: boolean;
+  selectionWithinLastParagraph: boolean;
+  atParagraphEnd: boolean;
+}> {
+  return editor.evaluate((element) => {
+    const editorFocused =
+      element instanceof HTMLElement &&
+      element.isContentEditable &&
+      document.activeElement === element;
+    const selection = window.getSelection();
+    const selectionCollapsed = Boolean(
+      selection && selection.rangeCount > 0 && selection.isCollapsed,
+    );
+    const paragraphs =
+      element instanceof HTMLElement
+        ? Array.from(element.children).filter(
+            (child): child is HTMLParagraphElement =>
+              child instanceof HTMLParagraphElement,
+          )
+        : [];
+    const lastParagraph = paragraphs.at(-1);
+    const selectionWithinLastParagraph = Boolean(
+      selectionCollapsed &&
+      lastParagraph &&
+      selection?.anchorNode &&
+      selection.focusNode &&
+      lastParagraph.contains(selection.anchorNode) &&
+      lastParagraph.contains(selection.focusNode),
+    );
+
+    if (!selectionWithinLastParagraph || !lastParagraph || !selection) {
+      return {
+        editorFocused,
+        selectionCollapsed,
+        selectionWithinLastParagraph,
+        atParagraphEnd: false,
+      };
+    }
+    const focusNode = selection.focusNode;
+    if (!focusNode) {
+      return {
+        editorFocused,
+        selectionCollapsed,
+        selectionWithinLastParagraph,
+        atParagraphEnd: false,
+      };
+    }
+
+    // An empty paragraph is rendered with ProseMirror's trailing <br>. Its
+    // collapsed caret inside the paragraph is the meaningful end position.
+    if (!lastParagraph.textContent) {
+      return {
+        editorFocused,
+        selectionCollapsed,
+        selectionWithinLastParagraph,
+        atParagraphEnd: true,
+      };
+    }
+
+    const remainingText = document.createRange();
+    remainingText.selectNodeContents(lastParagraph);
+    remainingText.setStart(focusNode, selection.focusOffset);
+    return {
+      editorFocused,
+      selectionCollapsed,
+      selectionWithinLastParagraph,
+      atParagraphEnd: remainingText.toString() === "",
+    };
+  });
+}
+
 async function insertBlock(
   page: Page,
   editor: Locator,
@@ -220,7 +293,21 @@ async function insertAndDescribeImage(
 ): Promise<void> {
   await editor.click();
   await page.keyboard.press("Control+End");
+  await expect
+    .poll(() => editorCaretReadiness(editor))
+    .toMatchObject({
+      editorFocused: true,
+      selectionCollapsed: true,
+      selectionWithinLastParagraph: true,
+      atParagraphEnd: true,
+    });
   await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("heading", { name: firstHeading, exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: secondHeading, exact: true }),
+  ).toBeVisible();
   await insertBlock(page, editor, "/image");
   const chooseImageInput = page.getByLabel("Choose image");
   await expect(chooseImageInput).toHaveAttribute("type", "file");
