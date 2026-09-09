@@ -57,6 +57,17 @@ describe("Lenni business-software-that-fits marketing page", () => {
     expect(workspace.enquiries).toHaveLength(4);
     expect(getVisibleFitRows(workspace, "clients", "all")).toHaveLength(4);
     expect(getVisibleFitRows(workspace, "projects", "all")).toHaveLength(3);
+
+    expect(createFitDemoState("trades")).toMatchObject({
+      clientDescriptor: "Homeowner",
+      leadLabel: "Enquiries",
+      workLabel: "Jobs",
+    });
+    expect(createFitDemoState("consultancy")).toMatchObject({
+      clientDescriptor: "Growing business",
+      leadLabel: "Opportunities",
+      workLabel: "Engagements",
+    });
   });
 
   it("uses page-specific metadata and the shared marketing shell", () => {

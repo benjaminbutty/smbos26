@@ -9,11 +9,14 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
-  type MouseEvent,
   type ReactNode,
 } from "react";
 
 import styles from "../app/business-software-that-fits/business-software-that-fits.module.css";
+import {
+  createTransientPointerDismissal,
+  registerCapturePointerDismissal,
+} from "../runtime/page-editor/transient-pointer-dismissal";
 
 export type FitExampleKey = "studio" | "trades" | "consultancy";
 export type FitWorkspaceTable = "clients" | "enquiries" | "projects";
@@ -41,6 +44,7 @@ interface FitExampleDefinition {
   readonly mark: string;
   readonly clientsLabel: string;
   readonly clientSingular: string;
+  readonly clientDescriptor: string;
   readonly workLabel: string;
   readonly workSingular: string;
   readonly leadLabel: string;
@@ -58,6 +62,7 @@ export interface FitDemoState {
   readonly mark: string;
   readonly clientsLabel: string;
   readonly clientSingular: string;
+  readonly clientDescriptor: string;
   readonly workLabel: string;
   readonly workSingular: string;
   readonly leadLabel: string;
@@ -83,6 +88,7 @@ const examples: Record<FitExampleKey, FitExampleDefinition> = {
     mark: "N",
     clientsLabel: "Clients",
     clientSingular: "Client",
+    clientDescriptor: "Independent homeware",
     workLabel: "Projects",
     workSingular: "Project",
     leadLabel: "Enquiries",
@@ -146,6 +152,7 @@ const examples: Record<FitExampleKey, FitExampleDefinition> = {
     mark: "O",
     clientsLabel: "Customers",
     clientSingular: "Customer",
+    clientDescriptor: "Homeowner",
     workLabel: "Jobs",
     workSingular: "Job",
     leadLabel: "Enquiries",
@@ -209,6 +216,7 @@ const examples: Record<FitExampleKey, FitExampleDefinition> = {
     mark: "E",
     clientsLabel: "Clients",
     clientSingular: "Client",
+    clientDescriptor: "Growing business",
     workLabel: "Engagements",
     workSingular: "Engagement",
     leadLabel: "Opportunities",
@@ -332,6 +340,7 @@ interface FitDemoContextValue {
   readonly table: FitWorkspaceTable;
   readonly view: FitView;
   readonly activeTab: FitTab;
+  readonly resetFocusTarget: "reset" | null;
   readonly notice: string;
   readonly dialog: DialogRequest | null;
   readonly selectExample: (key: FitExampleKey) => void;
@@ -347,7 +356,7 @@ interface FitDemoContextValue {
     id: string,
     returnFocus: HTMLElement,
   ) => void;
-  readonly closeSampleRecord: () => void;
+  readonly closeSampleRecord: (restoreFocus?: boolean) => void;
 }
 
 const FitDemoContext = createContext<FitDemoContextValue | null>(null);
@@ -377,15 +386,23 @@ export function FitDemoProvider({
   );
   const [dialog, setDialog] = useState<DialogRequest | null>(null);
   const [revision, setRevision] = useState(0);
+  const [resetFocusTarget, setResetFocusTarget] = useState<"reset" | null>(
+    null,
+  );
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
-  const resetWorkspace = (key: FitExampleKey, message: string) => {
+  const resetWorkspace = (
+    key: FitExampleKey,
+    message: string,
+    shouldFocusReset = false,
+  ) => {
     setExampleKey(key);
     setWorkspace(createFitDemoState(key));
     setTableState("enquiries");
     setView("all");
     setActiveTab("stages");
     setDialog(null);
+    setResetFocusTarget(shouldFocusReset ? "reset" : null);
     setRevision((current) => current + 1);
     setNotice(message);
   };
@@ -397,6 +414,7 @@ export function FitDemoProvider({
     table,
     view,
     activeTab,
+    resetFocusTarget,
     notice,
     dialog,
     selectExample: (key) => {
@@ -409,6 +427,7 @@ export function FitDemoProvider({
       resetWorkspace(
         exampleKey,
         `${examples[exampleKey].name} has been reset to its sample records.`,
+        true,
       );
     },
     setTable: (nextTable) => {
@@ -445,8 +464,11 @@ export function FitDemoProvider({
       returnFocusRef.current = returnFocus;
       setDialog({ kind, id });
     },
-    closeSampleRecord: () => {
+    closeSampleRecord: (restoreFocus = true) => {
       setDialog(null);
+      if (!restoreFocus) {
+        return;
+      }
       const returnFocus = returnFocusRef.current;
       window.requestAnimationFrame(() => {
         if (returnFocus?.isConnected) {
@@ -781,6 +803,7 @@ function FitDetailsExplorerContent() {
   const {
     activeTab,
     resetExample,
+    resetFocusTarget,
     workspace,
     setActiveTab,
     updateNames,
@@ -802,6 +825,9 @@ function FitDetailsExplorerContent() {
   const stageInputRef = useRef<HTMLInputElement>(null);
   const applyStageRef = useRef<HTMLButtonElement>(null);
   const addStageRef = useRef<HTMLButtonElement>(null);
+  const resetExampleRef = useRef<HTMLButtonElement>(null);
+  const singularNameRef = useRef<HTMLInputElement>(null);
+  const applyNamesRef = useRef<HTMLButtonElement>(null);
   const tabRefs = useRef<Partial<Record<FitTab, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
@@ -813,6 +839,18 @@ function FitDetailsExplorerContent() {
       applyStageRef.current?.focus();
     }
   }, [stageMode]);
+
+  useEffect(() => {
+    if (namesPreview) {
+      applyNamesRef.current?.focus();
+    }
+  }, [namesPreview]);
+
+  useEffect(() => {
+    if (resetFocusTarget === "reset") {
+      resetExampleRef.current?.focus();
+    }
+  }, [resetFocusTarget]);
 
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (
@@ -875,6 +913,11 @@ function FitDetailsExplorerContent() {
     window.requestAnimationFrame(() => addStageRef.current?.focus());
   };
 
+  const cancelStage = () => {
+    setStageMode("idle");
+    window.requestAnimationFrame(() => addStageRef.current?.focus());
+  };
+
   const previewNames = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const singular = singularDraft.trim();
@@ -891,6 +934,12 @@ function FitDetailsExplorerContent() {
     }
     updateNames(namesPreview.singular, namesPreview.plural);
     setNamesPreview(null);
+    window.requestAnimationFrame(() => singularNameRef.current?.focus());
+  };
+
+  const cancelNames = () => {
+    setNamesPreview(null);
+    window.requestAnimationFrame(() => singularNameRef.current?.focus());
   };
 
   const firstEnquiry = workspace.enquiries[0];
@@ -980,6 +1029,7 @@ function FitDetailsExplorerContent() {
                 <button
                   className={styles.quietButton}
                   onClick={resetExample}
+                  ref={resetExampleRef}
                   type="button"
                 >
                   Reset example
@@ -1038,7 +1088,7 @@ function FitDetailsExplorerContent() {
                     </button>
                     <button
                       className={styles.quietButton}
-                      onClick={() => setStageMode("idle")}
+                      onClick={cancelStage}
                       type="button"
                     >
                       Cancel
@@ -1070,6 +1120,7 @@ function FitDetailsExplorerContent() {
                     id="fit-singular-name"
                     maxLength={30}
                     onChange={(event) => setSingularDraft(event.target.value)}
+                    ref={singularNameRef}
                     value={singularDraft}
                   />
                 </label>
@@ -1106,13 +1157,14 @@ function FitDetailsExplorerContent() {
                     <button
                       className={styles.darkButton}
                       onClick={applyNames}
+                      ref={applyNamesRef}
                       type="button"
                     >
                       Apply to demo <span aria-hidden="true">✓</span>
                     </button>
                     <button
                       className={styles.quietButton}
-                      onClick={() => setNamesPreview(null)}
+                      onClick={cancelNames}
                       type="button"
                     >
                       Cancel
@@ -1250,7 +1302,9 @@ export function FitConnectedSnapshot() {
           <span>{initials(enquiry.client)}</span>
           <div>
             <h3>{enquiry.client}</h3>
-            <p>Independent homeware · {workspace.clientSingular}</p>
+            <p>
+              {workspace.clientDescriptor} · {workspace.clientSingular}
+            </p>
           </div>
         </div>
         <div className={styles.contactLine}>
@@ -1294,8 +1348,9 @@ export function FitConnectedSnapshot() {
           <StatusPill status={project.status} workspace={workspace} />
         </button>
         <p className={styles.recordNote}>
-          One {workspace.clientSingular.toLowerCase()}. Their enquiries and
-          projects, close at hand.
+          One {workspace.clientSingular.toLowerCase()}. Their{" "}
+          {workspace.leadLabel.toLowerCase()} and{" "}
+          {workspace.workLabel.toLowerCase()}, close at hand.
         </p>
       </div>
       <div className={styles.linkedSticker}>
@@ -1382,90 +1437,142 @@ function dialogContent(
 export function FitRecordDialog() {
   const { closeSampleRecord, dialog, updateEnquiryStage, workspace } =
     useFitDemo();
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const content = dialog ? dialogContent(workspace, dialog) : undefined;
 
   useEffect(() => {
     const element = dialogRef.current;
-    if (dialog && element && !element.open) {
-      element.showModal();
+    if (!dialog || !element) {
+      return;
     }
-    if (!dialog && element?.open) {
-      element.close();
-    }
-  }, [dialog]);
 
-  const dismissOnBackdrop = (event: MouseEvent<HTMLDialogElement>) => {
-    if (event.target === event.currentTarget) {
-      event.currentTarget.close();
-    }
-  };
+    const focusFrame = window.requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+    const dismissOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      closeSampleRecord();
+    };
+    const dismissOnOutsidePointer = createTransientPointerDismissal(
+      (target): target is Node => target instanceof Node,
+      [
+        {
+          open: true,
+          contains: (target) => element.contains(target),
+          dismiss: () => closeSampleRecord(false),
+        },
+      ],
+    );
+    const preserveOutsideTargetFocus = (event: {
+      target: EventTarget | null;
+    }) => {
+      const target = event.target;
+      if (!(target instanceof Node) || element.contains(target)) {
+        dismissOnOutsidePointer(event);
+        return;
+      }
+
+      const targetElement =
+        target instanceof Element ? target : target.parentElement;
+      const focusTarget = targetElement?.closest<HTMLElement>(
+        'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      );
+      dismissOnOutsidePointer(event);
+      if (focusTarget) {
+        window.requestAnimationFrame(() => {
+          if (focusTarget.isConnected) {
+            focusTarget.focus();
+          }
+        });
+      }
+    };
+    const unregisterPointerDismissal = registerCapturePointerDismissal(
+      document,
+      preserveOutsideTargetFocus,
+    );
+
+    document.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", dismissOnEscape);
+      unregisterPointerDismissal();
+    };
+  }, [closeSampleRecord, dialog]);
+
+  if (!content) {
+    return null;
+  }
 
   return (
-    <dialog
+    <aside
+      aria-describedby="fit-record-dialog-note"
       aria-labelledby="fit-record-dialog-title"
+      aria-modal="false"
       className={styles.recordDialog}
-      onClick={dismissOnBackdrop}
-      onClose={closeSampleRecord}
       ref={dialogRef}
+      role="dialog"
+      tabIndex={-1}
     >
-      {content ? (
-        <article aria-labelledby="fit-record-dialog-title">
-          <button
-            aria-label="Close sample record"
-            className={styles.dialogClose}
-            onClick={() => dialogRef.current?.close()}
-            type="button"
-          >
-            ×
-          </button>
-          <p className={styles.dialogEyebrow}>Example record · Local demo</p>
-          <h2 id="fit-record-dialog-title">{content.title}</h2>
-          <p className={styles.dialogSubtitle}>{content.subtitle}</p>
-          <dl className={styles.dialogFields}>
-            {content.fields.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-            {content.enquiryId ? (
-              <div>
-                <dt>
-                  <label htmlFor="fit-record-stage">Stage</label>
-                </dt>
-                <dd>
-                  <select
-                    id="fit-record-stage"
-                    onChange={(event) =>
-                      updateEnquiryStage(
-                        content.enquiryId ?? "",
-                        event.target.value,
-                      )
-                    }
-                    value={
-                      workspace.enquiries.find(
-                        (item) => item.id === content.enquiryId,
-                      )?.stage
-                    }
-                  >
-                    {workspace.stages.map((stage) => (
-                      <option key={stage} value={stage}>
-                        {stage}
-                      </option>
-                    ))}
-                  </select>
-                </dd>
-              </div>
-            ) : null}
-          </dl>
-          <p className={styles.dialogNote}>{content.note}</p>
-          <p className={styles.dialogSafety}>
-            Fictional sample information. Edits affect this browser preview only
-            and reset when the page is reloaded.
-          </p>
-        </article>
-      ) : null}
-    </dialog>
+      <article aria-labelledby="fit-record-dialog-title">
+        <button
+          aria-label="Close sample record"
+          className={styles.dialogClose}
+          onClick={() => closeSampleRecord()}
+          ref={closeButtonRef}
+          type="button"
+        >
+          ×
+        </button>
+        <p className={styles.dialogEyebrow}>Example record · Local demo</p>
+        <h2 id="fit-record-dialog-title">{content.title}</h2>
+        <p className={styles.dialogSubtitle}>{content.subtitle}</p>
+        <dl className={styles.dialogFields}>
+          {content.fields.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+          {content.enquiryId ? (
+            <div>
+              <dt>
+                <label htmlFor="fit-record-stage">Stage</label>
+              </dt>
+              <dd>
+                <select
+                  id="fit-record-stage"
+                  onChange={(event) =>
+                    updateEnquiryStage(
+                      content.enquiryId ?? "",
+                      event.target.value,
+                    )
+                  }
+                  value={
+                    workspace.enquiries.find(
+                      (item) => item.id === content.enquiryId,
+                    )?.stage
+                  }
+                >
+                  {workspace.stages.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {stage}
+                    </option>
+                  ))}
+                </select>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+        <p className={styles.dialogNote}>{content.note}</p>
+        <p className={styles.dialogSafety} id="fit-record-dialog-note">
+          Fictional sample information. Edits affect this browser preview only
+          and reset when the page is reloaded.
+        </p>
+      </article>
+    </aside>
   );
 }

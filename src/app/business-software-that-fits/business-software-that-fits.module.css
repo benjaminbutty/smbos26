@@ -10,7 +10,7 @@
   --coral: var(--marketing-coral-700, #d83a2f);
   --coral-hover: var(--marketing-coral-900, #8f211b);
   width: 100%;
-  overflow: clip;
+  overflow-x: clip;
   color: var(--ink);
   background: var(--canvas);
 }
@@ -28,15 +28,11 @@
   margin: 0;
 }
 
-.page button,
-.page input,
-.page select {
+.page :where(button, input, select) {
   font: inherit;
 }
 
-.page button,
-.page a,
-.page summary {
+.page :where(button, a, summary) {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -46,7 +42,7 @@
   text-decoration: none;
 }
 
-.page button {
+.page :where(button) {
   color: inherit;
   cursor: pointer;
 }
@@ -335,13 +331,14 @@
   width: 100%;
   min-height: 39px;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   padding: 8px;
   color: var(--muted);
   background: transparent;
   border: 0;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 11px;
   text-align: left;
 }
 
@@ -419,12 +416,15 @@
 
 .workspaceViewButton {
   position: relative;
+  display: inline-flex;
   min-height: 36px;
+  align-items: center;
+  justify-content: flex-start;
   padding: 7px 0 11px;
   color: var(--muted);
   background: transparent;
   border: 0;
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -493,6 +493,8 @@
   display: grid;
   width: 100%;
   min-height: 34px;
+  justify-content: start;
+  justify-items: start;
   padding: 3px 0;
   color: var(--ink);
   background: transparent;
@@ -737,6 +739,8 @@
 .fitTab {
   display: grid;
   align-items: start;
+  justify-content: start;
+  justify-items: start;
   gap: 10px;
   padding: 23px 0;
   color: var(--ink);
@@ -1144,6 +1148,7 @@
 .connectionGroup button {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 9px;
   min-height: 36px;
   padding: 8px 0;
@@ -1312,6 +1317,8 @@
   display: grid;
   width: 100%;
   align-items: center;
+  justify-content: stretch;
+  justify-items: start;
   gap: 10px;
   padding: 11px 0;
   color: var(--ink);
@@ -1334,6 +1341,10 @@
 
 .relatedRecord > span:nth-child(2) {
   min-width: 0;
+}
+
+.relatedRecord > span:last-child {
+  justify-self: end;
 }
 
 .relatedRecord strong,
@@ -1518,23 +1529,26 @@
 }
 
 .recordDialog {
+  position: fixed;
+  top: 50%;
+  right: clamp(16px, 5vw, 72px);
+  z-index: 20;
   width: min(calc(100% - 32px), 480px);
-  max-height: min(680px, calc(100% - 32px));
+  max-height: min(680px, calc(100dvh - 32px));
   padding: 0;
+  overflow-y: auto;
   color: var(--ink);
-  background: var(--surface);
+  background: #fff;
   border: 1px solid #d5ccc3;
   border-radius: 14px;
   box-shadow: 0 1rem 3rem rgb(23 26 29 / 20%);
-}
-
-.recordDialog::backdrop {
-  background: rgb(23 26 29 / 30%);
+  transform: translateY(-50%);
 }
 
 .recordDialog article {
   position: relative;
   padding: 29px 30px;
+  background: #fff;
 }
 
 .dialogClose {
@@ -2186,6 +2200,16 @@
   .availability {
     max-width: none;
     margin-left: 0;
+  }
+
+  .recordDialog {
+    top: auto;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: min(80dvh, 680px);
+    transform: none;
   }
 
   .recordDialog article {

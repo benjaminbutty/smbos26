@@ -254,8 +254,8 @@ export default function BusinessSoftwareThatFitsPage(): ReactNode {
             </div>
           </div>
         </section>
+        <FitRecordDialog />
       </main>
-      <FitRecordDialog />
     </FitDemoProvider>
   );
 }

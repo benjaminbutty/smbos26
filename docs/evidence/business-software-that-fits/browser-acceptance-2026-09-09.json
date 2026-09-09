@@ -1,0 +1,227 @@
+{
+  "browser": "Chrome/152.0.7977.83",
+  "capturedAt": "2026-09-09T16:44:04.855Z",
+  "consoleMessages": [],
+  "exceptions": [],
+  "interactions": {
+    "reducedMotion": {
+      "transitionDuration": "1e-05s"
+    },
+    "skipLinkFocus": {
+      "id": "",
+      "role": "",
+      "tag": "A",
+      "text": "Skip to content"
+    },
+    "compactTypography": {
+      "filter": {
+        "fontSize": "11px",
+        "justifyContent": "flex-start"
+      },
+      "navigation": {
+        "fontSize": "11px",
+        "justifyContent": "flex-start"
+      },
+      "row": {
+        "fontSize": "10px",
+        "justifyContent": "start",
+        "justifyItems": "start",
+        "textAlign": "left"
+      }
+    },
+    "rovingTabs": {
+      "focus": {
+        "id": "fit-tab-words",
+        "role": "tab",
+        "tag": "BUTTON",
+        "text": "01The words you use.Clients, customers, members. Start with language your team already knows.→"
+      },
+      "selected": "true"
+    },
+    "namesFocus": {
+      "afterApply": {
+        "id": "fit-singular-name",
+        "role": "",
+        "tag": "INPUT",
+        "text": ""
+      },
+      "afterCancel": {
+        "id": "fit-singular-name",
+        "role": "",
+        "tag": "INPUT",
+        "text": ""
+      },
+      "preview": {
+        "id": "",
+        "role": "",
+        "tag": "BUTTON",
+        "text": "Apply to demo ✓"
+      }
+    },
+    "stageFocus": {
+      "afterCancel": {
+        "id": "",
+        "role": "",
+        "tag": "BUTTON",
+        "text": "＋ Add your own stage"
+      },
+      "afterReset": {
+        "id": "",
+        "role": "",
+        "tag": "BUTTON",
+        "text": "Reset example"
+      },
+      "input": {
+        "id": "fit-stage-name",
+        "role": "",
+        "tag": "INPUT",
+        "text": ""
+      },
+      "preview": {
+        "id": "",
+        "role": "",
+        "tag": "BUTTON",
+        "text": "Apply to demo ✓"
+      }
+    },
+    "recordSheet": {
+      "afterEscapeFocus": {
+        "id": "",
+        "role": "",
+        "tag": "BUTTON",
+        "text": "Brand refreshOlive House"
+      },
+      "outsideDismiss": {
+        "activeText": "Find your fit",
+        "dialogOpen": false,
+        "hash": "#fit-details"
+      },
+      "sheet": {
+        "ariaModal": "false",
+        "background": "rgb(255, 255, 255)",
+        "role": "dialog"
+      },
+      "tradesLabels": true,
+      "consultancyLabels": true
+    },
+    "invalidForm": {
+      "error": "Enter a valid email address to join early access."
+    }
+  },
+  "localUrl": "http://localhost:3013/business-software-that-fits",
+  "network": {
+    "demoInteractions": {
+      "localWrites": [],
+      "observedNonLocal": [
+        {
+          "method": "POST",
+          "type": "Fetch",
+          "url": "https://jamp.io/api/main"
+        }
+      ]
+    },
+    "invalidForm": {
+      "localPosts": [
+        {
+          "method": "POST",
+          "type": "Fetch",
+          "url": "http://localhost:3013/business-software-that-fits"
+        }
+      ],
+      "summary": [
+        {
+          "count": 4,
+          "request": "GET http://localhost:3013 Fetch"
+        },
+        {
+          "count": 1,
+          "request": "POST http://localhost:3013 Fetch"
+        },
+        {
+          "count": 1,
+          "request": "GET http://localhost:3013 Script"
+        }
+      ]
+    },
+    "initialAndResponsive": {
+      "requestCount": 163,
+      "summary": [
+        {
+          "count": 6,
+          "request": "GET http://localhost:3013 Document"
+        },
+        {
+          "count": 6,
+          "request": "GET http://localhost:3013 Image"
+        },
+        {
+          "count": 24,
+          "request": "GET http://localhost:3013 Stylesheet"
+        },
+        {
+          "count": 60,
+          "request": "GET http://localhost:3013 Script"
+        },
+        {
+          "count": 6,
+          "request": "GET https://api.fontshare.com Stylesheet"
+        },
+        {
+          "count": 12,
+          "request": "GET https://jamp.io Script"
+        },
+        {
+          "count": 18,
+          "request": "GET https://cdn.fontshare.com Font"
+        },
+        {
+          "count": 7,
+          "request": "POST https://jamp.io Fetch"
+        },
+        {
+          "count": 24,
+          "request": "GET http://localhost:3013 Fetch"
+        }
+      ]
+    }
+  },
+  "responsive": {
+    "1440x900": {
+      "clientWidth": 1440,
+      "scrollHeight": 3441,
+      "scrollWidth": 1440,
+      "viewportHeight": 900,
+      "viewportWidth": 1440
+    },
+    "1024x768": {
+      "clientWidth": 1024,
+      "scrollHeight": 3479,
+      "scrollWidth": 1024,
+      "viewportHeight": 768,
+      "viewportWidth": 1024
+    },
+    "390x844": {
+      "clientWidth": 390,
+      "scrollHeight": 4753,
+      "scrollWidth": 390,
+      "viewportHeight": 844,
+      "viewportWidth": 390
+    },
+    "360x800": {
+      "clientWidth": 360,
+      "scrollHeight": 4801,
+      "scrollWidth": 360,
+      "viewportHeight": 800,
+      "viewportWidth": 360
+    }
+  },
+  "screenshots": [
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/desktop-1440x900.png",
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/tablet-1024x768.png",
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/mobile-390x844.png",
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/mobile-360x800.png",
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/record-sheet-1440x900.png",
+    "/private/tmp/lenni-business-software-that-fits/docs/evidence/business-software-that-fits/trades-connected-1440x900.png"
+  ],
+  "consoleErrors": []
+}
