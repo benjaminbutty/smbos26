@@ -1071,12 +1071,12 @@ begin
   where business_id = expected_business_id and id = requested_site_id for update;
   if not found then raise exception 'site_not_found' using errcode = 'P0002'; end if;
   if selected_state.draft_revision <> expected_draft_revision then
-    raise exception 'site_draft_stale' using errcode = '40001';
+    raise exception 'site_draft_stale' using errcode = 'P0001';
   end if;
   if selected_state.draft_base_version_id <> current_head.active_version_id
     or selected_state.draft_base_head_revision <> current_head.head_revision
   then
-    raise exception 'site_configuration_rebase_required' using errcode = '40001';
+    raise exception 'site_configuration_rebase_required' using errcode = 'P0001';
   end if;
   update public.site_states set
     draft_json = requested_draft,
@@ -1127,7 +1127,7 @@ begin
   where business_id = expected_business_id for update;
   if not found then raise exception 'configuration_head_not_found' using errcode = 'P0002'; end if;
   if current_head.active_version_id <> expected_base_version_id or current_head.head_revision <> expected_head_revision then
-    raise exception 'site_configuration_stale' using errcode = '40001';
+    raise exception 'site_configuration_stale' using errcode = 'P0001';
   end if;
   select * into active_version from public.configuration_versions
   where business_id = expected_business_id and id = current_head.active_version_id;
@@ -1139,12 +1139,12 @@ begin
   where business_id = expected_business_id and id = requested_site_id for update;
   if not found then raise exception 'site_not_found' using errcode = 'P0002'; end if;
   if selected_state.draft_revision <> expected_draft_revision then
-    raise exception 'site_draft_stale' using errcode = '40001';
+    raise exception 'site_draft_stale' using errcode = 'P0001';
   end if;
   if selected_state.draft_base_version_id <> current_head.active_version_id
     or selected_state.draft_base_head_revision <> current_head.head_revision
   then
-    raise exception 'site_configuration_rebase_required' using errcode = '40001';
+    raise exception 'site_configuration_rebase_required' using errcode = 'P0001';
   end if;
   perform private.assert_site_draft_v1(selected_state.draft_json);
   perform private.site_assert_assets_available_v1(expected_business_id, selected_state.draft_json);
@@ -1277,12 +1277,12 @@ begin
   if not found then raise exception 'site_not_found' using errcode = 'P0002'; end if;
   if selected_state.draft_revision <> expected_draft_revision
     or selected_release.source_draft_revision <> expected_draft_revision
-  then raise exception 'site_draft_stale' using errcode = '40001'; end if;
+  then raise exception 'site_draft_stale' using errcode = 'P0001'; end if;
   if current_head.active_version_id <> expected_base_version_id
     or current_head.head_revision <> expected_head_revision
     or selected_release.source_base_version_id <> expected_base_version_id
     or selected_release.source_head_revision <> expected_head_revision
-  then raise exception 'site_configuration_stale' using errcode = '40001'; end if;
+  then raise exception 'site_configuration_stale' using errcode = 'P0001'; end if;
   select * into active_version from public.configuration_versions
   where business_id = expected_business_id and id = current_head.active_version_id;
   if not found then raise exception 'configuration_active_version_not_found' using errcode = 'P0002'; end if;
@@ -1290,7 +1290,7 @@ begin
     expected_business_id, active_version.snapshot_json, active_version.snapshot_checksum
   );
   if selected_state.active_release_revision <> selected_release.expected_active_release_revision then
-    raise exception 'site_release_stale' using errcode = '40001'; end if;
+    raise exception 'site_release_stale' using errcode = 'P0001'; end if;
   if selected_release.configuration_change_set_id is not null then
     applied_change := public.apply_configuration_change(expected_business_id, expected_actor_id, selected_release.configuration_change_set_id);
     if applied_change.status <> 'applied' then raise exception 'site_configuration_incompatible' using errcode = '23514'; end if;
