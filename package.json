@@ -117,13 +117,13 @@
   "dependencies": {
     "@supabase/ssr": "0.12.3",
     "@supabase/supabase-js": "2.110.9",
-    "@tiptap/core": "3.29.2",
-    "@tiptap/extension-drag-handle": "3.29.2",
-    "@tiptap/extension-drag-handle-react": "3.29.2",
-    "@tiptap/pm": "3.29.2",
-    "@tiptap/react": "3.29.2",
-    "@tiptap/starter-kit": "3.29.2",
-    "next": "16.2.12",
+    "@tiptap/core": "3.30.5",
+    "@tiptap/extension-drag-handle": "3.30.5",
+    "@tiptap/extension-drag-handle-react": "3.30.5",
+    "@tiptap/pm": "3.30.5",
+    "@tiptap/react": "3.30.5",
+    "@tiptap/starter-kit": "3.30.5",
+    "next": "16.3.3",
     "openai": "7.2.0",
     "react": "19.2.8",
     "react-data-grid": "7.0.0-beta.59",
@@ -133,11 +133,13 @@
   "overrides": {
     "nanoid": "3.3.18",
     "postcss": "8.5.23",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4",
+    "@tiptap/extension-bubble-menu": "3.30.5",
+    "@tiptap/extension-floating-menu": "3.30.5"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@next/eslint-plugin-next": "16.2.12",
+    "@next/eslint-plugin-next": "16.3.3",
     "@types/node": "24.10.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
