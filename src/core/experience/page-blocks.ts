@@ -5,23 +5,24 @@ import type {
   SitePageLayout,
 } from "./schemas";
 
+type WalkablePageBlock = PageBlock | SitePageBlock;
+
 /** Walk top-level and contained Page blocks in document order. */
 export function walkPageBlocks(
   layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
-): SitePageBlock[] {
-  const blocks: readonly SitePageBlock[] = Array.isArray(layout)
-    ? layout
-    : (layout as SitePageLayout).blocks;
-  const result: SitePageBlock[] = [];
-  const visit = (items: readonly SitePageBlock[]): void => {
+): WalkablePageBlock[] {
+  const blocks: readonly WalkablePageBlock[] =
+    "blocks" in layout ? layout.blocks : layout;
+  const result: WalkablePageBlock[] = [];
+  const visit = (items: readonly WalkablePageBlock[]): void => {
     for (const block of items) {
       result.push(block);
       if (block.type === "collapsible") {
-        visit(block.blocks as readonly SitePageBlock[]);
+        visit(block.blocks);
       }
       if (block.type === "section") {
         for (const column of block.columns) {
-          visit(column.blocks as readonly SitePageBlock[]);
+          visit(column.blocks);
         }
       }
     }
@@ -89,7 +90,9 @@ export function pageBlockReferencesMedia(
     block.type === "image" && block.asset_id
       ? [block.asset_id]
       : block.type === "gallery"
-        ? block.images.map((image) => image.asset_id)
+        ? block.images.flatMap((image) =>
+            image.asset_id ? [image.asset_id] : [],
+          )
         : [],
   );
 }

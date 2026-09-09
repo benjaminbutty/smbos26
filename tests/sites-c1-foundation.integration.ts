@@ -18,6 +18,8 @@ import {
   createSiteDraft,
   prepareSiteRelease,
   publishSiteRelease,
+  rebaseSiteDraft,
+  resolveSiteDraftConflict,
   saveSiteDraft,
   SiteFoundationServiceError,
 } from "../src/core/sites/service";
@@ -92,6 +94,7 @@ let recordId: string;
 let recordTwoId: string;
 let otherRecordId: string;
 let siteId: string;
+let validationAssetId: string;
 
 function c1Rpc(client: Client): C1RpcClient {
   return client as unknown as C1RpcClient;
@@ -170,6 +173,11 @@ function siteDraft(
               selection: { schema_version: 1, record_ids: [recordIds[1]] },
               public_field_keys: options.publicFieldKeys ?? ["name", "price"],
               presentation: "list",
+            },
+            {
+              type: "public_form",
+              id: "00000000-0000-4000-8000-000000000104",
+              form_key: "product_enquiry",
             },
           ],
         },
@@ -254,7 +262,9 @@ async function createAdditionalSession(
         detectSessionInUrl: false,
         persistSession: false,
       },
-      global: { fetch: fixtureDeadlineFetch(`${label} sign-in`, 5_000) },
+      global: {
+        fetch: fixtureDeadlineFetch(`${label} sign-in`, 5_000),
+      },
     },
   );
   const signedIn = await client.auth.signInWithPassword({
@@ -561,6 +571,19 @@ describe("Lenni Sites C1 database foundation", () => {
           is_active: true,
         },
         {
+          op: "set_form",
+          key: "product_enquiry",
+          name: "Product enquiry",
+          object_key: "product",
+          mode: "create",
+          config_json: {
+            fields: [{ field: "name" }],
+            submit_label: "Send enquiry",
+          },
+          audience: "public",
+          is_active: true,
+        },
+        {
           op: "set_field",
           object_key: "product",
           key: "price",
@@ -672,6 +695,7 @@ describe("Lenni Sites C1 database foundation", () => {
         { draft: siteDraft([record.id, secondRecord.id]) },
       );
       siteId = state.id;
+      validationAssetId = (await createMediaAsset()).id;
     } catch (error) {
       throw fixtureRpcDiagnostic("create Site draft", error);
     }
@@ -785,6 +809,30 @@ describe("Lenni Sites C1 database foundation", () => {
         })(),
       },
       {
+        name: "external image inside a Site nested collapsible",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{
+              layout: { blocks: unknown[] };
+            }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "collapsible",
+            id: "00000000-0000-4000-8000-000000000124",
+            summary: "Legacy image",
+            blocks: [
+              {
+                type: "image",
+                id: "00000000-0000-4000-8000-000000000125",
+                src: "https://example.test/legacy-image.png",
+                alt: "Legacy image",
+              },
+            ],
+          });
+          return draft;
+        })(),
+      },
+      {
         name: "numeric rich-text span type in a reused list atom",
         draft: (() => {
           const draft = structuredClone(valid) as {
@@ -848,6 +896,93 @@ describe("Lenni Sites C1 database foundation", () => {
           return draft;
         })(),
       },
+      {
+        name: "third Site collapsible level",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{ layout: { blocks: unknown[] } }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "collapsible",
+            id: "00000000-0000-4000-8000-000000000130",
+            summary: "First level",
+            blocks: [
+              {
+                type: "collapsible",
+                id: "00000000-0000-4000-8000-000000000131",
+                summary: "Second level",
+                blocks: [
+                  {
+                    type: "collapsible",
+                    id: "00000000-0000-4000-8000-000000000132",
+                    summary: "Rejected third level",
+                    blocks: [],
+                  },
+                ],
+              },
+            ],
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "whitespace complete managed image alt",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{ layout: { blocks: unknown[] } }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "image",
+            id: "00000000-0000-4000-8000-000000000133",
+            asset_id: validationAssetId,
+            alt: "   ",
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "whitespace complete collapsible summary",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{ layout: { blocks: unknown[] } }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "collapsible",
+            id: "00000000-0000-4000-8000-000000000134",
+            summary: "   ",
+            blocks: [],
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "whitespace complete gallery image alt",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{ layout: { blocks: unknown[] } }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "gallery",
+            id: "00000000-0000-4000-8000-000000000135",
+            images: [{ asset_id: validationAssetId, alt: "   " }],
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "incomplete gallery child in a complete gallery",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{ layout: { blocks: unknown[] } }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "gallery",
+            id: "00000000-0000-4000-8000-000000000136",
+            images: [{ alt: "", draft_state: "incomplete" }],
+          });
+          return draft;
+        })(),
+      },
     ];
     for (const variant of variants) {
       const result = await c1Rpc(owner.client).rpc("save_site_draft", {
@@ -868,6 +1003,136 @@ describe("Lenni Sites C1 database foundation", () => {
       [business.id],
     );
     expect(after).toEqual(before);
+  });
+
+  it("persists incomplete nested author input and blocks only release preparation", async () => {
+    const draft = structuredClone(siteDraft([recordId, recordTwoId]));
+    draft.pages[0]!.layout.blocks.unshift({
+      type: "gallery",
+      id: "00000000-0000-4000-8000-000000000128",
+      presentation: "grid",
+      draft_state: "incomplete",
+      images: [
+        { alt: "", draft_state: "incomplete" },
+        { alt: "", draft_state: "incomplete" },
+      ],
+    });
+    draft.pages[0]!.layout.blocks.unshift({
+      type: "collapsible",
+      id: "00000000-0000-4000-8000-000000000126",
+      summary: "",
+      open: true,
+      draft_state: "incomplete",
+      blocks: [
+        {
+          type: "heading",
+          id: "00000000-0000-4000-8000-000000000127",
+          text: "",
+          level: 2,
+          draft_state: "incomplete",
+        },
+      ],
+    });
+    const persistedDraft = siteDraftV1Schema.parse(draft);
+    const before = await currentSiteState();
+    const saved = await c1Rpc(owner.client).rpc("save_site_draft", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: siteId,
+      expected_draft_revision: before.draft_revision,
+      requested_draft: persistedDraft,
+    });
+    expect(saved.error).toBeNull();
+    const [stored] = await fixtureSql.unsafe<
+      Array<{ draft_json: ReturnType<typeof siteDraft> }>
+    >("select draft_json from public.site_states where business_id = $1", [
+      business.id,
+    ]);
+    const storedHome = stored?.draft_json.pages.find(
+      (page) => page.id === "00000000-0000-4000-8000-000000000101",
+    );
+    const storedIncomplete = storedHome?.layout.blocks.find(
+      (block) => block.id === "00000000-0000-4000-8000-000000000126",
+    );
+    const storedGallery = storedHome?.layout.blocks.find(
+      (block) => block.id === "00000000-0000-4000-8000-000000000128",
+    );
+    expect(storedIncomplete).toMatchObject({
+      type: "collapsible",
+      draft_state: "incomplete",
+      blocks: [
+        expect.objectContaining({
+          type: "heading",
+          draft_state: "incomplete",
+        }),
+      ],
+    });
+    expect(storedGallery).toMatchObject({
+      type: "gallery",
+      draft_state: "incomplete",
+      images: [{ draft_state: "incomplete" }, { draft_state: "incomplete" }],
+    });
+    const savedState = await currentSiteState();
+    await expect(
+      prepareSiteRelease(owner.client, siteContext(), {
+        siteId,
+        ...siteCurrentness(savedState),
+      }),
+    ).rejects.toMatchObject({ code: "site_publication_not_ready" });
+    await saveCurrentDraft(siteDraft([recordId, recordTwoId]));
+  });
+
+  it("round-trips empty and blank included drafts but rejects them only at preparation", async () => {
+    const empty = siteDraftV1Schema.parse({
+      schema_version: 1,
+      branding: { name: "", accent: "forest" },
+      pages: [],
+    });
+    const beforeEmpty = await currentSiteState();
+    const savedEmpty = await c1Rpc(owner.client).rpc("save_site_draft", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: siteId,
+      expected_draft_revision: beforeEmpty.draft_revision,
+      requested_draft: empty,
+    });
+    expect(savedEmpty.error).toBeNull();
+    const [storedEmpty] = await fixtureSql.unsafe<
+      Array<{ draft_json: unknown }>
+    >("select draft_json from public.site_states where business_id = $1", [
+      business.id,
+    ]);
+    expect(storedEmpty?.draft_json).toEqual(empty);
+    await expect(prepareCurrentRelease()).rejects.toMatchObject({
+      code: "site_publication_not_ready",
+    });
+
+    const blankIncluded = siteDraftV1Schema.parse({
+      schema_version: 1,
+      branding: { name: "", accent: "forest" },
+      pages: [
+        {
+          id: "00000000-0000-4000-8000-000000000140",
+          title: "",
+          slug: "",
+          navigation_label: "",
+          is_home: true,
+          is_in_navigation: true,
+          is_included: true,
+          layout: { blocks: [] },
+        },
+      ],
+    });
+    const savedBlank = await saveCurrentDraft(blankIncluded);
+    expect(savedBlank.draft_json).toEqual(blankIncluded);
+    await expect(
+      prepareSiteRelease(owner.client, siteContext(), {
+        siteId,
+        ...siteCurrentness(savedBlank),
+      }),
+    ).rejects.toMatchObject({ code: "site_publication_not_ready" });
+
+    await saveCurrentDraft(siteDraft([recordId, recordTwoId]));
   });
 
   it("freezes approved fields, omits excluded Pages, and makes concurrent source-only publication a release CAS", async () => {
@@ -952,6 +1217,40 @@ describe("Lenni Sites C1 database foundation", () => {
     const replay = await publishCurrentRelease(publishedCandidate.id);
     expect(replay.id).toBe(publishedCandidate.id);
     expect((await currentSiteState()).active_release_id).toBe(candidateC.id);
+  });
+
+  it("keeps an excluded unfinished Page out of canonical backing Pages", async () => {
+    const excludedPageId = "00000000-0000-4000-8000-000000000141";
+    const complete = siteDraft([recordId, recordTwoId]);
+    const withExcluded = siteDraftV1Schema.parse({
+      ...complete,
+      pages: [
+        ...complete.pages,
+        {
+          id: excludedPageId,
+          title: "",
+          slug: "",
+          navigation_label: "",
+          is_home: false,
+          is_in_navigation: false,
+          is_included: false,
+          layout: { blocks: [] },
+        },
+      ],
+    });
+    const savedExcluded = await saveCurrentDraft(withExcluded);
+    const candidate = await prepareSiteRelease(owner.client, siteContext(), {
+      siteId,
+      ...siteCurrentness(savedExcluded),
+    });
+    expect(candidate.configuration_change_set_id).toBeNull();
+    const backingKey = `s${siteId.replaceAll("-", "")}_p${excludedPageId.replaceAll("-", "")}`;
+    const [backing] = await fixtureSql.unsafe<Array<{ count: number }>>(
+      "select count(*)::integer as count from public.pages where business_id = $1 and key = $2",
+      [business.id, backingKey],
+    );
+    expect(backing?.count).toBe(0);
+    await saveCurrentDraft(complete);
   });
 
   it("uses draft revision CAS and preserves Site RLS across anonymous, Staff, Admin, and tenant boundaries", async () => {
@@ -1285,6 +1584,15 @@ describe("Lenni Sites C1 database foundation", () => {
       await siteReferenceCount("site_draft_asset_references", draftAsset.id),
     ).toBe(0);
     expect(await cleanupClaim(draftAsset.id)).toBeNull();
+    await expect(
+      fixtureSql.begin(async (transaction) => {
+        await transaction.unsafe("set constraints all deferred");
+        await transaction.unsafe(
+          "delete from public.media_assets where business_id = $1 and id = $2",
+          [business.id, draftAsset.id],
+        );
+      }),
+    ).rejects.toMatchObject({ code: "23503" });
 
     const claimedAsset = await createMediaAsset();
     const claimToken = await cleanupClaim(claimedAsset.id);
@@ -1494,5 +1802,221 @@ describe("Lenni Sites C1 database foundation", () => {
       intent: { action: "create_table", title: "C1 compatibility table" },
     });
     expect(applied.changeSet.status).toBe("applied");
+  });
+
+  it("recovers a stale Site base through explicit rebase decisions and the normal Changes lifecycle", async () => {
+    const staleAfterUnrelatedChange = await currentSiteState();
+    await expect(
+      saveSiteDraft(owner.client, siteContext(), {
+        siteId,
+        expectedDraftRevision: staleAfterUnrelatedChange.draft_revision,
+        draft: siteDraft([recordId, recordTwoId]),
+      }),
+    ).rejects.toMatchObject({ code: "site_configuration_rebase_required" });
+
+    const rebased = await rebaseSiteDraft(owner.client, siteContext(), {
+      siteId,
+      ...siteCurrentness(staleAfterUnrelatedChange),
+    });
+    expect(rebased.draft_revision).toBe(
+      staleAfterUnrelatedChange.draft_revision + 1,
+    );
+
+    const draftPageId = "00000000-0000-4000-8000-000000000101";
+    const compactSiteId = siteId.replaceAll("-", "");
+    const compactDraftPageId = draftPageId.replaceAll("-", "");
+    const backingKey = `s${compactSiteId}_p${compactDraftPageId}`;
+    const backingSlug = `site-${compactSiteId}-p-${compactDraftPageId}`;
+    const externalDraft = siteDraft([recordId, recordTwoId]);
+    await applyConfigurationOperations(
+      [
+        {
+          op: "set_page",
+          key: backingKey,
+          title: "Externally changed Site backing Page",
+          slug: backingSlug,
+          audience: "public",
+          layout_json: externalDraft.pages[0]!.layout,
+          status: "draft",
+          is_active: true,
+        },
+      ],
+      "Change a bound Site Page outside its draft",
+    );
+
+    const conflicting = await currentSiteState();
+    await expect(
+      rebaseSiteDraft(owner.client, siteContext(), {
+        siteId,
+        ...siteCurrentness(conflicting),
+      }),
+    ).rejects.toMatchObject({ code: "site_configuration_rebase_conflict" });
+    const configuration = new ConfigurationChangeService(
+      owner.client,
+      siteContext(),
+    );
+    const reviewedTarget = await configuration.getProposalCurrentness();
+    await applyConfigurationOperations(
+      [
+        {
+          op: "set_object",
+          key: "unrelated_rebase_target",
+          singular_label: "Unrelated rebase target",
+          plural_label: "Unrelated rebase targets",
+          description: "Moves the reviewed configuration target.",
+          icon: null,
+          is_active: true,
+        },
+      ],
+      "Move the reviewed Site conflict target",
+    );
+    await expect(
+      resolveSiteDraftConflict(owner.client, siteContext(), {
+        siteId,
+        ...siteCurrentness(conflicting),
+        expectedTargetVersionId: reviewedTarget.expectedBaseVersionId,
+        expectedTargetHeadRevision: reviewedTarget.expectedHeadRevision,
+        resolution: "keep_site_draft",
+      }),
+    ).rejects.toMatchObject({ code: "site_rebase_target_stale" });
+
+    const resolvedTarget = await configuration.getProposalCurrentness();
+    const resolved = await resolveSiteDraftConflict(
+      owner.client,
+      siteContext(),
+      {
+        siteId,
+        ...siteCurrentness(conflicting),
+        expectedTargetVersionId: resolvedTarget.expectedBaseVersionId,
+        expectedTargetHeadRevision: resolvedTarget.expectedHeadRevision,
+        resolution: "keep_site_draft",
+      },
+    );
+    expect(resolved.draft_revision).toBe(conflicting.draft_revision + 1);
+
+    const firstCandidate = await prepareSiteRelease(
+      owner.client,
+      siteContext(),
+      { siteId, ...siteCurrentness(resolved) },
+    );
+    expect(firstCandidate.configuration_change_set_id).not.toBeNull();
+    const changes = new ConfigurationChangeService(owner.client, siteContext());
+    const abandoned = await changes.abandonChangeSet(
+      firstCandidate.configuration_change_set_id!,
+    );
+    expect(abandoned.status).toBe("abandoned");
+
+    const replacementCandidate = await prepareSiteRelease(
+      owner.client,
+      siteContext(),
+      { siteId, ...siteCurrentness(resolved) },
+    );
+    expect(replacementCandidate.id).not.toBe(firstCandidate.id);
+    expect(replacementCandidate.configuration_change_set_id).not.toBeNull();
+    const applied = await changes.applyChangeSet(
+      replacementCandidate.configuration_change_set_id!,
+    );
+    expect(applied.status).toBe("applied");
+
+    const published = await publishSiteRelease(owner.client, siteContext(), {
+      siteId,
+      candidateId: replacementCandidate.id,
+      ...siteCurrentness(resolved),
+    });
+    expect(published.status).toBe("published");
+    expect((await currentSiteState()).active_release_id).toBe(published.id);
+  });
+
+  it("expires prepared candidates after 24 hours without moving the pointer and retains frozen media", async () => {
+    const expiringAsset = await createMediaAsset();
+    await saveCurrentDraft(
+      siteDraft([recordId, recordTwoId], { logoAssetId: expiringAsset.id }),
+    );
+    const before = await currentSiteState();
+    const versionsBefore = await versionCount();
+    const fixtureIdentifier = `c1_site_expire_${business.id.replaceAll("-", "")}`;
+    try {
+      await fixtureSql.unsafe(`
+        create function private.${fixtureIdentifier}()
+        returns trigger
+        language plpgsql
+        set search_path = ''
+        as $$
+        begin
+          new.expires_at := timezone('utc', now()) - interval '1 second';
+          return new;
+        end;
+        $$;
+      `);
+      await fixtureSql.unsafe(`
+        create trigger ${fixtureIdentifier}
+        before insert on public.site_releases
+        for each row when (new.business_id = '${business.id}'::uuid)
+        execute function private.${fixtureIdentifier}();
+      `);
+      const candidate = await prepareCurrentRelease();
+      expect(candidate.status).toBe("prepared");
+      expect(
+        await siteReferenceCount(
+          "site_release_asset_references",
+          expiringAsset.id,
+        ),
+      ).toBe(1);
+
+      const expired = await publishCurrentRelease(candidate.id);
+      expect(expired.status).toBe("expired");
+      expect(await currentSiteState()).toMatchObject({
+        active_release_id: before.active_release_id,
+        active_release_revision: before.active_release_revision,
+      });
+      expect(await versionCount()).toBe(versionsBefore);
+      expect(
+        await siteReferenceCount(
+          "site_release_asset_references",
+          expiringAsset.id,
+        ),
+      ).toBe(1);
+      expect((await publishCurrentRelease(candidate.id)).status).toBe(
+        "expired",
+      );
+    } finally {
+      await fixtureSql.unsafe(
+        `drop trigger if exists ${fixtureIdentifier} on public.site_releases`,
+      );
+      await fixtureSql.unsafe(
+        `drop function if exists private.${fixtureIdentifier}()`,
+      );
+    }
+
+    await saveCurrentDraft(siteDraft([recordId, recordTwoId]));
+    expect(await cleanupClaim(expiringAsset.id)).toBeNull();
+  });
+
+  it("requires explicit recovery when a bound public Form definition changes", async () => {
+    const beforeCapabilityChange = await currentSiteState();
+    await applyConfigurationOperations(
+      [
+        {
+          op: "set_form",
+          key: "product_enquiry",
+          name: "Product enquiry",
+          object_key: "product",
+          mode: "create",
+          config_json: {
+            fields: [{ field: "name" }, { field: "price" }],
+            submit_label: "Send product enquiry",
+          },
+          audience: "public",
+          is_active: true,
+        },
+      ],
+      "Change the public Form bound by the Site draft",
+    );
+    await expect(
+      rebaseSiteDraft(owner.client, siteContext(), {
+        siteId,
+        ...siteCurrentness(beforeCapabilityChange),
+      }),
+    ).rejects.toMatchObject({ code: "site_configuration_rebase_conflict" });
   });
 });

@@ -1162,22 +1162,63 @@ export const pageLayoutSchema = z
  */
 export const siteGalleryImageSchema = z
   .object({
-    asset_id: z.uuid(),
-    alt: z.string().trim().min(1).max(300),
+    asset_id: z.uuid().optional(),
+    alt: z.string().trim().max(300).default(""),
     caption: z.string().trim().min(1).max(500).optional(),
+    /**
+     * C1 persists a small finite incomplete state while an owner is choosing
+     * media or writing its description. Releases require `complete` entries.
+     */
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
   })
-  .strict();
+  .strict()
+  .superRefine((image, context) => {
+    if (image.draft_state === "complete" && !image.asset_id) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery image needs a managed asset.",
+        path: ["asset_id"],
+      });
+    }
+    if (image.draft_state === "complete" && image.alt.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery image needs a description.",
+        path: ["alt"],
+      });
+    }
+  });
 
 export const siteGalleryBlockSchema = z
   .object({
     type: z.literal("gallery"),
-    images: z.array(siteGalleryImageSchema).min(1).max(12),
+    images: z.array(siteGalleryImageSchema).max(12),
     presentation: z.enum(["grid", "carousel"]).default("grid"),
     id: pageBlockIdSchema.optional(),
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
   })
   .strict()
   .superRefine((block, context) => {
-    const ids = block.images.map((image) => image.asset_id);
+    if (block.draft_state === "complete" && block.images.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery needs at least one image.",
+        path: ["images"],
+      });
+    }
+    if (
+      block.draft_state === "complete" &&
+      block.images.some((image) => image.draft_state !== "complete")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery cannot contain an incomplete image.",
+        path: ["images"],
+      });
+    }
+    const ids = block.images.flatMap((image) =>
+      image.asset_id ? [image.asset_id] : [],
+    );
     if (new Set(ids).size !== ids.length) {
       context.addIssue({
         code: "custom",
@@ -1190,7 +1231,7 @@ export const siteGalleryBlockSchema = z
 export const siteCollectionBlockSchema = z
   .object({
     type: z.literal("collection"),
-    object_key: graphKeySchema,
+    object_key: graphKeySchema.optional(),
     selection: z
       .object({
         schema_version: z.literal(1),
@@ -1209,10 +1250,11 @@ export const siteCollectionBlockSchema = z
           });
         }
       }),
-    public_field_keys: z.array(graphKeySchema).min(1).max(50),
-    presentation: z.enum(["cards", "list", "table"]),
+    public_field_keys: z.array(graphKeySchema).max(50),
+    presentation: z.enum(["cards", "list", "table"]).default("cards"),
     detail_page_id: z.uuid().optional(),
     id: pageBlockIdSchema.optional(),
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
   })
   .strict()
   .superRefine((block, context) => {
@@ -1221,6 +1263,23 @@ export const siteCollectionBlockSchema = z
         code: "custom",
         message: "Collection blocks require a stable identity.",
         path: ["id"],
+      });
+    }
+    if (block.draft_state === "complete" && !block.object_key) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete collection needs a Record type.",
+        path: ["object_key"],
+      });
+    }
+    if (
+      block.draft_state === "complete" &&
+      block.public_field_keys.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete collection needs at least one public Property.",
+        path: ["public_field_keys"],
       });
     }
     if (
@@ -1233,6 +1292,79 @@ export const siteCollectionBlockSchema = z
       });
     }
   });
+
+/** Site drafts forbid URL images and can persist an unfinished managed image. */
+export const siteDraftImageBlockSchema = z
+  .object({
+    type: z.literal("image"),
+    asset_id: z.uuid().optional(),
+    alt: z.string().trim().max(300).default(""),
+    caption: z.string().trim().min(1).max(500).optional(),
+    presentation: z.enum(["content", "wide"]).optional(),
+    id: pageBlockIdSchema.optional(),
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+  })
+  .strict()
+  .superRefine((image, context) => {
+    if (image.draft_state === "complete" && !image.asset_id) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete Site image needs a managed asset.",
+        path: ["asset_id"],
+      });
+    }
+    if (image.draft_state === "complete" && image.alt.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete Site image needs a description.",
+        path: ["alt"],
+      });
+    }
+  });
+
+/**
+ * These shared atoms have finite empty states for editor autosave. A release
+ * never includes them: `siteDraftPublicationReadyV1Schema` rejects every
+ * `draft_state: incomplete` block on an included Page.
+ */
+const siteIncompleteAtomicBlockSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("heading"),
+      text: z.string().trim().max(200),
+      level: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("text"),
+      text: z.string().trim().max(5000),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("button"),
+      label: z.string().trim().max(120),
+      href: z.string().trim().max(2048),
+      style: z.enum(["primary", "secondary"]).default("primary"),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("callout"),
+      text: z.string().trim().max(1000),
+      tone: z.enum(["neutral", "info", "success", "warning"]).default("info"),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+]);
 
 export const siteRecordDetailBlockSchema = z
   .object({
@@ -1261,23 +1393,98 @@ export const siteRecordDetailBlockSchema = z
     }
   });
 
-const siteSectionChildBlockSchema = z.union([
+type SiteCollapsibleBlock = {
+  type: "collapsible";
+  summary: string;
+  blocks: SiteNestedBlock[];
+  open: boolean;
+  id?: string | undefined;
+  draft_state: "complete" | "incomplete";
+};
+
+type SiteNestedBlock =
+  | z.output<typeof headingBlockSchema>
+  | z.output<typeof textBlockSchema>
+  | z.output<typeof siteDraftImageBlockSchema>
+  | z.output<typeof buttonBlockSchema>
+  | z.output<typeof publicFormBlockSchema>
+  | z.output<typeof bookingBlockSchema>
+  | z.output<typeof preorderBlockSchema>
+  | z.output<typeof dividerBlockSchema>
+  | z.output<typeof calloutBlockSchema>
+  | z.output<typeof richTextBlockSchema>
+  | z.output<typeof siteGalleryBlockSchema>
+  | z.output<typeof siteCollectionBlockSchema>
+  | z.output<typeof siteRecordDetailBlockSchema>
+  | z.output<typeof siteIncompleteAtomicBlockSchema>
+  | SiteCollapsibleBlock;
+
+export const siteSharedAtomicBlockSchema = z.union([
   headingBlockSchema,
   textBlockSchema,
-  imageBlockSchema,
   buttonBlockSchema,
-  formBlockSchema,
   publicFormBlockSchema,
   bookingBlockSchema,
   preorderBlockSchema,
   dividerBlockSchema,
   calloutBlockSchema,
   richTextBlockSchema,
-  collapsibleBlockSchema,
+]);
+
+const siteLeafBlockSchema = z.union([
+  siteSharedAtomicBlockSchema,
+  siteDraftImageBlockSchema,
   siteGalleryBlockSchema,
   siteCollectionBlockSchema,
   siteRecordDetailBlockSchema,
+  siteIncompleteAtomicBlockSchema,
 ]);
+
+function siteNestedBlockSchemaAtDepth(
+  nesting: number,
+): z.ZodType<SiteNestedBlock> {
+  return z.lazy(() =>
+    nesting > 1
+      ? siteLeafBlockSchema
+      : z.union([
+          siteLeafBlockSchema,
+          siteCollapsibleBlockSchemaAtDepth(nesting),
+        ]),
+  );
+}
+
+/**
+ * Sites use their own bounded recursive section grammar. Reusing the normal
+ * Page collapsible schema here would allow historical URL images to tunnel
+ * through a nested child and would make an owner unable to autosave a cleared
+ * child field.
+ */
+function siteCollapsibleBlockSchemaAtDepth(
+  nesting: number,
+): z.ZodType<SiteCollapsibleBlock> {
+  return z
+    .object({
+      type: z.literal("collapsible"),
+      summary: z.string().trim().max(200),
+      blocks: z.array(siteNestedBlockSchemaAtDepth(nesting + 1)).max(50),
+      open: z.boolean().default(true),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+    })
+    .strict()
+    .superRefine((block, context) => {
+      if (block.draft_state === "complete" && block.summary.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: "A complete section needs a summary.",
+          path: ["summary"],
+        });
+      }
+    });
+}
+
+const siteNestedBlockSchema: z.ZodType<SiteNestedBlock> =
+  siteNestedBlockSchemaAtDepth(0);
 
 const siteSectionBlockSchema = z
   .object({
@@ -1286,7 +1493,9 @@ const siteSectionBlockSchema = z
     columns: z
       .array(
         z
-          .object({ blocks: z.array(siteSectionChildBlockSchema).max(100) })
+          .object({
+            blocks: z.array(siteNestedBlockSchemaAtDepth(1)).max(100),
+          })
           .strict(),
       )
       .min(1)
@@ -1296,10 +1505,7 @@ const siteSectionBlockSchema = z
   .strict();
 
 export const sitePageBlockSchema = z.union([
-  pageBlockSchema,
-  siteGalleryBlockSchema,
-  siteCollectionBlockSchema,
-  siteRecordDetailBlockSchema,
+  siteNestedBlockSchema,
   siteSectionBlockSchema,
 ]);
 
@@ -1313,30 +1519,12 @@ export const sitePageLayoutSchema = z
       for (const block of blocks) {
         blockCount += 1;
         if ("id" in block && block.id) ids.push(block.id);
-        if (block.type === "view" || block.type === "form") {
-          context.addIssue({
-            code: "custom",
-            message:
-              "Site drafts use public composition atoms; generic Views and internal Forms are not part of this release grammar.",
-            path: ["blocks"],
-          });
-        }
-        if (block.type === "image" && block.src) {
-          context.addIssue({
-            code: "custom",
-            message:
-              "Site drafts use managed image assets so releases can freeze their media safely.",
-            path: ["blocks"],
-          });
-        }
         if (block.type === "collapsible") {
-          visit(block.blocks as readonly z.infer<typeof sitePageBlockSchema>[]);
+          visit(block.blocks);
         }
         if (block.type === "section") {
           for (const column of block.columns) {
-            visit(
-              column.blocks as readonly z.infer<typeof sitePageBlockSchema>[],
-            );
+            visit(column.blocks);
           }
         }
       }

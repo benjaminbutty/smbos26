@@ -17,6 +17,9 @@ create table public.site_states (
   draft_base_head_revision bigint not null check (draft_base_head_revision > 0),
   active_release_id uuid,
   active_release_revision bigint not null default 0 check (active_release_revision >= 0),
+  last_rebase_resolution text check (last_rebase_resolution in ('unrelated_head', 'keep_site_draft')),
+  last_rebased_by uuid,
+  last_rebased_at timestamptz,
   migration_state text not null default 'new' check (migration_state in ('new', 'legacy_pending')),
   created_by uuid not null,
   created_at timestamptz not null default timezone('utc', now()),
@@ -57,6 +60,7 @@ create table public.site_releases (
   projection_checksum text not null check (projection_checksum ~ '^[0-9a-f]{64}$'),
   prepared_by uuid not null,
   prepared_at timestamptz not null default timezone('utc', now()),
+  expires_at timestamptz not null,
   published_by uuid,
   published_at timestamptz,
   unique (business_id, id),
@@ -100,6 +104,9 @@ create table public.site_release_asset_references (
 create index site_releases_active_lookup_idx
   on public.site_releases (business_id, site_id, status, prepared_at desc);
 
+create index site_releases_expiry_lookup_idx
+  on public.site_releases (business_id, site_id, status, expires_at);
+
 create index site_draft_asset_references_asset_idx
   on public.site_draft_asset_references (business_id, asset_id);
 
@@ -134,6 +141,19 @@ as $$
   select coalesce(
     jsonb_typeof(value) = 'string'
     and char_length(btrim(value #>> '{}')) between 1 and maximum_length,
+    false
+  );
+$$;
+
+create or replace function private.site_valid_optional_string_v1(value jsonb, maximum_length integer)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    jsonb_typeof(value) = 'string'
+    and char_length(btrim(value #>> '{}')) <= maximum_length,
     false
   );
 $$;
@@ -340,7 +360,60 @@ begin
     raise exception 'site_draft_invalid' using errcode = '22023';
   end if;
 
-  if block ->> 'type' in ('heading', 'text', 'rich_text', 'image', 'button', 'public_form', 'booking', 'preorder', 'divider', 'callout') then
+  -- Site-only incomplete atomic states preserve a cleared editable value
+  -- during autosave. They remain structurally finite and preparation rejects
+  -- them on included Pages; historical Direct Page atoms keep their validator.
+  if block ? 'draft_state' and block ->> 'type' in ('heading', 'text', 'button', 'callout') then
+    if coalesce((
+      block ->> 'draft_state' is distinct from 'incomplete'
+      or (
+        block ->> 'type' = 'heading' and (
+          not private.site_json_has_only_keys_v1(block, array['type', 'text', 'level', 'id', 'draft_state'])
+          or not private.site_valid_optional_string_v1(block -> 'text', 200)
+          or (block ? 'level' and not (jsonb_typeof(block -> 'level') = 'number' and (block ->> 'level') in ('1', '2', '3')))
+        )
+      )
+      or (
+        block ->> 'type' = 'text' and (
+          not private.site_json_has_only_keys_v1(block, array['type', 'text', 'id', 'draft_state'])
+          or not private.site_valid_optional_string_v1(block -> 'text', 5000)
+        )
+      )
+      or (
+        block ->> 'type' = 'button' and (
+          not private.site_json_has_only_keys_v1(block, array['type', 'label', 'href', 'style', 'id', 'draft_state'])
+          or not private.site_valid_optional_string_v1(block -> 'label', 120)
+          or not private.site_valid_optional_string_v1(block -> 'href', 2048)
+          or (block ? 'style' and not private.site_json_string_in_v1(block -> 'style', array['primary', 'secondary']))
+        )
+      )
+      or (
+        block ->> 'type' = 'callout' and (
+          not private.site_json_has_only_keys_v1(block, array['type', 'text', 'tone', 'id', 'draft_state'])
+          or not private.site_valid_optional_string_v1(block -> 'text', 1000)
+          or (block ? 'tone' and not private.site_json_string_in_v1(block -> 'tone', array['neutral', 'info', 'success', 'warning']))
+        )
+      )
+    ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
+    return;
+  end if;
+
+  if block ->> 'type' = 'image' then
+    if coalesce((
+      not (block ?& array['type', 'id'])
+      or not private.site_json_has_only_keys_v1(block, array['type', 'asset_id', 'alt', 'caption', 'presentation', 'id', 'draft_state'])
+      or (block ? 'draft_state' and not private.site_json_string_in_v1(block -> 'draft_state', array['complete', 'incomplete']))
+      or (block ? 'asset_id' and not private.site_valid_uuid_v1(block -> 'asset_id'))
+      or (block ? 'alt' and not private.site_valid_optional_string_v1(block -> 'alt', 300))
+      or (block ? 'caption' and not private.site_valid_string_v1(block -> 'caption', 500))
+      or (block ? 'presentation' and not private.site_json_string_in_v1(block -> 'presentation', array['content', 'wide']))
+      or (coalesce(block ->> 'draft_state', 'complete') = 'complete'
+        and (not (block ? 'asset_id') or not private.site_valid_string_v1(block -> 'alt', 300)))
+    ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
+    return;
+  end if;
+
+  if block ->> 'type' in ('heading', 'text', 'rich_text', 'button', 'public_form', 'booking', 'preorder', 'divider', 'callout') then
     perform private.site_assert_legacy_block_types_v1(block);
     perform private.assert_valid_page_block_v2(block, false);
     if block ->> 'type' = 'image' and block ? 'src' then
@@ -352,11 +425,14 @@ begin
   if block ->> 'type' = 'collapsible' then
     if coalesce((nesting > 1
       or not (block ?& array['type', 'summary', 'blocks', 'id'])
-      or not private.site_json_has_only_keys_v1(block, array['type', 'summary', 'blocks', 'open', 'id'])
-      or not private.site_valid_string_v1(block -> 'summary', 200)
+      or not private.site_json_has_only_keys_v1(block, array['type', 'summary', 'blocks', 'open', 'id', 'draft_state'])
+      or not private.site_valid_optional_string_v1(block -> 'summary', 200)
       or jsonb_typeof(block -> 'blocks') <> 'array'
       or jsonb_array_length(block -> 'blocks') > 50
       or (block ? 'open' and jsonb_typeof(block -> 'open') is distinct from 'boolean')
+      or (block ? 'draft_state' and not private.site_json_string_in_v1(block -> 'draft_state', array['complete', 'incomplete']))
+      or (coalesce(block ->> 'draft_state', 'complete') = 'complete'
+        and not private.site_valid_string_v1(block -> 'summary', 200))
     ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
     for child in select value from jsonb_array_elements(block -> 'blocks') loop
       perform private.site_assert_block_v1(child, nesting + 1);
@@ -366,22 +442,31 @@ begin
 
   if block ->> 'type' = 'gallery' then
     if coalesce((not (block ?& array['type', 'images', 'id'])
-      or not private.site_json_has_only_keys_v1(block, array['type', 'images', 'presentation', 'id'])
+      or not private.site_json_has_only_keys_v1(block, array['type', 'images', 'presentation', 'id', 'draft_state'])
       or jsonb_typeof(block -> 'images') <> 'array'
-      or jsonb_array_length(block -> 'images') not between 1 and 12
+      or jsonb_array_length(block -> 'images') > 12
       or (block ? 'presentation' and not private.site_json_string_in_v1(block -> 'presentation', array['grid', 'carousel']))
+      or (block ? 'draft_state' and not private.site_json_string_in_v1(block -> 'draft_state', array['complete', 'incomplete']))
+      or (coalesce(block ->> 'draft_state', 'complete') = 'complete' and jsonb_array_length(block -> 'images') = 0)
+      or (coalesce(block ->> 'draft_state', 'complete') = 'complete' and exists (
+        select 1 from jsonb_array_elements(block -> 'images') as gallery_image(value)
+        where coalesce(gallery_image.value ->> 'draft_state', 'complete') = 'incomplete'
+      ))
     ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
     for image_value in select value from jsonb_array_elements(block -> 'images') loop
-      if coalesce((not (image_value ?& array['asset_id', 'alt'])
-        or not private.site_json_has_only_keys_v1(image_value, array['asset_id', 'alt', 'caption'])
-        or not private.site_valid_uuid_v1(image_value -> 'asset_id')
-        or not private.site_valid_string_v1(image_value -> 'alt', 300)
+      if coalesce((not private.site_json_has_only_keys_v1(image_value, array['asset_id', 'alt', 'caption', 'draft_state'])
+        or (image_value ? 'asset_id' and not private.site_valid_uuid_v1(image_value -> 'asset_id'))
+        or (image_value ? 'alt' and not private.site_valid_optional_string_v1(image_value -> 'alt', 300))
         or (image_value ? 'caption' and not private.site_valid_string_v1(image_value -> 'caption', 500))
+        or (image_value ? 'draft_state' and not private.site_json_string_in_v1(image_value -> 'draft_state', array['complete', 'incomplete']))
+        or (coalesce(image_value ->> 'draft_state', 'complete') = 'complete'
+          and (not (image_value ? 'asset_id') or not private.site_valid_string_v1(image_value -> 'alt', 300)))
       ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
     end loop;
     if exists (
       select 1
       from jsonb_array_elements(block -> 'images') as gallery_image(value)
+      where gallery_image.value ? 'asset_id'
       group by gallery_image.value ->> 'asset_id'
       having count(*) > 1
     ) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
@@ -390,9 +475,9 @@ begin
 
   if block ->> 'type' in ('collection', 'record_detail') then
     if block ->> 'type' = 'collection' then
-      if coalesce((not (block ?& array['type', 'object_key', 'selection', 'public_field_keys', 'presentation', 'id'])
-        or not private.site_json_has_only_keys_v1(block, array['type', 'object_key', 'selection', 'public_field_keys', 'presentation', 'detail_page_id', 'id'])
-        or not private.site_valid_key_v1(block -> 'object_key')
+      if coalesce((not (block ?& array['type', 'selection', 'public_field_keys', 'id'])
+        or not private.site_json_has_only_keys_v1(block, array['type', 'object_key', 'selection', 'public_field_keys', 'presentation', 'detail_page_id', 'id', 'draft_state'])
+        or (block ? 'object_key' and not private.site_valid_key_v1(block -> 'object_key'))
         or jsonb_typeof(block -> 'selection') is distinct from 'object'
         or not (block -> 'selection' ?& array['schema_version', 'record_ids'])
         or not private.site_json_has_only_keys_v1(block -> 'selection', array['schema_version', 'record_ids'])
@@ -401,9 +486,12 @@ begin
         or jsonb_typeof(block -> 'selection' -> 'record_ids') is distinct from 'array'
         or jsonb_array_length(block -> 'selection' -> 'record_ids') > 500
         or jsonb_typeof(block -> 'public_field_keys') is distinct from 'array'
-        or jsonb_array_length(block -> 'public_field_keys') not between 1 and 50
-        or not private.site_json_string_in_v1(block -> 'presentation', array['cards', 'list', 'table'])
+        or jsonb_array_length(block -> 'public_field_keys') > 50
+        or (block ? 'presentation' and not private.site_json_string_in_v1(block -> 'presentation', array['cards', 'list', 'table']))
         or (block ? 'detail_page_id' and not private.site_valid_uuid_v1(block -> 'detail_page_id'))
+        or (block ? 'draft_state' and not private.site_json_string_in_v1(block -> 'draft_state', array['complete', 'incomplete']))
+        or (coalesce(block ->> 'draft_state', 'complete') = 'complete'
+          and (not (block ? 'object_key') or jsonb_array_length(block -> 'public_field_keys') = 0))
       ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
       for field_value in select value from jsonb_array_elements(block -> 'selection' -> 'record_ids') loop
         if not private.site_valid_uuid_v1(field_value) then
@@ -527,21 +615,21 @@ begin
     or jsonb_typeof(draft -> 'branding') is distinct from 'object'
     or not (draft -> 'branding' ?& array['name', 'accent'])
     or not private.site_json_has_only_keys_v1(draft -> 'branding', array['name', 'accent', 'logo_asset_id'])
-    or not private.site_valid_string_v1(draft -> 'branding' -> 'name', 120)
+    or not private.site_valid_optional_string_v1(draft -> 'branding' -> 'name', 120)
     or not private.site_json_string_in_v1(draft -> 'branding' -> 'accent', array['coral', 'clay', 'forest', 'ocean', 'plum'])
     or (draft -> 'branding' ? 'logo_asset_id' and not private.site_valid_uuid_v1(draft -> 'branding' -> 'logo_asset_id'))
     or jsonb_typeof(draft -> 'pages') is distinct from 'array'
-    or jsonb_array_length(draft -> 'pages') not between 1 and 20
+    or jsonb_array_length(draft -> 'pages') > 20
   ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
 
   for page_value in select value from jsonb_array_elements(draft -> 'pages') loop
     if coalesce((not (page_value ?& array['id', 'title', 'slug', 'navigation_label', 'is_home', 'is_in_navigation', 'is_included', 'layout'])
       or not private.site_json_has_only_keys_v1(page_value, array['id', 'title', 'slug', 'navigation_label', 'is_home', 'is_in_navigation', 'is_included', 'layout'])
       or not private.site_valid_uuid_v1(page_value -> 'id')
-      or not private.site_valid_string_v1(page_value -> 'title', 120)
-      or not private.site_valid_string_v1(page_value -> 'navigation_label', 80)
-      or not private.site_valid_string_v1(page_value -> 'slug', 80)
-      or coalesce((page_value ->> 'slug') !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$', true)
+      or not private.site_valid_optional_string_v1(page_value -> 'title', 120)
+      or not private.site_valid_optional_string_v1(page_value -> 'navigation_label', 80)
+      or not private.site_valid_optional_string_v1(page_value -> 'slug', 80)
+      or ((page_value ->> 'slug') <> '' and coalesce((page_value ->> 'slug') !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$', true))
       or char_length(page_value ->> 'slug') > 80
       or jsonb_typeof(page_value -> 'is_home') is distinct from 'boolean'
       or jsonb_typeof(page_value -> 'is_in_navigation') is distinct from 'boolean'
@@ -552,14 +640,10 @@ begin
       or jsonb_array_length(page_value -> 'layout' -> 'blocks') > 100
     ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
     if (page_value ->> 'is_home')::boolean then home_count := home_count + 1; end if;
-    if (page_value ->> 'is_home')::boolean and not (page_value ->> 'is_included')::boolean then
-      raise exception 'site_draft_invalid' using errcode = '22023';
-    end if;
-    if (page_value ->> 'is_in_navigation')::boolean and not (page_value ->> 'is_included')::boolean then
-      raise exception 'site_draft_invalid' using errcode = '22023';
-    end if;
     page_ids := array_append(page_ids, page_value ->> 'id');
-    page_slugs := array_append(page_slugs, page_value ->> 'slug');
+    if page_value ->> 'slug' <> '' then
+      page_slugs := array_append(page_slugs, page_value ->> 'slug');
+    end if;
     total_blocks := 0;
     for block in select value from jsonb_array_elements(page_value -> 'layout' -> 'blocks') loop
       perform private.site_assert_block_v1(block);
@@ -568,7 +652,7 @@ begin
     end loop;
     if total_blocks > 100 then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
   end loop;
-  if home_count <> 1
+  if home_count > 1
     or cardinality(page_ids) <> cardinality(array(select distinct value from unnest(page_ids) as value))
     or cardinality(page_slugs) <> cardinality(array(select distinct value from unnest(page_slugs) as value))
     or cardinality(block_ids) <> cardinality(array(select distinct value from unnest(block_ids) as value))
@@ -664,6 +748,239 @@ begin
 end;
 $$;
 
+-- A saved draft may intentionally exclude unfinished Pages. This second,
+-- release-only boundary prevents an included collection/detail/navigation link
+-- from exposing that unfinished composition while leaving autosave durable.
+create or replace function private.site_assert_publication_ready_v1(draft jsonb)
+returns void
+language plpgsql
+immutable
+set search_path = ''
+as $$
+begin
+  perform private.assert_site_draft_v1(draft);
+  if not exists (
+    select 1
+    from jsonb_array_elements(draft -> 'pages') as page_value(value)
+    where (page_value.value ->> 'is_home')::boolean
+      and (page_value.value ->> 'is_included')::boolean
+  ) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(draft -> 'pages') as page_value(value)
+    where (page_value.value ->> 'is_included')::boolean
+      and (
+        not private.site_valid_string_v1(page_value.value -> 'title', 120)
+        or not private.site_valid_string_v1(page_value.value -> 'slug', 80)
+        or (page_value.value ->> 'slug') !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+        or ((page_value.value ->> 'is_in_navigation')::boolean
+          and not private.site_valid_string_v1(page_value.value -> 'navigation_label', 80))
+      )
+  ) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+  if not private.site_valid_string_v1(draft -> 'branding' -> 'name', 120) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+  if exists (
+    with pages as (
+      select (page_value.value ->> 'id')::uuid as id,
+        (page_value.value ->> 'is_included')::boolean as is_included
+      from jsonb_array_elements(draft -> 'pages') as page_value(value)
+    )
+    select 1
+    from private.site_draft_blocks_v1(draft) as draft_block
+    join pages on pages.id = draft_block.page_id
+    where pages.is_included
+      and (
+        draft_block.block ->> 'draft_state' = 'incomplete'
+        or (draft_block.block ->> 'type' = 'gallery' and exists (
+          select 1 from jsonb_array_elements(draft_block.block -> 'images') as gallery_image(value)
+          where gallery_image.value ->> 'draft_state' = 'incomplete'
+        ))
+      )
+  ) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(draft -> 'pages') as page_value(value)
+    where (page_value.value ->> 'is_in_navigation')::boolean
+      and not (page_value.value ->> 'is_included')::boolean
+  ) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+  if exists (
+    with pages as (
+      select (page_value.value ->> 'id')::uuid as id,
+        (page_value.value ->> 'is_included')::boolean as is_included
+      from jsonb_array_elements(draft -> 'pages') as page_value(value)
+    )
+    select 1
+    from private.site_draft_blocks_v1(draft) as collection_value
+    join pages as source_page on source_page.id = collection_value.page_id
+    left join pages as detail_page
+      on detail_page.id = (collection_value.block ->> 'detail_page_id')::uuid
+    where collection_value.block ->> 'type' = 'collection'
+      and source_page.is_included
+      and collection_value.block ? 'detail_page_id'
+      and coalesce(detail_page.is_included, false) is not true
+  ) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+  if exists (
+    with pages as (
+      select (page_value.value ->> 'id')::uuid as id,
+        (page_value.value ->> 'is_included')::boolean as is_included
+      from jsonb_array_elements(draft -> 'pages') as page_value(value)
+    )
+    select 1
+    from private.site_draft_blocks_v1(draft) as detail_value
+    join pages as detail_page on detail_page.id = detail_value.page_id
+    left join private.site_draft_blocks_v1(draft) as collection_value
+      on collection_value.block ->> 'type' = 'collection'
+      and collection_value.block ->> 'id' = detail_value.block ->> 'collection_block_id'
+    left join pages as collection_page on collection_page.id = collection_value.page_id
+    where detail_value.block ->> 'type' = 'record_detail'
+      and detail_page.is_included
+      and (
+        collection_value.block is null
+        or coalesce(collection_page.is_included, false) is not true
+        or collection_value.block ->> 'detail_page_id' <> detail_value.page_id::text
+      )
+  ) then
+    raise exception 'site_publication_not_ready' using errcode = '22023';
+  end if;
+end;
+$$;
+
+-- This is intentionally narrower than comparing whole configuration
+-- snapshots: an unrelated configuration edit can rebase the Site, while a
+-- changed Site backing Page, collection, or already-supported public
+-- capability dependency must be reviewed through the normal Changes lifecycle
+-- rather than overwritten by autosave.
+create or replace function private.site_configuration_reference_fingerprint_v1(
+  snapshot jsonb,
+  target_site_id uuid,
+  draft jsonb
+)
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  with site_blocks as (
+    select block from private.site_draft_blocks_v1(draft)
+  ), collection_blocks as (
+    select block from site_blocks where block ->> 'type' = 'collection'
+  ), public_form_keys as (
+    select block ->> 'form_key' as key
+    from site_blocks where block ->> 'type' = 'public_form'
+  ), booking_blocks as (
+    select block -> 'config' as config
+    from site_blocks where block ->> 'type' = 'booking'
+  ), preorder_keys as (
+    select block ->> 'preorder_key' as key
+    from site_blocks where block ->> 'type' = 'preorder'
+  ), snapshot_forms as (
+    select form_value.value as value
+    from jsonb_array_elements(snapshot -> 'forms') as form_value(value)
+    where form_value.value ->> 'key' in (select key from public_form_keys)
+  ), snapshot_preorders as (
+    select preorder_value.value as value
+    from jsonb_array_elements(snapshot -> 'preorder_experiences') as preorder_value(value)
+    where preorder_value.value ->> 'key' in (select key from preorder_keys)
+  ), site_page_keys as (
+    select private.site_page_key_v1(target_site_id, (page_value.value ->> 'id')::uuid) as key
+    from jsonb_array_elements(draft -> 'pages') as page_value(value)
+  ), collection_required_fields as (
+    select collection_value.block ->> 'object_key' as object_key,
+      field_value.value #>> '{}' as key
+    from collection_blocks as collection_value
+    cross join lateral jsonb_array_elements(collection_value.block -> 'public_field_keys') as field_value(value)
+  ), capability_object_keys as (
+    select form_value.value ->> 'object_key' as key from snapshot_forms as form_value
+    union
+    select config ->> 'booking_object_key' from booking_blocks
+    union
+    select config ->> 'customer_object_key' from booking_blocks
+    union
+    select config ->> 'subject_object_key' from booking_blocks where config ->> 'subject_object_key' is not null
+    union
+    select config ->> 'service_object_key' from booking_blocks where config ->> 'service_object_key' is not null
+    union
+    select preorder_value.value ->> 'product_object_key' from snapshot_preorders as preorder_value
+    union
+    select preorder_value.value ->> 'customer_object_key' from snapshot_preorders as preorder_value
+    union
+    select preorder_value.value ->> 'order_object_key' from snapshot_preorders as preorder_value
+    union
+    select preorder_value.value ->> 'order_item_object_key' from snapshot_preorders as preorder_value
+  ), required_object_keys as (
+    select block ->> 'object_key' as key from collection_blocks
+    union
+    select key from capability_object_keys where key is not null
+  ), required_relationship_keys as (
+    select relationship_value.value
+    from booking_blocks
+    cross join lateral jsonb_each_text(booking_blocks.config -> 'relationships') as relationship_value(key, value)
+    where relationship_value.value is not null
+    union
+    select preorder_value.value ->> 'customer_places_order_relationship_key' from snapshot_preorders as preorder_value
+    union
+    select preorder_value.value ->> 'order_contains_item_relationship_key' from snapshot_preorders as preorder_value
+    union
+    select preorder_value.value ->> 'product_appears_in_item_relationship_key' from snapshot_preorders as preorder_value
+  ), required_fields as (
+    select object_key, key from collection_required_fields
+    union
+    select field_value.value ->> 'object_key', field_value.value ->> 'key'
+    from jsonb_array_elements(snapshot -> 'field_definitions') as field_value(value)
+    where field_value.value ->> 'object_key' in (select key from capability_object_keys)
+  )
+  select jsonb_build_object(
+    'pages', coalesce((
+      select jsonb_agg(page_value.value order by page_value.value ->> 'key')
+      from jsonb_array_elements(snapshot -> 'pages') as page_value(value)
+      where page_value.value ->> 'key' in (select key from site_page_keys)
+    ), '[]'::jsonb),
+    'objects', coalesce((
+      select jsonb_agg(object_value.value order by object_value.value ->> 'key')
+      from jsonb_array_elements(snapshot -> 'object_definitions') as object_value(value)
+      where object_value.value ->> 'key' in (select key from required_object_keys)
+    ), '[]'::jsonb),
+    'fields', coalesce((
+      select jsonb_agg(field_definition.value order by field_definition.value ->> 'object_key', field_definition.value ->> 'key')
+      from jsonb_array_elements(snapshot -> 'field_definitions') as field_definition(value)
+      where exists (
+        select 1 from required_fields
+        where required_fields.object_key = field_definition.value ->> 'object_key'
+          and required_fields.key = field_definition.value ->> 'key'
+      )
+    ), '[]'::jsonb),
+    'relationships', coalesce((
+      select jsonb_agg(relationship_value.value order by relationship_value.value ->> 'key')
+      from jsonb_array_elements(snapshot -> 'relationship_definitions') as relationship_value(value)
+      where relationship_value.value ->> 'key' in (select value from required_relationship_keys)
+    ), '[]'::jsonb),
+    'forms', coalesce((
+      select jsonb_agg(form_value.value order by form_value.value ->> 'key')
+      from snapshot_forms as form_value
+    ), '[]'::jsonb),
+    'preorders', coalesce((
+      select jsonb_agg(preorder_value.value order by preorder_value.value ->> 'key')
+      from snapshot_preorders as preorder_value
+    ), '[]'::jsonb),
+    'preorder_locations', coalesce((
+      select jsonb_agg(location_value.value order by location_value.value ->> 'preorder_key', location_value.value ->> 'id')
+      from jsonb_array_elements(snapshot -> 'preorder_experience_locations') as location_value(value)
+      where location_value.value ->> 'preorder_key' in (select key from preorder_keys)
+    ), '[]'::jsonb)
+  );
+$$;
+
 create or replace function private.site_block_asset_ids_v1(block jsonb)
 returns setof uuid
 language plpgsql
@@ -678,7 +995,9 @@ begin
     return next (block ->> 'asset_id')::uuid;
   elsif block ->> 'type' = 'gallery' then
     for image_value in select value from jsonb_array_elements(block -> 'images') loop
-      return next (image_value ->> 'asset_id')::uuid;
+      if image_value ? 'asset_id' then
+        return next (image_value ->> 'asset_id')::uuid;
+      end if;
     end loop;
   elsif block ->> 'type' = 'collapsible' then
     for child in select value from jsonb_array_elements(block -> 'blocks') loop
@@ -916,6 +1235,9 @@ declare
   result jsonb := '[]'::jsonb;
 begin
   for page_value in select value from jsonb_array_elements(draft -> 'pages') loop
+    if not (page_value ->> 'is_included')::boolean then
+      continue;
+    end if;
     target_key := private.site_page_key_v1(target_site_id, (page_value ->> 'id')::uuid);
     target_slug := private.site_page_slug_v1(target_site_id, (page_value ->> 'id')::uuid);
     select * into existing_page from public.pages
@@ -991,6 +1313,48 @@ begin
   insert into public.site_draft_asset_references (business_id, site_id, asset_id, draft_revision)
   select target_business_id, target_site_id, asset_id, target_revision
   from (select distinct id_value as asset_id from private.site_draft_asset_ids_v1(draft) as id_value) as assets;
+end;
+$$;
+
+-- Expiry is a terminal candidate transition. The expired projection and every
+-- asset it froze remain immutable audit history, so its references continue to
+-- protect those bytes. C1 has no release-retention pruning policy; a future
+-- policy must remove the release and its reference in the same reviewed scope.
+create or replace function private.site_expire_prepared_releases_v1(
+  target_business_id uuid,
+  target_site_id uuid
+)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+begin
+  update public.site_releases
+  set status = 'expired'
+  where business_id = target_business_id
+    and site_id = target_site_id
+    and status = 'prepared'
+    and expires_at <= timezone('utc', now());
+end;
+$$;
+
+-- A saved/rebased composition invalidates private candidates that were prepared
+-- from an older revision. Their frozen media remains protected as immutable
+-- release history, even though no reader can resolve the invalidated release.
+create or replace function private.site_invalidate_prepared_releases_v1(
+  target_business_id uuid,
+  target_site_id uuid
+)
+returns void
+language plpgsql
+set search_path = ''
+as $$
+begin
+  update public.site_releases
+  set status = 'invalidated'
+  where business_id = target_business_id
+    and site_id = target_site_id
+    and status = 'prepared';
 end;
 $$;
 
@@ -1078,6 +1442,7 @@ begin
   then
     raise exception 'site_configuration_rebase_required' using errcode = 'P0001';
   end if;
+  perform private.site_invalidate_prepared_releases_v1(expected_business_id, requested_site_id);
   update public.site_states set
     draft_json = requested_draft,
     draft_revision = selected_state.draft_revision + 1,
@@ -1087,6 +1452,161 @@ begin
   where business_id = expected_business_id and id = requested_site_id
   returning * into selected_state;
   perform private.site_sync_draft_asset_references_v1(expected_business_id, requested_site_id, selected_state.draft_revision, requested_draft);
+  return selected_state;
+end;
+$$;
+
+create or replace function public.rebase_site_draft(
+  expected_business_id uuid,
+  expected_actor_id uuid,
+  requested_site_id uuid,
+  expected_draft_revision bigint,
+  expected_base_version_id uuid,
+  expected_head_revision bigint
+)
+returns public.site_states
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_head public.business_configuration_heads;
+  selected_state public.site_states;
+  base_version public.configuration_versions;
+  active_version public.configuration_versions;
+begin
+  if expected_business_id is null or expected_actor_id is null
+    or requested_site_id is null or expected_draft_revision is null
+    or expected_draft_revision <= 0 or expected_base_version_id is null
+    or expected_head_revision is null or expected_head_revision <= 0
+  then raise exception 'site_request_invalid' using errcode = '22023'; end if;
+  perform private.site_assert_actor_v1(expected_business_id, expected_actor_id);
+  select * into current_head from public.business_configuration_heads
+  where business_id = expected_business_id for update;
+  if not found then raise exception 'configuration_head_not_found' using errcode = 'P0002'; end if;
+  select * into selected_state from public.site_states
+  where business_id = expected_business_id and id = requested_site_id for update;
+  if not found then raise exception 'site_not_found' using errcode = 'P0002'; end if;
+  if selected_state.draft_revision <> expected_draft_revision
+    or selected_state.draft_base_version_id <> expected_base_version_id
+    or selected_state.draft_base_head_revision <> expected_head_revision
+  then raise exception 'site_rebase_stale' using errcode = 'P0001'; end if;
+  if selected_state.draft_base_version_id = current_head.active_version_id
+    and selected_state.draft_base_head_revision = current_head.head_revision
+  then return selected_state; end if;
+  select * into base_version from public.configuration_versions
+  where business_id = expected_business_id and id = selected_state.draft_base_version_id;
+  if not found then raise exception 'site_rebase_base_not_found' using errcode = 'P0002'; end if;
+  select * into active_version from public.configuration_versions
+  where business_id = expected_business_id and id = current_head.active_version_id;
+  if not found then raise exception 'configuration_active_version_not_found' using errcode = 'P0002'; end if;
+  perform private.assert_configuration_projection_matches_v1(
+    expected_business_id, active_version.snapshot_json, active_version.snapshot_checksum
+  );
+  if private.site_configuration_reference_fingerprint_v1(
+    base_version.snapshot_json, requested_site_id, selected_state.draft_json
+  ) is distinct from private.site_configuration_reference_fingerprint_v1(
+    active_version.snapshot_json, requested_site_id, selected_state.draft_json
+  ) then
+    raise exception 'site_configuration_rebase_conflict' using errcode = 'P0001';
+  end if;
+  perform private.site_invalidate_prepared_releases_v1(expected_business_id, requested_site_id);
+  update public.site_states set
+    draft_revision = selected_state.draft_revision + 1,
+    draft_base_version_id = current_head.active_version_id,
+    draft_base_head_revision = current_head.head_revision,
+    last_rebase_resolution = 'unrelated_head',
+    last_rebased_by = expected_actor_id,
+    last_rebased_at = timezone('utc', now()),
+    updated_at = timezone('utc', now())
+  where business_id = expected_business_id and id = requested_site_id
+  returning * into selected_state;
+  update public.site_draft_asset_references
+  set draft_revision = selected_state.draft_revision
+  where business_id = expected_business_id and site_id = requested_site_id;
+  return selected_state;
+end;
+$$;
+
+-- A changed Site-owned Page or collection definition is never silently
+-- rebased. This explicit recovery keeps the saved Site composition intact,
+-- advances its base only after owner acknowledgement, and makes the next
+-- prepare derive an ordinary finite configuration Change for review.
+create or replace function public.resolve_site_draft_rebase(
+  expected_business_id uuid,
+  expected_actor_id uuid,
+  requested_site_id uuid,
+  expected_draft_revision bigint,
+  expected_base_version_id uuid,
+  expected_head_revision bigint,
+  expected_target_version_id uuid,
+  expected_target_head_revision bigint,
+  requested_resolution text
+)
+returns public.site_states
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_head public.business_configuration_heads;
+  selected_state public.site_states;
+  base_version public.configuration_versions;
+  active_version public.configuration_versions;
+begin
+  if expected_business_id is null or expected_actor_id is null
+    or requested_site_id is null or expected_draft_revision is null
+    or expected_draft_revision <= 0 or expected_base_version_id is null
+    or expected_head_revision is null or expected_head_revision <= 0
+    or expected_target_version_id is null or expected_target_head_revision is null
+    or expected_target_head_revision <= 0
+    or requested_resolution is distinct from 'keep_site_draft'
+  then raise exception 'site_request_invalid' using errcode = '22023'; end if;
+  perform private.site_assert_actor_v1(expected_business_id, expected_actor_id);
+  select * into current_head from public.business_configuration_heads
+  where business_id = expected_business_id for update;
+  if not found then raise exception 'configuration_head_not_found' using errcode = 'P0002'; end if;
+  if current_head.active_version_id <> expected_target_version_id
+    or current_head.head_revision <> expected_target_head_revision
+  then raise exception 'site_rebase_target_stale' using errcode = 'P0001'; end if;
+  select * into selected_state from public.site_states
+  where business_id = expected_business_id and id = requested_site_id for update;
+  if not found then raise exception 'site_not_found' using errcode = 'P0002'; end if;
+  if selected_state.draft_revision <> expected_draft_revision
+    or selected_state.draft_base_version_id <> expected_base_version_id
+    or selected_state.draft_base_head_revision <> expected_head_revision
+  then raise exception 'site_rebase_stale' using errcode = 'P0001'; end if;
+  if selected_state.draft_base_version_id = current_head.active_version_id
+    and selected_state.draft_base_head_revision = current_head.head_revision
+  then raise exception 'site_rebase_not_needed' using errcode = '22023'; end if;
+  select * into base_version from public.configuration_versions
+  where business_id = expected_business_id and id = selected_state.draft_base_version_id;
+  if not found then raise exception 'site_rebase_base_not_found' using errcode = 'P0002'; end if;
+  select * into active_version from public.configuration_versions
+  where business_id = expected_business_id and id = current_head.active_version_id;
+  if not found then raise exception 'configuration_active_version_not_found' using errcode = 'P0002'; end if;
+  perform private.assert_configuration_projection_matches_v1(
+    expected_business_id, active_version.snapshot_json, active_version.snapshot_checksum
+  );
+  if private.site_configuration_reference_fingerprint_v1(
+    base_version.snapshot_json, requested_site_id, selected_state.draft_json
+  ) is not distinct from private.site_configuration_reference_fingerprint_v1(
+    active_version.snapshot_json, requested_site_id, selected_state.draft_json
+  ) then raise exception 'site_rebase_not_conflicted' using errcode = '22023'; end if;
+  perform private.site_invalidate_prepared_releases_v1(expected_business_id, requested_site_id);
+  update public.site_states set
+    draft_revision = selected_state.draft_revision + 1,
+    draft_base_version_id = current_head.active_version_id,
+    draft_base_head_revision = current_head.head_revision,
+    last_rebase_resolution = 'keep_site_draft',
+    last_rebased_by = expected_actor_id,
+    last_rebased_at = timezone('utc', now()),
+    updated_at = timezone('utc', now())
+  where business_id = expected_business_id and id = requested_site_id
+  returning * into selected_state;
+  update public.site_draft_asset_references
+  set draft_revision = selected_state.draft_revision
+  where business_id = expected_business_id and site_id = requested_site_id;
   return selected_state;
 end;
 $$;
@@ -1109,6 +1629,7 @@ declare
   active_version public.configuration_versions;
   selected_state public.site_states;
   existing_release public.site_releases;
+  existing_change public.configuration_change_sets;
   prepared_release public.site_releases;
   derived_operations jsonb;
   proposed_change public.configuration_change_sets;
@@ -1146,7 +1667,7 @@ begin
   then
     raise exception 'site_configuration_rebase_required' using errcode = 'P0001';
   end if;
-  perform private.assert_site_draft_v1(selected_state.draft_json);
+  perform private.site_assert_publication_ready_v1(selected_state.draft_json);
   perform private.site_assert_assets_available_v1(expected_business_id, selected_state.draft_json);
   perform private.site_lock_selected_records_v1(expected_business_id, selected_state.draft_json);
   derived_operations := private.site_derived_page_operations_v1(expected_business_id, requested_site_id, selected_state.draft_json);
@@ -1156,6 +1677,7 @@ begin
     raise exception 'site_projection_too_large' using errcode = '22023';
   end if;
   checksum := encode(extensions.digest(convert_to(projection::text, 'UTF8'), 'sha256'), 'hex');
+  perform private.site_expire_prepared_releases_v1(expected_business_id, requested_site_id);
   select * into existing_release from public.site_releases
   where business_id = expected_business_id and site_id = requested_site_id
     and status = 'prepared' and source_draft_revision = selected_state.draft_revision
@@ -1164,7 +1686,23 @@ begin
     and expected_active_release_revision = selected_state.active_release_revision
     and projection_checksum = checksum
   order by prepared_at desc limit 1 for share;
-  if found then return existing_release; end if;
+  if found then
+    if existing_release.configuration_change_set_id is null then
+      return existing_release;
+    end if;
+    select * into existing_change from public.configuration_change_sets
+    where business_id = expected_business_id
+      and id = existing_release.configuration_change_set_id
+    for share;
+    if found and existing_change.status = 'validated' then
+      return existing_release;
+    end if;
+    -- An ordinary Changes decision ended this candidate. The saved draft is
+    -- retained; a new prepare derives a fresh finite Change rather than
+    -- replaying an abandoned, rejected, or conflicted one.
+    update public.site_releases set status = 'invalidated'
+    where business_id = expected_business_id and id = existing_release.id;
+  end if;
   if jsonb_array_length(derived_operations) > 0 then
     proposed_change := public.propose_configuration_change(
       expected_business_id, expected_actor_id, current_head.active_version_id, current_head.head_revision,
@@ -1177,11 +1715,11 @@ begin
   end if;
   insert into public.site_releases (
     business_id, site_id, status, source_draft_revision, source_base_version_id, source_head_revision,
-    expected_active_release_revision, configuration_change_set_id, projection_json, review_json, projection_checksum, prepared_by
+    expected_active_release_revision, configuration_change_set_id, projection_json, review_json, projection_checksum, prepared_by, expires_at
   ) values (
     expected_business_id, requested_site_id, 'prepared', selected_state.draft_revision,
     current_head.active_version_id, current_head.head_revision, selected_state.active_release_revision,
-    validated_change.id, projection, review_metadata, checksum, expected_actor_id
+    validated_change.id, projection, review_metadata, checksum, expected_actor_id, timezone('utc', now()) + interval '24 hours'
   ) returning * into prepared_release;
   insert into public.site_release_asset_references (business_id, release_id, asset_id)
   select expected_business_id, prepared_release.id, asset_id
@@ -1207,6 +1745,9 @@ declare
   canonical_id uuid;
 begin
   for page_value in select value from jsonb_array_elements(draft -> 'pages') loop
+    if not (page_value ->> 'is_included')::boolean then
+      continue;
+    end if;
     page_id := (page_value ->> 'id')::uuid;
     target_key := private.site_page_key_v1(target_site_id, page_id);
     select id into canonical_id from public.pages
@@ -1246,6 +1787,7 @@ declare
   selected_state public.site_states;
   selected_release public.site_releases;
   applied_change public.configuration_change_sets;
+  configuration_already_applied boolean := false;
 begin
   if expected_business_id is null or expected_actor_id is null
     or requested_site_id is null or requested_candidate_id is null
@@ -1263,14 +1805,33 @@ begin
   -- A lost response is replayed before any stale comparison. It reports this
   -- release's original success but never moves a newer active pointer back.
   if selected_release.status = 'published' then return selected_release; end if;
+  -- Expiry is also terminal. This returns the original audit record without
+  -- moving a newer pointer; immutable release media remains retained.
+  if selected_release.status = 'expired' then return selected_release; end if;
+  if selected_release.status = 'prepared'
+    and selected_release.expires_at <= timezone('utc', now())
+  then
+    update public.site_releases set status = 'expired'
+    where business_id = expected_business_id and id = requested_candidate_id
+    returning * into selected_release;
+    return selected_release;
+  end if;
   if selected_release.status <> 'prepared' then raise exception 'site_release_not_publishable' using errcode = '55000'; end if;
   if selected_release.configuration_change_set_id is not null then
     select * into selected_change from public.configuration_change_sets
     where business_id = expected_business_id and id = selected_release.configuration_change_set_id for update;
-    if not found or selected_change.status <> 'validated'
+    if not found
       or selected_change.base_version_id <> selected_release.source_base_version_id
       or selected_change.base_head_revision <> selected_release.source_head_revision
     then raise exception 'site_configuration_incompatible' using errcode = '23514'; end if;
+    if selected_change.status = 'applied' then
+      if selected_change.applied_version_id is distinct from current_head.active_version_id then
+        raise exception 'site_configuration_stale' using errcode = 'P0001';
+      end if;
+      configuration_already_applied := true;
+    elsif selected_change.status <> 'validated' then
+      raise exception 'site_configuration_incompatible' using errcode = '23514';
+    end if;
   end if;
   select * into selected_state from public.site_states
   where business_id = expected_business_id and id = requested_site_id for update;
@@ -1278,8 +1839,16 @@ begin
   if selected_state.draft_revision <> expected_draft_revision
     or selected_release.source_draft_revision <> expected_draft_revision
   then raise exception 'site_draft_stale' using errcode = 'P0001'; end if;
-  if current_head.active_version_id <> expected_base_version_id
-    or current_head.head_revision <> expected_head_revision
+  if configuration_already_applied
+    and (
+      selected_state.draft_base_version_id <> selected_release.source_base_version_id
+      or selected_state.draft_base_head_revision <> selected_release.source_head_revision
+    )
+  then raise exception 'site_configuration_rebase_required' using errcode = 'P0001'; end if;
+  if (not configuration_already_applied and (
+      current_head.active_version_id <> expected_base_version_id
+      or current_head.head_revision <> expected_head_revision
+    ))
     or selected_release.source_base_version_id <> expected_base_version_id
     or selected_release.source_head_revision <> expected_head_revision
   then raise exception 'site_configuration_stale' using errcode = 'P0001'; end if;
@@ -1291,12 +1860,16 @@ begin
   );
   if selected_state.active_release_revision <> selected_release.expected_active_release_revision then
     raise exception 'site_release_stale' using errcode = 'P0001'; end if;
-  if selected_release.configuration_change_set_id is not null then
+  if selected_release.configuration_change_set_id is not null
+    and not configuration_already_applied
+  then
     applied_change := public.apply_configuration_change(expected_business_id, expected_actor_id, selected_release.configuration_change_set_id);
     if applied_change.status <> 'applied' then raise exception 'site_configuration_incompatible' using errcode = '23514'; end if;
     selected_release.applied_version_id := applied_change.applied_version_id;
     select * into current_head from public.business_configuration_heads
     where business_id = expected_business_id;
+  elsif configuration_already_applied then
+    selected_release.applied_version_id := selected_change.applied_version_id;
   end if;
   perform private.site_bind_canonical_pages_v1(expected_business_id, requested_site_id, selected_state.draft_json);
   update public.site_releases set status = 'published', applied_version_id = selected_release.applied_version_id,
@@ -1330,6 +1903,7 @@ begin
     or new.review_json <> old.review_json
     or new.projection_checksum <> old.projection_checksum
     or new.prepared_by <> old.prepared_by or new.prepared_at <> old.prepared_at
+    or new.expires_at <> old.expires_at
   then raise exception 'Site release content is immutable' using errcode = '55000'; end if;
   if old.status = 'prepared' and new.status = 'published' then return new; end if;
   if old.status = 'prepared' and new.status in ('invalidated', 'expired') then return new; end if;
@@ -1364,11 +1938,15 @@ grant select on public.site_states, public.site_page_bindings, public.site_relea
   public.site_draft_asset_references, public.site_release_asset_references to authenticated;
 revoke all on function public.create_site_draft(uuid, uuid, jsonb),
   public.save_site_draft(uuid, uuid, uuid, bigint, jsonb),
+  public.rebase_site_draft(uuid, uuid, uuid, bigint, uuid, bigint),
+  public.resolve_site_draft_rebase(uuid, uuid, uuid, bigint, uuid, bigint, uuid, bigint, text),
   public.prepare_site_release(uuid, uuid, uuid, bigint, uuid, bigint),
   public.publish_site_release(uuid, uuid, uuid, uuid, bigint, uuid, bigint)
   from public, anon, service_role;
 grant execute on function public.create_site_draft(uuid, uuid, jsonb),
   public.save_site_draft(uuid, uuid, uuid, bigint, jsonb),
+  public.rebase_site_draft(uuid, uuid, uuid, bigint, uuid, bigint),
+  public.resolve_site_draft_rebase(uuid, uuid, uuid, bigint, uuid, bigint, uuid, bigint, text),
   public.prepare_site_release(uuid, uuid, uuid, bigint, uuid, bigint),
   public.publish_site_release(uuid, uuid, uuid, uuid, bigint, uuid, bigint)
   to authenticated;

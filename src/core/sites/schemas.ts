@@ -1,16 +1,18 @@
 import { z } from "zod";
 
 import {
-  pageBlockSchema,
   siteCollectionBlockSchema,
+  siteDraftImageBlockSchema,
   siteGalleryBlockSchema,
   sitePageLayoutSchema,
   siteRecordDetailBlockSchema,
+  siteSharedAtomicBlockSchema,
   type SitePageLayout,
 } from "../experience/schemas";
 import { jsonObjectSchema } from "../graph/schemas";
 
 const siteNameSchema = z.string().trim().min(1).max(120);
+const siteDraftTextSchema = z.string().trim().max(120);
 const siteSlugSchema = z
   .string()
   .min(1)
@@ -27,7 +29,15 @@ export const siteBrandingSchema = z
   })
   .strict();
 
-export const sitePageSchema = z
+const siteDraftBrandingSchema = z
+  .object({
+    name: siteDraftTextSchema,
+    accent: siteAccentSchema,
+    logo_asset_id: z.uuid().optional(),
+  })
+  .strict();
+
+const sitePageShape = z
   .object({
     /**
      * This identifies the page inside the Site draft only. PostgreSQL derives
@@ -35,9 +45,9 @@ export const sitePageSchema = z
      * the ordinary configuration allocator; callers never choose that ID.
      */
     id: z.uuid(),
-    title: siteNameSchema,
-    slug: siteSlugSchema,
-    navigation_label: z.string().trim().min(1).max(80),
+    title: siteDraftTextSchema,
+    slug: z.string().trim().max(80),
+    navigation_label: z.string().trim().max(80),
     is_home: z.boolean(),
     is_in_navigation: z.boolean(),
     is_included: z.boolean(),
@@ -45,17 +55,28 @@ export const sitePageSchema = z
   })
   .strict();
 
+export const sitePageSchema = sitePageShape.superRefine((page, context) => {
+  if (page.slug.length > 0 && !siteSlugSchema.safeParse(page.slug).success) {
+    context.addIssue({
+      code: "custom",
+      message: "A Site Page address must use lowercase words and hyphens.",
+      path: ["slug"],
+    });
+  }
+});
+
 export const siteDraftV1Schema = z
   .object({
     schema_version: z.literal(1),
-    branding: siteBrandingSchema,
-    pages: z.array(sitePageSchema).min(1).max(20),
+    branding: siteDraftBrandingSchema,
+    pages: z.array(sitePageSchema).max(20),
   })
   .strict()
   .superRefine((draft, context) => {
     const pageIds = draft.pages.map((page) => page.id);
-    const slugs = draft.pages.map((page) => page.slug);
-    const homes = draft.pages.filter((page) => page.is_home);
+    const slugs = draft.pages
+      .map((page) => page.slug)
+      .filter((slug) => slug.length > 0);
     if (new Set(pageIds).size !== pageIds.length) {
       context.addIssue({
         code: "custom",
@@ -70,10 +91,10 @@ export const siteDraftV1Schema = z
         path: ["pages"],
       });
     }
-    if (homes.length !== 1) {
+    if (draft.pages.filter((page) => page.is_home).length > 1) {
       context.addIssue({
         code: "custom",
-        message: "A Site needs exactly one Home Page.",
+        message: "A Site can have only one Home Page.",
         path: ["pages"],
       });
     }
@@ -173,25 +194,208 @@ export const siteDraftV1Schema = z
         message: "A Site draft cannot exceed 256 KiB.",
       });
     }
+  });
+
+export type SiteDraftV1 = z.infer<typeof siteDraftV1Schema>;
+
+/**
+ * Draft persistence accepts a complete bounded composition even when the
+ * owner is deliberately excluding unfinished Pages. Preparation applies this
+ * additional release-only contract; autosave never pretends that exclusion is
+ * a completed public route.
+ */
+export const siteDraftPublicationReadyV1Schema = siteDraftV1Schema.superRefine(
+  (draft, context) => {
+    const pages = new Map(draft.pages.map((page) => [page.id, page]));
+    const collections = new Map<
+      string,
+      { pageId: string; detailPageId: string | undefined }
+    >();
+    const detailBlocks: Array<{ collectionId: string; pageId: string }> = [];
+    const visit = (
+      blocks: readonly SitePageLayout["blocks"][number][],
+      pageId: string,
+    ) => {
+      for (const block of blocks) {
+        if (block.type === "collection" && block.id) {
+          collections.set(block.id, {
+            pageId,
+            detailPageId: block.detail_page_id,
+          });
+        }
+        if (block.type === "record_detail") {
+          detailBlocks.push({
+            collectionId: block.collection_block_id,
+            pageId,
+          });
+        }
+        if (block.type === "collapsible") {
+          visit(
+            block.blocks as readonly SitePageLayout["blocks"][number][],
+            pageId,
+          );
+        }
+        if (block.type === "section") {
+          block.columns.forEach((column) =>
+            visit(
+              column.blocks as readonly SitePageLayout["blocks"][number][],
+              pageId,
+            ),
+          );
+        }
+      }
+    };
+    draft.pages.forEach((page) => visit(page.layout.blocks, page.id));
+
+    if (draft.branding.name.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A Site needs a name before publishing.",
+        path: ["branding", "name"],
+      });
+    }
+    if (
+      draft.pages.filter((page) => page.is_home && page.is_included).length !==
+      1
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A release needs exactly one included Home Page.",
+        path: ["pages"],
+      });
+    }
+
+    const visitReadiness = (
+      blocks: readonly SitePageLayout["blocks"][number][],
+      page: SiteDraftV1["pages"][number],
+    ) => {
+      for (const block of blocks) {
+        if (
+          page.is_included &&
+          "draft_state" in block &&
+          block.draft_state === "incomplete"
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "Included Pages cannot contain unfinished content.",
+            path: ["pages"],
+          });
+        }
+        if (block.type === "collapsible") {
+          visitReadiness(
+            block.blocks as readonly SitePageLayout["blocks"][number][],
+            page,
+          );
+        }
+        if (block.type === "section") {
+          block.columns.forEach((column) =>
+            visitReadiness(
+              column.blocks as readonly SitePageLayout["blocks"][number][],
+              page,
+            ),
+          );
+        }
+      }
+    };
+
+    for (const page of draft.pages) {
+      if (!page.is_included) continue;
+      if (page.title.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: "An included Page needs a title before publishing.",
+          path: ["pages"],
+        });
+      }
+      if (!siteSlugSchema.safeParse(page.slug).success) {
+        context.addIssue({
+          code: "custom",
+          message: "An included Page needs an address before publishing.",
+          path: ["pages"],
+        });
+      }
+      if (page.is_in_navigation && page.navigation_label.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: "A navigation Page needs a label before publishing.",
+          path: ["pages"],
+        });
+      }
+      visitReadiness(page.layout.blocks, page);
+      if (page.is_home && !page.is_included) {
+        context.addIssue({
+          code: "custom",
+          message: "The Home Page must be included before publishing.",
+          path: ["pages"],
+        });
+      }
+    }
+
     for (const page of draft.pages) {
       if (page.is_home && !page.is_included) {
         context.addIssue({
           code: "custom",
-          message: "The Home Page must be included in the next release.",
+          message: "The Home Page must be included before publishing.",
           path: ["pages"],
         });
       }
       if (page.is_in_navigation && !page.is_included) {
         context.addIssue({
           code: "custom",
-          message: "Only included Pages can appear in Site navigation.",
+          message: "Only included Pages can appear in published navigation.",
           path: ["pages"],
         });
       }
     }
-  });
 
-export type SiteDraftV1 = z.infer<typeof siteDraftV1Schema>;
+    for (const [collectionId, collection] of collections) {
+      const sourcePage = pages.get(collection.pageId);
+      if (!sourcePage?.is_included || !collection.detailPageId) continue;
+      const detailPage = pages.get(collection.detailPageId);
+      if (!detailPage?.is_included) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "An included collection cannot link to an excluded or missing detail Page.",
+          path: ["pages"],
+        });
+        continue;
+      }
+      if (
+        !detailBlocks.some(
+          (detail) =>
+            detail.collectionId === collectionId &&
+            detail.pageId === collection.detailPageId,
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "An included collection detail link needs its shared detail layout.",
+          path: ["pages"],
+        });
+      }
+    }
+
+    for (const detail of detailBlocks) {
+      const detailPage = pages.get(detail.pageId);
+      const collection = collections.get(detail.collectionId);
+      if (
+        detailPage?.is_included &&
+        (!collection ||
+          !pages.get(collection.pageId)?.is_included ||
+          collection.detailPageId !== detail.pageId)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "An included detail Page needs an included collection that owns it.",
+          path: ["pages"],
+        });
+      }
+    }
+  },
+);
 
 /**
  * A release is a server-built, immutable projection. Collection entries carry
@@ -267,8 +471,31 @@ const siteProjectedRecordDetailBlockSchema =
     id: z.uuid(),
   });
 
-const siteProjectedGalleryBlockSchema = siteGalleryBlockSchema.safeExtend({
+const siteProjectedGalleryBlockSchema = siteGalleryBlockSchema
+  .safeExtend({
+    id: z.uuid(),
+    draft_state: z.literal("complete").default("complete"),
+  })
+  .superRefine((block, context) => {
+    if (
+      block.images.some(
+        (image) =>
+          image.draft_state !== "complete" ||
+          !image.asset_id ||
+          image.alt.length === 0,
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A release gallery must contain complete managed images.",
+      });
+    }
+  });
+
+const siteProjectedImageBlockSchema = siteDraftImageBlockSchema.safeExtend({
   id: z.uuid(),
+  asset_id: z.uuid(),
+  draft_state: z.literal("complete").default("complete"),
 });
 
 function stripSiteProjectionRecordValues(value: unknown): unknown {
@@ -282,12 +509,62 @@ function stripSiteProjectionRecordValues(value: unknown): unknown {
   );
 }
 
-const siteProjectedSectionChildBlockSchema = z.union([
-  pageBlockSchema,
+type SiteProjectedCollapsibleBlock = {
+  type: "collapsible";
+  summary: string;
+  blocks: SiteProjectedNestedBlock[];
+  open: boolean;
+  id: string;
+  draft_state: "complete";
+};
+
+type SiteProjectedNestedBlock =
+  | z.output<typeof siteSharedAtomicBlockSchema>
+  | z.output<typeof siteProjectedImageBlockSchema>
+  | z.output<typeof siteProjectedGalleryBlockSchema>
+  | z.output<typeof siteProjectedCollectionBlockSchema>
+  | z.output<typeof siteProjectedRecordDetailBlockSchema>
+  | SiteProjectedCollapsibleBlock;
+
+const siteProjectedLeafBlockSchema = z.union([
+  siteSharedAtomicBlockSchema,
+  siteProjectedImageBlockSchema,
   siteProjectedGalleryBlockSchema,
   siteProjectedCollectionBlockSchema,
   siteProjectedRecordDetailBlockSchema,
 ]);
+
+function siteProjectedNestedBlockSchemaAtDepth(
+  nesting: number,
+): z.ZodType<SiteProjectedNestedBlock> {
+  return z.lazy(() =>
+    nesting > 1
+      ? siteProjectedLeafBlockSchema
+      : z.union([
+          siteProjectedLeafBlockSchema,
+          siteProjectedCollapsibleBlockSchemaAtDepth(nesting),
+        ]),
+  );
+}
+
+function siteProjectedCollapsibleBlockSchemaAtDepth(
+  nesting: number,
+): z.ZodType<SiteProjectedCollapsibleBlock> {
+  return z
+    .object({
+      type: z.literal("collapsible"),
+      summary: z.string().trim().min(1).max(200),
+      blocks: z
+        .array(siteProjectedNestedBlockSchemaAtDepth(nesting + 1))
+        .max(50),
+      open: z.boolean().default(true),
+      id: z.uuid(),
+      draft_state: z.literal("complete").default("complete"),
+    })
+    .strict();
+}
+
+const siteProjectedNestedBlockSchema = siteProjectedNestedBlockSchemaAtDepth(0);
 
 const siteProjectedSectionBlockSchema = z
   .object({
@@ -297,7 +574,7 @@ const siteProjectedSectionBlockSchema = z
       .array(
         z
           .object({
-            blocks: z.array(siteProjectedSectionChildBlockSchema).max(100),
+            blocks: z.array(siteProjectedNestedBlockSchemaAtDepth(1)).max(100),
           })
           .strict(),
       )
@@ -308,10 +585,7 @@ const siteProjectedSectionBlockSchema = z
   .strict();
 
 const siteProjectedPageBlockSchema = z.union([
-  pageBlockSchema,
-  siteProjectedGalleryBlockSchema,
-  siteProjectedCollectionBlockSchema,
-  siteProjectedRecordDetailBlockSchema,
+  siteProjectedNestedBlockSchema,
   siteProjectedSectionBlockSchema,
 ]);
 
@@ -333,7 +607,7 @@ const siteProjectedPageLayoutSchema = z
     }
   });
 
-const siteReleaseProjectionPageSchema = sitePageSchema
+const siteReleaseProjectionPageSchema = sitePageShape
   .omit({ layout: true })
   .extend({
     is_included: z.literal(true),
@@ -369,7 +643,7 @@ export const siteReleaseProjectionSchema = z
       });
     }
     if (
-      !siteDraftV1Schema.safeParse(
+      !siteDraftPublicationReadyV1Schema.safeParse(
         stripSiteProjectionRecordValues({
           schema_version: 1,
           branding: projection.branding,
@@ -423,6 +697,25 @@ export const siteReleasePreparationSchema = z
   })
   .strict();
 
+export const siteDraftRebaseSchema = z
+  .object({
+    siteId: z.uuid(),
+    expectedDraftRevision: z.number().int().positive(),
+    expectedBaseVersionId: z.uuid(),
+    expectedHeadRevision: z.number().int().positive(),
+  })
+  .strict();
+
+/** An owner acknowledgement is required before retaining a changed binding. */
+export const siteDraftConflictResolutionSchema = siteDraftRebaseSchema
+  .extend({
+    /** The exact current configuration the owner reviewed before acknowledging. */
+    expectedTargetVersionId: z.uuid(),
+    expectedTargetHeadRevision: z.number().int().positive(),
+    resolution: z.literal("keep_site_draft"),
+  })
+  .strict();
+
 export const siteReleasePublishSchema = z
   .object({
     siteId: z.uuid(),
@@ -438,7 +731,9 @@ function siteBlockMediaAssetIds(
 ): string[] {
   if (block.type === "image") return block.asset_id ? [block.asset_id] : [];
   if (block.type === "gallery")
-    return block.images.map((image) => image.asset_id);
+    return block.images.flatMap((image) =>
+      image.asset_id ? [image.asset_id] : [],
+    );
   if (block.type === "collapsible") {
     return block.blocks.flatMap((child) =>
       siteBlockMediaAssetIds(child as SitePageLayout["blocks"][number]),

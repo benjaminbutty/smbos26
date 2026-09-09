@@ -6,6 +6,7 @@ import { configurationSnapshotV1Schema } from "../src/core/configuration/definit
 import { pageLayoutSchema } from "../src/core/experience/schemas";
 import { setPageOperationSchema } from "../src/core/configuration/schemas";
 import {
+  siteDraftPublicationReadyV1Schema,
   siteDraftV1Schema,
   siteReleaseProjectionSchema,
   siteReleaseReviewSchema,
@@ -81,6 +82,203 @@ function validDraft() {
 }
 
 describe("Lenni Sites C1 composition schema", () => {
+  it("persists finite incomplete author input regardless of Page inclusion, then rejects it at preparation", () => {
+    const incompletePage = {
+      id: "00000000-0000-4000-8000-000000000020",
+      title: "",
+      slug: "",
+      navigation_label: "",
+      is_home: false,
+      is_in_navigation: false,
+      is_included: true,
+      layout: {
+        blocks: [
+          {
+            type: "heading",
+            id: "00000000-0000-4000-8000-000000000021",
+            text: "",
+            level: 2,
+            draft_state: "incomplete",
+          },
+          {
+            type: "button",
+            id: "00000000-0000-4000-8000-000000000022",
+            label: "",
+            href: "",
+            draft_state: "incomplete",
+          },
+          {
+            type: "image",
+            id: "00000000-0000-4000-8000-000000000023",
+            alt: "",
+            draft_state: "incomplete",
+          },
+          {
+            type: "gallery",
+            id: "00000000-0000-4000-8000-000000000024",
+            images: [
+              { alt: "", draft_state: "incomplete" },
+              { alt: "", draft_state: "incomplete" },
+            ],
+            draft_state: "incomplete",
+          },
+          {
+            type: "collection",
+            id: "00000000-0000-4000-8000-000000000025",
+            selection: { schema_version: 1, record_ids: [] },
+            public_field_keys: [],
+            draft_state: "incomplete",
+          },
+          {
+            type: "collapsible",
+            id: "00000000-0000-4000-8000-000000000028",
+            summary: "",
+            draft_state: "incomplete",
+            blocks: [
+              {
+                type: "image",
+                id: "00000000-0000-4000-8000-000000000029",
+                alt: "",
+                draft_state: "incomplete",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const draft = {
+      ...validDraft(),
+      branding: { name: "", accent: "forest" },
+      pages: [...validDraft().pages, incompletePage],
+    };
+    expect(siteDraftV1Schema.safeParse(draft).success).toBe(true);
+    expect(siteDraftPublicationReadyV1Schema.safeParse(draft).success).toBe(
+      false,
+    );
+    expect(siteDraftV1Schema.safeParse({ ...draft, pages: [] }).success).toBe(
+      true,
+    );
+  });
+
+  it("keeps excluded unfinished content durable and omits it from the publication-ready grammar", () => {
+    const draft = validDraft();
+    const excluded = {
+      id: "00000000-0000-4000-8000-000000000027",
+      title: "",
+      slug: "",
+      navigation_label: "",
+      is_home: false,
+      is_in_navigation: false,
+      is_included: false,
+      layout: {
+        blocks: [
+          {
+            type: "heading",
+            id: "00000000-0000-4000-8000-000000000026",
+            text: "",
+            draft_state: "incomplete",
+          },
+        ],
+      },
+    };
+    const persisted = { ...draft, pages: [...draft.pages, excluded] };
+    expect(siteDraftV1Schema.safeParse(persisted).success).toBe(true);
+    expect(siteDraftPublicationReadyV1Schema.safeParse(persisted).success).toBe(
+      true,
+    );
+    expect(
+      siteDraftPublicationReadyV1Schema.safeParse({
+        ...persisted,
+        pages: [...draft.pages, { ...excluded, is_included: true }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("permits exactly two levels of Site collapsibles and preserves complete-content rules", () => {
+    const allowed = structuredClone(validDraft()) as {
+      pages: Array<{ layout: { blocks: unknown[] } }>;
+    };
+    allowed.pages[0]!.layout.blocks.push({
+      type: "collapsible",
+      id: "00000000-0000-4000-8000-000000000030",
+      summary: "Top level",
+      blocks: [
+        {
+          type: "collapsible",
+          id: "00000000-0000-4000-8000-000000000031",
+          summary: "Second level",
+          blocks: [
+            {
+              type: "heading",
+              id: "00000000-0000-4000-8000-000000000032",
+              text: "Deepest allowed",
+              level: 2,
+            },
+          ],
+        },
+      ],
+    });
+    expect(siteDraftV1Schema.safeParse(allowed).success).toBe(true);
+
+    const tooDeep = structuredClone(allowed);
+    const topLevel = tooDeep.pages[0]!.layout.blocks.at(-1);
+    if (
+      !topLevel ||
+      typeof topLevel !== "object" ||
+      topLevel === null ||
+      !("blocks" in topLevel) ||
+      !Array.isArray(topLevel.blocks)
+    ) {
+      throw new Error("Fixture is invalid.");
+    }
+    const secondLevel = topLevel.blocks[0];
+    if (
+      !secondLevel ||
+      typeof secondLevel !== "object" ||
+      !("blocks" in secondLevel) ||
+      !Array.isArray(secondLevel.blocks)
+    ) {
+      throw new Error("Fixture is invalid.");
+    }
+    secondLevel.blocks[0] = {
+      type: "collapsible",
+      id: "00000000-0000-4000-8000-000000000033",
+      summary: "Rejected third level",
+      blocks: [
+        {
+          type: "heading",
+          id: "00000000-0000-4000-8000-000000000034",
+          text: "Too deep",
+          level: 2,
+        },
+      ],
+    };
+    expect(siteDraftV1Schema.safeParse(tooDeep).success).toBe(false);
+
+    const whitespace = structuredClone(validDraft()) as {
+      pages: Array<{ layout: { blocks: unknown[] } }>;
+    };
+    whitespace.pages[0]!.layout.blocks.push({
+      type: "collapsible",
+      id: "00000000-0000-4000-8000-000000000035",
+      summary: "   ",
+      blocks: [],
+    });
+    expect(siteDraftV1Schema.safeParse(whitespace).success).toBe(false);
+
+    const incompleteGalleryInCompleteParent = structuredClone(validDraft()) as {
+      pages: Array<{ layout: { blocks: unknown[] } }>;
+    };
+    incompleteGalleryInCompleteParent.pages[0]!.layout.blocks.push({
+      type: "gallery",
+      id: "00000000-0000-4000-8000-000000000036",
+      images: [{ alt: "", draft_state: "incomplete" }],
+    });
+    expect(
+      siteDraftV1Schema.safeParse(incompleteGalleryInCompleteParent).success,
+    ).toBe(false);
+  });
+
   it("accepts an empty explicit collection and its cross-Page detail layout", () => {
     const draft = siteDraftV1Schema.parse(validDraft());
     expect(draft.pages[0]!.layout.blocks[0]).toMatchObject({
@@ -184,6 +382,44 @@ describe("Lenni Sites C1 composition schema", () => {
     const draft = validDraft();
     const collection = draft.pages[0]!.layout.blocks[0]!;
     if (!("selection" in collection)) throw new Error("Fixture is invalid.");
+    const nestedCollection = {
+      ...collection,
+      records: [
+        {
+          id: "00000000-0000-4000-8000-000000000007",
+          values: { name: "Frozen", price: 10 },
+        },
+      ],
+    };
+    const featuredBlocks = [
+      {
+        type: "image" as const,
+        id: "00000000-0000-4000-8000-000000000038",
+        asset_id: "00000000-0000-4000-8000-000000000039",
+        alt: "Featured product",
+        draft_state: "complete" as const,
+      },
+      {
+        type: "gallery" as const,
+        id: "00000000-0000-4000-8000-000000000040",
+        draft_state: "complete" as const,
+        images: [
+          {
+            asset_id: "00000000-0000-4000-8000-000000000041",
+            alt: "Product collection",
+            draft_state: "complete" as const,
+          },
+        ],
+      },
+      nestedCollection,
+    ];
+    const featured = {
+      type: "collapsible" as const,
+      id: "00000000-0000-4000-8000-000000000037",
+      summary: "Frozen featured products",
+      draft_state: "complete" as const,
+      blocks: featuredBlocks,
+    };
     const projection = {
       schema_version: 1,
       branding: draft.branding,
@@ -191,17 +427,7 @@ describe("Lenni Sites C1 composition schema", () => {
         {
           ...draft.pages[0],
           layout: {
-            blocks: [
-              {
-                ...collection,
-                records: [
-                  {
-                    id: "00000000-0000-4000-8000-000000000007",
-                    values: { name: "Frozen", price: 10 },
-                  },
-                ],
-              },
-            ],
+            blocks: [featured],
           },
         },
         draft.pages[1],
@@ -211,6 +437,28 @@ describe("Lenni Sites C1 composition schema", () => {
     expect(siteReleaseProjectionSchema.safeParse(projection).success).toBe(
       true,
     );
+    expect(
+      siteReleaseProjectionSchema.safeParse({
+        ...projection,
+        pages: [
+          {
+            ...projection.pages[0],
+            layout: {
+              blocks: [
+                {
+                  ...featured,
+                  blocks: [
+                    { ...featured.blocks[0], untrusted_key: true },
+                    ...featured.blocks.slice(1),
+                  ],
+                },
+              ],
+            },
+          },
+          projection.pages[1],
+        ],
+      }).success,
+    ).toBe(false);
     expect(
       siteReleaseProjectionSchema.safeParse({
         ...projection,
@@ -231,15 +479,21 @@ describe("Lenni Sites C1 composition schema", () => {
             layout: {
               blocks: [
                 {
-                  ...projection.pages[0]!.layout.blocks[0],
-                  records: [
+                  ...featured,
+                  blocks: [
+                    ...featured.blocks.slice(0, 2),
                     {
-                      id: "00000000-0000-4000-8000-000000000007",
-                      values: {
-                        name: "Frozen",
-                        price: 10,
-                        internal_note: "Private",
-                      },
+                      ...nestedCollection,
+                      records: [
+                        {
+                          id: "00000000-0000-4000-8000-000000000007",
+                          values: {
+                            name: "Frozen",
+                            price: 10,
+                            internal_note: "Private",
+                          },
+                        },
+                      ],
                     },
                   ],
                 },
@@ -259,11 +513,17 @@ describe("Lenni Sites C1 composition schema", () => {
             layout: {
               blocks: [
                 {
-                  ...projection.pages[0]!.layout.blocks[0],
-                  records: [
+                  ...featured,
+                  blocks: [
+                    ...featured.blocks.slice(0, 2),
                     {
-                      id: "00000000-0000-4000-8000-000000000009",
-                      values: { name: "Frozen", price: 10 },
+                      ...nestedCollection,
+                      records: [
+                        {
+                          id: "00000000-0000-4000-8000-000000000009",
+                          values: { name: "Frozen", price: 10 },
+                        },
+                      ],
                     },
                   ],
                 },
@@ -327,6 +587,37 @@ describe("Lenni Sites C1 composition schema", () => {
           {
             ...validDraft().pages[0],
             layout: externalImage,
+          },
+          validDraft().pages[1],
+        ],
+      }).success,
+    ).toBe(false);
+
+    const nestedExternalImage = {
+      blocks: [
+        {
+          type: "collapsible",
+          id: "00000000-0000-4000-8000-000000000030",
+          summary: "Legacy image section",
+          blocks: [
+            {
+              type: "image",
+              id: "00000000-0000-4000-8000-000000000031",
+              src: "https://example.test/legacy-image.png",
+              alt: "Legacy image",
+            },
+          ],
+        },
+      ],
+    };
+    expect(pageLayoutSchema.safeParse(nestedExternalImage).success).toBe(true);
+    expect(
+      siteDraftV1Schema.safeParse({
+        ...validDraft(),
+        pages: [
+          {
+            ...validDraft().pages[0],
+            layout: nestedExternalImage,
           },
           validDraft().pages[1],
         ],
