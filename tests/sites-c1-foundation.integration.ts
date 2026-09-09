@@ -514,7 +514,7 @@ describe("Lenni Sites C1 database foundation", () => {
     });
     await configuration.validateChangeSet(proposal.id);
     await configuration.applyChangeSet(proposal.id);
-    const product = await admin
+    const product = await owner.client
       .from("object_definitions")
       .select("id")
       .eq("business_id", business.id)
@@ -575,7 +575,7 @@ describe("Lenni Sites C1 database foundation", () => {
     });
     await otherConfiguration.validateChangeSet(otherProposal.id);
     await otherConfiguration.applyChangeSet(otherProposal.id);
-    const otherProduct = await admin
+    const otherProduct = await otherOwner.client
       .from("object_definitions")
       .select("id")
       .eq("business_id", otherBusiness.id)
