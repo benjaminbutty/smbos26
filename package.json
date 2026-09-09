@@ -25,6 +25,7 @@
     "test:preorder": "vitest run --config vitest.integration.config.ts tests/integration/preorder.test.ts",
     "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
     "test:sites-c1": "vitest run --config vitest.sites-c1.config.ts",
+    "test:pages-browser": "playwright test --config playwright.pages-proof.config.ts",
     "test:ai-context": "vitest run --config vitest.ai-context.config.ts",
     "test:ai-accounting": "vitest run --config vitest.ai-accounting.config.ts",
     "test:openai-provider": "vitest run --config vitest.openai-provider.config.ts",
@@ -141,6 +142,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@next/eslint-plugin-next": "16.3.4",
+    "@playwright/test": "1.63.0",
     "@types/node": "24.10.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",

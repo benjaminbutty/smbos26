@@ -1,0 +1,267 @@
+name: Page browser proof
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/pages-browser-proof.yml"
+      - ".gitignore"
+      - "package.json"
+      - "package-lock.json"
+      - "playwright.pages-proof.config.ts"
+      - "src/app/globals.css"
+      - "src/app/layout.tsx"
+      - "src/app/app/**"
+      - "src/app/api/app/**"
+      - "src/app/onboarding/**"
+      - "src/app/sign-in/**"
+      - "src/auth/**"
+      - "src/components/app-shell.tsx"
+      - "src/components/workspace-mobile-nav.tsx"
+      - "src/core/configuration/direct-pages/**"
+      - "src/core/experience/**"
+      - "src/db/**"
+      - "src/runtime/media/**"
+      - "src/runtime/navigation/pages-sidebar.tsx"
+      - "src/runtime/page-editor/**"
+      - "src/runtime/pages/**"
+      - "src/tenancy/**"
+      - "supabase/**"
+      - "tests/e2e/**"
+      - "tests/page-*.test.ts"
+
+permissions:
+  contents: read
+
+jobs:
+  pages-browser-proof:
+    name: Page browser proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SMBOS_PAGES_PROOF_API_PORT: "55421"
+      SMBOS_PAGES_PROOF_APP_URL: http://127.0.0.1:3100
+      SMBOS_PAGES_PROOF_DB_PORT: "55422"
+      SMBOS_PAGES_PROOF_PROJECT_ID: smbos-pages-proof-${{ github.run_id }}-${{ github.run_attempt }}
+      SMBOS_PAGES_PROOF_SHADOW_PORT: "55420"
+
+    steps:
+      - name: Check out the reviewed pull request head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v6
+        with:
+          cache: npm
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for the proof
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Create a runner-owned Supabase target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_name="${SMBOS_PAGES_PROOF_PROJECT_ID}"
+          target_dir="${RUNNER_TEMP}/${target_name}"
+
+          if [[ -e "${target_dir}" ]]; then
+            echo "The Page browser-proof workdir already exists." >&2
+            exit 1
+          fi
+          # Auth, Storage and imgproxy stay enabled and use the isolated API
+          # gateway. The app, gateway and PostgreSQL endpoints are the host
+          # ports in this job.
+          for port in "${SMBOS_PAGES_PROOF_APP_URL##*:}" "${SMBOS_PAGES_PROOF_API_PORT}" "${SMBOS_PAGES_PROOF_DB_PORT}" "${SMBOS_PAGES_PROOF_SHADOW_PORT}"; do
+            if ss -H -ltn "sport = :${port}" | grep -q .; then
+              echo "The isolated Page browser-proof port ${port} is already in use." >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p "${target_dir}"
+          cp -R supabase "${target_dir}/supabase"
+          TARGET_DIR="${target_dir}" node - <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const { join } = require("node:path");
+
+          const configPath = join(process.env.TARGET_DIR, "supabase", "config.toml");
+          const replacements = [
+            [
+              'project_id = "smbos26"',
+              `project_id = "${process.env.SMBOS_PAGES_PROOF_PROJECT_ID}"`,
+            ],
+            [
+              "port = 55321",
+              `port = ${process.env.SMBOS_PAGES_PROOF_API_PORT}`,
+            ],
+            [
+              "port = 55322",
+              `port = ${process.env.SMBOS_PAGES_PROOF_DB_PORT}`,
+            ],
+            [
+              "shadow_port = 55320",
+              `shadow_port = ${process.env.SMBOS_PAGES_PROOF_SHADOW_PORT}`,
+            ],
+            [
+              'site_url = "http://localhost:3000"',
+              'site_url = "http://127.0.0.1:3100"',
+            ],
+            [
+              'additional_redirect_urls = ["http://127.0.0.1:3000"]',
+              'additional_redirect_urls = ["http://127.0.0.1:3100"]',
+            ],
+          ];
+          let config = readFileSync(configPath, "utf8");
+          for (const [source, target] of replacements) {
+            if (!config.includes(source)) {
+              throw new Error("The copied Supabase config did not match the reviewed target shape.");
+            }
+            config = config.replace(source, target);
+          }
+          const seedSection = /(^\[db\.seed\]\s*$)([\s\S]*?)(?=^\[|(?![\s\S]))/m;
+          const seedMatch = config.match(seedSection);
+          if (!seedMatch) {
+            throw new Error("The copied Supabase config has no seed section.");
+          }
+          const enabledLines = seedMatch[2].match(/^enabled\s*=\s*true\s*$/gm) ?? [];
+          if (enabledLines.length !== 1) {
+            throw new Error("The copied seed section did not contain one enabled setting.");
+          }
+          config = config.replace(seedSection, (section) =>
+            section.replace(/^enabled\s*=\s*true\s*$/m, "enabled = false"),
+          );
+          writeFileSync(configPath, config);
+          NODE
+
+          printf 'SMBOS_PAGES_PROOF_WORKDIR=%s\n' "${target_dir}" >> "${GITHUB_ENV}"
+
+      - name: Start and migrate the isolated Supabase target
+        env:
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/supabase start \
+            --workdir "${SMBOS_PAGES_PROOF_WORKDIR}" \
+            --exclude analytics,vector,studio,meta,realtime,edge-runtime,functions,inbucket
+          ./node_modules/.bin/supabase db reset --local --workdir "${SMBOS_PAGES_PROOF_WORKDIR}"
+
+      - name: Verify Auth and export only the isolated target
+        env:
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_file="${RUNNER_TEMP}/pages-proof-supabase.env"
+          ./node_modules/.bin/supabase status --workdir "${SMBOS_PAGES_PROOF_WORKDIR}" -o env > "${status_file}"
+          STATUS_FILE="${status_file}" node - <<'NODE'
+          const { appendFileSync, readFileSync } = require("node:fs");
+
+          async function main() {
+            const values = Object.fromEntries(
+              readFileSync(process.env.STATUS_FILE, "utf8")
+                .split("\n")
+                .map((line) => /^([A-Z0-9_]+)="(.*)"$/.exec(line.trim()))
+                .flatMap((match) => (match?.[1] ? [[match[1], match[2] ?? ""]] : [])),
+            );
+            const required = ["API_URL", "PUBLISHABLE_KEY", "SERVICE_ROLE_KEY"];
+            for (const key of required) {
+              if (!values[key]) throw new Error("The isolated target did not report its required credentials.");
+            }
+            const api = new URL(values.API_URL);
+            if (
+              api.protocol !== "http:" ||
+              api.hostname !== "127.0.0.1" ||
+              api.port !== process.env.SMBOS_PAGES_PROOF_API_PORT
+            ) {
+              throw new Error("The isolated target did not report the expected loopback API URL.");
+            }
+
+            const deadline = Date.now() + 60_000;
+            let ready = false;
+            while (Date.now() < deadline) {
+              try {
+                const response = await fetch(`${values.API_URL}/auth/v1/admin/users?page=1&per_page=1`, {
+                  headers: {
+                    apikey: values.SERVICE_ROLE_KEY,
+                    Authorization: `Bearer ${values.SERVICE_ROLE_KEY}`,
+                  },
+                });
+                if (response.ok) {
+                  ready = true;
+                  break;
+                }
+              } catch {
+                // Auth may still be starting after the clean migration reset.
+              }
+              await new Promise((resolve) => setTimeout(resolve, 1_000));
+            }
+            if (!ready) throw new Error("Auth did not become ready on the isolated target.");
+
+            appendFileSync(
+              process.env.GITHUB_ENV,
+              [
+                `SMBOS_PAGES_PROOF_API_URL=${values.API_URL}`,
+                `SMBOS_PAGES_PROOF_PUBLISHABLE_KEY=${values.PUBLISHABLE_KEY}`,
+                `SMBOS_PAGES_PROOF_SERVICE_ROLE_KEY=${values.SERVICE_ROLE_KEY}`,
+              ].join("\n") + "\n",
+            );
+          }
+
+          main().catch((error) => {
+            console.error(error instanceof Error ? error.message : "Could not verify the isolated target.");
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Run the owner Page browser proof
+        run: npm run test:pages-browser
+
+      - name: Record the reviewed source revision
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p test-results/pages-proof
+          git rev-parse HEAD > test-results/pages-proof/revision.txt
+          printf '%s\n' "${SMBOS_PAGES_PROOF_PROJECT_ID}" > test-results/pages-proof/target.txt
+
+      - name: Upload Page browser evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pages-browser-proof-${{ github.event.pull_request.head.sha }}
+          path: |
+            playwright-report/pages-proof/
+            test-results/pages-proof/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop only the runner-owned Supabase target
+        if: always()
+        env:
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_workdir="${RUNNER_TEMP}/${SMBOS_PAGES_PROOF_PROJECT_ID}"
+          actual_workdir="${SMBOS_PAGES_PROOF_WORKDIR:-}"
+          if [[ -z "${actual_workdir}" ]]; then
+            echo "No runner-owned Page browser-proof target was created."
+            exit 0
+          fi
+          if [[ "${actual_workdir}" != "${expected_workdir}" || ! -f "${actual_workdir}/supabase/config.toml" ]]; then
+            echo "Refusing to stop a target outside this runner-owned workdir." >&2
+            exit 1
+          fi
+          if ! grep -Fqx "project_id = \"${SMBOS_PAGES_PROOF_PROJECT_ID}\"" "${actual_workdir}/supabase/config.toml"; then
+            echo "Refusing to stop a target whose project ID was not created by this job." >&2
+            exit 1
+          fi
+          ./node_modules/.bin/supabase stop --workdir "${actual_workdir}"
