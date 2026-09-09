@@ -8,6 +8,7 @@ const configurationPreviewPath =
 
 const marketingOnlyPaths = new Set([
   "/",
+  "/business-software-that-fits",
   "/guides/what-software-does-my-small-business-need",
   "/outgrown-spreadsheets",
   "/robots.txt",
