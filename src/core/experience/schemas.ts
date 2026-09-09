@@ -1151,6 +1151,209 @@ export const pageLayoutSchema = z
     }
   });
 
+/**
+ * Site composition keeps the existing Page atoms as its base grammar. These
+ * additions are intentionally finite and live beside the shared experience
+ * schemas so a later public renderer extends the Page renderer rather than
+ * introducing a second, Site-only document format.
+ *
+ * C1 supports explicit Record selection only. A later selection schema may
+ * add bounded filters while preserving this versioned representation.
+ */
+const siteGalleryImageSchema = z
+  .object({
+    asset_id: z.uuid(),
+    alt: z.string().trim().min(1).max(300),
+    caption: z.string().trim().min(1).max(500).optional(),
+  })
+  .strict();
+
+const siteGalleryBlockSchema = z
+  .object({
+    type: z.literal("gallery"),
+    images: z.array(siteGalleryImageSchema).min(1).max(12),
+    presentation: z.enum(["grid", "carousel"]).default("grid"),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict()
+  .superRefine((block, context) => {
+    const ids = block.images.map((image) => image.asset_id);
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        message: "A gallery cannot contain the same image more than once.",
+        path: ["images"],
+      });
+    }
+  });
+
+const siteCollectionBlockSchema = z
+  .object({
+    type: z.literal("collection"),
+    object_key: graphKeySchema,
+    selection: z
+      .object({
+        schema_version: z.literal(1),
+        record_ids: z.array(z.uuid()).max(500),
+      })
+      .strict()
+      .superRefine((selection, context) => {
+        if (
+          new Set(selection.record_ids).size !== selection.record_ids.length
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "A collection cannot select the same Record more than once.",
+            path: ["record_ids"],
+          });
+        }
+      }),
+    public_field_keys: z.array(graphKeySchema).min(1).max(50),
+    presentation: z.enum(["cards", "list", "table"]),
+    detail_page_id: z.uuid().optional(),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict()
+  .superRefine((block, context) => {
+    if (!block.id) {
+      context.addIssue({
+        code: "custom",
+        message: "Collection blocks require a stable identity.",
+        path: ["id"],
+      });
+    }
+    if (
+      new Set(block.public_field_keys).size !== block.public_field_keys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A collection's public Properties must be unique.",
+        path: ["public_field_keys"],
+      });
+    }
+  });
+
+const siteRecordDetailBlockSchema = z
+  .object({
+    type: z.literal("record_detail"),
+    collection_block_id: z.uuid(),
+    public_field_keys: z.array(graphKeySchema).min(1).max(50),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict()
+  .superRefine((block, context) => {
+    if (!block.id) {
+      context.addIssue({
+        code: "custom",
+        message: "Shared detail blocks require a stable identity.",
+        path: ["id"],
+      });
+    }
+    if (
+      new Set(block.public_field_keys).size !== block.public_field_keys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A detail layout's public Properties must be unique.",
+        path: ["public_field_keys"],
+      });
+    }
+  });
+
+const siteSectionChildBlockSchema = z.union([
+  headingBlockSchema,
+  textBlockSchema,
+  imageBlockSchema,
+  buttonBlockSchema,
+  formBlockSchema,
+  publicFormBlockSchema,
+  bookingBlockSchema,
+  preorderBlockSchema,
+  dividerBlockSchema,
+  calloutBlockSchema,
+  richTextBlockSchema,
+  collapsibleBlockSchema,
+  siteGalleryBlockSchema,
+  siteCollectionBlockSchema,
+  siteRecordDetailBlockSchema,
+]);
+
+const siteSectionBlockSchema = z
+  .object({
+    type: z.literal("section"),
+    width: z.enum(["content", "wide"]).default("content"),
+    columns: z
+      .array(
+        z
+          .object({ blocks: z.array(siteSectionChildBlockSchema).max(100) })
+          .strict(),
+      )
+      .min(1)
+      .max(3),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict();
+
+export const sitePageBlockSchema = z.union([
+  pageBlockSchema,
+  siteGalleryBlockSchema,
+  siteCollectionBlockSchema,
+  siteRecordDetailBlockSchema,
+  siteSectionBlockSchema,
+]);
+
+export const sitePageLayoutSchema = z
+  .object({ blocks: z.array(sitePageBlockSchema).max(100) })
+  .strict()
+  .superRefine((layout, context) => {
+    const ids: string[] = [];
+    let blockCount = 0;
+    const visit = (blocks: readonly z.infer<typeof sitePageBlockSchema>[]) => {
+      for (const block of blocks) {
+        blockCount += 1;
+        if ("id" in block && block.id) ids.push(block.id);
+        if (block.type === "view" || block.type === "form") {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Site drafts use public composition atoms; generic Views and internal Forms are not part of this release grammar.",
+            path: ["blocks"],
+          });
+        }
+        if (block.type === "collapsible") {
+          visit(block.blocks as readonly z.infer<typeof sitePageBlockSchema>[]);
+        }
+        if (block.type === "section") {
+          for (const column of block.columns) {
+            visit(
+              column.blocks as readonly z.infer<typeof sitePageBlockSchema>[],
+            );
+          }
+        }
+      }
+    };
+    visit(layout.blocks);
+    if (blockCount > 100) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "A Site Page can contain at most 100 blocks, including sections.",
+        path: ["blocks"],
+      });
+    }
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Site Page blocks must use unique IDs.",
+        path: ["blocks"],
+      });
+    }
+  });
+
+export type SitePageLayout = z.infer<typeof sitePageLayoutSchema>;
+export type SitePageBlock = z.infer<typeof sitePageBlockSchema>;
+
 export const createViewDefinitionSchema = z
   .object({
     key: graphKeySchema,

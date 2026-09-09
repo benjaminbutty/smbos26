@@ -1,17 +1,29 @@
-import type { PageBlock, PageLayout } from "./schemas";
+import type {
+  PageBlock,
+  PageLayout,
+  SitePageBlock,
+  SitePageLayout,
+} from "./schemas";
 
 /** Walk top-level and contained Page blocks in document order. */
 export function walkPageBlocks(
-  layout: PageLayout | readonly PageBlock[],
-): PageBlock[] {
-  const blocks: readonly PageBlock[] = Array.isArray(layout)
+  layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
+): SitePageBlock[] {
+  const blocks: readonly SitePageBlock[] = Array.isArray(layout)
     ? layout
-    : (layout as PageLayout).blocks;
-  const result: PageBlock[] = [];
-  const visit = (items: readonly PageBlock[]): void => {
+    : (layout as SitePageLayout).blocks;
+  const result: SitePageBlock[] = [];
+  const visit = (items: readonly SitePageBlock[]): void => {
     for (const block of items) {
       result.push(block);
-      if (block.type === "collapsible") visit(block.blocks);
+      if (block.type === "collapsible") {
+        visit(block.blocks as readonly SitePageBlock[]);
+      }
+      if (block.type === "section") {
+        for (const column of block.columns) {
+          visit(column.blocks as readonly SitePageBlock[]);
+        }
+      }
     }
   };
   visit(blocks);
@@ -37,7 +49,7 @@ export function mapPageBlocks(
 }
 
 export function pageBlockReferencesView(
-  layout: PageLayout | readonly PageBlock[],
+  layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
 ): string[] {
   return walkPageBlocks(layout).flatMap((block) =>
     block.type === "view" ? [block.view_key] : [],
@@ -45,7 +57,7 @@ export function pageBlockReferencesView(
 }
 
 export function pageBlockReferencesForm(
-  layout: PageLayout | readonly PageBlock[],
+  layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
 ): string[] {
   return walkPageBlocks(layout).flatMap((block) =>
     block.type === "form" || block.type === "public_form"
@@ -55,7 +67,7 @@ export function pageBlockReferencesForm(
 }
 
 export function pageBlockReferencesBooking(
-  layout: PageLayout | readonly PageBlock[],
+  layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
 ): string[] {
   return walkPageBlocks(layout).flatMap((block) =>
     block.type === "booking" ? [block.booking_key] : [],
@@ -63,7 +75,7 @@ export function pageBlockReferencesBooking(
 }
 
 export function pageBlockReferencesPreorder(
-  layout: PageLayout | readonly PageBlock[],
+  layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
 ): string[] {
   return walkPageBlocks(layout).flatMap((block) =>
     block.type === "preorder" ? [block.preorder_key] : [],
@@ -71,9 +83,13 @@ export function pageBlockReferencesPreorder(
 }
 
 export function pageBlockReferencesMedia(
-  layout: PageLayout | readonly PageBlock[],
+  layout: PageLayout | SitePageLayout | readonly (PageBlock | SitePageBlock)[],
 ): string[] {
   return walkPageBlocks(layout).flatMap((block) =>
-    block.type === "image" && block.asset_id ? [block.asset_id] : [],
+    block.type === "image" && block.asset_id
+      ? [block.asset_id]
+      : block.type === "gallery"
+        ? block.images.map((image) => image.asset_id)
+        : [],
   );
 }

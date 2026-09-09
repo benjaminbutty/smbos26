@@ -274,6 +274,14 @@ jobs:
       - name: Seed the local demonstration data
         run: npm run demo:seed
 
+      - name: Run isolated Lenni Sites C1 database foundation tests
+        env:
+          SMBOS_TEST_SUPABASE_WORKDIR: ${{ github.workspace }}
+          SMBOS_TEST_SUPABASE_PROJECT_ID: smbos26
+          SMBOS_TEST_SUPABASE_API_PORT: "55321"
+          SMBOS_TEST_SUPABASE_DB_PORT: "55322"
+        run: npm run test:sites-c1
+
       - name: Run full PostgreSQL integration suite
         run: npm run test:integration
 
