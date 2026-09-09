@@ -80,7 +80,8 @@ create table public.site_draft_asset_references (
   foreign key (business_id, site_id)
     references public.site_states(business_id, id) on delete cascade,
   foreign key (business_id, asset_id)
-    references public.media_assets(business_id, id) on delete restrict
+    references public.media_assets(business_id, id)
+    on delete no action deferrable initially deferred
 );
 
 create table public.site_release_asset_references (
@@ -92,7 +93,8 @@ create table public.site_release_asset_references (
   foreign key (business_id, release_id)
     references public.site_releases(business_id, id) on delete cascade,
   foreign key (business_id, asset_id)
-    references public.media_assets(business_id, id) on delete restrict
+    references public.media_assets(business_id, id)
+    on delete no action deferrable initially deferred
 );
 
 create index site_releases_active_lookup_idx
