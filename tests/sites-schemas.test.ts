@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 import { configurationSnapshotV1Schema } from "../src/core/configuration/definition-source";
 import { pageLayoutSchema } from "../src/core/experience/schemas";
 import { setPageOperationSchema } from "../src/core/configuration/schemas";
-import { siteDraftV1Schema } from "../src/core/sites/schemas";
+import {
+  siteDraftV1Schema,
+  siteReleaseProjectionSchema,
+  siteReleaseReviewSchema,
+} from "../src/core/sites/schemas";
 
 const ids = {
   collection: "00000000-0000-4000-8000-000000000001",
@@ -166,6 +172,124 @@ describe("Lenni Sites C1 composition schema", () => {
     expect(siteDraftV1Schema.safeParse(draft).success).toBe(false);
   });
 
+  it("rejects a block identity reused on another Site Page", () => {
+    const draft = validDraft();
+    const section = draft.pages[1]!.layout.blocks[0]!;
+    if (!("id" in section)) throw new Error("Fixture is invalid.");
+    section.id = ids.collection;
+    expect(siteDraftV1Schema.safeParse(draft).success).toBe(false);
+  });
+
+  it("parses only bounded, included release projections and review metadata", () => {
+    const draft = validDraft();
+    const collection = draft.pages[0]!.layout.blocks[0]!;
+    if (!("selection" in collection)) throw new Error("Fixture is invalid.");
+    const projection = {
+      schema_version: 1,
+      branding: draft.branding,
+      pages: [
+        {
+          ...draft.pages[0],
+          layout: {
+            blocks: [
+              {
+                ...collection,
+                records: [
+                  {
+                    id: "00000000-0000-4000-8000-000000000007",
+                    values: { name: "Frozen", price: 10 },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        draft.pages[1],
+      ],
+    };
+    collection.selection.record_ids = ["00000000-0000-4000-8000-000000000007"];
+    expect(siteReleaseProjectionSchema.safeParse(projection).success).toBe(
+      true,
+    );
+    expect(
+      siteReleaseProjectionSchema.safeParse({
+        ...projection,
+        pages: [
+          {
+            ...projection.pages[0],
+            is_included: false,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      siteReleaseProjectionSchema.safeParse({
+        ...projection,
+        pages: [
+          {
+            ...projection.pages[0],
+            layout: {
+              blocks: [
+                {
+                  ...projection.pages[0]!.layout.blocks[0],
+                  records: [
+                    {
+                      id: "00000000-0000-4000-8000-000000000007",
+                      values: {
+                        name: "Frozen",
+                        price: 10,
+                        internal_note: "Private",
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          projection.pages[1],
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      siteReleaseProjectionSchema.safeParse({
+        ...projection,
+        pages: [
+          {
+            ...projection.pages[0],
+            layout: {
+              blocks: [
+                {
+                  ...projection.pages[0]!.layout.blocks[0],
+                  records: [
+                    {
+                      id: "00000000-0000-4000-8000-000000000009",
+                      values: { name: "Frozen", price: 10 },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+          projection.pages[1],
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      siteReleaseReviewSchema.safeParse({
+        schema_version: 1,
+        included_page_ids: [ids.homePage],
+        excluded_page_ids: [ids.detailPage],
+      }).success,
+    ).toBe(true);
+    expect(
+      siteReleaseReviewSchema.safeParse({
+        schema_version: 1,
+        included_page_ids: [ids.homePage],
+        excluded_page_ids: [ids.homePage],
+      }).success,
+    ).toBe(false);
+  });
+
   it("does not weaken the ordinary internal Page grammar", () => {
     const internalView = {
       blocks: [{ type: "view", view_key: "tasks" }],
@@ -184,6 +308,30 @@ describe("Lenni Sites C1 composition schema", () => {
       ],
     };
     expect(siteDraftV1Schema.safeParse(siteDraft).success).toBe(false);
+
+    const externalImage = {
+      blocks: [
+        {
+          type: "image",
+          id: "00000000-0000-4000-8000-000000000008",
+          src: "https://example.test/legacy-image.png",
+          alt: "Legacy image",
+        },
+      ],
+    };
+    expect(pageLayoutSchema.safeParse(externalImage).success).toBe(true);
+    expect(
+      siteDraftV1Schema.safeParse({
+        ...validDraft(),
+        pages: [
+          {
+            ...validDraft().pages[0],
+            layout: externalImage,
+          },
+          validDraft().pages[1],
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("parses a public draft Site backing Page beside an ordinary internal Page", () => {

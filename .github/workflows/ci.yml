@@ -67,6 +67,17 @@ jobs:
       - name: Wait for local Auth after clean migration reset
         run: npm run supabase:auth:ready:ci
 
+      # This suite owns every Business, account, configuration and Record it
+      # needs. Run it on the first fresh target so SQL/RLS evidence fails
+      # before seeded-provider suites consume the integration budget.
+      - name: Run isolated Lenni Sites C1 database foundation tests
+        env:
+          SMBOS_TEST_SUPABASE_WORKDIR: ${{ github.workspace }}
+          SMBOS_TEST_SUPABASE_PROJECT_ID: smbos26
+          SMBOS_TEST_SUPABASE_API_PORT: "55321"
+          SMBOS_TEST_SUPABASE_DB_PORT: "55322"
+        run: npm run test:sites-c1
+
       - name: Run OpenAI provider safety tests with injected clients
         run: npm run test:openai-provider
 
@@ -273,14 +284,6 @@ jobs:
 
       - name: Seed the local demonstration data
         run: npm run demo:seed
-
-      - name: Run isolated Lenni Sites C1 database foundation tests
-        env:
-          SMBOS_TEST_SUPABASE_WORKDIR: ${{ github.workspace }}
-          SMBOS_TEST_SUPABASE_PROJECT_ID: smbos26
-          SMBOS_TEST_SUPABASE_API_PORT: "55321"
-          SMBOS_TEST_SUPABASE_DB_PORT: "55322"
-        run: npm run test:sites-c1
 
       - name: Run full PostgreSQL integration suite
         run: npm run test:integration

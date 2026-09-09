@@ -197,6 +197,78 @@ $$;
 -- behavior. Site drafts are a new strict JSON boundary, so validate JSON
 -- scalar types before reusing those canonical atoms. In particular, `->>`
 -- would otherwise turn `42` into a valid-looking heading/text string.
+create or replace function private.site_assert_rich_text_content_types_v1(content jsonb)
+returns void
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  span jsonb;
+  mark jsonb;
+begin
+  if jsonb_typeof(content) is distinct from 'array' then
+    raise exception 'site_draft_invalid' using errcode = '22023';
+  end if;
+  for span in select value from jsonb_array_elements(content) loop
+    if jsonb_typeof(span) is distinct from 'object'
+      or jsonb_typeof(span -> 'type') is distinct from 'string'
+      or jsonb_typeof(span -> 'text') is distinct from 'string'
+      or (span ? 'marks' and jsonb_typeof(span -> 'marks') is distinct from 'array')
+    then
+      raise exception 'site_draft_invalid' using errcode = '22023';
+    end if;
+    if span ? 'marks' then
+      for mark in select value from jsonb_array_elements(span -> 'marks') loop
+        if jsonb_typeof(mark) is distinct from 'object'
+          or jsonb_typeof(mark -> 'type') is distinct from 'string'
+          or (mark ->> 'type' = 'link' and jsonb_typeof(mark -> 'href') is distinct from 'string')
+        then
+          raise exception 'site_draft_invalid' using errcode = '22023';
+        end if;
+      end loop;
+    end if;
+  end loop;
+end;
+$$;
+
+create or replace function private.site_assert_rich_text_types_v1(node jsonb)
+returns void
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  item jsonb;
+begin
+  if jsonb_typeof(node) is distinct from 'object'
+    or jsonb_typeof(node -> 'type') is distinct from 'string'
+  then
+    raise exception 'site_draft_invalid' using errcode = '22023';
+  end if;
+  if node ->> 'type' in ('paragraph', 'heading') then
+    if node ->> 'type' = 'heading'
+      and jsonb_typeof(node -> 'level') is distinct from 'number'
+    then
+      raise exception 'site_draft_invalid' using errcode = '22023';
+    end if;
+    perform private.site_assert_rich_text_content_types_v1(node -> 'content');
+    return;
+  end if;
+  if node ->> 'type' in ('bullet_list', 'numbered_list') then
+    if jsonb_typeof(node -> 'items') is distinct from 'array' then
+      raise exception 'site_draft_invalid' using errcode = '22023';
+    end if;
+    for item in select value from jsonb_array_elements(node -> 'items') loop
+      if jsonb_typeof(item) is distinct from 'object' then
+        raise exception 'site_draft_invalid' using errcode = '22023';
+      end if;
+      perform private.site_assert_rich_text_content_types_v1(item -> 'content');
+    end loop;
+  end if;
+end;
+$$;
+
 create or replace function private.site_assert_legacy_block_types_v1(block jsonb)
 returns void
 language plpgsql
@@ -214,6 +286,8 @@ begin
   elsif block ->> 'type' = 'text' then
     if jsonb_typeof(block -> 'text') is distinct from 'string'
     then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
+  elsif block ->> 'type' = 'rich_text' then
+    perform private.site_assert_rich_text_types_v1(block -> 'node');
   elsif block ->> 'type' = 'image' then
     if (block ? 'src' and jsonb_typeof(block -> 'src') is distinct from 'string')
       or (block ? 'asset_id' and jsonb_typeof(block -> 'asset_id') is distinct from 'string')

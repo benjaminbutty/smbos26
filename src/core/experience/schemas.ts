@@ -1160,7 +1160,7 @@ export const pageLayoutSchema = z
  * C1 supports explicit Record selection only. A later selection schema may
  * add bounded filters while preserving this versioned representation.
  */
-const siteGalleryImageSchema = z
+export const siteGalleryImageSchema = z
   .object({
     asset_id: z.uuid(),
     alt: z.string().trim().min(1).max(300),
@@ -1168,7 +1168,7 @@ const siteGalleryImageSchema = z
   })
   .strict();
 
-const siteGalleryBlockSchema = z
+export const siteGalleryBlockSchema = z
   .object({
     type: z.literal("gallery"),
     images: z.array(siteGalleryImageSchema).min(1).max(12),
@@ -1187,7 +1187,7 @@ const siteGalleryBlockSchema = z
     }
   });
 
-const siteCollectionBlockSchema = z
+export const siteCollectionBlockSchema = z
   .object({
     type: z.literal("collection"),
     object_key: graphKeySchema,
@@ -1234,7 +1234,7 @@ const siteCollectionBlockSchema = z
     }
   });
 
-const siteRecordDetailBlockSchema = z
+export const siteRecordDetailBlockSchema = z
   .object({
     type: z.literal("record_detail"),
     collection_block_id: z.uuid(),
@@ -1318,6 +1318,14 @@ export const sitePageLayoutSchema = z
             code: "custom",
             message:
               "Site drafts use public composition atoms; generic Views and internal Forms are not part of this release grammar.",
+            path: ["blocks"],
+          });
+        }
+        if (block.type === "image" && block.src) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Site drafts use managed image assets so releases can freeze their media safely.",
             path: ["blocks"],
           });
         }

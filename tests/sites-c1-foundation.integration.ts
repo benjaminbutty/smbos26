@@ -139,7 +139,7 @@ function siteDraft(
               object_key: "product",
               selection: { schema_version: 1, record_ids: [recordIds[1]] },
               public_field_keys: options.publicFieldKeys ?? ["name", "price"],
-              presentation: "rows",
+              presentation: "list",
             },
           ],
         },
@@ -600,12 +600,17 @@ describe("Lenni Sites C1 database foundation", () => {
   });
 
   afterAll(async () => {
-    if (createdBusinessIds.length > 0) {
-      await admin.from("businesses").delete().in("id", createdBusinessIds);
+    try {
+      if (admin && createdBusinessIds.length > 0) {
+        await admin.from("businesses").delete().in("id", createdBusinessIds);
+      }
+      if (admin) {
+        for (const userId of createdUserIds)
+          await admin.auth.admin.deleteUser(userId);
+      }
+    } finally {
+      if (fixtureSql) await fixtureSql.end();
     }
-    for (const userId of createdUserIds)
-      await admin.auth.admin.deleteUser(userId);
-    await fixtureSql.end();
   });
 
   it("rejects raw null currentness inputs and cross-tenant candidate IDs", async () => {
@@ -691,6 +696,70 @@ describe("Lenni Sites C1 database foundation", () => {
             id: "00000000-0000-4000-8000-000000000120",
             text: 42,
             level: 2,
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "numeric rich-text span type in a reused list atom",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{
+              layout: { blocks: unknown[] };
+            }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "rich_text",
+            id: "00000000-0000-4000-8000-000000000121",
+            node: {
+              type: "bullet_list",
+              items: [{ content: [{ type: 42, text: "Frozen" }] }],
+            },
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "numeric rich-text link target",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{
+              layout: { blocks: unknown[] };
+            }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "rich_text",
+            id: "00000000-0000-4000-8000-000000000122",
+            node: {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "Frozen",
+                  marks: [{ type: "link", href: 42 }],
+                },
+              ],
+            },
+          });
+          return draft;
+        })(),
+      },
+      {
+        name: "string rich-text heading level",
+        draft: (() => {
+          const draft = structuredClone(valid) as {
+            pages: Array<{
+              layout: { blocks: unknown[] };
+            }>;
+          };
+          draft.pages[0]!.layout.blocks.unshift({
+            type: "rich_text",
+            id: "00000000-0000-4000-8000-000000000123",
+            node: {
+              type: "heading",
+              level: "2",
+              content: [{ type: "text", text: "Frozen" }],
+            },
           });
           return draft;
         })(),
@@ -1031,10 +1100,11 @@ describe("Lenni Sites C1 database foundation", () => {
       [business.id],
     );
     if (!before) throw new Error("Expected the Site configuration head.");
+    const fixtureIdentifier = `c1_site_pointer_fail_${business.id.replaceAll("-", "")}`;
 
     try {
       await fixtureSql.unsafe(`
-        create function private.c1_fixture_reject_pointer_selection()
+        create function private.${fixtureIdentifier}()
         returns trigger
         language plpgsql
         set search_path = ''
@@ -1048,10 +1118,10 @@ describe("Lenni Sites C1 database foundation", () => {
         $$;
       `);
       await fixtureSql.unsafe(`
-        create trigger c1_fixture_reject_pointer_selection
+        create trigger ${fixtureIdentifier}
         before update on public.site_states
         for each row when (new.business_id = '${business.id}'::uuid)
-        execute function private.c1_fixture_reject_pointer_selection();
+        execute function private.${fixtureIdentifier}();
       `);
       await expect(publishCurrentRelease(candidate.id)).rejects.toMatchObject({
         cause: expect.objectContaining({
@@ -1062,10 +1132,10 @@ describe("Lenni Sites C1 database foundation", () => {
       });
     } finally {
       await fixtureSql.unsafe(
-        "drop trigger if exists c1_fixture_reject_pointer_selection on public.site_states",
+        `drop trigger if exists ${fixtureIdentifier} on public.site_states`,
       );
       await fixtureSql.unsafe(
-        "drop function if exists private.c1_fixture_reject_pointer_selection()",
+        `drop function if exists private.${fixtureIdentifier}()`,
       );
     }
 
@@ -1099,7 +1169,7 @@ describe("Lenni Sites C1 database foundation", () => {
     });
   });
 
-  it("retains draft, release, and historical Page media while rejecting claimed attachments and preserving the claim/attach race", async () => {
+  it("retains draft, published release, and historical Page media while rejecting claimed attachments and preserving the claim/attach race", async () => {
     const draftAsset = await createMediaAsset();
     await saveCurrentDraft(
       siteDraft([recordId, recordTwoId], { logoAssetId: draftAsset.id }),
@@ -1110,6 +1180,10 @@ describe("Lenni Sites C1 database foundation", () => {
     expect(await cleanupClaim(draftAsset.id)).toBeNull();
 
     const releaseWithAsset = await prepareCurrentRelease();
+    const publishedReleaseWithAsset = await publishCurrentRelease(
+      releaseWithAsset.id,
+    );
+    expect(publishedReleaseWithAsset.status).toBe("published");
     expect(
       await siteReferenceCount("site_release_asset_references", draftAsset.id),
     ).toBe(1);
@@ -1164,6 +1238,41 @@ describe("Lenni Sites C1 database foundation", () => {
     expect(claimedPageValidation.validation_result_json).toMatchObject({
       outcome: "invalid",
     });
+
+    const claimedInternalImageProposal = await configuration.proposeChangeSet({
+      ...(await configuration.getProposalCurrentness()),
+      title: "Reject claimed internal Page image",
+      description: "C1 existing internal Page asset boundary fixture.",
+      operations: [
+        {
+          op: "set_page",
+          key: `claimed_internal_image_${crypto.randomUUID().replaceAll("-", "")}`,
+          title: "Claimed internal image",
+          slug: `claimed-internal-image-${crypto.randomUUID().slice(0, 8)}`,
+          audience: "internal",
+          layout_json: {
+            blocks: [
+              {
+                type: "image",
+                id: crypto.randomUUID(),
+                asset_id: claimedAsset.id,
+                alt: "Claimed internal image",
+              },
+            ],
+          },
+          status: "draft",
+          is_active: true,
+        },
+      ],
+    });
+    const claimedInternalImageValidation =
+      await configuration.validateChangeSet(claimedInternalImageProposal.id);
+    expect(claimedInternalImageValidation.status).toBe("rejected");
+    expect(claimedInternalImageValidation.validation_result_json).toMatchObject(
+      {
+        outcome: "invalid",
+      },
+    );
 
     const raceAsset = await createMediaAsset();
     const stateBeforeRace = await currentSiteState();

@@ -7,8 +7,11 @@ import type { Database } from "../../db/supabase/database.types";
 import {
   siteDraftCreateSchema,
   siteDraftSaveSchema,
+  siteDraftV1Schema,
   siteReleasePreparationSchema,
+  siteReleaseProjectionSchema,
   siteReleasePublishSchema,
+  siteReleaseReviewSchema,
   type SiteDraftV1,
 } from "./schemas";
 
@@ -20,7 +23,7 @@ const siteStateSchema = z
   .object({
     id: z.uuid(),
     business_id: z.uuid(),
-    draft_json: z.unknown(),
+    draft_json: siteDraftV1Schema,
     draft_revision: z.number().int().positive(),
     draft_base_version_id: z.uuid(),
     draft_base_head_revision: z.number().int().positive(),
@@ -41,8 +44,8 @@ const siteReleaseSchema = z
     expected_active_release_revision: z.number().int().nonnegative(),
     configuration_change_set_id: z.uuid().nullable(),
     applied_version_id: z.uuid().nullable(),
-    projection_json: z.unknown(),
-    review_json: z.unknown(),
+    projection_json: siteReleaseProjectionSchema,
+    review_json: siteReleaseReviewSchema,
     projection_checksum: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .passthrough();

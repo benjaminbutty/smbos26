@@ -5,6 +5,7 @@ export default defineConfig({
     environment: "node",
     include: ["tests/sites-c1-foundation.integration.ts"],
     fileParallelism: false,
+    sequence: { concurrent: false },
     testTimeout: 30_000,
     hookTimeout: 30_000,
     restoreMocks: true,
