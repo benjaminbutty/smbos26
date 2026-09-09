@@ -19,6 +19,7 @@ import {
   prepareSiteRelease,
   publishSiteRelease,
   saveSiteDraft,
+  SiteFoundationServiceError,
 } from "../src/core/sites/service";
 import { siteDraftV1Schema } from "../src/core/sites/schemas";
 import type { Database, Tables } from "../src/db/supabase/database.types";
@@ -92,6 +93,31 @@ let siteId: string;
 
 function c1Rpc(client: Client): C1RpcClient {
   return client as unknown as C1RpcClient;
+}
+
+/** Keep CI fixture diagnostics useful without changing the owner-facing RPC error. */
+function fixtureRpcDiagnostic(operation: string, error: unknown): Error {
+  const cause =
+    error instanceof SiteFoundationServiceError ? error.cause : error;
+  const diagnostic =
+    typeof cause === "object" && cause !== null
+      ? (cause as {
+          code?: unknown;
+          details?: unknown;
+          hint?: unknown;
+          message?: unknown;
+        })
+      : {};
+  const fields = ["code", "message", "details", "hint"] as const;
+  const summary = fields
+    .flatMap((field) => {
+      const value = diagnostic[field];
+      return typeof value === "string" && value.length > 0
+        ? [`${field}=${value}`]
+        : [];
+    })
+    .join("; ");
+  return new Error(`${operation} fixture RPC failed${summary ? `: ${summary}` : ""}`);
 }
 
 function siteReads(client: Client): SiteReadClient {
@@ -591,12 +617,16 @@ describe("Lenni Sites C1 database foundation", () => {
     });
     otherRecordId = otherRecord.id;
 
-    const state = await createSiteDraft(
-      owner.client,
-      { businessId: business.id, actorId: owner.user.id },
-      { draft: siteDraft([record.id, secondRecord.id]) },
-    );
-    siteId = state.id;
+    try {
+      const state = await createSiteDraft(
+        owner.client,
+        { businessId: business.id, actorId: owner.user.id },
+        { draft: siteDraft([record.id, secondRecord.id]) },
+      );
+      siteId = state.id;
+    } catch (error) {
+      throw fixtureRpcDiagnostic("create Site draft", error);
+    }
   });
 
   afterAll(async () => {

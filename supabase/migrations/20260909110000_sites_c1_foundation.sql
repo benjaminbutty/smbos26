@@ -377,9 +377,12 @@ begin
         or (image_value ? 'caption' and not private.site_valid_string_v1(image_value -> 'caption', 500))
       ), true) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
     end loop;
-    if (select count(*) from jsonb_array_elements(block -> 'images') as image_value
-        group by image_value ->> 'asset_id' having count(*) > 1) > 0
-    then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
+    if exists (
+      select 1
+      from jsonb_array_elements(block -> 'images') as gallery_image(value)
+      group by gallery_image.value ->> 'asset_id'
+      having count(*) > 1
+    ) then raise exception 'site_draft_invalid' using errcode = '22023'; end if;
     return;
   end if;
 
@@ -635,15 +638,15 @@ begin
   end loop;
   if exists (
     select 1
-    from private.site_draft_blocks_v1(draft) as collection_value
-    where collection_value.block ->> 'type' = 'collection'
-      and collection_value.block ? 'detail_page_id'
+    from private.site_draft_blocks_v1(draft) as collection_block
+    where collection_block.block ->> 'type' = 'collection'
+      and collection_block.block ? 'detail_page_id'
       and 1 <> (
         select count(*)
         from private.site_draft_blocks_v1(draft) as detail_value
         where detail_value.block ->> 'type' = 'record_detail'
-          and detail_value.block ->> 'collection_block_id' = collection_value.block ->> 'id'
-          and detail_value.page_id = (collection_value.block ->> 'detail_page_id')::uuid
+          and detail_value.block ->> 'collection_block_id' = collection_block.block ->> 'id'
+          and detail_value.page_id = (collection_block.block ->> 'detail_page_id')::uuid
       )
   ) then
     raise exception 'site_draft_invalid' using errcode = '22023';
