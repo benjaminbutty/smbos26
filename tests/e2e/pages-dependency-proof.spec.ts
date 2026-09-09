@@ -343,14 +343,7 @@ async function verifyTouchNavigation(
     storageState,
     viewport: { height: 844, width: 390 },
   });
-  let tracing = false;
   try {
-    await mobileContext.tracing.start({
-      screenshots: true,
-      snapshots: true,
-      sources: true,
-    });
-    tracing = true;
     const mobilePage = await mobileContext.newPage();
     await mobilePage.route("https://jamp.io/**", (route) => route.abort());
     await mobilePage.goto(page.url());
@@ -388,11 +381,6 @@ async function verifyTouchNavigation(
     await expect(mobileLinkDialog).toBeHidden();
     await expect(mobilePageName).toBeFocused();
   } finally {
-    if (tracing) {
-      await mobileContext.tracing.stop({
-        path: testInfo.outputPath("mobile-trace.zip"),
-      });
-    }
     await mobileContext.close();
   }
 }
