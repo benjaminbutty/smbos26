@@ -23,7 +23,10 @@ import {
   saveSiteDraft,
   SiteFoundationServiceError,
 } from "../src/core/sites/service";
-import { siteDraftV1Schema } from "../src/core/sites/schemas";
+import {
+  siteDraftV1Schema,
+  siteReleaseProjectionSchema,
+} from "../src/core/sites/schemas";
 import type { Database, Tables } from "../src/db/supabase/database.types";
 import {
   getC1LocalSupabaseSettings,
@@ -77,6 +80,9 @@ type SiteReadClient = {
 const createdBusinessIds: string[] = [];
 const createdUserIds: string[] = [];
 const password = "Sites-C1-integration-password!";
+const primaryCollectionBlockId = "00000000-0000-4000-8000-000000000102";
+const secondaryCollectionBlockId = "00000000-0000-4000-8000-000000000103";
+const publicFormBlockId = "00000000-0000-4000-8000-000000000104";
 
 let settings: C1LocalSupabaseSettings;
 let admin: Client;
@@ -160,7 +166,7 @@ function siteDraft(
           blocks: [
             {
               type: "collection",
-              id: "00000000-0000-4000-8000-000000000102",
+              id: primaryCollectionBlockId,
               object_key: "product",
               selection: { schema_version: 1, record_ids: [recordIds[0]] },
               public_field_keys: options.publicFieldKeys ?? ["name", "price"],
@@ -168,7 +174,7 @@ function siteDraft(
             },
             {
               type: "collection",
-              id: "00000000-0000-4000-8000-000000000103",
+              id: secondaryCollectionBlockId,
               object_key: "product",
               selection: { schema_version: 1, record_ids: [recordIds[1]] },
               public_field_keys: options.publicFieldKeys ?? ["name", "price"],
@@ -176,7 +182,7 @@ function siteDraft(
             },
             {
               type: "public_form",
-              id: "00000000-0000-4000-8000-000000000104",
+              id: publicFormBlockId,
               form_key: "product_enquiry",
             },
           ],
@@ -203,6 +209,34 @@ function siteDraft(
       },
     ],
   });
+}
+
+function projectedCollection(projection: unknown, blockId: string) {
+  const block = siteReleaseProjectionSchema
+    .parse(projection)
+    .pages.flatMap((page) => page.layout.blocks)
+    .find(
+      (candidate) =>
+        candidate.type === "collection" && candidate.id === blockId,
+    );
+  if (!block || block.type !== "collection") {
+    throw new Error(`Fixture release is missing collection ${blockId}.`);
+  }
+  return block;
+}
+
+function projectedPublicForm(projection: unknown, blockId: string) {
+  const block = siteReleaseProjectionSchema
+    .parse(projection)
+    .pages.flatMap((page) => page.layout.blocks)
+    .find(
+      (candidate) =>
+        candidate.type === "public_form" && candidate.id === blockId,
+    );
+  if (!block || block.type !== "public_form") {
+    throw new Error(`Fixture release is missing public Form ${blockId}.`);
+  }
+  return block;
 }
 
 async function createIdentity(label: string): Promise<Identity> {
@@ -1144,29 +1178,35 @@ describe("Lenni Sites C1 database foundation", () => {
     const versionsBeforeSourceOnly = await versionCount();
     const candidateA = await prepareCurrentRelease();
     expect(candidateA.configuration_change_set_id).toBeNull();
-    const projection = candidateA.projection_json as {
-      pages: Array<{
-        slug: string;
-        layout: {
-          blocks: Array<{ records?: Array<{ id: string; values: object }> }>;
-        };
-      }>;
-    };
+    const projection = siteReleaseProjectionSchema.parse(
+      candidateA.projection_json,
+    );
     expect(projection.pages).toHaveLength(1);
     expect(projection.pages[0]?.slug).toBe("about");
-    expect(projection.pages[0]?.layout.blocks).toMatchObject([
-      {
-        records: [{ id: recordId, values: { name: "Frozen name", price: 10 } }],
-      },
-      {
-        records: [
-          {
-            id: recordTwoId,
-            values: { name: "Second frozen name", price: 12 },
-          },
-        ],
-      },
-    ]);
+    expect(
+      projectedCollection(projection, primaryCollectionBlockId),
+    ).toMatchObject({
+      selection: { record_ids: [recordId] },
+      public_field_keys: ["name", "price"],
+      records: [{ id: recordId, values: { name: "Frozen name", price: 10 } }],
+    });
+    expect(
+      projectedCollection(projection, secondaryCollectionBlockId),
+    ).toMatchObject({
+      selection: { record_ids: [recordTwoId] },
+      public_field_keys: ["name", "price"],
+      records: [
+        {
+          id: recordTwoId,
+          values: { name: "Second frozen name", price: 12 },
+        },
+      ],
+    });
+    expect(projectedPublicForm(projection, publicFormBlockId)).toEqual({
+      type: "public_form",
+      id: publicFormBlockId,
+      form_key: "product_enquiry",
+    });
     expect(JSON.stringify(candidateA.projection_json)).not.toContain(
       "internal_note",
     );
@@ -1422,17 +1462,37 @@ describe("Lenni Sites C1 database foundation", () => {
         "select projection_json from public.site_releases where business_id = $1 and id = $2",
         [business.id, candidateId],
       );
-      expect(prepared?.projection_json).toMatchObject({
-        pages: [
+      expect(
+        projectedCollection(
+          prepared?.projection_json,
+          primaryCollectionBlockId,
+        ),
+      ).toMatchObject({
+        selection: { record_ids: [recordId] },
+        public_field_keys: ["name", "price"],
+        records: [{ id: recordId, values: { name: "Frozen name", price: 41 } }],
+      });
+      expect(
+        projectedCollection(
+          prepared?.projection_json,
+          secondaryCollectionBlockId,
+        ),
+      ).toMatchObject({
+        selection: { record_ids: [recordTwoId] },
+        public_field_keys: ["name", "price"],
+        records: [
           {
-            layout: {
-              blocks: [
-                { records: [{ id: recordId, values: { price: 41 } }] },
-                { records: [{ id: recordTwoId, values: { price: 42 } }] },
-              ],
-            },
+            id: recordTwoId,
+            values: { name: "Second frozen name", price: 42 },
           },
         ],
+      });
+      expect(
+        projectedPublicForm(prepared?.projection_json, publicFormBlockId),
+      ).toEqual({
+        type: "public_form",
+        id: publicFormBlockId,
+        form_key: "product_enquiry",
       });
 
       await createGraphService(owner.client, {
@@ -1901,29 +1961,34 @@ describe("Lenni Sites C1 database foundation", () => {
     );
     expect(firstCandidate.configuration_change_set_id).not.toBeNull();
     const changes = new ConfigurationChangeService(owner.client, siteContext());
-    const abandoned = await changes.abandonChangeSet(
-      firstCandidate.configuration_change_set_id!,
-    );
-    expect(abandoned.status).toBe("abandoned");
-
-    const replacementCandidate = await prepareSiteRelease(
+    await expect(
+      changes.abandonChangeSet(firstCandidate.configuration_change_set_id!),
+    ).rejects.toMatchObject({
+      code: "configuration_change_set_not_abandonable",
+    });
+    const replayedCandidate = await prepareSiteRelease(
       owner.client,
       siteContext(),
       { siteId, ...siteCurrentness(resolved) },
     );
-    expect(replacementCandidate.id).not.toBe(firstCandidate.id);
-    expect(replacementCandidate.configuration_change_set_id).not.toBeNull();
+    expect(replayedCandidate.id).toBe(firstCandidate.id);
+    expect(replayedCandidate.configuration_change_set_id).toBe(
+      firstCandidate.configuration_change_set_id,
+    );
     const applied = await changes.applyChangeSet(
-      replacementCandidate.configuration_change_set_id!,
+      firstCandidate.configuration_change_set_id!,
     );
     expect(applied.status).toBe("applied");
+    const versionsAfterExternalApply = await versionCount();
 
     const published = await publishSiteRelease(owner.client, siteContext(), {
       siteId,
-      candidateId: replacementCandidate.id,
+      candidateId: firstCandidate.id,
       ...siteCurrentness(resolved),
     });
     expect(published.status).toBe("published");
+    expect(published.applied_version_id).toBe(applied.applied_version_id);
+    expect(await versionCount()).toBe(versionsAfterExternalApply);
     expect((await currentSiteState()).active_release_id).toBe(published.id);
   });
 
