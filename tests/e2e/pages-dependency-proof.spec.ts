@@ -149,6 +149,29 @@ async function keyboardMoveFirstHeadingUp(page: Page): Promise<void> {
     .toBe(true);
 }
 
+/**
+ * BubbleMenu intentionally appears only for a ProseMirror TextSelection. Use
+ * two bounded word selections rather than select-all: the latter constructs an
+ * AllSelection and is not an editable link range. Ending at the visual line
+ * then selecting words backwards also remains an actual, finite text range
+ * when the heading wraps in the mobile viewport.
+ */
+async function selectHeadingTextForLink(
+  page: Page,
+  heading: Locator,
+): Promise<void> {
+  await heading.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Control+Shift+ArrowLeft");
+  await page.keyboard.press("Control+Shift+ArrowLeft");
+
+  const selectedText = await page.evaluate(
+    () => window.getSelection()?.toString() ?? "",
+  );
+  expect(selectedText).toMatch(/\S/);
+  expect(firstHeading).toContain(selectedText.trim());
+}
+
 async function verifyTransientDismissal(
   page: Page,
   editor: Locator,
@@ -175,8 +198,7 @@ async function verifyTransientDismissal(
   await expect(blockMenu).toBeHidden();
   await expect(pageName).toBeFocused();
 
-  await first.click();
-  await page.keyboard.press("Control+A");
+  await selectHeadingTextForLink(page, first);
   await page.getByLabel("Add or edit link").click();
   const linkDialog = page.getByRole("dialog", { name: "Add or edit link" });
   await expect(linkDialog).toBeVisible();
@@ -184,8 +206,7 @@ async function verifyTransientDismissal(
   await expect(linkDialog).toBeHidden();
   await expect(editor).toBeFocused();
 
-  await first.click();
-  await page.keyboard.press("Control+A");
+  await selectHeadingTextForLink(page, first);
   await page.getByLabel("Add or edit link").click();
   await expect(linkDialog).toBeVisible();
   await pageName.click();
@@ -269,8 +290,7 @@ async function verifyTouchNavigation(
       name: firstHeading,
       exact: true,
     });
-    await mobileFirst.tap();
-    await mobilePage.keyboard.press("Control+A");
+    await selectHeadingTextForLink(mobilePage, mobileFirst);
     await mobilePage.getByLabel("Add or edit link").tap();
     const mobileLinkDialog = mobilePage.getByRole("dialog", {
       name: "Add or edit link",
