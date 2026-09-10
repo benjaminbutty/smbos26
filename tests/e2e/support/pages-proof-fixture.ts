@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import postgres from "postgres";
 import { createClient } from "@supabase/supabase-js";
 import { expect, test as base } from "@playwright/test";
 import type { Page } from "@playwright/test";
@@ -9,6 +10,7 @@ import type { Database } from "../../../src/db/supabase/database.types";
 interface ProofSettings {
   apiUrl: string;
   appUrl: string;
+  databaseUrl: string;
   projectId: string;
   publishableKey: string;
   serviceRoleKey: string;
@@ -39,6 +41,8 @@ function proofSettings(): ProofSettings {
   const appUrl = new URL(requiredEnvironment("SMBOS_PAGES_PROOF_APP_URL"));
   const apiUrl = new URL(requiredEnvironment("SMBOS_PAGES_PROOF_API_URL"));
   const apiPort = requiredEnvironment("SMBOS_PAGES_PROOF_API_PORT");
+  const databaseUrl = new URL(requiredEnvironment("SMBOS_PAGES_PROOF_DB_URL"));
+  const databasePort = requiredEnvironment("SMBOS_PAGES_PROOF_DB_PORT");
   const projectId = requiredEnvironment("SMBOS_PAGES_PROOF_PROJECT_ID");
   const workdir = requiredEnvironment("SMBOS_PAGES_PROOF_WORKDIR");
   const runId = requiredEnvironment("GITHUB_RUN_ID");
@@ -52,6 +56,9 @@ function proofSettings(): ProofSettings {
     apiUrl.protocol !== "http:" ||
     apiUrl.hostname !== "127.0.0.1" ||
     apiUrl.port !== apiPort ||
+    !["postgres:", "postgresql:"].includes(databaseUrl.protocol) ||
+    databaseUrl.hostname !== "127.0.0.1" ||
+    databaseUrl.port !== databasePort ||
     projectId !== expectedTarget ||
     !workdir.endsWith(`/${expectedTarget}`)
   ) {
@@ -63,6 +70,7 @@ function proofSettings(): ProofSettings {
   return {
     apiUrl: apiUrl.toString().replace(/\/$/, ""),
     appUrl: appUrl.toString().replace(/\/$/, ""),
+    databaseUrl: databaseUrl.toString(),
     projectId,
     publishableKey: requiredEnvironment("SMBOS_PAGES_PROOF_PUBLISHABLE_KEY"),
     serviceRoleKey: requiredEnvironment("SMBOS_PAGES_PROOF_SERVICE_ROLE_KEY"),
@@ -72,30 +80,28 @@ function proofSettings(): ProofSettings {
 
 async function removeFixture(
   admin: ReturnType<typeof createClient<Database>>,
+  databaseUrl: string,
   businessId: string | null,
   userId: string,
 ): Promise<void> {
   const failures: string[] = [];
 
   if (businessId) {
-    const sitesAdmin = admin as unknown as {
-      from(table: "site_states"): {
-        delete(): {
-          eq(
-            column: "business_id",
-            value: string,
-          ): Promise<{ error: { code?: string } | null }>;
-        };
-      };
-    };
-    const siteCleanup = await sitesAdmin
-      .from("site_states")
-      .delete()
-      .eq("business_id", businessId);
-    if (siteCleanup.error)
-      failures.push(
-        `Site cleanup failed (${siteCleanup.error.code ?? "unknown"})`,
+    const fixtureSql = postgres(databaseUrl, { max: 1 });
+    try {
+      await fixtureSql.unsafe(
+        "delete from public.site_states where business_id = $1::uuid",
+        [businessId],
       );
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : "unknown";
+      failures.push(`Site cleanup failed (${code})`);
+    } finally {
+      await fixtureSql.end({ timeout: 5 });
+    }
     const { error } = await admin
       .from("businesses")
       .delete()
@@ -191,7 +197,12 @@ export const test = base.extend<{ pagesProof: PagesProofFixture }>({
     try {
       await provideFixture(fixture);
     } finally {
-      await removeFixture(admin, businessId, created.data.user.id);
+      await removeFixture(
+        admin,
+        settings.databaseUrl,
+        businessId,
+        created.data.user.id,
+      );
     }
   },
 });

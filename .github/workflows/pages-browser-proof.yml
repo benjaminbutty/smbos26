@@ -173,7 +173,12 @@ jobs:
                 .map((line) => /^([A-Z0-9_]+)="(.*)"$/.exec(line.trim()))
                 .flatMap((match) => (match?.[1] ? [[match[1], match[2] ?? ""]] : [])),
             );
-            const required = ["API_URL", "PUBLISHABLE_KEY", "SERVICE_ROLE_KEY"];
+            const required = [
+              "API_URL",
+              "DB_URL",
+              "PUBLISHABLE_KEY",
+              "SERVICE_ROLE_KEY",
+            ];
             for (const key of required) {
               if (!values[key]) throw new Error("The isolated target did not report its required credentials.");
             }
@@ -184,6 +189,14 @@ jobs:
               api.port !== process.env.SMBOS_PAGES_PROOF_API_PORT
             ) {
               throw new Error("The isolated target did not report the expected loopback API URL.");
+            }
+            const database = new URL(values.DB_URL);
+            if (
+              !["postgres:", "postgresql:"].includes(database.protocol) ||
+              database.hostname !== "127.0.0.1" ||
+              database.port !== process.env.SMBOS_PAGES_PROOF_DB_PORT
+            ) {
+              throw new Error("The isolated target did not report the expected loopback database URL.");
             }
 
             const deadline = Date.now() + 60_000;
@@ -211,6 +224,7 @@ jobs:
               process.env.GITHUB_ENV,
               [
                 `SMBOS_PAGES_PROOF_API_URL=${values.API_URL}`,
+                `SMBOS_PAGES_PROOF_DB_URL=${values.DB_URL}`,
                 `SMBOS_PAGES_PROOF_PUBLISHABLE_KEY=${values.PUBLISHABLE_KEY}`,
                 `SMBOS_PAGES_PROOF_SERVICE_ROLE_KEY=${values.SERVICE_ROLE_KEY}`,
               ].join("\n") + "\n",

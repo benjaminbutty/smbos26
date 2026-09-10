@@ -228,11 +228,11 @@ async function keyboardMoveFirstHeadingUp(page: Page): Promise<void> {
 }
 
 /**
- * BubbleMenu intentionally appears only for a ProseMirror TextSelection. Use
- * two bounded word selections rather than select-all: the latter constructs an
- * AllSelection and is not an editable link range. Ending at the visual line
- * then selecting words backwards also remains an actual, finite text range
- * when the heading wraps in the mobile viewport.
+ * BubbleMenu intentionally appears only for a ProseMirror TextSelection. Use a
+ * bounded character selection to keep the link range editable on both desktop
+ * Chromium and touch emulation. Select-all constructs an AllSelection and is
+ * not an editable link range; character steps also avoid relying on a desktop
+ * word-navigation shortcut that mobile keyboards do not expose.
  */
 async function selectHeadingTextForLink(
   page: Page,
@@ -240,8 +240,9 @@ async function selectHeadingTextForLink(
 ): Promise<void> {
   await heading.click();
   await page.keyboard.press("End");
-  await page.keyboard.press("Control+Shift+ArrowLeft");
-  await page.keyboard.press("Control+Shift+ArrowLeft");
+  for (let index = 0; index < 5; index += 1) {
+    await page.keyboard.press("Shift+ArrowLeft");
+  }
 
   const selectedText = await page.evaluate(
     () => window.getSelection()?.toString() ?? "",
