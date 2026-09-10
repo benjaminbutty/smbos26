@@ -20,6 +20,7 @@ async function createWorkspaceTable(
   businessSlug: string,
   tableName: string,
   records: readonly string[],
+  options: { fileProperty?: string } = {},
 ): Promise<string> {
   await page.goto(`/app/${businessSlug}`);
   await page
@@ -39,6 +40,22 @@ async function createWorkspaceTable(
   const viewMatch = new URL(page.url()).pathname.match(/\/workspace\/([^/]+)$/);
   if (!viewMatch?.[1])
     throw new Error(`Could not identify the ${tableName} Table.`);
+
+  if (options.fileProperty) {
+    await page
+      .getByRole("button", { name: "Add property", exact: true })
+      .click();
+    const propertyEditor = page.locator(".editor-property-editor");
+    await expect(propertyEditor).toBeVisible();
+    await propertyEditor
+      .getByLabel("Property name", { exact: true })
+      .fill(options.fileProperty);
+    await propertyEditor.getByRole("menuitem", { name: /^File\b/ }).click();
+    await propertyEditor
+      .getByRole("button", { name: "Add property", exact: true })
+      .click();
+    await expect(propertyEditor).toHaveCount(0);
+  }
 
   for (const recordName of records) {
     await page.locator("button.editor-new-record-action").first().click();
@@ -233,6 +250,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     business.slug,
     "Catalogue",
     ["Heritage cake", "Lemon tart"],
+    { fileProperty: "Photo" },
   );
   const servicesView = await createWorkspaceTable(
     page,
@@ -283,12 +301,25 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     .getByRole("button", { name: "Add Record collection", exact: true })
     .first()
     .click();
-  await configureCollection(
+  const homeCatalogueCollection = await configureCollection(
     pages.first(),
     catalogueView,
     "cards",
     "Catalogue details",
   );
+  const recordImageInput = homeCatalogueCollection
+    .getByLabel("Record image (photo)", { exact: true })
+    .first();
+  await expect(recordImageInput).toBeVisible();
+  await recordImageInput.setInputFiles({
+    ...proofImage,
+    name: "browser-proof-record.png",
+  });
+  await expect(
+    page.getByText("Record image attached for the next reviewed release.", {
+      exact: true,
+    }),
+  ).toBeVisible();
   await page
     .getByRole("button", { name: "Add Record collection", exact: true })
     .first()
@@ -379,6 +410,8 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   ).toBeVisible();
   await expect(page.getByRole("link", { name: secondPageTitle })).toBeVisible();
   await expect(page.getByRole("img", { name: imageAlt })).toBeVisible();
+  await expect(page.locator("img.site-public-record-image")).toHaveCount(1);
+  await expect(page.locator("img.site-public-record-image")).toBeVisible();
   await expect(page.getByText("Heritage cake", { exact: true })).toBeVisible();
   await expect(page.getByText("Lemon tart", { exact: true })).toBeVisible();
   await expect(page.getByRole("table")).toBeVisible();
@@ -406,6 +439,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     page.getByRole("heading", { name: "Catalogue details" }),
   ).toBeVisible();
   await expect(page.getByText("Heritage cake", { exact: true })).toBeVisible();
+  await expect(page.locator("img.site-public-record-image")).toHaveCount(1);
 
   await page.getByRole("link", { name: secondPageTitle }).click();
   await expect(page).toHaveURL(

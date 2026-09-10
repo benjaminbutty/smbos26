@@ -19,6 +19,7 @@ export const addablePropertyKinds: readonly EditorColumnKind[] = [
   "email",
   "phone",
   "url",
+  "file",
   "select",
   "status",
 ];
@@ -81,6 +82,7 @@ const propertyKindLabels: Readonly<Partial<Record<EditorColumnKind, string>>> =
     email: "Email",
     phone: "Phone",
     url: "Website",
+    file: "File",
     select: "Choice",
     status: "Status",
   };
@@ -97,6 +99,7 @@ const propertyKindDescriptions: Readonly<
   email: "Email addresses.",
   phone: "Telephone numbers.",
   url: "Web links.",
+  file: "Managed images and attachments.",
   select: "A controlled list of choices.",
   status: "A labelled progress state, without automation.",
 };

@@ -27,6 +27,11 @@ export const lenniTypePickerOptions: readonly TypePickerOption[] = [
   { kind: "phone", label: "Phone", description: "Telephone numbers" },
   { kind: "url", label: "Website", description: "Web links" },
   {
+    kind: "file",
+    label: "File",
+    description: "Managed images and attachments",
+  },
+  {
     kind: "select",
     label: "Choice",
     description: "A controlled list of choices",
