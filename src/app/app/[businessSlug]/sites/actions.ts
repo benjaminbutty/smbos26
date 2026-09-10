@@ -637,6 +637,9 @@ export async function publishSiteReleaseAction(
       input.data,
     );
   } catch (error) {
+    if (error instanceof SiteFoundationServiceError) {
+      console.error("Sites publish failed", { code: error.code });
+    }
     siteNotice(parsedSlug.data, siteErrorNotice(error));
   }
   siteNotice(parsedSlug.data, "published");
