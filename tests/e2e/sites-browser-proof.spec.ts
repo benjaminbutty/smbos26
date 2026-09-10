@@ -570,6 +570,10 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
       .first(),
   ).toHaveValue("");
 
+  // The responsive capture intentionally leaves the page at the mobile
+  // viewport. Table creation is exercised through the visible desktop
+  // workspace control before returning to the Site recovery journey.
+  await page.setViewportSize({ width: 1440, height: 900 });
   await createWorkspaceTable(page, business.slug, "Recovery", []);
   await page.goto(`/app/${business.slug}/sites`);
   await expect(
