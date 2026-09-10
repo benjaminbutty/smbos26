@@ -599,6 +599,10 @@ describe("Lenni Sites C2 functional milestone", () => {
   afterAll(async () => {
     try {
       if (admin && createdBusinessIds.length > 0) {
+        await fixtureSql.unsafe(
+          "delete from public.site_states where business_id = any($1::uuid[])",
+          [createdBusinessIds],
+        );
         const deleted = await admin
           .from("businesses")
           .delete()

@@ -30,7 +30,7 @@ function displayValue(
         className="site-public-record-image"
         height={240}
         src={source}
-        unoptimized={Boolean(mediaPrefix)}
+        unoptimized
         width={320}
       />
     ) : (
@@ -55,7 +55,7 @@ function displayValue(
         className="site-public-record-image"
         height={240}
         src={source}
-        unoptimized={Boolean(mediaPrefix)}
+        unoptimized
         width={320}
       />
     ) : null;
@@ -145,7 +145,7 @@ function renderBlock(
           <Image
             alt={typeof block.alt === "string" ? block.alt : ""}
             src={source}
-            unoptimized={Boolean(mediaPrefix)}
+            unoptimized
             width={1200}
             height={800}
             sizes="(max-width: 720px) 100vw, 1200px"
