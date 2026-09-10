@@ -537,4 +537,57 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   );
   const unpublished = await page.request.get(`/p/${business.slug}/home`);
   expect(unpublished.status()).toBe(404);
+
+  // Keep an actually incomplete block through the debounced autosave and a
+  // full route reload. A later ordinary workspace change must require an
+  // explicit Site rebase while preserving that durable draft composition.
+  await page.goto(`/app/${business.slug}/sites`);
+  const draftHome = page.locator(".site-composer-page").first();
+  await draftHome
+    .getByRole("button", { name: "Add heading", exact: true })
+    .click();
+  const incompleteHeading = draftHome
+    .locator(".site-composer-block")
+    .last()
+    .locator("input")
+    .first();
+  const autosave = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+      response.status() === 200,
+  );
+  await incompleteHeading.fill("");
+  await autosave;
+  await page.reload();
+  await expect(
+    page
+      .locator(".site-composer-page")
+      .first()
+      .locator(".site-composer-block")
+      .last()
+      .locator("input")
+      .first(),
+  ).toHaveValue("");
+
+  await createWorkspaceTable(page, business.slug, "Recovery", []);
+  await page.goto(`/app/${business.slug}/sites`);
+  await expect(
+    page.getByRole("region", { name: "Draft recovery" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Rebase draft base", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=rebased$`),
+  );
+  await expect(
+    page
+      .locator(".site-composer-page")
+      .first()
+      .locator(".site-composer-block")
+      .last()
+      .locator("input")
+      .first(),
+  ).toHaveValue("");
 });

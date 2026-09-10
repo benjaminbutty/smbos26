@@ -449,7 +449,7 @@ create function public.resolve_public_page(
 )
 returns jsonb
 language sql
-stable
+volatile
 security definer
 set search_path = ''
 as $$
@@ -4202,7 +4202,7 @@ create function public.resolve_public_form(
   requested_form_key text
 )
 returns jsonb
-language sql stable security definer set search_path = ''
+language sql volatile security definer set search_path = ''
 as $$
   select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then null::jsonb
@@ -4242,7 +4242,7 @@ create function public.resolve_public_booking(
   requested_booking_key text
 )
 returns jsonb
-language sql stable security definer set search_path = ''
+language sql volatile security definer set search_path = ''
 as $$
   select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then null::jsonb
@@ -4282,7 +4282,7 @@ create function public.resolve_public_preorder(
   requested_preorder_key text
 )
 returns jsonb
-language sql stable security definer set search_path = ''
+language sql volatile security definer set search_path = ''
 as $$
   select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then null::jsonb
@@ -4417,6 +4417,14 @@ begin
     and new.status = 'published'
     and new.is_active
   then
+    -- Keep the same configuration-head then Site-state order as adoption,
+    -- publication, and every legacy action wrapper. This closes the window
+    -- where a direct legacy Page write could pass its authority check while
+    -- whole-Business adoption was acquiring the authority locks.
+    perform 1
+    from public.business_configuration_heads as head
+    where head.business_id = new.business_id
+    for update;
     select state.id into selected_site_id
     from public.site_states as state
     where state.business_id = new.business_id
