@@ -409,7 +409,8 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     page.getByText("Powered by Lenni", { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("link", { name: secondPageTitle })).toBeVisible();
-  await expect(page.getByRole("img", { name: imageAlt })).toBeVisible();
+  const siteImage = page.getByRole("img", { name: imageAlt });
+  await expect(siteImage).toBeVisible();
   await expect(page.locator("img.site-public-record-image")).toHaveCount(1);
   await expect(page.locator("img.site-public-record-image")).toBeVisible();
   await expect(page.getByText("Heritage cake", { exact: true })).toBeVisible();
@@ -421,13 +422,12 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(
     page.getByRole("table").getByText("Corporate lunch", { exact: true }),
   ).toBeVisible();
+  await siteImage.scrollIntoViewIfNeeded();
   await expect
     .poll(() =>
-      page
-        .getByRole("img", { name: imageAlt })
-        .evaluate((image) =>
-          image instanceof HTMLImageElement ? image.naturalWidth : 0,
-        ),
+      siteImage.evaluate((image) =>
+        image instanceof HTMLImageElement ? image.naturalWidth : 0,
+      ),
     )
     .toBeGreaterThan(0);
 
