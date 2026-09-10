@@ -209,6 +209,13 @@ export function SiteComposer({
   const autosaveReady = useRef(false);
   const revisionRef = useRef(draftRevision);
   const autosaveQueue = useRef(Promise.resolve());
+  const autosaveTimer = useRef<number | null>(null);
+
+  const cancelAutosaveTimer = useCallback(() => {
+    if (autosaveTimer.current === null) return;
+    window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = null;
+  }, []);
 
   const queueDraftSave = useCallback(
     (draftToSave: SiteDraftV1, failureMessage: string): Promise<boolean> => {
@@ -262,12 +269,17 @@ export function SiteComposer({
     }
     const draftToSave = copyDraft(draft);
     const timeout = window.setTimeout(() => {
+      autosaveTimer.current = null;
       void queueDraftSave(
         draftToSave,
         "Draft autosave failed. Use Save draft to try again.",
       );
     }, 900);
-    return () => window.clearTimeout(timeout);
+    autosaveTimer.current = timeout;
+    return () => {
+      window.clearTimeout(timeout);
+      if (autosaveTimer.current === timeout) autosaveTimer.current = null;
+    };
   }, [businessSlug, draft, queueDraftSave, siteId]);
 
   function commit(next: SiteDraftV1): void {
@@ -850,7 +862,9 @@ export function SiteComposer({
               value={revision}
             />
             <input name="draft" type="hidden" value={JSON.stringify(draft)} />
-            <button type="submit">Save draft</button>
+            <button onClick={cancelAutosaveTimer} type="submit">
+              Save draft
+            </button>
           </form>
         </div>
       </div>
