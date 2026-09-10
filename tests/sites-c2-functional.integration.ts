@@ -4,7 +4,9 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import postgres, { type Sql } from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 import { ConfigurationChangeService } from "../src/core/configuration/service";
 import { createGraphService } from "../src/core/graph/service";
