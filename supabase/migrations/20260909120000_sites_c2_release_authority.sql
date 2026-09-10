@@ -603,6 +603,92 @@ begin
 end;
 $$;
 
+-- `draft_state` is editor lifecycle metadata. It is retained in the durable
+-- Site draft so an incomplete block can be recovered, but the derived
+-- canonical Page operation must use the ordinary Page grammar. Preparation
+-- has already rejected incomplete blocks on included Pages before calling
+-- this release-only adapter.
+create or replace function private.site_strip_draft_metadata_block_v2(block jsonb)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  child jsonb;
+  child_blocks jsonb := '[]'::jsonb;
+  column_value jsonb;
+  columns_value jsonb := '[]'::jsonb;
+  image_value jsonb;
+  images_value jsonb := '[]'::jsonb;
+begin
+  if block ->> 'type' = 'collapsible' then
+    for child in select value from jsonb_array_elements(block -> 'blocks') loop
+      child_blocks := child_blocks || jsonb_build_array(
+        private.site_strip_draft_metadata_block_v2(child)
+      );
+    end loop;
+    return (block - 'draft_state' - 'blocks') || jsonb_build_object(
+      'blocks', child_blocks
+    );
+  end if;
+  if block ->> 'type' = 'section' then
+    for column_value in select value from jsonb_array_elements(block -> 'columns') loop
+      child_blocks := '[]'::jsonb;
+      for child in select value from jsonb_array_elements(column_value -> 'blocks') loop
+        child_blocks := child_blocks || jsonb_build_array(
+          private.site_strip_draft_metadata_block_v2(child)
+        );
+      end loop;
+      columns_value := columns_value || jsonb_build_array(
+        (column_value - 'blocks') || jsonb_build_object('blocks', child_blocks)
+      );
+    end loop;
+    return (block - 'draft_state' - 'columns') || jsonb_build_object(
+      'columns', columns_value
+    );
+  end if;
+  if block ->> 'type' = 'gallery' then
+    for image_value in select value from jsonb_array_elements(block -> 'images') loop
+      images_value := images_value || jsonb_build_array(image_value - 'draft_state');
+    end loop;
+    return (block - 'draft_state' - 'images') || jsonb_build_object(
+      'images', images_value
+    );
+  end if;
+  return block - 'draft_state';
+end;
+$$;
+
+create or replace function private.site_strip_draft_metadata_draft_v2(draft jsonb)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  page_value jsonb;
+  pages_value jsonb := '[]'::jsonb;
+  block jsonb;
+  blocks_value jsonb;
+begin
+  for page_value in select value from jsonb_array_elements(draft -> 'pages') loop
+    blocks_value := '[]'::jsonb;
+    for block in select value from jsonb_array_elements(page_value -> 'layout' -> 'blocks') loop
+      blocks_value := blocks_value || jsonb_build_array(
+        private.site_strip_draft_metadata_block_v2(block)
+      );
+    end loop;
+    pages_value := pages_value || jsonb_build_array(
+      (page_value - 'layout') || jsonb_build_object(
+        'layout', jsonb_build_object('blocks', blocks_value)
+      )
+    );
+  end loop;
+  return (draft - 'pages') || jsonb_build_object('pages', pages_value);
+end;
+$$;
+
 create or replace function private.site_assert_collection_filter_v2(
   target_business_id uuid,
   block jsonb
@@ -2204,7 +2290,9 @@ begin
   perform private.site_lock_selected_records_c2(
     expected_business_id, selected_state.draft_json
   );
-  canonical_draft := private.site_strip_filter_draft_v2(selected_state.draft_json);
+  canonical_draft := private.site_strip_draft_metadata_draft_v2(
+    private.site_strip_filter_draft_v2(selected_state.draft_json)
+  );
   derived_operations := private.site_derived_page_operations_v1(
     expected_business_id, requested_site_id, canonical_draft
   );
