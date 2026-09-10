@@ -365,6 +365,18 @@ async function callRpc<T>(
   return result.data;
 }
 
+async function callNullableRpc<T>(
+  client: Client,
+  name: string,
+  parameters: Record<string, string | number | null | object>,
+): Promise<T | null> {
+  const result = await rpc(client).rpc<T>(name, parameters);
+  if (result.error) {
+    throw new Error(`${name} failed: ${result.error.message}`);
+  }
+  return result.data;
+}
+
 describe("Lenni Sites C2 functional milestone", () => {
   beforeAll(async () => {
     settings = getC1LocalSupabaseSettings();
@@ -745,7 +757,7 @@ describe("Lenni Sites C2 functional milestone", () => {
     ).find((block) => block.type === "collection");
     expect(hiddenCollection?.records).toHaveLength(1);
     await expect(
-      callRpc(anonymous, "resolve_public_site_record", {
+      callNullableRpc(anonymous, "resolve_public_site_record", {
         requested_business_slug: catalogueBusiness.slug,
         requested_page_slug: "details",
         requested_record_token: token,
@@ -904,7 +916,7 @@ describe("Lenni Sites C2 functional milestone", () => {
     });
     expect(unpublished.active_release_id).toBeNull();
     await expect(
-      callRpc(anonymous, "resolve_public_page", {
+      callNullableRpc(anonymous, "resolve_public_page", {
         requested_business_slug: catalogueBusiness.slug,
         requested_page_slug: "home",
       }),
@@ -1364,7 +1376,7 @@ describe("Lenni Sites C2 functional milestone", () => {
     );
     expect(unpublished.active_release_id).toBeNull();
     await expect(
-      callRpc(anonymous, "resolve_public_page", {
+      callNullableRpc(anonymous, "resolve_public_page", {
         requested_business_slug: adoptionBusiness.slug,
         requested_page_slug: "legacy-home",
       }),
