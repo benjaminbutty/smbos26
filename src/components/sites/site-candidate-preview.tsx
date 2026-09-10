@@ -30,6 +30,7 @@ export function SiteCandidatePreview({
               className="site-preview-logo"
               height={64}
               src={logoSource}
+              unoptimized
               width={160}
             />
           ) : null}
