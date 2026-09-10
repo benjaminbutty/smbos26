@@ -63,6 +63,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       attachmentRevision: attachment.attachment_revision,
+      recordRevision: attachment.record_revision,
     });
   } catch (error) {
     if (error instanceof SiteFoundationServiceError) {

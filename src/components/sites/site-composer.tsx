@@ -203,6 +203,9 @@ export function SiteComposer({
   const [attachmentRevisions, setAttachmentRevisions] = useState<
     Record<string, number>
   >({});
+  const [recordRevisions, setRecordRevisions] = useState<
+    Record<string, number>
+  >({});
   const autosaveReady = useRef(false);
   const revisionRef = useRef(draftRevision);
   const autosaveQueue = useRef(Promise.resolve());
@@ -754,7 +757,8 @@ export function SiteComposer({
           objectDefinitionId: record.objectDefinitionId,
           fieldDefinitionId: field.id,
           assetId,
-          expectedRecordRevision: record.recordRevision,
+          expectedRecordRevision:
+            recordRevisions[record.id] ?? record.recordRevision,
           expectedAttachmentRevision,
         }),
       },
@@ -773,6 +777,13 @@ export function SiteComposer({
       setAttachmentRevisions((previous) => ({
         ...previous,
         [attachmentKey]: nextAttachmentRevision,
+      }));
+    }
+    const nextRecordRevision = asRecord(result).recordRevision;
+    if (typeof nextRecordRevision === "number") {
+      setRecordRevisions((previous) => ({
+        ...previous,
+        [record.id]: nextRecordRevision,
       }));
     }
     setMessage("Record image attached for the next reviewed release.");

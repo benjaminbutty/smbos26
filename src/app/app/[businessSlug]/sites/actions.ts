@@ -173,7 +173,7 @@ async function changeSiteAvailabilityAction(
   siteNotice(parsedSlug.data, "availability_changed");
 }
 
-export function withdrawSiteRecordAction(
+export async function withdrawSiteRecordAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -185,7 +185,7 @@ export function withdrawSiteRecordAction(
   );
 }
 
-export function reenableSiteRecordAction(
+export async function reenableSiteRecordAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -197,7 +197,7 @@ export function reenableSiteRecordAction(
   );
 }
 
-export function withdrawSiteObjectAction(
+export async function withdrawSiteObjectAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -209,7 +209,7 @@ export function withdrawSiteObjectAction(
   );
 }
 
-export function reenableSiteObjectAction(
+export async function reenableSiteObjectAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -221,7 +221,7 @@ export function reenableSiteObjectAction(
   );
 }
 
-export function withdrawSiteFieldAction(
+export async function withdrawSiteFieldAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -233,7 +233,7 @@ export function withdrawSiteFieldAction(
   );
 }
 
-export function reenableSiteFieldAction(
+export async function reenableSiteFieldAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -245,7 +245,7 @@ export function reenableSiteFieldAction(
   );
 }
 
-export function withdrawSiteMediaAction(
+export async function withdrawSiteMediaAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {
@@ -257,7 +257,7 @@ export function withdrawSiteMediaAction(
   );
 }
 
-export function reenableSiteMediaAction(
+export async function reenableSiteMediaAction(
   businessSlug: string,
   formData: FormData,
 ): Promise<never> {

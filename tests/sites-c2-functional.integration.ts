@@ -499,6 +499,51 @@ describe("Lenni Sites C2 functional milestone", () => {
       expectedRecordRevision: 1,
       expectedAttachmentRevision: 0,
     });
+    const canonicalFileRows = await fixtureSql.unsafe<
+      Array<{
+        id: string;
+        record_revision: number;
+        data_json: Record<string, unknown>;
+      }>
+    >(
+      `select id, record_revision, data_json
+       from public.records
+       where business_id = $1 and id = any($2::uuid[])
+       order by id`,
+      [catalogueBusiness.id, [firstRecordId, secondRecordId]],
+    );
+    expect(canonicalFileRows).toHaveLength(2);
+    expect(canonicalFileRows[0]?.record_revision).toBe(2);
+    expect(canonicalFileRows[1]?.record_revision).toBe(2);
+    expect(canonicalFileRows[0]?.data_json.photo).toMatchObject({
+      asset_id: expect.any(String),
+    });
+    expect(canonicalFileRows[1]?.data_json.photo).toMatchObject({
+      asset_id: expect.any(String),
+    });
+    const directManagedFileWrite = await owner.client
+      .from("records")
+      .update({
+        data_json: {
+          name: "Alpha item",
+          price: 2,
+          photo: { asset_id: galleryAssetId },
+        },
+      })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", firstRecordId);
+    expect(directManagedFileWrite.error?.message).toContain(
+      "site_record_file_write_boundary_required",
+    );
+    const cleanupAttempt = await rpc(admin).rpc(
+      "claim_site_media_asset_for_cleanup",
+      {
+        expected_business_id: catalogueBusiness.id,
+        requested_asset_id: siteImageAssetId,
+      },
+    );
+    expect(cleanupAttempt.error).toBeNull();
+    expect(cleanupAttempt.data).toBeNull();
 
     await applyConfiguration(
       adoptionBusiness,
@@ -828,6 +873,138 @@ describe("Lenni Sites C2 functional milestone", () => {
         requested_page_slug: "home",
       }),
     ).resolves.toBeNull();
+  });
+
+  it("keeps old releases unavailable across operational source transitions", async () => {
+    const initialState = await siteState();
+
+    const archivedRecord = await admin
+      .from("records")
+      .update({ record_status: "archived" })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", secondRecordId)
+      .select("record_status")
+      .single();
+    expect(archivedRecord.error).toBeNull();
+    expect(archivedRecord.data?.record_status).toBe("archived");
+    const recordAfterArchive = await fixtureSql.unsafe<
+      Array<{
+        status: string;
+        availability_revision: number;
+        available_from_release_revision: number;
+      }>
+    >(
+      `select status, availability_revision, available_from_release_revision
+       from public.site_public_record_availability
+       where business_id = $1 and site_id = $2 and record_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, secondRecordId],
+    );
+    expect(recordAfterArchive[0]).toMatchObject({
+      status: "withdrawn",
+      availability_revision: 1,
+      available_from_release_revision: 0,
+    });
+
+    const reactivatedRecord = await admin
+      .from("records")
+      .update({ record_status: "active" })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", secondRecordId)
+      .select("record_status")
+      .single();
+    expect(reactivatedRecord.error).toBeNull();
+    expect(reactivatedRecord.data?.record_status).toBe("active");
+    const recordAfterReactivation = await fixtureSql.unsafe<
+      Array<{
+        status: string;
+        availability_revision: number;
+        available_from_release_revision: number;
+      }>
+    >(
+      `select status, availability_revision, available_from_release_revision
+       from public.site_public_record_availability
+       where business_id = $1 and site_id = $2 and record_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, secondRecordId],
+    );
+    expect(recordAfterReactivation[0]).toMatchObject({
+      status: "withdrawn",
+      availability_revision: 2,
+    });
+    expect(
+      recordAfterReactivation[0]?.available_from_release_revision,
+    ).toBeGreaterThan(initialState.active_release_revision);
+
+    const archivedObject = await admin
+      .from("object_definitions")
+      .update({ is_active: false })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", objectDefinitionId)
+      .select("is_active")
+      .single();
+    expect(archivedObject.error).toBeNull();
+    expect(archivedObject.data?.is_active).toBe(false);
+    const reactivatedObject = await admin
+      .from("object_definitions")
+      .update({ is_active: true })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", objectDefinitionId)
+      .select("is_active")
+      .single();
+    expect(reactivatedObject.error).toBeNull();
+    expect(reactivatedObject.data?.is_active).toBe(true);
+    const objectAfterReactivation = await fixtureSql.unsafe<
+      Array<{
+        status: string;
+        availability_revision: number;
+        available_from_release_revision: number;
+      }>
+    >(
+      `select status, availability_revision, available_from_release_revision
+       from public.site_public_object_availability
+       where business_id = $1 and site_id = $2 and object_definition_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, objectDefinitionId],
+    );
+    expect(objectAfterReactivation[0]?.status).toBe("withdrawn");
+    expect(objectAfterReactivation[0]?.availability_revision).toBe(4);
+    expect(
+      objectAfterReactivation[0]?.available_from_release_revision,
+    ).toBeGreaterThan(initialState.active_release_revision);
+
+    const archivedField = await admin
+      .from("field_definitions")
+      .update({ is_active: false })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", priceFieldId)
+      .select("is_active")
+      .single();
+    expect(archivedField.error).toBeNull();
+    expect(archivedField.data?.is_active).toBe(false);
+    const reactivatedField = await admin
+      .from("field_definitions")
+      .update({ is_active: true })
+      .eq("business_id", catalogueBusiness.id)
+      .eq("id", priceFieldId)
+      .select("is_active")
+      .single();
+    expect(reactivatedField.error).toBeNull();
+    expect(reactivatedField.data?.is_active).toBe(true);
+    const fieldAfterReactivation = await fixtureSql.unsafe<
+      Array<{
+        status: string;
+        availability_revision: number;
+        available_from_release_revision: number;
+      }>
+    >(
+      `select status, availability_revision, available_from_release_revision
+       from public.site_public_field_availability
+       where business_id = $1 and site_id = $2 and field_definition_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, priceFieldId],
+    );
+    expect(fieldAfterReactivation[0]?.status).toBe("withdrawn");
+    expect(fieldAfterReactivation[0]?.availability_revision).toBe(4);
+    expect(
+      fieldAfterReactivation[0]?.available_from_release_revision,
+    ).toBeGreaterThan(initialState.active_release_revision);
   });
 
   it("stages whole-Business legacy Pages and retires old public actions after adoption", async () => {

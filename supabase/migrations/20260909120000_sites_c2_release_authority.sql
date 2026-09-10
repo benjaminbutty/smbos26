@@ -227,6 +227,42 @@ as $$
   );
 $$;
 
+-- Legacy resolution and submission share the configuration-head then Site
+-- state lock order with adoption and publication. The lock is held for the
+-- whole RPC transaction, so adoption cannot pass its authority check between
+-- a legacy check and the legacy write.
+create or replace function private.site_lock_legacy_authority_v2(
+  requested_business_slug text
+)
+returns boolean
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  requested_business_id uuid;
+  selected_state public.site_states;
+begin
+  select business.id into requested_business_id
+  from public.businesses as business
+  where business.slug = requested_business_slug;
+  if not found then return true; end if;
+
+  perform 1 from public.business_configuration_heads as head
+  where head.business_id = requested_business_id
+  for update;
+
+  select * into selected_state
+  from public.site_states as state
+  where state.business_id = requested_business_id
+  for update;
+
+  return selected_state.id is null
+    or selected_state.migration_state <> 'adopted';
+end;
+$$;
+
 create or replace function private.site_public_record_available_v2(
   target_business_id uuid,
   target_site_id uuid,
@@ -417,7 +453,7 @@ stable
 security definer
 set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then public.resolve_public_site_page(requested_business_slug, requested_page_slug)
     else public.resolve_public_page_legacy_v1(requested_business_slug, requested_page_slug)
   end;
@@ -2449,6 +2485,94 @@ create trigger records_bump_site_revision_v2
 before update on public.records
 for each row execute function private.bump_record_revision_v2();
 
+-- A managed Record image is part of the canonical Record value as well as the
+-- Site attachment index. Legacy URL/object file values remain valid, while a
+-- new managed value must be written by the narrow Site media boundary and must
+-- point at a tenant-owned, unclaimed media asset. This keeps direct table
+-- writes and generic AI Record updates from creating an untracked asset link.
+create or replace function private.validate_site_managed_record_file_v2()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  field_value public.field_definitions;
+  proposed_value jsonb;
+  previous_value jsonb;
+  managed_asset_id uuid;
+  site_file_write boolean :=
+    coalesce(pg_catalog.current_setting('smbos.site_record_file_write', true), '') = 'on';
+begin
+  if tg_op = 'UPDATE' and new.data_json is not distinct from old.data_json then
+    return new;
+  end if;
+
+  for field_value in
+    select definition.*
+    from public.field_definitions as definition
+    where definition.business_id = new.business_id
+      and definition.object_definition_id = new.object_definition_id
+      and definition.field_type = 'file'
+  loop
+    proposed_value := new.data_json -> field_value.key;
+    previous_value := case when tg_op = 'UPDATE'
+      then old.data_json -> field_value.key else null end;
+    if proposed_value is not distinct from previous_value then
+      continue;
+    end if;
+
+    if jsonb_typeof(proposed_value) = 'object'
+      and proposed_value ? 'asset_id'
+    then
+      if not private.site_json_has_only_keys_v1(proposed_value, array['asset_id'])
+        or jsonb_typeof(proposed_value -> 'asset_id') <> 'string'
+        or not (proposed_value ->> 'asset_id') ~*
+          '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      then
+        raise exception 'site_record_file_invalid' using errcode = '23514';
+      end if;
+      if not site_file_write then
+        raise exception 'site_record_file_write_boundary_required'
+          using errcode = '55000';
+      end if;
+      managed_asset_id := (proposed_value ->> 'asset_id')::uuid;
+      if not exists (
+        select 1 from public.media_assets as asset
+        where asset.business_id = new.business_id
+          and asset.id = managed_asset_id
+          and asset.cleanup_claim_token is null
+      ) then
+        raise exception 'site_record_file_asset_unavailable' using errcode = '23514';
+      end if;
+    end if;
+
+    if tg_op = 'UPDATE' and jsonb_typeof(previous_value) = 'object'
+      and previous_value ? 'asset_id'
+      and not site_file_write
+      and exists (
+        select 1 from public.site_record_media_attachments as attachment
+        where attachment.business_id = old.business_id
+      and attachment.record_id = old.id
+      and attachment.field_definition_id = field_value.id
+          and (previous_value ->> 'asset_id') ~*
+            '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          and attachment.asset_id = (previous_value ->> 'asset_id')::uuid
+      )
+    then
+      raise exception 'site_record_file_write_boundary_required'
+        using errcode = '55000';
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists records_validate_site_managed_file_v2 on public.records;
+create trigger records_validate_site_managed_file_v2
+before insert or update on public.records
+for each row execute function private.validate_site_managed_record_file_v2();
+
 create or replace function private.site_assert_record_source_v2(
   target_business_id uuid,
   target_site_id uuid,
@@ -2550,8 +2674,10 @@ declare
   record_value public.records;
   object_value public.object_definitions;
   field_value public.field_definitions;
-  asset_exists boolean;
+  selected_asset public.media_assets;
+  managed_file_value jsonb;
   existing_attachment public.site_record_media_attachments;
+  existing_attachment_found boolean;
   result public.site_record_media_attachments;
 begin
   perform private.site_assert_actor_v1(expected_business_id, expected_actor_id);
@@ -2584,21 +2710,48 @@ begin
     and object_definition_id = requested_object_definition_id
     and field_type = 'file' and is_active for share;
   if not found then raise exception 'site_file_field_invalid' using errcode = '23514'; end if;
-  select exists (
-    select 1 from public.media_assets as asset
-    where asset.business_id = expected_business_id and asset.id = requested_asset_id
-      and asset.cleanup_claim_token is null
-  ) into asset_exists;
-  if not asset_exists then raise exception 'site_asset_unavailable' using errcode = '23514'; end if;
+  -- Cleanup claims and attachment creation serialize on the asset row. The
+  -- claim worker therefore either sees this new reference or wins before it,
+  -- and an asset cannot be claimed between this check and the attachment.
+  select * into selected_asset
+  from public.media_assets as asset
+  where asset.business_id = expected_business_id and asset.id = requested_asset_id
+  for update;
+  if not found or selected_asset.cleanup_claim_token is not null then
+    raise exception 'site_asset_unavailable' using errcode = '23514';
+  end if;
   select * into existing_attachment from public.site_record_media_attachments
   where business_id = expected_business_id and site_id = requested_site_id
     and record_id = requested_record_id
     and field_definition_id = requested_field_definition_id for update;
+  existing_attachment_found := found;
   if found then
     if existing_attachment.attachment_revision <> expected_attachment_revision then
       raise exception 'site_attachment_stale' using errcode = 'P0001';
     end if;
-    if existing_attachment.asset_id = requested_asset_id then return existing_attachment; end if;
+    if existing_attachment.asset_id = requested_asset_id
+      and record_value.data_json -> field_value.key =
+        jsonb_build_object('asset_id', requested_asset_id::text)
+    then
+      insert into public.site_public_media_availability (
+        business_id, site_id, asset_id, status, changed_by
+      ) values (expected_business_id, requested_site_id, requested_asset_id, 'available', expected_actor_id)
+      on conflict (business_id, site_id, asset_id) do nothing;
+      return existing_attachment;
+    end if;
+  end if;
+
+  managed_file_value := jsonb_build_object('asset_id', requested_asset_id::text);
+  if record_value.data_json -> field_value.key is distinct from managed_file_value then
+    perform pg_catalog.set_config('smbos.site_record_file_write', 'on', true);
+    update public.records set
+      data_json = data_json || jsonb_build_object(field_value.key, managed_file_value)
+    where business_id = expected_business_id and id = requested_record_id
+    returning * into record_value;
+    perform pg_catalog.set_config('smbos.site_record_file_write', 'off', true);
+  end if;
+
+  if existing_attachment_found then
     update public.site_record_media_attachments set
       asset_id = requested_asset_id,
       record_revision = record_value.record_revision,
@@ -2647,7 +2800,9 @@ declare
   current_head public.business_configuration_heads;
   state_value public.site_states;
   record_value public.records;
+  field_value public.field_definitions;
   existing_attachment public.site_record_media_attachments;
+  managed_file_value jsonb;
   result public.site_record_media_attachments;
 begin
   perform private.site_assert_actor_v1(expected_business_id, expected_actor_id);
@@ -2661,7 +2816,7 @@ begin
     expected_business_id, requested_site_id, requested_record_id
   );
   select * into record_value from public.records
-  where business_id = expected_business_id and id = requested_record_id for share;
+  where business_id = expected_business_id and id = requested_record_id for update;
   if not found then raise exception 'site_record_not_found' using errcode = 'P0002'; end if;
   if record_value.record_revision <> expected_record_revision then
     raise exception 'site_record_stale' using errcode = 'P0001';
@@ -2673,6 +2828,22 @@ begin
   if not found then return null; end if;
   if existing_attachment.attachment_revision <> expected_attachment_revision then
     raise exception 'site_attachment_stale' using errcode = 'P0001';
+  end if;
+  select * into field_value
+  from public.field_definitions as definition
+  where definition.business_id = expected_business_id
+    and definition.id = requested_field_definition_id
+    and definition.object_definition_id = record_value.object_definition_id
+    and definition.field_type = 'file';
+  if not found then raise exception 'site_file_field_invalid' using errcode = '23514'; end if;
+  managed_file_value := jsonb_build_object('asset_id', existing_attachment.asset_id::text);
+  if record_value.data_json -> field_value.key = managed_file_value then
+    perform pg_catalog.set_config('smbos.site_record_file_write', 'on', true);
+    update public.records set
+      data_json = data_json - field_value.key
+    where business_id = expected_business_id and id = requested_record_id
+    returning * into record_value;
+    perform pg_catalog.set_config('smbos.site_record_file_write', 'off', true);
   end if;
   delete from public.site_record_media_attachments
   where business_id = expected_business_id and site_id = requested_site_id
@@ -3332,6 +3503,200 @@ grant execute on function public.withdraw_site_object(uuid, uuid, uuid, uuid, bi
   public.reenable_site_field(uuid, uuid, uuid, uuid, bigint, bigint)
   to authenticated;
 
+-- Operational Record/Object/Field deactivation is a separate source authority
+-- from the explicit Site withdrawal RPCs. A source transition withdraws every
+-- referenced Site immediately. Re-activation preserves withdrawal and moves
+-- the availability epoch beyond the current release, so an old release can
+-- never become visible again without an explicit reviewed Site re-enable and a
+-- fresh publication.
+create or replace function private.site_mark_source_transition_v2()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  source_kind text;
+  target_business_id uuid;
+  source_id uuid;
+  was_active boolean;
+  is_active boolean;
+  site_value record;
+  actor_id uuid;
+begin
+  if tg_op <> 'UPDATE' then return new; end if;
+
+  source_kind := case tg_table_name
+    when 'records' then 'record'
+    when 'object_definitions' then 'object'
+    when 'field_definitions' then 'field'
+    else null
+  end;
+  if source_kind is null then return new; end if;
+  target_business_id := coalesce(new.business_id, old.business_id);
+  source_id := coalesce(new.id, old.id);
+  if source_kind = 'record' then
+    was_active := old.record_status = 'active';
+    is_active := new.record_status = 'active';
+  else
+    was_active := old.is_active;
+    is_active := new.is_active;
+  end if;
+  if was_active = is_active then return new; end if;
+
+  for site_value in
+    select state.id, state.active_release_revision, state.created_by,
+      state.draft_json
+    from public.site_states as state
+    where state.business_id = target_business_id
+      and (
+        (source_kind = 'record' and (
+          exists (
+            select 1 from public.site_release_record_references as reference
+            where reference.business_id = target_business_id
+              and reference.record_id = source_id
+          )
+          or exists (
+            select 1
+            from private.site_draft_blocks_v1(state.draft_json) as block_value
+            where block_value.block ->> 'type' = 'collection'
+              and exists (
+                select 1
+                from private.site_collection_record_ids_v2(
+                  target_business_id, block_value.block
+                ) as selected_record
+                where selected_record.record_id = source_id
+              )
+          )
+          or exists (
+            select 1 from public.site_record_media_attachments as attachment
+            where attachment.business_id = target_business_id
+              and attachment.site_id = state.id
+              and attachment.record_id = source_id
+          )
+        ))
+        or (source_kind = 'object' and (
+          exists (
+            select 1 from public.site_release_collection_references as reference
+            where reference.business_id = target_business_id
+              and reference.object_definition_id = source_id
+          )
+          or exists (
+            select 1
+            from private.site_draft_blocks_v1(state.draft_json) as block_value
+            where block_value.block ->> 'type' = 'collection'
+              and block_value.block ->> 'object_key' = (
+                select definition.key
+                from public.object_definitions as definition
+                where definition.business_id = target_business_id
+                  and definition.id = source_id
+              )
+          )
+        ))
+        or (source_kind = 'field' and (
+          exists (
+            select 1 from public.site_release_collection_references as reference
+            where reference.business_id = target_business_id
+              and reference.field_definition_id = source_id
+          )
+          or exists (
+            select 1
+            from private.site_draft_blocks_v1(state.draft_json) as block_value
+            where block_value.block ->> 'type' = 'collection'
+              and exists (
+                select 1
+                from jsonb_array_elements(block_value.block -> 'public_field_keys') as field_key
+                where field_key #>> '{}' = (
+                  select definition.key
+                  from public.field_definitions as definition
+                  where definition.business_id = target_business_id
+                    and definition.id = source_id
+                )
+              )
+          )
+        ))
+      )
+  loop
+    actor_id := coalesce(auth.uid(), site_value.created_by);
+    if source_kind = 'record' then
+      insert into public.site_public_record_availability (
+        business_id, site_id, record_id, status,
+        available_from_release_revision, changed_by
+      ) values (
+        target_business_id, site_value.id, source_id,
+        case when is_active then 'available' else 'withdrawn' end,
+        case when is_active then site_value.active_release_revision + 1 else 0 end,
+        actor_id
+      ) on conflict (business_id, site_id, record_id) do update set
+        status = case when not is_active then 'withdrawn'
+          else site_public_record_availability.status end,
+        availability_revision = site_public_record_availability.availability_revision + 1,
+        available_from_release_revision = case when is_active
+          then greatest(
+            site_public_record_availability.available_from_release_revision,
+            excluded.available_from_release_revision
+          ) else 0 end,
+        changed_by = excluded.changed_by,
+        changed_at = timezone('utc', now());
+    elsif source_kind = 'object' then
+      insert into public.site_public_object_availability (
+        business_id, site_id, object_definition_id, status,
+        available_from_release_revision, changed_by
+      ) values (
+        target_business_id, site_value.id, source_id,
+        case when is_active then 'available' else 'withdrawn' end,
+        case when is_active then site_value.active_release_revision + 1 else 0 end,
+        actor_id
+      ) on conflict (business_id, site_id, object_definition_id) do update set
+        status = case when not is_active then 'withdrawn'
+          else site_public_object_availability.status end,
+        availability_revision = site_public_object_availability.availability_revision + 1,
+        available_from_release_revision = case when is_active
+          then greatest(
+            site_public_object_availability.available_from_release_revision,
+            excluded.available_from_release_revision
+          ) else 0 end,
+        changed_by = excluded.changed_by,
+        changed_at = timezone('utc', now());
+    else
+      insert into public.site_public_field_availability (
+        business_id, site_id, field_definition_id, status,
+        available_from_release_revision, changed_by
+      ) values (
+        target_business_id, site_value.id, source_id,
+        case when is_active then 'available' else 'withdrawn' end,
+        case when is_active then site_value.active_release_revision + 1 else 0 end,
+        actor_id
+      ) on conflict (business_id, site_id, field_definition_id) do update set
+        status = case when not is_active then 'withdrawn'
+          else site_public_field_availability.status end,
+        availability_revision = site_public_field_availability.availability_revision + 1,
+        available_from_release_revision = case when is_active
+          then greatest(
+            site_public_field_availability.available_from_release_revision,
+            excluded.available_from_release_revision
+          ) else 0 end,
+        changed_by = excluded.changed_by,
+        changed_at = timezone('utc', now());
+    end if;
+  end loop;
+  return new;
+end;
+$$;
+
+drop trigger if exists records_site_source_transition_v2 on public.records;
+create trigger records_site_source_transition_v2
+after update of record_status on public.records
+for each row execute function private.site_mark_source_transition_v2();
+drop trigger if exists objects_site_source_transition_v2 on public.object_definitions;
+create trigger objects_site_source_transition_v2
+after update of is_active on public.object_definitions
+for each row execute function private.site_mark_source_transition_v2();
+drop trigger if exists fields_site_source_transition_v2 on public.field_definitions;
+create trigger fields_site_source_transition_v2
+after update of is_active on public.field_definitions
+for each row execute function private.site_mark_source_transition_v2();
+
 create or replace function private.site_public_media_available_v2(
   target_business_id uuid,
   target_site_id uuid,
@@ -3751,7 +4116,7 @@ create function public.resolve_public_form(
 returns jsonb
 language sql stable security definer set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then null::jsonb
     else public.resolve_public_form_legacy_v1(
       requested_business_slug, requested_page_slug, requested_form_key
@@ -3772,7 +4137,7 @@ create function public.submit_public_create_form(
 returns jsonb
 language sql volatile security definer set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then jsonb_build_object('ok', false, 'code', 'legacy_public_actions_retired')
     else public.submit_public_create_form_legacy_v1(
       requested_business_slug, requested_page_slug, requested_form_key,
@@ -3791,7 +4156,7 @@ create function public.resolve_public_booking(
 returns jsonb
 language sql stable security definer set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then null::jsonb
     else public.resolve_public_booking_legacy_v1(
       requested_business_slug, requested_page_slug, requested_booking_key
@@ -3812,7 +4177,7 @@ create function public.submit_public_booking(
 returns jsonb
 language sql volatile security definer set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then jsonb_build_object('ok', false, 'code', 'legacy_public_actions_retired')
     else public.submit_public_booking_legacy_v1(
       requested_business_slug, requested_page_slug, requested_booking_key,
@@ -3831,7 +4196,7 @@ create function public.resolve_public_preorder(
 returns jsonb
 language sql stable security definer set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then null::jsonb
     else public.resolve_public_preorder_legacy_v1(
       requested_business_slug, requested_page_slug, requested_preorder_key
@@ -3851,7 +4216,7 @@ create function public.submit_public_preorder(
 returns jsonb
 language sql volatile security definer set search_path = ''
 as $$
-  select case when not private.site_legacy_public_allowed_v2(requested_business_slug)
+  select case when not private.site_lock_legacy_authority_v2(requested_business_slug)
     then jsonb_build_object('ok', false, 'code', 'legacy_public_actions_retired')
     else public.submit_public_preorder_legacy_v1(
       requested_business_slug, requested_page_slug, requested_preorder_key,
@@ -4107,6 +4472,17 @@ begin
     where business_id = expected_business_id and asset_id = requested_asset_id
   ) or exists (
     select 1
+    from public.records as record_value
+    join public.field_definitions as field_value
+      on field_value.business_id = record_value.business_id
+      and field_value.object_definition_id = record_value.object_definition_id
+      and field_value.field_type = 'file'
+    where record_value.business_id = expected_business_id
+      and jsonb_typeof(record_value.data_json -> field_value.key) = 'object'
+      and (record_value.data_json -> field_value.key) ? 'asset_id'
+      and (record_value.data_json -> field_value.key ->> 'asset_id') = requested_asset_id::text
+  ) or exists (
+    select 1
     from public.configuration_versions as version_value
     cross join lateral jsonb_array_elements(version_value.snapshot_json -> 'pages') as page_value(value)
     cross join lateral private.page_blocks_v2(page_value.value -> 'layout_json') as block_value(value)
@@ -4157,6 +4533,17 @@ begin
   ) or exists (
     select 1 from public.site_record_media_attachments
     where business_id = expected_business_id and asset_id = requested_asset_id
+  ) or exists (
+    select 1
+    from public.records as record_value
+    join public.field_definitions as field_value
+      on field_value.business_id = record_value.business_id
+      and field_value.object_definition_id = record_value.object_definition_id
+      and field_value.field_type = 'file'
+    where record_value.business_id = expected_business_id
+      and jsonb_typeof(record_value.data_json -> field_value.key) = 'object'
+      and (record_value.data_json -> field_value.key) ? 'asset_id'
+      and (record_value.data_json -> field_value.key ->> 'asset_id') = requested_asset_id::text
   ) or exists (
     select 1
     from public.configuration_versions as version_value
