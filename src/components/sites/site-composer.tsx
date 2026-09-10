@@ -197,7 +197,7 @@ export function SiteComposer({
   const [draft, setDraft] = useState<SiteDraftV1>(() =>
     copyDraft(initialDraft),
   );
-  const [, setRevision] = useState(draftRevision);
+  const [revision, setRevision] = useState(draftRevision);
   const [undoStack, setUndoStack] = useState<SiteDraftV1[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [attachmentRevisions, setAttachmentRevisions] = useState<
@@ -211,6 +211,7 @@ export function SiteComposer({
   const autosaveQueue = useRef(Promise.resolve());
   const autosaveTimer = useRef<number | null>(null);
   const explicitSavePending = useRef(false);
+  const revisionInput = useRef<HTMLInputElement | null>(null);
 
   const cancelAutosaveTimer = useCallback(() => {
     if (autosaveTimer.current === null) return;
@@ -296,6 +297,9 @@ export function SiteComposer({
     if (!form.isConnected) {
       explicitSavePending.current = false;
       return;
+    }
+    if (revisionInput.current) {
+      revisionInput.current.value = String(revisionRef.current);
     }
     form.requestSubmit();
   }
@@ -876,8 +880,9 @@ export function SiteComposer({
             <input name="siteId" type="hidden" value={siteId} />
             <input
               name="expectedDraftRevision"
+              ref={revisionInput}
               type="hidden"
-              value={revisionRef.current}
+              value={revision}
             />
             <input name="draft" type="hidden" value={JSON.stringify(draft)} />
             <button type="submit">Save draft</button>
