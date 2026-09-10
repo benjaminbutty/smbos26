@@ -623,11 +623,12 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.goto(`/app/${business.slug}/sites`);
   const draftHome = page.locator(".site-composer-page").first();
   await addSiteBlock(page, "Add heading");
-  const incompleteHeadingCard = draftHome.getByRole("button", {
-    name: "Heading",
-    exact: true,
-  });
-  await expect(incompleteHeadingCard).toHaveCount(1);
+  const incompleteHeadingCard = draftHome
+    .locator(".site-composer-canvas-block")
+    .last();
+  await expect(
+    incompleteHeadingCard.locator(".site-composer-canvas-block-type"),
+  ).toHaveText("Heading");
   await incompleteHeadingCard.click();
   const incompleteHeading = draftHome
     .locator(".site-composer-inspector .site-composer-block")
@@ -643,11 +644,12 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await autosave;
   await page.reload();
   const reloadedHome = page.locator(".site-composer-page").first();
-  const reloadedIncompleteHeading = reloadedHome.getByRole("button", {
-    name: "Heading",
-    exact: true,
-  });
-  await expect(reloadedIncompleteHeading).toHaveCount(1);
+  const reloadedIncompleteHeading = reloadedHome
+    .locator(".site-composer-canvas-block")
+    .last();
+  await expect(
+    reloadedIncompleteHeading.locator(".site-composer-canvas-block-type"),
+  ).toHaveText("Heading");
   await reloadedIncompleteHeading.click();
   await expect(
     reloadedHome
@@ -669,21 +671,16 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=rebased$`),
   );
+  const rebasedHome = page.locator(".site-composer-page").first();
+  const rebasedIncompleteHeading = rebasedHome
+    .locator(".site-composer-canvas-block")
+    .last();
   await expect(
-    page
-      .locator(".site-composer-page")
-      .first()
-      .getByRole("button", { name: "Heading", exact: true }),
-  ).toHaveCount(1);
-  await page
-    .locator(".site-composer-page")
-    .first()
-    .getByRole("button", { name: "Heading", exact: true })
-    .click();
+    rebasedIncompleteHeading.locator(".site-composer-canvas-block-type"),
+  ).toHaveText("Heading");
+  await rebasedIncompleteHeading.click();
   await expect(
-    page
-      .locator(".site-composer-page")
-      .first()
+    rebasedHome
       .locator(".site-composer-inspector .site-composer-block")
       .getByRole("textbox")
       .first(),
