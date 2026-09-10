@@ -637,7 +637,7 @@ describe("Lenni Sites C2 functional milestone", () => {
     expect(collection.records?.[0]?.values).toMatchObject({
       name: expect.any(String),
       price: expect.any(Number),
-      photo: { token: expect.stringMatching(/^m_[a-f0-9]{64}$/) },
+      photo: expect.stringMatching(/^m_[a-f0-9]{64}$/),
     });
     expect(numericCollection.records).toHaveLength(1);
     expect(numericCollection.records?.[0]?.values).toMatchObject({
@@ -1013,21 +1013,51 @@ describe("Lenni Sites C2 functional milestone", () => {
       Number(recordAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
 
-    const archivedObject = await admin
+    await applyConfiguration(
+      catalogueBusiness,
+      owner,
+      [
+        {
+          op: "set_object",
+          key: "catalogue_item",
+          singular_label: "Catalogue item",
+          plural_label: "Catalogue items",
+          description: "A customer-facing catalogue item.",
+          icon: null,
+          is_active: false,
+        },
+      ],
+      "Withdraw catalogue object",
+    );
+    const archivedObject = await owner.client
       .from("object_definitions")
-      .update({ is_active: false })
+      .select("is_active")
       .eq("business_id", catalogueBusiness.id)
       .eq("id", objectDefinitionId)
-      .select("is_active")
       .single();
     expect(archivedObject.error).toBeNull();
     expect(archivedObject.data?.is_active).toBe(false);
-    const reactivatedObject = await admin
+    await applyConfiguration(
+      catalogueBusiness,
+      owner,
+      [
+        {
+          op: "set_object",
+          key: "catalogue_item",
+          singular_label: "Catalogue item",
+          plural_label: "Catalogue items",
+          description: "A customer-facing catalogue item.",
+          icon: null,
+          is_active: true,
+        },
+      ],
+      "Restore catalogue object",
+    );
+    const reactivatedObject = await owner.client
       .from("object_definitions")
-      .update({ is_active: true })
+      .select("is_active")
       .eq("business_id", catalogueBusiness.id)
       .eq("id", objectDefinitionId)
-      .select("is_active")
       .single();
     expect(reactivatedObject.error).toBeNull();
     expect(reactivatedObject.data?.is_active).toBe(true);
@@ -1049,21 +1079,57 @@ describe("Lenni Sites C2 functional milestone", () => {
       Number(objectAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
 
-    const archivedField = await admin
+    await applyConfiguration(
+      catalogueBusiness,
+      owner,
+      [
+        {
+          op: "set_field",
+          object_key: "catalogue_item",
+          key: "price",
+          label: "Price",
+          field_type: "number",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: 1,
+          is_active: false,
+        },
+      ],
+      "Withdraw catalogue price field",
+    );
+    const archivedField = await owner.client
       .from("field_definitions")
-      .update({ is_active: false })
+      .select("is_active")
       .eq("business_id", catalogueBusiness.id)
       .eq("id", priceFieldId)
-      .select("is_active")
       .single();
     expect(archivedField.error).toBeNull();
     expect(archivedField.data?.is_active).toBe(false);
-    const reactivatedField = await admin
+    await applyConfiguration(
+      catalogueBusiness,
+      owner,
+      [
+        {
+          op: "set_field",
+          object_key: "catalogue_item",
+          key: "price",
+          label: "Price",
+          field_type: "number",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: 1,
+          is_active: true,
+        },
+      ],
+      "Restore catalogue price field",
+    );
+    const reactivatedField = await owner.client
       .from("field_definitions")
-      .update({ is_active: true })
+      .select("is_active")
       .eq("business_id", catalogueBusiness.id)
       .eq("id", priceFieldId)
-      .select("is_active")
       .single();
     expect(reactivatedField.error).toBeNull();
     expect(reactivatedField.data?.is_active).toBe(true);
