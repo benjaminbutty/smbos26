@@ -666,10 +666,9 @@ describe("Lenni Sites C2 functional milestone", () => {
     );
     expect(releaseCollectionReferences).toHaveLength(5);
     expect(
-      new Set(
-        releaseCollectionReferences.map((row) => row.collection_block_id),
-      ),
-    ).toHaveLength(2);
+      new Set(releaseCollectionReferences.map((row) => row.collection_block_id))
+        .size,
+    ).toBe(2);
     expect(
       releaseCollectionReferences.every(
         (row) =>
