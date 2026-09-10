@@ -78,6 +78,24 @@ async function removeFixture(
   const failures: string[] = [];
 
   if (businessId) {
+    const sitesAdmin = admin as unknown as {
+      from(table: "site_states"): {
+        delete(): {
+          eq(
+            column: "business_id",
+            value: string,
+          ): Promise<{ error: { code?: string } | null }>;
+        };
+      };
+    };
+    const siteCleanup = await sitesAdmin
+      .from("site_states")
+      .delete()
+      .eq("business_id", businessId);
+    if (siteCleanup.error)
+      failures.push(
+        `Site cleanup failed (${siteCleanup.error.code ?? "unknown"})`,
+      );
     const { error } = await admin
       .from("businesses")
       .delete()

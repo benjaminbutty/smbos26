@@ -449,7 +449,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     page.getByRole("heading", { name: secondPageTitle }),
   ).toBeVisible();
   await expect(
-    page.getByText("Write something useful.", { exact: true }),
+    page.getByText("Write something useful.", { exact: true }).first(),
   ).toBeVisible();
   await expect(
     page.getByText("Wedding catering", { exact: true }),
