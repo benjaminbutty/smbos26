@@ -797,7 +797,7 @@ create or replace function private.site_collection_record_ids_v2(
   target_business_id uuid,
   block jsonb
 )
-returns table (record_id uuid, position integer)
+returns table (record_id uuid, sort_position integer)
 language plpgsql
 stable
 set search_path = ''
@@ -847,7 +847,7 @@ begin
       if found then
         next_position := next_position + 1;
         record_id := record_value.id;
-        position := next_position;
+        sort_position := next_position;
         return next;
       end if;
     end loop;
@@ -955,7 +955,7 @@ begin
     if filter_match then
       next_position := next_position + 1;
       record_id := record_value.id;
-      position := next_position;
+      sort_position := next_position;
       return next;
     end if;
   end loop;
@@ -1842,7 +1842,7 @@ begin
     from jsonb_array_elements(block -> 'public_field_keys') with ordinality;
     for selected_record in select * from private.site_collection_record_ids_v2(
       target_business_id, block
-    ) order by position loop
+    ) order by sort_position loop
       records_projection := records_projection || jsonb_build_array(
         jsonb_build_object(
           'public_id', private.site_public_record_token_v2(
