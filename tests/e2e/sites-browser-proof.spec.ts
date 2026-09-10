@@ -116,9 +116,9 @@ async function selectCollectionRecordType(
 }
 
 function collectionBlocks(page: Locator): Locator {
-  return page
-    .locator(".site-composer-block")
-    .filter({ has: page.getByLabel("Record type") });
+  return page.locator(
+    ".site-composer-block:has(> .site-composer-collection-fields select)",
+  );
 }
 
 async function configureCollection(
