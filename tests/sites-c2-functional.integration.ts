@@ -980,11 +980,11 @@ describe("Lenni Sites C2 functional milestone", () => {
        where business_id = $1 and site_id = $2 and record_id = $3`,
       [catalogueBusiness.id, catalogueSiteId, secondRecordId],
     );
-    expect(recordAfterArchive[0]).toMatchObject({
-      status: "withdrawn",
-      availability_revision: 1,
-      available_from_release_revision: 0,
-    });
+    expect(recordAfterArchive[0]?.status).toBe("withdrawn");
+    expect(Number(recordAfterArchive[0]?.availability_revision)).toBe(1);
+    expect(Number(recordAfterArchive[0]?.available_from_release_revision)).toBe(
+      0,
+    );
 
     const reactivatedRecord = await admin
       .from("records")
@@ -1007,12 +1007,10 @@ describe("Lenni Sites C2 functional milestone", () => {
        where business_id = $1 and site_id = $2 and record_id = $3`,
       [catalogueBusiness.id, catalogueSiteId, secondRecordId],
     );
-    expect(recordAfterReactivation[0]).toMatchObject({
-      status: "withdrawn",
-      availability_revision: 2,
-    });
+    expect(recordAfterReactivation[0]?.status).toBe("withdrawn");
+    expect(Number(recordAfterReactivation[0]?.availability_revision)).toBe(2);
     expect(
-      recordAfterReactivation[0]?.available_from_release_revision,
+      Number(recordAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
 
     const archivedObject = await admin
@@ -1046,9 +1044,9 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, catalogueSiteId, objectDefinitionId],
     );
     expect(objectAfterReactivation[0]?.status).toBe("withdrawn");
-    expect(objectAfterReactivation[0]?.availability_revision).toBe(4);
+    expect(Number(objectAfterReactivation[0]?.availability_revision)).toBe(4);
     expect(
-      objectAfterReactivation[0]?.available_from_release_revision,
+      Number(objectAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
 
     const archivedField = await admin
@@ -1082,9 +1080,9 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, catalogueSiteId, priceFieldId],
     );
     expect(fieldAfterReactivation[0]?.status).toBe("withdrawn");
-    expect(fieldAfterReactivation[0]?.availability_revision).toBe(4);
+    expect(Number(fieldAfterReactivation[0]?.availability_revision)).toBe(4);
     expect(
-      fieldAfterReactivation[0]?.available_from_release_revision,
+      Number(fieldAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
   });
 

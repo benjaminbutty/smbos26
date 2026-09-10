@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SiteDraftV1 } from "../../core/sites/schemas";
 
@@ -210,15 +210,10 @@ export function SiteComposer({
   const revisionRef = useRef(draftRevision);
   const autosaveQueue = useRef(Promise.resolve());
 
-  useEffect(() => {
-    if (!autosaveReady.current) {
-      autosaveReady.current = true;
-      return;
-    }
-    const draftToSave = copyDraft(draft);
-    const timeout = window.setTimeout(() => {
-      autosaveQueue.current = autosaveQueue.current
-        .then(async () => {
+  const queueDraftSave = useCallback(
+    (draftToSave: SiteDraftV1, failureMessage: string): Promise<boolean> => {
+      const queued = autosaveQueue.current.then(async () => {
+        try {
           const response = await fetch(
             `/api/app/${encodeURIComponent(businessSlug)}/sites/draft`,
             {
@@ -235,9 +230,9 @@ export function SiteComposer({
             setMessage(
               response.status === 409
                 ? "This draft changed elsewhere. Reload before continuing."
-                : "Draft autosave failed. Use Save draft to try again.",
+                : failureMessage,
             );
-            return;
+            return false;
           }
           const result: unknown = await response.json().catch(() => null);
           const nextRevision = asRecord(result).draftRevision;
@@ -245,13 +240,35 @@ export function SiteComposer({
             revisionRef.current = nextRevision;
             setRevision(nextRevision);
           }
-        })
-        .catch(() => {
-          setMessage("Draft autosave failed. Use Save draft to try again.");
-        });
+          return true;
+        } catch {
+          setMessage(failureMessage);
+          return false;
+        }
+      });
+      autosaveQueue.current = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
+    },
+    [businessSlug, siteId],
+  );
+
+  useEffect(() => {
+    if (!autosaveReady.current) {
+      autosaveReady.current = true;
+      return;
+    }
+    const draftToSave = copyDraft(draft);
+    const timeout = window.setTimeout(() => {
+      void queueDraftSave(
+        draftToSave,
+        "Draft autosave failed. Use Save draft to try again.",
+      );
     }, 900);
     return () => window.clearTimeout(timeout);
-  }, [businessSlug, draft, siteId]);
+  }, [businessSlug, draft, queueDraftSave, siteId]);
 
   function commit(next: SiteDraftV1): void {
     setUndoStack((previous) => [...previous.slice(-19), copyDraft(draft)]);
@@ -737,6 +754,15 @@ export function SiteComposer({
   ): Promise<void> {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
+    setMessage("Saving the Site draft before attaching the Record image…");
+    if (
+      !(await queueDraftSave(
+        copyDraft(draft),
+        "The Site draft could not be saved before attaching the Record image.",
+      ))
+    ) {
+      return;
+    }
     setMessage(`Uploading ${field.key} for ${record.label}…`);
     const assetId = await uploadManagedAsset(file);
     if (!assetId) {
