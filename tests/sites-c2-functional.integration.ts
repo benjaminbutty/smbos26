@@ -655,6 +655,34 @@ describe("Lenni Sites C2 functional milestone", () => {
     expect(published.status).toBe("published");
     let state = await siteState();
     expect(state.migration_state).toBe("adopted");
+    const releaseCollectionReferences = await fixtureSql.unsafe<
+      Array<{ collection_block_id: string; public_key: string }>
+    >(
+      `select collection_block_id, public_key
+       from public.site_release_collection_references
+       where business_id = $1 and release_id = $2
+       order by collection_block_id, field_definition_id`,
+      [catalogueBusiness.id, published.id],
+    );
+    expect(releaseCollectionReferences).toHaveLength(5);
+    expect(
+      new Set(
+        releaseCollectionReferences.map((row) => row.collection_block_id),
+      ),
+    ).toHaveLength(2);
+    expect(
+      releaseCollectionReferences.every(
+        (row) =>
+          row.public_key.startsWith("b_") && row.public_key.length === 66,
+      ),
+    ).toBe(true);
+    const initialObjectAvailability = await fixtureSql.unsafe(
+      `select status, availability_revision, available_from_release_revision
+       from public.site_public_object_availability
+       where business_id = $1 and site_id = $2 and object_definition_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, objectDefinitionId],
+    );
+    expect(initialObjectAvailability).toHaveLength(0);
     const resolved = await callRpc<Record<string, unknown>>(
       anonymous,
       "resolve_public_page",
@@ -675,9 +703,11 @@ describe("Lenni Sites C2 functional milestone", () => {
         >
       ).blocks as Array<Record<string, unknown>>
     ).find((block) => block.type === "collection");
-    const token = (
-      resolvedCollection?.records as Array<Record<string, unknown>>
-    )[0]?.public_id as string;
+    expect(resolvedCollection, JSON.stringify(resolved)).toBeDefined();
+    const resolvedRecords = resolvedCollection?.records;
+    expect(resolvedRecords, JSON.stringify(resolved)).toBeDefined();
+    const token = (resolvedRecords as Array<Record<string, unknown>>)[0]
+      ?.public_id as string;
     expect(token).toMatch(/^r_[a-f0-9]{64}$/);
     const detail = await callRpc<Record<string, unknown>>(
       anonymous,
@@ -1074,7 +1104,7 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, catalogueSiteId, objectDefinitionId],
     );
     expect(objectAfterReactivation[0]?.status).toBe("withdrawn");
-    expect(Number(objectAfterReactivation[0]?.availability_revision)).toBe(4);
+    expect(Number(objectAfterReactivation[0]?.availability_revision)).toBe(2);
     expect(
       Number(objectAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
@@ -1146,7 +1176,7 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, catalogueSiteId, priceFieldId],
     );
     expect(fieldAfterReactivation[0]?.status).toBe("withdrawn");
-    expect(Number(fieldAfterReactivation[0]?.availability_revision)).toBe(4);
+    expect(Number(fieldAfterReactivation[0]?.availability_revision)).toBe(2);
     expect(
       Number(fieldAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
@@ -1178,6 +1208,23 @@ describe("Lenni Sites C2 functional milestone", () => {
     expect(initial.migration_state).toBe("legacy_pending");
     expect(initial.legacy_source_checksum).toMatch(/^[a-f0-9]{64}$/);
     expect(initial.legacy_source_page_count).toBe(1);
+    for (const invalidCas of [
+      { expected_draft_revision: null },
+      { expected_base_version_id: null },
+      { expected_head_revision: null },
+    ]) {
+      const rejected = await rpc(owner.client).rpc("stage_site_adoption", {
+        expected_business_id: adoptionBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: initial.id,
+        expected_draft_revision: initial.draft_revision,
+        expected_base_version_id: initial.draft_base_version_id,
+        expected_head_revision: initial.draft_base_head_revision,
+        ...invalidCas,
+      });
+      expect(rejected.data).toBeNull();
+      expect(rejected.error?.message).toContain("site_request_invalid");
+    }
     const staged = await stageSiteAdoption(
       owner.client,
       context(adoptionBusiness),
@@ -1205,6 +1252,42 @@ describe("Lenni Sites C2 functional milestone", () => {
     expect(bindingRows[0]?.canonical_page_key).toMatch(
       /^s[0-9a-f]+_p[0-9a-f]+$/,
     );
+    const adoptionSourceCheck = await fixtureSql.unsafe<
+      Array<{
+        state_checksum: string;
+        current_checksum: string;
+        unchanged: boolean;
+        binding_checksum: string;
+        page_checksum: string;
+      }>
+    >(
+      `select
+         state.legacy_source_checksum as state_checksum,
+         private.site_legacy_source_fingerprint_v2($1) as current_checksum,
+         private.site_legacy_source_is_unchanged_v2(
+           $1, $2, state.legacy_source_checksum
+         ) as unchanged,
+         binding.legacy_source_checksum as binding_checksum,
+         encode(extensions.digest(
+           convert_to(to_jsonb(page_value)::text, 'UTF8'), 'sha256'
+         ), 'hex') as page_checksum
+       from public.site_states as state
+       join public.site_page_bindings as binding
+         on binding.business_id = state.business_id
+         and binding.site_id = state.id
+         and binding.legacy_source_page_id is not null
+       join public.pages as page_value
+         on page_value.business_id = binding.business_id
+         and page_value.id = binding.legacy_source_page_id
+       where state.business_id = $1 and state.id = $2`,
+      [adoptionBusiness.id, initial.id],
+    );
+    expect(adoptionSourceCheck).toHaveLength(1);
+    expect(adoptionSourceCheck[0]).toMatchObject({
+      unchanged: true,
+      state_checksum: adoptionSourceCheck[0]?.current_checksum,
+      binding_checksum: adoptionSourceCheck[0]?.page_checksum,
+    });
 
     const candidate = await prepareSiteReleaseV2(
       owner.client,
