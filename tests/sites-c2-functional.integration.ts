@@ -519,8 +519,8 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, [firstRecordId, secondRecordId]],
     );
     expect(canonicalFileRows).toHaveLength(2);
-    expect(canonicalFileRows[0]?.record_revision).toBe(2);
-    expect(canonicalFileRows[1]?.record_revision).toBe(2);
+    expect(Number(canonicalFileRows[0]?.record_revision)).toBe(2);
+    expect(Number(canonicalFileRows[1]?.record_revision)).toBe(2);
     expect(canonicalFileRows[0]?.data_json.photo).toMatchObject({
       asset_id: expect.any(String),
     });
