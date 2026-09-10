@@ -1000,6 +1000,32 @@ describe("Lenni Sites C2 functional milestone", () => {
   it("keeps old releases unavailable across operational source transitions", async () => {
     const initialState = await siteState();
 
+    const objectBeforeConfiguration = await fixtureSql.unsafe<
+      Array<{ status: string; availability_revision: number }>
+    >(
+      `select status, availability_revision
+       from public.site_public_object_availability
+       where business_id = $1 and site_id = $2 and object_definition_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, objectDefinitionId],
+    );
+    expect(objectBeforeConfiguration[0]?.status).toBe("available");
+    const objectRevisionBeforeConfiguration = Number(
+      objectBeforeConfiguration[0]?.availability_revision,
+    );
+
+    const fieldBeforeConfiguration = await fixtureSql.unsafe<
+      Array<{ status: string; availability_revision: number }>
+    >(
+      `select status, availability_revision
+       from public.site_public_field_availability
+       where business_id = $1 and site_id = $2 and field_definition_id = $3`,
+      [catalogueBusiness.id, catalogueSiteId, priceFieldId],
+    );
+    expect(fieldBeforeConfiguration[0]?.status).toBe("available");
+    const fieldRevisionBeforeConfiguration = Number(
+      fieldBeforeConfiguration[0]?.availability_revision,
+    );
+
     const archivedRecord = await admin
       .from("records")
       .update({ record_status: "archived" })
@@ -1115,7 +1141,9 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, catalogueSiteId, objectDefinitionId],
     );
     expect(objectAfterReactivation[0]?.status).toBe("withdrawn");
-    expect(Number(objectAfterReactivation[0]?.availability_revision)).toBe(2);
+    expect(Number(objectAfterReactivation[0]?.availability_revision)).toBe(
+      objectRevisionBeforeConfiguration + 2,
+    );
     expect(
       Number(objectAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
@@ -1187,7 +1215,9 @@ describe("Lenni Sites C2 functional milestone", () => {
       [catalogueBusiness.id, catalogueSiteId, priceFieldId],
     );
     expect(fieldAfterReactivation[0]?.status).toBe("withdrawn");
-    expect(Number(fieldAfterReactivation[0]?.availability_revision)).toBe(2);
+    expect(Number(fieldAfterReactivation[0]?.availability_revision)).toBe(
+      fieldRevisionBeforeConfiguration + 2,
+    );
     expect(
       Number(fieldAfterReactivation[0]?.available_from_release_revision),
     ).toBeGreaterThan(initialState.active_release_revision);
