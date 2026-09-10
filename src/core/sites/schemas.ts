@@ -676,6 +676,175 @@ export const siteReleaseReviewSchema = z
     }
   });
 
+/**
+ * Anonymous Site delivery has its own schema. It intentionally accepts only
+ * opaque keys and the bounded presentation tree; private draft identities,
+ * Record UUIDs and storage keys never cross this parser boundary.
+ */
+const sitePublicTokenSchema = z.string().regex(/^[rm]_([a-f0-9]{64})$/);
+
+const sitePublicRecordSchema = z
+  .object({
+    public_id: z.string().regex(/^r_[a-f0-9]{64}$/),
+    values: jsonObjectSchema,
+  })
+  .strict();
+
+const sitePublicImageSchema = z
+  .object({
+    media_token: z.string().regex(/^m_[a-f0-9]{64}$/),
+  })
+  .passthrough();
+
+const privatePublicProjectionKeys = new Set([
+  "id",
+  "asset_id",
+  "object_key",
+  "selection",
+  "public_field_keys",
+  "detail_page_id",
+  "collection_block_id",
+  "form_key",
+  "booking_key",
+  "preorder_key",
+  "view_key",
+  "src",
+  "storage_key",
+  "business_id",
+  "record_id",
+  "draft_state",
+  "legacy_source_page_id",
+  "legacy_source_checksum",
+]);
+
+function findPrivateProjectionKey(
+  value: unknown,
+  path: readonly string[] = [],
+): string | null {
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const result = findPrivateProjectionKey(item, [...path, String(index)]);
+      if (result) return result;
+    }
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  for (const [key, nested] of Object.entries(value)) {
+    if (privatePublicProjectionKeys.has(key)) {
+      return [...path, key].join(".");
+    }
+    // Record values are user-defined public field keys. They may legitimately
+    // be named `id`, so their contents are bounded by jsonObjectSchema rather
+    // than treated as projection metadata.
+    if (key === "values") continue;
+    const result = findPrivateProjectionKey(nested, [...path, key]);
+    if (result) return result;
+  }
+  return null;
+}
+
+const sitePublicBlockSchema: z.ZodType<unknown> = z.lazy(() =>
+  z
+    .object({
+      type: z.enum([
+        "heading",
+        "text",
+        "image",
+        "gallery",
+        "button",
+        "callout",
+        "divider",
+        "collapsible",
+        "section",
+        "collection",
+        "record_detail",
+      ]),
+      public_key: z
+        .string()
+        .regex(/^b_[a-f0-9]{64}$/)
+        .optional(),
+      media_token: sitePublicTokenSchema.optional(),
+      records: z.array(sitePublicRecordSchema).max(500).optional(),
+      images: z.array(sitePublicImageSchema).max(12).optional(),
+      blocks: z.array(sitePublicBlockSchema).max(50).optional(),
+      columns: z
+        .array(
+          z
+            .object({ blocks: z.array(sitePublicBlockSchema).max(100) })
+            .strict(),
+        )
+        .max(3)
+        .optional(),
+    })
+    .passthrough()
+    .superRefine((block, context) => {
+      const privateKey = findPrivateProjectionKey(block);
+      if (privateKey) {
+        context.addIssue({
+          code: "custom",
+          message: `Public Site projection contains private key ${privateKey}.`,
+          path: [privateKey],
+        });
+      }
+    }),
+);
+
+export const sitePublicProjectionBrandingSchema = z
+  .object({
+    name: z.string(),
+    accent: siteAccentSchema,
+    logo_media_token: z
+      .string()
+      .regex(/^m_[a-f0-9]{64}$/)
+      .optional(),
+  })
+  .strict();
+
+export const sitePublicProjectionPageSchema = z
+  .object({
+    public_key: z.string().regex(/^b_[a-f0-9]{64}$/),
+    title: z.string().max(120),
+    slug: z.string().max(80),
+    navigation_label: z.string().max(80),
+    is_home: z.boolean(),
+    is_in_navigation: z.boolean(),
+    layout: z
+      .object({ blocks: z.array(sitePublicBlockSchema).max(100) })
+      .strict(),
+  })
+  .strict();
+
+export const sitePublicProjectionSchema = z
+  .object({
+    schema_version: z.literal(2),
+    branding: sitePublicProjectionBrandingSchema,
+    pages: z.array(sitePublicProjectionPageSchema).min(1).max(20),
+  })
+  .strict()
+  .superRefine((projection, context) => {
+    const slugs = projection.pages.map((page) => page.slug);
+    const keys = projection.pages.map((page) => page.public_key);
+    if (
+      new Set(slugs).size !== slugs.length ||
+      new Set(keys).size !== keys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Public Site Pages must retain unique addresses and keys.",
+        path: ["pages"],
+      });
+    }
+    if (projection.pages.filter((page) => page.is_home).length !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: "A public Site needs exactly one Home Page.",
+        path: ["pages"],
+      });
+    }
+  });
+
+export type SitePublicProjection = z.infer<typeof sitePublicProjectionSchema>;
+
 export const siteDraftCreateSchema = z
   .object({ draft: siteDraftV1Schema })
   .strict();

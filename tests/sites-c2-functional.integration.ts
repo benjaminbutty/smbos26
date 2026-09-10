@@ -1,0 +1,972 @@
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
+import postgres, { type Sql } from "postgres";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { ConfigurationChangeService } from "../src/core/configuration/service";
+import { createGraphService } from "../src/core/graph/service";
+import {
+  attachSiteRecordMedia,
+  createSiteDraft,
+  prepareSiteReleaseV2,
+  publishSiteReleaseV2,
+  reenableSiteField,
+  reenableSiteMedia,
+  reenableSiteObject,
+  reenableSiteRecord,
+  stageSiteAdoption,
+  unpublishSite,
+  withdrawSiteField,
+  withdrawSiteMedia,
+  withdrawSiteObject,
+  withdrawSiteRecord,
+} from "../src/core/sites/service";
+import {
+  siteDraftV1Schema,
+  sitePublicProjectionSchema,
+} from "../src/core/sites/schemas";
+import type { Database, Tables } from "../src/db/supabase/database.types";
+import {
+  getC1LocalSupabaseSettings,
+  type C1LocalSupabaseSettings,
+} from "./support/c1-local-supabase";
+
+type Client = SupabaseClient<Database>;
+type Business = Tables<"businesses">;
+type Identity = { client: Client; email: string; user: User };
+
+type RpcClient = {
+  rpc<T>(
+    name: string,
+    parameters: Record<string, string | number | null | object>,
+  ): Promise<{
+    data: T | null;
+    error: { code?: string; message?: string } | null;
+  }>;
+};
+
+type SiteState = {
+  id: string;
+  business_id: string;
+  draft_json: unknown;
+  draft_revision: number;
+  draft_base_version_id: string;
+  draft_base_head_revision: number;
+  active_release_id: string | null;
+  active_release_revision: number;
+  migration_state: "new" | "legacy_pending" | "adopted";
+};
+
+const password = "Sites-C2-integration-password!";
+const createdBusinessIds: string[] = [];
+const createdUserIds: string[] = [];
+
+let settings: C1LocalSupabaseSettings;
+let admin: Client;
+let anonymous: Client;
+let owner: Identity;
+let fixtureSql: Sql;
+let catalogueBusiness: Business;
+let adoptionBusiness: Business;
+let catalogueSiteId: string;
+let objectDefinitionId: string;
+let priceFieldId: string;
+let photoFieldId: string;
+let firstRecordId: string;
+let secondRecordId: string;
+let siteImageAssetId: string;
+let galleryAssetId: string;
+
+function rpc(client: Client): RpcClient {
+  return client as unknown as RpcClient;
+}
+
+async function createIdentity(label: string): Promise<Identity> {
+  const email = `sites-c2-${label}-${crypto.randomUUID()}@example.test`;
+  const created = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (created.error || !created.data.user) throw created.error;
+  createdUserIds.push(created.data.user.id);
+  const client = createClient<Database>(
+    settings.apiUrl,
+    settings.publishableKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+  const signedIn = await client.auth.signInWithPassword({ email, password });
+  if (signedIn.error) throw signedIn.error;
+  return { client, email, user: created.data.user };
+}
+
+async function createBusiness(name: string): Promise<Business> {
+  const result = await owner.client.rpc("create_business", {
+    business_name: name,
+    requested_business_type: "test",
+    requested_timezone: "Europe/London",
+  });
+  if (result.error || !result.data) throw result.error;
+  createdBusinessIds.push(result.data.id);
+  return result.data;
+}
+
+async function applyConfiguration(
+  business: Business,
+  identity: Identity,
+  operations: Parameters<
+    ConfigurationChangeService["proposeChangeSet"]
+  >[0]["operations"],
+  title: string,
+): Promise<void> {
+  const configuration = new ConfigurationChangeService(identity.client, {
+    businessId: business.id,
+    actorId: identity.user.id,
+  });
+  const proposal = await configuration.proposeChangeSet({
+    ...(await configuration.getProposalCurrentness()),
+    title,
+    description: "Sites C2 integration fixture.",
+    operations,
+  });
+  const validated = await configuration.validateChangeSet(proposal.id);
+  if (validated.status !== "validated") {
+    throw new Error(`Configuration fixture was rejected: ${proposal.id}`);
+  }
+  await configuration.applyChangeSet(proposal.id);
+}
+
+async function createAsset(): Promise<string> {
+  const id = crypto.randomUUID();
+  const result = await admin
+    .from("media_assets")
+    .insert({
+      id,
+      business_id: catalogueBusiness.id,
+      storage_key: `${catalogueBusiness.id}/${id}.png`,
+      mime_type: "image/png",
+      byte_size: 128,
+      width: 1,
+      height: 1,
+      created_by: owner.user.id,
+    })
+    .select("id")
+    .single();
+  if (result.error || !result.data) throw result.error;
+  return result.data.id;
+}
+
+async function siteState(
+  business: Business = catalogueBusiness,
+): Promise<SiteState> {
+  const reader = owner.client as unknown as {
+    from(table: "site_states"): {
+      select(columns: "*"): {
+        eq(
+          column: "business_id",
+          value: string,
+        ): {
+          single(): Promise<{ data: unknown; error: unknown | null }>;
+        };
+      };
+    };
+  };
+  const result = await reader
+    .from("site_states")
+    .select("*")
+    .eq("business_id", business.id)
+    .single();
+  if (result.error || !result.data) throw result.error;
+  return result.data as unknown as SiteState;
+}
+
+function context(business: Business = catalogueBusiness) {
+  return { businessId: business.id, actorId: owner.user.id };
+}
+
+function currentness(state: SiteState) {
+  return {
+    expectedDraftRevision: state.draft_revision,
+    expectedBaseVersionId: state.draft_base_version_id,
+    expectedHeadRevision: state.draft_base_head_revision,
+  };
+}
+
+function catalogueDraft() {
+  const homeId = crypto.randomUUID();
+  const detailId = crypto.randomUUID();
+  const collectionId = crypto.randomUUID();
+  const numericCollectionId = crypto.randomUUID();
+  return siteDraftV1Schema.parse({
+    schema_version: 1,
+    branding: { name: "C2 Catalogue", accent: "forest" },
+    pages: [
+      {
+        id: homeId,
+        title: "Home",
+        slug: "home",
+        navigation_label: "Home",
+        is_home: true,
+        is_in_navigation: true,
+        is_included: true,
+        layout: {
+          blocks: [
+            {
+              type: "heading",
+              id: crypto.randomUUID(),
+              text: "The C2 catalogue",
+              level: 1,
+            },
+            {
+              type: "text",
+              id: crypto.randomUUID(),
+              text: "Browse the latest catalogue items.",
+            },
+            {
+              type: "section",
+              id: crypto.randomUUID(),
+              width: "wide",
+              columns: [
+                {
+                  blocks: [
+                    {
+                      type: "heading",
+                      id: crypto.randomUUID(),
+                      text: "Curated",
+                      level: 2,
+                    },
+                  ],
+                },
+                {
+                  blocks: [
+                    {
+                      type: "text",
+                      id: crypto.randomUUID(),
+                      text: "Selected for this Site.",
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "image",
+              id: crypto.randomUUID(),
+              asset_id: siteImageAssetId,
+              alt: "Catalogue cover",
+              draft_state: "complete",
+            },
+            {
+              type: "gallery",
+              id: crypto.randomUUID(),
+              images: [
+                {
+                  asset_id: galleryAssetId,
+                  alt: "Catalogue detail",
+                  draft_state: "complete",
+                },
+              ],
+              presentation: "grid",
+              draft_state: "complete",
+            },
+            {
+              type: "collection",
+              id: collectionId,
+              object_key: "catalogue_item",
+              selection: {
+                schema_version: 1,
+                record_ids: [firstRecordId, secondRecordId],
+              },
+              public_field_keys: ["name", "price", "photo"],
+              presentation: "cards",
+              detail_page_id: detailId,
+              filter: {
+                schema_version: 1,
+                filters: [
+                  { field_key: "price", operator: "greater_than", value: 0 },
+                ],
+                filter_match: "all",
+                sorts: [{ field_key: "name", direction: "ascending" }],
+              },
+            },
+            {
+              type: "collection",
+              id: numericCollectionId,
+              object_key: "catalogue_item",
+              selection: {
+                schema_version: 1,
+                record_ids: [firstRecordId, secondRecordId],
+              },
+              public_field_keys: ["name", "price"],
+              presentation: "table",
+              filter: {
+                schema_version: 1,
+                filters: [
+                  { field_key: "price", operator: "greater_than", value: 2 },
+                ],
+                filter_match: "all",
+                sorts: [{ field_key: "price", direction: "descending" }],
+              },
+            },
+          ],
+        },
+      },
+      {
+        id: detailId,
+        title: "Item details",
+        slug: "details",
+        navigation_label: "Details",
+        is_home: false,
+        is_in_navigation: true,
+        is_included: true,
+        layout: {
+          blocks: [
+            {
+              type: "heading",
+              id: crypto.randomUUID(),
+              text: "Item details",
+              level: 1,
+            },
+            {
+              type: "record_detail",
+              id: crypto.randomUUID(),
+              collection_block_id: collectionId,
+              public_field_keys: ["name", "price", "photo"],
+            },
+          ],
+        },
+      },
+    ],
+  });
+}
+
+async function callRpc<T>(
+  client: Client,
+  name: string,
+  parameters: Record<string, string | number | null | object>,
+): Promise<T> {
+  const result = await rpc(client).rpc<T>(name, parameters);
+  if (result.error || result.data === null) {
+    throw new Error(`${name} failed: ${result.error?.message ?? "no data"}`);
+  }
+  return result.data;
+}
+
+describe("Lenni Sites C2 functional milestone", () => {
+  beforeAll(async () => {
+    settings = getC1LocalSupabaseSettings();
+    admin = createClient<Database>(settings.apiUrl, settings.serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    });
+    anonymous = createClient<Database>(
+      settings.apiUrl,
+      settings.publishableKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          persistSession: false,
+        },
+      },
+    );
+    fixtureSql = postgres(settings.databaseUrl, { max: 1 });
+    owner = await createIdentity("owner");
+    catalogueBusiness = await createBusiness(
+      `Sites C2 catalogue ${crypto.randomUUID()}`,
+    );
+    adoptionBusiness = await createBusiness(
+      `Sites C2 adoption ${crypto.randomUUID()}`,
+    );
+
+    await applyConfiguration(
+      catalogueBusiness,
+      owner,
+      [
+        {
+          op: "set_object",
+          key: "catalogue_item",
+          singular_label: "Catalogue item",
+          plural_label: "Catalogue items",
+          description: "A customer-facing catalogue item.",
+          icon: null,
+          is_active: true,
+        },
+        {
+          op: "set_field",
+          object_key: "catalogue_item",
+          key: "name",
+          label: "Name",
+          field_type: "short_text",
+          required: true,
+          default_value: null,
+          settings_json: {},
+          position: 0,
+          is_active: true,
+        },
+        {
+          op: "set_field",
+          object_key: "catalogue_item",
+          key: "price",
+          label: "Price",
+          field_type: "number",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: 1,
+          is_active: true,
+        },
+        {
+          op: "set_field",
+          object_key: "catalogue_item",
+          key: "photo",
+          label: "Photo",
+          field_type: "file",
+          required: false,
+          default_value: null,
+          settings_json: {},
+          position: 2,
+          is_active: true,
+        },
+      ],
+      "Create C2 catalogue type",
+    );
+    const object = await owner.client
+      .from("object_definitions")
+      .select("id")
+      .eq("business_id", catalogueBusiness.id)
+      .eq("key", "catalogue_item")
+      .single();
+    if (object.error || !object.data) throw object.error;
+    objectDefinitionId = object.data.id;
+    const fields = await owner.client
+      .from("field_definitions")
+      .select("id,key")
+      .eq("business_id", catalogueBusiness.id)
+      .eq("object_definition_id", objectDefinitionId);
+    if (fields.error || !fields.data) throw fields.error;
+    priceFieldId = fields.data.find((field) => field.key === "price")!.id;
+    photoFieldId = fields.data.find((field) => field.key === "photo")!.id;
+    const graph = createGraphService(owner.client, {
+      businessId: catalogueBusiness.id,
+    });
+    firstRecordId = (
+      await graph.createRecord({
+        objectDefinitionId,
+        data: { name: "Alpha item", price: 2 },
+        recordStatus: "active",
+      })
+    ).id;
+    secondRecordId = (
+      await graph.createRecord({
+        objectDefinitionId,
+        data: { name: "Beta item", price: 10 },
+        recordStatus: "active",
+      })
+    ).id;
+    siteImageAssetId = await createAsset();
+    galleryAssetId = await createAsset();
+    const state = await createSiteDraft(owner.client, context(), {
+      draft: catalogueDraft(),
+    });
+    catalogueSiteId = state.id;
+    await attachSiteRecordMedia(owner.client, context(), {
+      siteId: catalogueSiteId,
+      recordId: firstRecordId,
+      objectDefinitionId,
+      fieldDefinitionId: photoFieldId,
+      assetId: siteImageAssetId,
+      expectedRecordRevision: 1,
+      expectedAttachmentRevision: 0,
+    });
+    await attachSiteRecordMedia(owner.client, context(), {
+      siteId: catalogueSiteId,
+      recordId: secondRecordId,
+      objectDefinitionId,
+      fieldDefinitionId: photoFieldId,
+      assetId: galleryAssetId,
+      expectedRecordRevision: 1,
+      expectedAttachmentRevision: 0,
+    });
+
+    await applyConfiguration(
+      adoptionBusiness,
+      owner,
+      [
+        {
+          op: "set_page",
+          key: "legacy_home",
+          title: "Legacy Home",
+          slug: "legacy-home",
+          audience: "public",
+          layout_json: {
+            blocks: [
+              {
+                type: "heading",
+                id: crypto.randomUUID(),
+                text: "Legacy welcome",
+                level: 1,
+              },
+              {
+                type: "text",
+                id: crypto.randomUUID(),
+                text: "Legacy text retained for review.",
+              },
+            ],
+          },
+          status: "published",
+          is_active: true,
+        },
+      ],
+      "Create legacy public Page",
+    );
+  });
+
+  afterAll(async () => {
+    try {
+      if (admin && createdBusinessIds.length > 0) {
+        const deleted = await admin
+          .from("businesses")
+          .delete()
+          .in("id", createdBusinessIds);
+        if (deleted.error) throw deleted.error;
+      }
+      for (const userId of createdUserIds) {
+        const deleted = await admin.auth.admin.deleteUser(userId);
+        if (deleted.error) throw deleted.error;
+      }
+    } finally {
+      if (fixtureSql) await fixtureSql.end();
+    }
+  });
+
+  it("publishes the exact Site projection and applies finite availability epochs", async () => {
+    const prepared = await prepareSiteReleaseV2(owner.client, context(), {
+      siteId: catalogueSiteId,
+      ...(await currentnessForSite()),
+    });
+    const projection = sitePublicProjectionSchema.parse(
+      prepared.projection_json,
+    );
+    expect(projection.pages).toHaveLength(2);
+    expect(projection.pages.find((page) => page.is_home)?.slug).toBe("home");
+    const homeBlocks = projection.pages.find((page) => page.is_home)!.layout
+      .blocks;
+    const collections = homeBlocks.filter(
+      (block) =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "collection",
+    ) as Array<{
+      presentation?: string;
+      records?: Array<{ public_id: string; values: Record<string, unknown> }>;
+    }>;
+    expect(collections).toHaveLength(2);
+    const collection = collections.find(
+      (block) => block.presentation === "cards",
+    )!;
+    const numericCollection = collections.find(
+      (block) => block.presentation === "table",
+    )!;
+    expect(collection.records).toHaveLength(2);
+    expect(collection.records?.[0]?.public_id).toMatch(/^r_[a-f0-9]{64}$/);
+    expect(collection.records?.[0]?.values).toMatchObject({
+      name: expect.any(String),
+      price: expect.any(Number),
+      photo: { token: expect.stringMatching(/^m_[a-f0-9]{64}$/) },
+    });
+    expect(numericCollection.records).toHaveLength(1);
+    expect(numericCollection.records?.[0]?.values).toMatchObject({
+      name: "Beta item",
+      price: 10,
+    });
+    expect(JSON.stringify(projection)).not.toContain(objectDefinitionId);
+    expect(JSON.stringify(projection)).not.toContain(siteImageAssetId);
+
+    const published = await publishSiteReleaseV2(owner.client, context(), {
+      siteId: catalogueSiteId,
+      candidateId: prepared.id,
+      ...(await currentnessForSite()),
+    });
+    expect(published.status).toBe("published");
+    let state = await siteState();
+    expect(state.migration_state).toBe("adopted");
+    const resolved = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      },
+    );
+    expect(resolved).toMatchObject({ site: { schema_version: 2 } });
+    const resolvedProjection = JSON.stringify(resolved);
+    expect(resolvedProjection).not.toContain(objectDefinitionId);
+    expect(resolvedProjection).not.toContain(siteImageAssetId);
+    const resolvedCollection = (
+      (
+        (resolved.page as Record<string, unknown>).layout as Record<
+          string,
+          unknown
+        >
+      ).blocks as Array<Record<string, unknown>>
+    ).find((block) => block.type === "collection");
+    const token = (
+      resolvedCollection?.records as Array<Record<string, unknown>>
+    )[0]?.public_id as string;
+    expect(token).toMatch(/^r_[a-f0-9]{64}$/);
+    const detail = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_site_record",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "details",
+        requested_record_token: token,
+      },
+    );
+    expect(detail).toMatchObject({ record: { public_id: token } });
+
+    const firstWithdrawal = await withdrawSiteRecord(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: firstRecordId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: 0,
+    });
+    expect(firstWithdrawal.status).toBe("withdrawn");
+    state = await siteState();
+    const hidden = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      },
+    );
+    const hiddenCollection = (
+      (
+        (hidden.page as Record<string, unknown>).layout as Record<
+          string,
+          unknown
+        >
+      ).blocks as Array<Record<string, unknown>>
+    ).find((block) => block.type === "collection");
+    expect(hiddenCollection?.records).toHaveLength(1);
+    await expect(
+      callRpc(anonymous, "resolve_public_site_record", {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "details",
+        requested_record_token: token,
+      }),
+    ).resolves.toBeNull();
+
+    const reenabledRecord = await reenableSiteRecord(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: firstRecordId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: firstWithdrawal.availability_revision,
+    });
+    expect(reenabledRecord.status).toBe("available");
+    const oldReleaseView = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      },
+    );
+    const oldCollection = (
+      (
+        (oldReleaseView.page as Record<string, unknown>).layout as Record<
+          string,
+          unknown
+        >
+      ).blocks as Array<Record<string, unknown>>
+    ).find((block) => block.type === "collection");
+    expect(oldCollection?.records).toHaveLength(1);
+
+    const restoredCandidate = await prepareSiteReleaseV2(
+      owner.client,
+      context(),
+      { siteId: catalogueSiteId, ...(await currentnessForSite()) },
+    );
+    await publishSiteReleaseV2(owner.client, context(), {
+      siteId: catalogueSiteId,
+      candidateId: restoredCandidate.id,
+      ...(await currentnessForSite()),
+    });
+    state = await siteState();
+    const restored = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      },
+    );
+    const restoredCollection = (
+      (
+        (restored.page as Record<string, unknown>).layout as Record<
+          string,
+          unknown
+        >
+      ).blocks as Array<Record<string, unknown>>
+    ).find((block) => block.type === "collection");
+    expect(restoredCollection?.records).toHaveLength(2);
+
+    const fieldWithdrawal = await withdrawSiteField(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: priceFieldId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: 0,
+    });
+    expect(fieldWithdrawal.status).toBe("withdrawn");
+    state = await siteState();
+    const fieldHidden = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      },
+    );
+    expect(JSON.stringify(fieldHidden)).not.toContain('"price"');
+    const fieldRestored = await reenableSiteField(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: priceFieldId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: fieldWithdrawal.availability_revision,
+    });
+    expect(fieldRestored.status).toBe("available");
+    const fieldCandidate = await prepareSiteReleaseV2(owner.client, context(), {
+      siteId: catalogueSiteId,
+      ...(await currentnessForSite()),
+    });
+    await publishSiteReleaseV2(owner.client, context(), {
+      siteId: catalogueSiteId,
+      candidateId: fieldCandidate.id,
+      ...(await currentnessForSite()),
+    });
+    state = await siteState();
+
+    const objectWithdrawal = await withdrawSiteObject(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: objectDefinitionId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: 0,
+    });
+    expect(objectWithdrawal.status).toBe("withdrawn");
+    state = await siteState();
+    const objectHidden = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      },
+    );
+    const objectHiddenBlocks = (
+      (objectHidden.page as Record<string, unknown>).layout as Record<
+        string,
+        unknown
+      >
+    ).blocks as Array<Record<string, unknown>>;
+    expect(
+      objectHiddenBlocks.some((block) => block.type === "collection"),
+    ).toBe(false);
+    const objectRestored = await reenableSiteObject(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: objectDefinitionId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: objectWithdrawal.availability_revision,
+    });
+    expect(objectRestored.status).toBe("available");
+
+    const mediaWithdrawal = await withdrawSiteMedia(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: siteImageAssetId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: 0,
+    });
+    expect(mediaWithdrawal.status).toBe("withdrawn");
+    const mediaRestored = await reenableSiteMedia(owner.client, context(), {
+      siteId: catalogueSiteId,
+      targetId: siteImageAssetId,
+      expectedActiveReleaseRevision: state.active_release_revision,
+      expectedAvailabilityRevision: mediaWithdrawal.availability_revision,
+    });
+    expect(mediaRestored.status).toBe("available");
+    const mediaToken = `m_${"0".repeat(64)}`;
+    const anonymousMedia = await rpc(anonymous).rpc(
+      "resolve_public_site_media",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_media_token: mediaToken,
+      },
+    );
+    expect(anonymousMedia.error).toBeTruthy();
+    const unpublished = await unpublishSite(owner.client, context(), {
+      siteId: catalogueSiteId,
+      expectedActiveReleaseRevision: (await siteState())
+        .active_release_revision,
+    });
+    expect(unpublished.active_release_id).toBeNull();
+    await expect(
+      callRpc(anonymous, "resolve_public_page", {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "home",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("stages whole-Business legacy Pages and retires old public actions after adoption", async () => {
+    const initial = await createSiteDraft(
+      owner.client,
+      context(adoptionBusiness),
+      {
+        draft: siteDraftV1Schema.parse({
+          schema_version: 1,
+          branding: { name: "Adopted Site", accent: "clay" },
+          pages: [
+            {
+              id: crypto.randomUUID(),
+              title: "Temporary Home",
+              slug: "temporary-home",
+              navigation_label: "Home",
+              is_home: true,
+              is_in_navigation: true,
+              is_included: true,
+              layout: { blocks: [] },
+            },
+          ],
+        }),
+      },
+    );
+    expect(initial.migration_state).toBe("legacy_pending");
+    const staged = await stageSiteAdoption(
+      owner.client,
+      context(adoptionBusiness),
+      {
+        siteId: initial.id,
+        expectedDraftRevision: initial.draft_revision,
+        expectedBaseVersionId: initial.draft_base_version_id,
+        expectedHeadRevision: initial.draft_base_head_revision,
+      },
+    );
+    expect(staged.migration_state).toBe("legacy_pending");
+    expect(staged.draft_json.pages[0]?.slug).toBe("legacy-home");
+    const bindingRows = await fixtureSql.unsafe<
+      Array<{
+        legacy_source_page_id: string | null;
+        canonical_page_key: string;
+      }>
+    >(
+      `select legacy_source_page_id, canonical_page_key
+       from public.site_page_bindings where business_id = $1 and site_id = $2`,
+      [adoptionBusiness.id, initial.id],
+    );
+    expect(bindingRows).toHaveLength(1);
+    expect(bindingRows[0]?.legacy_source_page_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(bindingRows[0]?.canonical_page_key).toMatch(
+      /^s[0-9a-f]+_p[0-9a-f]+$/,
+    );
+
+    const candidate = await prepareSiteReleaseV2(
+      owner.client,
+      context(adoptionBusiness),
+      {
+        siteId: initial.id,
+        ...(await currentnessForSite(adoptionBusiness)),
+      },
+    );
+    await publishSiteReleaseV2(owner.client, context(adoptionBusiness), {
+      siteId: initial.id,
+      candidateId: candidate.id,
+      ...(await currentnessForSite(adoptionBusiness)),
+    });
+    expect((await siteState(adoptionBusiness)).migration_state).toBe("adopted");
+    const resolved = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: adoptionBusiness.slug,
+        requested_page_slug: "legacy-home",
+      },
+    );
+    expect(resolved).toMatchObject({ site: { schema_version: 2 } });
+    const submitNames = [
+      "submit_public_create_form",
+      "submit_public_booking",
+      "submit_public_preorder",
+    ] as const;
+    for (const name of submitNames) {
+      const argumentsValue =
+        name === "submit_public_preorder"
+          ? {
+              requested_business_slug: adoptionBusiness.slug,
+              requested_page_slug: "legacy-home",
+              requested_preorder_key: "legacy",
+              submission: {},
+              requested_request_hash: "hash",
+            }
+          : {
+              requested_business_slug: adoptionBusiness.slug,
+              requested_page_slug: "legacy-home",
+              [name === "submit_public_booking"
+                ? "requested_booking_key"
+                : "requested_form_key"]: "legacy",
+              ...(name === "submit_public_booking"
+                ? {
+                    requested_idempotency_token: crypto.randomUUID(),
+                    requested_submission: {},
+                  }
+                : {
+                    requested_idempotency_token: crypto.randomUUID(),
+                    requested_data: {},
+                  }),
+              requested_request_hash: "hash",
+            };
+      const retired = await rpc(anonymous).rpc<Record<string, unknown>>(
+        name,
+        argumentsValue,
+      );
+      expect(retired.error).toBeNull();
+      expect(retired.data).toMatchObject({
+        ok: false,
+        code: "legacy_public_actions_retired",
+      });
+    }
+    const unpublished = await unpublishSite(
+      owner.client,
+      context(adoptionBusiness),
+      {
+        siteId: initial.id,
+        expectedActiveReleaseRevision: (await siteState(adoptionBusiness))
+          .active_release_revision,
+      },
+    );
+    expect(unpublished.active_release_id).toBeNull();
+    await expect(
+      callRpc(anonymous, "resolve_public_page", {
+        requested_business_slug: adoptionBusiness.slug,
+        requested_page_slug: "legacy-home",
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
+async function currentnessForSite(business: Business = catalogueBusiness) {
+  const state = await siteState(business);
+  return currentness(state);
+}

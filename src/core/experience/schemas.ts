@@ -1251,6 +1251,85 @@ export const siteCollectionBlockSchema = z
         }
       }),
     public_field_keys: z.array(graphKeySchema).max(50),
+    /** C2 keeps filtering finite and stores it beside the explicit selection. */
+    filter: z
+      .object({
+        schema_version: z.literal(1),
+        filters: z
+          .array(
+            z
+              .object({
+                field_key: graphKeySchema,
+                operator: z.enum([
+                  "is",
+                  "is_not",
+                  "contains",
+                  "does_not_contain",
+                  "greater_than",
+                  "greater_than_or_equal",
+                  "less_than",
+                  "less_than_or_equal",
+                  "is_any_of",
+                  "is_empty",
+                  "is_not_empty",
+                ]),
+                value: z.json().optional(),
+                values: z.array(z.json()).max(20).optional(),
+              })
+              .strict()
+              .superRefine((item, context) => {
+                const noValue =
+                  item.operator === "is_empty" ||
+                  item.operator === "is_not_empty";
+                if (noValue && (item.value !== undefined || item.values)) {
+                  context.addIssue({
+                    code: "custom",
+                    message: "This filter does not accept a value.",
+                    path: ["value"],
+                  });
+                }
+                if (item.operator === "is_any_of") {
+                  if (
+                    (!item.values || item.values.length === 0) &&
+                    item.value === undefined
+                  ) {
+                    context.addIssue({
+                      code: "custom",
+                      message: "This filter needs a list of values.",
+                      path: ["values"],
+                    });
+                  }
+                  if (item.value !== undefined) {
+                    context.addIssue({
+                      code: "custom",
+                      message: "This filter needs a list of values.",
+                      path: ["values"],
+                    });
+                  }
+                } else if (!noValue && item.value === undefined) {
+                  context.addIssue({
+                    code: "custom",
+                    message: "This filter needs a value.",
+                    path: ["value"],
+                  });
+                }
+              }),
+          )
+          .max(10),
+        filter_match: z.enum(["all", "any"]),
+        sorts: z
+          .array(
+            z
+              .object({
+                field_key: graphKeySchema,
+                direction: z.enum(["ascending", "descending"]),
+              })
+              .strict(),
+          )
+          .max(3),
+      })
+      .strict()
+      .optional(),
     presentation: z.enum(["cards", "list", "table"]).default("cards"),
     detail_page_id: z.uuid().optional(),
     id: pageBlockIdSchema.optional(),

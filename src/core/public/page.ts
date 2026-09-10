@@ -18,6 +18,10 @@ import {
 } from "../experience/schemas";
 import { walkPageBlocks } from "../experience/page-blocks";
 import type { ExperienceFormBundle } from "../experience/service";
+import {
+  sitePublicProjectionBrandingSchema,
+  sitePublicProjectionPageSchema,
+} from "../sites/schemas";
 import { callPublicRpc } from "./rpc";
 
 const publicPageResolverSchema = z.object({
@@ -29,6 +33,31 @@ const publicPageResolverSchema = z.object({
     key: z.string(),
     title: z.string(),
     slug: z.string(),
+    layout: z.unknown(),
+  }),
+});
+
+const publicSiteResolverSchema = z.object({
+  business: z.object({ name: z.string(), slug: z.string() }),
+  site: z.object({
+    schema_version: z.literal(2),
+    branding: z.unknown(),
+    navigation: z.array(
+      z.object({
+        key: z.string(),
+        title: z.string(),
+        slug: z.string(),
+        label: z.string(),
+      }),
+    ),
+  }),
+  page: z.object({
+    key: z.string(),
+    title: z.string(),
+    slug: z.string(),
+    navigation_label: z.string(),
+    is_home: z.boolean(),
+    is_in_navigation: z.boolean(),
     layout: z.unknown(),
   }),
 });
@@ -106,6 +135,7 @@ function publicFormBundle(input: unknown): ExperienceFormBundle {
 }
 
 export interface PublicPageRuntime {
+  kind: "legacy";
   business: { name: string; slug: string };
   page: {
     key: string;
@@ -117,10 +147,42 @@ export interface PublicPageRuntime {
   bookings: Readonly<Record<string, PublicBookingCatalogue>>;
 }
 
+export interface PublicSiteRuntime {
+  kind: "site";
+  business: { name: string; slug: string };
+  site: {
+    branding: z.infer<typeof sitePublicProjectionBrandingSchema>;
+    navigation: Array<{
+      key: string;
+      title: string;
+      slug: string;
+      label: string;
+    }>;
+  };
+  page: {
+    key: string;
+    title: string;
+    slug: string;
+    navigation_label: string;
+    is_home: boolean;
+    is_in_navigation: boolean;
+    layout: z.infer<typeof sitePublicProjectionPageSchema>["layout"];
+  };
+  forms: Readonly<Record<string, never>>;
+  bookings: Readonly<Record<string, never>>;
+}
+
+export interface PublicSiteRecordRuntime extends PublicSiteRuntime {
+  record: {
+    public_id: string;
+    values: Record<string, unknown>;
+  };
+}
+
 export async function loadPublicPageRuntime(
   businessSlug: string,
   pageSlug: string,
-): Promise<PublicPageRuntime | null> {
+): Promise<PublicPageRuntime | PublicSiteRuntime | null> {
   const supabase = await createServerClient();
   const pageResult = await callPublicRpc<Json>(
     supabase,
@@ -136,6 +198,45 @@ export async function loadPublicPageRuntime(
     });
   }
   if (pageResult.data === null) return null;
+
+  if (
+    typeof pageResult.data === "object" &&
+    pageResult.data !== null &&
+    "site" in pageResult.data
+  ) {
+    const resolvedSite = publicSiteResolverSchema.parse(pageResult.data);
+    const branding = sitePublicProjectionBrandingSchema.parse(
+      resolvedSite.site.branding,
+    );
+    const projectionPage = sitePublicProjectionPageSchema.parse({
+      public_key: resolvedSite.page.key,
+      title: resolvedSite.page.title,
+      slug: resolvedSite.page.slug,
+      navigation_label: resolvedSite.page.navigation_label,
+      is_home: resolvedSite.page.is_home,
+      is_in_navigation: resolvedSite.page.is_in_navigation,
+      layout: resolvedSite.page.layout,
+    });
+    return {
+      kind: "site",
+      business: resolvedSite.business,
+      site: {
+        branding,
+        navigation: resolvedSite.site.navigation,
+      },
+      page: {
+        key: resolvedSite.page.key,
+        title: resolvedSite.page.title,
+        slug: resolvedSite.page.slug,
+        navigation_label: resolvedSite.page.navigation_label,
+        is_home: resolvedSite.page.is_home,
+        is_in_navigation: resolvedSite.page.is_in_navigation,
+        layout: projectionPage.layout,
+      },
+      forms: {},
+      bookings: {},
+    };
+  }
 
   const resolvedPage = publicPageResolverSchema.parse(pageResult.data);
   const layout = pageLayoutSchema.parse(resolvedPage.page.layout);
@@ -195,6 +296,7 @@ export async function loadPublicPageRuntime(
   );
 
   return {
+    kind: "legacy",
     business: resolvedPage.business,
     page: {
       key: resolvedPage.page.key,
@@ -213,5 +315,42 @@ export async function loadPublicFormRuntime(
   formKey: string,
 ): Promise<ExperienceFormBundle | null> {
   const runtime = await loadPublicPageRuntime(businessSlug, pageSlug);
-  return runtime?.forms[formKey] ?? null;
+  return runtime?.kind === "legacy" ? (runtime.forms[formKey] ?? null) : null;
+}
+
+export async function loadPublicRecordRuntime(
+  businessSlug: string,
+  pageSlug: string,
+  recordToken: string,
+): Promise<PublicSiteRecordRuntime | null> {
+  const runtime = await loadPublicPageRuntime(businessSlug, pageSlug);
+  if (!runtime || runtime.kind !== "site") return null;
+  const supabase = await createServerClient();
+  const result = await callPublicRpc<Json>(
+    supabase,
+    "resolve_public_site_record",
+    {
+      requested_business_slug: businessSlug,
+      requested_page_slug: pageSlug,
+      requested_record_token: recordToken,
+    },
+  );
+  if (result.error) {
+    throw new Error("Could not load the public Record.", {
+      cause: result.error,
+    });
+  }
+  if (result.data === null) return null;
+  const resolved = z
+    .object({
+      record: z
+        .object({
+          public_id: z.string().regex(/^r_[a-f0-9]{64}$/),
+          values: z.record(z.string(), z.unknown()),
+        })
+        .strict(),
+    })
+    .passthrough()
+    .parse(result.data);
+  return { ...runtime, record: resolved.record };
 }

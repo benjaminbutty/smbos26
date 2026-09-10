@@ -22,7 +22,7 @@ const inheritedEnvironment = Object.fromEntries(
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: "pages-dependency-proof.spec.ts",
+  testMatch: "*.spec.ts",
   outputDir: "test-results/pages-proof",
   timeout: 90_000,
   expect: { timeout: 10_000 },

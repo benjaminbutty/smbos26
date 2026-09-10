@@ -8,6 +8,7 @@ import { setPageOperationSchema } from "../src/core/configuration/schemas";
 import {
   siteDraftPublicationReadyV1Schema,
   siteDraftV1Schema,
+  sitePublicProjectionSchema,
   siteReleaseProjectionSchema,
   siteReleaseReviewSchema,
 } from "../src/core/sites/schemas";
@@ -674,5 +675,68 @@ describe("Lenni Sites C1 composition schema", () => {
         is_active: true,
       }).success,
     ).toBe(true);
+  });
+
+  it("rejects private identities and storage metadata in anonymous projections", () => {
+    const publicId = `r_${"a".repeat(64)}`;
+    const publicKey = `b_${"b".repeat(64)}`;
+    const valid = {
+      schema_version: 2,
+      branding: { name: "Moss and Stone", accent: "forest" },
+      pages: [
+        {
+          public_key: publicKey,
+          title: "Home",
+          slug: "home",
+          navigation_label: "Home",
+          is_home: true,
+          is_in_navigation: true,
+          layout: {
+            blocks: [
+              {
+                type: "collection",
+                public_key: publicKey,
+                records: [{ public_id: publicId, values: { id: "safe" } }],
+              },
+            ],
+          },
+        },
+      ],
+    };
+    expect(sitePublicProjectionSchema.safeParse(valid).success).toBe(true);
+    expect(
+      sitePublicProjectionSchema.safeParse({
+        ...valid,
+        pages: [
+          {
+            ...valid.pages[0],
+            layout: {
+              blocks: [
+                { type: "image", public_key: publicKey, asset_id: ids.detail },
+              ],
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      sitePublicProjectionSchema.safeParse({
+        ...valid,
+        pages: [
+          {
+            ...valid.pages[0],
+            layout: {
+              blocks: [
+                {
+                  type: "image",
+                  public_key: publicKey,
+                  storage_key: "private/path",
+                },
+              ],
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });

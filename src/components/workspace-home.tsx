@@ -97,6 +97,18 @@ function EmptyWorkspaceHome({
                 <small>Bring information and useful Views together</small>
               </span>
             </Link>
+            <Link
+              className="home-manual-action home-manual-action-secondary"
+              href={`/app/${encodeURIComponent(businessSlug)}/sites`}
+            >
+              <span className="home-manual-icon" aria-hidden="true">
+                ▣
+              </span>
+              <span>
+                <strong>Build a Site</strong>
+                <small>Publish Pages for your customers</small>
+              </span>
+            </Link>
           </div>
           <p className="home-manual-note">
             No technical setup. Properties and Connections stay inside the work.

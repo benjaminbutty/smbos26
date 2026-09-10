@@ -21,7 +21,35 @@ const siteContextSchema = z
   .object({ businessId: z.uuid(), actorId: z.uuid() })
   .strict();
 
-const siteStateSchema = z
+const siteRecordMediaAttachmentSchema = z
+  .object({
+    business_id: z.uuid(),
+    site_id: z.uuid(),
+    record_id: z.uuid(),
+    object_definition_id: z.uuid(),
+    field_definition_id: z.uuid(),
+    asset_id: z.uuid(),
+    record_revision: z.number().int().positive(),
+    attachment_revision: z.number().int().positive(),
+    created_by: z.uuid(),
+    created_at: z.string().datetime({ offset: true }),
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+const siteAvailabilitySchema = z
+  .object({
+    business_id: z.uuid(),
+    site_id: z.uuid(),
+    status: z.enum(["available", "withdrawn"]),
+    availability_revision: z.number().int().positive(),
+    available_from_release_revision: z.number().int().nonnegative(),
+    changed_by: z.uuid(),
+    changed_at: z.string().datetime({ offset: true }),
+  })
+  .passthrough();
+
+export const siteStateSchema = z
   .object({
     id: z.uuid(),
     business_id: z.uuid(),
@@ -37,14 +65,16 @@ const siteStateSchema = z
       .nullable(),
     last_rebased_by: z.uuid().nullable(),
     last_rebased_at: z.string().datetime({ offset: true }).nullable(),
-    migration_state: z.enum(["new", "legacy_pending"]),
+    migration_state: z.enum(["new", "legacy_pending", "adopted"]),
+    legacy_source_checksum: z.string().nullable(),
+    legacy_source_page_count: z.number().int().nonnegative().nullable(),
     created_by: z.uuid(),
     created_at: z.string().datetime({ offset: true }),
     updated_at: z.string().datetime({ offset: true }),
   })
   .strict();
 
-const siteReleaseSchema = z
+export const siteReleaseSchema = z
   .object({
     id: z.uuid(),
     business_id: z.uuid(),
@@ -68,10 +98,16 @@ const siteReleaseSchema = z
   })
   .strict();
 
+export const siteReleaseV2Schema = siteReleaseSchema.extend({
+  projection_schema_version: z.literal(2),
+  projection_json: z.unknown(),
+  review_json: z.unknown(),
+});
+
 type SiteRpcClient = {
   rpc<T>(
     functionName: string,
-    parameters: Record<string, string | number | SiteDraftV1>,
+    parameters: Record<string, string | number | SiteDraftV1 | null | unknown>,
   ): Promise<{ data: T | null; error: unknown | null }>;
 };
 
@@ -110,7 +146,7 @@ export class SiteFoundationServiceError extends Error {
 async function callSiteRpc<T>(
   client: SupabaseClient<Database>,
   functionName: string,
-  parameters: Record<string, string | number | SiteDraftV1>,
+  parameters: Record<string, string | number | SiteDraftV1 | null | unknown>,
   schema: z.ZodType<T>,
 ): Promise<T> {
   const result = await siteRpc(client).rpc<unknown>(functionName, parameters);
@@ -129,7 +165,7 @@ export async function createSiteDraft(
   const request = siteDraftCreateSchema.parse(input);
   return callSiteRpc(
     client,
-    "create_site_draft",
+    "create_site_draft_v2",
     {
       expected_business_id: context.businessId,
       expected_actor_id: context.actorId,
@@ -148,7 +184,7 @@ export async function saveSiteDraft(
   const request = siteDraftSaveSchema.parse(input);
   return callSiteRpc(
     client,
-    "save_site_draft",
+    "save_site_draft_v2",
     {
       expected_business_id: context.businessId,
       expected_actor_id: context.actorId,
@@ -259,5 +295,285 @@ export async function publishSiteRelease(
       expected_head_revision: request.expectedHeadRevision,
     },
     siteReleaseSchema,
+  );
+}
+
+/** C2's public-safe release path. The C1 helpers above remain available to
+ * existing integrations that still inspect the private v1 projection. */
+export async function prepareSiteReleaseV2(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePreparationSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "prepare_site_release_v2",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteReleaseV2Schema,
+  );
+}
+
+export async function publishSiteReleaseV2(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePublishSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "publish_site_release_v2",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      requested_candidate_id: request.candidateId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteReleaseV2Schema,
+  );
+}
+
+export async function stageSiteAdoption(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePreparationSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "stage_site_adoption",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteStateSchema,
+  );
+}
+
+export async function unpublishSite(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = z
+    .object({
+      siteId: z.uuid(),
+      expectedActiveReleaseRevision: z.number().int().nonnegative(),
+    })
+    .strict()
+    .parse(input);
+  return callSiteRpc(
+    client,
+    "unpublish_site",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      expected_active_release_revision: request.expectedActiveReleaseRevision,
+    },
+    siteStateSchema,
+  );
+}
+
+export async function attachSiteRecordMedia(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = z
+    .object({
+      siteId: z.uuid(),
+      recordId: z.uuid(),
+      objectDefinitionId: z.uuid(),
+      fieldDefinitionId: z.uuid(),
+      assetId: z.uuid(),
+      expectedRecordRevision: z.number().int().positive(),
+      expectedAttachmentRevision: z.number().int().nonnegative(),
+    })
+    .strict()
+    .parse(input);
+  return callSiteRpc(
+    client,
+    "attach_site_record_media",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      requested_record_id: request.recordId,
+      requested_object_definition_id: request.objectDefinitionId,
+      requested_field_definition_id: request.fieldDefinitionId,
+      requested_asset_id: request.assetId,
+      expected_record_revision: request.expectedRecordRevision,
+      expected_attachment_revision: request.expectedAttachmentRevision,
+    },
+    siteRecordMediaAttachmentSchema,
+  );
+}
+
+const siteAvailabilityInputSchema = z
+  .object({
+    siteId: z.uuid(),
+    targetId: z.uuid(),
+    expectedActiveReleaseRevision: z.number().int().nonnegative(),
+    expectedAvailabilityRevision: z.number().int().nonnegative(),
+  })
+  .strict();
+
+async function changeSiteAvailability(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+  functionName: string,
+  targetParameter:
+    | "requested_record_id"
+    | "requested_object_definition_id"
+    | "requested_field_definition_id"
+    | "requested_asset_id",
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteAvailabilityInputSchema.parse(input);
+  return callSiteRpc(
+    client,
+    functionName,
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      [targetParameter]: request.targetId,
+      expected_active_release_revision: request.expectedActiveReleaseRevision,
+      expected_availability_revision: request.expectedAvailabilityRevision,
+    },
+    siteAvailabilitySchema,
+  );
+}
+
+export function withdrawSiteRecord(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "withdraw_site_record",
+    "requested_record_id",
+  );
+}
+
+export function reenableSiteRecord(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "reenable_site_record",
+    "requested_record_id",
+  );
+}
+
+export function withdrawSiteObject(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "withdraw_site_object",
+    "requested_object_definition_id",
+  );
+}
+
+export function reenableSiteObject(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "reenable_site_object",
+    "requested_object_definition_id",
+  );
+}
+
+export function withdrawSiteField(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "withdraw_site_field",
+    "requested_field_definition_id",
+  );
+}
+
+export function reenableSiteField(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "reenable_site_field",
+    "requested_field_definition_id",
+  );
+}
+
+export function withdrawSiteMedia(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "withdraw_site_media",
+    "requested_asset_id",
+  );
+}
+
+export function reenableSiteMedia(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  return changeSiteAvailability(
+    client,
+    contextInput,
+    input,
+    "reenable_site_media",
+    "requested_asset_id",
   );
 }

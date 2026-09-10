@@ -3,7 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/sites-c1-foundation.integration.ts"],
+    include: [
+      "tests/sites-c1-foundation.integration.ts",
+      "tests/sites-c2-functional.integration.ts",
+    ],
     fileParallelism: false,
     sequence: { concurrent: false },
     testTimeout: 30_000,
