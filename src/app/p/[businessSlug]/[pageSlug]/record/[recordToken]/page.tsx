@@ -52,8 +52,8 @@ export default async function PublicRecordPage({
             </span>
           )}
           <div>
-            <strong>{runtime.business.name}</strong>
-            <span>Customer site</span>
+            <strong>{runtime.site.branding.name}</strong>
+            <span>{runtime.business.name}</span>
           </div>
         </div>
         <span className="c7-public-powered-by">Powered by Lenni</span>
