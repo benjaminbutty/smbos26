@@ -290,10 +290,10 @@ test("owner can review the compact Site editor", async ({
   ).toHaveCount(2);
   await selectSitePage(page, "Home");
 
-  const headingBlock = home
-    .locator(".site-composer-canvas-block")
-    .filter({ hasText: "New heading" })
-    .first();
+  const headingBlock = home.locator(".site-composer-canvas-block").first();
+  await expect(
+    headingBlock.locator(".site-composer-canvas-block-type"),
+  ).toHaveText("Heading");
   await headingBlock.click();
   const headingInput = home
     .locator(".site-composer-inspector .site-composer-block")
@@ -623,10 +623,15 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.goto(`/app/${business.slug}/sites`);
   const draftHome = page.locator(".site-composer-page").first();
   await addSiteBlock(page, "Add heading");
+  const incompleteHeadingCard = draftHome.getByRole("button", {
+    name: "Heading",
+    exact: true,
+  });
+  await expect(incompleteHeadingCard).toHaveCount(1);
+  await incompleteHeadingCard.click();
   const incompleteHeading = draftHome
     .locator(".site-composer-inspector .site-composer-block")
-    .last()
-    .locator("input")
+    .getByRole("textbox")
     .first();
   const autosave = page.waitForResponse(
     (response) =>
@@ -637,13 +642,17 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await incompleteHeading.fill("");
   await autosave;
   await page.reload();
+  const reloadedHome = page.locator(".site-composer-page").first();
+  const reloadedIncompleteHeading = reloadedHome.getByRole("button", {
+    name: "Heading",
+    exact: true,
+  });
+  await expect(reloadedIncompleteHeading).toHaveCount(1);
+  await reloadedIncompleteHeading.click();
   await expect(
-    page
-      .locator(".site-composer-page")
-      .first()
+    reloadedHome
       .locator(".site-composer-inspector .site-composer-block")
-      .last()
-      .locator("input")
+      .getByRole("textbox")
       .first(),
   ).toHaveValue("");
 
@@ -664,9 +673,19 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     page
       .locator(".site-composer-page")
       .first()
+      .getByRole("button", { name: "Heading", exact: true }),
+  ).toHaveCount(1);
+  await page
+    .locator(".site-composer-page")
+    .first()
+    .getByRole("button", { name: "Heading", exact: true })
+    .click();
+  await expect(
+    page
+      .locator(".site-composer-page")
+      .first()
       .locator(".site-composer-inspector .site-composer-block")
-      .last()
-      .locator("input")
+      .getByRole("textbox")
       .first(),
   ).toHaveValue("");
 });
