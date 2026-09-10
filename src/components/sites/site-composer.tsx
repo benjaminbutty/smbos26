@@ -197,7 +197,7 @@ export function SiteComposer({
   const [draft, setDraft] = useState<SiteDraftV1>(() =>
     copyDraft(initialDraft),
   );
-  const [revision, setRevision] = useState(draftRevision);
+  const [, setRevision] = useState(draftRevision);
   const [undoStack, setUndoStack] = useState<SiteDraftV1[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [attachmentRevisions, setAttachmentRevisions] = useState<
@@ -209,6 +209,14 @@ export function SiteComposer({
   const autosaveReady = useRef(false);
   const revisionRef = useRef(draftRevision);
   const autosaveQueue = useRef(Promise.resolve());
+  const autosaveTimer = useRef<number | null>(null);
+  const explicitSavePending = useRef(false);
+
+  const cancelAutosaveTimer = useCallback(() => {
+    if (autosaveTimer.current === null) return;
+    window.clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = null;
+  }, []);
 
   const queueDraftSave = useCallback(
     (draftToSave: SiteDraftV1, failureMessage: string): Promise<boolean> => {
@@ -262,13 +270,35 @@ export function SiteComposer({
     }
     const draftToSave = copyDraft(draft);
     const timeout = window.setTimeout(() => {
+      autosaveTimer.current = null;
       void queueDraftSave(
         draftToSave,
         "Draft autosave failed. Use Save draft to try again.",
       );
     }, 900);
-    return () => window.clearTimeout(timeout);
+    autosaveTimer.current = timeout;
+    return () => {
+      window.clearTimeout(timeout);
+      if (autosaveTimer.current === timeout) autosaveTimer.current = null;
+    };
   }, [businessSlug, draft, queueDraftSave, siteId]);
+
+  async function submitExplicitSave(event: FormEvent<HTMLFormElement>) {
+    if (explicitSavePending.current) {
+      explicitSavePending.current = false;
+      return;
+    }
+    const form = event.currentTarget;
+    event.preventDefault();
+    explicitSavePending.current = true;
+    cancelAutosaveTimer();
+    await autosaveQueue.current;
+    if (!form.isConnected) {
+      explicitSavePending.current = false;
+      return;
+    }
+    form.requestSubmit();
+  }
 
   function commit(next: SiteDraftV1): void {
     setUndoStack((previous) => [...previous.slice(-19), copyDraft(draft)]);
@@ -842,12 +872,12 @@ export function SiteComposer({
           >
             Undo
           </button>
-          <form action={saveAction}>
+          <form action={saveAction} onSubmit={submitExplicitSave}>
             <input name="siteId" type="hidden" value={siteId} />
             <input
               name="expectedDraftRevision"
               type="hidden"
-              value={revision}
+              value={revisionRef.current}
             />
             <input name="draft" type="hidden" value={JSON.stringify(draft)} />
             <button type="submit">Save draft</button>
