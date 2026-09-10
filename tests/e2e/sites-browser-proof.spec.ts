@@ -82,7 +82,9 @@ async function selectSitePage(page: Page, title: string): Promise<Locator> {
   const selected = page.locator(".site-composer-page");
   await expect(selected).toHaveCount(1);
   await expect(
-    selected.getByRole("heading", { name: title, exact: true }),
+    selected
+      .locator(".site-composer-page-header")
+      .getByRole("heading", { name: title, exact: true }),
   ).toBeVisible();
   return selected;
 }
@@ -373,6 +375,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.getByLabel("Site name").fill(siteName);
   const pages = page.locator(".site-composer-page");
   await expect(pages).toHaveCount(1);
+  await page.getByText("Site identity", { exact: true }).click();
   await page.getByLabel("Accent").selectOption("clay");
 
   const secondPage = await addSitePage(page, secondPageTitle, secondPageSlug);
