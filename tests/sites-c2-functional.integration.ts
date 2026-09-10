@@ -69,6 +69,7 @@ let admin: Client;
 let anonymous: Client;
 let owner: Identity;
 let fixtureSql: Sql;
+let raceSql: Sql;
 let catalogueBusiness: Business;
 let adoptionBusiness: Business;
 let catalogueSiteId: string;
@@ -382,6 +383,7 @@ describe("Lenni Sites C2 functional milestone", () => {
       },
     );
     fixtureSql = postgres(settings.databaseUrl, { max: 1 });
+    raceSql = postgres(settings.databaseUrl, { max: 1 });
     owner = await createIdentity("owner");
     catalogueBusiness = await createBusiness(
       `Sites C2 catalogue ${crypto.randomUUID()}`,
@@ -593,6 +595,7 @@ describe("Lenni Sites C2 functional milestone", () => {
       }
     } finally {
       if (fixtureSql) await fixtureSql.end();
+      if (raceSql) await raceSql.end();
     }
   });
 
@@ -873,6 +876,80 @@ describe("Lenni Sites C2 functional milestone", () => {
         requested_page_slug: "home",
       }),
     ).resolves.toBeNull();
+  });
+
+  it("serializes Record media attachment with cleanup claims", async () => {
+    const cleanupWonAssetId = await createAsset();
+    const cleanupClaimToken = crypto.randomUUID();
+    let blockedAttachment: Promise<unknown> | undefined;
+    await raceSql.begin(async (transaction) => {
+      await transaction`
+        select id
+        from public.media_assets
+        where business_id = ${catalogueBusiness.id}
+          and id = ${cleanupWonAssetId}
+        for update
+      `;
+      blockedAttachment = attachSiteRecordMedia(owner.client, context(), {
+        siteId: catalogueSiteId,
+        recordId: secondRecordId,
+        objectDefinitionId,
+        fieldDefinitionId: photoFieldId,
+        assetId: cleanupWonAssetId,
+        expectedRecordRevision: 2,
+        expectedAttachmentRevision: 1,
+      });
+      await transaction`
+        update public.media_assets
+        set cleanup_claim_token = ${cleanupClaimToken},
+            cleanup_claimed_at = timezone('utc', now())
+        where business_id = ${catalogueBusiness.id}
+          and id = ${cleanupWonAssetId}
+      `;
+    });
+    expect(blockedAttachment).toBeDefined();
+    await expect(blockedAttachment!).rejects.toMatchObject({
+      code: "site_asset_unavailable",
+    });
+    const released = await rpc(admin).rpc("release_site_media_cleanup_claim", {
+      expected_business_id: catalogueBusiness.id,
+      requested_asset_id: cleanupWonAssetId,
+      requested_claim_token: cleanupClaimToken,
+    });
+    expect(released.error).toBeNull();
+
+    const attachmentWonAssetId = await createAsset();
+    let waitingAttachment: Promise<unknown> | undefined;
+    await raceSql.begin(async (transaction) => {
+      await transaction`
+        select id
+        from public.media_assets
+        where business_id = ${catalogueBusiness.id}
+          and id = ${attachmentWonAssetId}
+        for update
+      `;
+      waitingAttachment = attachSiteRecordMedia(owner.client, context(), {
+        siteId: catalogueSiteId,
+        recordId: secondRecordId,
+        objectDefinitionId,
+        fieldDefinitionId: photoFieldId,
+        assetId: attachmentWonAssetId,
+        expectedRecordRevision: 2,
+        expectedAttachmentRevision: 1,
+      });
+    });
+    expect(waitingAttachment).toBeDefined();
+    const attached = (await waitingAttachment!) as { asset_id: string };
+    expect(attached.asset_id).toBe(attachmentWonAssetId);
+    const cleanupAfterAttachment = await rpc(admin).rpc(
+      "claim_site_media_asset_for_cleanup",
+      {
+        expected_business_id: catalogueBusiness.id,
+        requested_asset_id: attachmentWonAssetId,
+      },
+    );
+    expect(cleanupAfterAttachment.error).toBeNull();
+    expect(cleanupAfterAttachment.data).toBeNull();
   });
 
   it("keeps old releases unavailable across operational source transitions", async () => {
