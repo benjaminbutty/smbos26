@@ -335,7 +335,9 @@ function renderBlock(
               ? Object.entries(values).map(([field, value]) => (
                   <p key={field}>
                     <strong>{field}</strong>{" "}
-                    {displayValue(value, businessSlug, mediaPrefix)}
+                    <span className="site-public-record-value">
+                      {displayValue(value, businessSlug, mediaPrefix)}
+                    </span>
                   </p>
                 ))
               : null;
@@ -368,7 +370,9 @@ function renderBlock(
             ? Object.entries(record.values).map(([field, value]) => (
                 <p key={field}>
                   <strong>{field}</strong>{" "}
-                  {displayValue(value, businessSlug, mediaPrefix)}
+                  <span className="site-public-record-value">
+                    {displayValue(value, businessSlug, mediaPrefix)}
+                  </span>
                 </p>
               ))
             : null}
