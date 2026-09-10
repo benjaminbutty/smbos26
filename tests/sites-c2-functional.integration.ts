@@ -60,6 +60,8 @@ type SiteState = {
   active_release_id: string | null;
   active_release_revision: number;
   migration_state: "new" | "legacy_pending" | "adopted";
+  legacy_source_checksum: string | null;
+  legacy_source_page_count: number | null;
 };
 
 const password = "Sites-C2-integration-password!";
@@ -1110,6 +1112,8 @@ describe("Lenni Sites C2 functional milestone", () => {
       },
     );
     expect(initial.migration_state).toBe("legacy_pending");
+    expect(initial.legacy_source_checksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(initial.legacy_source_page_count).toBe(1);
     const staged = await stageSiteAdoption(
       owner.client,
       context(adoptionBusiness),

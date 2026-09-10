@@ -4350,7 +4350,13 @@ begin
       and page_value.audience = 'public'
       and page_value.status = 'published'
       and page_value.is_active;
-    if legacy_count > 0 then new.migration_state := 'legacy_pending'; end if;
+    if legacy_count > 0 then
+      new.migration_state := 'legacy_pending';
+      new.legacy_source_checksum := private.site_legacy_source_fingerprint_v2(
+        new.business_id
+      );
+      new.legacy_source_page_count := legacy_count;
+    end if;
   end if;
   if tg_op = 'UPDATE'
     and old.migration_state = 'adopted'
