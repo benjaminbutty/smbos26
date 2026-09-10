@@ -74,17 +74,41 @@ async function createWorkspaceTable(
   return decodeURIComponent(viewMatch[1]);
 }
 
+async function selectSitePage(page: Page, title: string): Promise<Locator> {
+  const pageButton = page
+    .getByRole("navigation", { name: "Choose a Page" })
+    .getByRole("button", { name: title, exact: true });
+  await pageButton.click();
+  const selected = page.locator(".site-composer-page");
+  await expect(selected).toHaveCount(1);
+  await expect(
+    selected.getByRole("heading", { name: title, exact: true }),
+  ).toBeVisible();
+  return selected;
+}
+
+async function addSiteBlock(page: Page, label: string): Promise<void> {
+  await page.getByRole("button", { name: "Add block", exact: true }).click();
+  await page.getByRole("menuitem", { name: label, exact: true }).click();
+}
+
 async function addSitePage(
   page: Page,
   title: string,
   slug: string,
   options: { included?: boolean; inNavigation?: boolean } = {},
 ): Promise<Locator> {
-  const pages = page.locator(".site-composer-page");
-  const nextIndex = await pages.count();
-  await page.getByRole("button", { name: "Add Page", exact: true }).click();
-  await expect(pages).toHaveCount(nextIndex + 1);
-  const added = pages.nth(nextIndex);
+  const pageButtons = page
+    .getByRole("navigation", { name: "Choose a Page" })
+    .getByRole("button");
+  const nextIndex = await pageButtons.count();
+  await page
+    .getByRole("button", { name: "Add Page", exact: true })
+    .first()
+    .click();
+  await expect(pageButtons).toHaveCount(nextIndex + 1);
+  const added = page.locator(".site-composer-page");
+  await expect(added).toHaveCount(1);
   await added.getByLabel("Title").fill(title);
   await added.getByLabel("Address").fill(slug);
   await added.getByLabel("Navigation label").fill(title);
@@ -193,10 +217,13 @@ async function saveSiteDraft(page: Page, businessSlug: string): Promise<void> {
 
 async function uploadSiteImage(page: Page): Promise<void> {
   const home = page.locator(".site-composer-page").first();
+  await page.getByRole("button", { name: "Add block", exact: true }).click();
   await home
-    .getByRole("button", { name: "Add Site image", exact: true })
+    .getByRole("menuitem", { name: "Add Site image", exact: true })
     .click();
-  const imageBlock = home.locator(".site-composer-block").last();
+  const imageBlock = home.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
   await imageBlock.getByLabel("Choose managed image").setInputFiles({
     ...proofImage,
     name: "browser-proof-site.png",
@@ -210,10 +237,13 @@ async function uploadSiteGalleryImage(
   pageLocator: Locator,
   name: string,
 ): Promise<void> {
+  await page.getByRole("button", { name: "Add block", exact: true }).click();
   await pageLocator
-    .getByRole("button", { name: "Add image gallery", exact: true })
+    .getByRole("menuitem", { name: "Add image gallery", exact: true })
     .click();
-  const galleryBlock = pageLocator.locator(".site-composer-block").last();
+  const galleryBlock = pageLocator.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
   await galleryBlock
     .getByLabel("Add managed gallery image")
     .setInputFiles({ ...proofImage, name });
@@ -232,11 +262,80 @@ async function captureSiteStates(
     await page.setViewportSize({ width: state.width, height: state.height });
     await expectSatoshi(page);
     await page.screenshot({
-      fullPage: true,
+      fullPage: false,
       path: testInfo.outputPath(state.name),
     });
   }
 }
+
+test("owner can review the compact Site editor", async ({
+  page,
+  pagesProof,
+}, testInfo) => {
+  await page.route("https://jamp.io/**", (route) => route.abort());
+  const business = await pagesProof.createBusinessThroughOwnerUi(page);
+
+  await page.goto(`/app/${business.slug}/sites`);
+  await page.getByRole("button", { name: "Create Site draft" }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=created$`),
+  );
+
+  const home = await selectSitePage(page, "Home");
+  await page.getByRole("button", { name: "Add Page", exact: true }).click();
+  await expect(
+    page.getByRole("navigation", { name: "Choose a Page" }).getByRole("button"),
+  ).toHaveCount(2);
+  await selectSitePage(page, "Home");
+
+  const headingBlock = home
+    .locator(".site-composer-canvas-block")
+    .filter({ hasText: "New heading" })
+    .first();
+  await headingBlock.click();
+  const headingInput = home
+    .locator(".site-composer-inspector .site-composer-block")
+    .getByRole("textbox")
+    .first();
+  await expect(headingInput).toBeVisible();
+  const autosave = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+      response.status() === 200,
+  );
+  await headingInput.fill("A welcoming home page");
+  await autosave;
+  await expect(
+    page.getByText("Saved automatically", { exact: true }),
+  ).toBeVisible();
+
+  for (const state of [
+    { name: "first-draft-editor-1440x900.png", width: 1440, height: 900 },
+    { name: "first-draft-editor-1024x768.png", width: 1024, height: 768 },
+    { name: "first-draft-editor-390x844.png", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: state.width, height: state.height });
+    await expectSatoshi(page);
+    await page.screenshot({
+      fullPage: false,
+      path: testInfo.outputPath(state.name),
+    });
+  }
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
+  );
+  await expect(
+    page.getByRole("region", { name: "Site preview" }),
+  ).toBeVisible();
+  await page.screenshot({
+    fullPage: false,
+    path: testInfo.outputPath("first-draft-preview-1440x900.png"),
+  });
+});
 
 test("owner builds and publishes a multi-page Site in Chromium", async ({
   page,
@@ -277,38 +376,29 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.getByLabel("Accent").selectOption("clay");
 
   const secondPage = await addSitePage(page, secondPageTitle, secondPageSlug);
-  await secondPage
-    .getByRole("button", { name: "Add 2-column section", exact: true })
-    .click();
-  await secondPage
-    .getByRole("button", { name: "Add collapsible section", exact: true })
-    .click();
+  await addSiteBlock(page, "Add 2-column section");
+  await addSiteBlock(page, "Add collapsible section");
 
   const cataloguePage = await addSitePage(page, "Catalogue", "catalogue");
   const portfolioPage = await addSitePage(page, "Portfolio", "portfolio");
-  const detailPage = await addSitePage(
-    page,
-    "Catalogue details",
-    "catalogue-details",
-    { inNavigation: false },
-  );
+  await addSitePage(page, "Catalogue details", "catalogue-details", {
+    inNavigation: false,
+  });
   await addSitePage(page, "Private notes", "private-notes", {
     included: false,
     inNavigation: false,
   });
 
-  await page
-    .getByRole("button", { name: "Add Record collection", exact: true })
-    .first()
-    .click();
+  const homePage = await selectSitePage(page, "Home");
+  await addSiteBlock(page, "Add Record collection");
   const homeCatalogueCollection = await configureCollection(
-    pages.first(),
+    homePage,
     catalogueView,
     "cards",
     "Catalogue details",
   );
   const recordImageInput = homeCatalogueCollection
-    .getByLabel("Record image (photo)", { exact: true })
+    .getByLabel("Record image (Photo)", { exact: true })
     .first();
   await expect(recordImageInput).toBeVisible();
   await recordImageInput.setInputFiles({
@@ -316,69 +406,61 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     name: "browser-proof-record.png",
   });
   await expect(
-    page.getByText("Record image attached for the next reviewed release.", {
+    page.getByText("Record image is ready for your next Site update.", {
       exact: true,
     }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Add Record collection", exact: true })
-    .first()
-    .click();
-  await configureCollection(pages.first(), servicesView, "table");
+  await addSiteBlock(page, "Add Record collection");
+  await configureCollection(homePage, servicesView, "table");
 
-  await cataloguePage
-    .getByRole("button", { name: "Add Record collection", exact: true })
-    .click();
+  await selectSitePage(page, "Catalogue");
+  await addSiteBlock(page, "Add Record collection");
   await configureCollection(cataloguePage, catalogueView, "cards");
-  await secondPage
-    .getByRole("button", { name: "Add Record collection", exact: true })
-    .click();
+  await selectSitePage(page, secondPageTitle);
+  await addSiteBlock(page, "Add Record collection");
   await configureCollection(secondPage, servicesView, "list");
 
-  await portfolioPage
-    .getByRole("button", { name: "Add Record collection", exact: true })
-    .click();
+  await selectSitePage(page, "Portfolio");
+  await addSiteBlock(page, "Add Record collection");
   await configureCollection(portfolioPage, portfolioView, "list");
 
-  await detailPage
-    .getByRole("button", { name: "Add shared Record detail", exact: true })
-    .click();
+  await selectSitePage(page, "Catalogue details");
+  await addSiteBlock(page, "Add shared Record detail");
 
+  await selectSitePage(page, "Portfolio");
   await uploadSiteGalleryImage(
     page,
     portfolioPage,
     "browser-proof-gallery.png",
   );
+  await selectSitePage(page, "Home");
   await uploadSiteImage(page);
 
-  const portfolioBlocks = portfolioPage.locator(".site-composer-block");
+  const portfolio = await selectSitePage(page, "Portfolio");
+  const portfolioBlocks = portfolio.locator(".site-composer-canvas-block");
+  const portfolioInspector = portfolio.locator(".site-composer-inspector");
   const initialPortfolioBlockCount = await portfolioBlocks.count();
-  await portfolioBlocks
-    .first()
+  await portfolioBlocks.first().click();
+  await portfolioInspector
     .getByRole("button", { name: "↓", exact: true })
     .click();
-  await portfolioBlocks
-    .first()
+  await portfolioInspector
     .getByRole("button", { name: "Duplicate", exact: true })
     .click();
   await expect(portfolioBlocks).toHaveCount(initialPortfolioBlockCount + 1);
-  await portfolioBlocks
-    .nth(1)
+  await portfolioInspector
     .getByRole("button", { name: "Remove", exact: true })
     .click();
   await expect(portfolioBlocks).toHaveCount(initialPortfolioBlockCount);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
   await expect(portfolioBlocks).toHaveCount(initialPortfolioBlockCount + 1);
-  await portfolioBlocks
-    .nth(1)
+  await portfolioInspector
     .getByRole("button", { name: "Remove", exact: true })
     .click();
 
   await saveSiteDraft(page, business.slug);
 
-  await page
-    .getByRole("button", { name: "Prepare release for review", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
   );
@@ -388,14 +470,12 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(page.getByText(siteName, { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", {
-      name: "Publish reviewed candidate",
+      name: "Publish",
       exact: true,
     }),
   ).toBeVisible();
 
-  await page
-    .getByRole("button", { name: "Publish reviewed candidate", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
   );
@@ -513,15 +593,11 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=availability_changed$`),
   );
-  await page
-    .getByRole("button", { name: "Prepare release for review", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
   );
-  await page
-    .getByRole("button", { name: "Publish reviewed candidate", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
   );
@@ -543,11 +619,9 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   // explicit Site rebase while preserving that durable draft composition.
   await page.goto(`/app/${business.slug}/sites`);
   const draftHome = page.locator(".site-composer-page").first();
-  await draftHome
-    .getByRole("button", { name: "Add heading", exact: true })
-    .click();
+  await addSiteBlock(page, "Add heading");
   const incompleteHeading = draftHome
-    .locator(".site-composer-block")
+    .locator(".site-composer-inspector .site-composer-block")
     .last()
     .locator("input")
     .first();
@@ -564,7 +638,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     page
       .locator(".site-composer-page")
       .first()
-      .locator(".site-composer-block")
+      .locator(".site-composer-inspector .site-composer-block")
       .last()
       .locator("input")
       .first(),
@@ -579,9 +653,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(
     page.getByRole("region", { name: "Draft recovery" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Rebase draft base", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Update draft", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=rebased$`),
   );
@@ -589,7 +661,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     page
       .locator(".site-composer-page")
       .first()
-      .locator(".site-composer-block")
+      .locator(".site-composer-inspector .site-composer-block")
       .last()
       .locator("input")
       .first(),

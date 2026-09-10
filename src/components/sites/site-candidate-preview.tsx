@@ -34,12 +34,10 @@ export function SiteCandidatePreview({
               width={160}
             />
           ) : null}
-          <p className="eyebrow">Exact candidate preview</p>
+          <p className="eyebrow">Preview of your Site update</p>
           <h2>{safeProjection.branding.name}</h2>
         </div>
-        <span className="muted">
-          Prepared projection · review before publishing
-        </span>
+        <span className="muted">Review before publishing</span>
       </div>
       {safeProjection.pages.map((page) => (
         <article className="site-candidate-preview-page" key={page.public_key}>

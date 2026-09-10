@@ -7,7 +7,7 @@ import type { SiteDraftV1 } from "../../core/sites/schemas";
 
 type SitePage = SiteDraftV1["pages"][number];
 type SiteBlock = SitePage["layout"]["blocks"][number];
-type SaveAction = (formData: FormData) => void | Promise<void>;
+type SiteAction = (formData: FormData) => void | Promise<void>;
 
 type FileFieldOption = { id: string; key: string };
 type FieldOption = { id: string; key: string; fieldType: string };
@@ -98,8 +98,103 @@ function blockLabel(block: SiteBlock): string {
   if (typeof value.text === "string" && value.text.trim()) return value.text;
   if (typeof value.summary === "string" && value.summary.trim())
     return value.summary;
-  if (typeof value.object_key === "string") return value.object_key;
-  return block.type.replaceAll("_", " ");
+  if (typeof value.object_key === "string") return displayKey(value.object_key);
+  return displayKey(block.type);
+}
+
+function blockIdentity(block: SiteBlock, fallback: string): string {
+  const value = asRecord(block);
+  return typeof value.id === "string" ? value.id : fallback;
+}
+
+function displayKey(value: string): string {
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function previewBlockContent(
+  block: SiteBlock,
+  objectOptions: readonly ObjectOption[],
+): ReactNode {
+  const value = asRecord(block);
+  if (block.type === "heading") {
+    return <h2>{typeof value.text === "string" ? value.text : "Heading"}</h2>;
+  }
+  if (block.type === "text" || block.type === "callout") {
+    return (
+      <p>
+        {typeof value.text === "string" && value.text.trim()
+          ? value.text
+          : "Add a short message for visitors."}
+      </p>
+    );
+  }
+  if (block.type === "button") {
+    return (
+      <span className="site-composer-canvas-button">
+        {typeof value.label === "string" && value.label.trim()
+          ? value.label
+          : "Add a button label"}
+      </span>
+    );
+  }
+  if (block.type === "image") {
+    return (
+      <span>
+        {typeof value.asset_id === "string"
+          ? typeof value.alt === "string" && value.alt.trim()
+            ? value.alt
+            : "Managed image"
+          : "Choose an image"}
+      </span>
+    );
+  }
+  if (block.type === "gallery") {
+    const count = Array.isArray(value.images) ? value.images.length : 0;
+    return (
+      <span>
+        {count ? `${count} image${count === 1 ? "" : "s"}` : "Add images"}
+      </span>
+    );
+  }
+  if (block.type === "collection") {
+    const option =
+      typeof value.object_key === "string"
+        ? objectOptions.find((candidate) => candidate.key === value.object_key)
+        : undefined;
+    const selection = asRecord(value.selection);
+    const count = Array.isArray(selection.record_ids)
+      ? selection.record_ids.length
+      : 0;
+    return (
+      <span>
+        {option ? displayKey(option.key) : "Choose information"} · {count} item
+        {count === 1 ? "" : "s"}
+      </span>
+    );
+  }
+  if (block.type === "record_detail") {
+    return <span>Shared details for each item</span>;
+  }
+  if (block.type === "collapsible") {
+    return (
+      <span>
+        {typeof value.summary === "string" && value.summary.trim()
+          ? value.summary
+          : "Expandable section"}
+      </span>
+    );
+  }
+  if (block.type === "section") {
+    const count = Array.isArray(value.columns) ? value.columns.length : 1;
+    return (
+      <span>
+        {count} column{count === 1 ? "" : "s"}
+      </span>
+    );
+  }
+  return <span>{displayKey(block.type)}</span>;
 }
 
 function copyDraft(draft: SiteDraftV1): SiteDraftV1 {
@@ -183,15 +278,25 @@ export function SiteComposer({
   businessSlug,
   draft: initialDraft,
   draftRevision,
+  draftBaseVersionId,
+  draftBaseHeadRevision,
   objectOptions,
+  previewAction,
+  publishAction,
+  candidateId,
   saveAction,
   siteId,
 }: Readonly<{
   businessSlug: string;
   draft: SiteDraftV1;
   draftRevision: number;
+  draftBaseVersionId: string;
+  draftBaseHeadRevision: number;
   objectOptions: ObjectOption[];
-  saveAction: SaveAction;
+  previewAction?: SiteAction;
+  publishAction?: SiteAction;
+  candidateId: string | undefined;
+  saveAction: SiteAction;
   siteId: string;
 }>): ReactNode {
   const [draft, setDraft] = useState<SiteDraftV1>(() =>
@@ -206,10 +311,23 @@ export function SiteComposer({
   const [recordRevisions, setRecordRevisions] = useState<
     Record<string, number>
   >({});
+  const [autosaveStatus, setAutosaveStatus] = useState<
+    "saved" | "saving" | "error"
+  >("saved");
   const autosaveReady = useRef(false);
   const revisionRef = useRef(draftRevision);
   const autosaveQueue = useRef(Promise.resolve());
   const autosaveTimer = useRef<number | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState(() => {
+    const home = initialDraft.pages.find((page) => page.is_home);
+    return home?.id ?? initialDraft.pages[0]?.id ?? "";
+  });
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(false);
+  const [addBlockMenuOpen, setAddBlockMenuOpen] = useState(false);
+  const addBlockButtonRef = useRef<HTMLButtonElement | null>(null);
+  const addBlockMenuRef = useRef<HTMLDivElement | null>(null);
 
   const cancelAutosaveTimer = useCallback(() => {
     if (autosaveTimer.current === null) return;
@@ -234,6 +352,7 @@ export function SiteComposer({
             },
           );
           if (!response.ok) {
+            setAutosaveStatus("error");
             setMessage(
               response.status === 409
                 ? "This draft changed elsewhere. Reload before continuing."
@@ -247,8 +366,10 @@ export function SiteComposer({
             revisionRef.current = nextRevision;
             setRevision(nextRevision);
           }
+          setAutosaveStatus("saved");
           return true;
         } catch {
+          setAutosaveStatus("error");
           setMessage(failureMessage);
           return false;
         }
@@ -282,10 +403,36 @@ export function SiteComposer({
     };
   }, [businessSlug, draft, queueDraftSave, siteId]);
 
+  useEffect(() => {
+    if (!addBlockMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        addBlockMenuRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setAddBlockMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setAddBlockMenuOpen(false);
+      addBlockButtonRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [addBlockMenuOpen]);
+
   function commit(next: SiteDraftV1): void {
     setUndoStack((previous) => [...previous.slice(-19), copyDraft(draft)]);
     setDraft(next);
     setMessage(null);
+    setAutosaveStatus("saving");
   }
 
   function updatePage(pageId: string, update: (page: SitePage) => void): void {
@@ -340,6 +487,12 @@ export function SiteComposer({
       clearDetailPageReferences(candidate.layout.blocks, pageId);
     }
     commit(next);
+    if (selectedPageId === pageId) {
+      const nextPage =
+        next.pages.find((candidate) => candidate.is_home) ?? next.pages[0];
+      setSelectedPageId(nextPage?.id ?? "");
+      setSelectedBlockId(null);
+    }
   }
 
   function setHome(pageId: string): void {
@@ -392,6 +545,10 @@ export function SiteComposer({
     if (!page) return;
     page.layout.blocks.push(block);
     commit(next);
+    setSelectedPageId(pageId);
+    setSelectedBlockId(blockIdentity(block, ""));
+    setPageSettingsOpen(false);
+    setAddBlockMenuOpen(false);
   }
 
   function addCollection(pageId: string): void {
@@ -775,7 +932,7 @@ export function SiteComposer({
     ) {
       return;
     }
-    setMessage(`Uploading ${field.key} for ${record.label}…`);
+    setMessage(`Uploading ${displayKey(field.key)} for ${record.label}…`);
     const assetId = await uploadManagedAsset(file);
     if (!assetId) {
       setMessage("The Record image could not be uploaded.");
@@ -824,7 +981,7 @@ export function SiteComposer({
         [record.id]: nextRecordRevision,
       }));
     }
-    setMessage("Record image attached for the next reviewed release.");
+    setMessage("Record image is ready for your next Site update.");
   }
 
   function undo(): void {
@@ -833,6 +990,7 @@ export function SiteComposer({
     setUndoStack((stack) => stack.slice(0, -1));
     setDraft(previous);
     setMessage(null);
+    setAutosaveStatus("saving");
   }
 
   return (
@@ -840,13 +998,34 @@ export function SiteComposer({
       <div className="site-composer-toolbar">
         <div>
           <p className="eyebrow">Site builder</p>
-          <h2>Shape the customer-facing Site</h2>
+          <h2>Shape your customer-facing Site</h2>
           <p className="muted">
-            Incomplete work autosaves as you shape it. Publish always uses the
-            reviewed candidate.
+            Changes save as you work. Publish updates the whole Site after you
+            review it.
           </p>
+          <label className="site-composer-toolbar-site-name">
+            Site name
+            <input
+              value={draft.branding.name}
+              onChange={(event) => {
+                const next = copyDraft(draft);
+                next.branding.name = event.target.value;
+                commit(next);
+              }}
+            />
+          </label>
         </div>
         <div className="site-composer-toolbar-actions">
+          <p
+            className={`site-composer-autosave-status is-${autosaveStatus}`}
+            aria-live="polite"
+          >
+            {autosaveStatus === "saving"
+              ? "Saving…"
+              : autosaveStatus === "error"
+                ? "Autosave needs attention"
+                : "Saved automatically"}
+          </p>
           <button
             disabled={undoStack.length === 0}
             onClick={undo}
@@ -866,27 +1045,79 @@ export function SiteComposer({
               Save draft
             </button>
           </form>
+          {previewAction ? (
+            <form action={previewAction}>
+              <input name="siteId" type="hidden" value={siteId} />
+              <input
+                name="expectedDraftRevision"
+                type="hidden"
+                value={revision}
+              />
+              <input
+                name="expectedBaseVersionId"
+                type="hidden"
+                value={draftBaseVersionId}
+              />
+              <input
+                name="expectedHeadRevision"
+                type="hidden"
+                value={draftBaseHeadRevision}
+              />
+              <button disabled={autosaveStatus === "saving"} type="submit">
+                Preview
+              </button>
+            </form>
+          ) : null}
+          {publishAction && candidateId ? (
+            <form action={publishAction}>
+              <input name="siteId" type="hidden" value={siteId} />
+              <input name="candidateId" type="hidden" value={candidateId} />
+              <input
+                name="expectedDraftRevision"
+                type="hidden"
+                value={revision}
+              />
+              <input
+                name="expectedBaseVersionId"
+                type="hidden"
+                value={draftBaseVersionId}
+              />
+              <input
+                name="expectedHeadRevision"
+                type="hidden"
+                value={draftBaseHeadRevision}
+              />
+              <button disabled={autosaveStatus === "saving"} type="submit">
+                Publish
+              </button>
+            </form>
+          ) : publishAction ? (
+            <button
+              disabled
+              title="Preview your changes before publishing"
+              type="button"
+            >
+              Publish
+            </button>
+          ) : null}
         </div>
       </div>
       {message ? <p className="notice notice-message">{message}</p> : null}
 
-      <section
-        className="panel site-composer-branding"
-        aria-label="Site branding"
-      >
-        <h3>Branding</h3>
+      <details className="panel site-composer-branding" open={identityOpen}>
+        <summary
+          onClick={(event) => {
+            event.preventDefault();
+            setIdentityOpen((open) => !open);
+          }}
+        >
+          <span>
+            <strong>Site identity</strong>
+            <small className="muted">Appearance and logo</small>
+          </span>
+          <span aria-hidden="true">{identityOpen ? "−" : "+"}</span>
+        </summary>
         <div className="site-composer-fields">
-          <label>
-            Site name
-            <input
-              value={draft.branding.name}
-              onChange={(event) => {
-                const next = copyDraft(draft);
-                next.branding.name = event.target.value;
-                commit(next);
-              }}
-            />
-          </label>
           <label>
             Accent
             <select
@@ -944,838 +1175,1151 @@ export function SiteComposer({
             ) : null}
           </label>
         </div>
-      </section>
+      </details>
 
-      <div className="site-composer-pages">
-        {draft.pages.map((page, pageIndex) => (
-          <article className="panel site-composer-page" key={page.id}>
-            <header className="site-composer-page-header">
-              <div>
-                <p className="eyebrow">Page {pageIndex + 1}</p>
-                <h3>{page.title || "Untitled Page"}</h3>
-              </div>
-              <div className="site-composer-inline-actions">
-                <button
-                  disabled={pageIndex === 0}
-                  onClick={() => movePage(page.id, -1)}
-                  type="button"
-                >
-                  ↑
-                </button>
-                <button
-                  disabled={pageIndex === draft.pages.length - 1}
-                  onClick={() => movePage(page.id, 1)}
-                  type="button"
-                >
-                  ↓
-                </button>
-                <button
-                  disabled={page.is_home || draft.pages.length <= 1}
-                  onClick={() => removePage(page.id)}
-                  type="button"
-                >
-                  Remove Page
-                </button>
-              </div>
-            </header>
-            <div className="site-composer-fields">
-              <label>
-                Title
-                <input
-                  value={page.title}
-                  onChange={(event) =>
-                    updatePage(page.id, (value) => {
-                      value.title = event.target.value;
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Address
-                <input
-                  value={page.slug}
-                  onChange={(event) =>
-                    updatePage(page.id, (value) => {
-                      value.slug = event.target.value;
-                    })
-                  }
-                />
-              </label>
-              <label>
-                Navigation label
-                <input
-                  value={page.navigation_label}
-                  onChange={(event) =>
-                    updatePage(page.id, (value) => {
-                      value.navigation_label = event.target.value;
-                    })
-                  }
-                />
-              </label>
+      <div className="site-composer-workspace">
+        <aside className="site-composer-page-nav" aria-label="Site Pages">
+          <div className="site-composer-page-nav-heading">
+            <div>
+              <p className="eyebrow">Your Site</p>
+              <h3>Pages</h3>
             </div>
-            <div className="site-composer-toggles">
-              <label>
-                <input
-                  checked={page.is_home}
-                  onChange={() => setHome(page.id)}
-                  type="checkbox"
-                />{" "}
-                Home
-              </label>
-              <label>
-                <input
-                  checked={page.is_in_navigation}
-                  onChange={(event) =>
-                    updatePage(page.id, (value) => {
-                      value.is_in_navigation = event.target.checked;
-                    })
-                  }
-                  type="checkbox"
-                />{" "}
-                Show in navigation
-              </label>
-              <label>
-                <input
-                  checked={page.is_included}
-                  onChange={(event) =>
-                    updatePage(page.id, (value) => {
-                      value.is_included = event.target.checked;
-                    })
-                  }
-                  type="checkbox"
-                />{" "}
-                Include in Site
-              </label>
-            </div>
-            <div className="site-composer-blocks">
-              {page.layout.blocks.map((block, blockIndex) => {
-                const value = asRecord(block);
-                const id =
-                  typeof value.id === "string"
-                    ? value.id
-                    : `${page.id}-${blockIndex}`;
-                const collectionOption =
-                  block.type === "collection"
-                    ? objectOptions.find(
-                        (option) => option.key === value.object_key,
-                      )
-                    : undefined;
-                const collectionFileFields = collectionOption?.fileFields ?? [];
-                const selectionValue = asRecord(value.selection);
-                const selectedRecordIds = new Set(
-                  block.type === "collection" &&
-                    Array.isArray(selectionValue.record_ids)
-                    ? selectionValue.record_ids.filter(
-                        (recordId): recordId is string =>
-                          typeof recordId === "string",
-                      )
-                    : [],
+            <button
+              onClick={() => {
+                const nextPage = pageWithDefaults(
+                  draft.pages.length + 1,
+                  draft.pages.length === 0,
                 );
-                const filterValue =
-                  block.type === "collection" ? asRecord(value.filter) : {};
-                const filterItems = Array.isArray(filterValue.filters)
-                  ? filterValue.filters
-                  : [];
-                const firstFilter = asRecord(filterItems[0]);
-                const filterField =
-                  filterItems.length > 0
-                    ? asRecord(filterItems[0]).field_key
-                    : "";
-                const filterFieldOption =
-                  typeof filterField === "string"
-                    ? collectionOption?.fieldOptions.find(
-                        (field) => field.key === filterField,
-                      )
-                    : undefined;
-                const filterFieldType = filterFieldOption?.fieldType;
-                const filterOperator =
-                  filterOperatorsForField(filterFieldType).find(
-                    (operator) => operator === firstFilter.operator,
-                  ) ?? "is_not_empty";
-                const filterRawValue = firstFilter.value;
-                const sortItems = Array.isArray(filterValue.sorts)
-                  ? filterValue.sorts
-                  : [];
-                const firstSort = asRecord(sortItems[0]);
-                const sortField =
-                  typeof firstSort.field_key === "string"
-                    ? firstSort.field_key
-                    : "";
-                const sortDirection =
-                  firstSort.direction === "descending"
-                    ? "descending"
-                    : "ascending";
-                return (
-                  <div className="site-composer-block" key={id}>
-                    <div className="site-composer-block-header">
-                      <strong>{blockLabel(block)}</strong>
-                      <div className="site-composer-inline-actions">
-                        <button
-                          disabled={blockIndex === 0}
-                          onClick={() => moveBlock(page.id, id, -1)}
-                          type="button"
-                        >
-                          ↑
-                        </button>
-                        <button
-                          disabled={
-                            blockIndex === page.layout.blocks.length - 1
-                          }
-                          onClick={() => moveBlock(page.id, id, 1)}
-                          type="button"
-                        >
-                          ↓
-                        </button>
-                        <button
-                          onClick={() => duplicateBlock(page.id, id)}
-                          type="button"
-                        >
-                          Duplicate
-                        </button>
-                        <button
-                          onClick={() => removeBlock(page.id, id)}
-                          type="button"
-                        >
-                          Remove
-                        </button>
-                      </div>
+                const next = copyDraft(draft);
+                next.pages = [...next.pages, nextPage];
+                commit(next);
+                setSelectedPageId(nextPage.id);
+                setSelectedBlockId(
+                  blockIdentity(nextPage.layout.blocks[0]!, ""),
+                );
+                setPageSettingsOpen(true);
+              }}
+              type="button"
+            >
+              Add Page
+            </button>
+          </div>
+          <nav aria-label="Choose a Page">
+            {draft.pages.map((page) => (
+              <button
+                aria-label={
+                  page.navigation_label || page.title || "Untitled Page"
+                }
+                aria-current={page.id === selectedPageId ? "page" : undefined}
+                className={
+                  page.id === selectedPageId
+                    ? "site-composer-page-link is-selected"
+                    : "site-composer-page-link"
+                }
+                key={page.id}
+                onClick={() => {
+                  setSelectedPageId(page.id);
+                  setSelectedBlockId(null);
+                  setPageSettingsOpen(false);
+                  setAddBlockMenuOpen(false);
+                }}
+                type="button"
+              >
+                <span>
+                  {page.navigation_label || page.title || "Untitled Page"}
+                </span>
+                <small className="muted">
+                  {page.is_home
+                    ? "Home"
+                    : page.is_included
+                      ? "Included"
+                      : "Draft only"}
+                </small>
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <main className="site-composer-pages">
+          {draft.pages
+            .filter((page) => page.id === selectedPageId)
+            .map((page) => {
+              const pageIndex = draft.pages.findIndex(
+                (candidate) => candidate.id === page.id,
+              );
+              return (
+                <article className="panel site-composer-page" key={page.id}>
+                  <header className="site-composer-page-header">
+                    <div>
+                      <p className="eyebrow">
+                        {page.is_home ? "Home" : "Page"}
+                      </p>
+                      <h2>{page.title || "Untitled Page"}</h2>
                     </div>
-                    {block.type === "heading" ? (
-                      <input
-                        value={typeof value.text === "string" ? value.text : ""}
-                        onChange={(event) =>
-                          updateBlock(page.id, id, (item) => {
-                            item.text = event.target.value;
-                            if (event.target.value.trim()) {
-                              delete item.draft_state;
-                            } else {
-                              item.draft_state = "incomplete";
-                            }
-                          })
-                        }
-                      />
-                    ) : null}
-                    {block.type === "text" || block.type === "callout" ? (
-                      <textarea
-                        value={typeof value.text === "string" ? value.text : ""}
-                        onChange={(event) =>
-                          updateBlock(page.id, id, (item) => {
-                            item.text = event.target.value;
-                            if (event.target.value.trim()) {
-                              delete item.draft_state;
-                            } else {
-                              item.draft_state = "incomplete";
-                            }
-                          })
-                        }
-                      />
-                    ) : null}
-                    {block.type === "button" ? (
-                      <div className="site-composer-media-fields">
+                    <div className="site-composer-inline-actions">
+                      <button
+                        aria-expanded={pageSettingsOpen}
+                        onClick={() => setPageSettingsOpen((open) => !open)}
+                        type="button"
+                      >
+                        Page settings
+                      </button>
+                      <button
+                        disabled={pageIndex === 0}
+                        onClick={() => movePage(page.id, -1)}
+                        aria-label="Move Page earlier"
+                        type="button"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        disabled={pageIndex === draft.pages.length - 1}
+                        onClick={() => movePage(page.id, 1)}
+                        aria-label="Move Page later"
+                        type="button"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        disabled={page.is_home || draft.pages.length <= 1}
+                        onClick={() => removePage(page.id)}
+                        type="button"
+                      >
+                        Remove Page
+                      </button>
+                    </div>
+                  </header>
+                  {pageSettingsOpen ? (
+                    <section
+                      className="site-composer-page-settings"
+                      aria-label="Page settings"
+                    >
+                      <div className="site-composer-fields">
                         <label>
-                          Button label
+                          Title
                           <input
-                            value={
-                              typeof value.label === "string" ? value.label : ""
-                            }
+                            value={page.title}
                             onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.label = event.target.value;
-                                if (event.target.value.trim()) {
-                                  delete item.draft_state;
-                                } else {
-                                  item.draft_state = "incomplete";
-                                }
+                              updatePage(page.id, (value) => {
+                                value.title = event.target.value;
                               })
                             }
                           />
                         </label>
                         <label>
-                          Button link
+                          Address
                           <input
-                            value={
-                              typeof value.href === "string" ? value.href : ""
-                            }
+                            value={page.slug}
                             onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.href = event.target.value;
-                                if (event.target.value.trim()) {
-                                  delete item.draft_state;
-                                } else {
-                                  item.draft_state = "incomplete";
-                                }
+                              updatePage(page.id, (value) => {
+                                value.slug = event.target.value;
                               })
                             }
                           />
                         </label>
                         <label>
-                          Style
-                          <select
-                            value={
-                              value.style === "secondary"
-                                ? "secondary"
-                                : "primary"
-                            }
+                          Navigation label
+                          <input
+                            value={page.navigation_label}
                             onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.style = event.target.value;
+                              updatePage(page.id, (value) => {
+                                value.navigation_label = event.target.value;
                               })
                             }
-                          >
-                            <option value="primary">Primary</option>
-                            <option value="secondary">Secondary</option>
-                          </select>
-                        </label>
-                      </div>
-                    ) : null}
-                    {block.type === "image" ? (
-                      <div className="site-composer-media-fields">
-                        <label>
-                          Image description
-                          <input
-                            value={
-                              typeof value.alt === "string" ? value.alt : ""
-                            }
-                            onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.alt = event.target.value;
-                                item.draft_state =
-                                  event.target.value.trim() && item.asset_id
-                                    ? "complete"
-                                    : "incomplete";
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          Choose managed image
-                          <input
-                            accept="image/jpeg,image/png,image/webp"
-                            onChange={(event) => {
-                              void uploadImage(event, page.id, id);
-                            }}
-                            type="file"
                           />
                         </label>
                       </div>
-                    ) : null}
-                    {block.type === "gallery" ? (
-                      <div className="site-composer-media-fields">
+                      <div className="site-composer-toggles">
                         <label>
-                          Add managed gallery image
                           <input
-                            accept="image/jpeg,image/png,image/webp"
-                            onChange={(event) => {
-                              void uploadGalleryImage(event, page.id, id);
-                            }}
-                            type="file"
-                          />
-                        </label>
-                        <span className="muted">
-                          {Array.isArray(value.images)
-                            ? `${value.images.length} image${value.images.length === 1 ? "" : "s"}`
-                            : "No images yet"}
-                        </span>
-                      </div>
-                    ) : null}
-                    {block.type === "collection" ? (
-                      <div className="site-composer-collection-fields">
-                        <label>
-                          Record type
-                          <select
-                            value={
-                              typeof value.object_key === "string"
-                                ? value.object_key
-                                : ""
-                            }
-                            onChange={(event) =>
-                              updateCollectionOption(
-                                page.id,
-                                id,
-                                event.target.value,
-                              )
-                            }
-                          >
-                            <option value="">Choose a Record type</option>
-                            {objectOptions.map((option) => (
-                              <option key={option.key} value={option.key}>
-                                {option.key}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Detail Page
-                          <select
-                            value={
-                              typeof value.detail_page_id === "string"
-                                ? value.detail_page_id
-                                : ""
-                            }
-                            onChange={(event) =>
-                              setCollectionDetailPage(
-                                page.id,
-                                id,
-                                event.target.value,
-                              )
-                            }
-                          >
-                            <option value="">No shared detail Page</option>
-                            {draft.pages.map((candidate) => (
-                              <option key={candidate.id} value={candidate.id}>
-                                {candidate.title || "Untitled Page"}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Presentation
-                          <select
-                            value={
-                              value.presentation === "list" ||
-                              value.presentation === "table"
-                                ? value.presentation
-                                : "cards"
-                            }
-                            onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.presentation =
-                                  event.target.value === "list" ||
-                                  event.target.value === "table"
-                                    ? event.target.value
-                                    : "cards";
-                              })
-                            }
-                          >
-                            <option value="cards">Cards</option>
-                            <option value="list">List</option>
-                            <option value="table">Table</option>
-                          </select>
-                        </label>
-                        <fieldset className="site-composer-field-allowlist">
-                          <legend>Public Properties</legend>
-                          {(collectionOption?.fieldOptions ?? []).map(
-                            (field) => (
-                              <label key={field.id}>
-                                <input
-                                  checked={
-                                    Array.isArray(value.public_field_keys) &&
-                                    value.public_field_keys.includes(field.key)
-                                  }
-                                  onChange={(event) =>
-                                    toggleCollectionField(
-                                      page.id,
-                                      id,
-                                      field.key,
-                                      event.target.checked,
-                                    )
-                                  }
-                                  type="checkbox"
-                                />{" "}
-                                {field.key}
-                              </label>
-                            ),
-                          )}
-                        </fieldset>
-                        <label>
-                          Filter to Records with
-                          <select
-                            value={
-                              typeof filterField === "string" ? filterField : ""
-                            }
-                            onChange={(event) =>
-                              setCollectionFilter(
-                                page.id,
-                                id,
-                                event.target.value,
-                                "is_not_empty",
-                                collectionOption?.fieldOptions.find(
-                                  (field) => field.key === event.target.value,
-                                )?.fieldType,
-                              )
-                            }
-                          >
-                            <option value="">All selected Records</option>
-                            {(collectionOption?.fields ?? []).map((field) => (
-                              <option key={field} value={field}>
-                                {field} is not empty
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {filterField ? (
-                          <label>
-                            Filter operator
-                            <select
-                              value={filterOperator}
-                              onChange={(event) => {
-                                const nextOperator = event.target
-                                  .value as SiteFilterOperator;
-                                setCollectionFilter(
-                                  page.id,
-                                  id,
-                                  String(filterField),
-                                  nextOperator,
-                                  filterFieldType,
-                                );
-                              }}
-                            >
-                              {filterOperatorsForField(filterFieldType).map(
-                                (operator) => (
-                                  <option key={operator} value={operator}>
-                                    {filterOperatorLabel(operator)}
-                                  </option>
-                                ),
-                              )}
-                            </select>
-                          </label>
-                        ) : null}
-                        {filterField &&
-                        !noValueFilterOperators.has(filterOperator) ? (
-                          <label>
-                            Filter value
-                            {filterFieldType === "boolean" ? (
-                              <select
-                                value={
-                                  filterRawValue === true ? "true" : "false"
-                                }
-                                onChange={(event) =>
-                                  setCollectionFilterValue(
-                                    page.id,
-                                    id,
-                                    String(filterField),
-                                    filterOperator,
-                                    filterFieldType,
-                                    event.target.value,
-                                  )
-                                }
-                              >
-                                <option value="true">True</option>
-                                <option value="false">False</option>
-                              </select>
-                            ) : (
-                              <input
-                                inputMode={
-                                  filterFieldType === "number" ||
-                                  filterFieldType === "currency"
-                                    ? "decimal"
-                                    : undefined
-                                }
-                                onChange={(event) =>
-                                  setCollectionFilterValue(
-                                    page.id,
-                                    id,
-                                    String(filterField),
-                                    filterOperator,
-                                    filterFieldType,
-                                    event.target.value,
-                                  )
-                                }
-                                type={
-                                  filterFieldType === "number" ||
-                                  filterFieldType === "currency"
-                                    ? "number"
-                                    : "text"
-                                }
-                                value={
-                                  typeof filterRawValue === "number" ||
-                                  typeof filterRawValue === "string"
-                                    ? String(filterRawValue)
-                                    : ""
-                                }
-                              />
-                            )}
-                          </label>
-                        ) : null}
-                        <label>
-                          Order Records by
-                          <select
-                            value={sortField}
-                            onChange={(event) =>
-                              setCollectionSort(
-                                page.id,
-                                id,
-                                event.target.value,
-                                sortDirection,
-                              )
-                            }
-                          >
-                            <option value="">Keep selected order</option>
-                            {(collectionOption?.fields ?? []).map((field) => (
-                              <option key={field} value={field}>
-                                {field}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        {sortField ? (
-                          <label>
-                            Direction
-                            <select
-                              value={sortDirection}
-                              onChange={(event) =>
-                                setCollectionSort(
-                                  page.id,
-                                  id,
-                                  sortField,
-                                  event.target.value === "descending"
-                                    ? "descending"
-                                    : "ascending",
-                                )
-                              }
-                            >
-                              <option value="ascending">Ascending</option>
-                              <option value="descending">Descending</option>
-                            </select>
-                          </label>
-                        ) : null}
-                        <div className="site-composer-record-options">
-                          <span className="muted">Selected Records</span>
-                          {(collectionOption?.records ?? []).map((record) => (
-                            <div
-                              className="site-composer-record-option"
-                              key={record.id}
-                            >
-                              <label>
-                                <input
-                                  checked={selectedRecordIds.has(record.id)}
-                                  onChange={(event) =>
-                                    toggleCollectionRecord(
-                                      page.id,
-                                      id,
-                                      record.id,
-                                      event.target.checked,
-                                    )
-                                  }
-                                  type="checkbox"
-                                />{" "}
-                                {record.label}
-                              </label>
-                              {collectionFileFields.length > 0 ? (
-                                <div className="site-composer-record-media">
-                                  {collectionFileFields.map((field) => (
-                                    <label key={field.id}>
-                                      Record image ({field.key})
-                                      <input
-                                        accept="image/jpeg,image/png,image/webp"
-                                        onChange={(event) => {
-                                          void uploadRecordImage(
-                                            event,
-                                            record,
-                                            field,
-                                            siteId,
-                                          );
-                                        }}
-                                        type="file"
-                                      />
-                                    </label>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ))}
-                          {collectionOption &&
-                          collectionOption.records.length > 0 &&
-                          collectionFileFields.length === 0 ? (
-                            <span className="muted">
-                              Add a file Property to attach Record images.
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                    {block.type === "collapsible" ? (
-                      <div className="site-composer-nested-editor">
-                        <label>
-                          Summary
-                          <input
-                            value={
-                              typeof value.summary === "string"
-                                ? value.summary
-                                : ""
-                            }
-                            onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.summary = event.target.value;
-                                item.draft_state = event.target.value.trim()
-                                  ? "complete"
-                                  : "incomplete";
-                              })
-                            }
-                          />
+                            checked={page.is_home}
+                            onChange={() => setHome(page.id)}
+                            type="checkbox"
+                          />{" "}
+                          Home
                         </label>
                         <label>
                           <input
-                            checked={value.open !== false}
+                            checked={page.is_in_navigation}
                             onChange={(event) =>
-                              updateBlock(page.id, id, (item) => {
-                                item.open = event.target.checked;
+                              updatePage(page.id, (value) => {
+                                value.is_in_navigation = event.target.checked;
                               })
                             }
                             type="checkbox"
                           />{" "}
-                          Open by default
+                          Show in navigation
                         </label>
-                        <NestedSiteBlocks
-                          blocks={
-                            Array.isArray(value.blocks)
-                              ? (value.blocks as SiteBlock[])
-                              : []
-                          }
-                          appendBlock={appendNestedBlock}
-                          containerId={id}
-                          duplicateBlock={duplicateBlock}
-                          moveBlock={moveBlock}
-                          onUploadGalleryImage={uploadGalleryImage}
-                          onUploadImage={uploadImage}
-                          pageId={page.id}
-                          removeBlock={removeBlock}
-                          setSectionColumns={setSectionColumns}
-                          updateBlock={updateBlock}
-                        />
-                      </div>
-                    ) : null}
-                    {block.type === "section" ? (
-                      <div className="site-composer-nested-editor">
                         <label>
-                          Columns
-                          <select
-                            value={
-                              Array.isArray(value.columns)
-                                ? Math.min(Math.max(value.columns.length, 1), 3)
-                                : 1
+                          <input
+                            checked={page.is_included}
+                            onChange={(event) =>
+                              updatePage(page.id, (value) => {
+                                value.is_included = event.target.checked;
+                              })
                             }
-                            onChange={(event) => {
-                              const nextCount = Number(event.target.value);
-                              if (
-                                nextCount === 1 ||
-                                nextCount === 2 ||
-                                nextCount === 3
-                              ) {
-                                setSectionColumns(page.id, id, nextCount);
-                              }
-                            }}
-                          >
-                            <option value={1}>1 column</option>
-                            <option value={2}>2 columns</option>
-                            <option value={3}>3 columns</option>
-                          </select>
+                            type="checkbox"
+                          />{" "}
+                          Include in Site
                         </label>
-                        {(Array.isArray(value.columns)
-                          ? value.columns
-                          : []
-                        ).map((column, columnIndex) => {
-                          const columnValue = asRecord(column);
+                      </div>
+                    </section>
+                  ) : null}
+                  <section
+                    className="site-composer-canvas"
+                    aria-label="Page canvas"
+                  >
+                    <div className="site-composer-canvas-heading">
+                      <div>
+                        <p className="eyebrow">Draft preview</p>
+                        <h3>{page.title || "Untitled Page"}</h3>
+                      </div>
+                      <span className="muted">
+                        {page.is_included ? "Included in Site" : "Draft only"}
+                      </span>
+                    </div>
+                    <div className="site-composer-canvas-content">
+                      {page.layout.blocks.map((block, blockIndex) => {
+                        const id = blockIdentity(
+                          block,
+                          `${page.id}-${blockIndex}`,
+                        );
+                        return (
+                          <button
+                            aria-pressed={selectedBlockId === id}
+                            className={
+                              selectedBlockId === id
+                                ? "site-composer-canvas-block is-selected"
+                                : "site-composer-canvas-block"
+                            }
+                            key={id}
+                            onClick={() => {
+                              setSelectedBlockId(id);
+                              setPageSettingsOpen(false);
+                            }}
+                            type="button"
+                          >
+                            <span className="site-composer-canvas-block-type">
+                              {displayKey(block.type)}
+                            </span>
+                            {previewBlockContent(block, objectOptions)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                  <section
+                    className="site-composer-inspector"
+                    aria-label="Block settings"
+                  >
+                    <div className="site-composer-inspector-heading">
+                      <div>
+                        <p className="eyebrow">Selected content</p>
+                        <h3>
+                          {selectedBlockId
+                            ? "Edit this block"
+                            : "Choose a block to edit"}
+                        </h3>
+                      </div>
+                      <span className="muted">Changes save as you work</span>
+                    </div>
+                    <div className="site-composer-blocks">
+                      {page.layout.blocks
+                        .filter(
+                          (block, blockIndex) =>
+                            blockIdentity(block, `${page.id}-${blockIndex}`) ===
+                            selectedBlockId,
+                        )
+                        .map((block) => {
+                          const value = asRecord(block);
+                          const id = blockIdentity(
+                            block,
+                            `${page.id}-selected`,
+                          );
+                          const blockIndex = page.layout.blocks.findIndex(
+                            (candidate) => blockIdentity(candidate, "") === id,
+                          );
+                          const collectionOption =
+                            block.type === "collection"
+                              ? objectOptions.find(
+                                  (option) => option.key === value.object_key,
+                                )
+                              : undefined;
+                          const collectionFileFields =
+                            collectionOption?.fileFields ?? [];
+                          const selectionValue = asRecord(value.selection);
+                          const selectedRecordIds = new Set(
+                            block.type === "collection" &&
+                              Array.isArray(selectionValue.record_ids)
+                              ? selectionValue.record_ids.filter(
+                                  (recordId): recordId is string =>
+                                    typeof recordId === "string",
+                                )
+                              : [],
+                          );
+                          const filterValue =
+                            block.type === "collection"
+                              ? asRecord(value.filter)
+                              : {};
+                          const filterItems = Array.isArray(filterValue.filters)
+                            ? filterValue.filters
+                            : [];
+                          const firstFilter = asRecord(filterItems[0]);
+                          const filterField =
+                            filterItems.length > 0
+                              ? asRecord(filterItems[0]).field_key
+                              : "";
+                          const filterFieldOption =
+                            typeof filterField === "string"
+                              ? collectionOption?.fieldOptions.find(
+                                  (field) => field.key === filterField,
+                                )
+                              : undefined;
+                          const filterFieldType = filterFieldOption?.fieldType;
+                          const filterOperator =
+                            filterOperatorsForField(filterFieldType).find(
+                              (operator) => operator === firstFilter.operator,
+                            ) ?? "is_not_empty";
+                          const filterRawValue = firstFilter.value;
+                          const sortItems = Array.isArray(filterValue.sorts)
+                            ? filterValue.sorts
+                            : [];
+                          const firstSort = asRecord(sortItems[0]);
+                          const sortField =
+                            typeof firstSort.field_key === "string"
+                              ? firstSort.field_key
+                              : "";
+                          const sortDirection =
+                            firstSort.direction === "descending"
+                              ? "descending"
+                              : "ascending";
                           return (
                             <div
-                              className="site-composer-column-editor"
-                              key={id + "-column-" + columnIndex}
+                              className="site-composer-block is-selected"
+                              key={id}
                             >
-                              <strong>Column {columnIndex + 1}</strong>
-                              <NestedSiteBlocks
-                                blocks={
-                                  Array.isArray(columnValue.blocks)
-                                    ? (columnValue.blocks as SiteBlock[])
+                              <div className="site-composer-block-header">
+                                <strong>{blockLabel(block)}</strong>
+                                <div className="site-composer-inline-actions">
+                                  <button
+                                    disabled={blockIndex === 0}
+                                    onClick={() => moveBlock(page.id, id, -1)}
+                                    type="button"
+                                  >
+                                    ↑
+                                  </button>
+                                  <button
+                                    disabled={
+                                      blockIndex ===
+                                      page.layout.blocks.length - 1
+                                    }
+                                    onClick={() => moveBlock(page.id, id, 1)}
+                                    type="button"
+                                  >
+                                    ↓
+                                  </button>
+                                  <button
+                                    onClick={() => duplicateBlock(page.id, id)}
+                                    type="button"
+                                  >
+                                    Duplicate
+                                  </button>
+                                  <button
+                                    onClick={() => removeBlock(page.id, id)}
+                                    type="button"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                              {block.type === "heading" ? (
+                                <input
+                                  value={
+                                    typeof value.text === "string"
+                                      ? value.text
+                                      : ""
+                                  }
+                                  onChange={(event) =>
+                                    updateBlock(page.id, id, (item) => {
+                                      item.text = event.target.value;
+                                      if (event.target.value.trim()) {
+                                        delete item.draft_state;
+                                      } else {
+                                        item.draft_state = "incomplete";
+                                      }
+                                    })
+                                  }
+                                />
+                              ) : null}
+                              {block.type === "text" ||
+                              block.type === "callout" ? (
+                                <textarea
+                                  value={
+                                    typeof value.text === "string"
+                                      ? value.text
+                                      : ""
+                                  }
+                                  onChange={(event) =>
+                                    updateBlock(page.id, id, (item) => {
+                                      item.text = event.target.value;
+                                      if (event.target.value.trim()) {
+                                        delete item.draft_state;
+                                      } else {
+                                        item.draft_state = "incomplete";
+                                      }
+                                    })
+                                  }
+                                />
+                              ) : null}
+                              {block.type === "button" ? (
+                                <div className="site-composer-media-fields">
+                                  <label>
+                                    Button label
+                                    <input
+                                      value={
+                                        typeof value.label === "string"
+                                          ? value.label
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.label = event.target.value;
+                                          if (event.target.value.trim()) {
+                                            delete item.draft_state;
+                                          } else {
+                                            item.draft_state = "incomplete";
+                                          }
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Button link
+                                    <input
+                                      value={
+                                        typeof value.href === "string"
+                                          ? value.href
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.href = event.target.value;
+                                          if (event.target.value.trim()) {
+                                            delete item.draft_state;
+                                          } else {
+                                            item.draft_state = "incomplete";
+                                          }
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Style
+                                    <select
+                                      value={
+                                        value.style === "secondary"
+                                          ? "secondary"
+                                          : "primary"
+                                      }
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.style = event.target.value;
+                                        })
+                                      }
+                                    >
+                                      <option value="primary">Primary</option>
+                                      <option value="secondary">
+                                        Secondary
+                                      </option>
+                                    </select>
+                                  </label>
+                                </div>
+                              ) : null}
+                              {block.type === "image" ? (
+                                <div className="site-composer-media-fields">
+                                  <label>
+                                    Image description
+                                    <input
+                                      value={
+                                        typeof value.alt === "string"
+                                          ? value.alt
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.alt = event.target.value;
+                                          item.draft_state =
+                                            event.target.value.trim() &&
+                                            item.asset_id
+                                              ? "complete"
+                                              : "incomplete";
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Choose managed image
+                                    <input
+                                      accept="image/jpeg,image/png,image/webp"
+                                      onChange={(event) => {
+                                        void uploadImage(event, page.id, id);
+                                      }}
+                                      type="file"
+                                    />
+                                  </label>
+                                </div>
+                              ) : null}
+                              {block.type === "gallery" ? (
+                                <div className="site-composer-media-fields">
+                                  <label>
+                                    Add managed gallery image
+                                    <input
+                                      accept="image/jpeg,image/png,image/webp"
+                                      onChange={(event) => {
+                                        void uploadGalleryImage(
+                                          event,
+                                          page.id,
+                                          id,
+                                        );
+                                      }}
+                                      type="file"
+                                    />
+                                  </label>
+                                  <span className="muted">
+                                    {Array.isArray(value.images)
+                                      ? `${value.images.length} image${value.images.length === 1 ? "" : "s"}`
+                                      : "No images yet"}
+                                  </span>
+                                </div>
+                              ) : null}
+                              {block.type === "collection" ? (
+                                <div className="site-composer-collection-fields">
+                                  <label>
+                                    Record type
+                                    <select
+                                      value={
+                                        typeof value.object_key === "string"
+                                          ? value.object_key
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        updateCollectionOption(
+                                          page.id,
+                                          id,
+                                          event.target.value,
+                                        )
+                                      }
+                                    >
+                                      <option value="">
+                                        Choose a Record type
+                                      </option>
+                                      {objectOptions.map((option) => (
+                                        <option
+                                          key={option.key}
+                                          value={option.key}
+                                        >
+                                          {displayKey(option.key)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label>
+                                    Detail Page
+                                    <select
+                                      value={
+                                        typeof value.detail_page_id === "string"
+                                          ? value.detail_page_id
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        setCollectionDetailPage(
+                                          page.id,
+                                          id,
+                                          event.target.value,
+                                        )
+                                      }
+                                    >
+                                      <option value="">
+                                        No shared detail Page
+                                      </option>
+                                      {draft.pages.map((candidate) => (
+                                        <option
+                                          key={candidate.id}
+                                          value={candidate.id}
+                                        >
+                                          {candidate.title || "Untitled Page"}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label>
+                                    Presentation
+                                    <select
+                                      value={
+                                        value.presentation === "list" ||
+                                        value.presentation === "table"
+                                          ? value.presentation
+                                          : "cards"
+                                      }
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.presentation =
+                                            event.target.value === "list" ||
+                                            event.target.value === "table"
+                                              ? event.target.value
+                                              : "cards";
+                                        })
+                                      }
+                                    >
+                                      <option value="cards">Cards</option>
+                                      <option value="list">List</option>
+                                      <option value="table">Table</option>
+                                    </select>
+                                  </label>
+                                  <fieldset className="site-composer-field-allowlist">
+                                    <legend>Public Properties</legend>
+                                    {(collectionOption?.fieldOptions ?? []).map(
+                                      (field) => (
+                                        <label key={field.id}>
+                                          <input
+                                            checked={
+                                              Array.isArray(
+                                                value.public_field_keys,
+                                              ) &&
+                                              value.public_field_keys.includes(
+                                                field.key,
+                                              )
+                                            }
+                                            onChange={(event) =>
+                                              toggleCollectionField(
+                                                page.id,
+                                                id,
+                                                field.key,
+                                                event.target.checked,
+                                              )
+                                            }
+                                            type="checkbox"
+                                          />{" "}
+                                          {displayKey(field.key)}
+                                        </label>
+                                      ),
+                                    )}
+                                  </fieldset>
+                                  <label>
+                                    Filter to Records with
+                                    <select
+                                      value={
+                                        typeof filterField === "string"
+                                          ? filterField
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        setCollectionFilter(
+                                          page.id,
+                                          id,
+                                          event.target.value,
+                                          "is_not_empty",
+                                          collectionOption?.fieldOptions.find(
+                                            (field) =>
+                                              field.key === event.target.value,
+                                          )?.fieldType,
+                                        )
+                                      }
+                                    >
+                                      <option value="">
+                                        All selected Records
+                                      </option>
+                                      {(collectionOption?.fields ?? []).map(
+                                        (field) => (
+                                          <option key={field} value={field}>
+                                            {displayKey(field)} is not empty
+                                          </option>
+                                        ),
+                                      )}
+                                    </select>
+                                  </label>
+                                  {filterField ? (
+                                    <label>
+                                      Filter operator
+                                      <select
+                                        value={filterOperator}
+                                        onChange={(event) => {
+                                          const nextOperator = event.target
+                                            .value as SiteFilterOperator;
+                                          setCollectionFilter(
+                                            page.id,
+                                            id,
+                                            String(filterField),
+                                            nextOperator,
+                                            filterFieldType,
+                                          );
+                                        }}
+                                      >
+                                        {filterOperatorsForField(
+                                          filterFieldType,
+                                        ).map((operator) => (
+                                          <option
+                                            key={operator}
+                                            value={operator}
+                                          >
+                                            {filterOperatorLabel(operator)}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </label>
+                                  ) : null}
+                                  {filterField &&
+                                  !noValueFilterOperators.has(
+                                    filterOperator,
+                                  ) ? (
+                                    <label>
+                                      Filter value
+                                      {filterFieldType === "boolean" ? (
+                                        <select
+                                          value={
+                                            filterRawValue === true
+                                              ? "true"
+                                              : "false"
+                                          }
+                                          onChange={(event) =>
+                                            setCollectionFilterValue(
+                                              page.id,
+                                              id,
+                                              String(filterField),
+                                              filterOperator,
+                                              filterFieldType,
+                                              event.target.value,
+                                            )
+                                          }
+                                        >
+                                          <option value="true">True</option>
+                                          <option value="false">False</option>
+                                        </select>
+                                      ) : (
+                                        <input
+                                          inputMode={
+                                            filterFieldType === "number" ||
+                                            filterFieldType === "currency"
+                                              ? "decimal"
+                                              : undefined
+                                          }
+                                          onChange={(event) =>
+                                            setCollectionFilterValue(
+                                              page.id,
+                                              id,
+                                              String(filterField),
+                                              filterOperator,
+                                              filterFieldType,
+                                              event.target.value,
+                                            )
+                                          }
+                                          type={
+                                            filterFieldType === "number" ||
+                                            filterFieldType === "currency"
+                                              ? "number"
+                                              : "text"
+                                          }
+                                          value={
+                                            typeof filterRawValue ===
+                                              "number" ||
+                                            typeof filterRawValue === "string"
+                                              ? String(filterRawValue)
+                                              : ""
+                                          }
+                                        />
+                                      )}
+                                    </label>
+                                  ) : null}
+                                  <label>
+                                    Order Records by
+                                    <select
+                                      value={sortField}
+                                      onChange={(event) =>
+                                        setCollectionSort(
+                                          page.id,
+                                          id,
+                                          event.target.value,
+                                          sortDirection,
+                                        )
+                                      }
+                                    >
+                                      <option value="">
+                                        Keep selected order
+                                      </option>
+                                      {(collectionOption?.fields ?? []).map(
+                                        (field) => (
+                                          <option key={field} value={field}>
+                                            {displayKey(field)}
+                                          </option>
+                                        ),
+                                      )}
+                                    </select>
+                                  </label>
+                                  {sortField ? (
+                                    <label>
+                                      Direction
+                                      <select
+                                        value={sortDirection}
+                                        onChange={(event) =>
+                                          setCollectionSort(
+                                            page.id,
+                                            id,
+                                            sortField,
+                                            event.target.value === "descending"
+                                              ? "descending"
+                                              : "ascending",
+                                          )
+                                        }
+                                      >
+                                        <option value="ascending">
+                                          Ascending
+                                        </option>
+                                        <option value="descending">
+                                          Descending
+                                        </option>
+                                      </select>
+                                    </label>
+                                  ) : null}
+                                  <div className="site-composer-record-options">
+                                    <span className="muted">
+                                      Selected Records
+                                    </span>
+                                    {(collectionOption?.records ?? []).map(
+                                      (record) => (
+                                        <div
+                                          className="site-composer-record-option"
+                                          key={record.id}
+                                        >
+                                          <label>
+                                            <input
+                                              checked={selectedRecordIds.has(
+                                                record.id,
+                                              )}
+                                              onChange={(event) =>
+                                                toggleCollectionRecord(
+                                                  page.id,
+                                                  id,
+                                                  record.id,
+                                                  event.target.checked,
+                                                )
+                                              }
+                                              type="checkbox"
+                                            />{" "}
+                                            {record.label}
+                                          </label>
+                                          {collectionFileFields.length > 0 ? (
+                                            <div className="site-composer-record-media">
+                                              {collectionFileFields.map(
+                                                (field) => (
+                                                  <label key={field.id}>
+                                                    Record image (
+                                                    {displayKey(field.key)})
+                                                    <input
+                                                      accept="image/jpeg,image/png,image/webp"
+                                                      onChange={(event) => {
+                                                        void uploadRecordImage(
+                                                          event,
+                                                          record,
+                                                          field,
+                                                          siteId,
+                                                        );
+                                                      }}
+                                                      type="file"
+                                                    />
+                                                  </label>
+                                                ),
+                                              )}
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      ),
+                                    )}
+                                    {collectionOption &&
+                                    collectionOption.records.length > 0 &&
+                                    collectionFileFields.length === 0 ? (
+                                      <span className="muted">
+                                        Add a file Property to attach Record
+                                        images.
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
+                              {block.type === "collapsible" ? (
+                                <div className="site-composer-nested-editor">
+                                  <label>
+                                    Summary
+                                    <input
+                                      value={
+                                        typeof value.summary === "string"
+                                          ? value.summary
+                                          : ""
+                                      }
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.summary = event.target.value;
+                                          item.draft_state =
+                                            event.target.value.trim()
+                                              ? "complete"
+                                              : "incomplete";
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    <input
+                                      checked={value.open !== false}
+                                      onChange={(event) =>
+                                        updateBlock(page.id, id, (item) => {
+                                          item.open = event.target.checked;
+                                        })
+                                      }
+                                      type="checkbox"
+                                    />{" "}
+                                    Open by default
+                                  </label>
+                                  <NestedSiteBlocks
+                                    blocks={
+                                      Array.isArray(value.blocks)
+                                        ? (value.blocks as SiteBlock[])
+                                        : []
+                                    }
+                                    appendBlock={appendNestedBlock}
+                                    containerId={id}
+                                    duplicateBlock={duplicateBlock}
+                                    moveBlock={moveBlock}
+                                    onUploadGalleryImage={uploadGalleryImage}
+                                    onUploadImage={uploadImage}
+                                    pageId={page.id}
+                                    removeBlock={removeBlock}
+                                    setSectionColumns={setSectionColumns}
+                                    updateBlock={updateBlock}
+                                  />
+                                </div>
+                              ) : null}
+                              {block.type === "section" ? (
+                                <div className="site-composer-nested-editor">
+                                  <label>
+                                    Columns
+                                    <select
+                                      value={
+                                        Array.isArray(value.columns)
+                                          ? Math.min(
+                                              Math.max(value.columns.length, 1),
+                                              3,
+                                            )
+                                          : 1
+                                      }
+                                      onChange={(event) => {
+                                        const nextCount = Number(
+                                          event.target.value,
+                                        );
+                                        if (
+                                          nextCount === 1 ||
+                                          nextCount === 2 ||
+                                          nextCount === 3
+                                        ) {
+                                          setSectionColumns(
+                                            page.id,
+                                            id,
+                                            nextCount,
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <option value={1}>1 column</option>
+                                      <option value={2}>2 columns</option>
+                                      <option value={3}>3 columns</option>
+                                    </select>
+                                  </label>
+                                  {(Array.isArray(value.columns)
+                                    ? value.columns
                                     : []
-                                }
-                                appendBlock={appendNestedBlock}
-                                columnIndex={columnIndex}
-                                containerId={id}
-                                duplicateBlock={duplicateBlock}
-                                moveBlock={moveBlock}
-                                onUploadGalleryImage={uploadGalleryImage}
-                                onUploadImage={uploadImage}
-                                pageId={page.id}
-                                removeBlock={removeBlock}
-                                setSectionColumns={setSectionColumns}
-                                updateBlock={updateBlock}
-                              />
+                                  ).map((column, columnIndex) => {
+                                    const columnValue = asRecord(column);
+                                    return (
+                                      <div
+                                        className="site-composer-column-editor"
+                                        key={id + "-column-" + columnIndex}
+                                      >
+                                        <strong>
+                                          Column {columnIndex + 1}
+                                        </strong>
+                                        <NestedSiteBlocks
+                                          blocks={
+                                            Array.isArray(columnValue.blocks)
+                                              ? (columnValue.blocks as SiteBlock[])
+                                              : []
+                                          }
+                                          appendBlock={appendNestedBlock}
+                                          columnIndex={columnIndex}
+                                          containerId={id}
+                                          duplicateBlock={duplicateBlock}
+                                          moveBlock={moveBlock}
+                                          onUploadGalleryImage={
+                                            uploadGalleryImage
+                                          }
+                                          onUploadImage={uploadImage}
+                                          pageId={page.id}
+                                          removeBlock={removeBlock}
+                                          setSectionColumns={setSectionColumns}
+                                          updateBlock={updateBlock}
+                                        />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
                             </div>
                           );
                         })}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="site-composer-add-actions">
-              <button
-                onClick={() => addBlock(page.id, newBlock("heading"))}
-                type="button"
-              >
-                Add heading
-              </button>
-              <button
-                onClick={() => addBlock(page.id, newBlock("text"))}
-                type="button"
-              >
-                Add text
-              </button>
-              <button
-                onClick={() => addBlock(page.id, newBlock("callout"))}
-                type="button"
-              >
-                Add callout
-              </button>
-              <button
-                onClick={() => addBlock(page.id, newBlock("button"))}
-                type="button"
-              >
-                Add button
-              </button>
-              <button
-                onClick={() => addBlock(page.id, newBlock("divider"))}
-                type="button"
-              >
-                Add divider
-              </button>
-              <button onClick={() => addSection(page.id, 1)} type="button">
-                Add 1-column section
-              </button>
-              <button onClick={() => addSection(page.id, 2)} type="button">
-                Add 2-column section
-              </button>
-              <button onClick={() => addSection(page.id, 3)} type="button">
-                Add 3-column section
-              </button>
-              <button onClick={() => addImage(page.id)} type="button">
-                Add Site image
-              </button>
-              <button onClick={() => addGallery(page.id)} type="button">
-                Add image gallery
-              </button>
-              <button onClick={() => addCollapsible(page.id)} type="button">
-                Add collapsible section
-              </button>
-              <button onClick={() => addCollection(page.id)} type="button">
-                Add Record collection
-              </button>
-              <button onClick={() => addRecordDetail(page.id)} type="button">
-                Add shared Record detail
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-      <div className="site-composer-footer-actions">
-        <button
-          onClick={() =>
-            commit({
-              ...copyDraft(draft),
-              pages: [
-                ...draft.pages,
-                pageWithDefaults(
-                  draft.pages.length + 1,
-                  draft.pages.length === 0,
-                ),
-              ],
-            })
-          }
-          type="button"
-        >
-          Add Page
-        </button>
+                    </div>
+                    <div className="site-composer-add-actions">
+                      <button
+                        aria-expanded={addBlockMenuOpen}
+                        aria-haspopup="menu"
+                        onClick={() => setAddBlockMenuOpen((open) => !open)}
+                        ref={addBlockButtonRef}
+                        type="button"
+                      >
+                        Add block
+                      </button>
+                      {addBlockMenuOpen ? (
+                        <div
+                          className="site-composer-add-menu"
+                          ref={addBlockMenuRef}
+                          role="menu"
+                        >
+                          <button
+                            onClick={() =>
+                              addBlock(page.id, newBlock("heading"))
+                            }
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add heading
+                          </button>
+                          <button
+                            onClick={() => addBlock(page.id, newBlock("text"))}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add text
+                          </button>
+                          <button
+                            onClick={() =>
+                              addBlock(page.id, newBlock("callout"))
+                            }
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add callout
+                          </button>
+                          <button
+                            onClick={() =>
+                              addBlock(page.id, newBlock("button"))
+                            }
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add button
+                          </button>
+                          <button
+                            onClick={() =>
+                              addBlock(page.id, newBlock("divider"))
+                            }
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add divider
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addSection(page.id, 1);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add 1-column section
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addSection(page.id, 2);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add 2-column section
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addSection(page.id, 3);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add 3-column section
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addImage(page.id);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add Site image
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addGallery(page.id);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add image gallery
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addCollapsible(page.id);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add collapsible section
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addCollection(page.id);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add Record collection
+                          </button>
+                          <button
+                            onClick={() => {
+                              setAddBlockMenuOpen(false);
+                              addRecordDetail(page.id);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add shared Record detail
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                </article>
+              );
+            })}
+        </main>
       </div>
     </div>
   );

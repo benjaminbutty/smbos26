@@ -391,16 +391,25 @@ export default async function SitesPage({
       }
     : null;
 
+  const draftNeedsUpdate = Boolean(
+    state &&
+    workspaceCurrentness &&
+    (workspaceCurrentness.expectedBaseVersionId !==
+      state.draft_base_version_id ||
+      workspaceCurrentness.expectedHeadRevision !==
+        state.draft_base_head_revision),
+  );
+
   const noticeText: Record<string, string> = {
     created: "Your Site draft is ready.",
     saved: "Site draft saved.",
-    rebased: "Site draft is aligned with the latest workspace configuration.",
-    prepared: "A release candidate is ready for review.",
+    rebased: "Your Site draft is up to date with workspace changes.",
+    prepared: "Your Site update is ready to review.",
     published: "Your Site is live.",
-    adopted: "Legacy Pages are staged for Site review.",
+    adopted: "Existing Pages are ready to review in your Site.",
     unpublished: "The Site is unpublished. Its legacy Pages remain retired.",
     availability_changed:
-      "Availability changed. Re-enabled data needs a new reviewed release.",
+      "Availability changed. Re-enabled items return after you publish an update.",
     stale: "This Site changed elsewhere. Reload and review the current draft.",
     input_invalid: "Review the highlighted Site details and try again.",
     failed: "The Site change could not be completed.",
@@ -413,8 +422,8 @@ export default async function SitesPage({
           <p className="eyebrow">Sites</p>
           <h1 className="page-title">Customer-facing Site</h1>
           <p className="lede">
-            Compose pages, collections and managed media in a durable draft,
-            then review the exact release before publishing.
+            Shape pages, collections and managed media in a saved draft. Review
+            the update before publishing.
           </p>
         </div>
         <div className="site-owner-actions">
@@ -456,9 +465,8 @@ export default async function SitesPage({
             <section className="panel site-adoption-panel">
               <h2>Review existing public Pages</h2>
               <p className="muted">
-                Existing published Pages are staged with their addresses and
-                source history. Adoption takes effect only when you publish the
-                reviewed Site candidate.
+                Existing published Pages are ready with their addresses and
+                content. Bring them into this Site when you publish.
               </p>
               <form action={stageSiteAdoptionAction.bind(null, businessSlug)}>
                 <input name="siteId" type="hidden" value={state.id} />
@@ -477,7 +485,7 @@ export default async function SitesPage({
                   type="hidden"
                   value={state.draft_base_head_revision}
                 />
-                <button type="submit">Stage legacy Pages for review</button>
+                <button type="submit">Bring Pages into this Site</button>
               </form>
             </section>
           ) : null}
@@ -486,7 +494,12 @@ export default async function SitesPage({
             businessSlug={businessSlug}
             draft={state.draft_json}
             draftRevision={state.draft_revision}
+            draftBaseVersionId={state.draft_base_version_id}
+            draftBaseHeadRevision={state.draft_base_head_revision}
             objectOptions={objectOptions}
+            previewAction={prepareSiteReleaseAction.bind(null, businessSlug)}
+            publishAction={publishSiteReleaseAction.bind(null, businessSlug)}
+            candidateId={candidate?.id}
             saveAction={saveSiteDraftAction.bind(null, businessSlug)}
             siteId={state.id}
           />
@@ -524,47 +537,20 @@ export default async function SitesPage({
             />
           ) : null}
 
-          <section
-            className="panel site-recovery-panel"
-            aria-label="Draft recovery"
-          >
-            <div>
-              <p className="eyebrow">Draft recovery</p>
-              <h2>Keep editing after a workspace change</h2>
-              <p className="muted">
-                If another workspace change makes this draft stale, rebase its
-                base explicitly before saving or preparing the next release.
-              </p>
-            </div>
-            <form action={rebaseSiteDraftAction.bind(null, businessSlug)}>
-              <input name="siteId" type="hidden" value={state.id} />
-              <input
-                name="expectedDraftRevision"
-                type="hidden"
-                value={state.draft_revision}
-              />
-              <input
-                name="expectedBaseVersionId"
-                type="hidden"
-                value={state.draft_base_version_id}
-              />
-              <input
-                name="expectedHeadRevision"
-                type="hidden"
-                value={state.draft_base_head_revision}
-              />
-              <button className="button-secondary" type="submit">
-                Rebase draft base
-              </button>
-            </form>
-            {workspaceCurrentness &&
-            (workspaceCurrentness.expectedBaseVersionId !==
-              state.draft_base_version_id ||
-              workspaceCurrentness.expectedHeadRevision !==
-                state.draft_base_head_revision) ? (
-              <form
-                action={resolveSiteDraftConflictAction.bind(null, businessSlug)}
-              >
+          {draftNeedsUpdate ? (
+            <section
+              className="panel site-recovery-panel"
+              aria-label="Draft recovery"
+            >
+              <div>
+                <p className="eyebrow">Draft recovery</p>
+                <h2>Keep editing after a workspace change</h2>
+                <p className="muted">
+                  Another workspace change happened while you were editing.
+                  Update this draft before saving or publishing.
+                </p>
+              </div>
+              <form action={rebaseSiteDraftAction.bind(null, businessSlug)}>
                 <input name="siteId" type="hidden" value={state.id} />
                 <input
                   name="expectedDraftRevision"
@@ -581,27 +567,59 @@ export default async function SitesPage({
                   type="hidden"
                   value={state.draft_base_head_revision}
                 />
-                <input
-                  name="expectedTargetVersionId"
-                  type="hidden"
-                  value={workspaceCurrentness.expectedBaseVersionId}
-                />
-                <input
-                  name="expectedTargetHeadRevision"
-                  type="hidden"
-                  value={workspaceCurrentness.expectedHeadRevision}
-                />
-                <input
-                  name="resolution"
-                  type="hidden"
-                  value="keep_site_draft"
-                />
                 <button className="button-secondary" type="submit">
-                  Keep Site draft and continue
+                  Update draft
                 </button>
               </form>
-            ) : null}
-          </section>
+              {workspaceCurrentness &&
+              (workspaceCurrentness.expectedBaseVersionId !==
+                state.draft_base_version_id ||
+                workspaceCurrentness.expectedHeadRevision !==
+                  state.draft_base_head_revision) ? (
+                <form
+                  action={resolveSiteDraftConflictAction.bind(
+                    null,
+                    businessSlug,
+                  )}
+                >
+                  <input name="siteId" type="hidden" value={state.id} />
+                  <input
+                    name="expectedDraftRevision"
+                    type="hidden"
+                    value={state.draft_revision}
+                  />
+                  <input
+                    name="expectedBaseVersionId"
+                    type="hidden"
+                    value={state.draft_base_version_id}
+                  />
+                  <input
+                    name="expectedHeadRevision"
+                    type="hidden"
+                    value={state.draft_base_head_revision}
+                  />
+                  <input
+                    name="expectedTargetVersionId"
+                    type="hidden"
+                    value={workspaceCurrentness.expectedBaseVersionId}
+                  />
+                  <input
+                    name="expectedTargetHeadRevision"
+                    type="hidden"
+                    value={workspaceCurrentness.expectedHeadRevision}
+                  />
+                  <input
+                    name="resolution"
+                    type="hidden"
+                    value="keep_site_draft"
+                  />
+                  <button className="button-secondary" type="submit">
+                    Keep Site draft and continue
+                  </button>
+                </form>
+              ) : null}
+            </section>
+          ) : null}
 
           {candidate ? (
             <SiteCandidatePreview
@@ -623,8 +641,8 @@ export default async function SitesPage({
                   : "Publish the Site"}
               </h2>
               <p className="muted">
-                Publishing creates a new immutable public projection. Later
-                draft edits remain private until reviewed again.
+                Publishing updates the public Site. Later draft edits remain
+                private until you review them.
               </p>
             </div>
             <div className="site-release-actions">
@@ -645,7 +663,7 @@ export default async function SitesPage({
                   type="hidden"
                   value={state.draft_base_head_revision}
                 />
-                <button type="submit">Prepare release for review</button>
+                <button type="submit">Preview Site update</button>
               </form>
               {candidate ? (
                 <form
@@ -672,7 +690,7 @@ export default async function SitesPage({
                     type="hidden"
                     value={state.draft_base_head_revision}
                   />
-                  <button type="submit">Publish reviewed candidate</button>
+                  <button type="submit">Publish Site update</button>
                 </form>
               ) : null}
               {state.active_release_id ? (
@@ -691,8 +709,8 @@ export default async function SitesPage({
             </div>
             {candidate ? (
               <p className="notice notice-message">
-                Candidate {candidate.id.slice(0, 8)} is ready. Review the
-                preview above, then publish this exact candidate.
+                Your Site update is ready. Review the preview above, then
+                publish it.
               </p>
             ) : null}
           </section>

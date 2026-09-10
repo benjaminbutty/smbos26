@@ -93,8 +93,8 @@ export function SiteAvailabilityControls({
         <p className="eyebrow">Availability</p>
         <h2>Withdraw live data safely</h2>
         <p className="muted">
-          Withdrawal takes effect immediately. Re-enabled data returns only in a
-          new reviewed release.
+          Withdrawal takes effect immediately. Re-enabled items return after you
+          publish a new Site update.
         </p>
       </div>
       {objects.length > 0 ? (
