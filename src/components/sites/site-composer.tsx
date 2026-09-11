@@ -4,7 +4,7 @@ import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
-import type { SiteDraftV1 } from "../../core/sites/schemas";
+import { siteDraftV1Schema, type SiteDraftV1 } from "../../core/sites/schemas";
 import { useUnsavedNavigationWarning } from "../../runtime/unsaved-navigation-warning";
 import {
   SerialSaveCoordinator,
@@ -139,13 +139,34 @@ function richTextContentText(content: unknown): string {
     .join("");
 }
 
-function richTextNodeText(node: UnknownRecord): string {
-  if (node.type === "bullet_list" || node.type === "numbered_list") {
-    return (Array.isArray(node.items) ? node.items : [])
-      .map((item) => richTextContentText(asRecord(item).content))
-      .join("\n");
+function richTextNodeContent(node: UnknownRecord): UnknownRecord[] {
+  if (node.type !== "bullet_list" && node.type !== "numbered_list") {
+    return Array.isArray(node.content)
+      ? node.content
+          .map((span) => asRecord(span))
+          .filter((span) => typeof span.text === "string")
+          .map((span) => structuredClone(span))
+      : [];
   }
-  return richTextContentText(node.content);
+  const content: UnknownRecord[] = [];
+  const items = Array.isArray(node.items) ? node.items : [];
+  items.forEach((item, index) => {
+    if (index > 0) content.push({ type: "text", text: "\n" });
+    const itemContent = asRecord(item).content;
+    if (Array.isArray(itemContent)) {
+      content.push(
+        ...itemContent
+          .map((span) => asRecord(span))
+          .filter((span) => typeof span.text === "string")
+          .map((span) => structuredClone(span)),
+      );
+    }
+  });
+  return content;
+}
+
+function richTextNodeText(node: UnknownRecord): string {
+  return richTextContentText(richTextNodeContent(node));
 }
 
 function richTextNodeType(value: unknown): RichTextNodeType {
@@ -160,16 +181,10 @@ function richTextMarks(node: UnknownRecord): {
   italic: boolean;
   link: string;
 } {
-  const firstContent =
-    node.type === "bullet_list" || node.type === "numbered_list"
-      ? asRecord(
-          asRecord(Array.isArray(node.items) ? node.items[0] : null).content,
-        )
-      : node.content;
-  const firstSpan = Array.isArray(firstContent)
-    ? asRecord(firstContent.find((span) => asRecord(span).text))
-    : {};
-  const marks = Array.isArray(firstSpan.marks) ? firstSpan.marks : [];
+  const firstSpan = richTextNodeContent(node).find(
+    (span) => typeof span.text === "string" && span.text.length > 0,
+  );
+  const marks = Array.isArray(firstSpan?.marks) ? firstSpan.marks : [];
   const link = marks
     .map((mark) => asRecord(mark))
     .find((mark) => mark.type === "link");
@@ -180,47 +195,230 @@ function richTextMarks(node: UnknownRecord): {
   };
 }
 
-function makeRichTextNode(
-  type: RichTextNodeType,
-  text: string,
-  options: Readonly<{
-    bold: boolean;
-    italic: boolean;
-    link: string;
-    level: 1 | 2 | 3;
-  }>,
-): UnknownRecord {
-  const marks = [
-    ...(options.bold ? [{ type: "bold" }] : []),
-    ...(options.italic ? [{ type: "italic" }] : []),
-    ...(safeRichTextHrefPattern.test(options.link)
-      ? [{ type: "link", href: options.link }]
-      : []),
-  ];
-  const makeSpan = (line: string): UnknownRecord | null =>
-    line
-      ? {
+function richTextMarksSignature(span: UnknownRecord): string {
+  return JSON.stringify(Array.isArray(span.marks) ? span.marks : []);
+}
+
+function mergeRichTextSpans(spans: readonly UnknownRecord[]): UnknownRecord[] {
+  const merged: UnknownRecord[] = [];
+  for (const input of spans) {
+    if (typeof input.text !== "string" || input.text.length === 0) continue;
+    const span = structuredClone(input);
+    const previous = merged.at(-1);
+    if (
+      previous &&
+      previous.type === "text" &&
+      richTextMarksSignature(previous) === richTextMarksSignature(span)
+    ) {
+      previous.text = String(previous.text) + span.text;
+    } else {
+      merged.push(span);
+    }
+  }
+  return merged;
+}
+
+function richTextContentSlice(
+  content: readonly UnknownRecord[],
+  start: number,
+  end: number,
+): UnknownRecord[] {
+  if (end <= start) return [];
+  const result: UnknownRecord[] = [];
+  let position = 0;
+  for (const span of content) {
+    const text = typeof span.text === "string" ? span.text : "";
+    const spanStart = position;
+    const spanEnd = position + text.length;
+    position = spanEnd;
+    if (spanEnd <= start || spanStart >= end || text.length === 0) continue;
+    const from = Math.max(start - spanStart, 0);
+    const to = Math.min(end - spanStart, text.length);
+    const piece = structuredClone(span);
+    piece.text = text.slice(from, to);
+    result.push(piece);
+  }
+  return mergeRichTextSpans(result);
+}
+
+function richTextMarksAt(
+  content: readonly UnknownRecord[],
+  offset: number,
+): UnknownRecord[] {
+  let position = 0;
+  let previous: UnknownRecord | undefined;
+  for (const span of content) {
+    const text = typeof span.text === "string" ? span.text : "";
+    if (text.length === 0) continue;
+    const end = position + text.length;
+    if (offset < end || (offset === end && offset > 0)) {
+      const source = offset === end && previous ? previous : span;
+      return Array.isArray(source.marks) ? structuredClone(source.marks) : [];
+    }
+    previous = span;
+    position = end;
+  }
+  return Array.isArray(previous?.marks) ? structuredClone(previous.marks) : [];
+}
+
+/**
+ * Apply a textarea edit by retaining unchanged prefix and suffix spans. Only
+ * the replaced range receives the nearest existing marks, so editing mixed
+ * formatting does not flatten the canonical document.
+ */
+function preserveRichTextContentEdit(
+  content: readonly UnknownRecord[],
+  nextText: string,
+): UnknownRecord[] {
+  const previousText = richTextContentText(content);
+  if (previousText === nextText) {
+    return content.map((span) => structuredClone(span));
+  }
+  let prefix = 0;
+  while (
+    prefix < previousText.length &&
+    prefix < nextText.length &&
+    previousText[prefix] === nextText[prefix]
+  ) {
+    prefix += 1;
+  }
+  let suffix = 0;
+  while (
+    previousText.length - prefix - suffix > 0 &&
+    nextText.length - prefix - suffix > 0 &&
+    previousText[previousText.length - suffix - 1] ===
+      nextText[nextText.length - suffix - 1]
+  ) {
+    suffix += 1;
+  }
+  const previousEnd = previousText.length - suffix;
+  const nextEnd = nextText.length - suffix;
+  const middleText = nextText.slice(prefix, nextEnd);
+  const middleMarks = richTextMarksAt(content, prefix);
+  const middle = middleText
+    ? [
+        {
           type: "text",
-          text: line,
-          ...(marks.length ? { marks } : {}),
-        }
-      : null;
-  const lines = text.split("\n").slice(0, 50);
+          text: middleText,
+          ...(middleMarks.length ? { marks: middleMarks } : {}),
+        },
+      ]
+    : [];
+  return mergeRichTextSpans([
+    ...richTextContentSlice(content, 0, prefix),
+    ...middle,
+    ...richTextContentSlice(content, previousEnd, previousText.length),
+  ]);
+}
+
+function splitRichTextLines(
+  content: readonly UnknownRecord[],
+): UnknownRecord[][] {
+  const lines: UnknownRecord[][] = [[]];
+  for (const span of content) {
+    const text = typeof span.text === "string" ? span.text : "";
+    let start = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] !== "\n") continue;
+      const piece = structuredClone(span);
+      piece.text = text.slice(start, index);
+      lines[lines.length - 1]!.push(piece);
+      lines.push([]);
+      start = index + 1;
+    }
+    const trailing = structuredClone(span);
+    trailing.text = text.slice(start);
+    lines[lines.length - 1]!.push(trailing);
+  }
+  return lines.map((line) => mergeRichTextSpans(line));
+}
+
+function richTextNodeWithContent(
+  type: RichTextNodeType,
+  content: readonly UnknownRecord[],
+  level: 1 | 2 | 3,
+): UnknownRecord {
   if (type === "bullet_list" || type === "numbered_list") {
     return {
       type,
-      items: lines.map((line) => {
-        const span = makeSpan(line);
-        return { content: span ? [span] : [] };
-      }),
+      items: splitRichTextLines(content).map((line) => ({ content: line })),
     };
   }
-  const content = makeSpan(text);
   return {
     type,
-    ...(type === "heading" ? { level: options.level } : {}),
-    content: content ? [content] : [],
+    ...(type === "heading" ? { level } : {}),
+    content: content.map((span) => structuredClone(span)),
   };
+}
+
+function richTextNodeWithText(
+  node: UnknownRecord,
+  nextText: string,
+  type: RichTextNodeType,
+  level: 1 | 2 | 3,
+): UnknownRecord {
+  const edited = preserveRichTextContentEdit(
+    richTextNodeContent(node),
+    nextText,
+  );
+  return richTextNodeWithContent(type, edited, level);
+}
+
+function richTextNodeWithMarks(
+  node: UnknownRecord,
+  options: Readonly<{
+    bold?: boolean;
+    italic?: boolean;
+    link?: string;
+  }>,
+): UnknownRecord {
+  const updateContent = (contentInput: unknown): UnknownRecord[] => {
+    const content = Array.isArray(contentInput)
+      ? contentInput.map((span) => asRecord(span))
+      : [];
+    return content.map((input) => {
+      const span = structuredClone(input);
+      const currentMarks = Array.isArray(span.marks)
+        ? span.marks.map((mark) => asRecord(mark))
+        : [];
+      const marks = currentMarks.filter((mark) => {
+        if (mark.type === "bold" && options.bold !== undefined) return false;
+        if (mark.type === "italic" && options.italic !== undefined)
+          return false;
+        if (mark.type === "link" && options.link !== undefined) return false;
+        return true;
+      });
+      if (options.bold) marks.push({ type: "bold" });
+      if (options.italic) marks.push({ type: "italic" });
+      if (
+        options.link !== undefined &&
+        safeRichTextHrefPattern.test(options.link)
+      ) {
+        marks.push({ type: "link", href: options.link });
+      }
+      if (marks.length) span.marks = marks;
+      else delete span.marks;
+      return span;
+    });
+  };
+  if (node.type === "bullet_list" || node.type === "numbered_list") {
+    return {
+      ...structuredClone(node),
+      items: (Array.isArray(node.items) ? node.items : []).map((item) => ({
+        ...structuredClone(asRecord(item)),
+        content: updateContent(asRecord(item).content),
+      })),
+    };
+  }
+  return { ...structuredClone(node), content: updateContent(node.content) };
+}
+
+function richTextNodeWithType(
+  node: UnknownRecord,
+  type: RichTextNodeType,
+  level: 1 | 2 | 3,
+): UnknownRecord {
+  return richTextNodeWithContent(type, richTextNodeContent(node), level);
 }
 
 function previewRichText(nodeInput: unknown): ReactNode {
@@ -445,6 +643,29 @@ function previewBlockContent(
   return <span>{displayKey(block.type)}</span>;
 }
 
+function previewSitePage(
+  page: SitePage,
+  objectOptions: readonly ObjectOption[],
+  businessSlug: string,
+  className: string,
+): ReactNode {
+  return (
+    <div className={className}>
+      <header>
+        <p className="eyebrow">Page</p>
+        <h3>{page.title}</h3>
+      </header>
+      <div className="site-composer-conflict-preview-content">
+        {page.layout.blocks.map((block, index) => (
+          <article key={blockIdentity(block, `${page.id}-${index}`)}>
+            {previewBlockContent(block, objectOptions, businessSlug)}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function copyDraft(draft: SiteDraftV1): SiteDraftV1 {
   return structuredClone(draft);
 }
@@ -566,6 +787,14 @@ export function SiteComposer({
   const [revision, setRevision] = useState(draftRevision);
   const [undoStack, setUndoStack] = useState<SiteDraftV1[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [serverConflict, setServerConflict] = useState<{
+    draft: SiteDraftV1;
+    revision: number;
+  } | null>(null);
+  const [showingServerDraft, setShowingServerDraft] = useState(false);
+  const [serverDraftPageId, setServerDraftPageId] = useState<string | null>(
+    null,
+  );
   const [attachmentRevisions, setAttachmentRevisions] = useState<
     Record<string, number>
   >({});
@@ -578,6 +807,8 @@ export function SiteComposer({
   const initialDraftRef = useRef(copyDraft(initialDraft));
   const serverDraftRef = useRef(copyDraft(initialDraft));
   const serverRevisionRef = useRef(draftRevision);
+  const observedPropsDraftRef = useRef(copyDraft(initialDraft));
+  const observedPropsRevisionRef = useRef(draftRevision);
   const revisionRef = useRef(draftRevision);
   const mountedRef = useRef(false);
   const saveFailureMessageRef = useRef<string | null>(null);
@@ -597,6 +828,37 @@ export function SiteComposer({
   const [addBlockMenuOpen, setAddBlockMenuOpen] = useState(false);
   const addBlockButtonRef = useRef<HTMLButtonElement | null>(null);
   const addBlockMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchLatestServerDraft = useCallback(async (): Promise<{
+    draft: SiteDraftV1;
+    revision: number;
+  } | null> => {
+    try {
+      const response = await fetch(
+        `/api/app/${encodeURIComponent(
+          businessSlug,
+        )}/sites/draft?siteId=${encodeURIComponent(siteId)}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) return null;
+      const result: unknown = await response.json().catch(() => null);
+      const value = asRecord(result);
+      const parsedDraft = siteDraftV1Schema.safeParse(value.draft);
+      const nextRevision = value.draftRevision;
+      if (
+        value.siteId !== siteId ||
+        !parsedDraft.success ||
+        typeof nextRevision !== "number" ||
+        !Number.isInteger(nextRevision) ||
+        nextRevision <= 0
+      ) {
+        return null;
+      }
+      return { draft: parsedDraft.data, revision: nextRevision };
+    } catch {
+      return null;
+    }
+  }, [businessSlug, siteId]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -650,6 +912,28 @@ export function SiteComposer({
             saveFailureMessageRef.current = stale
               ? "This draft changed elsewhere. Your edits are still here; saving is paused until the draft is reconciled."
               : failureMessage;
+            if (stale) {
+              const latest = await fetchLatestServerDraft();
+              const requestIsActive =
+                saveCoordinatorRef.current?.isRequestActive(requestId) ?? false;
+              if (latest && requestIsActive && mountedRef.current) {
+                if (latest.revision >= serverRevisionRef.current) {
+                  const latestDraft = copyDraft(latest.draft);
+                  serverDraftRef.current = copyDraft(latestDraft);
+                  serverRevisionRef.current = latest.revision;
+                  setServerConflict({
+                    draft: latestDraft,
+                    revision: latest.revision,
+                  });
+                  setShowingServerDraft(false);
+                  setServerDraftPageId(
+                    latestDraft.pages.find((page) => page.is_home)?.id ??
+                      latestDraft.pages[0]?.id ??
+                      null,
+                  );
+                }
+              }
+            }
             return {
               status: stale ? "stale" : "error",
               message: saveFailureMessageRef.current,
@@ -691,7 +975,7 @@ export function SiteComposer({
         saveCoordinatorRef.current = null;
       }
     };
-  }, [businessSlug, siteId]);
+  }, [businessSlug, fetchLatestServerDraft, siteId]);
 
   useEffect(() => {
     const coordinator = saveCoordinatorRef.current;
@@ -701,12 +985,19 @@ export function SiteComposer({
 
   useEffect(() => {
     const nextServerDraft = copyDraft(initialDraft);
+    const propsChanged =
+      draftRevision !== observedPropsRevisionRef.current ||
+      !siteDraftEquals(observedPropsDraftRef.current, nextServerDraft);
+    observedPropsDraftRef.current = copyDraft(nextServerDraft);
+    observedPropsRevisionRef.current = draftRevision;
+    if (!propsChanged || draftRevision < serverRevisionRef.current) return;
+
     const serverChanged =
       draftRevision !== serverRevisionRef.current ||
       !siteDraftEquals(serverDraftRef.current, nextServerDraft);
-    serverDraftRef.current = nextServerDraft;
-    serverRevisionRef.current = draftRevision;
     if (!serverChanged) return;
+    serverDraftRef.current = copyDraft(nextServerDraft);
+    serverRevisionRef.current = draftRevision;
 
     const coordinator = saveCoordinatorRef.current;
     if (!coordinator) return;
@@ -718,6 +1009,16 @@ export function SiteComposer({
       // owner has reviewed the newer server baseline. This avoids clobbering
       // a rebased or adopted draft with a stale local revision.
       coordinator.block("stale");
+      setServerConflict({
+        draft: nextServerDraft,
+        revision: draftRevision,
+      });
+      setShowingServerDraft(false);
+      setServerDraftPageId(
+        nextServerDraft.pages.find((page) => page.is_home)?.id ??
+          nextServerDraft.pages[0]?.id ??
+          null,
+      );
       setAutosaveStatus("error");
       setMessage(
         "This draft was updated elsewhere. Your edits are still here; review the latest draft before saving.",
@@ -749,6 +1050,81 @@ export function SiteComposer({
     setMessage(null);
     setAutosaveStatus("saved");
   }, [draft, draftRevision, initialDraft]);
+
+  function showLatestServerDraft(): void {
+    if (!serverConflict) return;
+    setShowingServerDraft((showing) => !showing);
+    setMessage(
+      "The latest draft is shown below. Your edits remain here until you choose which version to keep.",
+    );
+  }
+
+  function useLatestServerDraft(): void {
+    const conflict = serverConflict;
+    if (!conflict) return;
+    const canonical = copyDraft(conflict.draft);
+    initialDraftRef.current = copyDraft(canonical);
+    serverDraftRef.current = copyDraft(canonical);
+    serverRevisionRef.current = conflict.revision;
+    revisionRef.current = conflict.revision;
+    saveCoordinatorRef.current?.acknowledge(copyDraft(canonical));
+    setDraft(canonical);
+    setRevision(conflict.revision);
+    setUndoStack([]);
+    setSelectedPageId((currentPageId) => {
+      if (canonical.pages.some((page) => page.id === currentPageId)) {
+        return currentPageId;
+      }
+      return (
+        canonical.pages.find((page) => page.is_home)?.id ??
+        canonical.pages[0]?.id ??
+        ""
+      );
+    });
+    setSelectedBlockId(null);
+    setPageSettingsOpen(false);
+    setAddBlockMenuOpen(false);
+    setServerConflict(null);
+    setShowingServerDraft(false);
+    setServerDraftPageId(null);
+    navigationBypassRef.current = false;
+    saveFailureMessageRef.current = null;
+    setMessage("The latest Site draft is now open for editing.");
+    setAutosaveStatus("saved");
+  }
+
+  function keepLocalDraftOnLatestServer(): void {
+    const conflict = serverConflict;
+    const coordinator = saveCoordinatorRef.current;
+    if (!conflict || !coordinator) return;
+    const canonical = copyDraft(conflict.draft);
+    const localCandidate = copyDraft(draft);
+    initialDraftRef.current = copyDraft(canonical);
+    serverDraftRef.current = copyDraft(canonical);
+    serverRevisionRef.current = conflict.revision;
+    revisionRef.current = conflict.revision;
+    coordinator.acknowledge(copyDraft(canonical));
+    coordinator.update(localCandidate);
+    setDraft(localCandidate);
+    setRevision(conflict.revision);
+    setUndoStack([]);
+    setServerConflict(null);
+    setShowingServerDraft(false);
+    setServerDraftPageId(null);
+    navigationBypassRef.current = false;
+    saveFailureMessageRef.current = null;
+    setMessage("Your edits are ready to save over the latest Site draft.");
+    setAutosaveStatus("saving");
+  }
+
+  const latestConflictPage = serverConflict
+    ? (serverConflict.draft.pages.find(
+        (page) => page.id === serverDraftPageId,
+      ) ??
+      serverConflict.draft.pages.find((page) => page.is_home) ??
+      serverConflict.draft.pages[0])
+    : undefined;
+  const releaseReady = autosaveStatus === "saved" && serverConflict === null;
 
   const saveDraftNow = useCallback(async (): Promise<boolean> => {
     const coordinator = saveCoordinatorRef.current;
@@ -800,7 +1176,8 @@ export function SiteComposer({
     const onPointerDown = (event: PointerEvent) => {
       if (
         event.target instanceof Node &&
-        addBlockMenuRef.current?.contains(event.target)
+        (addBlockMenuRef.current?.contains(event.target) ||
+          addBlockButtonRef.current?.contains(event.target))
       ) {
         return;
       }
@@ -1572,7 +1949,7 @@ export function SiteComposer({
               />
               <button
                 className="button-secondary site-composer-preview-action"
-                disabled={autosaveStatus === "saving"}
+                disabled={!releaseReady}
                 type="submit"
               >
                 Preview
@@ -1600,7 +1977,7 @@ export function SiteComposer({
               />
               <button
                 className="site-composer-publish-action"
-                disabled={autosaveStatus === "saving"}
+                disabled={!releaseReady}
                 type="submit"
               >
                 Publish
@@ -1619,6 +1996,65 @@ export function SiteComposer({
         </div>
       </div>
       {message ? <p className="notice notice-message">{message}</p> : null}
+      {serverConflict ? (
+        <section
+          aria-label="Review newer Site draft"
+          className="site-composer-conflict"
+        >
+          <div>
+            <p className="eyebrow">Draft update</p>
+            <h2>Review a newer Site draft</h2>
+            <p className="muted">
+              Another update was saved while you were editing. Choose which
+              version you want to continue with.
+            </p>
+          </div>
+          <div className="site-composer-inline-actions">
+            <button
+              className="button-secondary"
+              onClick={showLatestServerDraft}
+              type="button"
+            >
+              {showingServerDraft ? "Hide latest draft" : "Review latest draft"}
+            </button>
+            <button
+              className="button-secondary"
+              onClick={useLatestServerDraft}
+              type="button"
+            >
+              Use latest draft (discard my edits)
+            </button>
+            <button onClick={keepLocalDraftOnLatestServer} type="button">
+              Keep my edits and save over latest
+            </button>
+          </div>
+          {showingServerDraft && latestConflictPage ? (
+            <div className="site-composer-conflict-review">
+              {serverConflict.draft.pages.length > 1 ? (
+                <nav aria-label="Pages in latest draft">
+                  {serverConflict.draft.pages.map((page) => (
+                    <button
+                      aria-pressed={page.id === latestConflictPage.id}
+                      className="button-secondary"
+                      key={page.id}
+                      onClick={() => setServerDraftPageId(page.id)}
+                      type="button"
+                    >
+                      {page.navigation_label || page.title}
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
+              {previewSitePage(
+                latestConflictPage,
+                objectOptions,
+                businessSlug,
+                "site-composer-conflict-preview",
+              )}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <details className="panel site-composer-branding" open={identityOpen}>
         <summary
@@ -3031,6 +3467,9 @@ function RichTextEditor({
   const text = richTextNodeText(node);
   const level =
     node.level === 1 || node.level === 3 ? node.level : (2 as const);
+  const [validationMessage, setValidationMessage] = useState<string | null>(
+    null,
+  );
   const update = (
     changes: Partial<{
       type: RichTextNodeType;
@@ -3041,12 +3480,30 @@ function RichTextEditor({
       level: 1 | 2 | 3;
     }>,
   ): void => {
+    const nextType = changes.type ?? type;
+    const nextLevel = changes.level ?? level;
+    if (
+      changes.text !== undefined &&
+      (nextType === "bullet_list" || nextType === "numbered_list") &&
+      changes.text.split("\n").length > 50
+    ) {
+      setValidationMessage("Lists can contain up to 50 items.");
+      return;
+    }
+    setValidationMessage(null);
+    if (changes.text !== undefined) {
+      onChange(richTextNodeWithText(node, changes.text, nextType, nextLevel));
+      return;
+    }
+    if (changes.type !== undefined || changes.level !== undefined) {
+      onChange(richTextNodeWithType(node, nextType, nextLevel));
+      return;
+    }
     onChange(
-      makeRichTextNode(changes.type ?? type, changes.text ?? text, {
-        bold: changes.bold ?? marks.bold,
-        italic: changes.italic ?? marks.italic,
-        link: changes.link ?? marks.link,
-        level: changes.level ?? level,
+      richTextNodeWithMarks(node, {
+        ...(changes.bold !== undefined ? { bold: changes.bold } : {}),
+        ...(changes.italic !== undefined ? { italic: changes.italic } : {}),
+        ...(changes.link !== undefined ? { link: changes.link } : {}),
       }),
     );
   };
@@ -3109,6 +3566,11 @@ function RichTextEditor({
           value={text}
         />
       </label>
+      {validationMessage ? (
+        <small className="site-composer-inline-error" role="status">
+          {validationMessage}
+        </small>
+      ) : null}
       {type !== "bullet_list" && type !== "numbered_list" ? (
         <div className="site-composer-toggles">
           <label>

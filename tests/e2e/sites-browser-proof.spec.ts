@@ -354,6 +354,114 @@ test("owner can review the compact Site editor", async ({
   });
 });
 
+test("owner can review and keep edits after a two-tab Site conflict", async ({
+  page,
+  pagesProof,
+}) => {
+  await page.route("https://jamp.io/**", (route) => route.abort());
+  const business = await pagesProof.createBusinessThroughOwnerUi(page);
+
+  await page.goto(`/app/${business.slug}/sites`);
+  await page.getByRole("button", { name: "Create Site draft" }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=created$`),
+  );
+
+  const secondTab = await page.context().newPage();
+  try {
+    await secondTab.goto(`/app/${business.slug}/sites`);
+    const firstHome = await selectSitePage(page, "Home");
+    const secondHome = await selectSitePage(secondTab, "Home");
+    const firstHeadingBlock = firstHome
+      .locator(".site-composer-canvas-block")
+      .first();
+    const secondHeadingBlock = secondHome
+      .locator(".site-composer-canvas-block")
+      .first();
+    await firstHeadingBlock.click();
+    await secondHeadingBlock.click();
+    const firstHeading = firstHome
+      .locator(".site-composer-inspector .site-composer-block")
+      .getByRole("textbox")
+      .first();
+    const secondHeading = secondHome
+      .locator(".site-composer-inspector .site-composer-block")
+      .getByRole("textbox")
+      .first();
+
+    await secondHeading.fill("Second tab version");
+    await saveSiteDraft(secondTab);
+
+    await firstHeading.fill("First tab version");
+    const staleResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+        response.status() === 409,
+    );
+    const latestStateResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+        response.status() === 200,
+    );
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await Promise.all([staleResponse, latestStateResponse]);
+
+    const conflict = page.getByRole("region", {
+      name: "Review newer Site draft",
+    });
+    await expect(conflict).toBeVisible();
+    await expect(
+      firstHome
+        .locator(".site-composer-canvas")
+        .getByText("First tab version", { exact: true }),
+    ).toBeVisible();
+
+    await conflict
+      .getByRole("button", { name: "Review latest draft", exact: true })
+      .click();
+    await expect(
+      conflict
+        .locator(".site-composer-conflict-preview")
+        .getByText("Second tab version", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      firstHome
+        .locator(".site-composer-canvas")
+        .getByText("First tab version", { exact: true }),
+    ).toBeVisible();
+
+    const keptSave = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+        response.status() === 200,
+    );
+    await conflict
+      .getByRole("button", {
+        name: "Keep my edits and save over latest",
+        exact: true,
+      })
+      .click();
+    await keptSave;
+    await expect(conflict).toBeHidden();
+    await expect(
+      page.getByText("Saved automatically", { exact: true }),
+    ).toBeVisible();
+
+    await secondTab.reload();
+    const savedSecondHome = await selectSitePage(secondTab, "Home");
+    await expect(
+      savedSecondHome
+        .locator(".site-composer-canvas")
+        .getByText("First tab version", { exact: true }),
+    ).toBeVisible();
+  } finally {
+    await secondTab.close();
+  }
+});
+
 test("owner builds and publishes a multi-page Site in Chromium", async ({
   page,
   pagesProof,
