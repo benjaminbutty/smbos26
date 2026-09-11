@@ -135,7 +135,9 @@ const siteFormQuestionSchema = z
     help_text: z.string().trim().max(500).optional(),
     field_type: siteFormQuestionTypeSchema,
     required: z.boolean().default(false),
-    options: z.array(z.string().trim().max(120)).max(50).optional(),
+    // Keep the editor's line-oriented draft intact. Prepare trims, drops
+    // blanks, and rejects duplicates before writing canonical Field options.
+    options: z.array(z.string().max(120)).max(50).optional(),
     default_value: jsonValueSchema.optional(),
     visible_when: siteFormDraftConditionSchema.optional(),
     upload_kind: z.enum(["image", "pdf"]).optional(),
@@ -183,6 +185,12 @@ export const siteFormDraftSchema = z
   });
 
 export type SiteFormDraft = z.infer<typeof siteFormDraftSchema>;
+
+export function siteFormChoiceOptionsForPublication(
+  options: readonly string[] | undefined,
+): string[] {
+  return (options ?? []).map((option) => option.trim()).filter(Boolean);
+}
 
 export const siteDraftV1Schema = z
   .object({
@@ -420,17 +428,22 @@ export const siteDraftPublicationReadyV1Schema = siteDraftV1Schema.superRefine(
             path: ["forms", formIndex, "questions", questionIndex, "label"],
           });
         }
+        const normalizedOptions = siteFormChoiceOptionsForPublication(
+          question.options,
+        );
+        const needsChoiceOptions =
+          question.field_type === "select" ||
+          question.field_type === "multi_select" ||
+          question.field_type === "status";
         if (
-          (question.field_type === "select" ||
-            question.field_type === "multi_select" ||
-            question.field_type === "status") &&
-          (!(question.options ?? []).length ||
-            (question.options ?? []).some((option) => !option.trim()))
+          needsChoiceOptions &&
+          (normalizedOptions.length === 0 ||
+            new Set(normalizedOptions).size !== normalizedOptions.length)
         ) {
           context.addIssue({
             code: "custom",
             message:
-              "Choice questions need at least one option before publishing.",
+              "Choice questions need at least one unique option before publishing.",
             path: ["forms", formIndex, "questions", questionIndex, "options"],
           });
         }
@@ -473,28 +486,24 @@ export const siteDraftPublicationReadyV1Schema = siteDraftV1Schema.superRefine(
             ? condition.operator === "includes"
             : condition.operator === "equals" ||
               condition.operator === "not_equals";
+        const sourceOptions = siteFormChoiceOptionsForPublication(
+          source?.options,
+        );
         const valueSupported =
           source?.field_type === "boolean"
             ? typeof condition.value === "boolean"
             : typeof condition.value === "string" &&
-              Boolean(
-                source?.options?.some(
-                  (option) =>
-                    option.trim() !== "" && option.trim() === condition.value,
-                ),
-              );
+              sourceOptions.includes(condition.value);
         if (
           !sourceIsEarlier ||
           !supportedSource ||
           !operatorSupported ||
-          !valueSupported ||
-          question.required
+          !valueSupported
         ) {
           context.addIssue({
             code: "custom",
-            message: question.required
-              ? "A conditional question cannot be required."
-              : "Conditions must use a typed earlier choice or Yes/No question.",
+            message:
+              "Conditions must use a typed earlier choice or Yes/No question.",
             path: [
               "forms",
               formIndex,

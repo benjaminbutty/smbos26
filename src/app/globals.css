@@ -19416,6 +19416,19 @@ textarea {
   justify-content: space-between;
 }
 
+.site-form-question-heading,
+.site-form-question-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.site-form-question-actions {
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
 .site-form-composer-heading > div,
 .site-form-card-heading > div {
   min-width: 0;

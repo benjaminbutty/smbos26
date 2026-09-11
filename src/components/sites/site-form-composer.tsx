@@ -2,12 +2,19 @@
 
 import type { ReactNode } from "react";
 
-import type { SiteDraftV1, SiteFormDraft } from "../../core/sites/schemas";
+import { walkPageBlocks } from "../../core/experience/page-blocks";
+import type { SitePageLayout } from "../../core/experience/schemas";
+import {
+  siteFormChoiceOptionsForPublication,
+  type SiteDraftV1,
+  type SiteFormDraft,
+} from "../../core/sites/schemas";
 import type { ObjectOption } from "./site-composer";
 
 type FormQuestion = SiteFormDraft["questions"][number];
 type FormQuestionType = FormQuestion["field_type"];
 type Condition = NonNullable<FormQuestion["visible_when"]>;
+type SiteBlock = SitePageLayout["blocks"][number];
 
 const questionTypes: Array<{ value: FormQuestionType; label: string }> = [
   { value: "short_text", label: "Short answer" },
@@ -64,7 +71,7 @@ function blankForm(): SiteFormDraft {
 
 function formBlockExists(draft: SiteDraftV1, formKey: string): boolean {
   return draft.pages.some((page) =>
-    page.layout.blocks.some(
+    walkPageBlocks(page.layout).some(
       (block) =>
         block.type === "public_form" &&
         "form_key" in block &&
@@ -77,7 +84,7 @@ function formBlockCount(draft: SiteDraftV1, formKey: string): number {
   return draft.pages.reduce(
     (count, page) =>
       count +
-      page.layout.blocks.filter(
+      walkPageBlocks(page.layout).filter(
         (block) =>
           block.type === "public_form" &&
           "form_key" in block &&
@@ -85,6 +92,47 @@ function formBlockCount(draft: SiteDraftV1, formKey: string): number {
       ).length,
     0,
   );
+}
+
+function removeFormBlocks(
+  blocks: readonly SiteBlock[],
+  formKey: string,
+): SiteBlock[] {
+  return blocks.flatMap((block) => {
+    if (
+      block.type === "public_form" &&
+      "form_key" in block &&
+      block.form_key === formKey
+    ) {
+      return [];
+    }
+    if (block.type === "collapsible") {
+      return [
+        {
+          ...block,
+          blocks: removeFormBlocks(
+            block.blocks as readonly SiteBlock[],
+            formKey,
+          ),
+        } as SiteBlock,
+      ];
+    }
+    if (block.type === "section") {
+      return [
+        {
+          ...block,
+          columns: block.columns.map((column) => ({
+            ...column,
+            blocks: removeFormBlocks(
+              column.blocks as readonly SiteBlock[],
+              formKey,
+            ),
+          })),
+        } as SiteBlock,
+      ];
+    }
+    return [block];
+  });
 }
 
 function objectLabel(object: ObjectOption): string {
@@ -152,8 +200,8 @@ function conditionValueIsValid(
     return typeof condition.value === "boolean";
   if (typeof condition.value !== "string" || !condition.value.trim())
     return false;
-  return (source.options ?? []).some(
-    (option) => option.trim() === condition.value,
+  return siteFormChoiceOptionsForPublication(source.options).includes(
+    condition.value,
   );
 }
 
@@ -208,12 +256,18 @@ export function siteFormDraftBlockers(
       question.field_type === "select" ||
       question.field_type === "multi_select" ||
       question.field_type === "status";
+    const normalizedOptions = siteFormChoiceOptionsForPublication(
+      question.options,
+    );
     if (
       needsChoices &&
-      !(question.options ?? []).some((option) => option.trim())
+      (normalizedOptions.length === 0 ||
+        new Set(normalizedOptions).size !== normalizedOptions.length)
     ) {
       blockers.push(
-        `Add choices for ${question.label || `question ${index + 1}`}.`,
+        normalizedOptions.length === 0
+          ? `Add choices for ${question.label || `question ${index + 1}`}.`
+          : `Remove duplicate choices for ${question.label || `question ${index + 1}`}.`,
       );
     }
     if (question.field_type === "file" && !question.upload_kind) {
@@ -236,9 +290,13 @@ export function siteFormDraftBlockers(
     }
 
     if (question.visible_when) {
-      if (question.required || selectedField?.required) {
+      if (
+        selectedField?.required &&
+        (selectedField.defaultValue === undefined ||
+          selectedField.defaultValue === null)
+      ) {
         blockers.push(
-          `${question.label || `Question ${index + 1}`} cannot be required when it is conditional.`,
+          `${question.label || `Question ${index + 1}`} hides a required property without a default answer.`,
         );
       }
       const source = form.questions.find(
@@ -293,7 +351,7 @@ function conditionDefault(source: FormQuestion): Condition {
   return {
     field: source.key,
     operator: source.field_type === "multi_select" ? "includes" : "equals",
-    value: source.options?.find((option) => option.trim())?.trim() ?? "",
+    value: siteFormChoiceOptionsForPublication(source.options)[0] ?? "",
   };
 }
 
@@ -331,8 +389,36 @@ export function SiteFormComposer({
 
   function removeForm(formId: string): void {
     const next = structuredClone(draft);
-    next.forms = (next.forms ?? []).filter((form) => form.id !== formId);
+    const form = (next.forms ?? []).find(
+      (candidate) => candidate.id === formId,
+    );
+    if (!form) return;
+    next.pages.forEach((page) => {
+      page.layout.blocks = removeFormBlocks(page.layout.blocks, form.key);
+    });
+    next.forms = (next.forms ?? []).filter(
+      (candidate) => candidate.id !== formId,
+    );
     onChange(next);
+  }
+
+  function moveQuestion(
+    formId: string,
+    questionId: string,
+    direction: -1 | 1,
+  ): void {
+    updateForm(formId, (form) => {
+      const index = form.questions.findIndex(
+        (question) => question.id === questionId,
+      );
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= form.questions.length) {
+        return;
+      }
+      const [question] = form.questions.splice(index, 1);
+      if (!question) return;
+      form.questions.splice(target, 0, question);
+    });
   }
 
   function updateQuestion(
@@ -660,29 +746,55 @@ export function SiteFormComposer({
                     <div className="site-form-question" key={question.id}>
                       <div className="site-form-question-heading">
                         <strong>Question {questionIndex + 1}</strong>
-                        {form.questions.length > 1 ? (
+                        <div className="site-form-question-actions">
                           <button
+                            aria-label={`Move question ${questionIndex + 1} up`}
                             className="button-secondary"
+                            disabled={questionIndex === 0}
                             onClick={() =>
-                              updateForm(form.id, (value) => {
-                                value.questions = value.questions.filter(
-                                  (candidate) => candidate.id !== question.id,
-                                );
-                                value.questions.forEach((candidate) => {
-                                  if (
-                                    candidate.visible_when?.field ===
-                                    question.key
-                                  ) {
-                                    candidate.visible_when = undefined;
-                                  }
-                                });
-                              })
+                              moveQuestion(form.id, question.id, -1)
                             }
                             type="button"
                           >
-                            Remove
+                            Move up
                           </button>
-                        ) : null}
+                          <button
+                            aria-label={`Move question ${questionIndex + 1} down`}
+                            className="button-secondary"
+                            disabled={
+                              questionIndex === form.questions.length - 1
+                            }
+                            onClick={() =>
+                              moveQuestion(form.id, question.id, 1)
+                            }
+                            type="button"
+                          >
+                            Move down
+                          </button>
+                          {form.questions.length > 1 ? (
+                            <button
+                              className="button-secondary"
+                              onClick={() =>
+                                updateForm(form.id, (value) => {
+                                  value.questions = value.questions.filter(
+                                    (candidate) => candidate.id !== question.id,
+                                  );
+                                  value.questions.forEach((candidate) => {
+                                    if (
+                                      candidate.visible_when?.field ===
+                                      question.key
+                                    ) {
+                                      candidate.visible_when = undefined;
+                                    }
+                                  });
+                                })
+                              }
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                       <div className="site-form-grid">
                         <label>
@@ -885,10 +997,11 @@ export function SiteFormComposer({
                                   form.id,
                                   question.id,
                                   (value) => {
-                                    value.options = event.target.value
-                                      .split("\n")
-                                      .map((option) => option.trim())
-                                      .filter(Boolean);
+                                    // Keep blank and trailing lines in the
+                                    // durable draft. Prepare normalizes the
+                                    // choices after the owner finishes typing.
+                                    value.options =
+                                      event.target.value.split("\n");
                                   },
                                 )
                               }
@@ -949,8 +1062,16 @@ export function SiteFormComposer({
                                   form.id,
                                   question.id,
                                   (value) => {
+                                    const sourceIndex =
+                                      event.target.value === ""
+                                        ? -1
+                                        : Number(event.target.value);
                                     const source =
-                                      sources[Number(event.target.value)];
+                                      Number.isInteger(sourceIndex) &&
+                                      sourceIndex >= 0 &&
+                                      sourceIndex < sources.length
+                                        ? sources[sourceIndex]
+                                        : undefined;
                                     value.visible_when = source
                                       ? conditionDefault(source)
                                       : undefined;
@@ -1035,13 +1156,13 @@ export function SiteFormComposer({
                                   value={String(question.visible_when.value)}
                                 >
                                   <option value="">Choose an answer</option>
-                                  {(selectedSource.options ?? [])
-                                    .filter((option) => option.trim())
-                                    .map((option) => (
-                                      <option key={option} value={option}>
-                                        {option}
-                                      </option>
-                                    ))}
+                                  {siteFormChoiceOptionsForPublication(
+                                    selectedSource.options,
+                                  ).map((option) => (
+                                    <option key={option} value={option}>
+                                      {option}
+                                    </option>
+                                  ))}
                                 </select>
                               )}
                             </label>

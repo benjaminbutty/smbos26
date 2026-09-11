@@ -864,15 +864,23 @@ export function SitePublicForm({
                       value={typeof value === "string" ? value : ""}
                     />
                   ) : question.field_type === "boolean" ? (
-                    <input
+                    <select
                       aria-describedby={describedBy}
-                      checked={value === true}
                       id={inputId}
                       onChange={(event) =>
-                        setAnswer(question.key, event.target.checked)
+                        setAnswer(
+                          question.key,
+                          event.target.value === ""
+                            ? undefined
+                            : event.target.value === "true",
+                        )
                       }
-                      type="checkbox"
-                    />
+                      value={typeof value === "boolean" ? String(value) : ""}
+                    >
+                      <option value="">Choose Yes or No</option>
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
                   ) : question.field_type === "select" ||
                     question.field_type === "status" ? (
                     <select

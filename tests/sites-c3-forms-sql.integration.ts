@@ -465,6 +465,56 @@ describe("Sites C3 Form SQL boundary", () => {
 
     const publishedState = await readSiteState();
     expect(publishedState.draft_revision).toBe(state.draft_revision + 1);
+
+    // Keep the publication placement guard exercised alongside the valid
+    // placement above. A missing Form must fail before any release is built.
+    const invalidPlacementDraft = structuredClone(
+      publishedState.draft_json,
+    ) as {
+      pages: Array<{
+        layout: { blocks: Array<Record<string, unknown>> };
+      }>;
+    };
+    const invalidFormBlock = invalidPlacementDraft.pages
+      .flatMap((page) => page.layout.blocks)
+      .find((block) => block.type === "public_form");
+    expect(invalidFormBlock).toBeDefined();
+    invalidFormBlock!.form_key = "missing_form";
+    const invalidPlacementState = await callRpc<SiteState>(
+      owner.client,
+      "save_site_draft_v2",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: siteId,
+        expected_draft_revision: publishedState.draft_revision,
+        requested_draft: siteDraftV1Schema.parse(invalidPlacementDraft),
+      },
+    );
+    const invalidPrepare = await rpc(owner.client).rpc<PreparedRelease>(
+      "prepare_site_release_v3",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: siteId,
+        expected_draft_revision: invalidPlacementState.draft_revision,
+        expected_base_version_id: invalidPlacementState.draft_base_version_id,
+        expected_head_revision: invalidPlacementState.draft_base_head_revision,
+      },
+    );
+    expect(invalidPrepare.data).toBeNull();
+    expect(invalidPrepare.error?.message).toContain("site_form_page_missing");
+    const restoredState = await callRpc<SiteState>(
+      owner.client,
+      "save_site_draft_v2",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: siteId,
+        expected_draft_revision: invalidPlacementState.draft_revision,
+        requested_draft: siteDraftV1Schema.parse(publishedState.draft_json),
+      },
+    );
     const staleSave = await rpc(owner.client).rpc<SiteState>(
       "save_site_draft_v2",
       {
@@ -477,7 +527,7 @@ describe("Sites C3 Form SQL boundary", () => {
     );
     expect(staleSave.data).toBeNull();
     expect(staleSave.error?.code).toBe("P0001");
-    state = publishedState;
+    state = restoredState;
     const editedDraft = structuredClone(state.draft_json) as {
       forms: Array<{
         key: string;

@@ -8,6 +8,7 @@ import { setPageOperationSchema } from "../src/core/configuration/schemas";
 import {
   siteDraftPublicationReadyV1Schema,
   siteDraftV1Schema,
+  siteFormChoiceOptionsForPublication,
   sitePublicProjectionSchema,
   siteReleaseProjectionSchema,
   siteReleaseReviewSchema,
@@ -179,6 +180,7 @@ describe("Lenni Sites C1 composition schema", () => {
               label: "",
               field_type: "select" as const,
               required: false,
+              options: [" First choice ", "", "  "],
               visible_when: {
                 field: "",
                 operator: "equals" as const,
@@ -194,7 +196,20 @@ describe("Lenni Sites C1 composition schema", () => {
       id: "00000000-0000-4000-8000-000000000042",
       form_key: "draft_form",
     });
-    expect(siteDraftV1Schema.safeParse(draft).success).toBe(true);
+    const parsedDraft = siteDraftV1Schema.safeParse(draft);
+    expect(parsedDraft.success).toBe(true);
+    if (parsedDraft.success) {
+      expect(parsedDraft.data.forms?.[0]?.questions[0]?.options).toEqual([
+        " First choice ",
+        "",
+        "  ",
+      ]);
+      expect(
+        siteFormChoiceOptionsForPublication(
+          parsedDraft.data.forms?.[0]?.questions[0]?.options,
+        ),
+      ).toEqual(["First choice"]);
+    }
     expect(siteDraftPublicationReadyV1Schema.safeParse(draft).success).toBe(
       false,
     );
@@ -212,6 +227,67 @@ describe("Lenni Sites C1 composition schema", () => {
     if (formBlockIndex >= 0) unplacedBlocks.splice(formBlockIndex, 1);
     expect(siteDraftPublicationReadyV1Schema.safeParse(unplaced).success).toBe(
       true,
+    );
+  });
+
+  it("uses trimmed choice domains for publication conditions while retaining draft lines", () => {
+    const draft = structuredClone(validDraft()) as ReturnType<
+      typeof validDraft
+    > & {
+      forms?: unknown[];
+    };
+    draft.forms = [
+      {
+        id: "00000000-0000-4000-8000-000000000050",
+        key: "choice_form",
+        name: "Choice form",
+        object_mode: "new",
+        object_key: "choice_table",
+        singular_label: "Choice",
+        plural_label: "Choices",
+        view_mode: "new",
+        view_key: "choice_view",
+        view_name: "Choices",
+        questions: [
+          {
+            id: "00000000-0000-4000-8000-000000000051",
+            key: "kind",
+            label: "Kind",
+            field_type: "select",
+            required: false,
+            options: [" Yes ", ""],
+          },
+          {
+            id: "00000000-0000-4000-8000-000000000052",
+            key: "details",
+            label: "Details",
+            field_type: "short_text",
+            required: true,
+            visible_when: {
+              field: "kind",
+              operator: "equals",
+              value: "Yes",
+            },
+          },
+        ],
+      },
+    ];
+    (draft.pages[0]!.layout.blocks as unknown[]).push({
+      type: "public_form",
+      id: "00000000-0000-4000-8000-000000000053",
+      form_key: "choice_form",
+    });
+
+    const parsed = siteDraftV1Schema.parse(draft);
+    expect(parsed.forms?.[0]?.questions[0]?.options).toEqual([" Yes ", ""]);
+    expect(siteDraftPublicationReadyV1Schema.safeParse(parsed).success).toBe(
+      true,
+    );
+
+    const duplicate = structuredClone(parsed);
+    duplicate.forms![0]!.questions[0]!.options = ["Yes", " Yes "];
+    expect(siteDraftPublicationReadyV1Schema.safeParse(duplicate).success).toBe(
+      false,
     );
   });
 

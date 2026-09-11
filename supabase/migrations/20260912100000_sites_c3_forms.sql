@@ -474,6 +474,36 @@ begin
 end;
 $$;
 
+-- Choice lines remain untouched in the durable draft while the owner is
+-- typing.  Prepare applies this release-only normalization before writing a
+-- canonical Field: trim each string, discard blank lines, and retain the
+-- original order for the resulting options.
+create or replace function private.site_form_choice_options_v3(
+  requested_options jsonb
+)
+returns jsonb
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    jsonb_agg(
+      case
+        when jsonb_typeof(option.value) = 'string'
+          then to_jsonb(btrim(option.value #>> '{}'))
+        else option.value
+      end
+      order by option.ordinality
+    ) filter (
+      where jsonb_typeof(option.value) <> 'string'
+        or btrim(option.value #>> '{}') <> ''
+    ),
+    '[]'::jsonb
+  )
+  from jsonb_array_elements(coalesce(requested_options, '[]'::jsonb))
+    with ordinality as option(value, ordinality);
+$$;
+
 create or replace function private.site_strip_forms_v3(draft jsonb)
 returns jsonb
 language sql
@@ -622,6 +652,8 @@ end;
 $$;
 
 revoke all on function private.site_assert_form_draft_shape_v3(jsonb)
+  from public, anon, authenticated, service_role;
+revoke all on function private.site_form_choice_options_v3(jsonb)
   from public, anon, authenticated, service_role;
 revoke all on function private.site_strip_forms_v3(jsonb)
   from public, anon, authenticated, service_role;
@@ -775,6 +807,7 @@ declare
   effective_existing_view boolean := false;
   site_id_value uuid;
   settings_value jsonb;
+  choice_options jsonb;
   configured_form jsonb;
 begin
   perform private.site_assert_form_draft_shape_v3(form_value);
@@ -883,30 +916,38 @@ begin
       end if;
       settings_value := case
         when question_type in ('select', 'multi_select', 'status')
-          then jsonb_build_object('options', coalesce(question -> 'options', '[]'::jsonb))
+          then jsonb_build_object(
+            'options', private.site_form_choice_options_v3(
+              question -> 'options'
+            )
+          )
         else '{}'::jsonb
       end;
     end if;
 
-    if question_type in ('select', 'multi_select', 'status')
-      and (
-        jsonb_typeof(coalesce(question -> 'options', settings_value -> 'options')) is distinct from 'array'
-        or jsonb_array_length(coalesce(question -> 'options', settings_value -> 'options')) < 1
-        or exists (
-          select 1
-          from jsonb_array_elements(coalesce(question -> 'options', settings_value -> 'options')) as option(value)
-          where jsonb_typeof(option.value) is distinct from 'string'
-            or char_length(btrim(option.value #>> '{}')) = 0
-            or char_length(btrim(option.value #>> '{}')) > 120
+    choice_options := private.site_form_choice_options_v3(
+      case when question ? 'options'
+        then question -> 'options'
+        else settings_value -> 'options'
+      end
+    );
+
+    if question_type in ('select', 'multi_select', 'status') then
+      if jsonb_array_length(choice_options) < 1
+        or (
+          select count(*) from jsonb_array_elements(choice_options)
+        ) <> (
+          select count(distinct option.value)
+          from jsonb_array_elements(choice_options) as option(value)
         )
-      )
-    then
-      raise exception 'site_form_choices_not_ready' using errcode = '23514';
+      then
+        raise exception 'site_form_choices_not_ready' using errcode = '23514';
+      end if;
     end if;
 
     if question_field_mode = 'existing'
       and question ? 'options'
-      and question -> 'options' <> settings_value -> 'options'
+      and choice_options <> settings_value -> 'options'
     then
       raise exception 'site_form_field_domain_changed' using errcode = '23514';
     end if;
@@ -968,6 +1009,7 @@ begin
       else
         source_options := source_question -> 'options';
       end if;
+      source_options := private.site_form_choice_options_v3(source_options);
       if source_type not in ('select', 'multi_select', 'boolean', 'status')
         or (source_type = 'multi_select' and condition ->> 'operator' <> 'includes')
         or (source_type <> 'multi_select' and condition ->> 'operator' not in ('equals', 'not_equals'))
@@ -982,9 +1024,6 @@ begin
       then
         raise exception 'site_form_condition_invalid' using errcode = '23514';
       end if;
-      if coalesce((question ->> 'required')::boolean, false) then
-        raise exception 'site_form_conditional_required_invalid' using errcode = '23514';
-      end if;
     end if;
   end loop;
 
@@ -997,7 +1036,16 @@ begin
     where value ->> 'object_key' = object_key_value
       and coalesce((value ->> 'is_active')::boolean, false)
       and coalesce((value ->> 'required')::boolean, false)
-      and (value -> 'default_value') = 'null'::jsonb
+      and (
+        value -> 'default_value' is null
+        or value -> 'default_value' = 'null'::jsonb
+        or not private.graph_value_is_present(value -> 'default_value')
+        or not private.graph_field_value_is_valid(
+          value -> 'default_value',
+          (value ->> 'field_type')::public.graph_field_type,
+          value -> 'settings_json'
+        )
+      )
   loop
     if not exists (
       select 1
@@ -1151,7 +1199,7 @@ begin
         select 1 from jsonb_array_elements(
           coalesce(draft -> 'forms', '[]'::jsonb)
         ) as form_item(value)
-        where value ->> 'key' = site_block.block ->> 'form_key'
+        where form_item.value ->> 'key' = block_value.block ->> 'form_key'
       )
   loop
     raise exception 'site_form_page_missing' using errcode = '23514';
@@ -1324,8 +1372,16 @@ begin
         raise exception 'Form visibility condition is not valid for its source Field'
           using errcode = '23514';
       end if;
-      if coalesce((field_config ->> 'required')::boolean, false)
-        or referenced_field.required
+      if referenced_field.required
+        and (
+          referenced_field.default_value is null
+          or not private.graph_value_is_present(referenced_field.default_value)
+          or not private.graph_field_value_is_valid(
+            referenced_field.default_value,
+            referenced_field.field_type,
+            referenced_field.settings_json
+          )
+        )
       then
         raise exception 'Conditionally hidden Fields cannot be required'
           using errcode = '23514';
@@ -1454,7 +1510,11 @@ begin
       );
       settings_value := case
         when question ->> 'field_type' in ('select', 'multi_select', 'status')
-          then jsonb_build_object('options', coalesce(question -> 'options', '[]'::jsonb))
+          then jsonb_build_object(
+            'options', private.site_form_choice_options_v3(
+              question -> 'options'
+            )
+          )
         else '{}'::jsonb
       end;
       field_value := private.configuration_candidate_field_v1(
@@ -1955,7 +2015,10 @@ begin
 
   -- Reject keys outside the frozen action. Conditional answers are known
   -- keys and are intentionally omitted when their source is not visible.
-  for supplied_key in select key from jsonb_object_keys(supplied_answers) as key loop
+  for supplied_key in
+    select answer_key.key
+    from jsonb_object_keys(supplied_answers) as answer_key(key)
+  loop
     if not exists (
       select 1
       from jsonb_array_elements(bindings) as item(value)
@@ -1965,7 +2028,10 @@ begin
     end if;
   end loop;
 
-  for binding in select value from jsonb_array_elements(bindings) loop
+  for binding in
+    select binding_item.value
+    from jsonb_array_elements(bindings) as binding_item(value)
+  loop
     field_key_value := binding ->> 'field_key';
     hidden := coalesce((binding ->> 'hidden')::boolean, false);
 
@@ -2281,6 +2347,7 @@ as $$
       and field_definition.required
       and (
         field_definition.default_value is null
+        or not private.graph_value_is_present(field_definition.default_value)
         or not private.graph_field_value_is_valid(
           field_definition.default_value,
           field_definition.field_type,
