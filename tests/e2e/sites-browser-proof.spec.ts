@@ -210,6 +210,24 @@ async function expectSatoshi(page: Page): Promise<void> {
   });
 }
 
+async function waitForImages(page: Page): Promise<void> {
+  await page.locator("img").evaluateAll(async (images) => {
+    await Promise.all(
+      images.map(async (image) => {
+        if (!(image instanceof HTMLImageElement)) return;
+        if (image.complete && image.naturalWidth > 0) {
+          await image.decode().catch(() => undefined);
+          return;
+        }
+        await new Promise<void>((resolve) => {
+          image.addEventListener("load", () => resolve(), { once: true });
+          image.addEventListener("error", () => resolve(), { once: true });
+        });
+      }),
+    );
+  });
+}
+
 async function saveSiteDraft(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
   await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
@@ -262,6 +280,7 @@ async function captureSiteStates(
     await page.setViewportSize({ width: state.width, height: state.height });
     await page.evaluate(() => window.scrollTo(0, 0));
     await expectSatoshi(page);
+    await waitForImages(page);
     await page.screenshot({
       fullPage: false,
       path: testInfo.outputPath(state.name),
@@ -349,6 +368,7 @@ test("owner can review the compact Site editor", async ({
   ).toBeVisible();
   const preview = page.getByRole("region", { name: "Site preview" });
   await preview.scrollIntoViewIfNeeded();
+  await waitForImages(page);
   await preview.screenshot({
     path: testInfo.outputPath("first-draft-preview-1440x900.png"),
   });
@@ -406,7 +426,13 @@ test("owner can review and keep edits after a two-tab Site conflict", async ({
         response.status() === 200,
     );
     await page.getByRole("button", { name: "Save draft", exact: true }).click();
-    await Promise.all([staleResponse, latestStateResponse]);
+    const [, latestDraftResponse] = await Promise.all([
+      staleResponse,
+      latestStateResponse,
+    ]);
+    expect(latestDraftResponse.headers()["cache-control"]).toContain(
+      "private, no-store",
+    );
 
     const conflict = page.getByRole("region", {
       name: "Review newer Site draft",
@@ -538,6 +564,26 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   ).toBeVisible();
   await addSiteBlock(page, "Add Record collection");
   await configureCollection(homePage, servicesView, "table");
+  await addSiteBlock(page, "Add button");
+  const sitePageButton = homePage
+    .locator(".site-composer-inspector .site-composer-block")
+    .last();
+  await sitePageButton
+    .getByLabel("Button label", { exact: true })
+    .fill("View services");
+  await sitePageButton
+    .getByLabel("Site Page destination", { exact: true })
+    .selectOption({ label: secondPageTitle });
+  await addSiteBlock(page, "Add formatted text");
+  const sitePageRichText = homePage
+    .locator(".site-composer-inspector .site-composer-block")
+    .last();
+  await sitePageRichText
+    .getByLabel("Formatted text content", { exact: true })
+    .fill("Explore services");
+  await sitePageRichText
+    .getByLabel("Site Page destination", { exact: true })
+    .selectOption({ label: secondPageTitle });
 
   await selectSitePage(page, "Catalogue");
   await addSiteBlock(page, "Add Record collection");
@@ -603,6 +649,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
 
   const candidatePreview = page.getByRole("region", { name: "Site preview" });
   await candidatePreview.scrollIntoViewIfNeeded();
+  await waitForImages(page);
   await candidatePreview.screenshot({
     path: testInfo.outputPath("candidate-preview-home-1440x900.png"),
   });
@@ -627,6 +674,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(
     candidatePreview.locator("[data-page-slug='catalogue-details'] h3"),
   ).toBeFocused();
+  await waitForImages(page);
   await candidatePreview.screenshot({
     path: testInfo.outputPath("candidate-preview-detail-1440x900.png"),
   });
@@ -636,6 +684,36 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(
     candidatePreview.locator("[data-page-slug='home']"),
   ).toBeVisible();
+  const candidateRichTextLink = candidatePreview.getByRole("link", {
+    name: "Explore services",
+    exact: true,
+  });
+  await expect(candidateRichTextLink).toHaveAttribute(
+    "href",
+    `/p/${business.slug}/${secondPageSlug}`,
+  );
+  await candidateRichTextLink.focus();
+  await candidateRichTextLink.press("Enter");
+  await expect(
+    candidatePreview.locator(`[data-page-slug='${secondPageSlug}']`),
+  ).toBeVisible();
+  await expect(
+    candidatePreview.locator(`[data-page-slug='${secondPageSlug}'] h3`),
+  ).toBeFocused();
+  await candidatePreview
+    .getByRole("button", { name: "Home", exact: true })
+    .click();
+  const candidateButtonLink = candidatePreview.getByRole("link", {
+    name: "View services",
+    exact: true,
+  });
+  await candidateButtonLink.click();
+  await expect(
+    candidatePreview.locator(`[data-page-slug='${secondPageSlug}']`),
+  ).toBeVisible();
+  await candidatePreview
+    .getByRole("button", { name: "Home", exact: true })
+    .click();
 
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page.waitForURL(
@@ -644,9 +722,11 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expectSatoshi(page);
   await captureSiteStates(page, testInfo);
 
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/p/${business.slug}/home`);
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(page.getByText(siteName, { exact: true })).toBeVisible();
+  await waitForImages(page);
   await page.locator("main").scrollIntoViewIfNeeded();
   await page.screenshot({
     path: testInfo.outputPath("live-home-1440x900.png"),
@@ -686,6 +766,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   ).toBeVisible();
   await expect(page.getByText("Heritage cake", { exact: true })).toBeVisible();
   await expect(page.locator("img.site-public-record-image")).toHaveCount(1);
+  await waitForImages(page);
   await page.locator("main").scrollIntoViewIfNeeded();
   await page.screenshot({
     path: testInfo.outputPath("live-catalogue-detail-1440x900.png"),

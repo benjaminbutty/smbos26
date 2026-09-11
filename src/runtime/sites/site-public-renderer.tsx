@@ -20,6 +20,8 @@ export type SitePublicRecordSelect = (
   recordToken: string,
 ) => void;
 
+export type SitePublicPageSelect = (pageSlug: string) => boolean;
+
 function objectValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -73,7 +75,27 @@ function displayValue(
   return null;
 }
 
-function richTextInline(contentInput: unknown): ReactNode {
+function candidateSitePageSlug(
+  businessSlug: string,
+  href: string,
+): string | null {
+  const canonicalPrefix = `/p/${encodeURIComponent(businessSlug)}/`;
+  const canonicalPath = href.startsWith(canonicalPrefix)
+    ? href.slice(canonicalPrefix.length).split(/[?#]/, 1)[0]
+    : null;
+  if (!canonicalPath || canonicalPath.includes("/")) return null;
+  try {
+    return decodeURIComponent(canonicalPath);
+  } catch {
+    return null;
+  }
+}
+
+function richTextInline(
+  contentInput: unknown,
+  businessSlug: string,
+  onPageSelect?: SitePublicPageSelect,
+): ReactNode {
   if (!Array.isArray(contentInput)) return null;
   return contentInput.map((spanInput, index) => {
     const span = objectValue(spanInput);
@@ -89,21 +111,41 @@ function richTextInline(contentInput: unknown): ReactNode {
         typeof mark.href === "string" &&
         /^(?:https?:\/\/|\/|mailto:|tel:)[^\s]+$/i.test(mark.href)
       ) {
-        rendered = <a href={mark.href}>{rendered}</a>;
+        const pageSlug = onPageSelect
+          ? candidateSitePageSlug(businessSlug, mark.href)
+          : null;
+        rendered = (
+          <a
+            href={mark.href}
+            onClick={
+              pageSlug
+                ? (event) => {
+                    if (onPageSelect?.(pageSlug)) event.preventDefault();
+                  }
+                : undefined
+            }
+          >
+            {rendered}
+          </a>
+        );
       }
     }
     return <Fragment key={`${index}-${span.text}`}>{rendered}</Fragment>;
   });
 }
 
-function richTextContent(node: unknown): ReactNode {
+function richTextContent(
+  node: unknown,
+  businessSlug: string,
+  onPageSelect?: SitePublicPageSelect,
+): ReactNode {
   const object = objectValue(node);
   if (!object) return null;
   if (object.type === "paragraph") {
-    return richTextInline(object.content);
+    return richTextInline(object.content, businessSlug, onPageSelect);
   }
   if (object.type === "heading") {
-    const content = richTextInline(object.content);
+    const content = richTextInline(object.content, businessSlug, onPageSelect);
     if (object.level === 1) return <h1>{content}</h1>;
     if (object.level === 3) return <h3>{content}</h3>;
     return <h2>{content}</h2>;
@@ -115,7 +157,11 @@ function richTextContent(node: unknown): ReactNode {
       <List>
         {items.map((item, index) => {
           const content = objectValue(item)?.content;
-          return <li key={index}>{richTextInline(content)}</li>;
+          return (
+            <li key={index}>
+              {richTextInline(content, businessSlug, onPageSelect)}
+            </li>
+          );
         })}
       </List>
     );
@@ -171,6 +217,7 @@ function renderBlock(
   mediaPrefix?: string,
   record?: SitePublicRecord,
   onRecordSelect?: SitePublicRecordSelect,
+  onPageSelect?: SitePublicPageSelect,
 ): ReactNode {
   const block = objectValue(blockInput);
   if (!block || typeof block.type !== "string") return null;
@@ -196,7 +243,7 @@ function renderBlock(
     case "rich_text":
       return (
         <div key={key} className="site-public-rich-text">
-          {richTextContent(block.node)}
+          {richTextContent(block.node, businessSlug, onPageSelect)}
         </div>
       );
     case "image": {
@@ -247,12 +294,17 @@ function renderBlock(
               mediaPrefix,
               record,
               onRecordSelect,
+              onPageSelect,
             ),
           )}
         </div>
       );
     }
-    case "button":
+    case "button": {
+      const pageTarget =
+        typeof block.href === "string" && onPageSelect
+          ? candidateSitePageSlug(businessSlug, block.href)
+          : null;
       return typeof block.href === "string" &&
         typeof block.label === "string" ? (
         <a
@@ -261,10 +313,18 @@ function renderBlock(
             block.style === "secondary" ? "button button-secondary" : "button"
           }
           href={block.href}
+          onClick={
+            pageTarget
+              ? (event) => {
+                  if (onPageSelect?.(pageTarget)) event.preventDefault();
+                }
+              : undefined
+          }
         >
           {block.label}
         </a>
       ) : null;
+    }
     case "callout":
       return (
         <aside
@@ -296,6 +356,7 @@ function renderBlock(
               mediaPrefix,
               record,
               onRecordSelect,
+              onPageSelect,
             )}
           </div>
         </details>
@@ -338,6 +399,7 @@ function renderBlock(
                   mediaPrefix,
                   record,
                   onRecordSelect,
+                  onPageSelect,
                 )}
               </div>
             );
@@ -515,6 +577,7 @@ function renderBlocks(
   mediaPrefix?: string,
   record?: SitePublicRecord,
   onRecordSelect?: SitePublicRecordSelect,
+  onPageSelect?: SitePublicPageSelect,
 ): ReactNode {
   const blocks = Array.isArray(blocksInput) ? blocksInput : [];
   return blocks.map((block, index) => (
@@ -526,6 +589,7 @@ function renderBlocks(
         mediaPrefix,
         record,
         onRecordSelect,
+        onPageSelect,
       )}
     </div>
   ));
@@ -538,6 +602,7 @@ export function SitePublicRenderer({
   mediaPrefix,
   record,
   onRecordSelect,
+  onPageSelect,
 }: Readonly<{
   businessSlug: string;
   layout: SitePublicLayout;
@@ -545,6 +610,7 @@ export function SitePublicRenderer({
   mediaPrefix?: string;
   record?: SitePublicRecord | undefined;
   onRecordSelect?: SitePublicRecordSelect;
+  onPageSelect?: SitePublicPageSelect;
 }>): ReactNode {
   return (
     <div className="site-public-layout">
@@ -555,6 +621,7 @@ export function SitePublicRenderer({
         mediaPrefix,
         record,
         onRecordSelect,
+        onPageSelect,
       )}
     </div>
   );

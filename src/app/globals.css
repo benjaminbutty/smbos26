@@ -19363,7 +19363,11 @@ textarea {
 /* Lenni Sites C2 owner and public composition surfaces. */
 .sites-composer-page {
   display: grid;
-  gap: var(--space-8);
+  gap: var(--space-6);
+}
+
+.sites-composer-page .page-title {
+  font-size: clamp(1.8rem, 4vw, 2.75rem);
 }
 
 .site-owner-heading,
@@ -19478,7 +19482,7 @@ textarea {
 .site-composer-toolbar-site-name {
   display: grid;
   gap: var(--space-2);
-  margin-top: var(--space-4);
+  margin-top: 0;
   max-width: 28rem;
 }
 
@@ -19779,6 +19783,10 @@ textarea {
   width: 100%;
 }
 
+.site-composer-branding {
+  padding: var(--space-3) var(--space-4);
+}
+
 .site-composer-branding summary {
   align-items: center;
   cursor: pointer;
@@ -19799,6 +19807,7 @@ textarea {
 
 .site-composer-branding .site-composer-fields {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: var(--space-3);
 }
 
 .site-composer-blocks {
@@ -20141,7 +20150,7 @@ textarea {
   }
 
   .sites-composer-page {
-    gap: var(--space-5);
+    gap: var(--space-4);
   }
 
   .site-owner-heading,
@@ -20175,20 +20184,8 @@ textarea {
     padding: var(--space-4);
   }
 
-  .site-composer-toolbar h2 {
-    margin: 0;
-    font-size: 1.5rem;
-    line-height: 1.1;
-  }
-
-  .site-composer-toolbar > div:first-child > .muted {
-    margin: var(--space-2) 0 0;
-    line-height: 1.45;
-  }
-
   .site-composer-toolbar-site-name {
     gap: var(--space-1);
-    margin-top: var(--space-3);
   }
 
   .site-composer-toolbar-actions {
@@ -20206,10 +20203,6 @@ textarea {
   .site-composer-toolbar-actions form,
   .site-composer-toolbar-actions button {
     width: 100%;
-  }
-
-  .site-composer-branding {
-    padding: var(--space-3) var(--space-4);
   }
 
   .site-composer-fields,

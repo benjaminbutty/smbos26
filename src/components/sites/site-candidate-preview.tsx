@@ -233,6 +233,17 @@ export function SiteCandidatePreview({
               setFocusPreviewHeadingVersion((version) => version + 1);
             }
           }}
+          onPageSelect={(pageSlug) => {
+            const targetPage = safeProjection.pages.find(
+              (page) => page.slug === pageSlug,
+            );
+            if (!targetPage) return false;
+            setSelectedPageSlug(targetPage.slug);
+            setSelectedRecordToken(null);
+            focusPreviewHeadingRef.current = true;
+            setFocusPreviewHeadingVersion((version) => version + 1);
+            return true;
+          }}
           pageSlug={selectedPage.slug}
           record={selectedRecord}
         />

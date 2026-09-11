@@ -65,6 +65,7 @@ function siteNotice(
     | "availability_changed"
     | "input_invalid"
     | "stale"
+    | "link_not_ready"
     | "failed",
 ): never {
   redirect(
@@ -268,11 +269,14 @@ export async function reenableSiteMediaAction(
   );
 }
 
-function siteErrorNotice(error: unknown): "stale" | "failed" {
-  return error instanceof SiteFoundationServiceError &&
-    /stale|rebase/.test(error.code)
-    ? "stale"
-    : "failed";
+function siteErrorNotice(
+  error: unknown,
+): "stale" | "link_not_ready" | "failed" {
+  if (error instanceof SiteFoundationServiceError) {
+    if (error.code === "site_page_link_not_ready") return "link_not_ready";
+    if (/stale|rebase/.test(error.code)) return "stale";
+  }
+  return "failed";
 }
 
 function stringValue(formData: FormData, name: string): string | null {

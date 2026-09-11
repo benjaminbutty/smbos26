@@ -414,6 +414,8 @@ export default async function SitesPage({
     availability_changed:
       "Availability changed. Re-enabled items return after you publish an update.",
     stale: "This Site changed elsewhere. Reload and review the current draft.",
+    link_not_ready:
+      "A Site link points to a missing or hidden Page. Include that Page or change or remove the link, then preview again.",
     input_invalid: "Review the highlighted Site details and try again.",
     failed: "The Site change could not be completed.",
   };

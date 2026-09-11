@@ -25,6 +25,17 @@ type SiteStateReader = {
   };
 };
 
+const privateNoStoreHeaders = {
+  "Cache-Control": "private, no-store",
+};
+
+function privateDraftResponse(body: unknown, status = 200): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: privateNoStoreHeaders,
+  });
+}
+
 export async function GET(
   request: Request,
   { params }: Readonly<SiteDraftRouteProps>,
@@ -32,17 +43,17 @@ export async function GET(
   const { businessSlug } = await params;
   const siteId = new URL(request.url).searchParams.get("siteId");
   if (!siteId) {
-    return NextResponse.json({ message: "Site unavailable." }, { status: 404 });
+    return privateDraftResponse({ message: "Site unavailable." }, 404);
   }
   const supabase = await createServerClient();
   let tenant;
   try {
     tenant = await resolveTenant(businessSlug, supabase);
   } catch {
-    return NextResponse.json({ message: "Site unavailable." }, { status: 404 });
+    return privateDraftResponse({ message: "Site unavailable." }, 404);
   }
   if (!hasCapability(tenant.membership.role, "manage_configuration")) {
-    return NextResponse.json({ message: "Site unavailable." }, { status: 404 });
+    return privateDraftResponse({ message: "Site unavailable." }, 404);
   }
   const stateReader = supabase as unknown as SiteStateReader;
   const stateResult = await stateReader
@@ -52,13 +63,13 @@ export async function GET(
     .eq("id", siteId)
     .maybeSingle();
   if (stateResult.error || !stateResult.data) {
-    return NextResponse.json({ message: "Site unavailable." }, { status: 404 });
+    return privateDraftResponse({ message: "Site unavailable." }, 404);
   }
   const state = siteStateSchema.safeParse(stateResult.data);
   if (!state.success) {
-    return NextResponse.json({ message: "Site unavailable." }, { status: 404 });
+    return privateDraftResponse({ message: "Site unavailable." }, 404);
   }
-  return NextResponse.json({
+  return privateDraftResponse({
     ok: true,
     siteId: state.data.id,
     draft: state.data.draft_json,

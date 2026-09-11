@@ -958,8 +958,15 @@ export function SiteComposer({
           if (!requestIsActive) {
             return { status: "success", canonical: candidate };
           }
-          revisionRef.current = nextRevision;
-          if (mountedRef.current) setRevision(nextRevision);
+          if (nextRevision >= serverRevisionRef.current) {
+            serverDraftRef.current = copyDraft(candidate);
+          }
+          serverRevisionRef.current = Math.max(
+            serverRevisionRef.current,
+            nextRevision,
+          );
+          revisionRef.current = Math.max(revisionRef.current, nextRevision);
+          if (mountedRef.current) setRevision(revisionRef.current);
           saveFailureMessageRef.current = null;
           return { status: "success", canonical: candidate };
         } catch {
@@ -1867,11 +1874,6 @@ export function SiteComposer({
     <div className="site-composer">
       <div className="site-composer-toolbar">
         <div>
-          <p className="eyebrow">Site</p>
-          <h2>Build your Site</h2>
-          <p className="muted">
-            Changes save automatically. Preview before publishing.
-          </p>
           <label className="site-composer-toolbar-site-name">
             Site name
             <input
@@ -2531,6 +2533,8 @@ export function SiteComposer({
                               ) : null}
                               {block.type === "rich_text" ? (
                                 <RichTextEditor
+                                  businessSlug={businessSlug}
+                                  pages={draft.pages}
                                   value={value}
                                   onChange={(node) =>
                                     updateBlock(page.id, id, (item) => {
@@ -2581,6 +2585,20 @@ export function SiteComposer({
                                       }
                                     />
                                   </label>
+                                  <SitePageDestinationField
+                                    businessSlug={businessSlug}
+                                    href={
+                                      typeof value.href === "string"
+                                        ? value.href
+                                        : ""
+                                    }
+                                    onChange={(href) =>
+                                      updateBlock(page.id, id, (item) => {
+                                        item.href = href;
+                                      })
+                                    }
+                                    pages={draft.pages}
+                                  />
                                   <label>
                                     Style
                                     <select
@@ -3047,6 +3065,7 @@ export function SiteComposer({
                                     Open by default
                                   </label>
                                   <NestedSiteBlocks
+                                    businessSlug={businessSlug}
                                     blocks={
                                       Array.isArray(value.blocks)
                                         ? (value.blocks as SiteBlock[])
@@ -3063,6 +3082,7 @@ export function SiteComposer({
                                     onUploadGalleryImage={uploadGalleryImage}
                                     onUploadImage={uploadImage}
                                     pageId={page.id}
+                                    pages={draft.pages}
                                     removeBlock={removeBlock}
                                     sectionIds={page.layout.blocks
                                       .filter((item) => item.type === "section")
@@ -3220,6 +3240,7 @@ export function SiteComposer({
                                           Column {columnIndex + 1}
                                         </strong>
                                         <NestedSiteBlocks
+                                          businessSlug={businessSlug}
                                           blocks={
                                             Array.isArray(columnValue.blocks)
                                               ? (columnValue.blocks as SiteBlock[])
@@ -3239,6 +3260,7 @@ export function SiteComposer({
                                           }
                                           onUploadImage={uploadImage}
                                           pageId={page.id}
+                                          pages={draft.pages}
                                           removeBlock={removeBlock}
                                           sectionIds={page.layout.blocks
                                             .filter(
@@ -3454,10 +3476,69 @@ function richTextNodeLabel(type: RichTextNodeType): string {
   return type === "heading" ? "Heading" : "Paragraph";
 }
 
+function sitePageHref(businessSlug: string, pageSlug: string): string {
+  return `/p/${encodeURIComponent(businessSlug)}/${encodeURIComponent(
+    pageSlug,
+  )}`;
+}
+
+function sitePageSlugForHref(
+  businessSlug: string,
+  href: string,
+  pages: readonly SitePage[],
+): string | null {
+  const canonicalPage = pages.find(
+    (page) => sitePageHref(businessSlug, page.slug) === href,
+  );
+  return canonicalPage?.slug ?? null;
+}
+
+function SitePageDestinationField({
+  businessSlug,
+  href,
+  onChange,
+  pages,
+}: Readonly<{
+  businessSlug: string;
+  href: string;
+  onChange: (href: string) => void;
+  pages: readonly SitePage[];
+}>): ReactNode {
+  const selectedSlug = sitePageSlugForHref(businessSlug, href, pages) ?? "";
+  return (
+    <label>
+      Site Page destination
+      <select
+        aria-label="Site Page destination"
+        onChange={(event) => {
+          const page = pages.find(
+            (candidate) => candidate.slug === event.target.value,
+          );
+          if (page) onChange(sitePageHref(businessSlug, page.slug));
+        }}
+        value={selectedSlug}
+      >
+        <option value="">Choose a Site Page</option>
+        {pages
+          .filter((page) => page.is_included)
+          .map((page) => (
+            <option key={page.id} value={page.slug}>
+              {page.navigation_label || page.title}
+            </option>
+          ))}
+      </select>
+    </label>
+  );
+}
+
 function RichTextEditor({
+  businessSlug,
+  pages,
   value,
   onChange,
 }: Readonly<{
+  businessSlug: string;
+  pages: readonly SitePage[];
   value: UnknownRecord;
   onChange: (node: UnknownRecord) => void;
 }>): ReactNode {
@@ -3611,11 +3692,17 @@ function RichTextEditor({
               update({ link: nextLink });
             }
           }}
-          placeholder="https://example.com or /contact"
+          placeholder="https://example.com or use Site Page destination"
           type="url"
           defaultValue={marks.link}
         />
       </label>
+      <SitePageDestinationField
+        businessSlug={businessSlug}
+        href={marks.link}
+        onChange={(href) => update({ link: href })}
+        pages={pages}
+      />
       <small className="muted">
         Use one line per list item. Links accept secure web, site, email, or
         phone addresses.
@@ -3625,6 +3712,7 @@ function RichTextEditor({
 }
 
 function NestedSiteBlocks({
+  businessSlug,
   blocks,
   appendBlock,
   columnIndex,
@@ -3636,12 +3724,14 @@ function NestedSiteBlocks({
   onUploadGalleryImage,
   onUploadImage,
   pageId,
+  pages,
   removeBlock,
   sectionIds,
   setSectionColumns,
   setSectionPresentation,
   updateBlock,
 }: Readonly<{
+  businessSlug: string;
   blocks: SiteBlock[];
   appendBlock: (
     pageId: string,
@@ -3658,6 +3748,7 @@ function NestedSiteBlocks({
   onUploadGalleryImage: SiteBlockUpload;
   onUploadImage: SiteBlockUpload;
   pageId: string;
+  pages: readonly SitePage[];
   removeBlock: SiteBlockMove;
   sectionIds: readonly string[];
   setSectionColumns: (
@@ -3810,6 +3901,8 @@ function NestedSiteBlocks({
             ) : null}
             {block.type === "rich_text" ? (
               <RichTextEditor
+                businessSlug={businessSlug}
+                pages={pages}
                 value={value}
                 onChange={(node) =>
                   updateBlock(pageId, id, (item) => {
@@ -3852,6 +3945,16 @@ function NestedSiteBlocks({
                     }
                   />
                 </label>
+                <SitePageDestinationField
+                  businessSlug={businessSlug}
+                  href={typeof value.href === "string" ? value.href : ""}
+                  onChange={(href) =>
+                    updateBlock(pageId, id, (item) => {
+                      item.href = href;
+                    })
+                  }
+                  pages={pages}
+                />
                 <label>
                   Style
                   <select
@@ -3951,6 +4054,7 @@ function NestedSiteBlocks({
                   Open by default
                 </label>
                 <NestedSiteBlocks
+                  businessSlug={businessSlug}
                   blocks={
                     Array.isArray(value.blocks)
                       ? (value.blocks as SiteBlock[])
@@ -3965,6 +4069,7 @@ function NestedSiteBlocks({
                   onUploadGalleryImage={onUploadGalleryImage}
                   onUploadImage={onUploadImage}
                   pageId={pageId}
+                  pages={pages}
                   removeBlock={removeBlock}
                   sectionIds={sectionIds}
                   setSectionColumns={setSectionColumns}
@@ -4091,6 +4196,7 @@ function NestedSiteBlocks({
                       >
                         <strong>Column {columnIndex + 1}</strong>
                         <NestedSiteBlocks
+                          businessSlug={businessSlug}
                           blocks={
                             Array.isArray(columnValue.blocks)
                               ? (columnValue.blocks as SiteBlock[])
@@ -4106,6 +4212,7 @@ function NestedSiteBlocks({
                           onUploadGalleryImage={onUploadGalleryImage}
                           onUploadImage={onUploadImage}
                           pageId={pageId}
+                          pages={pages}
                           removeBlock={removeBlock}
                           sectionIds={sectionIds}
                           setSectionColumns={setSectionColumns}
