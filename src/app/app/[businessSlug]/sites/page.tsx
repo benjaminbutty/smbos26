@@ -29,6 +29,7 @@ import {
   siteReleaseV2Schema,
   siteStateSchema,
 } from "../../../../core/sites/service";
+import { sitePublicProjectionSchema } from "../../../../core/sites/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
 
 interface SitesPageProps {
@@ -308,6 +309,9 @@ export default async function SitesPage({
     if (candidateResult.data)
       candidate = siteReleaseV2Schema.parse(candidateResult.data);
   }
+  const candidateProjection = candidate
+    ? sitePublicProjectionSchema.parse(candidate.projection_json)
+    : null;
 
   const objectAvailabilityById = new Map(
     objectAvailabilityRows.map((row) => [row.object_definition_id, row]),
@@ -620,11 +624,11 @@ export default async function SitesPage({
             </section>
           ) : null}
 
-          {candidate ? (
+          {candidate && candidateProjection ? (
             <SiteCandidatePreview
               businessSlug={businessSlug}
               candidateId={candidate.id}
-              projection={candidate.projection_json}
+              projection={candidateProjection}
             />
           ) : null}
 

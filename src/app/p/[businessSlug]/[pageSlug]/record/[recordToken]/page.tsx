@@ -5,6 +5,7 @@ import Image from "next/image";
 
 import { loadPublicRecordRuntime } from "../../../../../../core/public/page";
 import { SitePublicRenderer } from "../../../../../../runtime/sites/site-public-renderer";
+import { sitePublicAccentStyle } from "../../../../../../runtime/sites/site-public-theme";
 
 interface PublicRecordPageProps {
   params: Promise<{
@@ -35,7 +36,10 @@ export default async function PublicRecordPage({
       )}/media/${runtime.site.branding.logo_media_token}`
     : null;
   return (
-    <main className="public-runtime-page site-public-runtime-page">
+    <main
+      className="public-runtime-page site-public-runtime-page site-public-branded-surface"
+      style={sitePublicAccentStyle(runtime.site.branding.accent)}
+    >
       <header className="c7-public-experience-header">
         <div className="c7-public-experience-identity">
           {logoSource ? (

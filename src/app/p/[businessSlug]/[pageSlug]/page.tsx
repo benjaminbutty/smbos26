@@ -12,6 +12,7 @@ import type { PublicPreorderCatalogue } from "../../../../core/preorder/schemas"
 import { createServerClient } from "../../../../db/supabase/server";
 import { PageRenderer } from "../../../../runtime/pages/page-renderer";
 import { SitePublicRenderer } from "../../../../runtime/sites/site-public-renderer";
+import { sitePublicAccentStyle } from "../../../../runtime/sites/site-public-theme";
 
 interface PublicPageProps {
   params: Promise<{ businessSlug: string; pageSlug: string }>;
@@ -41,7 +42,10 @@ export default async function PublicPage({
         )}/media/${runtime.site.branding.logo_media_token}`
       : null;
     return (
-      <main className="public-runtime-page site-public-runtime-page">
+      <main
+        className="public-runtime-page site-public-runtime-page site-public-branded-surface"
+        style={sitePublicAccentStyle(runtime.site.branding.accent)}
+      >
         <header className="c7-public-experience-header">
           <div className="c7-public-experience-identity">
             {logoSource ? (

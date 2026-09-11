@@ -10,6 +10,11 @@ export interface SitePublicRecord {
   values: Record<string, unknown>;
 }
 
+export type SitePublicRecordSelect = (
+  detailPageSlug: string,
+  recordToken: string,
+) => void;
+
 function objectValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -104,12 +109,41 @@ function mediaSource(
     : `/api/public/sites/${encodeURIComponent(businessSlug)}/media/${token}`;
 }
 
+function recordLink(
+  businessSlug: string,
+  detailPageSlug: string,
+  recordToken: string,
+  onRecordSelect?: SitePublicRecordSelect,
+): ReactNode {
+  if (onRecordSelect) {
+    return (
+      <button
+        className="site-public-record-link"
+        onClick={() => onRecordSelect(detailPageSlug, recordToken)}
+        type="button"
+      >
+        View details
+      </button>
+    );
+  }
+  return (
+    <a
+      href={`/p/${encodeURIComponent(businessSlug)}/${encodeURIComponent(
+        detailPageSlug,
+      )}/record/${encodeURIComponent(recordToken)}`}
+    >
+      View details
+    </a>
+  );
+}
+
 function renderBlock(
   blockInput: unknown,
   businessSlug: string,
   pageSlug: string,
   mediaPrefix?: string,
   record?: SitePublicRecord,
+  onRecordSelect?: SitePublicRecordSelect,
 ): ReactNode {
   const block = objectValue(blockInput);
   if (!block || typeof block.type !== "string") return null;
@@ -171,6 +205,7 @@ function renderBlock(
               pageSlug,
               mediaPrefix,
               record,
+              onRecordSelect,
             ),
           )}
         </div>
@@ -204,6 +239,7 @@ function renderBlock(
               pageSlug,
               mediaPrefix,
               record,
+              onRecordSelect,
             )}
           </div>
         </details>
@@ -233,6 +269,7 @@ function renderBlock(
                   pageSlug,
                   mediaPrefix,
                   record,
+                  onRecordSelect,
                 )}
               </div>
             );
@@ -274,14 +311,10 @@ function renderBlock(
                 {records.map((record, index) => {
                   const recordValue = objectValue(record);
                   const values = objectValue(recordValue?.values);
-                  const recordLink =
+                  const recordToken =
                     typeof block.detail_page_slug === "string" &&
                     typeof recordValue?.public_id === "string"
-                      ? `/p/${encodeURIComponent(
-                          businessSlug,
-                        )}/${encodeURIComponent(
-                          block.detail_page_slug,
-                        )}/record/${encodeURIComponent(recordValue.public_id)}`
+                      ? recordValue.public_id
                       : null;
                   return (
                     <tr
@@ -302,9 +335,15 @@ function renderBlock(
                       ))}
                       {typeof block.detail_page_slug === "string" ? (
                         <td>
-                          {recordLink ? (
-                            <a href={recordLink}>View details</a>
-                          ) : null}
+                          {recordToken &&
+                          typeof block.detail_page_slug === "string"
+                            ? recordLink(
+                                businessSlug,
+                                block.detail_page_slug,
+                                recordToken,
+                                onRecordSelect,
+                              )
+                            : null}
                         </td>
                       ) : null}
                     </tr>
@@ -341,11 +380,9 @@ function renderBlock(
                   </p>
                 ))
               : null;
-            const recordLink =
+            const recordToken =
               detailPageSlug && typeof recordValue?.public_id === "string"
-                ? `/p/${encodeURIComponent(businessSlug)}/${encodeURIComponent(
-                    detailPageSlug,
-                  )}/record/${encodeURIComponent(recordValue.public_id)}`
+                ? recordValue.public_id
                 : null;
             return (
               <article
@@ -355,7 +392,14 @@ function renderBlock(
                     : index
                 }
               >
-                {recordLink ? <a href={recordLink}>View details</a> : null}
+                {recordToken && detailPageSlug
+                  ? recordLink(
+                      businessSlug,
+                      detailPageSlug,
+                      recordToken,
+                      onRecordSelect,
+                    )
+                  : null}
                 {recordContent}
               </article>
             );
@@ -389,11 +433,19 @@ function renderBlocks(
   pageSlug: string,
   mediaPrefix?: string,
   record?: SitePublicRecord,
+  onRecordSelect?: SitePublicRecordSelect,
 ): ReactNode {
   const blocks = Array.isArray(blocksInput) ? blocksInput : [];
   return blocks.map((block, index) => (
     <div key={index} className="site-public-block">
-      {renderBlock(block, businessSlug, pageSlug, mediaPrefix, record)}
+      {renderBlock(
+        block,
+        businessSlug,
+        pageSlug,
+        mediaPrefix,
+        record,
+        onRecordSelect,
+      )}
     </div>
   ));
 }
@@ -404,16 +456,25 @@ export function SitePublicRenderer({
   pageSlug,
   mediaPrefix,
   record,
+  onRecordSelect,
 }: Readonly<{
   businessSlug: string;
   layout: SitePublicLayout;
   pageSlug: string;
   mediaPrefix?: string;
-  record?: SitePublicRecord;
+  record?: SitePublicRecord | undefined;
+  onRecordSelect?: SitePublicRecordSelect;
 }>): ReactNode {
   return (
     <div className="site-public-layout">
-      {renderBlocks(layout.blocks, businessSlug, pageSlug, mediaPrefix, record)}
+      {renderBlocks(
+        layout.blocks,
+        businessSlug,
+        pageSlug,
+        mediaPrefix,
+        record,
+        onRecordSelect,
+      )}
     </div>
   );
 }
