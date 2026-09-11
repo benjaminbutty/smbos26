@@ -262,6 +262,7 @@ async function captureSiteStates(
     { name: "site-390x844.png", width: 390, height: 844 },
   ]) {
     await page.setViewportSize({ width: state.width, height: state.height });
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expectSatoshi(page);
     await page.screenshot({
       fullPage: false,
@@ -318,6 +319,7 @@ test("owner can review the compact Site editor", async ({
     { name: "first-draft-editor-390x844.png", width: 390, height: 844 },
   ]) {
     await page.setViewportSize({ width: state.width, height: state.height });
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expectSatoshi(page);
     await page.screenshot({
       fullPage: false,
@@ -333,8 +335,9 @@ test("owner can review the compact Site editor", async ({
   await expect(
     page.getByRole("region", { name: "Site preview" }),
   ).toBeVisible();
-  await page.screenshot({
-    fullPage: false,
+  const preview = page.getByRole("region", { name: "Site preview" });
+  await preview.scrollIntoViewIfNeeded();
+  await preview.screenshot({
     path: testInfo.outputPath("first-draft-preview-1440x900.png"),
   });
 });
@@ -478,6 +481,42 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     }),
   ).toBeVisible();
 
+  const candidatePreview = page.getByRole("region", { name: "Site preview" });
+  await candidatePreview.scrollIntoViewIfNeeded();
+  await candidatePreview.screenshot({
+    path: testInfo.outputPath("candidate-preview-home-1440x900.png"),
+  });
+  const candidateDetails = candidatePreview
+    .getByRole("button", { name: "View details", exact: true })
+    .first();
+  await candidateDetails.focus();
+  await expect(candidateDetails).toBeFocused();
+  await candidateDetails.press("Enter");
+  await expect(
+    candidatePreview.locator("[data-page-slug='catalogue-details']"),
+  ).toBeVisible();
+  await expect(
+    candidatePreview.getByRole("heading", {
+      name: "Catalogue details",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    candidatePreview.getByText("Heritage cake", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    candidatePreview.locator("[data-page-slug='catalogue-details'] h3"),
+  ).toBeFocused();
+  await candidatePreview.screenshot({
+    path: testInfo.outputPath("candidate-preview-detail-1440x900.png"),
+  });
+  await candidatePreview
+    .getByRole("button", { name: "Home", exact: true })
+    .click();
+  await expect(
+    candidatePreview.locator("[data-page-slug='home']"),
+  ).toBeVisible();
+
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
@@ -488,6 +527,10 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.goto(`/p/${business.slug}/home`);
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(page.getByText(siteName, { exact: true })).toBeVisible();
+  await page.locator("main").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("live-home-1440x900.png"),
+  });
   await expect(
     page.getByText("Powered by Lenni", { exact: true }),
   ).toBeVisible();
@@ -523,6 +566,10 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   ).toBeVisible();
   await expect(page.getByText("Heritage cake", { exact: true })).toBeVisible();
   await expect(page.locator("img.site-public-record-image")).toHaveCount(1);
+  await page.locator("main").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("live-catalogue-detail-1440x900.png"),
+  });
 
   await page.getByRole("link", { name: secondPageTitle }).click();
   await expect(page).toHaveURL(

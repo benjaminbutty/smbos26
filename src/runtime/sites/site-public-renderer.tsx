@@ -1,4 +1,9 @@
-import type { CSSProperties, ElementType, ReactNode } from "react";
+import {
+  Fragment,
+  type CSSProperties,
+  type ElementType,
+  type ReactNode,
+} from "react";
 import Image from "next/image";
 
 export interface SitePublicLayout {
@@ -68,28 +73,50 @@ function displayValue(
   return null;
 }
 
+function richTextInline(contentInput: unknown): ReactNode {
+  if (!Array.isArray(contentInput)) return null;
+  return contentInput.map((spanInput, index) => {
+    const span = objectValue(spanInput);
+    if (typeof span?.text !== "string") return null;
+    let rendered: ReactNode = span.text;
+    const marks = Array.isArray(span.marks) ? span.marks : [];
+    for (const markInput of marks) {
+      const mark = objectValue(markInput);
+      if (mark?.type === "bold") rendered = <strong>{rendered}</strong>;
+      if (mark?.type === "italic") rendered = <em>{rendered}</em>;
+      if (
+        mark?.type === "link" &&
+        typeof mark.href === "string" &&
+        /^(?:https?:\/\/|\/|mailto:|tel:)[^\s]+$/i.test(mark.href)
+      ) {
+        rendered = <a href={mark.href}>{rendered}</a>;
+      }
+    }
+    return <Fragment key={`${index}-${span.text}`}>{rendered}</Fragment>;
+  });
+}
+
 function richTextContent(node: unknown): ReactNode {
   const object = objectValue(node);
   if (!object) return null;
-  if (object.type === "paragraph" || object.type === "heading") {
-    const content = Array.isArray(object.content) ? object.content : [];
-    return content.map((span, index) => {
-      const value = objectValue(span);
-      return (
-        <span key={index}>
-          {typeof value?.text === "string" ? value.text : null}
-        </span>
-      );
-    });
+  if (object.type === "paragraph") {
+    return richTextInline(object.content);
+  }
+  if (object.type === "heading") {
+    const content = richTextInline(object.content);
+    if (object.level === 1) return <h1>{content}</h1>;
+    if (object.level === 3) return <h3>{content}</h3>;
+    return <h2>{content}</h2>;
   }
   if (object.type === "bullet_list" || object.type === "numbered_list") {
     const items = Array.isArray(object.items) ? object.items : [];
     const List = object.type === "bullet_list" ? "ul" : "ol";
     return (
       <List>
-        {items.map((item, index) => (
-          <li key={index}>{richTextContent(item)}</li>
-        ))}
+        {items.map((item, index) => {
+          const content = objectValue(item)?.content;
+          return <li key={index}>{richTextInline(content)}</li>;
+        })}
       </List>
     );
   }
@@ -175,7 +202,14 @@ function renderBlock(
     case "image": {
       const source = mediaSource(businessSlug, block.media_token, mediaPrefix);
       return source ? (
-        <figure key={key} className="site-public-image">
+        <figure
+          key={key}
+          className={
+            block.presentation === "wide"
+              ? "site-public-image site-public-image-wide"
+              : "site-public-image"
+          }
+        >
           <Image
             alt={typeof block.alt === "string" ? block.alt : ""}
             src={source}
@@ -193,7 +227,14 @@ function renderBlock(
     case "gallery": {
       const images = Array.isArray(block.images) ? block.images : [];
       return (
-        <div key={key} className="site-public-gallery">
+        <div
+          key={key}
+          className={
+            block.presentation === "carousel"
+              ? "site-public-gallery site-public-gallery-carousel"
+              : "site-public-gallery"
+          }
+        >
           {images.map((image, index) =>
             renderBlock(
               {
@@ -214,13 +255,28 @@ function renderBlock(
     case "button":
       return typeof block.href === "string" &&
         typeof block.label === "string" ? (
-        <a key={key} className="button" href={block.href}>
+        <a
+          key={key}
+          className={
+            block.style === "secondary" ? "button button-secondary" : "button"
+          }
+          href={block.href}
+        >
           {block.label}
         </a>
       ) : null;
     case "callout":
       return (
-        <aside key={key}>
+        <aside
+          key={key}
+          className={`site-public-callout site-public-callout-${
+            block.tone === "neutral" ||
+            block.tone === "success" ||
+            block.tone === "warning"
+              ? block.tone
+              : "info"
+          }`}
+        >
           {displayValue(block.text, businessSlug, mediaPrefix)}
         </aside>
       );
@@ -250,6 +306,18 @@ function renderBlock(
         <div
           key={key}
           className="site-public-section"
+          data-alignment={
+            block.alignment === "center" || block.alignment === "end"
+              ? block.alignment
+              : "start"
+          }
+          data-background={block.background === "tint" ? "tint" : "plain"}
+          data-spacing={
+            block.spacing === "compact" || block.spacing === "spacious"
+              ? block.spacing
+              : "comfortable"
+          }
+          data-width={block.width === "wide" ? "wide" : "content"}
           style={
             {
               "--site-public-column-count": Math.min(
@@ -407,21 +475,34 @@ function renderBlock(
         </section>
       );
     }
-    case "record_detail":
+    case "record_detail": {
+      const requestedFields = Array.isArray(block.display_field_keys)
+        ? block.display_field_keys.filter(
+            (field): field is string => typeof field === "string",
+          )
+        : Object.keys(record?.values ?? {});
+      const detailFields = requestedFields.filter((field) =>
+        Object.prototype.hasOwnProperty.call(record?.values ?? {}, field),
+      );
       return (
         <section key={key} aria-label="Record details">
           {record
-            ? Object.entries(record.values).map(([field, value]) => (
+            ? detailFields.map((field) => (
                 <p key={field}>
                   <strong>{field}</strong>{" "}
                   <span className="site-public-record-value">
-                    {displayValue(value, businessSlug, mediaPrefix)}
+                    {displayValue(
+                      record.values[field],
+                      businessSlug,
+                      mediaPrefix,
+                    )}
                   </span>
                 </p>
               ))
             : null}
         </section>
       );
+    }
     default:
       return null;
   }

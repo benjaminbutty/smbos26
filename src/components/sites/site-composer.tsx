@@ -2,8 +2,14 @@
 
 import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 import type { SiteDraftV1 } from "../../core/sites/schemas";
+import { useUnsavedNavigationWarning } from "../../runtime/unsaved-navigation-warning";
+import {
+  SerialSaveCoordinator,
+  type SaveCoordinatorResult,
+} from "../../runtime/page-editor/save-coordinator";
 
 type SitePage = SiteDraftV1["pages"][number];
 type SiteBlock = SitePage["layout"]["blocks"][number];
@@ -116,6 +122,7 @@ function displayKey(value: string): string {
 function previewBlockContent(
   block: SiteBlock,
   objectOptions: readonly ObjectOption[],
+  businessSlug: string,
 ): ReactNode {
   const value = asRecord(block);
   if (block.type === "heading") {
@@ -140,21 +147,61 @@ function previewBlockContent(
     );
   }
   if (block.type === "image") {
+    const assetId = typeof value.asset_id === "string" ? value.asset_id : null;
+    const alt =
+      typeof value.alt === "string" && value.alt.trim()
+        ? value.alt
+        : "Managed image";
     return (
-      <span>
-        {typeof value.asset_id === "string"
-          ? typeof value.alt === "string" && value.alt.trim()
-            ? value.alt
-            : "Managed image"
-          : "Choose an image"}
+      <span className="site-composer-canvas-image">
+        {assetId ? (
+          <Image
+            alt={alt}
+            height={180}
+            src={`/api/app/${encodeURIComponent(
+              businessSlug,
+            )}/pages/assets/${encodeURIComponent(assetId)}`}
+            unoptimized
+            width={320}
+          />
+        ) : (
+          <span>Choose an image</span>
+        )}
+        {assetId ? <span>{alt}</span> : null}
       </span>
     );
   }
   if (block.type === "gallery") {
-    const count = Array.isArray(value.images) ? value.images.length : 0;
+    const images = Array.isArray(value.images)
+      ? value.images.map((image) => asRecord(image))
+      : [];
     return (
-      <span>
-        {count ? `${count} image${count === 1 ? "" : "s"}` : "Add images"}
+      <span className="site-composer-canvas-gallery">
+        {images.length ? (
+          images.slice(0, 4).map((image, index) => {
+            const assetId =
+              typeof image.asset_id === "string" ? image.asset_id : null;
+            return assetId ? (
+              <Image
+                alt={
+                  typeof image.alt === "string" ? image.alt : "Gallery image"
+                }
+                height={120}
+                key={`${assetId}-${index}`}
+                src={`/api/app/${encodeURIComponent(
+                  businessSlug,
+                )}/pages/assets/${encodeURIComponent(assetId)}`}
+                unoptimized
+                width={160}
+              />
+            ) : null;
+          })
+        ) : (
+          <span>Add images</span>
+        )}
+        {images.length > 4 ? (
+          <small className="muted">+{images.length - 4} more</small>
+        ) : null}
       </span>
     );
   }
@@ -167,10 +214,36 @@ function previewBlockContent(
     const count = Array.isArray(selection.record_ids)
       ? selection.record_ids.length
       : 0;
+    const selectedIds = new Set(
+      Array.isArray(selection.record_ids)
+        ? selection.record_ids.filter(
+            (recordId): recordId is string => typeof recordId === "string",
+          )
+        : [],
+    );
+    const selectedRecords = option
+      ? option.records
+          .filter((record) => selectedIds.has(record.id))
+          .slice(0, 3)
+      : [];
     return (
-      <span>
-        {option ? displayKey(option.key) : "Choose information"} · {count} item
-        {count === 1 ? "" : "s"}
+      <span className="site-composer-canvas-collection">
+        <strong>
+          {option ? displayKey(option.key) : "Choose information"}
+        </strong>
+        {selectedRecords.length ? (
+          <span>
+            {selectedRecords.map((record) => (
+              <span key={record.id}>{record.label}</span>
+            ))}
+          </span>
+        ) : (
+          <span>
+            {count
+              ? `${count} selected item${count === 1 ? "" : "s"}`
+              : "Choose items"}
+          </span>
+        )}
       </span>
     );
   }
@@ -178,19 +251,54 @@ function previewBlockContent(
     return <span>Shared details for each item</span>;
   }
   if (block.type === "collapsible") {
+    const nestedBlocks = Array.isArray(value.blocks) ? value.blocks : [];
     return (
-      <span>
-        {typeof value.summary === "string" && value.summary.trim()
-          ? value.summary
-          : "Expandable section"}
+      <span className="site-composer-canvas-collapsible">
+        <strong>
+          {typeof value.summary === "string" && value.summary.trim()
+            ? value.summary
+            : "Expandable section"}
+        </strong>
+        <span>
+          {nestedBlocks.slice(0, 3).map((nested, index) => (
+            <span key={index}>
+              {previewBlockContent(
+                nested as SiteBlock,
+                objectOptions,
+                businessSlug,
+              )}
+            </span>
+          ))}
+          {nestedBlocks.length > 3 ? (
+            <small className="muted">+{nestedBlocks.length - 3} more</small>
+          ) : null}
+        </span>
       </span>
     );
   }
   if (block.type === "section") {
-    const count = Array.isArray(value.columns) ? value.columns.length : 1;
+    const columns = Array.isArray(value.columns) ? value.columns : [];
     return (
-      <span>
-        {count} column{count === 1 ? "" : "s"}
+      <span className="site-composer-canvas-section">
+        {columns.map((column, index) => {
+          const columnValue = asRecord(column);
+          const nestedBlocks = Array.isArray(columnValue.blocks)
+            ? columnValue.blocks
+            : [];
+          return (
+            <span key={index}>
+              {nestedBlocks.slice(0, 3).map((nested, nestedIndex) => (
+                <span key={nestedIndex}>
+                  {previewBlockContent(
+                    nested as SiteBlock,
+                    objectOptions,
+                    businessSlug,
+                  )}
+                </span>
+              ))}
+            </span>
+          );
+        })}
       </span>
     );
   }
@@ -199,6 +307,10 @@ function previewBlockContent(
 
 function copyDraft(draft: SiteDraftV1): SiteDraftV1 {
   return structuredClone(draft);
+}
+
+function siteDraftEquals(left: SiteDraftV1, right: SiteDraftV1): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function newBlock(
@@ -314,10 +426,17 @@ export function SiteComposer({
   const [autosaveStatus, setAutosaveStatus] = useState<
     "saved" | "saving" | "error"
   >("saved");
-  const autosaveReady = useRef(false);
+  const initialDraftRef = useRef(copyDraft(initialDraft));
   const revisionRef = useRef(draftRevision);
-  const autosaveQueue = useRef(Promise.resolve());
-  const autosaveTimer = useRef<number | null>(null);
+  const mountedRef = useRef(false);
+  const saveFailureMessageRef = useRef<string | null>(null);
+  const saveCoordinatorRef = useRef<SerialSaveCoordinator<SiteDraftV1> | null>(
+    null,
+  );
+  const navigationPendingRef = useRef(false);
+  const navigationBypassRef = useRef(false);
+  const manualSubmitRef = useRef(false);
+  const manualSavePendingRef = useRef(false);
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const home = initialDraft.pages.find((page) => page.is_home);
     return home?.id ?? initialDraft.pages[0]?.id ?? "";
@@ -329,15 +448,39 @@ export function SiteComposer({
   const addBlockButtonRef = useRef<HTMLButtonElement | null>(null);
   const addBlockMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const cancelAutosaveTimer = useCallback(() => {
-    if (autosaveTimer.current === null) return;
-    window.clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = null;
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
-  const queueDraftSave = useCallback(
-    (draftToSave: SiteDraftV1, failureMessage: string): Promise<boolean> => {
-      const queued = autosaveQueue.current.then(async () => {
+  useEffect(() => {
+    const coordinator = new SerialSaveCoordinator<SiteDraftV1>({
+      debounceMs: 900,
+      maxWaitMs: 10_000,
+      equals: siteDraftEquals,
+      initialValue: initialDraftRef.current,
+      onStateChange: (next) => {
+        if (next.status === "error" || next.status === "stale") {
+          setAutosaveStatus("error");
+          setMessage(
+            saveFailureMessageRef.current ??
+              "Draft autosave failed. Use Save draft to try again.",
+          );
+          return;
+        }
+        if (next.status === "saved") {
+          setAutosaveStatus("saved");
+          return;
+        }
+        setAutosaveStatus("saving");
+      },
+      save: async ({
+        candidate,
+      }): Promise<SaveCoordinatorResult<SiteDraftV1>> => {
+        const failureMessage =
+          "Draft autosave failed. Use Save draft to try again.";
         try {
           const response = await fetch(
             `/api/app/${encodeURIComponent(businessSlug)}/sites/draft`,
@@ -347,61 +490,88 @@ export function SiteComposer({
               body: JSON.stringify({
                 siteId,
                 expectedDraftRevision: revisionRef.current,
-                draft: draftToSave,
+                draft: candidate,
               }),
             },
           );
           if (!response.ok) {
-            setAutosaveStatus("error");
-            setMessage(
-              response.status === 409
-                ? "This draft changed elsewhere. Reload before continuing."
-                : failureMessage,
-            );
-            return false;
+            const stale = response.status === 409;
+            saveFailureMessageRef.current = stale
+              ? "This draft changed elsewhere. Your edits are still here; saving is paused until the draft is reconciled."
+              : failureMessage;
+            return {
+              status: stale ? "stale" : "error",
+              message: saveFailureMessageRef.current,
+            };
           }
           const result: unknown = await response.json().catch(() => null);
           const nextRevision = asRecord(result).draftRevision;
           if (typeof nextRevision === "number") {
             revisionRef.current = nextRevision;
-            setRevision(nextRevision);
+            if (mountedRef.current) setRevision(nextRevision);
           }
-          setAutosaveStatus("saved");
-          return true;
+          saveFailureMessageRef.current = null;
+          return { status: "success", canonical: candidate };
         } catch {
-          setAutosaveStatus("error");
-          setMessage(failureMessage);
-          return false;
+          saveFailureMessageRef.current = failureMessage;
+          return { status: "error", message: failureMessage };
         }
-      });
-      autosaveQueue.current = queued.then(
-        () => undefined,
-        () => undefined,
-      );
-      return queued;
-    },
-    [businessSlug, siteId],
-  );
+      },
+    });
+    saveCoordinatorRef.current = coordinator;
+    return () => {
+      coordinator.dispose();
+      if (saveCoordinatorRef.current === coordinator) {
+        saveCoordinatorRef.current = null;
+      }
+    };
+  }, [businessSlug, siteId]);
 
   useEffect(() => {
-    if (!autosaveReady.current) {
-      autosaveReady.current = true;
-      return;
+    const coordinator = saveCoordinatorRef.current;
+    if (!coordinator || siteDraftEquals(coordinator.candidate, draft)) return;
+    coordinator.update(copyDraft(draft));
+  }, [draft]);
+
+  const saveDraftNow = useCallback(async (): Promise<boolean> => {
+    const coordinator = saveCoordinatorRef.current;
+    if (!coordinator) return false;
+    if (!siteDraftEquals(coordinator.candidate, draft)) {
+      coordinator.update(copyDraft(draft));
     }
-    const draftToSave = copyDraft(draft);
-    const timeout = window.setTimeout(() => {
-      autosaveTimer.current = null;
-      void queueDraftSave(
-        draftToSave,
-        "Draft autosave failed. Use Save draft to try again.",
-      );
-    }, 900);
-    autosaveTimer.current = timeout;
-    return () => {
-      window.clearTimeout(timeout);
-      if (autosaveTimer.current === timeout) autosaveTimer.current = null;
-    };
-  }, [businessSlug, draft, queueDraftSave, siteId]);
+    if (coordinator.state.blocked === "stale") return false;
+    const result =
+      coordinator.state.blocked === "error"
+        ? await coordinator.retry()
+        : await coordinator.flush();
+    if (result?.status === "error" || result?.status === "stale") return false;
+    return !coordinator.hasUnacknowledgedWork;
+  }, [draft]);
+
+  const flushBeforeNavigation = useCallback(
+    async (href: string): Promise<void> => {
+      if (navigationPendingRef.current) return;
+      navigationPendingRef.current = true;
+      const saved = await saveDraftNow();
+      navigationPendingRef.current = false;
+      if (!saved) {
+        setMessage(
+          "Your latest Site edits are still here. Save them before leaving this page.",
+        );
+        return;
+      }
+      navigationBypassRef.current = true;
+      window.location.assign(href);
+    },
+    [saveDraftNow],
+  );
+
+  useUnsavedNavigationWarning(
+    autosaveStatus !== "saved",
+    "Leave this Site? Your latest edits are still being saved.",
+    flushBeforeNavigation,
+    navigationBypassRef,
+  );
 
   useEffect(() => {
     if (!addBlockMenuOpen) return;
@@ -511,6 +681,47 @@ export function SiteComposer({
     const target = index + offset;
     if (!blocks || index < 0 || target < 0 || target >= blocks.length) return;
     [blocks[index], blocks[target]] = [blocks[target]!, blocks[index]!];
+    commit(next);
+  }
+
+  function moveBlockToColumn(
+    pageId: string,
+    sectionId: string,
+    blockId: string,
+    sourceColumnIndex: number,
+    targetColumnIndex: number,
+  ): void {
+    if (sourceColumnIndex === targetColumnIndex) return;
+    const next = copyDraft(draft);
+    const page = next.pages.find((candidate) => candidate.id === pageId);
+    const sectionBlocks = page
+      ? findBlockList(page.layout.blocks, sectionId)
+      : null;
+    const section = sectionBlocks?.find(
+      (candidate) => asRecord(candidate).id === sectionId,
+    );
+    const sectionValue = asRecord(section);
+    const columns = Array.isArray(sectionValue.columns)
+      ? sectionValue.columns.map((column) => asRecord(column))
+      : [];
+    const sourceColumn = columns[sourceColumnIndex];
+    const targetColumn = columns[targetColumnIndex];
+    if (!sourceColumn || !targetColumn) return;
+    const sourceBlocks = Array.isArray(sourceColumn.blocks)
+      ? sourceColumn.blocks
+      : [];
+    const moved = sourceBlocks.find(
+      (candidate) => asRecord(candidate).id === blockId,
+    );
+    if (!moved) return;
+    sourceColumn.blocks = sourceBlocks.filter(
+      (candidate) => asRecord(candidate).id !== blockId,
+    );
+    targetColumn.blocks = [
+      ...(Array.isArray(targetColumn.blocks) ? targetColumn.blocks : []),
+      moved,
+    ];
+    sectionValue.columns = columns;
     commit(next);
   }
 
@@ -833,6 +1044,17 @@ export function SiteComposer({
     });
   }
 
+  function setSectionPresentation(
+    pageId: string,
+    blockId: string,
+    property: "width" | "spacing" | "alignment" | "background",
+    value: string,
+  ): void {
+    updateBlock(pageId, blockId, (block) => {
+      block[property] = value;
+    });
+  }
+
   function addSection(pageId: string, columnCount: 1 | 2 | 3 = 2): void {
     const columns = Array.from({ length: columnCount }, (_, index) => ({
       blocks:
@@ -849,6 +1071,9 @@ export function SiteComposer({
       type: "section",
       id: crypto.randomUUID(),
       width: "content",
+      spacing: "comfortable",
+      alignment: "start",
+      background: "plain",
       columns,
     } as SiteBlock);
   }
@@ -924,12 +1149,10 @@ export function SiteComposer({
     const file = event.currentTarget.files?.[0];
     if (!file) return;
     setMessage("Saving the Site draft before attaching the Record image…");
-    if (
-      !(await queueDraftSave(
-        copyDraft(draft),
+    if (!(await saveDraftNow())) {
+      setMessage(
         "The Site draft could not be saved before attaching the Record image.",
-      ))
-    ) {
+      );
       return;
     }
     setMessage(`Uploading ${displayKey(field.key)} for ${record.label}…`);
@@ -1033,7 +1256,28 @@ export function SiteComposer({
           >
             Undo
           </button>
-          <form action={saveAction}>
+          <form
+            action={saveAction}
+            onSubmit={(event) => {
+              if (manualSubmitRef.current) {
+                manualSubmitRef.current = false;
+                return;
+              }
+              if (manualSavePendingRef.current) {
+                event.preventDefault();
+                return;
+              }
+              event.preventDefault();
+              manualSavePendingRef.current = true;
+              const form = event.currentTarget;
+              void saveDraftNow().then((saved) => {
+                manualSavePendingRef.current = false;
+                if (!saved) return;
+                manualSubmitRef.current = true;
+                form.requestSubmit();
+              });
+            }}
+          >
             <input name="siteId" type="hidden" value={siteId} />
             <input
               name="expectedDraftRevision"
@@ -1043,7 +1287,6 @@ export function SiteComposer({
             <input name="draft" type="hidden" value={JSON.stringify(draft)} />
             <button
               className="button-secondary site-composer-save-action"
-              onClick={cancelAutosaveTimer}
               type="submit"
             >
               Save draft
@@ -1417,7 +1660,11 @@ export function SiteComposer({
                             <span className="site-composer-canvas-block-type">
                               {displayKey(block.type)}
                             </span>
-                            {previewBlockContent(block, objectOptions)}
+                            {previewBlockContent(
+                              block,
+                              objectOptions,
+                              businessSlug,
+                            )}
                           </button>
                         );
                       })}
@@ -2103,17 +2350,117 @@ export function SiteComposer({
                                     containerId={id}
                                     duplicateBlock={duplicateBlock}
                                     moveBlock={moveBlock}
+                                    moveBlockToColumn={moveBlockToColumn}
                                     onUploadGalleryImage={uploadGalleryImage}
                                     onUploadImage={uploadImage}
                                     pageId={page.id}
                                     removeBlock={removeBlock}
                                     setSectionColumns={setSectionColumns}
+                                    setSectionPresentation={
+                                      setSectionPresentation
+                                    }
                                     updateBlock={updateBlock}
                                   />
                                 </div>
                               ) : null}
                               {block.type === "section" ? (
                                 <div className="site-composer-nested-editor">
+                                  <div className="site-composer-collection-fields">
+                                    <label>
+                                      Width
+                                      <select
+                                        value={
+                                          value.width === "wide"
+                                            ? "wide"
+                                            : "content"
+                                        }
+                                        onChange={(event) =>
+                                          setSectionPresentation(
+                                            page.id,
+                                            id,
+                                            "width",
+                                            event.target.value,
+                                          )
+                                        }
+                                      >
+                                        <option value="content">
+                                          Content width
+                                        </option>
+                                        <option value="wide">Wide</option>
+                                      </select>
+                                    </label>
+                                    <label>
+                                      Spacing
+                                      <select
+                                        value={
+                                          value.spacing === "compact" ||
+                                          value.spacing === "spacious"
+                                            ? value.spacing
+                                            : "comfortable"
+                                        }
+                                        onChange={(event) =>
+                                          setSectionPresentation(
+                                            page.id,
+                                            id,
+                                            "spacing",
+                                            event.target.value,
+                                          )
+                                        }
+                                      >
+                                        <option value="compact">Compact</option>
+                                        <option value="comfortable">
+                                          Comfortable
+                                        </option>
+                                        <option value="spacious">
+                                          Spacious
+                                        </option>
+                                      </select>
+                                    </label>
+                                    <label>
+                                      Alignment
+                                      <select
+                                        value={
+                                          value.alignment === "center" ||
+                                          value.alignment === "end"
+                                            ? value.alignment
+                                            : "start"
+                                        }
+                                        onChange={(event) =>
+                                          setSectionPresentation(
+                                            page.id,
+                                            id,
+                                            "alignment",
+                                            event.target.value,
+                                          )
+                                        }
+                                      >
+                                        <option value="start">Left</option>
+                                        <option value="center">Center</option>
+                                        <option value="end">Right</option>
+                                      </select>
+                                    </label>
+                                    <label>
+                                      Background
+                                      <select
+                                        value={
+                                          value.background === "tint"
+                                            ? "tint"
+                                            : "plain"
+                                        }
+                                        onChange={(event) =>
+                                          setSectionPresentation(
+                                            page.id,
+                                            id,
+                                            "background",
+                                            event.target.value,
+                                          )
+                                        }
+                                      >
+                                        <option value="plain">Plain</option>
+                                        <option value="tint">Soft tint</option>
+                                      </select>
+                                    </label>
+                                  </div>
                                   <label>
                                     Columns
                                     <select
@@ -2171,6 +2518,7 @@ export function SiteComposer({
                                           containerId={id}
                                           duplicateBlock={duplicateBlock}
                                           moveBlock={moveBlock}
+                                          moveBlockToColumn={moveBlockToColumn}
                                           onUploadGalleryImage={
                                             uploadGalleryImage
                                           }
@@ -2178,6 +2526,9 @@ export function SiteComposer({
                                           pageId={page.id}
                                           removeBlock={removeBlock}
                                           setSectionColumns={setSectionColumns}
+                                          setSectionPresentation={
+                                            setSectionPresentation
+                                          }
                                           updateBlock={updateBlock}
                                         />
                                       </div>
@@ -2347,6 +2698,13 @@ type SiteBlockUpdate = (
   update: (block: UnknownRecord) => void,
 ) => void;
 type SiteBlockMove = (pageId: string, blockId: string, offset: -1 | 1) => void;
+type SiteBlockMoveToColumn = (
+  pageId: string,
+  sectionId: string,
+  blockId: string,
+  sourceColumnIndex: number,
+  targetColumnIndex: number,
+) => void;
 type SiteBlockUpload = (
   event: FormEvent<HTMLInputElement>,
   pageId: string,
@@ -2360,11 +2718,13 @@ function NestedSiteBlocks({
   containerId,
   duplicateBlock,
   moveBlock,
+  moveBlockToColumn,
   onUploadGalleryImage,
   onUploadImage,
   pageId,
   removeBlock,
   setSectionColumns,
+  setSectionPresentation,
   updateBlock,
 }: Readonly<{
   blocks: SiteBlock[];
@@ -2378,6 +2738,7 @@ function NestedSiteBlocks({
   containerId: string;
   duplicateBlock: SiteBlockMove;
   moveBlock: SiteBlockMove;
+  moveBlockToColumn: SiteBlockMoveToColumn;
   onUploadGalleryImage: SiteBlockUpload;
   onUploadImage: SiteBlockUpload;
   pageId: string;
@@ -2386,6 +2747,12 @@ function NestedSiteBlocks({
     pageId: string,
     blockId: string,
     columnCount: 1 | 2 | 3,
+  ) => void;
+  setSectionPresentation: (
+    pageId: string,
+    blockId: string,
+    property: "width" | "spacing" | "alignment" | "background",
+    value: string,
   ) => void;
   updateBlock: SiteBlockUpdate;
 }>): ReactNode {
@@ -2409,6 +2776,44 @@ function NestedSiteBlocks({
                 >
                   ↑
                 </button>
+                {typeof columnIndex === "number" ? (
+                  <>
+                    <button
+                      aria-label="Move to previous column"
+                      disabled={columnIndex === 0}
+                      onClick={() =>
+                        moveBlockToColumn(
+                          pageId,
+                          containerId,
+                          id,
+                          columnIndex,
+                          columnIndex - 1,
+                        )
+                      }
+                      title="Move to previous column"
+                      type="button"
+                    >
+                      ←
+                    </button>
+                    <button
+                      aria-label="Move to next column"
+                      disabled={columnIndex >= 2}
+                      onClick={() =>
+                        moveBlockToColumn(
+                          pageId,
+                          containerId,
+                          id,
+                          columnIndex,
+                          columnIndex + 1,
+                        )
+                      }
+                      title="Move to next column"
+                      type="button"
+                    >
+                      →
+                    </button>
+                  </>
+                ) : null}
                 <button
                   disabled={blockIndex === blocks.length - 1}
                   onClick={() => moveBlock(pageId, id, 1)}
@@ -2602,17 +3007,101 @@ function NestedSiteBlocks({
                   containerId={id}
                   duplicateBlock={duplicateBlock}
                   moveBlock={moveBlock}
+                  moveBlockToColumn={moveBlockToColumn}
                   onUploadGalleryImage={onUploadGalleryImage}
                   onUploadImage={onUploadImage}
                   pageId={pageId}
                   removeBlock={removeBlock}
                   setSectionColumns={setSectionColumns}
+                  setSectionPresentation={setSectionPresentation}
                   updateBlock={updateBlock}
                 />
               </div>
             ) : null}
             {block.type === "section" ? (
               <div className="site-composer-nested-editor">
+                <div className="site-composer-collection-fields">
+                  <label>
+                    Width
+                    <select
+                      value={value.width === "wide" ? "wide" : "content"}
+                      onChange={(event) =>
+                        setSectionPresentation(
+                          pageId,
+                          id,
+                          "width",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="content">Content width</option>
+                      <option value="wide">Wide</option>
+                    </select>
+                  </label>
+                  <label>
+                    Spacing
+                    <select
+                      value={
+                        value.spacing === "compact" ||
+                        value.spacing === "spacious"
+                          ? value.spacing
+                          : "comfortable"
+                      }
+                      onChange={(event) =>
+                        setSectionPresentation(
+                          pageId,
+                          id,
+                          "spacing",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="compact">Compact</option>
+                      <option value="comfortable">Comfortable</option>
+                      <option value="spacious">Spacious</option>
+                    </select>
+                  </label>
+                  <label>
+                    Alignment
+                    <select
+                      value={
+                        value.alignment === "center" ||
+                        value.alignment === "end"
+                          ? value.alignment
+                          : "start"
+                      }
+                      onChange={(event) =>
+                        setSectionPresentation(
+                          pageId,
+                          id,
+                          "alignment",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="start">Left</option>
+                      <option value="center">Center</option>
+                      <option value="end">Right</option>
+                    </select>
+                  </label>
+                  <label>
+                    Background
+                    <select
+                      value={value.background === "tint" ? "tint" : "plain"}
+                      onChange={(event) =>
+                        setSectionPresentation(
+                          pageId,
+                          id,
+                          "background",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="plain">Plain</option>
+                      <option value="tint">Soft tint</option>
+                    </select>
+                  </label>
+                </div>
                 <label>
                   Columns
                   <select
@@ -2657,11 +3146,13 @@ function NestedSiteBlocks({
                           containerId={id}
                           duplicateBlock={duplicateBlock}
                           moveBlock={moveBlock}
+                          moveBlockToColumn={moveBlockToColumn}
                           onUploadGalleryImage={onUploadGalleryImage}
                           onUploadImage={onUploadImage}
                           pageId={pageId}
                           removeBlock={removeBlock}
                           setSectionColumns={setSectionColumns}
+                          setSectionPresentation={setSectionPresentation}
                           updateBlock={updateBlock}
                         />
                       </div>

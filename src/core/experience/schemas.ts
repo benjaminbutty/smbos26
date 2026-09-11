@@ -1016,7 +1016,7 @@ const pageRichTextContentSchema = z
     }
   });
 
-const pageRichTextNodeSchema = z.discriminatedUnion("type", [
+export const pageRichTextNodeSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("paragraph"),
@@ -1565,10 +1565,22 @@ function siteCollapsibleBlockSchemaAtDepth(
 const siteNestedBlockSchema: z.ZodType<SiteNestedBlock> =
   siteNestedBlockSchemaAtDepth(0);
 
+export const siteSectionWidthSchema = z.enum(["content", "wide"]);
+export const siteSectionSpacingSchema = z.enum([
+  "compact",
+  "comfortable",
+  "spacious",
+]);
+export const siteSectionAlignmentSchema = z.enum(["start", "center", "end"]);
+export const siteSectionBackgroundSchema = z.enum(["plain", "tint"]);
+
 const siteSectionBlockSchema = z
   .object({
     type: z.literal("section"),
-    width: z.enum(["content", "wide"]).default("content"),
+    width: siteSectionWidthSchema.default("content"),
+    spacing: siteSectionSpacingSchema.default("comfortable"),
+    alignment: siteSectionAlignmentSchema.default("start"),
+    background: siteSectionBackgroundSchema.default("plain"),
     columns: z
       .array(
         z

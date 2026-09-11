@@ -4,12 +4,17 @@ import {
   siteCollectionBlockSchema,
   siteDraftImageBlockSchema,
   siteGalleryBlockSchema,
+  pageRichTextNodeSchema,
   sitePageLayoutSchema,
   siteRecordDetailBlockSchema,
+  siteSectionAlignmentSchema,
+  siteSectionBackgroundSchema,
+  siteSectionSpacingSchema,
+  siteSectionWidthSchema,
   siteSharedAtomicBlockSchema,
   type SitePageLayout,
 } from "../experience/schemas";
-import { jsonObjectSchema } from "../graph/schemas";
+import { graphKeySchema, jsonObjectSchema } from "../graph/schemas";
 
 const siteNameSchema = z.string().trim().min(1).max(120);
 const siteDraftTextSchema = z.string().trim().max(120);
@@ -569,7 +574,10 @@ const siteProjectedNestedBlockSchema = siteProjectedNestedBlockSchemaAtDepth(0);
 const siteProjectedSectionBlockSchema = z
   .object({
     type: z.literal("section"),
-    width: z.enum(["content", "wide"]).default("content"),
+    width: siteSectionWidthSchema.default("content"),
+    spacing: siteSectionSpacingSchema.default("comfortable"),
+    alignment: siteSectionAlignmentSchema.default("start"),
+    background: siteSectionBackgroundSchema.default("plain"),
     columns: z
       .array(
         z
@@ -749,6 +757,7 @@ const sitePublicBlockSchema: z.ZodType<unknown> = z.lazy(() =>
       type: z.enum([
         "heading",
         "text",
+        "rich_text",
         "image",
         "gallery",
         "button",
@@ -766,6 +775,11 @@ const sitePublicBlockSchema: z.ZodType<unknown> = z.lazy(() =>
       media_token: sitePublicTokenSchema.optional(),
       records: z.array(sitePublicRecordSchema).max(500).optional(),
       images: z.array(sitePublicImageSchema).max(12).optional(),
+      display_field_keys: z.array(graphKeySchema).max(50).optional(),
+      width: siteSectionWidthSchema.optional(),
+      spacing: siteSectionSpacingSchema.optional(),
+      alignment: siteSectionAlignmentSchema.optional(),
+      background: siteSectionBackgroundSchema.optional(),
       blocks: z.array(sitePublicBlockSchema).max(50).optional(),
       columns: z
         .array(
@@ -778,6 +792,16 @@ const sitePublicBlockSchema: z.ZodType<unknown> = z.lazy(() =>
     })
     .passthrough()
     .superRefine((block, context) => {
+      if (
+        block.type === "rich_text" &&
+        !pageRichTextNodeSchema.safeParse(block.node).success
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Public rich text must use the canonical Page format.",
+          path: ["node"],
+        });
+      }
       const privateKey = findPrivateProjectionKey(block);
       if (privateKey) {
         context.addIssue({

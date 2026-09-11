@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 
 import {
@@ -118,6 +118,10 @@ export function SiteCandidatePreview({
   const [selectedRecordToken, setSelectedRecordToken] = useState<string | null>(
     null,
   );
+  const [focusPreviewHeadingVersion, setFocusPreviewHeadingVersion] =
+    useState(0);
+  const focusPreviewHeadingRef = useRef(false);
+  const previewHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const records = useMemo(
     () => recordsInProjection(safeProjection),
     [safeProjection],
@@ -144,6 +148,12 @@ export function SiteCandidatePreview({
   const logoSource = safeProjection.branding.logo_media_token
     ? `${mediaPrefix}/${safeProjection.branding.logo_media_token}`
     : null;
+
+  useEffect(() => {
+    if (!focusPreviewHeadingRef.current) return;
+    focusPreviewHeadingRef.current = false;
+    previewHeadingRef.current?.focus();
+  }, [focusPreviewHeadingVersion]);
 
   return (
     <section
@@ -197,7 +207,9 @@ export function SiteCandidatePreview({
       >
         <header>
           <p className="eyebrow">{selectedPage.navigation_label}</p>
-          <h3>{selectedPage.title}</h3>
+          <h3 ref={previewHeadingRef} tabIndex={-1}>
+            {selectedPage.title}
+          </h3>
         </header>
         <SitePublicRenderer
           businessSlug={businessSlug}
@@ -217,6 +229,8 @@ export function SiteCandidatePreview({
             ) {
               setSelectedPageSlug(detailPageSlug);
               setSelectedRecordToken(recordToken);
+              focusPreviewHeadingRef.current = true;
+              setFocusPreviewHeadingVersion((version) => version + 1);
             }
           }}
           pageSlug={selectedPage.slug}
