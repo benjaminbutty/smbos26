@@ -1357,38 +1357,51 @@ describe("Lenni Sites C2 functional milestone", () => {
       },
     );
     expect(resolved).toMatchObject({ site: { schema_version: 2 } });
-    const submitNames = [
+    const preorderArguments = {
+      requested_business_slug: adoptionBusiness.slug,
+      requested_page_slug: "legacy-home",
+      requested_preorder_key: "legacy",
+      submission: {},
+      requested_request_hash: "hash",
+    };
+    for (const client of [anonymous, owner.client]) {
+      const rejected = await rpc(client).rpc<Record<string, unknown>>(
+        "submit_public_preorder",
+        preorderArguments,
+      );
+      expect(rejected.data).toBeNull();
+      expect(rejected.error?.code).toBe("42501");
+    }
+    const trustedPreorder = await rpc(admin).rpc<Record<string, unknown>>(
+      "submit_public_preorder",
+      preorderArguments,
+    );
+    expect(trustedPreorder.error).toBeNull();
+    expect(trustedPreorder.data).toMatchObject({
+      ok: false,
+      code: "legacy_public_actions_retired",
+    });
+    for (const name of [
       "submit_public_create_form",
       "submit_public_booking",
-      "submit_public_preorder",
-    ] as const;
-    for (const name of submitNames) {
-      const argumentsValue =
-        name === "submit_public_preorder"
+    ] as const) {
+      const argumentsValue = {
+        requested_business_slug: adoptionBusiness.slug,
+        requested_page_slug: "legacy-home",
+        [name === "submit_public_booking"
+          ? "requested_booking_key"
+          : "requested_form_key"]: "legacy",
+        ...(name === "submit_public_booking"
           ? {
-              requested_business_slug: adoptionBusiness.slug,
-              requested_page_slug: "legacy-home",
-              requested_preorder_key: "legacy",
-              submission: {},
-              requested_request_hash: "hash",
+              requested_idempotency_token: crypto.randomUUID(),
+              requested_submission: {},
             }
           : {
-              requested_business_slug: adoptionBusiness.slug,
-              requested_page_slug: "legacy-home",
-              [name === "submit_public_booking"
-                ? "requested_booking_key"
-                : "requested_form_key"]: "legacy",
-              ...(name === "submit_public_booking"
-                ? {
-                    requested_idempotency_token: crypto.randomUUID(),
-                    requested_submission: {},
-                  }
-                : {
-                    requested_idempotency_token: crypto.randomUUID(),
-                    requested_data: {},
-                  }),
-              requested_request_hash: "hash",
-            };
+              requested_idempotency_token: crypto.randomUUID(),
+              requested_data: {},
+            }),
+        requested_request_hash: "hash",
+      };
       const retired = await rpc(anonymous).rpc<Record<string, unknown>>(
         name,
         argumentsValue,
