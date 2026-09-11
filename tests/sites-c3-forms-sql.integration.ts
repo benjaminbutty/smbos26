@@ -23,6 +23,13 @@ type SiteState = {
   draft_base_version_id: string;
   draft_base_head_revision: number;
 };
+type SqlSiteState = Omit<
+  SiteState,
+  "draft_revision" | "draft_base_head_revision"
+> & {
+  draft_revision: number | string;
+  draft_base_head_revision: number | string;
+};
 type PreparedRelease = {
   id: string;
   status: string;
@@ -93,7 +100,7 @@ async function createOwner(): Promise<Identity> {
 }
 
 async function readSiteState(): Promise<SiteState> {
-  const rows = await sql<SiteState[]>`
+  const rows = await sql<SqlSiteState[]>`
     select id, draft_json, draft_revision, draft_base_version_id,
       draft_base_head_revision
     from public.site_states
@@ -101,7 +108,11 @@ async function readSiteState(): Promise<SiteState> {
   `;
   const state = rows[0];
   if (!state) throw new Error("Forms fixture Site state was not found.");
-  return state;
+  return {
+    ...state,
+    draft_revision: Number(state.draft_revision),
+    draft_base_head_revision: Number(state.draft_base_head_revision),
+  };
 }
 
 async function callRpc<T>(
@@ -213,21 +224,41 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  let retainProtectedFixture = false;
   try {
     if (sql && createdBusinessIds.length > 0) {
-      await sql.unsafe(
-        "delete from public.site_states where business_id = any($1::uuid[])",
+      const [protectedRelease] = await sql.unsafe<
+        { protected_release: boolean }[]
+      >(
+        `select exists (
+           select 1
+           from public.site_release_actions_v3
+           where business_id = any($1::uuid[])
+         ) as protected_release`,
         [createdBusinessIds],
       );
-      const deleted = await admin
-        .from("businesses")
-        .delete()
-        .in("id", createdBusinessIds);
-      if (deleted.error) throw deleted.error;
+      if (!protectedRelease?.protected_release) {
+        await sql.unsafe(
+          "delete from public.site_states where business_id = any($1::uuid[])",
+          [createdBusinessIds],
+        );
+        const deleted = await admin
+          .from("businesses")
+          .delete()
+          .in("id", createdBusinessIds);
+        if (deleted.error) throw deleted.error;
+      } else {
+        retainProtectedFixture = true;
+      }
+      // Published C3 actions are immutable by design. The isolated runner
+      // disposes this database after the test, so retain that protected
+      // business rather than bypassing the release-authority trigger.
     }
-    for (const userId of createdUserIds) {
-      const deleted = await admin.auth.admin.deleteUser(userId);
-      if (deleted.error) throw deleted.error;
+    if (!retainProtectedFixture) {
+      for (const userId of createdUserIds) {
+        const deleted = await admin.auth.admin.deleteUser(userId);
+        if (deleted.error) throw deleted.error;
+      }
     }
   } finally {
     if (sql) await sql.end();

@@ -316,21 +316,41 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  let retainProtectedFixture = false;
   try {
     if (sql && createdBusinessIds.length > 0) {
-      await sql.unsafe(
-        "delete from public.site_states where business_id = any($1::uuid[])",
+      const [protectedRelease] = await sql.unsafe<
+        { protected_release: boolean }[]
+      >(
+        `select exists (
+           select 1
+           from public.site_release_actions_v3
+           where business_id = any($1::uuid[])
+         ) as protected_release`,
         [createdBusinessIds],
       );
-      const deleted = await admin
-        .from("businesses")
-        .delete()
-        .in("id", createdBusinessIds);
-      if (deleted.error) throw deleted.error;
+      if (!protectedRelease?.protected_release) {
+        await sql.unsafe(
+          "delete from public.site_states where business_id = any($1::uuid[])",
+          [createdBusinessIds],
+        );
+        const deleted = await admin
+          .from("businesses")
+          .delete()
+          .in("id", createdBusinessIds);
+        if (deleted.error) throw deleted.error;
+      } else {
+        retainProtectedFixture = true;
+      }
+      // Published C3 actions are immutable by design. The isolated runner
+      // disposes this database after the test, so retain that protected
+      // business rather than bypassing the release-authority trigger.
     }
-    for (const userId of createdUserIds) {
-      const deleted = await admin.auth.admin.deleteUser(userId);
-      if (deleted.error) throw deleted.error;
+    if (!retainProtectedFixture) {
+      for (const userId of createdUserIds) {
+        const deleted = await admin.auth.admin.deleteUser(userId);
+        if (deleted.error) throw deleted.error;
+      }
     }
   } finally {
     if (sql) await sql.end();

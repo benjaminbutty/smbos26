@@ -530,21 +530,21 @@ begin
     existing_grants := existing_grants || jsonb_build_array(to_jsonb(existing_grant));
   end loop;
 
-  select min(existing_grant.reservation_expires_at)
+  select min(grant_row.reservation_expires_at)
     into existing_attempt_expiry
-  from public.site_public_upload_grants as existing_grant
-  where existing_grant.business_id = requested_business_id
-    and existing_grant.submission_attempt_id = requested_submission_attempt_id;
+  from public.site_public_upload_grants as grant_row
+  where grant_row.business_id = requested_business_id
+    and grant_row.submission_attempt_id = requested_submission_attempt_id;
   if existing_attempt_expiry is not null
     and existing_attempt_expiry <= statement_timestamp()
   then
     raise exception 'site_upload_submission_attempt_expired' using errcode = '55000';
   end if;
-  select min(existing_grant.application_expires_at)
+  select min(grant_row.application_expires_at)
     into existing_application_expiry
-  from public.site_public_upload_grants as existing_grant
-  where existing_grant.business_id = requested_business_id
-    and existing_grant.submission_attempt_id = requested_submission_attempt_id;
+  from public.site_public_upload_grants as grant_row
+  where grant_row.business_id = requested_business_id
+    and grant_row.submission_attempt_id = requested_submission_attempt_id;
   if existing_application_expiry is not null
     and existing_application_expiry <= statement_timestamp()
   then
@@ -693,14 +693,14 @@ begin
 
   if exists (
     select 1
-    from public.site_public_upload_grants as existing_grant
-    where existing_grant.business_id = requested_business_id
-      and existing_grant.submission_attempt_id = requested_submission_attempt_id
+    from public.site_public_upload_grants as grant_row
+    where grant_row.business_id = requested_business_id
+      and grant_row.submission_attempt_id = requested_submission_attempt_id
       and (
-        existing_grant.client_subject_hash <> requested_client_subject_hash
-        or existing_grant.form_id <> requested_form_id
-        or existing_grant.release_id <> requested_release_id
-        or existing_grant.action_key <> requested_action_key
+        grant_row.client_subject_hash <> requested_client_subject_hash
+        or grant_row.form_id <> requested_form_id
+        or grant_row.release_id <> requested_release_id
+        or grant_row.action_key <> requested_action_key
       )
   ) then
     raise exception 'site_upload_attempt_binding_invalid' using errcode = '22023';
@@ -714,10 +714,10 @@ begin
       or (
         select count(*) from jsonb_array_elements(requested_files)
       ) <> (
-        select count(distinct existing_grant.question_key)
-        from public.site_public_upload_grants as existing_grant
-        where existing_grant.business_id = requested_business_id
-          and existing_grant.submission_attempt_id = requested_submission_attempt_id
+        select count(distinct grant_row.question_key)
+        from public.site_public_upload_grants as grant_row
+        where grant_row.business_id = requested_business_id
+          and grant_row.submission_attempt_id = requested_submission_attempt_id
       )
     then
       raise exception 'site_upload_attempt_binding_invalid' using errcode = '22023';
@@ -769,9 +769,9 @@ begin
     raise exception 'site_upload_quota_exceeded' using errcode = '54000';
   end if;
   if (
-    select count(*) from public.site_public_upload_grants as existing_grant
-    where existing_grant.business_id = requested_business_id
-      and existing_grant.submission_attempt_id = requested_submission_attempt_id
+    select count(*) from public.site_public_upload_grants as grant_row
+    where grant_row.business_id = requested_business_id
+      and grant_row.submission_attempt_id = requested_submission_attempt_id
   ) + total_count > 5 then
     raise exception 'site_upload_submission_file_limit' using errcode = '22023';
   end if;
@@ -782,10 +782,10 @@ begin
     question_key_value := file_request ->> 'question_key';
     count_value := (file_request ->> 'count')::integer;
     select count(*) into current_count
-    from public.site_public_upload_grants as existing_grant
-    where existing_grant.business_id = requested_business_id
-      and existing_grant.submission_attempt_id = requested_submission_attempt_id
-      and existing_grant.question_key = question_key_value;
+    from public.site_public_upload_grants as grant_row
+    where grant_row.business_id = requested_business_id
+      and grant_row.submission_attempt_id = requested_submission_attempt_id
+      and grant_row.question_key = question_key_value;
     question := null;
     select question_value.value into question
     from jsonb_array_elements(requested_questions) as question_value(value)

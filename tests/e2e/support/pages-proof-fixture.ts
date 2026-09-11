@@ -85,14 +85,28 @@ async function removeFixture(
   userId: string,
 ): Promise<void> {
   const failures: string[] = [];
+  let retainProtectedBusiness = false;
 
   if (businessId) {
     const fixtureSql = postgres(databaseUrl, { max: 1 });
     try {
-      await fixtureSql.unsafe(
-        "delete from public.site_states where business_id = $1::uuid",
+      const [protectedRelease] = await fixtureSql.unsafe<
+        { protected_release: boolean }[]
+      >(
+        `select exists (
+           select 1
+           from public.site_release_actions_v3
+           where business_id = $1::uuid
+         ) as protected_release`,
         [businessId],
       );
+      retainProtectedBusiness = protectedRelease?.protected_release ?? false;
+      if (!retainProtectedBusiness) {
+        await fixtureSql.unsafe(
+          "delete from public.site_states where business_id = $1::uuid",
+          [businessId],
+        );
+      }
     } catch (error) {
       const code =
         error && typeof error === "object" && "code" in error
@@ -102,17 +116,26 @@ async function removeFixture(
     } finally {
       await fixtureSql.end({ timeout: 5 });
     }
-    const { error } = await admin
-      .from("businesses")
-      .delete()
-      .eq("id", businessId);
-    if (error)
-      failures.push(`business cleanup failed (${error.code ?? "unknown"})`);
+    if (!retainProtectedBusiness && failures.length === 0) {
+      const { error } = await admin
+        .from("businesses")
+        .delete()
+        .eq("id", businessId);
+      if (error)
+        failures.push(`business cleanup failed (${error.code ?? "unknown"})`);
+    }
+    // Published C3 actions are immutable by design. The isolated browser
+    // runner disposes its database after the proof, so retain that protected
+    // business rather than bypassing the release-authority trigger.
   }
 
-  const { error: userError } = await admin.auth.admin.deleteUser(userId);
-  if (userError) {
-    failures.push(`account cleanup failed (${userError.status ?? "unknown"})`);
+  if (!retainProtectedBusiness) {
+    const { error: userError } = await admin.auth.admin.deleteUser(userId);
+    if (userError) {
+      failures.push(
+        `account cleanup failed (${userError.status ?? "unknown"})`,
+      );
+    }
   }
 
   if (failures.length > 0) {
