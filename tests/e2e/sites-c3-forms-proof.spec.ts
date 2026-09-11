@@ -203,6 +203,21 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
     .getByRole("button", { name: "Start with a Form", exact: true })
     .click();
   await fillFormDraft(page);
+
+  const form = formCard(page);
+  const formToggle = form.locator(".site-form-toggle");
+  await expect(formToggle).toHaveAccessibleName("Collapse form");
+  await formToggle.focus();
+  await page.keyboard.press("Space");
+  await expect(formToggle).toHaveAccessibleName("Edit form");
+  await expect(form.getByLabel("Form name", { exact: true })).toBeHidden();
+  await expect(formToggle).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(formToggle).toHaveAccessibleName("Collapse form");
+  await expect(formToggle).toBeFocused();
+  await expect(form.getByLabel("Form name", { exact: true })).toHaveValue(
+    formName,
+  );
   await captureResponsiveEvidence(page, "owner-form-composer");
 
   await page.getByRole("button", { name: "Preview", exact: true }).click();
@@ -231,9 +246,16 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
       publicForm.getByRole("heading", { name: formName }),
     ).toBeVisible();
 
+    const enquiryType = publicForm.getByRole("combobox", {
+      name: "Enquiry type",
+      exact: true,
+    });
     await publicForm
-      .getByRole("combobox", { name: "Enquiry type", exact: true })
-      .selectOption({ label: "Catering" });
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect(enquiryType).toBeFocused();
+    await expect(enquiryType).toHaveAttribute("aria-invalid", "true");
+    await enquiryType.selectOption({ label: "Catering" });
     await expect(
       publicForm.getByLabel("Project details", { exact: true }),
     ).toBeVisible();

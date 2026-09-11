@@ -28,6 +28,12 @@ type PreparedRelease = {
   status: string;
   projection_schema_version: number;
 };
+type SubmissionResult = {
+  ok: boolean;
+  idempotent?: boolean;
+  code?: string;
+  confirmation?: { public_reference: string };
+};
 type RpcClient = {
   rpc<T>(
     name: string,
@@ -590,6 +596,162 @@ describe("Sites C3 Form SQL boundary", () => {
       throw new Error("Republished Forms action was not indexed.");
     expect(secondAction.action_key).toBe(action.action_key);
     expect(secondAction.release_token).not.toBe(action.release_token);
+
+    const oldReleaseRetry = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_form_v3",
+      submitParameters,
+    );
+    expect(oldReleaseRetry).toMatchObject({
+      ok: true,
+      idempotent: true,
+      confirmation: {
+        public_reference: firstSubmission.confirmation.public_reference,
+      },
+    });
+
+    const [beforeStaleReceipts] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.public_form_submissions
+      where business_id = ${business.id}
+        and action_key = ${action.action_key}
+    `;
+    const [beforeStaleRecords] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${business.id}
+        and object_definition_id = ${action.object_definition_id}
+    `;
+    const staleAttemptId = crypto.randomUUID();
+    const staleReleaseAttempt = await rpc(admin).rpc<SubmissionResult>(
+      "submit_public_site_form_v3",
+      {
+        ...submitParameters,
+        requested_release_token: action.release_token,
+        requested_idempotency_token: staleAttemptId,
+        requested_submission_attempt_id: staleAttemptId,
+        requested_answers: { name: "Stale release" },
+        requested_request_hash: "d".repeat(64),
+      },
+    );
+    expect(staleReleaseAttempt.error).toBeNull();
+    expect(staleReleaseAttempt.data).toMatchObject({
+      ok: false,
+      code: "action_unavailable",
+    });
+    const [afterStaleReceipts] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.public_form_submissions
+      where business_id = ${business.id}
+        and action_key = ${action.action_key}
+    `;
+    const [afterStaleRecords] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${business.id}
+        and object_definition_id = ${action.object_definition_id}
+    `;
+    expect(afterStaleReceipts?.count).toBe(beforeStaleReceipts?.count);
+    expect(afterStaleRecords?.count).toBe(beforeStaleRecords?.count);
+
+    const changedAttemptId = crypto.randomUUID();
+    const changedAttempt = {
+      ...submitParameters,
+      requested_release_token: secondAction.release_token,
+      requested_idempotency_token: changedAttemptId,
+      requested_submission_attempt_id: changedAttemptId,
+      requested_answers: { name: "Current release" },
+      requested_request_hash: "e".repeat(64),
+    };
+    const currentSubmission = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_form_v3",
+      changedAttempt,
+    );
+    expect(currentSubmission).toMatchObject({
+      ok: true,
+      idempotent: false,
+    });
+    const changedRetry = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_form_v3",
+      {
+        ...changedAttempt,
+        requested_answers: { name: "Changed answer" },
+      },
+    );
+    expect(changedRetry).toMatchObject({
+      ok: false,
+      code: "idempotency_conflict",
+    });
+
+    const concurrentAttemptId = crypto.randomUUID();
+    const concurrentAttempt = {
+      ...submitParameters,
+      requested_release_token: secondAction.release_token,
+      requested_idempotency_token: concurrentAttemptId,
+      requested_submission_attempt_id: concurrentAttemptId,
+      requested_answers: { name: "Concurrent answer" },
+      requested_request_hash: "f".repeat(64),
+    };
+    const [beforeConcurrentRecords] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${business.id}
+        and object_definition_id = ${action.object_definition_id}
+    `;
+    const concurrentResults = await Promise.all([
+      rpc(admin).rpc<SubmissionResult>(
+        "submit_public_site_form_v3",
+        concurrentAttempt,
+      ),
+      rpc(admin).rpc<SubmissionResult>(
+        "submit_public_site_form_v3",
+        concurrentAttempt,
+      ),
+    ]);
+    expect(
+      concurrentResults.every(
+        (result) => result.error === null && result.data !== null,
+      ),
+    ).toBe(true);
+    const concurrentPayloads = concurrentResults.flatMap((result) =>
+      result.data ? [result.data] : [],
+    );
+    expect(concurrentPayloads).toHaveLength(2);
+    expect(
+      concurrentPayloads.filter(
+        (result) => result.ok && result.idempotent === false,
+      ),
+    ).toHaveLength(1);
+    expect(
+      concurrentPayloads.filter(
+        (result) => result.ok && result.idempotent === true,
+      ),
+    ).toHaveLength(1);
+    const concurrentConfirmations = concurrentPayloads.map(
+      (result) => result.confirmation?.public_reference,
+    );
+    expect(concurrentConfirmations[0]).toBeDefined();
+    expect(concurrentConfirmations[1]).toBe(concurrentConfirmations[0]);
+    const [concurrentReceiptCount] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.public_form_submissions
+      where business_id = ${business.id}
+        and action_key = ${secondAction.action_key}
+        and idempotency_token = ${concurrentAttemptId}
+    `;
+    const [concurrentRecordCount] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${business.id}
+        and object_definition_id = ${action.object_definition_id}
+    `;
+    expect(concurrentReceiptCount?.count).toBe(1);
+    expect(concurrentRecordCount?.count).toBe(
+      (beforeConcurrentRecords?.count ?? 0) + 1,
+    );
+
     const fieldRows = await sql<{ key: string; position: number }[]>`
       select key, position
       from public.field_definitions

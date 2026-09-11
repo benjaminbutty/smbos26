@@ -1965,12 +1965,6 @@ export function SiteComposer({
 
   return (
     <div className="site-composer">
-      <SiteFormComposer
-        draft={draft}
-        objectOptions={objectOptions}
-        onAddToPage={addFormToPage}
-        onChange={commit}
-      />
       <div className="site-composer-toolbar">
         <div>
           <label className="site-composer-toolbar-site-name">
@@ -2156,6 +2150,13 @@ export function SiteComposer({
           ) : null}
         </section>
       ) : null}
+
+      <SiteFormComposer
+        draft={draft}
+        objectOptions={objectOptions}
+        onAddToPage={addFormToPage}
+        onChange={commit}
+      />
 
       <details className="panel site-composer-branding" open={identityOpen}>
         <summary

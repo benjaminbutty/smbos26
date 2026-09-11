@@ -19400,6 +19400,12 @@ textarea {
   gap: var(--space-6);
 }
 
+.site-composer {
+  container-name: site-composer;
+  container-type: inline-size;
+  min-width: 0;
+}
+
 .site-form-composer {
   display: grid;
   gap: var(--space-5);
@@ -19426,6 +19432,14 @@ textarea {
 
 .site-form-question-actions {
   justify-content: flex-end;
+  margin-left: auto;
+}
+
+.site-form-card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin-left: auto;
 }
 
@@ -19474,17 +19488,36 @@ textarea {
   gap: var(--space-4);
 }
 
+.site-form-card-body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.site-form-card-body[hidden],
+.site-form-card-summary[hidden] {
+  display: none;
+}
+
+.site-form-card-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
 .site-form-card {
   background: var(--surface-base);
 }
 
 .site-form-grid {
+  align-items: start;
   display: grid;
   gap: var(--space-4);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .site-form-grid > label {
+  align-content: start;
   display: grid;
   gap: var(--space-2);
 }
@@ -19699,6 +19732,14 @@ textarea {
   display: grid;
   gap: var(--space-6);
   grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+}
+
+.site-composer-pages,
+.site-composer-workspace > *,
+.site-composer-page,
+.site-composer-canvas,
+.site-composer-inspector {
+  min-width: 0;
 }
 
 .site-composer-page-nav {
@@ -20482,5 +20523,51 @@ textarea {
 
   .site-public-runtime-page {
     padding-inline: var(--space-4);
+  }
+}
+
+@container site-composer (max-width: 64rem) {
+  .site-composer-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .site-composer-page-nav {
+    position: static;
+  }
+
+  .site-composer-page-nav nav {
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  }
+
+  .site-composer-page-header {
+    flex-wrap: wrap;
+  }
+}
+
+@container site-composer (max-width: 48rem) {
+  .site-form-composer-heading,
+  .site-form-card-heading,
+  .site-form-subheading,
+  .site-form-ready {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .site-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .site-form-composer-heading button,
+  .site-form-ready button {
+    width: 100%;
+  }
+
+  .site-form-card-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .site-form-card-actions button {
+    flex: 1 1 auto;
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { walkPageBlocks } from "../../core/experience/page-blocks";
 import type { SitePageLayout } from "../../core/experience/schemas";
@@ -367,6 +368,18 @@ export function SiteFormComposer({
   onChange: (draft: SiteDraftV1) => void;
 }>): ReactNode {
   const forms = draft.forms ?? [];
+  const [expandedFormIds, setExpandedFormIds] = useState<Set<string>>(
+    () => new Set(forms.slice(0, 1).map((form) => form.id)),
+  );
+
+  function toggleForm(formId: string): void {
+    setExpandedFormIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(formId)) next.delete(formId);
+      else next.add(formId);
+      return next;
+    });
+  }
 
   function updateForm(
     formId: string,
@@ -383,8 +396,10 @@ export function SiteFormComposer({
 
   function addForm(): void {
     const next = structuredClone(draft);
-    next.forms = [...(next.forms ?? []), blankForm()];
+    const form = blankForm();
+    next.forms = [...(next.forms ?? []), form];
     onChange(next);
+    setExpandedFormIds((previous) => new Set(previous).add(form.id));
   }
 
   function removeForm(formId: string): void {
@@ -400,6 +415,11 @@ export function SiteFormComposer({
       (candidate) => candidate.id !== formId,
     );
     onChange(next);
+    setExpandedFormIds((previous) => {
+      const nextExpanded = new Set(previous);
+      nextExpanded.delete(formId);
+      return nextExpanded;
+    });
   }
 
   function moveQuestion(
@@ -469,6 +489,7 @@ export function SiteFormComposer({
           const destination = objectOptions.find(
             (object) => object.key === form.object_key,
           );
+          const isExpanded = expandedFormIds.has(form.id);
           return (
             <article className="site-form-card" key={form.id}>
               <div className="site-form-card-heading">
@@ -476,71 +497,171 @@ export function SiteFormComposer({
                   <p className="eyebrow">Form {formIndex + 1}</p>
                   <h3>{form.name || "Unnamed Form"}</h3>
                 </div>
-                <button
-                  className="button-secondary"
-                  onClick={() => removeForm(form.id)}
-                  type="button"
-                >
-                  Remove
-                </button>
+                <div className="site-form-card-actions">
+                  <button
+                    aria-controls={`site-form-${form.id}-content`}
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? "Collapse form" : "Edit form"}
+                    className="button-secondary site-form-toggle"
+                    onClick={() => toggleForm(form.id)}
+                    title={form.name || `Form ${formIndex + 1}`}
+                    type="button"
+                  >
+                    {isExpanded ? "Collapse" : "Edit form"}
+                  </button>
+                  <button
+                    className="button-secondary"
+                    onClick={() => removeForm(form.id)}
+                    type="button"
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
 
-              <div className="site-form-grid">
-                <label>
-                  Form name
-                  <input
-                    onChange={(event) =>
-                      updateForm(form.id, (value) => {
-                        value.name = event.target.value;
-                      })
-                    }
-                    value={form.name}
-                  />
-                </label>
-                <label>
-                  Save responses in
-                  <select
-                    onChange={(event) =>
-                      updateForm(form.id, (value) => {
-                        value.object_mode = event.target
-                          .value as SiteFormDraft["object_mode"];
-                        if (value.object_mode === "existing") {
-                          value.questions.forEach((question) => {
-                            question.field_mode = "existing";
-                          });
-                        } else {
-                          if (
-                            !value.object_key ||
-                            objectOptions.some(
-                              (object) => object.key === value.object_key,
-                            )
-                          ) {
-                            value.object_key = managedKey("table");
-                          }
-                          value.questions.forEach((question) => {
-                            question.field_mode = "new";
-                          });
-                        }
-                      })
-                    }
-                    value={form.object_mode}
-                  >
-                    <option value="new">A new Table</option>
-                    <option value="existing">An existing Table</option>
-                  </select>
-                </label>
-                {form.object_mode === "existing" ? (
+              <div className="site-form-card-summary" hidden={isExpanded}>
+                <span>
+                  {form.questions.length} question
+                  {form.questions.length === 1 ? "" : "s"}
+                </span>
+                {placed ? (
+                  <span className="muted">
+                    Placed on {placed} Page block{placed === 1 ? "" : "s"}.
+                  </span>
+                ) : (
+                  <span className="muted">Not placed on a Page yet.</span>
+                )}
+              </div>
+
+              <div
+                className="site-form-card-body"
+                hidden={!isExpanded}
+                id={`site-form-${form.id}-content`}
+              >
+                <div className="site-form-grid">
                   <label>
-                    Table
+                    Form name
+                    <input
+                      onChange={(event) =>
+                        updateForm(form.id, (value) => {
+                          value.name = event.target.value;
+                        })
+                      }
+                      value={form.name}
+                    />
+                  </label>
+                  <label>
+                    Save responses in
                     <select
                       onChange={(event) =>
                         updateForm(form.id, (value) => {
-                          value.object_key = event.target.value;
-                          value.questions.forEach((question) => {
-                            if (question.field_mode === undefined) {
+                          value.object_mode = event.target
+                            .value as SiteFormDraft["object_mode"];
+                          if (value.object_mode === "existing") {
+                            value.questions.forEach((question) => {
                               question.field_mode = "existing";
+                            });
+                          } else {
+                            if (
+                              !value.object_key ||
+                              objectOptions.some(
+                                (object) => object.key === value.object_key,
+                              )
+                            ) {
+                              value.object_key = managedKey("table");
                             }
-                          });
+                            value.questions.forEach((question) => {
+                              question.field_mode = "new";
+                            });
+                          }
+                        })
+                      }
+                      value={form.object_mode}
+                    >
+                      <option value="new">A new Table</option>
+                      <option value="existing">An existing Table</option>
+                    </select>
+                  </label>
+                  {form.object_mode === "existing" ? (
+                    <label>
+                      Table
+                      <select
+                        onChange={(event) =>
+                          updateForm(form.id, (value) => {
+                            value.object_key = event.target.value;
+                            value.questions.forEach((question) => {
+                              if (question.field_mode === undefined) {
+                                question.field_mode = "existing";
+                              }
+                            });
+                            if (value.view_mode === "existing") {
+                              const selectedObject = objectOptions.find(
+                                (object) => object.key === value.object_key,
+                              );
+                              if (
+                                !value.view_key ||
+                                !selectedObject?.viewOptions.some(
+                                  (view) => view.key === value.view_key,
+                                )
+                              ) {
+                                value.view_key =
+                                  selectedObject?.viewOptions[0]?.key ?? "";
+                              }
+                            }
+                          })
+                        }
+                        value={form.object_key}
+                      >
+                        <option value="">Choose a Table</option>
+                        {objectOptions.map((object) => (
+                          <option key={object.key} value={object.key}>
+                            {objectLabel(object)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <div className="site-form-field-note">
+                      <strong>New Table</strong>
+                      <span className="muted">
+                        A workspace Table will be created automatically when you
+                        publish.
+                      </span>
+                    </div>
+                  )}
+                  {form.object_mode === "new" ? (
+                    <>
+                      <label>
+                        Table name (singular)
+                        <input
+                          onChange={(event) =>
+                            updateForm(form.id, (value) => {
+                              value.singular_label = event.target.value;
+                            })
+                          }
+                          value={form.singular_label ?? ""}
+                        />
+                      </label>
+                      <label>
+                        Table name (plural)
+                        <input
+                          onChange={(event) =>
+                            updateForm(form.id, (value) => {
+                              value.plural_label = event.target.value;
+                            })
+                          }
+                          value={form.plural_label ?? ""}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                  <label>
+                    Table View
+                    <select
+                      onChange={(event) =>
+                        updateForm(form.id, (value) => {
+                          value.view_mode = event.target
+                            .value as SiteFormDraft["view_mode"];
                           if (value.view_mode === "existing") {
                             const selectedObject = objectOptions.find(
                               (object) => object.key === value.object_key,
@@ -554,293 +675,277 @@ export function SiteFormComposer({
                               value.view_key =
                                 selectedObject?.viewOptions[0]?.key ?? "";
                             }
+                          } else if (
+                            !value.view_key ||
+                            objectOptions.some((object) =>
+                              object.viewOptions.some(
+                                (view) => view.key === value.view_key,
+                              ),
+                            )
+                          ) {
+                            value.view_key = managedKey("view");
                           }
                         })
                       }
-                      value={form.object_key}
+                      value={form.view_mode}
                     >
-                      <option value="">Choose a Table</option>
-                      {objectOptions.map((object) => (
-                        <option key={object.key} value={object.key}>
-                          {objectLabel(object)}
+                      <option value="new">Create a Table View</option>
+                      {form.object_mode === "existing" ||
+                      form.view_mode === "existing" ? (
+                        <option value="existing">
+                          Use an existing Table View
                         </option>
-                      ))}
+                      ) : null}
                     </select>
                   </label>
-                ) : (
-                  <div className="site-form-field-note">
-                    <strong>New Table</strong>
-                    <span className="muted">
-                      A workspace Table will be created automatically when you
-                      publish.
-                    </span>
-                  </div>
-                )}
-                {form.object_mode === "new" ? (
-                  <>
+                  {form.view_mode === "new" ? (
                     <label>
-                      Table name (singular)
+                      View name
                       <input
                         onChange={(event) =>
                           updateForm(form.id, (value) => {
-                            value.singular_label = event.target.value;
+                            value.view_name = event.target.value;
                           })
                         }
-                        value={form.singular_label ?? ""}
+                        value={form.view_name ?? ""}
                       />
                     </label>
+                  ) : (
                     <label>
-                      Table name (plural)
-                      <input
+                      Existing Table View
+                      <select
                         onChange={(event) =>
                           updateForm(form.id, (value) => {
-                            value.plural_label = event.target.value;
+                            value.view_key = event.target.value;
                           })
                         }
-                        value={form.plural_label ?? ""}
-                      />
+                        value={form.view_key ?? ""}
+                      >
+                        <option value="">Choose a Table View</option>
+                        {(destination?.viewOptions ?? []).map((view) => (
+                          <option key={view.key} value={view.key}>
+                            {view.label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                  </>
-                ) : null}
-                <label>
-                  Table View
-                  <select
-                    onChange={(event) =>
-                      updateForm(form.id, (value) => {
-                        value.view_mode = event.target
-                          .value as SiteFormDraft["view_mode"];
-                        if (value.view_mode === "existing") {
-                          const selectedObject = objectOptions.find(
-                            (object) => object.key === value.object_key,
-                          );
-                          if (
-                            !value.view_key ||
-                            !selectedObject?.viewOptions.some(
-                              (view) => view.key === value.view_key,
-                            )
-                          ) {
-                            value.view_key =
-                              selectedObject?.viewOptions[0]?.key ?? "";
-                          }
-                        } else if (
-                          !value.view_key ||
-                          objectOptions.some((object) =>
-                            object.viewOptions.some(
-                              (view) => view.key === value.view_key,
-                            ),
-                          )
-                        ) {
-                          value.view_key = managedKey("view");
-                        }
-                      })
-                    }
-                    value={form.view_mode}
-                  >
-                    <option value="new">Create a Table View</option>
-                    {form.object_mode === "existing" ||
-                    form.view_mode === "existing" ? (
-                      <option value="existing">
-                        Use an existing Table View
-                      </option>
-                    ) : null}
-                  </select>
-                </label>
-                {form.view_mode === "new" ? (
+                  )}
                   <label>
-                    View name
+                    Button label
                     <input
                       onChange={(event) =>
                         updateForm(form.id, (value) => {
-                          value.view_name = event.target.value;
+                          value.submit_label = event.target.value;
                         })
                       }
-                      value={form.view_name ?? ""}
+                      value={form.submit_label ?? ""}
                     />
                   </label>
-                ) : (
-                  <label>
-                    Existing Table View
-                    <select
-                      onChange={(event) =>
+                  {form.object_mode === "existing" && destination ? (
+                    <div className="site-form-field-note">
+                      <strong>{objectLabel(destination)}</strong>
+                      <span className="muted">
+                        Choose existing properties or add new ones below. New
+                        properties are added to this Table when you publish.
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="site-form-questions">
+                  <div className="site-form-subheading">
+                    <h4>Questions</h4>
+                    <button
+                      className="button-secondary"
+                      onClick={() =>
                         updateForm(form.id, (value) => {
-                          value.view_key = event.target.value;
+                          value.questions.push(
+                            blankQuestion(
+                              value.object_mode === "existing"
+                                ? "existing"
+                                : "new",
+                            ),
+                          );
                         })
                       }
-                      value={form.view_key ?? ""}
+                      type="button"
                     >
-                      <option value="">Choose a Table View</option>
-                      {(destination?.viewOptions ?? []).map((view) => (
-                        <option key={view.key} value={view.key}>
-                          {view.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                <label>
-                  Button label
-                  <input
-                    onChange={(event) =>
-                      updateForm(form.id, (value) => {
-                        value.submit_label = event.target.value;
-                      })
-                    }
-                    value={form.submit_label ?? ""}
-                  />
-                </label>
-                {form.object_mode === "existing" && destination ? (
-                  <div className="site-form-field-note">
-                    <strong>{objectLabel(destination)}</strong>
-                    <span className="muted">
-                      Choose existing properties or add new ones below. New
-                      properties are added to this Table when you publish.
-                    </span>
+                      Add question
+                    </button>
                   </div>
-                ) : null}
-              </div>
-
-              <div className="site-form-questions">
-                <div className="site-form-subheading">
-                  <h4>Questions</h4>
-                  <button
-                    className="button-secondary"
-                    onClick={() =>
-                      updateForm(form.id, (value) => {
-                        value.questions.push(
-                          blankQuestion(
-                            value.object_mode === "existing"
-                              ? "existing"
-                              : "new",
-                          ),
-                        );
-                      })
-                    }
-                    type="button"
-                  >
-                    Add question
-                  </button>
-                </div>
-                {form.questions.map((question, questionIndex) => {
-                  const sources = conditionSources(
-                    form.questions,
-                    questionIndex,
-                  );
-                  const selectedSourceIndex = sources.findIndex(
-                    (source) => source.key === question.visible_when?.field,
-                  );
-                  const selectedSource =
-                    selectedSourceIndex >= 0
-                      ? sources[selectedSourceIndex]
-                      : undefined;
-                  const currentFieldMode = questionFieldMode(
-                    question,
-                    form.object_mode,
-                  );
-                  const selectedField =
-                    currentFieldMode === "existing"
-                      ? destination?.fieldOptions.find(
-                          (field) => field.key === question.key,
-                        )
-                      : undefined;
-                  return (
-                    <div className="site-form-question" key={question.id}>
-                      <div className="site-form-question-heading">
-                        <strong>Question {questionIndex + 1}</strong>
-                        <div className="site-form-question-actions">
-                          <button
-                            aria-label={`Move question ${questionIndex + 1} up`}
-                            className="button-secondary"
-                            disabled={questionIndex === 0}
-                            onClick={() =>
-                              moveQuestion(form.id, question.id, -1)
-                            }
-                            type="button"
-                          >
-                            Move up
-                          </button>
-                          <button
-                            aria-label={`Move question ${questionIndex + 1} down`}
-                            className="button-secondary"
-                            disabled={
-                              questionIndex === form.questions.length - 1
-                            }
-                            onClick={() =>
-                              moveQuestion(form.id, question.id, 1)
-                            }
-                            type="button"
-                          >
-                            Move down
-                          </button>
-                          {form.questions.length > 1 ? (
+                  {form.questions.map((question, questionIndex) => {
+                    const sources = conditionSources(
+                      form.questions,
+                      questionIndex,
+                    );
+                    const selectedSourceIndex = sources.findIndex(
+                      (source) => source.key === question.visible_when?.field,
+                    );
+                    const selectedSource =
+                      selectedSourceIndex >= 0
+                        ? sources[selectedSourceIndex]
+                        : undefined;
+                    const currentFieldMode = questionFieldMode(
+                      question,
+                      form.object_mode,
+                    );
+                    const selectedField =
+                      currentFieldMode === "existing"
+                        ? destination?.fieldOptions.find(
+                            (field) => field.key === question.key,
+                          )
+                        : undefined;
+                    return (
+                      <div className="site-form-question" key={question.id}>
+                        <div className="site-form-question-heading">
+                          <strong>Question {questionIndex + 1}</strong>
+                          <div className="site-form-question-actions">
                             <button
+                              aria-label={`Move question ${questionIndex + 1} up`}
                               className="button-secondary"
+                              disabled={questionIndex === 0}
                               onClick={() =>
-                                updateForm(form.id, (value) => {
-                                  value.questions = value.questions.filter(
-                                    (candidate) => candidate.id !== question.id,
-                                  );
-                                  value.questions.forEach((candidate) => {
-                                    if (
-                                      candidate.visible_when?.field ===
-                                      question.key
-                                    ) {
-                                      candidate.visible_when = undefined;
-                                    }
-                                  });
-                                })
+                                moveQuestion(form.id, question.id, -1)
                               }
                               type="button"
                             >
-                              Remove
+                              Move up
                             </button>
-                          ) : null}
+                            <button
+                              aria-label={`Move question ${questionIndex + 1} down`}
+                              className="button-secondary"
+                              disabled={
+                                questionIndex === form.questions.length - 1
+                              }
+                              onClick={() =>
+                                moveQuestion(form.id, question.id, 1)
+                              }
+                              type="button"
+                            >
+                              Move down
+                            </button>
+                            {form.questions.length > 1 ? (
+                              <button
+                                className="button-secondary"
+                                onClick={() =>
+                                  updateForm(form.id, (value) => {
+                                    value.questions = value.questions.filter(
+                                      (candidate) =>
+                                        candidate.id !== question.id,
+                                    );
+                                    value.questions.forEach((candidate) => {
+                                      if (
+                                        candidate.visible_when?.field ===
+                                        question.key
+                                      ) {
+                                        candidate.visible_when = undefined;
+                                      }
+                                    });
+                                  })
+                                }
+                                type="button"
+                              >
+                                Remove
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
-                      <div className="site-form-grid">
-                        <label>
-                          Question
-                          <input
-                            onChange={(event) =>
-                              updateQuestion(form.id, question.id, (value) => {
-                                value.label = event.target.value;
-                              })
-                            }
-                            value={question.label}
-                          />
-                        </label>
-                        {form.object_mode === "existing" ? (
-                          <>
-                            <label>
-                              Property source
-                              <select
-                                onChange={(event) =>
-                                  updateQuestion(
-                                    form.id,
-                                    question.id,
-                                    (value) => {
-                                      const nextMode = event.target.value as
-                                        "existing" | "new";
-                                      value.field_mode = nextMode;
-                                      if (nextMode === "new") {
-                                        if (
-                                          !value.key ||
+                        <div className="site-form-grid">
+                          <label>
+                            Question
+                            <input
+                              onChange={(event) =>
+                                updateQuestion(
+                                  form.id,
+                                  question.id,
+                                  (value) => {
+                                    value.label = event.target.value;
+                                  },
+                                )
+                              }
+                              value={question.label}
+                            />
+                          </label>
+                          {form.object_mode === "existing" ? (
+                            <>
+                              <label>
+                                Property source
+                                <select
+                                  onChange={(event) =>
+                                    updateQuestion(
+                                      form.id,
+                                      question.id,
+                                      (value) => {
+                                        const nextMode = event.target.value as
+                                          "existing" | "new";
+                                        value.field_mode = nextMode;
+                                        if (nextMode === "new") {
+                                          if (
+                                            !value.key ||
+                                            destination?.fieldOptions.some(
+                                              (field) =>
+                                                field.key === value.key,
+                                            )
+                                          ) {
+                                            value.key = managedKey("property");
+                                          }
+                                        } else if (
                                           destination?.fieldOptions.some(
                                             (field) => field.key === value.key,
                                           )
                                         ) {
-                                          value.key = managedKey("property");
+                                          const field =
+                                            destination.fieldOptions.find(
+                                              (candidate) =>
+                                                candidate.key === value.key,
+                                            );
+                                          if (field) {
+                                            value.label =
+                                              field.label ?? value.label;
+                                            value.field_type =
+                                              fieldTypeAsQuestionType(
+                                                field.fieldType,
+                                              );
+                                            value.required =
+                                              field.required || value.required;
+                                            value.options =
+                                              field.options?.slice();
+                                          }
                                         }
-                                      } else if (
-                                        destination?.fieldOptions.some(
-                                          (field) => field.key === value.key,
-                                        )
-                                      ) {
-                                        const field =
-                                          destination.fieldOptions.find(
-                                            (candidate) =>
-                                              candidate.key === value.key,
-                                          );
-                                        if (field) {
+                                      },
+                                    )
+                                  }
+                                  value={currentFieldMode}
+                                >
+                                  <option value="existing">
+                                    Use an existing property
+                                  </option>
+                                  <option value="new">
+                                    Add a new property
+                                  </option>
+                                </select>
+                              </label>
+                              {currentFieldMode === "existing" ? (
+                                <label>
+                                  Existing property
+                                  <select
+                                    onChange={(event) =>
+                                      updateQuestion(
+                                        form.id,
+                                        question.id,
+                                        (value) => {
+                                          const field =
+                                            destination?.fieldOptions.find(
+                                              (candidate) =>
+                                                candidate.key ===
+                                                event.target.value,
+                                            );
+                                          if (!field) {
+                                            value.key = "";
+                                            return;
+                                          }
+                                          value.field_mode = "existing";
+                                          value.key = field.key;
                                           value.label =
                                             field.label ?? value.label;
                                           value.field_type =
@@ -851,327 +956,300 @@ export function SiteFormComposer({
                                             field.required || value.required;
                                           value.options =
                                             field.options?.slice();
-                                        }
-                                      }
+                                          value.upload_kind = undefined;
+                                          value.upload_count = undefined;
+                                        },
+                                      )
+                                    }
+                                    value={selectedField?.key ?? ""}
+                                  >
+                                    <option value="">Choose a property</option>
+                                    {(destination?.fieldOptions ?? []).map(
+                                      (field) => (
+                                        <option
+                                          key={field.key}
+                                          value={field.key}
+                                        >
+                                          {field.label || "Existing property"} (
+                                          {questionTypeLabels.get(
+                                            fieldTypeAsQuestionType(
+                                              field.fieldType,
+                                            ),
+                                          )}
+                                          )
+                                        </option>
+                                      ),
+                                    )}
+                                  </select>
+                                </label>
+                              ) : (
+                                <div className="site-form-field-note">
+                                  <strong>New property</strong>
+                                  <span className="muted">
+                                    This property will be added to the selected
+                                    Table when you publish.
+                                  </span>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="site-form-field-note">
+                              <strong>New property</strong>
+                              <span className="muted">
+                                This property will be named automatically from
+                                the question.
+                              </span>
+                            </div>
+                          )}
+                          <label>
+                            Answer type
+                            <select
+                              disabled={
+                                form.object_mode === "existing" &&
+                                Boolean(selectedField)
+                              }
+                              onChange={(event) =>
+                                updateQuestion(
+                                  form.id,
+                                  question.id,
+                                  (value) => {
+                                    value.field_type = event.target
+                                      .value as FormQuestionType;
+                                  },
+                                )
+                              }
+                              value={question.field_type}
+                            >
+                              {questionTypes.map((type) => (
+                                <option key={type.value} value={type.value}>
+                                  {type.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="site-form-checkbox">
+                            <input
+                              checked={
+                                question.required ||
+                                Boolean(selectedField?.required)
+                              }
+                              disabled={Boolean(selectedField?.required)}
+                              onChange={(event) =>
+                                updateQuestion(
+                                  form.id,
+                                  question.id,
+                                  (value) => {
+                                    value.required = event.target.checked;
+                                  },
+                                )
+                              }
+                              type="checkbox"
+                            />
+                            Required answer
+                          </label>
+                          <label>
+                            Help for visitors
+                            <input
+                              onChange={(event) =>
+                                updateQuestion(
+                                  form.id,
+                                  question.id,
+                                  (value) => {
+                                    value.help_text =
+                                      event.target.value || undefined;
+                                  },
+                                )
+                              }
+                              value={question.help_text ?? ""}
+                            />
+                          </label>
+                          {question.field_type === "select" ||
+                          question.field_type === "multi_select" ||
+                          question.field_type === "status" ? (
+                            <label>
+                              Choices (one per line)
+                              <textarea
+                                onChange={(event) =>
+                                  updateQuestion(
+                                    form.id,
+                                    question.id,
+                                    (value) => {
+                                      // Keep blank and trailing lines in the
+                                      // durable draft. Prepare normalizes the
+                                      // choices after the owner finishes typing.
+                                      value.options =
+                                        event.target.value.split("\n");
                                     },
                                   )
                                 }
-                                value={currentFieldMode}
-                              >
-                                <option value="existing">
-                                  Use an existing property
-                                </option>
-                                <option value="new">Add a new property</option>
-                              </select>
+                                value={(question.options ?? []).join("\n")}
+                              />
                             </label>
-                            {currentFieldMode === "existing" ? (
+                          ) : null}
+                          {question.field_type === "file" ? (
+                            <>
                               <label>
-                                Existing property
+                                File kind
                                 <select
                                   onChange={(event) =>
                                     updateQuestion(
                                       form.id,
                                       question.id,
                                       (value) => {
-                                        const field =
-                                          destination?.fieldOptions.find(
-                                            (candidate) =>
-                                              candidate.key ===
-                                              event.target.value,
-                                          );
-                                        if (!field) {
-                                          value.key = "";
-                                          return;
-                                        }
-                                        value.field_mode = "existing";
-                                        value.key = field.key;
-                                        value.label =
-                                          field.label ?? value.label;
-                                        value.field_type =
-                                          fieldTypeAsQuestionType(
-                                            field.fieldType,
-                                          );
-                                        value.required =
-                                          field.required || value.required;
-                                        value.options = field.options?.slice();
-                                        value.upload_kind = undefined;
-                                        value.upload_count = undefined;
+                                        value.upload_kind = event.target
+                                          .value as "image" | "pdf";
                                       },
                                     )
                                   }
-                                  value={selectedField?.key ?? ""}
+                                  value={question.upload_kind ?? ""}
                                 >
-                                  <option value="">Choose a property</option>
-                                  {(destination?.fieldOptions ?? []).map(
-                                    (field) => (
-                                      <option key={field.key} value={field.key}>
-                                        {field.label || "Existing property"} (
-                                        {questionTypeLabels.get(
-                                          fieldTypeAsQuestionType(
-                                            field.fieldType,
-                                          ),
-                                        )}
-                                        )
-                                      </option>
-                                    ),
-                                  )}
+                                  <option value="">Choose a kind</option>
+                                  <option value="image">Image</option>
+                                  <option value="pdf">PDF</option>
                                 </select>
                               </label>
-                            ) : (
-                              <div className="site-form-field-note">
-                                <strong>New property</strong>
-                                <span className="muted">
-                                  This property will be added to the selected
-                                  Table when you publish.
-                                </span>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="site-form-field-note">
-                            <strong>New property</strong>
-                            <span className="muted">
-                              This property will be named automatically from the
-                              question.
-                            </span>
-                          </div>
-                        )}
-                        <label>
-                          Answer type
-                          <select
-                            disabled={
-                              form.object_mode === "existing" &&
-                              Boolean(selectedField)
-                            }
-                            onChange={(event) =>
-                              updateQuestion(form.id, question.id, (value) => {
-                                value.field_type = event.target
-                                  .value as FormQuestionType;
-                              })
-                            }
-                            value={question.field_type}
-                          >
-                            {questionTypes.map((type) => (
-                              <option key={type.value} value={type.value}>
-                                {type.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="site-form-checkbox">
-                          <input
-                            checked={
-                              question.required ||
-                              Boolean(selectedField?.required)
-                            }
-                            disabled={Boolean(selectedField?.required)}
-                            onChange={(event) =>
-                              updateQuestion(form.id, question.id, (value) => {
-                                value.required = event.target.checked;
-                              })
-                            }
-                            type="checkbox"
-                          />
-                          Required answer
-                        </label>
-                        <label>
-                          Help for visitors
-                          <input
-                            onChange={(event) =>
-                              updateQuestion(form.id, question.id, (value) => {
-                                value.help_text =
-                                  event.target.value || undefined;
-                              })
-                            }
-                            value={question.help_text ?? ""}
-                          />
-                        </label>
-                        {question.field_type === "select" ||
-                        question.field_type === "multi_select" ||
-                        question.field_type === "status" ? (
-                          <label>
-                            Choices (one per line)
-                            <textarea
-                              onChange={(event) =>
-                                updateQuestion(
-                                  form.id,
-                                  question.id,
-                                  (value) => {
-                                    // Keep blank and trailing lines in the
-                                    // durable draft. Prepare normalizes the
-                                    // choices after the owner finishes typing.
-                                    value.options =
-                                      event.target.value.split("\n");
-                                  },
-                                )
-                              }
-                              value={(question.options ?? []).join("\n")}
-                            />
-                          </label>
-                        ) : null}
-                        {question.field_type === "file" ? (
-                          <>
+                              <label>
+                                Maximum files
+                                <input
+                                  min={1}
+                                  max={5}
+                                  onChange={(event) =>
+                                    updateQuestion(
+                                      form.id,
+                                      question.id,
+                                      (value) => {
+                                        value.upload_count = event.target.value
+                                          ? Number(event.target.value)
+                                          : undefined;
+                                      },
+                                    )
+                                  }
+                                  type="number"
+                                  value={question.upload_count ?? 1}
+                                />
+                              </label>
+                            </>
+                          ) : null}
+                          {sources.length ? (
                             <label>
-                              File kind
+                              Show when earlier answer is
                               <select
                                 onChange={(event) =>
                                   updateQuestion(
                                     form.id,
                                     question.id,
                                     (value) => {
-                                      value.upload_kind = event.target.value as
-                                        "image" | "pdf";
+                                      const sourceIndex =
+                                        event.target.value === ""
+                                          ? -1
+                                          : Number(event.target.value);
+                                      const source =
+                                        Number.isInteger(sourceIndex) &&
+                                        sourceIndex >= 0 &&
+                                        sourceIndex < sources.length
+                                          ? sources[sourceIndex]
+                                          : undefined;
+                                      value.visible_when = source
+                                        ? conditionDefault(source)
+                                        : undefined;
                                     },
                                   )
                                 }
-                                value={question.upload_kind ?? ""}
+                                value={
+                                  selectedSourceIndex >= 0
+                                    ? selectedSourceIndex
+                                    : ""
+                                }
                               >
-                                <option value="">Choose a kind</option>
-                                <option value="image">Image</option>
-                                <option value="pdf">PDF</option>
+                                <option value="">Always show</option>
+                                {sources.map((source, sourceIndex) => (
+                                  <option key={source.id} value={sourceIndex}>
+                                    {source.label ||
+                                      `Question ${form.questions.indexOf(source) + 1}`}
+                                  </option>
+                                ))}
                               </select>
                             </label>
-                            <label>
-                              Maximum files
-                              <input
-                                min={1}
-                                max={5}
-                                onChange={(event) =>
-                                  updateQuestion(
-                                    form.id,
-                                    question.id,
-                                    (value) => {
-                                      value.upload_count = event.target.value
-                                        ? Number(event.target.value)
-                                        : undefined;
-                                    },
-                                  )
-                                }
-                                type="number"
-                                value={question.upload_count ?? 1}
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                        {sources.length ? (
-                          <label>
-                            Show when earlier answer is
-                            <select
-                              onChange={(event) =>
-                                updateQuestion(
-                                  form.id,
-                                  question.id,
-                                  (value) => {
-                                    const sourceIndex =
-                                      event.target.value === ""
-                                        ? -1
-                                        : Number(event.target.value);
-                                    const source =
-                                      Number.isInteger(sourceIndex) &&
-                                      sourceIndex >= 0 &&
-                                      sourceIndex < sources.length
-                                        ? sources[sourceIndex]
-                                        : undefined;
-                                    value.visible_when = source
-                                      ? conditionDefault(source)
-                                      : undefined;
-                                  },
-                                )
-                              }
-                              value={
-                                selectedSourceIndex >= 0
-                                  ? selectedSourceIndex
-                                  : ""
-                              }
-                            >
-                              <option value="">Always show</option>
-                              {sources.map((source, sourceIndex) => (
-                                <option key={source.id} value={sourceIndex}>
-                                  {source.label ||
-                                    `Question ${form.questions.indexOf(source) + 1}`}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : null}
-                        {question.visible_when && selectedSource ? (
-                          <>
-                            {selectedSource.field_type !== "multi_select" ? (
+                          ) : null}
+                          {question.visible_when && selectedSource ? (
+                            <>
+                              {selectedSource.field_type !== "multi_select" ? (
+                                <label>
+                                  Rule
+                                  <select
+                                    onChange={(event) =>
+                                      updateQuestion(
+                                        form.id,
+                                        question.id,
+                                        (value) => {
+                                          if (value.visible_when) {
+                                            value.visible_when.operator = event
+                                              .target.value as
+                                              "equals" | "not_equals";
+                                          }
+                                        },
+                                      )
+                                    }
+                                    value={question.visible_when.operator}
+                                  >
+                                    <option value="equals">is</option>
+                                    <option value="not_equals">is not</option>
+                                  </select>
+                                </label>
+                              ) : null}
                               <label>
-                                Rule
-                                <select
-                                  onChange={(event) =>
-                                    updateQuestion(
-                                      form.id,
-                                      question.id,
-                                      (value) => {
-                                        if (value.visible_when) {
-                                          value.visible_when.operator = event
-                                            .target.value as
-                                            "equals" | "not_equals";
-                                        }
-                                      },
-                                    )
-                                  }
-                                  value={question.visible_when.operator}
-                                >
-                                  <option value="equals">is</option>
-                                  <option value="not_equals">is not</option>
-                                </select>
+                                Answer
+                                {selectedSource.field_type === "boolean" ? (
+                                  <select
+                                    onChange={(event) =>
+                                      updateQuestion(
+                                        form.id,
+                                        question.id,
+                                        (value) => {
+                                          if (value.visible_when)
+                                            value.visible_when.value =
+                                              event.target.value === "true";
+                                        },
+                                      )
+                                    }
+                                    value={String(question.visible_when.value)}
+                                  >
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                  </select>
+                                ) : (
+                                  <select
+                                    onChange={(event) =>
+                                      updateQuestion(
+                                        form.id,
+                                        question.id,
+                                        (value) => {
+                                          if (value.visible_when)
+                                            value.visible_when.value =
+                                              event.target.value;
+                                        },
+                                      )
+                                    }
+                                    value={String(question.visible_when.value)}
+                                  >
+                                    <option value="">Choose an answer</option>
+                                    {siteFormChoiceOptionsForPublication(
+                                      selectedSource.options,
+                                    ).map((option) => (
+                                      <option key={option} value={option}>
+                                        {option}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
                               </label>
-                            ) : null}
-                            <label>
-                              Answer
-                              {selectedSource.field_type === "boolean" ? (
-                                <select
-                                  onChange={(event) =>
-                                    updateQuestion(
-                                      form.id,
-                                      question.id,
-                                      (value) => {
-                                        if (value.visible_when)
-                                          value.visible_when.value =
-                                            event.target.value === "true";
-                                      },
-                                    )
-                                  }
-                                  value={String(question.visible_when.value)}
-                                >
-                                  <option value="true">Yes</option>
-                                  <option value="false">No</option>
-                                </select>
-                              ) : (
-                                <select
-                                  onChange={(event) =>
-                                    updateQuestion(
-                                      form.id,
-                                      question.id,
-                                      (value) => {
-                                        if (value.visible_when)
-                                          value.visible_when.value =
-                                            event.target.value;
-                                      },
-                                    )
-                                  }
-                                  value={String(question.visible_when.value)}
-                                >
-                                  <option value="">Choose an answer</option>
-                                  {siteFormChoiceOptionsForPublication(
-                                    selectedSource.options,
-                                  ).map((option) => (
-                                    <option key={option} value={option}>
-                                      {option}
-                                    </option>
-                                  ))}
-                                </select>
-                              )}
-                            </label>
-                          </>
-                        ) : null}
+                            </>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
 
               {blockers.length ? (

@@ -2673,6 +2673,7 @@ declare
   all_operations jsonb;
   derived_operations jsonb;
   form_operations jsonb;
+  form_stripped_draft jsonb;
   projection jsonb;
   review_metadata jsonb;
   action_bundles jsonb := '[]'::jsonb;
@@ -2804,12 +2805,18 @@ begin
 
   -- Canonical Pages retain the C2 layout grammar; the public release below
   -- carries the reviewed Form atoms alongside that canonical Page projection.
-  canonical_draft := private.site_strip_draft_metadata_draft_v2(
-    private.site_strip_filter_draft_v2(
-      private.site_strip_public_forms_from_draft_v3(selected_state.draft_json)
-    )
+  form_stripped_draft := private.site_strip_public_forms_from_draft_v3(
+    selected_state.draft_json
   );
-  perform private.site_assert_publication_draft_c2(canonical_draft);
+  perform private.site_assert_publication_draft_c2(
+    expected_business_id, form_stripped_draft
+  );
+  perform private.site_assert_publication_ready_v1(
+    private.site_strip_filter_draft_v2(form_stripped_draft)
+  );
+  canonical_draft := private.site_strip_draft_metadata_draft_v2(
+    private.site_strip_filter_draft_v2(form_stripped_draft)
+  );
   perform private.site_assert_assets_available_v1(
     expected_business_id, selected_state.draft_json
   );

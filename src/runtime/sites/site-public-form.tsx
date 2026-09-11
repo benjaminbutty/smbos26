@@ -1,7 +1,8 @@
 "use client";
 
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { z } from "zod";
 
 import type { SitePublicFormAction } from "../../core/sites/schemas";
@@ -11,6 +12,8 @@ import {
 } from "../../core/sites/upload-protocol";
 
 type Answers = Record<string, unknown>;
+
+type RecoveryMode = "expired" | "conflict" | "stale" | "unavailable" | null;
 
 type UploadCapability = z.infer<typeof sitePublicUploadCapabilitySchema>;
 
@@ -70,13 +73,248 @@ const uploadManifestSchema = z
   .strict();
 
 class PublicUploadClientError extends Error {
-  readonly canStartNewAttempt: boolean;
+  readonly recoveryMode: "expired" | "conflict" | "stale" | null;
 
-  constructor(message: string, canStartNewAttempt = false) {
+  constructor(
+    message: string,
+    _canStartNewAttempt = false,
+    recoveryMode: "expired" | "conflict" | "stale" | null = _canStartNewAttempt
+      ? "conflict"
+      : null,
+  ) {
     super(message);
     this.name = "PublicUploadClientError";
-    this.canStartNewAttempt = canStartNewAttempt;
+    this.recoveryMode = recoveryMode;
   }
+}
+
+type StoredAnswer = {
+  fieldType: string;
+  value: string | number | boolean | string[];
+};
+
+function compatibleAnswersStorageKey(
+  businessSlug: string,
+  actionKey: string,
+): string {
+  return `smbos:site-form-answers:${businessSlug}:${actionKey}`;
+}
+
+function latestReviewStorageKey(
+  businessSlug: string,
+  actionKey: string,
+): string {
+  return `smbos:site-form-review:${businessSlug}:${actionKey}`;
+}
+
+function isStoredAnswer(value: unknown): value is StoredAnswer {
+  if (typeof value !== "object" || value === null || !("fieldType" in value)) {
+    return false;
+  }
+  const candidate = value as { fieldType?: unknown; value?: unknown };
+  if (typeof candidate.fieldType !== "string") return false;
+  if (
+    typeof candidate.value === "string" ||
+    typeof candidate.value === "boolean" ||
+    (typeof candidate.value === "number" && Number.isFinite(candidate.value))
+  ) {
+    return true;
+  }
+  return (
+    Array.isArray(candidate.value) &&
+    candidate.value.every((item) => typeof item === "string")
+  );
+}
+
+function readCompatibleAnswers(
+  storageKey: string,
+  action: SitePublicFormAction,
+): Answers {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.sessionStorage.getItem(storageKey);
+    if (!raw || raw.length > 65536) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const questions = new Map(
+      action.questions.map((question) => [question.key, question]),
+    );
+    const restored: Answers = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const question = questions.get(key);
+      if (
+        !question ||
+        question.field_type === "file" ||
+        !isStoredAnswer(value) ||
+        value.fieldType !== question.field_type ||
+        questionValidationError(question, value.value) !== null
+      ) {
+        continue;
+      }
+      restored[key] = value.value;
+    }
+    return restored;
+  } catch {
+    return {};
+  }
+}
+
+function writeCompatibleAnswers(
+  storageKey: string,
+  action: SitePublicFormAction,
+  answers: Answers,
+): void {
+  if (typeof window === "undefined") return;
+  const stored = Object.fromEntries(
+    action.questions.flatMap((question) => {
+      if (question.field_type === "file") return [];
+      const value = answers[question.key];
+      if (
+        typeof value === "string" ||
+        typeof value === "boolean" ||
+        (typeof value === "number" && Number.isFinite(value)) ||
+        (Array.isArray(value) &&
+          value.every((item) => typeof item === "string"))
+      ) {
+        return [[question.key, { fieldType: question.field_type, value }]];
+      }
+      return [];
+    }),
+  );
+  try {
+    const encoded = JSON.stringify(stored);
+    if (new TextEncoder().encode(encoded).byteLength > 65536) {
+      window.sessionStorage.removeItem(storageKey);
+      return;
+    }
+    window.sessionStorage.setItem(storageKey, encoded);
+  } catch {
+    // The in-memory answers remain available when session storage is unavailable.
+  }
+}
+
+function removeStoredCompatibleAnswers(storageKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // A completed or reviewed response does not need durable answer state.
+  }
+}
+
+function readPendingLatestReview(storageKey: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.sessionStorage.getItem(storageKey);
+    return value && /^s_[a-f0-9]{64}$/.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function setPendingLatestReview(
+  storageKey: string,
+  releaseToken: string,
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(storageKey, releaseToken);
+  } catch {
+    // The in-memory review state still blocks a fresh submission.
+  }
+}
+
+function clearPendingLatestReview(storageKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // The in-memory review state is authoritative for this mounted Form.
+  }
+}
+
+function questionInputId(actionKey: string, questionKey: string): string {
+  return `site-form-${actionKey}-${questionKey}`;
+}
+
+function questionErrorId(actionKey: string, questionKey: string): string {
+  return `${questionInputId(actionKey, questionKey)}-error`;
+}
+
+function questionValidationError(
+  question: SitePublicFormAction["questions"][number],
+  value: unknown,
+): string | null {
+  if (!answerPresent(value)) {
+    return question.required ? `${question.label} is required.` : null;
+  }
+  switch (question.field_type) {
+    case "short_text":
+    case "long_text":
+    case "email":
+    case "phone":
+    case "url":
+    case "date":
+    case "datetime":
+      return typeof value === "string" ? null : `${question.label} needs text.`;
+    case "number":
+    case "currency":
+      return typeof value === "number" && Number.isFinite(value)
+        ? null
+        : `${question.label} needs a number.`;
+    case "boolean":
+      return typeof value === "boolean"
+        ? null
+        : `${question.label} needs Yes or No.`;
+    case "select":
+    case "status":
+      return typeof value === "string" &&
+        (question.options ?? []).includes(value)
+        ? null
+        : `${question.label} needs one of the available options.`;
+    case "multi_select":
+      return Array.isArray(value) &&
+        value.every(
+          (item) =>
+            typeof item === "string" && (question.options ?? []).includes(item),
+        )
+        ? null
+        : `${question.label} needs one or more available options.`;
+    case "file":
+      return filesFromAnswer(value).length > 0
+        ? null
+        : question.required
+          ? `${question.label} is required.`
+          : null;
+    default:
+      return null;
+  }
+}
+
+function compatibleAnswersForAction(
+  previousAction: SitePublicFormAction,
+  nextAction: SitePublicFormAction,
+  answers: Answers,
+): Answers {
+  const previousQuestions = new Map(
+    previousAction.questions.map((question) => [question.key, question]),
+  );
+  const compatible: Answers = {};
+  for (const question of nextAction.questions) {
+    if (question.field_type === "file") continue;
+    const previousQuestion = previousQuestions.get(question.key);
+    const value = answers[question.key];
+    if (
+      !previousQuestion ||
+      previousQuestion.field_type !== question.field_type ||
+      !answerPresent(value) ||
+      questionValidationError(question, value) !== null
+    ) {
+      continue;
+    }
+    compatible[question.key] = value;
+  }
+  return compatible;
 }
 
 function isVisible(
@@ -410,15 +648,25 @@ function uploadResponseError(
   result: unknown,
 ): PublicUploadClientError {
   const code = responseCode(result);
-  if (
-    response.status === 404 ||
-    response.status === 410 ||
-    code === "site_upload_expired" ||
-    code === "site_upload_not_found"
-  ) {
+  if (code === "site_upload_unavailable") {
+    return new PublicUploadClientError(
+      "This response version is no longer current. Review the latest Form before sending again.",
+      false,
+      "stale",
+    );
+  }
+  if (code === "site_upload_expired" || response.status === 410) {
     return new PublicUploadClientError(
       "This response attempt has expired. Start a new response attempt.",
       true,
+      "expired",
+    );
+  }
+  if (code === "site_upload_not_found" || response.status === 404) {
+    return new PublicUploadClientError(
+      "The selected file could not be found. Start a new response attempt.",
+      true,
+      "conflict",
     );
   }
   if (response.status === 429) {
@@ -486,14 +734,33 @@ export function SitePublicForm({
   pageSlug: string;
   preview?: boolean;
 }>): ReactNode {
+  const router = useRouter();
   const storageKey = attemptStorageKey(businessSlug, pageSlug, action);
   const manifestStorageKey = uploadManifestStorageKey(storageKey);
+  const answersStorageKey = compatibleAnswersStorageKey(
+    businessSlug,
+    action.action_key,
+  );
+  const reviewStorageKey = latestReviewStorageKey(
+    businessSlug,
+    action.action_key,
+  );
   const [answers, setAnswers] = useState<Answers>({});
   const [status, setStatus] = useState<
     "idle" | "submitting" | "success" | "error"
   >("idle");
   const [message, setMessage] = useState<string | null>(null);
-  const [canStartNewAttempt, setCanStartNewAttempt] = useState(false);
+  const [questionErrors, setQuestionErrors] = useState<Record<string, string>>(
+    {},
+  );
+  const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>(null);
+  const [reviewState, setReviewState] = useState<
+    "none" | "refreshing" | "needs_ack"
+  >("none");
+  const [staleReleaseToken, setStaleReleaseToken] = useState<string | null>(
+    null,
+  );
+  const previousAction = useRef(action);
   const [idempotencyToken, setIdempotencyToken] = useState<string | null>(() =>
     readStoredAttempt(storageKey),
   );
@@ -510,6 +777,74 @@ export function SitePublicForm({
     [action, answers],
   );
 
+  useEffect(() => {
+    const restoredAnswers = readCompatibleAnswers(answersStorageKey, action);
+    const priorAction = previousAction.current;
+    const actionChanged =
+      priorAction.action_key === action.action_key &&
+      priorAction.release_token !== action.release_token;
+    const pendingReleaseToken = readPendingLatestReview(reviewStorageKey);
+    const pendingNewAction =
+      pendingReleaseToken !== null &&
+      pendingReleaseToken !== action.release_token;
+    if (
+      (actionChanged || pendingNewAction) &&
+      (staleReleaseToken || pendingReleaseToken) &&
+      reviewState !== "needs_ack"
+    ) {
+      const previousActionForStorage =
+        pendingNewAction && pendingReleaseToken
+          ? { ...action, release_token: pendingReleaseToken }
+          : priorAction;
+      const oldStorageKey = attemptStorageKey(
+        businessSlug,
+        pageSlug,
+        previousActionForStorage,
+      );
+      const oldManifestStorageKey = uploadManifestStorageKey(oldStorageKey);
+      try {
+        window.sessionStorage.removeItem(oldStorageKey);
+      } catch {
+        // The old token is also cleared from component state below.
+      }
+      removeStoredUploadManifest(oldManifestStorageKey);
+      setIdempotencyToken(null);
+      setUploadManifest(null);
+      setFileInputVersion((current) => current + 1);
+      setAnswers((current) =>
+        compatibleAnswersForAction(priorAction, action, {
+          ...restoredAnswers,
+          ...current,
+        }),
+      );
+      setRecoveryMode(null);
+      setQuestionErrors({});
+      setReviewState("needs_ack");
+      setStatus("error");
+      setMessage("The latest Form is ready. Review it before sending again.");
+    } else if (Object.keys(restoredAnswers).length > 0) {
+      setAnswers((current) =>
+        Object.keys(current).length > 0 ? current : restoredAnswers,
+      );
+    }
+    if (!actionChanged && pendingReleaseToken && reviewState === "none") {
+      setStaleReleaseToken(pendingReleaseToken);
+      setReviewState("refreshing");
+      setRecoveryMode("stale");
+      setStatus("error");
+      setMessage("Review the latest Form before sending again.");
+    }
+    previousAction.current = action;
+  }, [
+    action,
+    answersStorageKey,
+    businessSlug,
+    pageSlug,
+    reviewStorageKey,
+    reviewState,
+    staleReleaseToken,
+  ]);
+
   function saveUploadManifest(next: UploadManifest | null): void {
     setUploadManifest(next);
     if (next) {
@@ -521,6 +856,12 @@ export function SitePublicForm({
 
   function setAnswer(key: string, value: unknown): void {
     setAnswers((current) => ({ ...current, [key]: value }));
+    setQuestionErrors((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
   }
 
   function handleChoiceChange(
@@ -538,19 +879,62 @@ export function SitePublicForm({
     setAnswer(key, event.target.value);
   }
 
+  function reviewLatestForm(): void {
+    writeCompatibleAnswers(answersStorageKey, action, answers);
+    setPendingLatestReview(reviewStorageKey, action.release_token);
+    setStaleReleaseToken(action.release_token);
+    setReviewState("refreshing");
+    setStatus("error");
+    setMessage("Loading the latest Form. Review it before sending again.");
+    router.refresh();
+  }
+
+  function acknowledgeLatestReview(): void {
+    clearPendingLatestReview(reviewStorageKey);
+    setStaleReleaseToken(null);
+    setReviewState("none");
+    setRecoveryMode(null);
+    setStatus("idle");
+    setMessage(null);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (preview || status === "submitting") return;
+    if (reviewState !== "none") {
+      setStatus("error");
+      setMessage(
+        reviewState === "needs_ack"
+          ? "Review the latest Form before sending a new response."
+          : "The latest Form is still loading. Review it before sending again.",
+      );
+      return;
+    }
+    if (recoveryMode === "stale" || recoveryMode === "unavailable") return;
+    const nextQuestionErrors: Record<string, string> = {};
     for (const question of visibleQuestions) {
-      if (question.required && !answerPresent(answers[question.key])) {
-        setStatus("error");
-        setMessage(`${question.label} is required.`);
-        return;
-      }
+      const error = questionValidationError(question, answers[question.key]);
+      if (error) nextQuestionErrors[question.key] = error;
+    }
+    setQuestionErrors(nextQuestionErrors);
+    const firstInvalidQuestion = visibleQuestions.find(
+      (question) => nextQuestionErrors[question.key],
+    );
+    if (firstInvalidQuestion) {
+      setStatus("error");
+      setMessage("Please check the highlighted questions.");
+      window.requestAnimationFrame(() => {
+        document
+          .getElementById(
+            questionInputId(action.action_key, firstInvalidQuestion.key),
+          )
+          ?.focus();
+      });
+      return;
     }
     setStatus("submitting");
     setMessage(null);
-    setCanStartNewAttempt(false);
+    setRecoveryMode(null);
     try {
       const selected = await selectedUploadFiles(visibleQuestions, answers);
       const token = idempotencyToken ?? crypto.randomUUID();
@@ -671,6 +1055,7 @@ export function SitePublicForm({
               throw new PublicUploadClientError(
                 "This response attempt has expired. Start a new response attempt.",
                 true,
+                "expired",
               );
             }
             const selectedFile = selected[index];
@@ -767,21 +1152,32 @@ export function SitePublicForm({
       );
       const result: unknown = await responseBody(response);
       if (!response.ok) {
+        const code = responseCode(result);
+        const nextRecoveryMode: RecoveryMode =
+          code === "action_unavailable"
+            ? "stale"
+            : code === "not_found" || response.status === 404
+              ? "unavailable"
+              : code === "idempotency_conflict"
+                ? "conflict"
+                : null;
         const detail =
           typeof result === "object" && result !== null && "message" in result
             ? String(result.message)
-            : "This Form could not be sent. Review your answers and try again.";
+            : nextRecoveryMode === "stale"
+              ? "This response version is no longer current. Review the latest Form before sending again."
+              : nextRecoveryMode === "unavailable"
+                ? "This Form is no longer available."
+                : "This Form could not be sent. Review your answers and try again.";
+        if (nextRecoveryMode === "stale") {
+          writeCompatibleAnswers(answersStorageKey, action, answers);
+          setPendingLatestReview(reviewStorageKey, action.release_token);
+          setStaleReleaseToken(action.release_token);
+          setReviewState("refreshing");
+        }
         setStatus("error");
         setMessage(detail);
-        setCanStartNewAttempt(
-          response.status === 404 ||
-            (typeof result === "object" &&
-              result !== null &&
-              "code" in result &&
-              (result.code === "idempotency_conflict" ||
-                result.code === "action_unavailable" ||
-                result.code === "not_found")),
-        );
+        setRecoveryMode(nextRecoveryMode);
         return;
       }
       const reference =
@@ -791,7 +1187,10 @@ export function SitePublicForm({
           ? String(result.publicReference)
           : null;
       setStatus("success");
-      setCanStartNewAttempt(false);
+      setRecoveryMode(null);
+      setQuestionErrors({});
+      removeStoredCompatibleAnswers(answersStorageKey);
+      clearPendingLatestReview(reviewStorageKey);
       removeStoredUploadManifest(manifestStorageKey);
       try {
         window.sessionStorage.removeItem(storageKey);
@@ -807,12 +1206,19 @@ export function SitePublicForm({
       );
     } catch (error) {
       if (error instanceof PublicUploadClientError) {
+        if (error.recoveryMode === "stale") {
+          writeCompatibleAnswers(answersStorageKey, action, answers);
+          setPendingLatestReview(reviewStorageKey, action.release_token);
+          setStaleReleaseToken(action.release_token);
+          setReviewState("refreshing");
+        }
         setStatus("error");
         setMessage(error.message);
-        setCanStartNewAttempt(error.canStartNewAttempt);
+        setRecoveryMode(error.recoveryMode);
         return;
       }
       setStatus("error");
+      setRecoveryMode(null);
       setMessage(
         "This Form could not be sent. Check your connection and try again.",
       );
@@ -829,12 +1235,24 @@ export function SitePublicForm({
         <p role="status">{message}</p>
       ) : (
         <form onSubmit={submit}>
-          <fieldset disabled={status === "submitting"}>
+          <fieldset
+            disabled={status === "submitting" || recoveryMode === "unavailable"}
+          >
             {visibleQuestions.map((question) => {
               const value = answers[question.key];
-              const inputId = `site-form-${action.action_key}-${question.key}`;
+              const inputId = questionInputId(action.action_key, question.key);
               const helpId = `${inputId}-help`;
-              const describedBy = question.help_text ? helpId : undefined;
+              const error = questionErrors[question.key];
+              const errorId = questionErrorId(action.action_key, question.key);
+              const describedBy =
+                [question.help_text ? helpId : null, error ? errorId : null]
+                  .filter(Boolean)
+                  .join(" ") || undefined;
+              const inputAria = {
+                "aria-describedby": describedBy,
+                "aria-invalid": error ? true : undefined,
+                "aria-required": question.required ? true : undefined,
+              };
               return (
                 <div
                   className="form-field"
@@ -845,18 +1263,16 @@ export function SitePublicForm({
                   }
                 >
                   <label htmlFor={inputId}>
-                    <span>
-                      {question.label}
-                      {question.required ? (
-                        <span aria-label="required" className="required-mark">
-                          *
-                        </span>
-                      ) : null}
-                    </span>
+                    {question.label}
+                    {question.required ? (
+                      <span aria-hidden="true" className="required-mark">
+                        *
+                      </span>
+                    ) : null}
                   </label>
                   {question.field_type === "long_text" ? (
                     <textarea
-                      aria-describedby={describedBy}
+                      {...inputAria}
                       id={inputId}
                       onChange={(event) =>
                         setAnswer(question.key, event.target.value)
@@ -865,7 +1281,7 @@ export function SitePublicForm({
                     />
                   ) : question.field_type === "boolean" ? (
                     <select
-                      aria-describedby={describedBy}
+                      {...inputAria}
                       id={inputId}
                       onChange={(event) =>
                         setAnswer(
@@ -884,7 +1300,7 @@ export function SitePublicForm({
                   ) : question.field_type === "select" ||
                     question.field_type === "status" ? (
                     <select
-                      aria-describedby={describedBy}
+                      {...inputAria}
                       id={inputId}
                       onChange={(event) =>
                         handleChoiceChange(event, question.key, false)
@@ -900,7 +1316,7 @@ export function SitePublicForm({
                     </select>
                   ) : question.field_type === "multi_select" ? (
                     <select
-                      aria-describedby={describedBy}
+                      {...inputAria}
                       id={inputId}
                       multiple
                       onChange={(event) =>
@@ -916,7 +1332,7 @@ export function SitePublicForm({
                     </select>
                   ) : question.field_type === "file" ? (
                     <input
-                      aria-describedby={describedBy}
+                      {...inputAria}
                       id={inputId}
                       accept={
                         question.upload_kind === "pdf"
@@ -936,7 +1352,7 @@ export function SitePublicForm({
                     />
                   ) : (
                     <input
-                      aria-describedby={describedBy}
+                      {...inputAria}
                       id={inputId}
                       onChange={(event) =>
                         setAnswer(
@@ -948,6 +1364,12 @@ export function SitePublicForm({
                               : Number(event.target.value)
                             : event.target.value,
                         )
+                      }
+                      step={
+                        question.field_type === "number" ||
+                        question.field_type === "currency"
+                          ? "any"
+                          : undefined
                       }
                       type={inputType(question.field_type)}
                       value={
@@ -962,11 +1384,32 @@ export function SitePublicForm({
                       {question.help_text}
                     </p>
                   ) : null}
+                  {error ? (
+                    <p className="field-help" id={errorId} role="alert">
+                      {error}
+                    </p>
+                  ) : null}
                 </div>
               );
             })}
             {message ? <p role="alert">{message}</p> : null}
-            {canStartNewAttempt ? (
+            {reviewState === "refreshing" && recoveryMode === "stale" ? (
+              <button onClick={reviewLatestForm} type="button">
+                Review latest Form
+              </button>
+            ) : null}
+            {reviewState === "needs_ack" ? (
+              <div className="field-help" role="status">
+                <p>
+                  The latest version is ready. Review the questions before
+                  sending.
+                </p>
+                <button onClick={acknowledgeLatestReview} type="button">
+                  I’ve reviewed the latest Form
+                </button>
+              </div>
+            ) : null}
+            {recoveryMode === "expired" || recoveryMode === "conflict" ? (
               <button
                 onClick={() => {
                   try {
@@ -989,14 +1432,23 @@ export function SitePublicForm({
                   setFileInputVersion((current) => current + 1);
                   setStatus("idle");
                   setMessage(null);
-                  setCanStartNewAttempt(false);
+                  setRecoveryMode(null);
+                  setQuestionErrors({});
                 }}
                 type="button"
               >
                 Start a new response attempt
               </button>
             ) : null}
-            <button disabled={preview || status === "submitting"} type="submit">
+            <button
+              disabled={
+                preview ||
+                status === "submitting" ||
+                reviewState !== "none" ||
+                recoveryMode === "unavailable"
+              }
+              type="submit"
+            >
               {preview
                 ? "Disabled in preview"
                 : status === "submitting"
