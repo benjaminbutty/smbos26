@@ -757,6 +757,267 @@ describe("Lenni Sites C2 functional milestone", () => {
     expect(after.draft_json).toEqual(before.draft_json);
   });
 
+  it("guards same-Business Site Page links at publication", async () => {
+    type DraftPage = {
+      id: string;
+      title: string;
+      slug: string;
+      navigation_label: string;
+      is_home: boolean;
+      is_in_navigation: boolean;
+      is_included: boolean;
+      layout: { blocks: Array<Record<string, unknown>> };
+    };
+    type Draft = { pages: DraftPage[] };
+
+    const original = await siteState();
+    const draftWithLinks = structuredClone(original.draft_json) as Draft;
+    const aboutPageId = crypto.randomUUID();
+    const contactPageId = crypto.randomUUID();
+    const aboutHref = `/p/${catalogueBusiness.slug}/about?source=button#cta`;
+    const contactHref = `/p/${catalogueBusiness.slug}/contact?source=rich#copy`;
+    const missingHref = `/p/${catalogueBusiness.slug}/missing?source=nested#copy`;
+    const homePage = draftWithLinks.pages.find((page) => page.is_home);
+    expect(homePage).toBeDefined();
+    const homeBlocks = homePage!.layout.blocks;
+    const richText = homeBlocks.find((block) => block.type === "rich_text");
+    expect(richText).toBeDefined();
+    const richTextContent = (
+      richText!.node as {
+        content: Array<{ marks?: Array<Record<string, unknown>> }>;
+      }
+    ).content;
+    const richTextLink = richTextContent
+      .flatMap((span) => span.marks ?? [])
+      .find((mark) => mark.type === "link");
+    expect(richTextLink).toBeDefined();
+    richTextLink!.href = contactHref;
+    homeBlocks.push({
+      type: "button",
+      id: crypto.randomUUID(),
+      label: "About",
+      href: aboutHref,
+      style: "secondary",
+    });
+    const section = homeBlocks.find((block) => block.type === "section");
+    expect(section).toBeDefined();
+    const firstColumn = (
+      section!.columns as Array<{ blocks: Array<Record<string, unknown>> }>
+    )[0];
+    expect(firstColumn).toBeDefined();
+    firstColumn!.blocks.push({
+      type: "rich_text",
+      id: crypto.randomUUID(),
+      node: {
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "Contact",
+            marks: [{ type: "link", href: contactHref }],
+          },
+        ],
+      },
+    });
+    draftWithLinks.pages.push(
+      {
+        id: aboutPageId,
+        title: "About",
+        slug: "about",
+        navigation_label: "About",
+        is_home: false,
+        is_in_navigation: false,
+        is_included: true,
+        layout: {
+          blocks: [
+            {
+              type: "heading",
+              id: crypto.randomUUID(),
+              text: "About",
+              level: 1,
+            },
+          ],
+        },
+      },
+      {
+        id: contactPageId,
+        title: "Contact",
+        slug: "contact",
+        navigation_label: "Contact",
+        is_home: false,
+        is_in_navigation: false,
+        is_included: true,
+        layout: {
+          blocks: [
+            {
+              type: "heading",
+              id: crypto.randomUUID(),
+              text: "Contact",
+              level: 1,
+            },
+          ],
+        },
+      },
+    );
+
+    const saved = await callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: catalogueBusiness.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: catalogueSiteId,
+      expected_draft_revision: original.draft_revision,
+      requested_draft: draftWithLinks,
+    });
+    const prepared = await prepareSiteReleaseV2(owner.client, context(), {
+      siteId: catalogueSiteId,
+      ...(await currentnessForSite()),
+    });
+    const projection = sitePublicProjectionSchema.parse(
+      prepared.projection_json,
+    );
+    expect(projection.pages.map((page) => page.slug)).toEqual(
+      expect.arrayContaining(["about", "contact"]),
+    );
+    const projectedHomeBlocks = projection.pages.find((page) => page.is_home)!
+      .layout.blocks as Array<Record<string, unknown>>;
+    expect(
+      projectedHomeBlocks.find((block) => block.type === "button"),
+    ).toMatchObject({ href: aboutHref });
+    expect(
+      projectedHomeBlocks.find((block) => block.type === "rich_text"),
+    ).toMatchObject({
+      node: {
+        content: [
+          {},
+          { marks: [{ type: "bold" }, { type: "link", href: contactHref }] },
+        ],
+      },
+    });
+    const projectedSection = projectedHomeBlocks.find(
+      (block) => block.type === "section",
+    )!;
+    const projectedNestedBlocks =
+      (
+        projectedSection.columns as Array<{
+          blocks: Array<Record<string, unknown>>;
+        }>
+      )[0]?.blocks ?? [];
+    expect(
+      projectedNestedBlocks.find((block) => block.type === "rich_text"),
+    ).toMatchObject({
+      node: {
+        content: [{ marks: [{ type: "link", href: contactHref }] }],
+      },
+    });
+    expect(saved.draft_revision).toBe(original.draft_revision + 1);
+
+    const excludedDraft = structuredClone(saved.draft_json) as Draft;
+    const excludedAbout = excludedDraft.pages.find(
+      (page) => page.id === aboutPageId,
+    );
+    expect(excludedAbout).toBeDefined();
+    excludedAbout!.is_included = false;
+    await callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: catalogueBusiness.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: catalogueSiteId,
+      expected_draft_revision: saved.draft_revision,
+      requested_draft: excludedDraft,
+    });
+    const beforeExcludedFailure = await siteState();
+    let excludedFailure: unknown;
+    try {
+      await prepareSiteReleaseV2(owner.client, context(), {
+        siteId: catalogueSiteId,
+        ...(await currentnessForSite()),
+      });
+    } catch (error) {
+      excludedFailure = error;
+    }
+    expect(excludedFailure).toMatchObject({ code: "site_page_link_not_ready" });
+    expect(
+      (excludedFailure as { cause?: { details?: string } }).cause?.details,
+    ).toContain(aboutHref);
+    const afterExcludedFailure = await siteState();
+    expect(afterExcludedFailure.draft_revision).toBe(
+      beforeExcludedFailure.draft_revision,
+    );
+    expect(afterExcludedFailure.draft_json).toEqual(
+      beforeExcludedFailure.draft_json,
+    );
+    expect(afterExcludedFailure.active_release_id).toBe(
+      beforeExcludedFailure.active_release_id,
+    );
+    expect(afterExcludedFailure.active_release_revision).toBe(
+      beforeExcludedFailure.active_release_revision,
+    );
+
+    const missingDraft = structuredClone(
+      afterExcludedFailure.draft_json,
+    ) as Draft;
+    const restoredAbout = missingDraft.pages.find(
+      (page) => page.id === aboutPageId,
+    );
+    expect(restoredAbout).toBeDefined();
+    restoredAbout!.is_included = true;
+    const missingSection = missingDraft.pages
+      .find((page) => page.is_home)!
+      .layout.blocks.find((block) => block.type === "section");
+    expect(missingSection).toBeDefined();
+    const nestedRichText = (
+      missingSection!.columns as Array<{
+        blocks: Array<Record<string, unknown>>;
+      }>
+    )[0]!.blocks.find((block) => block.type === "rich_text");
+    expect(nestedRichText).toBeDefined();
+    const nestedLink = (
+      nestedRichText!.node as {
+        content: Array<{ marks?: Array<Record<string, unknown>> }>;
+      }
+    ).content
+      .flatMap((span) => span.marks ?? [])
+      .find((mark) => mark.type === "link");
+    expect(nestedLink).toBeDefined();
+    nestedLink!.href = missingHref;
+    await callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: catalogueBusiness.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: catalogueSiteId,
+      expected_draft_revision: beforeExcludedFailure.draft_revision,
+      requested_draft: missingDraft,
+    });
+    const beforeMissingFailure = await siteState();
+    let missingFailure: unknown;
+    try {
+      await prepareSiteReleaseV2(owner.client, context(), {
+        siteId: catalogueSiteId,
+        ...(await currentnessForSite()),
+      });
+    } catch (error) {
+      missingFailure = error;
+    }
+    expect(missingFailure).toMatchObject({ code: "site_page_link_not_ready" });
+    expect(
+      (missingFailure as { cause?: { details?: string } }).cause?.details,
+    ).toContain(missingHref);
+    const afterMissingFailure = await siteState();
+    expect(afterMissingFailure.draft_revision).toBe(
+      beforeMissingFailure.draft_revision,
+    );
+    expect(afterMissingFailure.draft_json).toEqual(
+      beforeMissingFailure.draft_json,
+    );
+
+    await callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: catalogueBusiness.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: catalogueSiteId,
+      expected_draft_revision: afterMissingFailure.draft_revision,
+      requested_draft: original.draft_json as object,
+    });
+    const restored = await siteState();
+    expect(restored.draft_json).toEqual(original.draft_json);
+  });
+
   it("publishes the exact Site projection and applies finite availability epochs", async () => {
     const prepared = await prepareSiteReleaseV2(owner.client, context(), {
       siteId: catalogueSiteId,
