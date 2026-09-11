@@ -26,7 +26,6 @@ import {
   publishSiteReleaseV2,
   rebaseSiteDraft,
   resolveSiteDraftConflict,
-  saveSiteDraft,
   stageSiteAdoption,
   unpublishSite,
   withdrawSiteField,
@@ -468,52 +467,6 @@ export async function createSiteAction(
     siteNotice(parsedSlug.data, "failed");
   }
   siteNotice(parsedSlug.data, "created");
-}
-
-export async function saveSiteDraftAction(
-  businessSlugInput: string,
-  formData: FormData,
-): Promise<never> {
-  const parsedSlug = routeSlugSchema.safeParse(businessSlugInput);
-  if (!parsedSlug.success) notFound();
-  const siteId = z.uuid().safeParse(stringValue(formData, "siteId"));
-  const expectedDraftRevision = z.coerce
-    .number()
-    .int()
-    .positive()
-    .safeParse(stringValue(formData, "expectedDraftRevision"));
-  let draft: unknown;
-  try {
-    draft = JSON.parse(stringValue(formData, "draft") ?? "");
-  } catch {
-    siteNotice(parsedSlug.data, "input_invalid");
-  }
-  const parsedDraft = siteDraftV1Schema.safeParse(draft);
-  if (
-    !siteId.success ||
-    !expectedDraftRevision.success ||
-    !parsedDraft.success
-  ) {
-    siteNotice(parsedSlug.data, "input_invalid");
-  }
-  const supabase = await createServerClient();
-  const tenant = await resolveTenant(parsedSlug.data, supabase);
-  if (!hasCapability(tenant.membership.role, "manage_configuration"))
-    notFound();
-  try {
-    await saveSiteDraft(
-      supabase,
-      { businessId: tenant.business.id, actorId: tenant.user.id },
-      {
-        siteId: siteId.data,
-        expectedDraftRevision: expectedDraftRevision.data,
-        draft: parsedDraft.data,
-      },
-    );
-  } catch (error) {
-    siteNotice(parsedSlug.data, siteErrorNotice(error));
-  }
-  siteNotice(parsedSlug.data, "saved");
 }
 
 export async function rebaseSiteDraftAction(

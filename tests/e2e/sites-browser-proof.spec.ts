@@ -210,11 +210,9 @@ async function expectSatoshi(page: Page): Promise<void> {
   });
 }
 
-async function saveSiteDraft(page: Page, businessSlug: string): Promise<void> {
+async function saveSiteDraft(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Save draft", exact: true }).click();
-  await page.waitForURL(
-    new RegExp(`/app/${businessSlug}/sites\\?notice=saved$`),
-  );
+  await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
 }
 
 async function uploadSiteImage(page: Page): Promise<void> {
@@ -464,7 +462,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     .getByRole("button", { name: "Remove", exact: true })
     .click();
 
-  await saveSiteDraft(page, business.slug);
+  await saveSiteDraft(page);
 
   await page.getByRole("button", { name: "Preview", exact: true }).click();
   await page.waitForURL(
@@ -608,7 +606,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
 
   await page.goto(`/app/${business.slug}/sites`);
   await page.getByLabel("Site name").fill("Private draft branding");
-  await saveSiteDraft(page, business.slug);
+  await saveSiteDraft(page);
   await page.goto(`/p/${business.slug}/home`);
   await expect(page.getByText(siteName, { exact: true })).toBeVisible();
   await expect(
@@ -732,4 +730,33 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
       .getByRole("textbox")
       .first(),
   ).toHaveValue("");
+
+  const recoveredHeadingInput = rebasedHome
+    .locator(".site-composer-inspector .site-composer-block")
+    .getByRole("textbox")
+    .first();
+  const recoveredAutosave = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+      response.status() === 200,
+  );
+  await recoveredHeadingInput.fill("Recovered after workspace change");
+  await recoveredAutosave;
+  await expect(
+    page.getByText("Saved automatically", { exact: true }),
+  ).toBeVisible();
+  await saveSiteDraft(page);
+  await page.reload();
+  const recoveredHome = page.locator(".site-composer-page").first();
+  const recoveredHeadingCard = recoveredHome
+    .locator(".site-composer-canvas-block")
+    .last();
+  await recoveredHeadingCard.click();
+  await expect(
+    recoveredHome
+      .locator(".site-composer-inspector .site-composer-block")
+      .getByRole("textbox")
+      .first(),
+  ).toHaveValue("Recovered after workspace change");
 });

@@ -119,6 +119,143 @@ function displayKey(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+type RichTextNodeType =
+  "paragraph" | "heading" | "bullet_list" | "numbered_list";
+
+const richTextNodeTypes: readonly RichTextNodeType[] = [
+  "paragraph",
+  "heading",
+  "bullet_list",
+  "numbered_list",
+];
+
+const safeRichTextHrefPattern = /^(?:https?:\/\/|\/|mailto:|tel:)[^\s]+$/i;
+
+function richTextContentText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((span) => asRecord(span))
+    .map((span) => (typeof span.text === "string" ? span.text : ""))
+    .join("");
+}
+
+function richTextNodeText(node: UnknownRecord): string {
+  if (node.type === "bullet_list" || node.type === "numbered_list") {
+    return (Array.isArray(node.items) ? node.items : [])
+      .map((item) => richTextContentText(asRecord(item).content))
+      .join("\n");
+  }
+  return richTextContentText(node.content);
+}
+
+function richTextNodeType(value: unknown): RichTextNodeType {
+  const type = asRecord(value).type;
+  return richTextNodeTypes.includes(type as RichTextNodeType)
+    ? (type as RichTextNodeType)
+    : "paragraph";
+}
+
+function richTextMarks(node: UnknownRecord): {
+  bold: boolean;
+  italic: boolean;
+  link: string;
+} {
+  const firstContent =
+    node.type === "bullet_list" || node.type === "numbered_list"
+      ? asRecord(
+          asRecord(Array.isArray(node.items) ? node.items[0] : null).content,
+        )
+      : node.content;
+  const firstSpan = Array.isArray(firstContent)
+    ? asRecord(firstContent.find((span) => asRecord(span).text))
+    : {};
+  const marks = Array.isArray(firstSpan.marks) ? firstSpan.marks : [];
+  const link = marks
+    .map((mark) => asRecord(mark))
+    .find((mark) => mark.type === "link");
+  return {
+    bold: marks.some((mark) => asRecord(mark).type === "bold"),
+    italic: marks.some((mark) => asRecord(mark).type === "italic"),
+    link: typeof link?.href === "string" ? link.href : "",
+  };
+}
+
+function makeRichTextNode(
+  type: RichTextNodeType,
+  text: string,
+  options: Readonly<{
+    bold: boolean;
+    italic: boolean;
+    link: string;
+    level: 1 | 2 | 3;
+  }>,
+): UnknownRecord {
+  const marks = [
+    ...(options.bold ? [{ type: "bold" }] : []),
+    ...(options.italic ? [{ type: "italic" }] : []),
+    ...(safeRichTextHrefPattern.test(options.link)
+      ? [{ type: "link", href: options.link }]
+      : []),
+  ];
+  const makeSpan = (line: string): UnknownRecord | null =>
+    line
+      ? {
+          type: "text",
+          text: line,
+          ...(marks.length ? { marks } : {}),
+        }
+      : null;
+  const lines = text.split("\n").slice(0, 50);
+  if (type === "bullet_list" || type === "numbered_list") {
+    return {
+      type,
+      items: lines.map((line) => {
+        const span = makeSpan(line);
+        return { content: span ? [span] : [] };
+      }),
+    };
+  }
+  const content = makeSpan(text);
+  return {
+    type,
+    ...(type === "heading" ? { level: options.level } : {}),
+    content: content ? [content] : [],
+  };
+}
+
+function previewRichText(nodeInput: unknown): ReactNode {
+  const node = asRecord(nodeInput);
+  const text = richTextNodeText(node);
+  if (node.type === "heading") {
+    return (
+      <span className="site-composer-canvas-rich-text-heading">
+        {text || "Add a formatted heading"}
+      </span>
+    );
+  }
+  if (node.type === "bullet_list" || node.type === "numbered_list") {
+    const items = (Array.isArray(node.items) ? node.items : [])
+      .map((item) => richTextContentText(asRecord(item).content))
+      .filter((item) => item.trim());
+    return (
+      <span className="site-composer-canvas-rich-text-list">
+        {items.length
+          ? items.map((item, index) => (
+              <span key={`${index}-${item}`}>
+                {node.type === "bullet_list" ? "•" : `${index + 1}.`} {item}
+              </span>
+            ))
+          : "Add list items"}
+      </span>
+    );
+  }
+  return (
+    <span className="site-composer-canvas-rich-text">
+      {text || "Add formatted text"}
+    </span>
+  );
+}
+
 function previewBlockContent(
   block: SiteBlock,
   objectOptions: readonly ObjectOption[],
@@ -127,6 +264,9 @@ function previewBlockContent(
   const value = asRecord(block);
   if (block.type === "heading") {
     return <h2>{typeof value.text === "string" ? value.text : "Heading"}</h2>;
+  }
+  if (block.type === "rich_text") {
+    return previewRichText(value.node);
   }
   if (block.type === "text" || block.type === "callout") {
     return (
@@ -342,6 +482,17 @@ function newBlock(
   return { type, id } as SiteBlock;
 }
 
+function newRichTextBlock(): SiteBlock {
+  return {
+    type: "rich_text",
+    id: crypto.randomUUID(),
+    node: {
+      type: "paragraph",
+      content: [{ type: "text", text: "Write something useful." }],
+    },
+  } as SiteBlock;
+}
+
 function newImageBlock(): SiteBlock {
   return {
     type: "image",
@@ -396,7 +547,6 @@ export function SiteComposer({
   previewAction,
   publishAction,
   candidateId,
-  saveAction,
   siteId,
 }: Readonly<{
   businessSlug: string;
@@ -408,7 +558,6 @@ export function SiteComposer({
   previewAction?: SiteAction;
   publishAction?: SiteAction;
   candidateId: string | undefined;
-  saveAction: SiteAction;
   siteId: string;
 }>): ReactNode {
   const [draft, setDraft] = useState<SiteDraftV1>(() =>
@@ -427,6 +576,8 @@ export function SiteComposer({
     "saved" | "saving" | "error"
   >("saved");
   const initialDraftRef = useRef(copyDraft(initialDraft));
+  const serverDraftRef = useRef(copyDraft(initialDraft));
+  const serverRevisionRef = useRef(draftRevision);
   const revisionRef = useRef(draftRevision);
   const mountedRef = useRef(false);
   const saveFailureMessageRef = useRef<string | null>(null);
@@ -435,7 +586,6 @@ export function SiteComposer({
   );
   const navigationPendingRef = useRef(false);
   const navigationBypassRef = useRef(false);
-  const manualSubmitRef = useRef(false);
   const manualSavePendingRef = useRef(false);
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const home = initialDraft.pages.find((page) => page.is_home);
@@ -478,6 +628,7 @@ export function SiteComposer({
       },
       save: async ({
         candidate,
+        requestId,
       }): Promise<SaveCoordinatorResult<SiteDraftV1>> => {
         const failureMessage =
           "Draft autosave failed. Use Save draft to try again.";
@@ -506,10 +657,25 @@ export function SiteComposer({
           }
           const result: unknown = await response.json().catch(() => null);
           const nextRevision = asRecord(result).draftRevision;
-          if (typeof nextRevision === "number") {
-            revisionRef.current = nextRevision;
-            if (mountedRef.current) setRevision(nextRevision);
+          if (
+            typeof nextRevision !== "number" ||
+            !Number.isInteger(nextRevision) ||
+            nextRevision <= 0
+          ) {
+            saveFailureMessageRef.current =
+              "The draft save response was incomplete. Use Save draft to try again.";
+            return {
+              status: "error",
+              message: saveFailureMessageRef.current,
+            };
           }
+          const requestIsActive =
+            saveCoordinatorRef.current?.isRequestActive(requestId) ?? false;
+          if (!requestIsActive) {
+            return { status: "success", canonical: candidate };
+          }
+          revisionRef.current = nextRevision;
+          if (mountedRef.current) setRevision(nextRevision);
           saveFailureMessageRef.current = null;
           return { status: "success", canonical: candidate };
         } catch {
@@ -532,6 +698,57 @@ export function SiteComposer({
     if (!coordinator || siteDraftEquals(coordinator.candidate, draft)) return;
     coordinator.update(copyDraft(draft));
   }, [draft]);
+
+  useEffect(() => {
+    const nextServerDraft = copyDraft(initialDraft);
+    const serverChanged =
+      draftRevision !== serverRevisionRef.current ||
+      !siteDraftEquals(serverDraftRef.current, nextServerDraft);
+    serverDraftRef.current = nextServerDraft;
+    serverRevisionRef.current = draftRevision;
+    if (!serverChanged) return;
+
+    const coordinator = saveCoordinatorRef.current;
+    if (!coordinator) return;
+    if (
+      coordinator.hasUnacknowledgedWork &&
+      !siteDraftEquals(coordinator.candidate, nextServerDraft)
+    ) {
+      // Keep the visible candidate intact, but stop its next write until the
+      // owner has reviewed the newer server baseline. This avoids clobbering
+      // a rebased or adopted draft with a stale local revision.
+      coordinator.block("stale");
+      setAutosaveStatus("error");
+      setMessage(
+        "This draft was updated elsewhere. Your edits are still here; review the latest draft before saving.",
+      );
+      return;
+    }
+
+    initialDraftRef.current = nextServerDraft;
+    revisionRef.current = draftRevision;
+    coordinator.acknowledge(nextServerDraft);
+    setDraft(nextServerDraft);
+    setRevision(draftRevision);
+    setUndoStack([]);
+    setSelectedPageId((currentPageId) => {
+      if (nextServerDraft.pages.some((page) => page.id === currentPageId)) {
+        return currentPageId;
+      }
+      return (
+        nextServerDraft.pages.find((page) => page.is_home)?.id ??
+        nextServerDraft.pages[0]?.id ??
+        ""
+      );
+    });
+    setSelectedBlockId(null);
+    setPageSettingsOpen(false);
+    setAddBlockMenuOpen(false);
+    navigationBypassRef.current = false;
+    saveFailureMessageRef.current = null;
+    setMessage(null);
+    setAutosaveStatus("saved");
+  }, [draft, draftRevision, initialDraft]);
 
   const saveDraftNow = useCallback(async (): Promise<boolean> => {
     const coordinator = saveCoordinatorRef.current;
@@ -560,7 +777,12 @@ export function SiteComposer({
         );
         return;
       }
-      navigationBypassRef.current = true;
+      const destination = new URL(href, window.location.href);
+      const sameDocument =
+        destination.origin === window.location.origin &&
+        destination.pathname === window.location.pathname &&
+        destination.search === window.location.search;
+      navigationBypassRef.current = !sameDocument;
       window.location.assign(href);
     },
     [saveDraftNow],
@@ -599,6 +821,7 @@ export function SiteComposer({
   }, [addBlockMenuOpen]);
 
   function commit(next: SiteDraftV1): void {
+    navigationBypassRef.current = false;
     setUndoStack((previous) => [...previous.slice(-19), copyDraft(draft)]);
     setDraft(next);
     setMessage(null);
@@ -722,6 +945,52 @@ export function SiteComposer({
       moved,
     ];
     sectionValue.columns = columns;
+    commit(next);
+  }
+
+  function moveBlockAcrossSections(
+    pageId: string,
+    sectionId: string,
+    blockId: string,
+    offset: -1 | 1,
+  ): void {
+    const next = copyDraft(draft);
+    const page = next.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+    const sections = page.layout.blocks.filter(
+      (block) => block.type === "section",
+    );
+    const sourceSectionIndex = sections.findIndex(
+      (section) => asRecord(section).id === sectionId,
+    );
+    const targetSection = sections[sourceSectionIndex + offset];
+    if (!targetSection) return;
+    const sourceSection = sections[sourceSectionIndex];
+    const sourceColumns = asRecord(sourceSection).columns;
+    const targetColumns = asRecord(targetSection).columns;
+    if (!Array.isArray(sourceColumns) || !Array.isArray(targetColumns)) return;
+
+    let sourceBlocks: SiteBlock[] | null = null;
+    let moved: SiteBlock | null = null;
+    for (const column of sourceColumns) {
+      const columnValue = asRecord(column);
+      if (!Array.isArray(columnValue.blocks)) continue;
+      const candidate = columnValue.blocks.find(
+        (block) => asRecord(block).id === blockId,
+      );
+      if (candidate) {
+        sourceBlocks = columnValue.blocks as SiteBlock[];
+        moved = candidate as SiteBlock;
+        break;
+      }
+    }
+    const targetColumn = asRecord(targetColumns[0]);
+    if (!sourceBlocks || !moved || !Array.isArray(targetColumn.blocks)) return;
+    sourceBlocks.splice(
+      sourceBlocks.findIndex((block) => asRecord(block).id === blockId),
+      1,
+    );
+    targetColumn.blocks = [...(targetColumn.blocks as SiteBlock[]), moved];
     commit(next);
   }
 
@@ -1210,6 +1479,7 @@ export function SiteComposer({
   function undo(): void {
     const previous = undoStack.at(-1);
     if (!previous) return;
+    navigationBypassRef.current = false;
     setUndoStack((stack) => stack.slice(0, -1));
     setDraft(previous);
     setMessage(null);
@@ -1257,34 +1527,24 @@ export function SiteComposer({
             Undo
           </button>
           <form
-            action={saveAction}
             onSubmit={(event) => {
-              if (manualSubmitRef.current) {
-                manualSubmitRef.current = false;
-                return;
-              }
               if (manualSavePendingRef.current) {
                 event.preventDefault();
                 return;
               }
               event.preventDefault();
               manualSavePendingRef.current = true;
-              const form = event.currentTarget;
-              void saveDraftNow().then((saved) => {
-                manualSavePendingRef.current = false;
-                if (!saved) return;
-                manualSubmitRef.current = true;
-                form.requestSubmit();
-              });
+              void saveDraftNow()
+                .then((saved) => {
+                  manualSavePendingRef.current = false;
+                  if (saved) setMessage("Draft saved.");
+                })
+                .catch(() => {
+                  manualSavePendingRef.current = false;
+                  setMessage("The Site draft could not be saved. Try again.");
+                });
             }}
           >
-            <input name="siteId" type="hidden" value={siteId} />
-            <input
-              name="expectedDraftRevision"
-              type="hidden"
-              value={revision}
-            />
-            <input name="draft" type="hidden" value={JSON.stringify(draft)} />
             <button
               className="button-secondary site-composer-save-action"
               type="submit"
@@ -1833,6 +2093,16 @@ export function SiteComposer({
                                   }
                                 />
                               ) : null}
+                              {block.type === "rich_text" ? (
+                                <RichTextEditor
+                                  value={value}
+                                  onChange={(node) =>
+                                    updateBlock(page.id, id, (item) => {
+                                      item.node = node;
+                                    })
+                                  }
+                                />
+                              ) : null}
                               {block.type === "button" ? (
                                 <div className="site-composer-media-fields">
                                   <label>
@@ -2350,11 +2620,17 @@ export function SiteComposer({
                                     containerId={id}
                                     duplicateBlock={duplicateBlock}
                                     moveBlock={moveBlock}
+                                    moveBlockAcrossSections={
+                                      moveBlockAcrossSections
+                                    }
                                     moveBlockToColumn={moveBlockToColumn}
                                     onUploadGalleryImage={uploadGalleryImage}
                                     onUploadImage={uploadImage}
                                     pageId={page.id}
                                     removeBlock={removeBlock}
+                                    sectionIds={page.layout.blocks
+                                      .filter((item) => item.type === "section")
+                                      .map((item) => blockIdentity(item, ""))}
                                     setSectionColumns={setSectionColumns}
                                     setSectionPresentation={
                                       setSectionPresentation
@@ -2518,6 +2794,9 @@ export function SiteComposer({
                                           containerId={id}
                                           duplicateBlock={duplicateBlock}
                                           moveBlock={moveBlock}
+                                          moveBlockAcrossSections={
+                                            moveBlockAcrossSections
+                                          }
                                           moveBlockToColumn={moveBlockToColumn}
                                           onUploadGalleryImage={
                                             uploadGalleryImage
@@ -2525,6 +2804,13 @@ export function SiteComposer({
                                           onUploadImage={uploadImage}
                                           pageId={page.id}
                                           removeBlock={removeBlock}
+                                          sectionIds={page.layout.blocks
+                                            .filter(
+                                              (item) => item.type === "section",
+                                            )
+                                            .map((item) =>
+                                              blockIdentity(item, ""),
+                                            )}
                                           setSectionColumns={setSectionColumns}
                                           setSectionPresentation={
                                             setSectionPresentation
@@ -2571,6 +2857,15 @@ export function SiteComposer({
                             type="button"
                           >
                             Add text
+                          </button>
+                          <button
+                            onClick={() =>
+                              addBlock(page.id, newRichTextBlock())
+                            }
+                            role="menuitem"
+                            type="button"
+                          >
+                            Add formatted text
                           </button>
                           <button
                             onClick={() =>
@@ -2705,11 +3000,167 @@ type SiteBlockMoveToColumn = (
   sourceColumnIndex: number,
   targetColumnIndex: number,
 ) => void;
+type SiteBlockMoveAcrossSections = (
+  pageId: string,
+  sectionId: string,
+  blockId: string,
+  offset: -1 | 1,
+) => void;
 type SiteBlockUpload = (
   event: FormEvent<HTMLInputElement>,
   pageId: string,
   blockId: string,
 ) => Promise<void>;
+
+function richTextNodeLabel(type: RichTextNodeType): string {
+  if (type === "bullet_list") return "Bulleted list";
+  if (type === "numbered_list") return "Numbered list";
+  return type === "heading" ? "Heading" : "Paragraph";
+}
+
+function RichTextEditor({
+  value,
+  onChange,
+}: Readonly<{
+  value: UnknownRecord;
+  onChange: (node: UnknownRecord) => void;
+}>): ReactNode {
+  const node = asRecord(value.node);
+  const type = richTextNodeType(node);
+  const marks = richTextMarks(node);
+  const text = richTextNodeText(node);
+  const level =
+    node.level === 1 || node.level === 3 ? node.level : (2 as const);
+  const update = (
+    changes: Partial<{
+      type: RichTextNodeType;
+      text: string;
+      bold: boolean;
+      italic: boolean;
+      link: string;
+      level: 1 | 2 | 3;
+    }>,
+  ): void => {
+    onChange(
+      makeRichTextNode(changes.type ?? type, changes.text ?? text, {
+        bold: changes.bold ?? marks.bold,
+        italic: changes.italic ?? marks.italic,
+        link: changes.link ?? marks.link,
+        level: changes.level ?? level,
+      }),
+    );
+  };
+
+  return (
+    <div className="site-composer-rich-text-fields">
+      <label>
+        Format
+        <select
+          value={type}
+          onChange={(event) => {
+            const nextType = event.target.value as RichTextNodeType;
+            if (richTextNodeTypes.includes(nextType))
+              update({ type: nextType });
+          }}
+        >
+          {richTextNodeTypes.map((option) => (
+            <option key={option} value={option}>
+              {richTextNodeLabel(option)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {type === "heading" ? (
+        <label>
+          Heading level
+          <select
+            value={level}
+            onChange={(event) => {
+              const nextLevel = Number(event.target.value);
+              if (nextLevel === 1 || nextLevel === 2 || nextLevel === 3) {
+                update({ level: nextLevel });
+              }
+            }}
+          >
+            <option value={1}>Large</option>
+            <option value={2}>Medium</option>
+            <option value={3}>Small</option>
+          </select>
+        </label>
+      ) : null}
+      <label>
+        {type === "bullet_list" || type === "numbered_list"
+          ? "List items"
+          : "Content"}
+        <textarea
+          aria-label={
+            type === "bullet_list" || type === "numbered_list"
+              ? "List items"
+              : "Formatted text content"
+          }
+          maxLength={type === "heading" ? 200 : 5000}
+          onChange={(event) => update({ text: event.target.value })}
+          placeholder={
+            type === "bullet_list" || type === "numbered_list"
+              ? "One item per line"
+              : "Write something useful."
+          }
+          rows={type === "bullet_list" || type === "numbered_list" ? 6 : 4}
+          value={text}
+        />
+      </label>
+      {type !== "bullet_list" && type !== "numbered_list" ? (
+        <div className="site-composer-toggles">
+          <label>
+            <input
+              checked={marks.bold}
+              onChange={(event) => update({ bold: event.target.checked })}
+              type="checkbox"
+            />{" "}
+            Bold
+          </label>
+          <label>
+            <input
+              checked={marks.italic}
+              onChange={(event) => update({ italic: event.target.checked })}
+              type="checkbox"
+            />{" "}
+            Italic
+          </label>
+        </div>
+      ) : null}
+      <label>
+        Link (optional)
+        <input
+          inputMode="url"
+          onBlur={(event) => {
+            // The field stays uncontrolled while an owner types a URL. The
+            // canonical node is updated only once the bounded URL is valid;
+            // restore the last accepted value when focus leaves an invalid
+            // entry.
+            const input = event.currentTarget;
+            if (input.value && !safeRichTextHrefPattern.test(input.value)) {
+              input.value = marks.link;
+            }
+          }}
+          onChange={(event) => {
+            const nextLink = event.target.value;
+            if (!nextLink || safeRichTextHrefPattern.test(nextLink)) {
+              update({ link: nextLink });
+            }
+          }}
+          placeholder="https://example.com or /contact"
+          type="url"
+          defaultValue={marks.link}
+        />
+      </label>
+      <small className="muted">
+        Use one line per list item. Links accept secure web, site, email, or
+        phone addresses.
+      </small>
+    </div>
+  );
+}
 
 function NestedSiteBlocks({
   blocks,
@@ -2718,11 +3169,13 @@ function NestedSiteBlocks({
   containerId,
   duplicateBlock,
   moveBlock,
+  moveBlockAcrossSections,
   moveBlockToColumn,
   onUploadGalleryImage,
   onUploadImage,
   pageId,
   removeBlock,
+  sectionIds,
   setSectionColumns,
   setSectionPresentation,
   updateBlock,
@@ -2738,11 +3191,13 @@ function NestedSiteBlocks({
   containerId: string;
   duplicateBlock: SiteBlockMove;
   moveBlock: SiteBlockMove;
+  moveBlockAcrossSections: SiteBlockMoveAcrossSections;
   moveBlockToColumn: SiteBlockMoveToColumn;
   onUploadGalleryImage: SiteBlockUpload;
   onUploadImage: SiteBlockUpload;
   pageId: string;
   removeBlock: SiteBlockMove;
+  sectionIds: readonly string[];
   setSectionColumns: (
     pageId: string,
     blockId: string,
@@ -2764,6 +3219,7 @@ function NestedSiteBlocks({
           typeof value.id === "string"
             ? value.id
             : pageId + "-nested-" + blockIndex;
+        const sectionIndex = sectionIds.indexOf(containerId);
         return (
           <div className="site-composer-nested-block" key={id}>
             <div className="site-composer-block-header">
@@ -2811,6 +3267,31 @@ function NestedSiteBlocks({
                       type="button"
                     >
                       →
+                    </button>
+                    <button
+                      aria-label="Move to previous section"
+                      disabled={sectionIndex <= 0}
+                      onClick={() =>
+                        moveBlockAcrossSections(pageId, containerId, id, -1)
+                      }
+                      title="Move to previous section"
+                      type="button"
+                    >
+                      ↑ section
+                    </button>
+                    <button
+                      aria-label="Move to next section"
+                      disabled={
+                        sectionIndex < 0 ||
+                        sectionIndex >= sectionIds.length - 1
+                      }
+                      onClick={() =>
+                        moveBlockAcrossSections(pageId, containerId, id, 1)
+                      }
+                      title="Move to next section"
+                      type="button"
+                    >
+                      ↓ section
                     </button>
                   </>
                 ) : null}
@@ -2861,6 +3342,16 @@ function NestedSiteBlocks({
                     } else {
                       item.draft_state = "incomplete";
                     }
+                  })
+                }
+              />
+            ) : null}
+            {block.type === "rich_text" ? (
+              <RichTextEditor
+                value={value}
+                onChange={(node) =>
+                  updateBlock(pageId, id, (item) => {
+                    item.node = node;
                   })
                 }
               />
@@ -3007,11 +3498,13 @@ function NestedSiteBlocks({
                   containerId={id}
                   duplicateBlock={duplicateBlock}
                   moveBlock={moveBlock}
+                  moveBlockAcrossSections={moveBlockAcrossSections}
                   moveBlockToColumn={moveBlockToColumn}
                   onUploadGalleryImage={onUploadGalleryImage}
                   onUploadImage={onUploadImage}
                   pageId={pageId}
                   removeBlock={removeBlock}
+                  sectionIds={sectionIds}
                   setSectionColumns={setSectionColumns}
                   setSectionPresentation={setSectionPresentation}
                   updateBlock={updateBlock}
@@ -3146,11 +3639,13 @@ function NestedSiteBlocks({
                           containerId={id}
                           duplicateBlock={duplicateBlock}
                           moveBlock={moveBlock}
+                          moveBlockAcrossSections={moveBlockAcrossSections}
                           moveBlockToColumn={moveBlockToColumn}
                           onUploadGalleryImage={onUploadGalleryImage}
                           onUploadImage={onUploadImage}
                           pageId={pageId}
                           removeBlock={removeBlock}
+                          sectionIds={sectionIds}
                           setSectionColumns={setSectionColumns}
                           setSectionPresentation={setSectionPresentation}
                           updateBlock={updateBlock}
@@ -3180,6 +3675,14 @@ function NestedSiteBlocks({
           type="button"
         >
           Add text
+        </button>
+        <button
+          onClick={() =>
+            appendBlock(pageId, containerId, newRichTextBlock(), columnIndex)
+          }
+          type="button"
+        >
+          Add formatted text
         </button>
         <button
           onClick={() =>

@@ -19393,7 +19393,8 @@ textarea {
 
 .site-composer-fields label,
 .site-composer-media-fields label,
-.site-composer-collection-fields label {
+.site-composer-collection-fields label,
+.site-composer-rich-text-fields label {
   display: grid;
   gap: var(--space-2);
 }
@@ -19618,6 +19619,23 @@ textarea {
   font-size: 0.8rem;
 }
 
+.site-composer-canvas-rich-text,
+.site-composer-canvas-rich-text-heading,
+.site-composer-canvas-rich-text-list {
+  display: grid;
+  gap: var(--space-1);
+  white-space: pre-wrap;
+}
+
+.site-composer-canvas-rich-text-heading {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.site-composer-canvas-rich-text-list {
+  color: var(--text-secondary);
+}
+
 .site-composer-canvas-gallery {
   align-items: center;
   display: flex;
@@ -19780,10 +19798,16 @@ textarea {
 }
 
 .site-composer-collection-fields,
-.site-composer-media-fields {
+.site-composer-media-fields,
+.site-composer-rich-text-fields {
   display: grid;
   gap: var(--space-3);
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.site-composer-rich-text-fields textarea {
+  min-height: 7rem;
+  resize: vertical;
 }
 
 .site-composer-field-allowlist {
@@ -20125,6 +20149,7 @@ textarea {
   .site-composer-fields,
   .site-composer-collection-fields,
   .site-composer-media-fields,
+  .site-composer-rich-text-fields,
   .site-public-section,
   .site-public-gallery {
     grid-template-columns: minmax(0, 1fr);

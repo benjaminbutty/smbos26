@@ -9,7 +9,6 @@ import {
   publishSiteReleaseAction,
   resolveSiteDraftConflictAction,
   rebaseSiteDraftAction,
-  saveSiteDraftAction,
   stageSiteAdoptionAction,
   unpublishSiteAction,
   reenableSiteFieldAction,
@@ -503,7 +502,6 @@ export default async function SitesPage({
             previewAction={prepareSiteReleaseAction.bind(null, businessSlug)}
             publishAction={publishSiteReleaseAction.bind(null, businessSlug)}
             candidateId={candidate?.id}
-            saveAction={saveSiteDraftAction.bind(null, businessSlug)}
             siteId={state.id}
           />
 
