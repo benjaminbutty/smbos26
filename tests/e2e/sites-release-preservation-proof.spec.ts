@@ -1,6 +1,8 @@
 import type { Locator, Page } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 import { expect, test } from "./support/pages-proof-fixture";
+import type { Database } from "../../src/db/supabase/database.types";
 
 const initialRecordName = "Original release item";
 const updatedRecordName = "Updated release item";
@@ -20,6 +22,156 @@ const updatedRecordImage = {
   ),
   mimeType: "image/png",
 };
+
+type LegacyFixtureCredentials = Readonly<{
+  email: string;
+  password: string;
+}>;
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is required for the isolated Page browser proof.`);
+  }
+  return value;
+}
+
+async function readServedImage(
+  page: Page,
+  image: Locator,
+): Promise<{ source: string; bytes: Buffer }> {
+  await expect
+    .poll(() =>
+      image.evaluate((element) =>
+        element instanceof HTMLImageElement && element.complete
+          ? element.naturalWidth
+          : 0,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const source = await image.getAttribute("src");
+  if (!source) throw new Error("The released Site image had no source URL.");
+  const response = await page.request.get(
+    new URL(source, page.url()).toString(),
+  );
+  expect(response.status()).toBe(200);
+  return { source, bytes: await response.body() };
+}
+
+async function seedLegacyPublicPage(
+  businessId: string,
+  credentials: LegacyFixtureCredentials,
+): Promise<void> {
+  const client = createClient<Database>(
+    requiredEnvironment("SMBOS_PAGES_PROOF_API_URL"),
+    requiredEnvironment("SMBOS_PAGES_PROOF_PUBLISHABLE_KEY"),
+    {
+      auth: {
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        persistSession: false,
+      },
+    },
+  );
+  const signedIn = await client.auth.signInWithPassword(credentials);
+  if (signedIn.error || !signedIn.data.user) {
+    throw (
+      signedIn.error ?? new Error("Could not sign in the legacy fixture owner.")
+    );
+  }
+
+  try {
+    const actorId = signedIn.data.user.id;
+    const head = await client
+      .from("business_configuration_heads")
+      .select("active_version_id,head_revision")
+      .eq("business_id", businessId)
+      .maybeSingle();
+    if (head.error || !head.data) {
+      throw (
+        head.error ??
+        new Error("Could not load the legacy fixture configuration head.")
+      );
+    }
+
+    const proposal = await client.rpc("propose_configuration_change", {
+      expected_business_id: businessId,
+      expected_actor_id: actorId,
+      expected_base_version_id: head.data.active_version_id,
+      expected_head_revision: head.data.head_revision,
+      requested_title: "Seed legacy public Page for Sites proof",
+      requested_description: "CI fixture state for legacy Sites adoption.",
+      requested_operations: [
+        {
+          op: "set_page",
+          key: "legacy_content_proof",
+          title: "Legacy welcome",
+          slug: "legacy-content-proof",
+          audience: "public",
+          layout_json: {
+            blocks: [
+              {
+                id: crypto.randomUUID(),
+                type: "heading",
+                text: "Legacy welcome",
+                level: 1,
+              },
+              {
+                id: crypto.randomUUID(),
+                type: "text",
+                text: "This content belongs to the legacy Page.",
+              },
+            ],
+          },
+          status: "published",
+          is_active: true,
+        },
+      ],
+    });
+    if (proposal.error || !proposal.data) {
+      throw (
+        proposal.error ??
+        new Error("Could not propose the legacy fixture Page.")
+      );
+    }
+    if (proposal.data.status !== "proposed") {
+      throw new Error(`Legacy fixture proposal was ${proposal.data.status}.`);
+    }
+
+    const validated = await client.rpc("validate_configuration_change", {
+      expected_business_id: businessId,
+      expected_actor_id: actorId,
+      requested_change_set_id: proposal.data.id,
+    });
+    if (validated.error || !validated.data) {
+      throw (
+        validated.error ??
+        new Error("Could not validate the legacy fixture Page.")
+      );
+    }
+    if (validated.data.status !== "validated") {
+      throw new Error(
+        `Legacy fixture validation was ${validated.data.status}.`,
+      );
+    }
+
+    const applied = await client.rpc("apply_configuration_change", {
+      expected_business_id: businessId,
+      expected_actor_id: actorId,
+      requested_change_set_id: proposal.data.id,
+    });
+    if (applied.error || !applied.data) {
+      throw (
+        applied.error ?? new Error("Could not apply the legacy fixture Page.")
+      );
+    }
+    if (applied.data.status !== "applied") {
+      throw new Error(`Legacy fixture application was ${applied.data.status}.`);
+    }
+  } finally {
+    await client.auth.signOut({ scope: "local" });
+  }
+}
 
 async function createWorkspaceTable(
   page: Page,
@@ -144,24 +296,6 @@ async function saveSiteDraft(page: Page): Promise<void> {
   await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
 }
 
-async function waitForImages(page: Page): Promise<void> {
-  await page.locator("img").evaluateAll(async (images) => {
-    await Promise.all(
-      images.map(async (image) => {
-        if (!(image instanceof HTMLImageElement)) return;
-        if (image.complete && image.naturalWidth > 0) {
-          await image.decode().catch(() => undefined);
-          return;
-        }
-        await new Promise<void>((resolve) => {
-          image.addEventListener("load", () => resolve(), { once: true });
-          image.addEventListener("error", () => resolve(), { once: true });
-        });
-      }),
-    );
-  });
-}
-
 test("published Site keeps source Record changes private until republish", async ({
   page,
   pagesProof,
@@ -213,9 +347,7 @@ test("published Site keeps source Record changes private until republish", async
   ).toBeVisible();
   const releasedImage = page.locator("img.site-public-record-image");
   await expect(releasedImage).toHaveCount(1);
-  await waitForImages(page);
-  const initialImageSource = await releasedImage.getAttribute("src");
-  expect(initialImageSource).toBeTruthy();
+  const initialServedImage = await readServedImage(page, releasedImage);
 
   await page.goto(`/app/${business.slug}/workspace/${catalogueView}`);
   await page
@@ -239,9 +371,15 @@ test("published Site keeps source Record changes private until republish", async
 
   await page.goto(`/app/${business.slug}/sites`);
   const updatedHome = await selectSitePage(page, "Home");
+  const updatedCollectionCanvas = updatedHome
+    .locator(".site-composer-canvas-block-type")
+    .filter({ hasText: /^Collection$/ })
+    .locator("..");
+  await expect(updatedCollectionCanvas).toHaveCount(1);
+  await updatedCollectionCanvas.click();
   const updatedCollection = updatedHome
     .locator(
-      ".site-composer-block:has(> .site-composer-collection-fields select)",
+      ".site-composer-inspector .site-composer-block:has(> .site-composer-collection-fields select)",
     )
     .first();
   await updatedCollection
@@ -266,7 +404,9 @@ test("published Site keeps source Record changes private until republish", async
   );
   const stillReleasedImage = page.locator("img.site-public-record-image");
   await expect(stillReleasedImage).toHaveCount(1);
-  await expect(stillReleasedImage).toHaveAttribute("src", initialImageSource!);
+  const unchangedServedImage = await readServedImage(page, stillReleasedImage);
+  expect(unchangedServedImage.source).toBe(initialServedImage.source);
+  expect(unchangedServedImage.bytes).toEqual(initialServedImage.bytes);
 
   await page.goto(`/app/${business.slug}/sites`);
   await page.getByRole("button", { name: "Preview", exact: true }).click();
@@ -287,8 +427,111 @@ test("published Site keeps source Record changes private until republish", async
   );
   const republishedImage = page.locator("img.site-public-record-image");
   await expect(republishedImage).toHaveCount(1);
-  await expect(republishedImage).not.toHaveAttribute(
-    "src",
-    initialImageSource!,
+  const republishedServedImage = await readServedImage(page, republishedImage);
+  expect(republishedServedImage.source).not.toBe(initialServedImage.source);
+  expect(republishedServedImage.bytes).not.toEqual(initialServedImage.bytes);
+});
+
+test("legacy public content keeps its address through Site adoption", async ({
+  page,
+  pagesProof,
+}) => {
+  const business = await pagesProof.createBusinessThroughOwnerUi(page);
+  const legacyPath = `/p/${business.slug}/legacy-content-proof`;
+
+  await seedLegacyPublicPage(business.id, {
+    email: pagesProof.email,
+    password: pagesProof.password,
+  });
+
+  await page.goto(`/app/${business.slug}/sites`);
+  await page.getByRole("button", { name: "Create Site draft" }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=created$`),
   );
+  await page.reload();
+  const adoptionPanel = page.locator(".site-adoption-panel");
+  await expect(adoptionPanel).toBeVisible();
+  await adoptionPanel
+    .getByRole("button", { name: "Bring Pages into this Site", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=adopted$`),
+  );
+
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
+  );
+  const initialCandidate = page.getByRole("region", { name: "Site preview" });
+  await expect(
+    initialCandidate
+      .locator(".site-public-layout")
+      .getByText("This content belongs to the legacy Page.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
+  );
+
+  await page.goto(legacyPath);
+  await expect(
+    page
+      .locator(".site-public-layout")
+      .getByText("This content belongs to the legacy Page.", { exact: true }),
+  ).toBeVisible();
+
+  await page.goto(`/app/${business.slug}/sites`);
+  const adoptedPage = await selectSitePage(page, "Legacy welcome");
+  const adoptedCanvas = adoptedPage.locator(".site-composer-canvas-block");
+  await expect(adoptedCanvas).toHaveCount(2);
+  await adoptedCanvas.first().click();
+  const adoptedHeading = adoptedPage
+    .locator(".site-composer-inspector .site-composer-block")
+    .getByRole("textbox")
+    .first();
+  await expect(adoptedHeading).toHaveValue("Legacy welcome");
+  const autosave = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes(`/api/app/${business.slug}/sites/draft`) &&
+      response.status() === 200,
+  );
+  await adoptedHeading.fill("Updated adopted welcome");
+  await autosave;
+  await saveSiteDraft(page);
+
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
+  );
+  const editedCandidate = page.getByRole("region", { name: "Site preview" });
+  await expect(
+    editedCandidate
+      .locator(".site-public-layout")
+      .getByText("Updated adopted welcome", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
+  );
+
+  await page.goto(legacyPath);
+  const liveLayout = page.locator(".site-public-layout");
+  await expect(
+    liveLayout.getByText("Updated adopted welcome", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    liveLayout.getByText("Legacy welcome", { exact: true }),
+  ).toHaveCount(0);
+
+  await page.goto(`/app/${business.slug}/sites`);
+  await page
+    .getByRole("button", { name: "Unpublish Site", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=unpublished$`),
+  );
+  const unpublished = await page.request.get(legacyPath);
+  expect(unpublished.status()).toBe(404);
 });
