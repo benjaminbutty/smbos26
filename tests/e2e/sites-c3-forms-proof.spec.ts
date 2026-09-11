@@ -93,7 +93,10 @@ function formQuestion(form: Locator, index: number): Locator {
   return form.locator(".site-form-question").nth(index);
 }
 
-async function fillFormDraft(page: Page): Promise<void> {
+async function fillFormDraft(
+  page: Page,
+  options: Readonly<{ requiredReferenceImage?: boolean }> = {},
+): Promise<void> {
   const form = formCard(page);
   await expect(form).toHaveCount(1);
 
@@ -169,6 +172,9 @@ async function fillFormDraft(page: Page): Promise<void> {
   await fourthQuestion
     .getByRole("combobox", { name: "File kind", exact: true })
     .selectOption("image");
+  if (options.requiredReferenceImage) {
+    await fourthQuestion.getByRole("checkbox").check();
+  }
 
   await form.getByRole("button", { name: "Add question", exact: true }).click();
   await expect(form.locator(".site-form-question")).toHaveCount(5);
@@ -339,6 +345,18 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
     exact: true,
   });
   await expect(imageAttachment).toBeVisible();
+  const privateAttachmentHref = await imageAttachment.getAttribute("href");
+  expect(privateAttachmentHref).toBeTruthy();
+  const anonymousContext = await browser.newContext();
+  const anonymousAttachmentPage = await anonymousContext.newPage();
+  try {
+    const privateResponse = await anonymousAttachmentPage.goto(
+      new URL(privateAttachmentHref!, page.url()).toString(),
+    );
+    expect(privateResponse?.status()).toBe(404);
+  } finally {
+    await anonymousContext.close();
+  }
   const imageDownload = await Promise.all([
     page.waitForEvent("download"),
     imageAttachment.click(),
@@ -362,4 +380,210 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
   ]).then(([event]) => event);
   expect(await pdfDownload.failure()).toBeNull();
   expect(pdfDownload.suggestedFilename()).toMatch(/^site-attachment-.*\.pdf$/);
+});
+
+test("visitor preserves a finalized Form upload across reload and explicit file changes", async ({
+  page,
+  pagesProof,
+}) => {
+  await page.route("https://jamp.io/**", (route) => route.abort());
+  const business = await pagesProof.createBusinessThroughOwnerUi(page);
+
+  await createSiteDraft(page, business.slug);
+  await page
+    .getByRole("button", { name: "Start with a Form", exact: true })
+    .click();
+  await fillFormDraft(page, { requiredReferenceImage: true });
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
+  );
+  await expect(
+    page.getByRole("region", { name: "Site preview" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
+  );
+
+  const browser = page.context().browser();
+  if (!browser) throw new Error("The Sites proof needs a browser context.");
+  const visitorContext = await browser.newContext();
+  const visitor = await visitorContext.newPage();
+  await visitor.route("https://jamp.io/**", (route) => route.abort());
+
+  let interceptFinalSubmission = true;
+  const finalSubmitRequests: Array<{
+    attemptId: string;
+    grantIds: string[];
+  }> = [];
+  await visitor.route("**/api/public/sites/**", async (route) => {
+    const request = route.request();
+    let body: Record<string, unknown> | null = null;
+    try {
+      const parsed: unknown = request.postDataJSON();
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        !Array.isArray(parsed)
+      ) {
+        body = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Non-JSON requests continue to the configured API/storage service.
+    }
+    const attemptId =
+      typeof body?.submissionAttemptId === "string"
+        ? body.submissionAttemptId
+        : null;
+    const grantIds = Array.isArray(body?.grantIds)
+      ? body.grantIds.filter(
+          (grantId): grantId is string => typeof grantId === "string",
+        )
+      : null;
+    const answers =
+      typeof body?.answers === "object" &&
+      body.answers !== null &&
+      !Array.isArray(body.answers)
+        ? body.answers
+        : null;
+    if (request.method() === "POST" && attemptId && grantIds && answers) {
+      finalSubmitRequests.push({ attemptId, grantIds });
+      if (interceptFinalSubmission) {
+        await route.fulfill({
+          body: JSON.stringify({
+            code: "temporary_submission_failure",
+            message: "Temporary submission interruption.",
+          }),
+          contentType: "application/json",
+          status: 503,
+        });
+        return;
+      }
+    }
+    await route.continue();
+  });
+
+  try {
+    await visitor.goto(
+      new URL(`/p/${business.slug}/home`, page.url()).toString(),
+    );
+    const publicForm = visitor.locator("section.site-public-form");
+    await expect(
+      publicForm.getByRole("heading", { name: formName }),
+    ).toBeVisible();
+
+    await publicForm
+      .getByRole("combobox", { name: "Enquiry type", exact: true })
+      .selectOption({ label: "Catering" });
+    await publicForm
+      .getByLabel("Project details", { exact: true })
+      .fill("Please include a staffed lunch for 30 guests.");
+    await publicForm
+      .getByLabel("Preferred date", { exact: true })
+      .fill("2026-10-15");
+    await publicForm
+      .getByLabel("Reference image", { exact: true })
+      .setInputFiles({ ...proofImage, name: "first-reference.png" });
+    await publicForm
+      .getByLabel("Supporting document", { exact: true })
+      .setInputFiles({ ...proofPdf, name: "first-support.pdf" });
+    await publicForm
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect.poll(() => finalSubmitRequests.length).toBe(1);
+    await expect(
+      publicForm
+        .locator('[role="alert"]')
+        .filter({ hasText: "Temporary submission interruption." }),
+    ).toBeVisible();
+
+    await publicForm
+      .getByLabel("Reference image", { exact: true })
+      .setInputFiles([]);
+    await publicForm
+      .getByLabel("Supporting document", { exact: true })
+      .setInputFiles([]);
+    await publicForm
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect(
+      publicForm.getByRole("button", {
+        name: "Start a new response attempt",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      publicForm.getByText(
+        "The selected files changed. Start a new response attempt before sending them.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    expect(finalSubmitRequests).toHaveLength(1);
+    expect(finalSubmitRequests[0]!.grantIds).toHaveLength(2);
+
+    await visitor.reload();
+    await expect(
+      publicForm.getByLabel("Project details", { exact: true }),
+    ).toHaveValue("Please include a staffed lunch for 30 guests.");
+    await expect(
+      publicForm.getByRole("combobox", {
+        name: "Enquiry type",
+        exact: true,
+      }),
+    ).toHaveValue("Catering");
+    await publicForm
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect(
+      publicForm.getByRole("button", {
+        name: "Start a new response attempt",
+        exact: true,
+      }),
+    ).toBeVisible();
+    expect(finalSubmitRequests).toHaveLength(1);
+
+    await publicForm
+      .getByRole("button", {
+        name: "Start a new response attempt",
+        exact: true,
+      })
+      .click();
+    await publicForm
+      .getByLabel("Reference image", { exact: true })
+      .setInputFiles({ ...proofImage, name: "second-reference.png" });
+    await publicForm
+      .getByLabel("Supporting document", { exact: true })
+      .setInputFiles({ ...proofPdf, name: "second-support.pdf" });
+    await publicForm
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect.poll(() => finalSubmitRequests.length).toBe(2);
+    const secondAttempt = finalSubmitRequests[1]!;
+    expect(secondAttempt.attemptId).not.toBe(finalSubmitRequests[0]!.attemptId);
+
+    interceptFinalSubmission = false;
+    await visitor.reload();
+    await expect(
+      publicForm.getByLabel("Project details", { exact: true }),
+    ).toHaveValue("Please include a staffed lunch for 30 guests.");
+    await expect(
+      publicForm.getByText(/Retained for retry: second-reference\.png/),
+    ).toBeVisible();
+    await expect(
+      publicForm.getByText(/Retained for retry: second-support\.pdf/),
+    ).toBeVisible();
+    await publicForm
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect.poll(() => finalSubmitRequests.length).toBe(3);
+    const retryAttempt = finalSubmitRequests[2]!;
+    expect(retryAttempt.attemptId).toBe(secondAttempt.attemptId);
+    expect(retryAttempt.grantIds).toEqual(secondAttempt.grantIds);
+    await expect(publicForm.getByRole("status")).toContainText(
+      "Thanks. Your reference is",
+    );
+  } finally {
+    await visitorContext.close();
+  }
 });
