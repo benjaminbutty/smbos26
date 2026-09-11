@@ -1,7 +1,13 @@
 "use client";
 
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 
@@ -12,6 +18,10 @@ import {
 } from "../../core/sites/upload-protocol";
 
 type Answers = Record<string, unknown>;
+
+const subscribeToHydration = (): (() => void) => () => {};
+const getClientHydrationSnapshot = (): boolean => true;
+const getServerHydrationSnapshot = (): boolean => false;
 
 type RecoveryMode = "expired" | "conflict" | "stale" | "unavailable" | null;
 
@@ -244,8 +254,12 @@ function questionErrorId(actionKey: string, questionKey: string): string {
 function questionValidationError(
   question: SitePublicFormAction["questions"][number],
   value: unknown,
+  options: Readonly<{ allowRetainedFile?: boolean }> = {},
 ): string | null {
   if (!answerPresent(value)) {
+    if (question.field_type === "file" && options.allowRetainedFile) {
+      return null;
+    }
     return question.required ? `${question.label} is required.` : null;
   }
   switch (question.field_type) {
@@ -405,6 +419,37 @@ function uploadManifestStorageKey(storageKey: string): string {
   return `${storageKey}:manifest`;
 }
 
+function fileInputChangeStorageKey(storageKey: string): string {
+  return `${storageKey}:file-input-changed`;
+}
+
+function readStoredFileInputChanged(storageKey: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(storageKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredFileInputChanged(storageKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(storageKey, "1");
+  } catch {
+    // The in-memory marker still protects this mounted response attempt.
+  }
+}
+
+function clearStoredFileInputChanged(storageKey: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // A cleared attempt does not need durable file-input state.
+  }
+}
+
 function readStoredUploadManifest(storageKey: string): UploadManifest | null {
   if (typeof window === "undefined") return null;
   try {
@@ -429,6 +474,27 @@ function readStoredUploadManifest(storageKey: string): UploadManifest | null {
   } catch {
     return null;
   }
+}
+
+function retainedFilesForQuestion(
+  manifest: UploadManifest | null,
+  questionKey: string,
+): UploadManifestFile[] {
+  if (!manifest) return [];
+  const files = manifest.files.filter(
+    (file) => file.questionKey === questionKey,
+  );
+  if (files.length === 0) return [];
+  const finalizedGrantIds = new Set(manifest.finalizedGrantIds);
+  const allFinalized = files.every((file) => {
+    const capability = manifest.capabilities.find(
+      (candidate) =>
+        candidate.question_key === file.questionKey &&
+        candidate.file_ordinal === file.fileOrdinal,
+    );
+    return Boolean(capability && finalizedGrantIds.has(capability.grant_id));
+  });
+  return allFinalized ? files : [];
 }
 
 function writeStoredUploadManifest(
@@ -650,7 +716,7 @@ function uploadResponseError(
   const code = responseCode(result);
   if (code === "site_upload_unavailable") {
     return new PublicUploadClientError(
-      "This response version is no longer current. Review the latest Form before sending again.",
+      "The file upload is no longer available. Review the latest Form before sending again.",
       false,
       "stale",
     );
@@ -737,6 +803,7 @@ export function SitePublicForm({
   const router = useRouter();
   const storageKey = attemptStorageKey(businessSlug, pageSlug, action);
   const manifestStorageKey = uploadManifestStorageKey(storageKey);
+  const fileInputChangeKey = fileInputChangeStorageKey(storageKey);
   const answersStorageKey = compatibleAnswersStorageKey(
     businessSlug,
     action.action_key,
@@ -753,6 +820,7 @@ export function SitePublicForm({
   const [questionErrors, setQuestionErrors] = useState<Record<string, string>>(
     {},
   );
+  const [showValidationSummary, setShowValidationSummary] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState<RecoveryMode>(null);
   const [reviewState, setReviewState] = useState<
     "none" | "refreshing" | "needs_ack"
@@ -771,7 +839,15 @@ export function SitePublicForm({
       return token && manifest?.attemptId === token ? manifest : null;
     },
   );
+  const [fileInputChanged, setFileInputChanged] = useState(() =>
+    readStoredFileInputChanged(fileInputChangeKey),
+  );
   const [fileInputVersion, setFileInputVersion] = useState(0);
+  const hasHydrated = useSyncExternalStore(
+    subscribeToHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
   const visibleQuestions = useMemo(
     () => visibleQuestionsForAnswers(action, answers),
     [action, answers],
@@ -802,14 +878,17 @@ export function SitePublicForm({
         previousActionForStorage,
       );
       const oldManifestStorageKey = uploadManifestStorageKey(oldStorageKey);
+      const oldFileInputChangeKey = fileInputChangeStorageKey(oldStorageKey);
       try {
         window.sessionStorage.removeItem(oldStorageKey);
       } catch {
         // The old token is also cleared from component state below.
       }
       removeStoredUploadManifest(oldManifestStorageKey);
+      clearStoredFileInputChanged(oldFileInputChangeKey);
       setIdempotencyToken(null);
       setUploadManifest(null);
+      setFileInputChanged(false);
       setFileInputVersion((current) => current + 1);
       setAnswers((current) =>
         compatibleAnswersForAction(priorAction, action, {
@@ -855,6 +934,16 @@ export function SitePublicForm({
   }
 
   function setAnswer(key: string, value: unknown): void {
+    if (
+      showValidationSummary &&
+      questionErrors[key] &&
+      Object.keys(questionErrors).length === 1
+    ) {
+      setShowValidationSummary(false);
+      setMessage((current) =>
+        current === "Please check the highlighted questions." ? null : current,
+      );
+    }
     setAnswers((current) => ({ ...current, [key]: value }));
     setQuestionErrors((current) => {
       if (!(key in current)) return current;
@@ -862,6 +951,17 @@ export function SitePublicForm({
       delete next[key];
       return next;
     });
+  }
+
+  function handleFileInputChange(
+    key: string,
+    event: ChangeEvent<HTMLInputElement>,
+  ): void {
+    if (uploadManifest?.files.length) {
+      setFileInputChanged(true);
+      writeStoredFileInputChanged(fileInputChangeKey);
+    }
+    setAnswer(key, event.target.files?.length ? event.target.files : undefined);
   }
 
   function handleChoiceChange(
@@ -911,9 +1011,32 @@ export function SitePublicForm({
       return;
     }
     if (recoveryMode === "stale" || recoveryMode === "unavailable") return;
+    if (
+      fileInputChanged &&
+      uploadManifest?.files.length &&
+      visibleQuestions
+        .filter((question) => question.field_type === "file")
+        .every(
+          (question) => filesFromAnswer(answers[question.key]).length === 0,
+        )
+    ) {
+      setQuestionErrors({});
+      setShowValidationSummary(false);
+      setStatus("error");
+      setRecoveryMode("conflict");
+      setMessage(
+        "The selected files changed. Start a new response attempt before sending them.",
+      );
+      return;
+    }
     const nextQuestionErrors: Record<string, string> = {};
     for (const question of visibleQuestions) {
-      const error = questionValidationError(question, answers[question.key]);
+      const error = questionValidationError(question, answers[question.key], {
+        allowRetainedFile:
+          !fileInputChanged &&
+          question.field_type === "file" &&
+          retainedFilesForQuestion(uploadManifest, question.key).length > 0,
+      });
       if (error) nextQuestionErrors[question.key] = error;
     }
     setQuestionErrors(nextQuestionErrors);
@@ -921,6 +1044,7 @@ export function SitePublicForm({
       (question) => nextQuestionErrors[question.key],
     );
     if (firstInvalidQuestion) {
+      setShowValidationSummary(true);
       setStatus("error");
       setMessage("Please check the highlighted questions.");
       window.requestAnimationFrame(() => {
@@ -932,6 +1056,16 @@ export function SitePublicForm({
       });
       return;
     }
+    setShowValidationSummary(false);
+    const submittedAnswers = Object.fromEntries(
+      visibleQuestions.flatMap((question) => {
+        const value = answers[question.key];
+        return question.field_type !== "file" && answerPresent(value)
+          ? [[question.key, value]]
+          : [];
+      }),
+    );
+    writeCompatibleAnswers(answersStorageKey, action, submittedAnswers);
     setStatus("submitting");
     setMessage(null);
     setRecoveryMode(null);
@@ -1126,14 +1260,6 @@ export function SitePublicForm({
         }
       }
 
-      const submittedAnswers = Object.fromEntries(
-        visibleQuestions.flatMap((question) => {
-          const value = answers[question.key];
-          return question.field_type !== "file" && answerPresent(value)
-            ? [[question.key, value]]
-            : [];
-        }),
-      );
       const response = await fetch(
         publicFormEndpoint(businessSlug, pageSlug, action),
         {
@@ -1189,9 +1315,11 @@ export function SitePublicForm({
       setStatus("success");
       setRecoveryMode(null);
       setQuestionErrors({});
+      setShowValidationSummary(false);
       removeStoredCompatibleAnswers(answersStorageKey);
       clearPendingLatestReview(reviewStorageKey);
       removeStoredUploadManifest(manifestStorageKey);
+      clearStoredFileInputChanged(fileInputChangeKey);
       try {
         window.sessionStorage.removeItem(storageKey);
       } catch {
@@ -1199,6 +1327,7 @@ export function SitePublicForm({
       }
       setUploadManifest(null);
       setIdempotencyToken(null);
+      setFileInputChanged(false);
       setMessage(
         reference
           ? `Thanks. Your reference is ${reference}.`
@@ -1244,8 +1373,20 @@ export function SitePublicForm({
               const helpId = `${inputId}-help`;
               const error = questionErrors[question.key];
               const errorId = questionErrorId(action.action_key, question.key);
+              const retainedFiles =
+                hasHydrated &&
+                !fileInputChanged &&
+                question.field_type === "file"
+                  ? retainedFilesForQuestion(uploadManifest, question.key)
+                  : [];
+              const retainedId =
+                retainedFiles.length > 0 ? `${inputId}-retained` : null;
               const describedBy =
-                [question.help_text ? helpId : null, error ? errorId : null]
+                [
+                  question.help_text ? helpId : null,
+                  error ? errorId : null,
+                  retainedId,
+                ]
                   .filter(Boolean)
                   .join(" ") || undefined;
               const inputAria = {
@@ -1341,12 +1482,7 @@ export function SitePublicForm({
                       }
                       multiple={Boolean((question.upload_count ?? 1) > 1)}
                       onChange={(event) =>
-                        setAnswer(
-                          question.key,
-                          event.target.files?.length
-                            ? event.target.files
-                            : undefined,
-                        )
+                        handleFileInputChange(question.key, event)
                       }
                       type="file"
                     />
@@ -1379,6 +1515,13 @@ export function SitePublicForm({
                       }
                     />
                   )}
+                  {retainedFiles.length > 0 ? (
+                    <p className="field-help" id={retainedId ?? undefined}>
+                      Retained for retry:{" "}
+                      {retainedFiles.map((file) => file.name).join(", ")}. These
+                      files will be included in this response.
+                    </p>
+                  ) : null}
                   {question.help_text ? (
                     <p className="field-help" id={helpId}>
                       {question.help_text}
@@ -1418,8 +1561,10 @@ export function SitePublicForm({
                     // The next attempt can still use a fresh in-memory token.
                   }
                   removeStoredUploadManifest(manifestStorageKey);
+                  clearStoredFileInputChanged(fileInputChangeKey);
                   setIdempotencyToken(null);
                   setUploadManifest(null);
+                  setFileInputChanged(false);
                   setAnswers((current) => {
                     const next = { ...current };
                     for (const question of action.questions) {
@@ -1434,6 +1579,7 @@ export function SitePublicForm({
                   setMessage(null);
                   setRecoveryMode(null);
                   setQuestionErrors({});
+                  setShowValidationSummary(false);
                 }}
                 type="button"
               >
