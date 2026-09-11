@@ -818,12 +818,12 @@ export function SiteComposer({
   const navigationPendingRef = useRef(false);
   const navigationBypassRef = useRef(false);
   const manualSavePendingRef = useRef(false);
-  const movedBlockIdRef = useRef<string | null>(null);
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const home = initialDraft.pages.find((page) => page.is_home);
     return home?.id ?? initialDraft.pages[0]?.id ?? "";
   });
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
   const [identityOpen, setIdentityOpen] = useState(false);
   const [addBlockMenuOpen, setAddBlockMenuOpen] = useState(false);
@@ -990,20 +990,6 @@ export function SiteComposer({
     if (!coordinator || siteDraftEquals(coordinator.candidate, draft)) return;
     coordinator.update(copyDraft(draft));
   }, [draft]);
-
-  useEffect(() => {
-    const movedBlockId = movedBlockIdRef.current;
-    if (!movedBlockId) return;
-    const movedBlock = Array.from(
-      document.querySelectorAll<HTMLElement>("[data-site-block-id]"),
-    ).find((element) => element.dataset.siteBlockId === movedBlockId);
-    const destination = movedBlock?.querySelector<HTMLSelectElement>(
-      'select[aria-label="Move block to"]',
-    );
-    if (!destination) return;
-    destination.focus();
-    movedBlockIdRef.current = null;
-  }, [draft, selectedBlockId]);
 
   useEffect(() => {
     const nextServerDraft = copyDraft(initialDraft);
@@ -1343,7 +1329,7 @@ export function SiteComposer({
 
     sourceBlocks.splice(sourceIndex, 1);
     targetBlocks.push(moved);
-    movedBlockIdRef.current = blockId;
+    setFocusBlockId(blockId);
     commit(next);
     setSelectedPageId(pageId);
     setSelectedBlockId(
@@ -2559,11 +2545,17 @@ export function SiteComposer({
                               {block.type !== "section" ? (
                                 <SiteBlockDestinationField
                                   currentDestination="root"
+                                  focusOnMount={focusBlockId === id}
                                   onMove={(destination) =>
                                     moveBlockToDestination(
                                       page.id,
                                       id,
                                       destination,
+                                    )
+                                  }
+                                  onFocused={() =>
+                                    setFocusBlockId((current) =>
+                                      current === id ? null : current,
                                     )
                                   }
                                   sectionTargets={sectionTargets}
@@ -3159,8 +3151,14 @@ export function SiteComposer({
                                       moveBlockToDestination
                                     }
                                     moveBlockToColumn={moveBlockToColumn}
+                                    focusBlockId={focusBlockId}
                                     onUploadGalleryImage={uploadGalleryImage}
                                     onUploadImage={uploadImage}
+                                    onBlockFocused={(blockId) =>
+                                      setFocusBlockId((current) =>
+                                        current === blockId ? null : current,
+                                      )
+                                    }
                                     pageId={page.id}
                                     pages={draft.pages}
                                     removeBlock={removeBlock}
@@ -3339,10 +3337,18 @@ export function SiteComposer({
                                             moveBlockToDestination
                                           }
                                           moveBlockToColumn={moveBlockToColumn}
+                                          focusBlockId={focusBlockId}
                                           onUploadGalleryImage={
                                             uploadGalleryImage
                                           }
                                           onUploadImage={uploadImage}
+                                          onBlockFocused={(blockId) =>
+                                            setFocusBlockId((current) =>
+                                              current === blockId
+                                                ? null
+                                                : current,
+                                            )
+                                          }
                                           pageId={page.id}
                                           pages={draft.pages}
                                           removeBlock={removeBlock}
@@ -3616,19 +3622,32 @@ function parseSiteBlockDestination(
 
 function SiteBlockDestinationField({
   currentDestination,
+  focusOnMount = false,
   onMove,
+  onFocused,
   sectionTargets,
 }: Readonly<{
   currentDestination: string;
+  focusOnMount?: boolean;
   onMove: (destination: string) => void;
+  onFocused?: () => void;
   sectionTargets: readonly SiteSectionTarget[];
 }>): ReactNode {
+  const selectRef = useCallback(
+    (element: HTMLSelectElement | null) => {
+      if (!element || !focusOnMount) return;
+      element.focus();
+      if (document.activeElement === element) onFocused?.();
+    },
+    [focusOnMount, onFocused],
+  );
   return (
     <label className="site-composer-move-destination">
       Move block to
       <select
         aria-label="Move block to"
         onChange={(event) => onMove(event.target.value)}
+        ref={focusOnMount ? selectRef : undefined}
         value={currentDestination}
       >
         <option value="root">Page content</option>
@@ -3887,6 +3906,8 @@ function NestedSiteBlocks({
   moveBlockAcrossSections,
   moveBlockToDestination,
   moveBlockToColumn,
+  focusBlockId,
+  onBlockFocused,
   onUploadGalleryImage,
   onUploadImage,
   pageId,
@@ -3913,6 +3934,8 @@ function NestedSiteBlocks({
   moveBlockAcrossSections: SiteBlockMoveAcrossSections;
   moveBlockToDestination: SiteBlockMoveToDestination;
   moveBlockToColumn: SiteBlockMoveToColumn;
+  focusBlockId: string | null;
+  onBlockFocused: (blockId: string) => void;
   onUploadGalleryImage: SiteBlockUpload;
   onUploadImage: SiteBlockUpload;
   pageId: string;
@@ -4048,9 +4071,11 @@ function NestedSiteBlocks({
                   containerId,
                   columnIndex,
                 )}
+                focusOnMount={focusBlockId === id}
                 onMove={(destination) =>
                   moveBlockToDestination(pageId, id, destination)
                 }
+                onFocused={() => onBlockFocused(id)}
                 sectionTargets={sectionTargets}
               />
             ) : null}
@@ -4252,8 +4277,10 @@ function NestedSiteBlocks({
                   moveBlockAcrossSections={moveBlockAcrossSections}
                   moveBlockToDestination={moveBlockToDestination}
                   moveBlockToColumn={moveBlockToColumn}
+                  focusBlockId={focusBlockId}
                   onUploadGalleryImage={onUploadGalleryImage}
                   onUploadImage={onUploadImage}
+                  onBlockFocused={onBlockFocused}
                   pageId={pageId}
                   pages={pages}
                   removeBlock={removeBlock}
@@ -4397,8 +4424,10 @@ function NestedSiteBlocks({
                           moveBlockAcrossSections={moveBlockAcrossSections}
                           moveBlockToDestination={moveBlockToDestination}
                           moveBlockToColumn={moveBlockToColumn}
+                          focusBlockId={focusBlockId}
                           onUploadGalleryImage={onUploadGalleryImage}
                           onUploadImage={onUploadImage}
+                          onBlockFocused={onBlockFocused}
                           pageId={pageId}
                           pages={pages}
                           removeBlock={removeBlock}

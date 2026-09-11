@@ -412,6 +412,7 @@ test("owner can move content between Page and Section containers", async ({
       return option ? (option as HTMLOptionElement).value : null;
     });
   expect(secondColumnTarget).toBeTruthy();
+  await moveToSection.focus();
   await moveToSection.selectOption(secondColumnTarget!);
 
   const sectionInspector = home.locator(
@@ -434,9 +435,9 @@ test("owner can move content between Page and Section containers", async ({
   await expect(
     movedBlock.getByLabel("Move block to", { exact: true }),
   ).toBeFocused();
-  await movedBlock
-    .getByLabel("Move block to", { exact: true })
-    .selectOption("root");
+  const moveToRoot = movedBlock.getByLabel("Move block to", { exact: true });
+  await moveToRoot.focus();
+  await moveToRoot.selectOption("root");
 
   const restoredInspector = home.locator(
     ".site-composer-inspector .site-composer-block",
