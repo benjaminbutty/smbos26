@@ -15,6 +15,63 @@ const proofImage = {
   mimeType: "image/png",
 };
 
+function proofPdfBuffer(): Buffer {
+  const stream = "BT\n/F1 12 Tf\n10 50 Td\n(Upload proof) Tj\nET\n";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${Buffer.byteLength(stream, "binary")} >>\nstream\n${stream}endstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(Buffer.byteLength(pdf, "binary"));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  }
+  const crossReferenceOffset = Buffer.byteLength(pdf, "binary");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${crossReferenceOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "binary");
+}
+
+const proofPdf = {
+  buffer: proofPdfBuffer(),
+  mimeType: "application/pdf",
+};
+
+const proofViewports = [
+  { name: "desktop", width: 1440, height: 900 },
+  { name: "tablet", width: 834, height: 1112 },
+  { name: "mobile", width: 390, height: 844 },
+] as const;
+
+async function captureResponsiveEvidence(
+  page: Page,
+  prefix: string,
+): Promise<void> {
+  const originalViewport = page.viewportSize() ?? proofViewports[0];
+  try {
+    for (const viewport of proofViewports) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({
+        fullPage: true,
+        path: test
+          .info()
+          .outputPath(
+            `${prefix}-${viewport.name}-${viewport.width}x${viewport.height}.png`,
+          ),
+      });
+    }
+  } finally {
+    await page.setViewportSize(originalViewport);
+  }
+}
+
 async function createSiteDraft(
   page: Page,
   businessSlug: string,
@@ -55,7 +112,7 @@ async function fillFormDraft(page: Page): Promise<void> {
     .getByLabel("Question", { exact: true })
     .fill("Enquiry type");
   await firstQuestion
-    .getByLabel("Answer type", { exact: true })
+    .getByRole("combobox", { name: "Answer type", exact: true })
     .selectOption("select");
   await firstQuestion
     .getByLabel("Choices (one per line)", { exact: true })
@@ -69,13 +126,16 @@ async function fillFormDraft(page: Page): Promise<void> {
     .getByLabel("Question", { exact: true })
     .fill("Project details");
   await secondQuestion
-    .getByLabel("Answer type", { exact: true })
+    .getByRole("combobox", { name: "Answer type", exact: true })
     .selectOption("long_text");
   await secondQuestion
-    .getByLabel("Show when earlier answer is", { exact: true })
+    .getByRole("combobox", {
+      name: "Show when earlier answer is",
+      exact: true,
+    })
     .selectOption({ label: "Enquiry type" });
   await secondQuestion
-    .getByLabel("Answer", { exact: true })
+    .getByRole("combobox", { name: "Answer", exact: true })
     .selectOption({ label: "Catering" });
 
   await form.getByRole("button", { name: "Add question", exact: true }).click();
@@ -85,13 +145,16 @@ async function fillFormDraft(page: Page): Promise<void> {
     .getByLabel("Question", { exact: true })
     .fill("Preferred date");
   await thirdQuestion
-    .getByLabel("Answer type", { exact: true })
+    .getByRole("combobox", { name: "Answer type", exact: true })
     .selectOption("date");
   await thirdQuestion
-    .getByLabel("Show when earlier answer is", { exact: true })
+    .getByRole("combobox", {
+      name: "Show when earlier answer is",
+      exact: true,
+    })
     .selectOption({ label: "Enquiry type" });
   await thirdQuestion
-    .getByLabel("Answer", { exact: true })
+    .getByRole("combobox", { name: "Answer", exact: true })
     .selectOption({ label: "Catering" });
 
   await form.getByRole("button", { name: "Add question", exact: true }).click();
@@ -101,11 +164,24 @@ async function fillFormDraft(page: Page): Promise<void> {
     .getByLabel("Question", { exact: true })
     .fill("Reference image");
   await fourthQuestion
-    .getByLabel("Answer type", { exact: true })
+    .getByRole("combobox", { name: "Answer type", exact: true })
     .selectOption("file");
   await fourthQuestion
-    .getByLabel("File kind", { exact: true })
+    .getByRole("combobox", { name: "File kind", exact: true })
     .selectOption("image");
+
+  await form.getByRole("button", { name: "Add question", exact: true }).click();
+  await expect(form.locator(".site-form-question")).toHaveCount(5);
+  const fifthQuestion = formQuestion(form, 4);
+  await fifthQuestion
+    .getByLabel("Question", { exact: true })
+    .fill("Supporting document");
+  await fifthQuestion
+    .getByRole("combobox", { name: "Answer type", exact: true })
+    .selectOption("file");
+  await fifthQuestion
+    .getByRole("combobox", { name: "File kind", exact: true })
+    .selectOption("pdf");
 
   await expect(
     form.getByText("Ready to publish", { exact: true }),
@@ -127,6 +203,7 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
     .getByRole("button", { name: "Start with a Form", exact: true })
     .click();
   await fillFormDraft(page);
+  await captureResponsiveEvidence(page, "owner-form-composer");
 
   await page.getByRole("button", { name: "Preview", exact: true }).click();
   await page.waitForURL(
@@ -155,7 +232,7 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
     ).toBeVisible();
 
     await publicForm
-      .getByLabel("Enquiry type", { exact: true })
+      .getByRole("combobox", { name: "Enquiry type", exact: true })
       .selectOption({ label: "Catering" });
     await expect(
       publicForm.getByLabel("Project details", { exact: true }),
@@ -163,6 +240,22 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
     await expect(
       publicForm.getByLabel("Preferred date", { exact: true }),
     ).toBeVisible();
+    await expect(
+      publicForm.getByLabel("Reference image", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      publicForm.getByLabel("Supporting document", { exact: true }),
+    ).toBeVisible();
+    await captureResponsiveEvidence(visitor, "anonymous-public-form");
+
+    await publicForm
+      .getByRole("combobox", { name: "Enquiry type", exact: true })
+      .focus();
+    await visitor.keyboard.press("Tab");
+    await expect(
+      publicForm.getByLabel("Project details", { exact: true }),
+    ).toBeFocused();
+
     await publicForm
       .getByLabel("Project details", { exact: true })
       .fill("Please include a staffed lunch for 30 guests.");
@@ -174,6 +267,12 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
       .setInputFiles({
         ...proofImage,
         name: "visitor-reference.png",
+      });
+    await publicForm
+      .getByLabel("Supporting document", { exact: true })
+      .setInputFiles({
+        ...proofPdf,
+        name: "visitor-support.pdf",
       });
 
     await publicForm
@@ -210,15 +309,35 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/workspace/[^/?#]+/[^/?#]+(?:\\?.*)?$`),
   );
-  const attachment = page.getByRole("link", {
+  const imageField = page
+    .locator(".detail-grid > div")
+    .filter({ hasText: "Reference image" });
+  const imageAttachment = imageField.getByRole("link", {
     name: "Attachment 1",
     exact: true,
   });
-  await expect(attachment).toBeVisible();
-  const download = await Promise.all([
+  await expect(imageAttachment).toBeVisible();
+  const imageDownload = await Promise.all([
     page.waitForEvent("download"),
-    attachment.click(),
+    imageAttachment.click(),
   ]).then(([event]) => event);
-  expect(await download.failure()).toBeNull();
-  expect(download.suggestedFilename()).toMatch(/^site-attachment-.*\.png$/);
+  expect(await imageDownload.failure()).toBeNull();
+  expect(imageDownload.suggestedFilename()).toMatch(
+    /^site-attachment-.*\.png$/,
+  );
+
+  const pdfField = page
+    .locator(".detail-grid > div")
+    .filter({ hasText: "Supporting document" });
+  const pdfAttachment = pdfField.getByRole("link", {
+    name: "Attachment 1",
+    exact: true,
+  });
+  await expect(pdfAttachment).toBeVisible();
+  const pdfDownload = await Promise.all([
+    page.waitForEvent("download"),
+    pdfAttachment.click(),
+  ]).then(([event]) => event);
+  expect(await pdfDownload.failure()).toBeNull();
+  expect(pdfDownload.suggestedFilename()).toMatch(/^site-attachment-.*\.pdf$/);
 });

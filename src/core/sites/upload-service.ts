@@ -25,6 +25,13 @@ import {
   validateSiteUploadBytes,
   type ValidatedSiteUpload,
 } from "./upload-validation";
+import {
+  cleanupSitePublicUploadGrant as cleanupSitePublicUploadGrantCore,
+  listSitePublicUploadStoragePaths,
+} from "./upload-cleanup";
+import { SiteUploadServiceError } from "./upload-errors";
+
+export { SiteUploadServiceError } from "./upload-errors";
 
 type RpcResult<T> = { data: T | null; error: unknown | null };
 type RpcClient = {
@@ -74,29 +81,6 @@ type UploadAdminClient = RpcClient & {
 const rpcClient = (client: unknown): RpcClient => client as RpcClient;
 const storageClient = (client: unknown): UploadAdminClient =>
   client as UploadAdminClient;
-
-export class SiteUploadServiceError extends Error {
-  readonly code:
-    | "unavailable"
-    | "invalid_request"
-    | "rate_limited"
-    | "expired"
-    | "not_found"
-    | "integrity_failed"
-    | "quota_exceeded"
-    | "claim_lost"
-    | "provider_failed";
-
-  constructor(
-    code: SiteUploadServiceError["code"],
-    message = "The upload session is unavailable.",
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = "SiteUploadServiceError";
-    this.code = code;
-  }
-}
 
 function rpcFailureCode(error: unknown): string | null {
   if (!error || typeof error !== "object") return null;
@@ -418,32 +402,6 @@ const finalizationClaimSchema = z.object({
 function assertClaimLive(claimExpiresAt: string | null | undefined): void {
   if (!claimExpiresAt || Date.parse(claimExpiresAt) <= Date.now()) {
     throw new SiteUploadServiceError("claim_lost");
-  }
-}
-
-async function withStorageDeadline<T>(
-  operation: Promise<T>,
-  timeoutMs = sitePublicUploadLimits.storageCallTimeoutMs,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(
-          () =>
-            reject(
-              new SiteUploadServiceError(
-                "provider_failed",
-                "Storage did not respond within its bounded deadline.",
-              ),
-            ),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
   }
 }
 
@@ -823,60 +781,6 @@ export async function finalizeSitePublicUpload(
   });
 }
 
-type CleanupClaim = {
-  state: string;
-  cleanup_claim_token: string;
-  verified_storage_key: string | null;
-  quarantine_key: string;
-  quarantine_prefix: string;
-  verified_prefix: string;
-};
-
-const cleanupClaimSchema = z.object({
-  state: z.string(),
-  cleanup_claim_token: z.uuid(),
-  verified_storage_key: z.string().nullable(),
-  quarantine_key: z.string(),
-  quarantine_prefix: z.string(),
-  verified_prefix: z.string(),
-});
-
-const wait = (milliseconds: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
-
-async function listStoragePaths(
-  storage: StorageFileApi,
-  prefix: string,
-): Promise<string[]> {
-  const paths: string[] = [];
-  const pageSize = 100;
-  const maxPages = 10;
-  for (let page = 0; page < maxPages; page += 1) {
-    const listing = await withStorageDeadline(
-      storage.list(prefix, { limit: pageSize, offset: page * pageSize }),
-    );
-    if (listing.error || !listing.data) {
-      throw new SiteUploadServiceError(
-        "provider_failed",
-        "Storage cleanup could not list its bounded prefix.",
-        { cause: listing.error },
-      );
-    }
-    paths.push(
-      ...listing.data.map((entry) =>
-        entry.name.startsWith(`${prefix}/`)
-          ? entry.name
-          : `${prefix}/${entry.name}`,
-      ),
-    );
-    if (listing.data.length < pageSize) return paths;
-  }
-  throw new SiteUploadServiceError(
-    "provider_failed",
-    "Storage cleanup found more objects than its bounded prefix sweep allows.",
-  );
-}
-
 /**
  * Sweep a grant after the full 2h15 reservation deadline. A tombstone remains
  * selectable so later bounded maintenance repeats the exact prefixes.
@@ -886,68 +790,10 @@ export async function cleanupSitePublicUploadGrant(
   grantId: string,
   options: { fenceWaitMs?: number } = {},
 ): Promise<void> {
-  const admin = storageClient(client ?? createAdminClient());
-  const claim = cleanupClaimSchema.parse(
-    await callRpc<unknown>(admin, "claim_site_public_upload_cleanup_v1", {
-      requested_grant_id: grantId,
-    }),
-  ) as CleanupClaim;
-  const fenceWaitMs =
-    options.fenceWaitMs ?? sitePublicUploadLimits.storageCallTimeoutMs;
-  await wait(fenceWaitMs);
-  const storage = admin.storage.from(sitePublicUploadBucket);
-  // The quarantine key is one exact object, not a folder. Remove it directly;
-  // listing the key as a prefix would leave the provider object behind.
-  const quarantineRemoved = await withStorageDeadline(
-    storage.remove([claim.quarantine_key]),
-  );
-  if (
-    quarantineRemoved.error &&
-    !isNotFoundStorageError(quarantineRemoved.error)
-  ) {
-    throw new SiteUploadServiceError(
-      "provider_failed",
-      "Storage cleanup could not confirm quarantine removal.",
-      { cause: quarantineRemoved.error },
-    );
-  }
-
-  let paths = await listStoragePaths(storage, claim.verified_prefix);
-  if (claim.verified_storage_key) {
-    paths = paths.filter((path) => path !== claim.verified_storage_key);
-  }
-  if (paths.length > 0) {
-    const removed = await withStorageDeadline(storage.remove(paths));
-    if (removed.error) {
-      throw new SiteUploadServiceError(
-        "provider_failed",
-        "Storage cleanup could not confirm verified-orphan removal.",
-        { cause: removed.error },
-      );
-    }
-  }
-  const remaining = await listStoragePaths(storage, claim.verified_prefix);
-  const unexpected = remaining.filter(
-    (path) => path !== claim.verified_storage_key,
-  );
-  if (unexpected.length > 0) {
-    throw new SiteUploadServiceError(
-      "provider_failed",
-      "Storage cleanup found a late object after removal.",
-    );
-  }
-  await callRpc(admin, "finalize_site_public_upload_cleanup_v1", {
-    requested_grant_id: grantId,
-    requested_cleanup_claim_token: claim.cleanup_claim_token,
-  });
-}
-
-function isNotFoundStorageError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "status" in error &&
-    Number(error.status) === 404
+  return cleanupSitePublicUploadGrantCore(
+    client ?? createAdminClient(),
+    grantId,
+    options,
   );
 }
 
@@ -956,5 +802,5 @@ export const sitePublicUploadServiceInternals = {
   normalizeIssueCounts,
   readAndValidateProviderObject,
   writeAndVerifyDestination,
-  listStoragePaths,
+  listStoragePaths: listSitePublicUploadStoragePaths,
 };

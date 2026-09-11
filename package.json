@@ -113,6 +113,7 @@
     "check:migration-immutability": "node scripts/check-migration-immutability.mjs",
     "demo:seed": "node scripts/demo-seed.mjs",
     "media:cleanup": "node scripts/cleanup-page-assets.mjs",
+    "sites:cleanup-uploads": "vite-node --script scripts/cleanup-site-public-upload-grants.ts",
     "workspace:proof:seed": "node scripts/internal-workspace-proof-seed.mjs",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test"
   },
