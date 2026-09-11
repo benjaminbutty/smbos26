@@ -153,6 +153,8 @@ test.describe("mobile Site composer touch proof", () => {
     await expect(addBlockMenu).toBeHidden();
     await expect(addBlock).toHaveAttribute("aria-expanded", "false");
 
+    await addBlock.tap();
+    await expect(addBlockMenu).toBeVisible();
     await siteName.tap();
     await expect(addBlockMenu).toBeHidden();
     await expect(siteName).toBeFocused();
