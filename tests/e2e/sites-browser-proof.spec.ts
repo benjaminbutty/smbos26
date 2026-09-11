@@ -374,6 +374,89 @@ test("owner can review the compact Site editor", async ({
   });
 });
 
+test("owner can move content between Page and Section containers", async ({
+  page,
+  pagesProof,
+}) => {
+  await page.route("https://jamp.io/**", (route) => route.abort());
+  const business = await pagesProof.createBusinessThroughOwnerUi(page);
+
+  await page.goto(`/app/${business.slug}/sites`);
+  await page.getByRole("button", { name: "Create Site draft" }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=created$`),
+  );
+
+  const home = await selectSitePage(page, "Home");
+  const rootHeading = home.locator(".site-composer-canvas-block").first();
+  await rootHeading.click();
+  const rootInspector = home.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
+  await rootInspector.getByRole("textbox").first().fill("Move this heading");
+
+  await addSiteBlock(page, "Add 2-column section");
+  const section = home.locator(".site-composer-canvas-block").last();
+  await expect(section).toContainText("Section");
+
+  await rootHeading.click();
+  const moveToSection = rootInspector.getByLabel("Move block to", {
+    exact: true,
+  });
+  const secondColumnTarget = await moveToSection
+    .locator("option")
+    .evaluateAll((options) => {
+      const option = options.find((candidate) =>
+        (candidate.textContent ?? "").includes("Column 2"),
+      );
+      return option ? (option as HTMLOptionElement).value : null;
+    });
+  expect(secondColumnTarget).toBeTruthy();
+  await moveToSection.selectOption(secondColumnTarget!);
+
+  const sectionInspector = home.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
+  await expect(
+    sectionInspector
+      .locator(".site-composer-column-editor")
+      .nth(1)
+      .locator(".site-composer-nested-block input")
+      .first(),
+  ).toHaveValue("Move this heading");
+
+  const movedBlock = sectionInspector
+    .locator(".site-composer-column-editor")
+    .nth(1)
+    .locator(".site-composer-nested-block")
+    .first();
+  await expect(movedBlock).toHaveCount(1);
+  await expect(
+    movedBlock.getByLabel("Move block to", { exact: true }),
+  ).toBeFocused();
+  await movedBlock
+    .getByLabel("Move block to", { exact: true })
+    .selectOption("root");
+
+  const restoredInspector = home.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
+  await expect(restoredInspector.locator("input").first()).toHaveValue(
+    "Move this heading",
+  );
+  await expect(
+    restoredInspector.getByLabel("Move block to", { exact: true }),
+  ).toBeFocused();
+  await saveSiteDraft(page);
+  await page.reload();
+  const reloadedHome = await selectSitePage(page, "Home");
+  await expect(
+    reloadedHome
+      .locator(".site-composer-canvas")
+      .getByText("Move this heading", { exact: true }),
+  ).toBeVisible();
+});
+
 test("owner can review and keep edits after a two-tab Site conflict", async ({
   page,
   pagesProof,
@@ -734,7 +817,9 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(
     page.getByText("Powered by Lenni", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("link", { name: secondPageTitle })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: secondPageTitle, exact: true }),
+  ).toBeVisible();
   const siteImage = page.getByRole("img", { name: imageAlt });
   await expect(siteImage).toBeVisible();
   await expect(page.locator("img.site-public-record-image")).toHaveCount(1);
@@ -772,7 +857,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     path: testInfo.outputPath("live-catalogue-detail-1440x900.png"),
   });
 
-  await page.getByRole("link", { name: secondPageTitle }).click();
+  await page.getByRole("link", { name: secondPageTitle, exact: true }).click();
   await expect(page).toHaveURL(
     new RegExp(`/p/${business.slug}/${secondPageSlug}$`),
   );

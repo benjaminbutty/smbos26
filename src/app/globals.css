@@ -19380,6 +19380,16 @@ textarea {
   justify-content: space-between;
 }
 
+.site-owner-heading-compact {
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.site-owner-heading-compact h1 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  margin: 0;
+}
+
 .site-composer,
 .site-composer-pages,
 .site-composer-conflict,
@@ -19853,6 +19863,16 @@ textarea {
   justify-content: space-between;
 }
 
+.site-composer-move-destination {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 24rem;
+}
+
+.site-composer-move-destination select {
+  width: 100%;
+}
+
 .site-composer-toggles,
 .site-composer-record-options {
   align-items: center;
@@ -20162,6 +20182,15 @@ textarea {
 
   .site-owner-heading {
     gap: var(--space-3);
+  }
+
+  .site-owner-heading-compact {
+    display: flex;
+    flex-direction: row;
+  }
+
+  .site-owner-heading-compact .site-owner-actions {
+    justify-content: flex-end;
   }
 
   .site-owner-heading .eyebrow {

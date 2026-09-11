@@ -818,6 +818,7 @@ export function SiteComposer({
   const navigationPendingRef = useRef(false);
   const navigationBypassRef = useRef(false);
   const manualSavePendingRef = useRef(false);
+  const movedBlockIdRef = useRef<string | null>(null);
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const home = initialDraft.pages.find((page) => page.is_home);
     return home?.id ?? initialDraft.pages[0]?.id ?? "";
@@ -989,6 +990,20 @@ export function SiteComposer({
     if (!coordinator || siteDraftEquals(coordinator.candidate, draft)) return;
     coordinator.update(copyDraft(draft));
   }, [draft]);
+
+  useEffect(() => {
+    const movedBlockId = movedBlockIdRef.current;
+    if (!movedBlockId) return;
+    const movedBlock = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-site-block-id]"),
+    ).find((element) => element.dataset.siteBlockId === movedBlockId);
+    const destination = movedBlock?.querySelector<HTMLSelectElement>(
+      'select[aria-label="Move block to"]',
+    );
+    if (!destination) return;
+    destination.focus();
+    movedBlockIdRef.current = null;
+  }, [draft, selectedBlockId]);
 
   useEffect(() => {
     const nextServerDraft = copyDraft(initialDraft);
@@ -1289,6 +1304,53 @@ export function SiteComposer({
     if (!blocks || index < 0 || target < 0 || target >= blocks.length) return;
     [blocks[index], blocks[target]] = [blocks[target]!, blocks[index]!];
     commit(next);
+  }
+
+  function moveBlockToDestination(
+    pageId: string,
+    blockId: string,
+    destination: string,
+  ): void {
+    const parsedDestination = parseSiteBlockDestination(destination);
+    if (!parsedDestination) return;
+    const next = copyDraft(draft);
+    const page = next.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+    const sourceBlocks = findBlockList(page.layout.blocks, blockId);
+    const sourceIndex =
+      sourceBlocks?.findIndex(
+        (candidate) => asRecord(candidate).id === blockId,
+      ) ?? -1;
+    const moved = sourceBlocks?.[sourceIndex];
+    if (!sourceBlocks || sourceIndex < 0 || !moved) return;
+
+    let targetBlocks: SiteBlock[];
+    if (parsedDestination.kind === "root") {
+      targetBlocks = page.layout.blocks;
+    } else {
+      if (moved.type === "section") return;
+      const section = page.layout.blocks.find(
+        (candidate) =>
+          candidate.type === "section" &&
+          candidate.id === parsedDestination.sectionId,
+      );
+      if (!section || section.type !== "section") return;
+      const targetColumn = section.columns[parsedDestination.columnIndex];
+      if (!targetColumn) return;
+      targetBlocks = targetColumn.blocks as SiteBlock[];
+    }
+    if (sourceBlocks === targetBlocks) return;
+
+    sourceBlocks.splice(sourceIndex, 1);
+    targetBlocks.push(moved);
+    movedBlockIdRef.current = blockId;
+    commit(next);
+    setSelectedPageId(pageId);
+    setSelectedBlockId(
+      parsedDestination.kind === "section"
+        ? parsedDestination.sectionId
+        : blockId,
+    );
   }
 
   function moveBlockToColumn(
@@ -2399,6 +2461,7 @@ export function SiteComposer({
                           const blockIndex = page.layout.blocks.findIndex(
                             (candidate) => blockIdentity(candidate, "") === id,
                           );
+                          const sectionTargets = siteSectionTargets(page);
                           const collectionOption =
                             block.type === "collection"
                               ? objectOptions.find(
@@ -2456,6 +2519,7 @@ export function SiteComposer({
                           return (
                             <div
                               className="site-composer-block is-selected"
+                              data-site-block-id={id}
                               key={id}
                             >
                               <div className="site-composer-block-header">
@@ -2492,6 +2556,19 @@ export function SiteComposer({
                                   </button>
                                 </div>
                               </div>
+                              {block.type !== "section" ? (
+                                <SiteBlockDestinationField
+                                  currentDestination="root"
+                                  onMove={(destination) =>
+                                    moveBlockToDestination(
+                                      page.id,
+                                      id,
+                                      destination,
+                                    )
+                                  }
+                                  sectionTargets={sectionTargets}
+                                />
+                              ) : null}
                               {block.type === "heading" ? (
                                 <input
                                   value={
@@ -3078,12 +3155,16 @@ export function SiteComposer({
                                     moveBlockAcrossSections={
                                       moveBlockAcrossSections
                                     }
+                                    moveBlockToDestination={
+                                      moveBlockToDestination
+                                    }
                                     moveBlockToColumn={moveBlockToColumn}
                                     onUploadGalleryImage={uploadGalleryImage}
                                     onUploadImage={uploadImage}
                                     pageId={page.id}
                                     pages={draft.pages}
                                     removeBlock={removeBlock}
+                                    sectionTargets={sectionTargets}
                                     sectionIds={page.layout.blocks
                                       .filter((item) => item.type === "section")
                                       .map((item) => blockIdentity(item, ""))}
@@ -3254,6 +3335,9 @@ export function SiteComposer({
                                           moveBlockAcrossSections={
                                             moveBlockAcrossSections
                                           }
+                                          moveBlockToDestination={
+                                            moveBlockToDestination
+                                          }
                                           moveBlockToColumn={moveBlockToColumn}
                                           onUploadGalleryImage={
                                             uploadGalleryImage
@@ -3262,6 +3346,7 @@ export function SiteComposer({
                                           pageId={page.id}
                                           pages={draft.pages}
                                           removeBlock={removeBlock}
+                                          sectionTargets={sectionTargets}
                                           sectionIds={page.layout.blocks
                                             .filter(
                                               (item) => item.type === "section",
@@ -3464,11 +3549,22 @@ type SiteBlockMoveAcrossSections = (
   blockId: string,
   offset: -1 | 1,
 ) => void;
+type SiteBlockMoveToDestination = (
+  pageId: string,
+  blockId: string,
+  destination: string,
+) => void;
 type SiteBlockUpload = (
   event: FormEvent<HTMLInputElement>,
   pageId: string,
   blockId: string,
 ) => Promise<void>;
+
+type SiteSectionTarget = {
+  id: string;
+  label: string;
+  columnCount: number;
+};
 
 function richTextNodeLabel(type: RichTextNodeType): string {
   if (type === "bullet_list") return "Bulleted list";
@@ -3480,6 +3576,75 @@ function sitePageHref(businessSlug: string, pageSlug: string): string {
   return `/p/${encodeURIComponent(businessSlug)}/${encodeURIComponent(
     pageSlug,
   )}`;
+}
+
+function siteSectionTargets(page: SitePage): SiteSectionTarget[] {
+  return page.layout.blocks.flatMap((block, index) => {
+    if (block.type !== "section" || typeof block.id !== "string") return [];
+    return [
+      {
+        id: block.id,
+        label: `Section ${index + 1}`,
+        columnCount: block.columns.length,
+      },
+    ];
+  });
+}
+
+function siteSectionDestination(
+  sectionId: string,
+  columnIndex: number,
+): string {
+  return `section:${sectionId}:${columnIndex}`;
+}
+
+function parseSiteBlockDestination(
+  value: string,
+):
+  | { kind: "root" }
+  | { kind: "section"; sectionId: string; columnIndex: number }
+  | null {
+  if (value === "root") return { kind: "root" };
+  const match = /^section:([^:]+):([0-2])$/.exec(value);
+  if (!match?.[1] || !match[2]) return null;
+  return {
+    kind: "section",
+    sectionId: match[1],
+    columnIndex: Number(match[2]),
+  };
+}
+
+function SiteBlockDestinationField({
+  currentDestination,
+  onMove,
+  sectionTargets,
+}: Readonly<{
+  currentDestination: string;
+  onMove: (destination: string) => void;
+  sectionTargets: readonly SiteSectionTarget[];
+}>): ReactNode {
+  return (
+    <label className="site-composer-move-destination">
+      Move block to
+      <select
+        aria-label="Move block to"
+        onChange={(event) => onMove(event.target.value)}
+        value={currentDestination}
+      >
+        <option value="root">Page content</option>
+        {sectionTargets.map((section) =>
+          Array.from({ length: section.columnCount }, (_, columnIndex) => (
+            <option
+              key={siteSectionDestination(section.id, columnIndex)}
+              value={siteSectionDestination(section.id, columnIndex)}
+            >
+              {section.label} · Column {columnIndex + 1}
+            </option>
+          )),
+        )}
+      </select>
+    </label>
+  );
 }
 
 function sitePageSlugForHref(
@@ -3720,12 +3885,14 @@ function NestedSiteBlocks({
   duplicateBlock,
   moveBlock,
   moveBlockAcrossSections,
+  moveBlockToDestination,
   moveBlockToColumn,
   onUploadGalleryImage,
   onUploadImage,
   pageId,
   pages,
   removeBlock,
+  sectionTargets,
   sectionIds,
   setSectionColumns,
   setSectionPresentation,
@@ -3744,12 +3911,14 @@ function NestedSiteBlocks({
   duplicateBlock: SiteBlockMove;
   moveBlock: SiteBlockMove;
   moveBlockAcrossSections: SiteBlockMoveAcrossSections;
+  moveBlockToDestination: SiteBlockMoveToDestination;
   moveBlockToColumn: SiteBlockMoveToColumn;
   onUploadGalleryImage: SiteBlockUpload;
   onUploadImage: SiteBlockUpload;
   pageId: string;
   pages: readonly SitePage[];
   removeBlock: SiteBlockMove;
+  sectionTargets: readonly SiteSectionTarget[];
   sectionIds: readonly string[];
   setSectionColumns: (
     pageId: string,
@@ -3774,7 +3943,11 @@ function NestedSiteBlocks({
             : pageId + "-nested-" + blockIndex;
         const sectionIndex = sectionIds.indexOf(containerId);
         return (
-          <div className="site-composer-nested-block" key={id}>
+          <div
+            className="site-composer-nested-block"
+            data-site-block-id={id}
+            key={id}
+          >
             <div className="site-composer-block-header">
               <strong>{blockLabel(block)}</strong>
               <div className="site-composer-inline-actions">
@@ -3869,6 +4042,18 @@ function NestedSiteBlocks({
                 </button>
               </div>
             </div>
+            {typeof columnIndex === "number" ? (
+              <SiteBlockDestinationField
+                currentDestination={siteSectionDestination(
+                  containerId,
+                  columnIndex,
+                )}
+                onMove={(destination) =>
+                  moveBlockToDestination(pageId, id, destination)
+                }
+                sectionTargets={sectionTargets}
+              />
+            ) : null}
             {block.type === "heading" ? (
               <input
                 value={typeof value.text === "string" ? value.text : ""}
@@ -4065,12 +4250,14 @@ function NestedSiteBlocks({
                   duplicateBlock={duplicateBlock}
                   moveBlock={moveBlock}
                   moveBlockAcrossSections={moveBlockAcrossSections}
+                  moveBlockToDestination={moveBlockToDestination}
                   moveBlockToColumn={moveBlockToColumn}
                   onUploadGalleryImage={onUploadGalleryImage}
                   onUploadImage={onUploadImage}
                   pageId={pageId}
                   pages={pages}
                   removeBlock={removeBlock}
+                  sectionTargets={sectionTargets}
                   sectionIds={sectionIds}
                   setSectionColumns={setSectionColumns}
                   setSectionPresentation={setSectionPresentation}
@@ -4208,12 +4395,14 @@ function NestedSiteBlocks({
                           duplicateBlock={duplicateBlock}
                           moveBlock={moveBlock}
                           moveBlockAcrossSections={moveBlockAcrossSections}
+                          moveBlockToDestination={moveBlockToDestination}
                           moveBlockToColumn={moveBlockToColumn}
                           onUploadGalleryImage={onUploadGalleryImage}
                           onUploadImage={onUploadImage}
                           pageId={pageId}
                           pages={pages}
                           removeBlock={removeBlock}
+                          sectionTargets={sectionTargets}
                           sectionIds={sectionIds}
                           setSectionColumns={setSectionColumns}
                           setSectionPresentation={setSectionPresentation}

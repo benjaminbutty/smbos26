@@ -422,13 +422,21 @@ export default async function SitesPage({
 
   return (
     <section className="tenant-content sites-composer-page">
-      <header className="site-owner-heading">
+      <header
+        className={
+          state
+            ? "site-owner-heading site-owner-heading-compact"
+            : "site-owner-heading"
+        }
+      >
         <div>
-          <p className="eyebrow">Sites</p>
+          {!state ? <p className="eyebrow">Sites</p> : null}
           <h1 className="page-title">Your Site</h1>
-          <p className="lede">
-            Build your pages, then preview and publish when they are ready.
-          </p>
+          {!state ? (
+            <p className="lede">
+              Build your pages, then preview and publish when they are ready.
+            </p>
+          ) : null}
         </div>
         <div className="site-owner-actions">
           <Link
@@ -440,7 +448,7 @@ export default async function SitesPage({
         </div>
       </header>
 
-      {notice && noticeText[notice] ? (
+      {notice && noticeText[notice] && !(state && notice === "created") ? (
         <p className="notice notice-message">{noticeText[notice]}</p>
       ) : null}
 
