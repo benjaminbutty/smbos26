@@ -997,11 +997,10 @@ export function SiteComposer({
     <div className="site-composer">
       <div className="site-composer-toolbar">
         <div>
-          <p className="eyebrow">Site builder</p>
-          <h2>Shape your customer-facing Site</h2>
+          <p className="eyebrow">Site</p>
+          <h2>Build your Site</h2>
           <p className="muted">
-            Changes save as you work. Publish updates the whole Site after you
-            review it.
+            Changes save automatically. Preview before publishing.
           </p>
           <label className="site-composer-toolbar-site-name">
             Site name
@@ -1027,6 +1026,7 @@ export function SiteComposer({
                 : "Saved automatically"}
           </p>
           <button
+            className="button-secondary site-composer-quiet-action"
             disabled={undoStack.length === 0}
             onClick={undo}
             type="button"
@@ -1041,7 +1041,11 @@ export function SiteComposer({
               value={revision}
             />
             <input name="draft" type="hidden" value={JSON.stringify(draft)} />
-            <button onClick={cancelAutosaveTimer} type="submit">
+            <button
+              className="button-secondary site-composer-save-action"
+              onClick={cancelAutosaveTimer}
+              type="submit"
+            >
               Save draft
             </button>
           </form>
@@ -1063,7 +1067,11 @@ export function SiteComposer({
                 type="hidden"
                 value={draftBaseHeadRevision}
               />
-              <button disabled={autosaveStatus === "saving"} type="submit">
+              <button
+                className="button-secondary site-composer-preview-action"
+                disabled={autosaveStatus === "saving"}
+                type="submit"
+              >
                 Preview
               </button>
             </form>
@@ -1087,12 +1095,17 @@ export function SiteComposer({
                 type="hidden"
                 value={draftBaseHeadRevision}
               />
-              <button disabled={autosaveStatus === "saving"} type="submit">
+              <button
+                className="site-composer-publish-action"
+                disabled={autosaveStatus === "saving"}
+                type="submit"
+              >
                 Publish
               </button>
             </form>
           ) : publishAction ? (
             <button
+              className="site-composer-publish-action"
               disabled
               title="Preview your changes before publishing"
               type="button"
@@ -1263,29 +1276,32 @@ export function SiteComposer({
                       >
                         Page settings
                       </button>
-                      <button
-                        disabled={pageIndex === 0}
-                        onClick={() => movePage(page.id, -1)}
-                        aria-label="Move Page earlier"
-                        type="button"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        disabled={pageIndex === draft.pages.length - 1}
-                        onClick={() => movePage(page.id, 1)}
-                        aria-label="Move Page later"
-                        type="button"
-                      >
-                        ↓
-                      </button>
-                      <button
-                        disabled={page.is_home || draft.pages.length <= 1}
-                        onClick={() => removePage(page.id)}
-                        type="button"
-                      >
-                        Remove Page
-                      </button>
+                      {pageIndex > 0 ? (
+                        <button
+                          onClick={() => movePage(page.id, -1)}
+                          aria-label="Move Page earlier"
+                          type="button"
+                        >
+                          ↑
+                        </button>
+                      ) : null}
+                      {pageIndex < draft.pages.length - 1 ? (
+                        <button
+                          onClick={() => movePage(page.id, 1)}
+                          aria-label="Move Page later"
+                          type="button"
+                        >
+                          ↓
+                        </button>
+                      ) : null}
+                      {!page.is_home && draft.pages.length > 1 ? (
+                        <button
+                          onClick={() => removePage(page.id)}
+                          type="button"
+                        >
+                          Remove Page
+                        </button>
+                      ) : null}
                     </div>
                   </header>
                   {pageSettingsOpen ? (

@@ -420,10 +420,9 @@ export default async function SitesPage({
       <header className="site-owner-heading">
         <div>
           <p className="eyebrow">Sites</p>
-          <h1 className="page-title">Customer-facing Site</h1>
+          <h1 className="page-title">Your Site</h1>
           <p className="lede">
-            Shape pages, collections and managed media in a saved draft. Review
-            the update before publishing.
+            Build your pages, then preview and publish when they are ready.
           </p>
         </div>
         <div className="site-owner-actions">
