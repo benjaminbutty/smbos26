@@ -22,6 +22,8 @@ import {
   reenableSiteMedia,
   reenableSiteObject,
   reenableSiteRecord,
+  prepareSiteReleaseV3,
+  publishSiteReleaseV3,
   prepareSiteReleaseV2,
   publishSiteReleaseV2,
   rebaseSiteDraft,
@@ -291,6 +293,35 @@ function integerValue(formData: FormData, name: string): number {
     : Number.NaN;
 }
 
+async function siteDraftHasForms(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+): Promise<boolean> {
+  const reader = supabase as unknown as {
+    from(table: string): {
+      select(columns: string): {
+        eq(
+          column: string,
+          value: string,
+        ): {
+          maybeSingle(): PromiseLike<{ data: unknown; error: unknown | null }>;
+        };
+      };
+    };
+  };
+  const result = await reader
+    .from("site_states")
+    .select("draft_json")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  if (!result.data || typeof result.data !== "object") return false;
+  const draft = siteDraftV1Schema.parse(
+    (result.data as { draft_json: unknown }).draft_json,
+  );
+  return Boolean(draft.forms?.length);
+}
+
 function redirectWithNotice(
   path: string,
   notice:
@@ -556,11 +587,18 @@ export async function prepareSiteReleaseAction(
     notFound();
   let candidate;
   try {
-    candidate = await prepareSiteReleaseV2(
-      supabase,
-      { businessId: tenant.business.id, actorId: tenant.user.id },
-      input.data,
-    );
+    const hasForms = await siteDraftHasForms(supabase, tenant.business.id);
+    candidate = hasForms
+      ? await prepareSiteReleaseV3(
+          supabase,
+          { businessId: tenant.business.id, actorId: tenant.user.id },
+          input.data,
+        )
+      : await prepareSiteReleaseV2(
+          supabase,
+          { businessId: tenant.business.id, actorId: tenant.user.id },
+          input.data,
+        );
   } catch (error) {
     siteNotice(parsedSlug.data, siteErrorNotice(error));
   }
@@ -588,11 +626,20 @@ export async function publishSiteReleaseAction(
   if (!hasCapability(tenant.membership.role, "manage_configuration"))
     notFound();
   try {
-    await publishSiteReleaseV2(
-      supabase,
-      { businessId: tenant.business.id, actorId: tenant.user.id },
-      input.data,
-    );
+    const hasForms = await siteDraftHasForms(supabase, tenant.business.id);
+    if (hasForms) {
+      await publishSiteReleaseV3(
+        supabase,
+        { businessId: tenant.business.id, actorId: tenant.user.id },
+        input.data,
+      );
+    } else {
+      await publishSiteReleaseV2(
+        supabase,
+        { businessId: tenant.business.id, actorId: tenant.user.id },
+        input.data,
+      );
+    }
   } catch (error) {
     if (error instanceof SiteFoundationServiceError) {
       console.error("Sites publish failed", { code: error.code });

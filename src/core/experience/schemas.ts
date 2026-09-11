@@ -827,6 +827,18 @@ export const formFieldConfigSchema = z
     label: labelSchema.optional(),
     help_text: z.string().trim().min(1).max(500).optional(),
     hidden: z.boolean().default(false),
+    /** Form requiredness is allowed to be stricter than the canonical Field. */
+    required: z.boolean().optional(),
+    visible_when: z
+      .object({
+        field: graphKeySchema,
+        operator: z.enum(["equals", "not_equals", "includes"]),
+        value: z.union([z.string(), z.number(), z.boolean()]),
+      })
+      .strict()
+      .optional(),
+    upload_kind: z.enum(["image", "pdf"]).optional(),
+    upload_count: z.number().int().min(1).max(5).optional(),
     default_value: jsonValueSchema.optional(),
   })
   .strict()
@@ -841,6 +853,20 @@ export const formFieldConfigSchema = z
         code: "custom",
         message: "Hidden fields require a usable default value.",
         path: ["default_value"],
+      });
+    }
+    if (field.upload_count !== undefined && !field.upload_kind) {
+      context.addIssue({
+        code: "custom",
+        message: "An upload count needs an upload kind.",
+        path: ["upload_kind"],
+      });
+    }
+    if (field.upload_kind && field.hidden) {
+      context.addIssue({
+        code: "custom",
+        message: "Upload questions cannot be hidden.",
+        path: ["hidden"],
       });
     }
   });
@@ -862,7 +888,35 @@ export const formConfigSchema = z
       }),
     submit_label: labelSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((config, context) => {
+    const positions = new Map(
+      config.fields.map((field, index) => [field.field, index]),
+    );
+    const hiddenFields = new Set(
+      config.fields.filter((field) => field.hidden).map((field) => field.field),
+    );
+    config.fields.forEach((field, index) => {
+      if (
+        field.visible_when &&
+        (!positions.has(field.visible_when.field) ||
+          (positions.get(field.visible_when.field) ?? -1) >= index)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "A conditional Form field must reference an earlier field.",
+          path: ["fields", index, "visible_when", "field"],
+        });
+      }
+      if (field.visible_when && hiddenFields.has(field.visible_when.field)) {
+        context.addIssue({
+          code: "custom",
+          message: "A condition cannot reference a hidden Form field.",
+          path: ["fields", index, "visible_when", "field"],
+        });
+      }
+    });
+  });
 
 export const safePageHrefSchema = z
   .string()

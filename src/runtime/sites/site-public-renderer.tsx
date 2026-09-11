@@ -6,6 +6,9 @@ import {
 } from "react";
 import Image from "next/image";
 
+import { sitePublicFormActionSchema } from "../../core/sites/schemas";
+import { SitePublicForm } from "./site-public-form";
+
 export interface SitePublicLayout {
   blocks: unknown[];
 }
@@ -218,12 +221,25 @@ function renderBlock(
   record?: SitePublicRecord,
   onRecordSelect?: SitePublicRecordSelect,
   onPageSelect?: SitePublicPageSelect,
+  preview = false,
 ): ReactNode {
   const block = objectValue(blockInput);
   if (!block || typeof block.type !== "string") return null;
   const key =
     typeof block.public_key === "string" ? block.public_key : block.type;
   switch (block.type) {
+    case "form": {
+      const action = sitePublicFormActionSchema.safeParse(block.action);
+      return action.success ? (
+        <SitePublicForm
+          action={action.data}
+          businessSlug={businessSlug}
+          key={`${action.data.action_key}:${action.data.release_token}`}
+          pageSlug={pageSlug}
+          preview={preview}
+        />
+      ) : null;
+    }
     case "heading": {
       const level =
         typeof block.level === "number" && block.level >= 1 && block.level <= 6
@@ -295,6 +311,7 @@ function renderBlock(
               record,
               onRecordSelect,
               onPageSelect,
+              preview,
             ),
           )}
         </div>
@@ -357,6 +374,7 @@ function renderBlock(
               record,
               onRecordSelect,
               onPageSelect,
+              preview,
             )}
           </div>
         </details>
@@ -400,6 +418,7 @@ function renderBlock(
                   record,
                   onRecordSelect,
                   onPageSelect,
+                  preview,
                 )}
               </div>
             );
@@ -578,6 +597,7 @@ function renderBlocks(
   record?: SitePublicRecord,
   onRecordSelect?: SitePublicRecordSelect,
   onPageSelect?: SitePublicPageSelect,
+  preview = false,
 ): ReactNode {
   const blocks = Array.isArray(blocksInput) ? blocksInput : [];
   return blocks.map((block, index) => (
@@ -590,6 +610,7 @@ function renderBlocks(
         record,
         onRecordSelect,
         onPageSelect,
+        preview,
       )}
     </div>
   ));
@@ -603,6 +624,7 @@ export function SitePublicRenderer({
   record,
   onRecordSelect,
   onPageSelect,
+  preview,
 }: Readonly<{
   businessSlug: string;
   layout: SitePublicLayout;
@@ -611,6 +633,7 @@ export function SitePublicRenderer({
   record?: SitePublicRecord | undefined;
   onRecordSelect?: SitePublicRecordSelect;
   onPageSelect?: SitePublicPageSelect;
+  preview?: boolean;
 }>): ReactNode {
   return (
     <div className="site-public-layout">
@@ -622,6 +645,7 @@ export function SitePublicRenderer({
         record,
         onRecordSelect,
         onPageSelect,
+        preview,
       )}
     </div>
   );

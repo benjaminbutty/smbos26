@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 import { siteDraftV1Schema, type SiteDraftV1 } from "../../core/sites/schemas";
+import { walkPageBlocks } from "../../core/experience/page-blocks";
+import { SiteFormComposer, siteFormDraftBlockers } from "./site-form-composer";
 import { useUnsavedNavigationWarning } from "../../runtime/unsaved-navigation-warning";
 import {
   SerialSaveCoordinator,
@@ -16,7 +18,19 @@ type SiteBlock = SitePage["layout"]["blocks"][number];
 type SiteAction = (formData: FormData) => void | Promise<void>;
 
 type FileFieldOption = { id: string; key: string };
-type FieldOption = { id: string; key: string; fieldType: string };
+type FieldOption = {
+  id: string;
+  key: string;
+  label?: string;
+  fieldType: string;
+  required?: boolean;
+  defaultValue?: unknown;
+  options?: string[];
+};
+type ViewOption = {
+  key: string;
+  label: string;
+};
 type RecordOption = {
   id: string;
   label: string;
@@ -24,10 +38,13 @@ type RecordOption = {
   recordRevision: number;
   attachments: Record<string, number>;
 };
-type ObjectOption = {
+export type ObjectOption = {
   id: string;
   key: string;
+  singularLabel?: string;
+  pluralLabel?: string;
   fieldOptions: FieldOption[];
+  viewOptions: ViewOption[];
   fields: string[];
   fileFields: FileFieldOption[];
   records: RecordOption[];
@@ -1132,7 +1149,20 @@ export function SiteComposer({
       serverConflict.draft.pages.find((page) => page.is_home) ??
       serverConflict.draft.pages[0])
     : undefined;
-  const releaseReady = autosaveStatus === "saved" && serverConflict === null;
+  const reachableFormKeys = new Set(
+    draft.pages
+      .filter((page) => page.is_included)
+      .flatMap((page) =>
+        walkPageBlocks(page.layout).flatMap((block) =>
+          block.type === "public_form" ? [block.form_key] : [],
+        ),
+      ),
+  );
+  const formsReady = (draft.forms ?? [])
+    .filter((form) => reachableFormKeys.has(form.key))
+    .every((form) => siteFormDraftBlockers(form, objectOptions).length === 0);
+  const releaseReady =
+    autosaveStatus === "saved" && serverConflict === null && formsReady;
 
   const saveDraftNow = useCallback(async (): Promise<boolean> => {
     const coordinator = saveCoordinatorRef.current;
@@ -1211,6 +1241,21 @@ export function SiteComposer({
     setDraft(next);
     setMessage(null);
     setAutosaveStatus("saving");
+  }
+
+  function addFormToPage(formKey: string, pageId: string): void {
+    const next = copyDraft(draft);
+    const page = next.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+    page.layout.blocks.unshift({
+      type: "public_form",
+      id: crypto.randomUUID(),
+      form_key: formKey,
+    } as SiteBlock);
+    commit(next);
+    setMessage(
+      "Form added to the Page. It will be available when you publish.",
+    );
   }
 
   function updatePage(pageId: string, update: (page: SitePage) => void): void {
@@ -1920,6 +1965,12 @@ export function SiteComposer({
 
   return (
     <div className="site-composer">
+      <SiteFormComposer
+        draft={draft}
+        objectOptions={objectOptions}
+        onAddToPage={addFormToPage}
+        onChange={commit}
+      />
       <div className="site-composer-toolbar">
         <div>
           <label className="site-composer-toolbar-site-name">

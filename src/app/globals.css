@@ -19400,6 +19400,161 @@ textarea {
   gap: var(--space-6);
 }
 
+.site-form-composer {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.site-form-composer-heading,
+.site-form-card-heading,
+.site-form-subheading,
+.site-form-ready {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  justify-content: space-between;
+}
+
+.site-form-composer-heading > div,
+.site-form-card-heading > div {
+  min-width: 0;
+}
+
+.site-form-composer-heading h2,
+.site-form-card-heading h3,
+.site-form-subheading h4 {
+  margin: 0;
+}
+
+.site-form-composer-heading p:last-child {
+  margin-bottom: 0;
+  max-width: 42rem;
+}
+
+.site-form-empty,
+.site-form-card,
+.site-form-question,
+.site-form-field-note,
+.site-form-blockers {
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.site-form-empty,
+.site-form-field-note {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.site-form-empty p,
+.site-form-field-note span,
+.site-form-blockers ul {
+  margin: 0;
+}
+
+.site-form-list,
+.site-form-card,
+.site-form-questions {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.site-form-card {
+  background: var(--surface-base);
+}
+
+.site-form-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.site-form-grid > label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.site-form-grid > label > input,
+.site-form-grid > label > select,
+.site-form-grid > label > textarea {
+  width: 100%;
+}
+
+.site-form-grid > label > textarea {
+  min-height: 6rem;
+}
+
+.site-form-checkbox {
+  align-content: center;
+  grid-template-columns: auto 1fr;
+}
+
+.site-form-checkbox input {
+  margin: 0;
+}
+
+.site-form-blockers {
+  background: var(--surface-subtle);
+  border-color: var(--accent);
+}
+
+.site-form-blockers ul {
+  display: grid;
+  gap: var(--space-1);
+  padding-left: 1.2rem;
+}
+
+.site-public-form {
+  background: var(--surface-base);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-4);
+  max-width: 42rem;
+  padding: var(--space-5);
+}
+
+.site-public-form h2,
+.site-public-form p {
+  margin: 0;
+}
+
+.site-public-form form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.site-public-form form fieldset {
+  border: 0;
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.site-public-form .form-field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.site-public-form .form-field > label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.site-public-form .form-field > input,
+.site-public-form .form-field > select,
+.site-public-form .form-field > textarea {
+  width: 100%;
+}
+
+.site-public-form .form-field > textarea {
+  min-height: 8rem;
+}
+
 .site-composer-conflict {
   align-items: center;
   background: var(--surface-subtle);
@@ -20178,6 +20333,23 @@ textarea {
   .site-composer-page-header,
   .site-candidate-preview-heading {
     flex-direction: column;
+  }
+
+  .site-form-composer-heading,
+  .site-form-card-heading,
+  .site-form-subheading,
+  .site-form-ready {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .site-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .site-form-composer-heading button,
+  .site-form-ready button {
+    width: 100%;
   }
 
   .site-owner-heading {

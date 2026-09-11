@@ -21,6 +21,7 @@ import type { ExperienceFormBundle } from "../experience/service";
 import {
   sitePublicProjectionBrandingSchema,
   sitePublicProjectionPageSchema,
+  sitePublicProjectionV3Schema,
 } from "../sites/schemas";
 import { callPublicRpc } from "./rpc";
 
@@ -40,7 +41,7 @@ const publicPageResolverSchema = z.object({
 const publicSiteResolverSchema = z.object({
   business: z.object({ name: z.string(), slug: z.string() }),
   site: z.object({
-    schema_version: z.literal(2),
+    schema_version: z.union([z.literal(2), z.literal(3)]),
     branding: z.unknown(),
     navigation: z.array(
       z.object({
@@ -166,7 +167,9 @@ export interface PublicSiteRuntime {
     navigation_label: string;
     is_home: boolean;
     is_in_navigation: boolean;
-    layout: z.infer<typeof sitePublicProjectionPageSchema>["layout"];
+    layout:
+      | z.infer<typeof sitePublicProjectionPageSchema>["layout"]
+      | z.infer<typeof sitePublicProjectionV3Schema>["pages"][number]["layout"];
   };
   forms: Readonly<Record<string, never>>;
   bookings: Readonly<Record<string, never>>;
@@ -208,7 +211,11 @@ export async function loadPublicPageRuntime(
     const branding = sitePublicProjectionBrandingSchema.parse(
       resolvedSite.site.branding,
     );
-    const projectionPage = sitePublicProjectionPageSchema.parse({
+    const projectionPageSchema =
+      resolvedSite.site.schema_version === 3
+        ? sitePublicProjectionV3Schema.shape.pages.element
+        : sitePublicProjectionPageSchema;
+    const projectionPage = projectionPageSchema.parse({
       public_key: resolvedSite.page.key,
       title: resolvedSite.page.title,
       slug: resolvedSite.page.slug,

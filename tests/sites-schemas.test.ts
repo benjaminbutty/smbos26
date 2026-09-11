@@ -161,6 +161,60 @@ describe("Lenni Sites C1 composition schema", () => {
     );
   });
 
+  it("keeps incomplete Form authoring edits durable until publication readiness", () => {
+    const draft = {
+      ...validDraft(),
+      forms: [
+        {
+          id: "00000000-0000-4000-8000-000000000040",
+          key: "draft_form",
+          name: "",
+          object_mode: "new" as const,
+          object_key: "",
+          view_mode: "new" as const,
+          questions: [
+            {
+              id: "00000000-0000-4000-8000-000000000041",
+              key: "",
+              label: "",
+              field_type: "select" as const,
+              required: false,
+              visible_when: {
+                field: "",
+                operator: "equals" as const,
+                value: "",
+              },
+            },
+          ],
+        },
+      ],
+    };
+    (draft.pages[0]!.layout.blocks as unknown[]).push({
+      type: "public_form",
+      id: "00000000-0000-4000-8000-000000000042",
+      form_key: "draft_form",
+    });
+    expect(siteDraftV1Schema.safeParse(draft).success).toBe(true);
+    expect(siteDraftPublicationReadyV1Schema.safeParse(draft).success).toBe(
+      false,
+    );
+
+    const unplaced = structuredClone(draft) as typeof draft;
+    unplaced.forms![0]!.key = "unplaced_form";
+    const unplacedBlocks = unplaced.pages[0]!.layout.blocks as unknown[];
+    const formBlockIndex = unplacedBlocks.findIndex(
+      (block) =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "public_form",
+    );
+    if (formBlockIndex >= 0) unplacedBlocks.splice(formBlockIndex, 1);
+    expect(siteDraftPublicationReadyV1Schema.safeParse(unplaced).success).toBe(
+      true,
+    );
+  });
+
   it("keeps excluded unfinished content durable and omits it from the publication-ready grammar", () => {
     const draft = validDraft();
     const excluded = {

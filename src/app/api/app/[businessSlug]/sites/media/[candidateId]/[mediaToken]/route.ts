@@ -27,7 +27,7 @@ type PreviewReader = {
 type ReleaseRow = {
   site_id: string;
   status: "prepared" | "published" | "invalidated" | "expired";
-  projection_schema_version: number;
+  projection_schema_version: 2 | 3;
 };
 
 type TokenRow = { asset_id: string };
@@ -39,6 +39,10 @@ const slugSchema = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   .max(120);
 const mediaTokenSchema = z.string().regex(/^m_[a-f0-9]{64}$/);
+const previewProjectionSchemaVersionSchema = z.union([
+  z.literal(2),
+  z.literal(3),
+]);
 
 function readQuery<T>(query: QueryResult<unknown>): QueryResult<T> {
   return query as unknown as QueryResult<T>;
@@ -86,10 +90,15 @@ export async function GET(
       .eq("id", candidateId)
       .maybeSingle(),
   );
+  const releaseProjectionVersion = releaseResult.data
+    ? previewProjectionSchemaVersionSchema.safeParse(
+        releaseResult.data.projection_schema_version,
+      )
+    : null;
   if (
     releaseResult.error ||
     !releaseResult.data ||
-    releaseResult.data.projection_schema_version !== 2 ||
+    !releaseProjectionVersion?.success ||
     !["prepared", "published"].includes(releaseResult.data.status)
   ) {
     return NextResponse.json(

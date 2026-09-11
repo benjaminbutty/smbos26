@@ -14,7 +14,11 @@ import {
   siteSharedAtomicBlockSchema,
   type SitePageLayout,
 } from "../experience/schemas";
-import { graphKeySchema, jsonObjectSchema } from "../graph/schemas";
+import {
+  graphKeySchema,
+  jsonObjectSchema,
+  jsonValueSchema,
+} from "../graph/schemas";
 
 const siteNameSchema = z.string().trim().min(1).max(120);
 const siteDraftTextSchema = z.string().trim().max(120);
@@ -25,6 +29,16 @@ const siteSlugSchema = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 const siteAccentSchema = z.enum(["coral", "clay", "forest", "ocean", "plum"]);
+
+const siteDraftFormTextSchema = z.string().trim().max(120);
+const siteDraftFormKeySchema = z
+  .string()
+  .trim()
+  .max(80)
+  .refine(
+    (value) => value.length === 0 || /^[a-z][a-z0-9_]*$/.test(value),
+    "Use lowercase letters, numbers, and underscores.",
+  );
 
 export const siteBrandingSchema = z
   .object({
@@ -70,11 +84,112 @@ export const sitePageSchema = sitePageShape.superRefine((page, context) => {
   }
 });
 
+/**
+ * A Site Form is a pending authoring intent. It is deliberately separate from
+ * the canonical Form row: autosave can retain a useful, recoverable draft
+ * while Prepare is the only operation that materialises it into the ordinary
+ * Object, Field, View and Form primitives.
+ */
+export const siteFormConditionSchema = z
+  .object({
+    field: graphKeySchema,
+    operator: z.enum(["equals", "not_equals", "includes"]),
+    value: z.union([z.string(), z.number(), z.boolean()]),
+  })
+  .strict();
+
+const siteFormDraftConditionSchema = z
+  .object({
+    field: siteDraftFormKeySchema,
+    operator: z.enum(["equals", "not_equals", "includes"]),
+    value: z.union([z.string().trim().max(120), z.number(), z.boolean()]),
+  })
+  .strict();
+
+const siteFormQuestionTypeSchema = z.enum([
+  "short_text",
+  "long_text",
+  "number",
+  "currency",
+  "date",
+  "datetime",
+  "email",
+  "phone",
+  "url",
+  "select",
+  "multi_select",
+  "boolean",
+  "file",
+  "status",
+]);
+
+const siteFormQuestionSchema = z
+  .object({
+    id: z.uuid(),
+    key: siteDraftFormKeySchema,
+    // A missing mode is accepted while an older draft is being normalized.
+    // New authoring writes it explicitly so an existing Table can add a new
+    // Property without replacing the Table's established Fields.
+    field_mode: z.enum(["existing", "new"]).optional(),
+    label: siteDraftFormTextSchema,
+    help_text: z.string().trim().max(500).optional(),
+    field_type: siteFormQuestionTypeSchema,
+    required: z.boolean().default(false),
+    options: z.array(z.string().trim().max(120)).max(50).optional(),
+    default_value: jsonValueSchema.optional(),
+    visible_when: siteFormDraftConditionSchema.optional(),
+    upload_kind: z.enum(["image", "pdf"]).optional(),
+    upload_count: z.number().int().min(1).max(5).optional(),
+  })
+  .strict()
+  .superRefine((question, context) => {
+    // Draft persistence is intentionally permissive. Prepare applies the
+    // question and destination completeness rules once the owner is done.
+    if (question.upload_count !== undefined && question.upload_count < 1) {
+      context.addIssue({
+        code: "custom",
+        message: "Upload count must be positive.",
+        path: ["upload_count"],
+      });
+    }
+  });
+
+export const siteFormDraftSchema = z
+  .object({
+    id: z.uuid(),
+    key: siteDraftFormKeySchema,
+    name: siteDraftFormTextSchema,
+    object_mode: z.enum(["existing", "new"]),
+    object_key: siteDraftFormKeySchema,
+    singular_label: siteDraftFormTextSchema.optional(),
+    plural_label: siteDraftFormTextSchema.optional(),
+    view_mode: z.enum(["existing", "new"]),
+    view_key: siteDraftFormKeySchema.optional(),
+    view_name: siteDraftFormTextSchema.optional(),
+    submit_label: siteDraftFormTextSchema.optional(),
+    questions: z.array(siteFormQuestionSchema).max(50),
+  })
+  .strict()
+  .superRefine((form, context) => {
+    const questionKeys = form.questions.map((question) => question.key);
+    const nonEmptyQuestionKeys = questionKeys.filter((key) => key.length > 0);
+    if (new Set(nonEmptyQuestionKeys).size !== nonEmptyQuestionKeys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Form questions must use unique Property keys.",
+        path: ["questions"],
+      });
+    }
+  });
+
+export type SiteFormDraft = z.infer<typeof siteFormDraftSchema>;
+
 export const siteDraftV1Schema = z
   .object({
     schema_version: z.literal(1),
     branding: siteDraftBrandingSchema,
     pages: z.array(sitePageSchema).max(20),
+    forms: z.array(siteFormDraftSchema).max(20).optional(),
   })
   .strict()
   .superRefine((draft, context) => {
@@ -212,6 +327,185 @@ export type SiteDraftV1 = z.infer<typeof siteDraftV1Schema>;
 export const siteDraftPublicationReadyV1Schema = siteDraftV1Schema.superRefine(
   (draft, context) => {
     const pages = new Map(draft.pages.map((page) => [page.id, page]));
+    const reachableFormKeys = new Set<string>();
+    const collectReachableFormKeys = (value: unknown): void => {
+      if (!Array.isArray(value)) return;
+      for (const child of value) {
+        if (!child || typeof child !== "object") continue;
+        const block = child as Record<string, unknown>;
+        if (
+          block.type === "public_form" &&
+          typeof block.form_key === "string"
+        ) {
+          reachableFormKeys.add(block.form_key);
+        }
+        collectReachableFormKeys(block.blocks);
+        if (Array.isArray(block.columns)) {
+          for (const column of block.columns) {
+            if (!column || typeof column !== "object") continue;
+            collectReachableFormKeys(
+              (column as Record<string, unknown>).blocks,
+            );
+          }
+        }
+      }
+    };
+    draft.pages
+      .filter((page) => page.is_included)
+      .forEach((page) => collectReachableFormKeys(page.layout.blocks));
+    const formKeys = new Set<string>();
+    for (const [formIndex, form] of (draft.forms ?? []).entries()) {
+      if (!reachableFormKeys.has(form.key)) continue;
+      if (!form.key || formKeys.has(form.key)) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Each Form needs a unique managed identity before publishing.",
+          path: ["forms", formIndex, "key"],
+        });
+      }
+      formKeys.add(form.key);
+      if (!form.name.trim()) {
+        context.addIssue({
+          code: "custom",
+          message: "Each Form needs a name before publishing.",
+          path: ["forms", formIndex, "name"],
+        });
+      }
+      if (
+        form.object_mode === "new" &&
+        (!form.singular_label?.trim() || !form.plural_label?.trim())
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "A new Form Table needs singular and plural names.",
+          path: ["forms", formIndex],
+        });
+      }
+      if (form.object_mode === "existing" && !form.object_key) {
+        context.addIssue({
+          code: "custom",
+          message: "A Form needs an existing Table before publishing.",
+          path: ["forms", formIndex, "object_key"],
+        });
+      }
+      if (form.view_mode === "new" && !form.view_name?.trim()) {
+        context.addIssue({
+          code: "custom",
+          message: "A new Form View needs a name before publishing.",
+          path: ["forms", formIndex, "view_name"],
+        });
+      }
+      if (form.questions.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: "Each Form needs at least one question before publishing.",
+          path: ["forms", formIndex, "questions"],
+        });
+      }
+      const questionKeys = new Set<string>();
+      form.questions.forEach((question, questionIndex) => {
+        if (!question.key || questionKeys.has(question.key)) {
+          context.addIssue({
+            code: "custom",
+            message: "Each Form question needs a unique managed property.",
+            path: ["forms", formIndex, "questions", questionIndex, "key"],
+          });
+        }
+        questionKeys.add(question.key);
+        if (!question.label.trim()) {
+          context.addIssue({
+            code: "custom",
+            message: "Each Form question needs a label before publishing.",
+            path: ["forms", formIndex, "questions", questionIndex, "label"],
+          });
+        }
+        if (
+          (question.field_type === "select" ||
+            question.field_type === "multi_select" ||
+            question.field_type === "status") &&
+          (!(question.options ?? []).length ||
+            (question.options ?? []).some((option) => !option.trim()))
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Choice questions need at least one option before publishing.",
+            path: ["forms", formIndex, "questions", questionIndex, "options"],
+          });
+        }
+        if (question.field_type === "file" && !question.upload_kind) {
+          context.addIssue({
+            code: "custom",
+            message: "File questions need an upload kind before publishing.",
+            path: [
+              "forms",
+              formIndex,
+              "questions",
+              questionIndex,
+              "upload_kind",
+            ],
+          });
+        }
+      });
+      const questionPositions = new Map(
+        form.questions.map((question, questionIndex) => [
+          question.key,
+          questionIndex,
+        ]),
+      );
+      form.questions.forEach((question, questionIndex) => {
+        const condition = question.visible_when;
+        if (!condition) return;
+        const sourceIndex = questionPositions.get(condition.field);
+        const source = form.questions.find(
+          (candidate) => candidate.key === condition.field,
+        );
+        const sourceIsEarlier =
+          sourceIndex !== undefined && sourceIndex < questionIndex;
+        const supportedSource =
+          source?.field_type === "select" ||
+          source?.field_type === "multi_select" ||
+          source?.field_type === "boolean" ||
+          source?.field_type === "status";
+        const operatorSupported =
+          source?.field_type === "multi_select"
+            ? condition.operator === "includes"
+            : condition.operator === "equals" ||
+              condition.operator === "not_equals";
+        const valueSupported =
+          source?.field_type === "boolean"
+            ? typeof condition.value === "boolean"
+            : typeof condition.value === "string" &&
+              Boolean(
+                source?.options?.some(
+                  (option) =>
+                    option.trim() !== "" && option.trim() === condition.value,
+                ),
+              );
+        if (
+          !sourceIsEarlier ||
+          !supportedSource ||
+          !operatorSupported ||
+          !valueSupported ||
+          question.required
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: question.required
+              ? "A conditional question cannot be required."
+              : "Conditions must use a typed earlier choice or Yes/No question.",
+            path: [
+              "forms",
+              formIndex,
+              "questions",
+              questionIndex,
+              "visible_when",
+            ],
+          });
+        }
+      });
+    }
     const collections = new Map<
       string,
       { pageId: string; detailPageId: string | undefined }
@@ -868,6 +1162,266 @@ export const sitePublicProjectionSchema = z
   });
 
 export type SitePublicProjection = z.infer<typeof sitePublicProjectionSchema>;
+
+/**
+ * Site Form delivery is versioned independently from the immutable v2
+ * projection. The action contains only public question semantics and opaque
+ * release/action keys; canonical UUIDs and upload provider details stay on the
+ * server.
+ */
+export const sitePublicFormQuestionSchema = z
+  .object({
+    key: graphKeySchema,
+    label: siteNameSchema,
+    help_text: z.string().trim().min(1).max(500).optional(),
+    field_type: z.enum([
+      "short_text",
+      "long_text",
+      "number",
+      "currency",
+      "date",
+      "datetime",
+      "email",
+      "phone",
+      "url",
+      "select",
+      "multi_select",
+      "boolean",
+      "file",
+      "status",
+    ]),
+    required: z.boolean(),
+    options: z.array(z.string().trim().min(1).max(120)).max(50).optional(),
+    visible_when: siteFormConditionSchema.optional(),
+    upload_kind: z.enum(["image", "pdf"]).optional(),
+    upload_count: z.number().int().min(1).max(5).optional(),
+  })
+  .strict()
+  .superRefine((question, context) => {
+    if (
+      (question.field_type === "select" ||
+        question.field_type === "multi_select" ||
+        question.field_type === "status") &&
+      !question.options?.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Choice questions need options.",
+        path: ["options"],
+      });
+    }
+    if (question.field_type === "file" && !question.upload_kind) {
+      context.addIssue({
+        code: "custom",
+        message: "File questions need an upload kind.",
+        path: ["upload_kind"],
+      });
+    }
+    if (question.upload_count !== undefined && !question.upload_kind) {
+      context.addIssue({
+        code: "custom",
+        message: "An upload count needs an upload kind.",
+        path: ["upload_kind"],
+      });
+    }
+  });
+
+export const sitePublicFormActionSchema = z
+  .object({
+    release_token: z.string().regex(/^s_[a-f0-9]{64}$/),
+    action_key: z.string().regex(/^a_[a-f0-9]{64}$/),
+    form_name: siteNameSchema,
+    submit_label: siteNameSchema.optional(),
+    questions: z.array(sitePublicFormQuestionSchema).min(1).max(50),
+  })
+  .strict()
+  .superRefine((action, context) => {
+    const keys = action.questions.map((question) => question.key);
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Public Form question keys must be unique.",
+        path: ["questions"],
+      });
+    }
+    const positions = new Map(keys.map((key, index) => [key, index]));
+    action.questions.forEach((question, index) => {
+      if (
+        question.visible_when &&
+        (!positions.has(question.visible_when.field) ||
+          (positions.get(question.visible_when.field) ?? -1) >= index)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "A condition must reference an earlier question.",
+          path: ["questions", index, "visible_when", "field"],
+        });
+      } else if (question.visible_when) {
+        const source = action.questions.find(
+          (candidate) => candidate.key === question.visible_when?.field,
+        );
+        const condition = question.visible_when;
+        const supportedSource =
+          source?.field_type === "select" ||
+          source?.field_type === "multi_select" ||
+          source?.field_type === "boolean" ||
+          source?.field_type === "status";
+        const operatorSupported =
+          source?.field_type === "multi_select"
+            ? condition.operator === "includes"
+            : condition.operator === "equals" ||
+              condition.operator === "not_equals";
+        const valueSupported =
+          source?.field_type === "boolean"
+            ? typeof condition.value === "boolean"
+            : typeof condition.value === "string" &&
+              Boolean(
+                source?.options?.some(
+                  (option) => option.trim() === condition.value,
+                ),
+              );
+        if (!supportedSource || !operatorSupported || !valueSupported) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "Conditions must use a typed earlier choice or Yes/No question.",
+            path: ["questions", index, "visible_when"],
+          });
+        }
+      }
+    });
+  });
+
+export type SitePublicFormAction = z.infer<typeof sitePublicFormActionSchema>;
+
+const sitePublicFormBlockSchema = z
+  .object({
+    type: z.literal("form"),
+    public_key: z.string().regex(/^b_[a-f0-9]{64}$/),
+    action: sitePublicFormActionSchema,
+  })
+  .strict();
+
+const sitePublicBlockSchemaV3: z.ZodType<unknown> = z.lazy(() =>
+  z
+    .object({
+      type: z.enum([
+        "heading",
+        "text",
+        "rich_text",
+        "image",
+        "gallery",
+        "button",
+        "callout",
+        "divider",
+        "collapsible",
+        "section",
+        "collection",
+        "record_detail",
+        "form",
+      ]),
+      public_key: z
+        .string()
+        .regex(/^b_[a-f0-9]{64}$/)
+        .optional(),
+      media_token: sitePublicTokenSchema.optional(),
+      records: z.array(sitePublicRecordSchema).max(500).optional(),
+      images: z.array(sitePublicImageSchema).max(12).optional(),
+      display_field_keys: z.array(graphKeySchema).max(50).optional(),
+      width: siteSectionWidthSchema.optional(),
+      spacing: siteSectionSpacingSchema.optional(),
+      alignment: siteSectionAlignmentSchema.optional(),
+      background: siteSectionBackgroundSchema.optional(),
+      blocks: z.array(sitePublicBlockSchemaV3).max(50).optional(),
+      columns: z
+        .array(
+          z
+            .object({ blocks: z.array(sitePublicBlockSchemaV3).max(100) })
+            .strict(),
+        )
+        .max(3)
+        .optional(),
+      action: sitePublicFormActionSchema.optional(),
+    })
+    .passthrough()
+    .superRefine((block, context) => {
+      if (block.type === "form") {
+        const parsed = sitePublicFormBlockSchema.safeParse(block);
+        if (!parsed.success) {
+          context.addIssue({
+            code: "custom",
+            message: "Public Form blocks must include a valid action.",
+            path: ["action"],
+          });
+        }
+      }
+      if (
+        block.type === "rich_text" &&
+        !pageRichTextNodeSchema.safeParse(block.node).success
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Public rich text must use the canonical Page format.",
+          path: ["node"],
+        });
+      }
+      const privateKey = findPrivateProjectionKey(block);
+      if (privateKey) {
+        context.addIssue({
+          code: "custom",
+          message: `Public Site projection contains private key ${privateKey}.`,
+          path: [privateKey],
+        });
+      }
+    }),
+);
+
+const sitePublicProjectionPageSchemaV3 = z
+  .object({
+    public_key: z.string().regex(/^b_[a-f0-9]{64}$/),
+    title: z.string().max(120),
+    slug: z.string().max(80),
+    navigation_label: z.string().max(80),
+    is_home: z.boolean(),
+    is_in_navigation: z.boolean(),
+    layout: z
+      .object({ blocks: z.array(sitePublicBlockSchemaV3).max(100) })
+      .strict(),
+  })
+  .strict();
+
+export const sitePublicProjectionV3Schema = z
+  .object({
+    schema_version: z.literal(3),
+    branding: sitePublicProjectionBrandingSchema,
+    pages: z.array(sitePublicProjectionPageSchemaV3).min(1).max(20),
+  })
+  .strict()
+  .superRefine((projection, context) => {
+    const slugs = projection.pages.map((page) => page.slug);
+    const keys = projection.pages.map((page) => page.public_key);
+    if (
+      new Set(slugs).size !== slugs.length ||
+      new Set(keys).size !== keys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Public Site Pages must retain unique addresses and keys.",
+        path: ["pages"],
+      });
+    }
+    if (projection.pages.filter((page) => page.is_home).length !== 1) {
+      context.addIssue({
+        code: "custom",
+        message: "A public Site needs exactly one Home Page.",
+        path: ["pages"],
+      });
+    }
+  });
+
+export type SitePublicProjectionV3 = z.infer<
+  typeof sitePublicProjectionV3Schema
+>;
 
 export const siteDraftCreateSchema = z
   .object({ draft: siteDraftV1Schema })

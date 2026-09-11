@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 
+import { sitePublicFileValueSchema } from "../../core/sites/upload-protocol";
 import type { Json, Tables } from "../../db/supabase/database.types";
 
 interface FieldValueProps {
+  businessSlug?: string | undefined;
   field: Tables<"field_definitions">;
+  linkFiles?: boolean | undefined;
   value: Json | undefined;
 }
 
@@ -12,6 +15,7 @@ interface FieldInputControlProps {
   field: Tables<"field_definitions">;
   value: Json | undefined;
   ariaLabel?: string;
+  businessSlug?: string | undefined;
   isEdit?: boolean;
   autoFocus?: boolean;
 }
@@ -58,6 +62,42 @@ function fileLabel(value: Json | undefined): string {
   return "View file";
 }
 
+function ownerAttachmentIds(value: Json | undefined): string[] | null {
+  const parsed = sitePublicFileValueSchema.safeParse(value);
+  return parsed.success ? parsed.data.attachment_ids : null;
+}
+
+function ownerAttachmentValue(
+  value: Json | undefined,
+  businessSlug: string | undefined,
+  linkFiles: boolean,
+): ReactNode | null {
+  const attachmentIds = ownerAttachmentIds(value);
+  if (!attachmentIds) return null;
+
+  return (
+    <span
+      aria-label={`${attachmentIds.length} attachment${attachmentIds.length === 1 ? "" : "s"}`}
+      className="file-attachment-links"
+    >
+      {attachmentIds.map((attachmentId, index) => (
+        <span key={attachmentId}>
+          {index > 0 ? ", " : null}
+          {linkFiles && businessSlug ? (
+            <a
+              href={`/api/app/${encodeURIComponent(businessSlug)}/sites/submission-attachments/${encodeURIComponent(attachmentId)}`}
+            >
+              Attachment {index + 1}
+            </a>
+          ) : (
+            <span>Attachment {index + 1}</span>
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function formatDate(value: string, includeTime: boolean): string {
   const date = new Date(includeTime ? value : `${value}T00:00:00.000Z`);
 
@@ -102,7 +142,9 @@ function formatCurrency(
 }
 
 export function FieldValue({
+  businessSlug,
   field,
+  linkFiles = true,
   value,
 }: Readonly<FieldValueProps>): ReactNode {
   if (value === undefined || value === null || value === "") {
@@ -169,11 +211,17 @@ export function FieldValue({
         String(value)
       );
     case "file": {
+      const attachments = ownerAttachmentValue(value, businessSlug, linkFiles);
+      if (attachments) return attachments;
       const url = getSafeFileUrl(value);
       return url ? (
-        <a href={url} rel="noreferrer" target="_blank">
-          {fileLabel(value)}
-        </a>
+        linkFiles ? (
+          <a href={url} rel="noreferrer" target="_blank">
+            {fileLabel(value)}
+          </a>
+        ) : (
+          <span>{fileLabel(value)}</span>
+        )
       ) : (
         <span className="empty-value">Unavailable</span>
       );
@@ -203,6 +251,7 @@ export function FieldInputControl({
   autoFocus = false,
   ariaLabel,
   ariaDescribedBy,
+  businessSlug,
   field,
   value,
   isEdit = false,
@@ -312,7 +361,11 @@ export function FieldInputControl({
           {hasExistingValue ? (
             <span className="current-file">
               <span>Current file</span>
-              <FieldValue field={field} value={value} />
+              <FieldValue
+                businessSlug={businessSlug}
+                field={field}
+                value={value}
+              />
             </span>
           ) : null}
           <input

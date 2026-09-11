@@ -6,7 +6,9 @@ import Image from "next/image";
 
 import {
   type SitePublicProjection,
+  type SitePublicProjectionV3,
   sitePublicProjectionSchema,
+  sitePublicProjectionV3Schema,
 } from "../../core/sites/schemas";
 import {
   type SitePublicRecord,
@@ -63,7 +65,7 @@ function collectRecords(
 }
 
 function recordsInProjection(
-  projection: SitePublicProjection,
+  projection: SitePublicProjection | SitePublicProjectionV3,
 ): Map<string, CandidateRecord> {
   const records = new Map<string, CandidateRecord>();
   projection.pages.forEach((page) =>
@@ -105,10 +107,13 @@ export function SiteCandidatePreview({
 }: Readonly<{
   businessSlug: string;
   candidateId: string;
-  projection: SitePublicProjection;
+  projection: SitePublicProjection | SitePublicProjectionV3;
 }>): ReactNode {
   const safeProjection = useMemo(
-    () => sitePublicProjectionSchema.parse(projection),
+    () =>
+      projection.schema_version === 3
+        ? sitePublicProjectionV3Schema.parse(projection)
+        : sitePublicProjectionSchema.parse(projection),
     [projection],
   );
   const homePage =
@@ -215,6 +220,7 @@ export function SiteCandidatePreview({
           businessSlug={businessSlug}
           layout={selectedPage.layout}
           mediaPrefix={mediaPrefix}
+          preview
           onRecordSelect={(detailPageSlug, recordToken) => {
             const detailPage = safeProjection.pages.find(
               (page) => page.slug === detailPageSlug,

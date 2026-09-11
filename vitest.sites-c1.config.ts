@@ -6,6 +6,8 @@ export default defineConfig({
     include: [
       "tests/sites-c1-foundation.integration.ts",
       "tests/sites-c2-functional.integration.ts",
+      "tests/sites-c3-forms-sql.integration.ts",
+      "tests/sites-c3-uploads-sql.integration.ts",
     ],
     fileParallelism: false,
     sequence: { concurrent: false },

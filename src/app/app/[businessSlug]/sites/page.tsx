@@ -26,9 +26,13 @@ import { SiteAvailabilityControls } from "../../../../components/sites/site-avai
 import { ConfigurationChangeService } from "../../../../core/configuration/service";
 import {
   siteReleaseV2Schema,
+  siteReleaseV3Schema,
   siteStateSchema,
 } from "../../../../core/sites/service";
-import { sitePublicProjectionSchema } from "../../../../core/sites/schemas";
+import {
+  sitePublicProjectionSchema,
+  sitePublicProjectionV3Schema,
+} from "../../../../core/sites/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
 
 interface SitesPageProps {
@@ -45,11 +49,26 @@ type SiteReader = {
   from(table: string): { select(columns: string): ReadQuery<unknown> };
 };
 
-type ObjectRow = { id: string; key: string; is_active: boolean };
+type ObjectRow = {
+  id: string;
+  key: string;
+  singular_label: string;
+  plural_label: string;
+  is_active: boolean;
+};
 type FieldRow = {
   id: string;
   key: string;
+  label: string;
   field_type: string;
+  required: boolean;
+  is_active: boolean;
+  default_value: unknown;
+  settings_json: unknown;
+};
+type ViewRow = {
+  key: string;
+  name: string;
   is_active: boolean;
 };
 type RecordRow = {
@@ -168,7 +187,7 @@ export default async function SitesPage({
   const objectResult = await readQuery<ObjectRow[]>(
     reader
       .from("object_definitions")
-      .select("id,key,is_active")
+      .select("id,key,singular_label,plural_label,is_active")
       .eq("business_id", tenant.business.id)
       .eq("is_active", true),
   );
@@ -241,7 +260,9 @@ export default async function SitesPage({
       const fieldsResult = await readQuery<FieldRow[]>(
         reader
           .from("field_definitions")
-          .select("id,key,field_type,is_active")
+          .select(
+            "id,key,label,field_type,required,is_active,default_value,settings_json",
+          )
           .eq("business_id", tenant.business.id)
           .eq("object_definition_id", objectValue.id)
           .eq("is_active", true),
@@ -254,21 +275,52 @@ export default async function SitesPage({
           .eq("object_definition_id", objectValue.id)
           .eq("record_status", "active"),
       );
+      const viewsResult = await readQuery<ViewRow[]>(
+        reader
+          .from("views")
+          .select("key,name,is_active")
+          .eq("business_id", tenant.business.id)
+          .eq("object_definition_id", objectValue.id)
+          .eq("is_active", true),
+      );
       if (fieldsResult.error) throw fieldsResult.error;
       if (recordsResult.error) throw recordsResult.error;
+      if (viewsResult.error) throw viewsResult.error;
       return {
         id: objectValue.id,
         key: objectValue.key,
+        singularLabel: objectValue.singular_label,
+        pluralLabel: objectValue.plural_label,
         fieldOptions: (fieldsResult.data ?? [])
-          .map((field) => ({
-            id: field.id,
-            key: field.key,
-            fieldType: field.field_type,
-          }))
-          .slice(0, 10),
+          .map((field) => {
+            const settings =
+              typeof field.settings_json === "object" &&
+              field.settings_json !== null &&
+              !Array.isArray(field.settings_json)
+                ? (field.settings_json as Record<string, unknown>)
+                : {};
+            const options = Array.isArray(settings.options)
+              ? settings.options.filter(
+                  (option): option is string => typeof option === "string",
+                )
+              : undefined;
+            return {
+              id: field.id,
+              key: field.key,
+              label: field.label,
+              fieldType: field.field_type,
+              required: field.required,
+              defaultValue: field.default_value,
+              ...(options ? { options } : {}),
+            };
+          })
+          .slice(0, 50),
+        viewOptions: (viewsResult.data ?? [])
+          .map((view) => ({ key: view.key, label: view.name }))
+          .slice(0, 20),
         fields: (fieldsResult.data ?? [])
           .map((field) => field.key)
-          .slice(0, 10),
+          .slice(0, 50),
         fileFields: (fieldsResult.data ?? [])
           .filter((field) => field.field_type === "file")
           .map((field) => ({ id: field.id, key: field.key })),
@@ -305,11 +357,20 @@ export default async function SitesPage({
         .eq("id", candidateId)
         .maybeSingle(),
     );
-    if (candidateResult.data)
-      candidate = siteReleaseV2Schema.parse(candidateResult.data);
+    if (candidateResult.data) {
+      const parsedRelease = candidateResult.data as {
+        projection_schema_version?: unknown;
+      };
+      candidate =
+        parsedRelease.projection_schema_version === 3
+          ? siteReleaseV3Schema.parse(candidateResult.data)
+          : siteReleaseV2Schema.parse(candidateResult.data);
+    }
   }
   const candidateProjection = candidate
-    ? sitePublicProjectionSchema.parse(candidate.projection_json)
+    ? candidate.projection_schema_version === 3
+      ? sitePublicProjectionV3Schema.parse(candidate.projection_json)
+      : sitePublicProjectionSchema.parse(candidate.projection_json)
     : null;
 
   const objectAvailabilityById = new Map(

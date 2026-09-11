@@ -91,6 +91,13 @@ export const siteReleaseSchema = z
     projection_json: siteReleaseProjectionSchema,
     review_json: siteReleaseReviewSchema,
     projection_checksum: z.string().regex(/^[a-f0-9]{64}$/),
+    // C3 adds an opaque token to v3 releases.  It remains nullable for the
+    // immutable v1/v2 rows so existing Site releases continue to parse.
+    release_token: z
+      .string()
+      .regex(/^s_[a-f0-9]{64}$/)
+      .nullable()
+      .optional(),
     prepared_by: z.uuid(),
     prepared_at: z.string().datetime({ offset: true }),
     published_by: z.uuid().nullable(),
@@ -102,6 +109,13 @@ export const siteReleaseV2Schema = siteReleaseSchema.extend({
   projection_schema_version: z.literal(2),
   projection_json: z.unknown(),
   review_json: z.unknown(),
+});
+
+export const siteReleaseV3Schema = siteReleaseSchema.extend({
+  projection_schema_version: z.literal(3),
+  projection_json: z.unknown(),
+  review_json: z.unknown(),
+  release_token: z.string().regex(/^s_[a-f0-9]{64}$/),
 });
 
 type SiteRpcClient = {
@@ -342,6 +356,52 @@ export async function publishSiteReleaseV2(
       expected_head_revision: request.expectedHeadRevision,
     },
     siteReleaseV2Schema,
+  );
+}
+
+/** C3 keeps the C2 release path immutable while adding public Form actions. */
+export async function prepareSiteReleaseV3(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePreparationSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "prepare_site_release_v3",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteReleaseV3Schema,
+  );
+}
+
+export async function publishSiteReleaseV3(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePublishSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "publish_site_release_v3",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      requested_candidate_id: request.candidateId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteReleaseV3Schema,
   );
 }
 

@@ -14,6 +14,7 @@ import {
 
 interface InlineTableProps {
   action: InlineEditAction;
+  businessSlug: string;
   editableFieldKeys: readonly string[];
   fields: Tables<"field_definitions">[];
   recordBasePath: string;
@@ -48,6 +49,7 @@ const initialActionState: InlineEditActionState = { status: "idle" };
 
 export function InlineTable({
   action,
+  businessSlug,
   editableFieldKeys,
   fields,
   recordBasePath,
@@ -147,6 +149,7 @@ export function InlineTable({
                             />
                             <FieldInputControl
                               ariaLabel={`Edit ${field.label}`}
+                              businessSlug={businessSlug}
                               field={field}
                               value={value}
                             />
@@ -176,10 +179,19 @@ export function InlineTable({
                                 className="primary-record-link"
                                 href={`${recordBasePath}/${record.id}`}
                               >
-                                <FieldValue field={field} value={value} />
+                                <FieldValue
+                                  businessSlug={businessSlug}
+                                  field={field}
+                                  linkFiles={false}
+                                  value={value}
+                                />
                               </a>
                             ) : (
-                              <FieldValue field={field} value={value} />
+                              <FieldValue
+                                businessSlug={businessSlug}
+                                field={field}
+                                value={value}
+                              />
                             )}
                             <button
                               aria-label={`Edit ${field.label}`}
@@ -201,10 +213,19 @@ export function InlineTable({
                             className="primary-record-link"
                             href={`${recordBasePath}/${record.id}`}
                           >
-                            <FieldValue field={field} value={value} />
+                            <FieldValue
+                              businessSlug={businessSlug}
+                              field={field}
+                              linkFiles={false}
+                              value={value}
+                            />
                           </a>
                         ) : (
-                          <FieldValue field={field} value={value} />
+                          <FieldValue
+                            businessSlug={businessSlug}
+                            field={field}
+                            value={value}
+                          />
                         )}
                       </td>
                     );
