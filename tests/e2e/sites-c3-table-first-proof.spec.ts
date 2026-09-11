@@ -259,7 +259,9 @@ test("Table-first Site Form keeps its destination through a reviewed release", a
     }),
   ).toHaveValue(existingViewKey);
   await expect(
-    reloadedForm.getByText("Placed on 1 Page block.", { exact: true }),
+    reloadedForm
+      .locator(".site-form-ready")
+      .getByText("Placed on 1 Page block.", { exact: true }),
   ).toBeVisible();
   await captureFormStates(page);
 

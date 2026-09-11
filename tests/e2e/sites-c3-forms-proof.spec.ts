@@ -94,7 +94,15 @@ function formQuestion(form: Locator, index: number): Locator {
 }
 
 function referenceImageInput(form: Locator): Locator {
-  return form.getByLabel(/^Reference image(?:\s+\*)?$/);
+  return form.getByLabel(/^Reference image(?:\s*\*)?$/);
+}
+
+async function checkedReferenceImageInput(form: Locator): Promise<Locator> {
+  const input = referenceImageInput(form);
+  await expect(input).toHaveCount(1);
+  await expect(input).toHaveAttribute("type", "file");
+  await expect(input).toBeEnabled();
+  return input;
 }
 
 async function fillFormDraft(
@@ -489,7 +497,8 @@ test("visitor preserves a finalized Form upload across reload and explicit file 
     await publicForm
       .getByLabel("Preferred date", { exact: true })
       .fill("2026-10-15");
-    await referenceImageInput(publicForm).setInputFiles({
+    const firstReferenceImage = await checkedReferenceImageInput(publicForm);
+    await firstReferenceImage.setInputFiles({
       ...proofImage,
       name: "first-reference.png",
     });
@@ -506,7 +515,8 @@ test("visitor preserves a finalized Form upload across reload and explicit file 
         .filter({ hasText: "Temporary submission interruption." }),
     ).toBeVisible();
 
-    await referenceImageInput(publicForm).setInputFiles([]);
+    const clearedReferenceImage = await checkedReferenceImageInput(publicForm);
+    await clearedReferenceImage.setInputFiles([]);
     await publicForm
       .getByLabel("Supporting document", { exact: true })
       .setInputFiles([]);
@@ -555,7 +565,8 @@ test("visitor preserves a finalized Form upload across reload and explicit file 
         exact: true,
       })
       .click();
-    await referenceImageInput(publicForm).setInputFiles({
+    const secondReferenceImage = await checkedReferenceImageInput(publicForm);
+    await secondReferenceImage.setInputFiles({
       ...proofImage,
       name: "second-reference.png",
     });
