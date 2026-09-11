@@ -430,7 +430,7 @@ test("owner can move content between Page and Section containers", async ({
     .locator(".site-composer-column-editor")
     .nth(1)
     .locator(".site-composer-nested-block")
-    .first();
+    .filter({ hasText: "Move this heading" });
   await expect(movedBlock).toHaveCount(1);
   await expect(
     movedBlock.getByLabel("Move block to", { exact: true }),
