@@ -438,7 +438,25 @@ test("Table-first Site Form keeps its destination through a reviewed release", a
   await openRecord.click();
   const recordPanel = page.locator(".editor-record-panel");
   await expect(recordPanel).toBeVisible();
-  await expect(recordPanel).toContainText("Alex Morgan");
-  await expect(recordPanel).toContainText("Please send registration details.");
-  await expect(recordPanel).toContainText("Yes");
+  await recordPanel
+    .getByRole("link", { name: "Open full record", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/workspace/[^/?#]+/[^/?#]+(?:\\?.*)?$`),
+  );
+  const detailField = (label: string): Locator =>
+    page.locator(".detail-grid > div").filter({
+      has: page.locator("dt").filter({ hasText: label }),
+    });
+  const nameField = detailField("Name");
+  const followUpField = detailField(followUpQuestion);
+  const commentField = detailField(initialCommentQuestion);
+  await expect(nameField.locator("dt")).toHaveText("Name");
+  await expect(nameField.locator("dd")).toContainText("Alex Morgan");
+  await expect(followUpField.locator("dt")).toHaveText(followUpQuestion);
+  await expect(followUpField.locator("dd")).toHaveText("Yes");
+  await expect(commentField.locator("dt")).toHaveText(initialCommentQuestion);
+  await expect(commentField.locator("dd")).toContainText(
+    "Please send registration details.",
+  );
 });
