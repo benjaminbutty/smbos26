@@ -237,9 +237,34 @@ function catalogueDraft() {
               text: "Browse the latest catalogue items.",
             },
             {
+              type: "rich_text",
+              id: crypto.randomUUID(),
+              node: {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "Read the ",
+                    marks: [{ type: "italic" }],
+                  },
+                  {
+                    type: "text",
+                    text: "catalogue",
+                    marks: [
+                      { type: "bold" },
+                      { type: "link", href: "/catalogue" },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
               type: "section",
               id: crypto.randomUUID(),
               width: "wide",
+              spacing: "spacious",
+              alignment: "center",
+              background: "tint",
               columns: [
                 {
                   blocks: [
@@ -344,7 +369,7 @@ function catalogueDraft() {
               type: "record_detail",
               id: crypto.randomUUID(),
               collection_block_id: collectionId,
-              public_field_keys: ["name", "price", "photo"],
+              public_field_keys: ["price", "name"],
             },
           ],
         },
@@ -586,6 +611,33 @@ describe("Lenni Sites C2 functional milestone", () => {
                 id: crypto.randomUUID(),
                 text: "Legacy text retained for review.",
               },
+              {
+                type: "rich_text",
+                id: crypto.randomUUID(),
+                node: {
+                  type: "bullet_list",
+                  items: [
+                    {
+                      content: [
+                        {
+                          type: "text",
+                          text: "Legacy rich text is retained.",
+                          marks: [{ type: "bold" }],
+                        },
+                      ],
+                    },
+                    {
+                      content: [
+                        {
+                          type: "text",
+                          text: "It remains editable after adoption.",
+                          marks: [{ type: "link", href: "/details" }],
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
             ],
           },
           status: "published",
@@ -619,6 +671,92 @@ describe("Lenni Sites C2 functional milestone", () => {
     }
   });
 
+  it("round-trips bounded authoring metadata and rejects invalid raw updates", async () => {
+    const before = await siteState();
+    const draft = before.draft_json as {
+      pages: Array<{ layout: { blocks: Array<Record<string, unknown>> } }>;
+    };
+    const homeBlocks = draft.pages[0]?.layout.blocks ?? [];
+    const section = homeBlocks.find((block) => block.type === "section");
+    expect(section).toMatchObject({
+      width: "wide",
+      spacing: "spacious",
+      alignment: "center",
+      background: "tint",
+    });
+    expect(
+      homeBlocks.find((block) => block.type === "rich_text"),
+    ).toMatchObject({
+      type: "rich_text",
+      node: {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Read the ", marks: [{ type: "italic" }] },
+          {
+            type: "text",
+            text: "catalogue",
+            marks: [{ type: "bold" }, { type: "link", href: "/catalogue" }],
+          },
+        ],
+      },
+    });
+
+    const unchanged = await rpc(owner.client).rpc<Record<string, unknown>>(
+      "save_site_draft_v2",
+      {
+        expected_business_id: catalogueBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: catalogueSiteId,
+        expected_draft_revision: before.draft_revision,
+        requested_draft: before.draft_json as object,
+      },
+    );
+    expect(unchanged.error).toBeNull();
+    expect(unchanged.data).toMatchObject({
+      draft_revision: before.draft_revision,
+    });
+
+    for (const [name, mutate] of [
+      [
+        "invalid spacing enum",
+        (target: Record<string, unknown>) => {
+          target.spacing = "roomy";
+        },
+      ],
+      [
+        "unknown presentation key",
+        (target: Record<string, unknown>) => {
+          target.shadow = true;
+        },
+      ],
+    ] as const) {
+      const invalidDraft = structuredClone(before.draft_json) as {
+        pages: Array<{ layout: { blocks: Array<Record<string, unknown>> } }>;
+      };
+      const invalidSection = invalidDraft.pages[0]?.layout.blocks.find(
+        (block) => block.type === "section",
+      );
+      expect(invalidSection, name).toBeDefined();
+      mutate(invalidSection!);
+      const rejected = await rpc(owner.client).rpc<Record<string, unknown>>(
+        "save_site_draft_v2",
+        {
+          expected_business_id: catalogueBusiness.id,
+          expected_actor_id: owner.user.id,
+          requested_site_id: catalogueSiteId,
+          expected_draft_revision: before.draft_revision,
+          requested_draft: invalidDraft,
+        },
+      );
+      expect(rejected.data, name).toBeNull();
+      expect(rejected.error?.message, name).toContain("site_draft_invalid");
+    }
+
+    const after = await siteState();
+    expect(after.draft_revision).toBe(before.draft_revision);
+    expect(after.draft_json).toEqual(before.draft_json);
+  });
+
   it("publishes the exact Site projection and applies finite availability epochs", async () => {
     const prepared = await prepareSiteReleaseV2(owner.client, context(), {
       siteId: catalogueSiteId,
@@ -631,6 +769,54 @@ describe("Lenni Sites C2 functional milestone", () => {
     expect(projection.pages.find((page) => page.is_home)?.slug).toBe("home");
     const homeBlocks = projection.pages.find((page) => page.is_home)!.layout
       .blocks;
+    const projectedSection = homeBlocks.find(
+      (block): block is Record<string, unknown> =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "section",
+    );
+    expect(projectedSection).toMatchObject({
+      width: "wide",
+      spacing: "spacious",
+      alignment: "center",
+      background: "tint",
+    });
+    const projectedRichText = homeBlocks.find(
+      (block): block is Record<string, unknown> =>
+        typeof block === "object" &&
+        block !== null &&
+        "type" in block &&
+        block.type === "rich_text",
+    );
+    expect(projectedRichText).toMatchObject({
+      type: "rich_text",
+      node: {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Read the ", marks: [{ type: "italic" }] },
+          {
+            type: "text",
+            text: "catalogue",
+            marks: [{ type: "bold" }, { type: "link", href: "/catalogue" }],
+          },
+        ],
+      },
+    });
+    expect(projectedRichText).not.toHaveProperty("id");
+    const projectedDetail = projection.pages
+      .find((page) => page.slug === "details")!
+      .layout.blocks.find(
+        (block): block is Record<string, unknown> =>
+          typeof block === "object" &&
+          block !== null &&
+          "type" in block &&
+          block.type === "record_detail",
+      );
+    expect(projectedDetail).toMatchObject({
+      display_field_keys: ["price", "name"],
+    });
+    expect(projectedDetail).not.toHaveProperty("public_field_keys");
     const collections = homeBlocks.filter(
       (block) =>
         typeof block === "object" &&
@@ -724,6 +910,46 @@ describe("Lenni Sites C2 functional milestone", () => {
     const token = (resolvedRecords as Array<Record<string, unknown>>)[0]
       ?.public_id as string;
     expect(token).toMatch(/^r_[a-f0-9]{64}$/);
+    const resolvedRichText = (
+      (
+        (resolved.page as Record<string, unknown>).layout as Record<
+          string,
+          unknown
+        >
+      ).blocks as Array<Record<string, unknown>>
+    ).find((block) => block.type === "rich_text");
+    expect(resolvedRichText).toMatchObject({
+      node: {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Read the ", marks: [{ type: "italic" }] },
+          {
+            type: "text",
+            text: "catalogue",
+            marks: [{ type: "bold" }, { type: "link", href: "/catalogue" }],
+          },
+        ],
+      },
+    });
+    const resolvedDetails = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_page",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "details",
+      },
+    );
+    const resolvedDetail = (
+      (
+        (resolvedDetails.page as Record<string, unknown>).layout as Record<
+          string,
+          unknown
+        >
+      ).blocks as Array<Record<string, unknown>>
+    ).find((block) => block.type === "record_detail");
+    expect(resolvedDetail).toMatchObject({
+      display_field_keys: ["price", "name"],
+    });
     const detail = await callRpc<Record<string, unknown>>(
       anonymous,
       "resolve_public_site_record",
@@ -1282,6 +1508,37 @@ describe("Lenni Sites C2 functional milestone", () => {
     );
     expect(staged.migration_state).toBe("legacy_pending");
     expect(staged.draft_json.pages[0]?.slug).toBe("legacy-home");
+    const stagedRichText = (
+      staged.draft_json.pages[0]?.layout.blocks as Array<
+        Record<string, unknown>
+      >
+    ).find((block) => block.type === "rich_text");
+    expect(stagedRichText).toMatchObject({
+      type: "rich_text",
+      node: {
+        type: "bullet_list",
+        items: [
+          {
+            content: [
+              {
+                type: "text",
+                text: "Legacy rich text is retained.",
+                marks: [{ type: "bold" }],
+              },
+            ],
+          },
+          {
+            content: [
+              {
+                type: "text",
+                text: "It remains editable after adoption.",
+                marks: [{ type: "link", href: "/details" }],
+              },
+            ],
+          },
+        ],
+      },
+    });
     const bindingRows = await fixtureSql.unsafe<
       Array<{
         legacy_source_page_id: string | null;
