@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 import {
   issueSitePublicUploadGrants,
   readSitePrivateStorageObject,
+  resolveSitePublicUploadActionContext,
   SiteUploadServiceError,
 } from "../src/core/sites/upload-service";
 import {
@@ -112,6 +113,119 @@ describe("Sites C3 private storage transport", () => {
       readSitePrivateStorageObject("quarantine/business/grant", 32),
     ).rejects.toBeInstanceOf(SiteUploadServiceError);
   });
+});
+
+describe("Sites C3 upload RPC error classification", () => {
+  const input = {
+    businessSlug: "acme",
+    pageSlug: "request",
+    actionKey: "a_" + "a".repeat(64),
+    releaseToken: "s_" + "b".repeat(64),
+    submissionAttemptId: "00000000-0000-4000-8000-000000000005",
+    attemptExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+
+  it.each([
+    {
+      label: "an unknown transient database or transport failure",
+      error: {
+        code: "XX000",
+        message: "connection terminated unexpectedly",
+        details: "temporary infrastructure failure",
+      },
+      expectedCode: "provider_failed",
+    },
+    {
+      label: "the reservation quota",
+      error: {
+        code: "54000",
+        message: "site_upload_quota_exceeded",
+      },
+      expectedCode: "quota_exceeded",
+    },
+    {
+      label: "the committed attachment quota",
+      error: {
+        code: "54000",
+        message: "site_upload_committed_quota_exceeded",
+      },
+      expectedCode: "quota_exceeded",
+    },
+    {
+      label: "a withdrawn action",
+      error: {
+        code: "P0002",
+        message: "site_upload_action_unavailable",
+      },
+      expectedCode: "unavailable",
+    },
+    {
+      label: "a resolver authority failure",
+      error: {
+        code: "P0002",
+        message: "site_form_action_unavailable",
+      },
+      expectedCode: "unavailable",
+    },
+    {
+      label: "an action binding mismatch",
+      error: {
+        code: "22023",
+        message: "site_upload_attempt_binding_invalid",
+      },
+      expectedCode: "unavailable",
+    },
+    {
+      label: "an expired application window",
+      error: {
+        code: "55000",
+        message: "site_upload_application_expired",
+      },
+      expectedCode: "expired",
+    },
+    {
+      label: "an expired submission attempt",
+      error: {
+        code: "55000",
+        message: "site_upload_submission_attempt_expired",
+      },
+      expectedCode: "expired",
+    },
+    {
+      label: "an expired issuance window",
+      error: {
+        code: "55000",
+        message: "site_upload_issue_window_closed",
+      },
+      expectedCode: "expired",
+    },
+    {
+      label: "a rate limit returned as an RPC error",
+      error: {
+        code: "P0001",
+        message: "site_upload_rate_limited",
+      },
+      expectedCode: "rate_limited",
+    },
+  ])(
+    "maps $label without exposing SQL diagnostics",
+    async ({ error, expectedCode }) => {
+      const client = {
+        rpc: vi.fn(async () => ({ data: null, error })),
+      };
+      const thrown = await resolveSitePublicUploadActionContext(
+        client,
+        input,
+      ).catch((value: unknown) => value);
+
+      expect(thrown).toBeInstanceOf(SiteUploadServiceError);
+      expect(thrown).toMatchObject({ code: expectedCode });
+      expect((thrown as Error).message).not.toContain(error.message);
+      if (error.details) {
+        expect((thrown as Error).message).not.toContain(error.details);
+      }
+    },
+  );
 });
 
 describe("Sites C3 upload issuance retries", () => {
@@ -326,5 +440,24 @@ describe("Sites C3 upload issuance retries", () => {
     expect(
       Date.parse(markParameters!.requested_provider_expires_at!),
     ).toBeLessThanOrEqual(Date.parse(originalGrant.reservation_expires_at));
+  });
+
+  it("keeps the SQL rate-limit result mapped to rate_limited", async () => {
+    const rpc = vi.fn(async () => ({
+      data: { error: "site_upload_rate_limited" },
+      error: null,
+    }));
+
+    await expect(
+      issueSitePublicUploadGrants(
+        { rpc },
+        issueContext(),
+        {
+          submission_attempt_id: id(5),
+          files: [{ question_key: "documents", count: 1 }],
+        },
+        "a".repeat(64),
+      ),
+    ).rejects.toMatchObject({ code: "rate_limited" });
   });
 });

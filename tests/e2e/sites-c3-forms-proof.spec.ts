@@ -93,6 +93,10 @@ function formQuestion(form: Locator, index: number): Locator {
   return form.locator(".site-form-question").nth(index);
 }
 
+function referenceImageInput(form: Locator): Locator {
+  return form.getByLabel(/^Reference image(?:\s+\*)?$/);
+}
+
 async function fillFormDraft(
   page: Page,
   options: Readonly<{ requiredReferenceImage?: boolean }> = {},
@@ -237,6 +241,11 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
   );
+  await expect(
+    page
+      .locator(".workspace-sidebar")
+      .getByRole("link", { name: tableViewName, exact: true }),
+  ).toBeVisible();
 
   const browser = page.context().browser();
   if (!browser) throw new Error("The Sites proof needs a browser context.");
@@ -292,10 +301,7 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
       .fill("2026-10-15");
     await publicForm
       .getByLabel("Reference image", { exact: true })
-      .setInputFiles({
-        ...proofImage,
-        name: "visitor-reference.png",
-      });
+      .setInputFiles({ ...proofImage, name: "visitor-reference.png" });
     await publicForm
       .getByLabel("Supporting document", { exact: true })
       .setInputFiles({
@@ -313,9 +319,10 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
     await visitorContext.close();
   }
 
-  await page.goto(`/app/${business.slug}`);
+  await page.getByRole("link", { name: "Back to Home", exact: true }).click();
+  await page.waitForURL(new RegExp(`/app/${business.slug}$`));
   await page
-    .getByRole("link", { name: `Open ${tablePlural}`, exact: true })
+    .getByRole("link", { name: `Open ${tableViewName}`, exact: true })
     .click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/workspace/[^/?#]+(?:\\?.*)?$`),
@@ -482,9 +489,10 @@ test("visitor preserves a finalized Form upload across reload and explicit file 
     await publicForm
       .getByLabel("Preferred date", { exact: true })
       .fill("2026-10-15");
-    await publicForm
-      .getByLabel("Reference image", { exact: true })
-      .setInputFiles({ ...proofImage, name: "first-reference.png" });
+    await referenceImageInput(publicForm).setInputFiles({
+      ...proofImage,
+      name: "first-reference.png",
+    });
     await publicForm
       .getByLabel("Supporting document", { exact: true })
       .setInputFiles({ ...proofPdf, name: "first-support.pdf" });
@@ -498,9 +506,7 @@ test("visitor preserves a finalized Form upload across reload and explicit file 
         .filter({ hasText: "Temporary submission interruption." }),
     ).toBeVisible();
 
-    await publicForm
-      .getByLabel("Reference image", { exact: true })
-      .setInputFiles([]);
+    await referenceImageInput(publicForm).setInputFiles([]);
     await publicForm
       .getByLabel("Supporting document", { exact: true })
       .setInputFiles([]);
@@ -549,9 +555,10 @@ test("visitor preserves a finalized Form upload across reload and explicit file 
         exact: true,
       })
       .click();
-    await publicForm
-      .getByLabel("Reference image", { exact: true })
-      .setInputFiles({ ...proofImage, name: "second-reference.png" });
+    await referenceImageInput(publicForm).setInputFiles({
+      ...proofImage,
+      name: "second-reference.png",
+    });
     await publicForm
       .getByLabel("Supporting document", { exact: true })
       .setInputFiles({ ...proofPdf, name: "second-support.pdf" });

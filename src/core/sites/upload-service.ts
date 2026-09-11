@@ -82,10 +82,117 @@ const rpcClient = (client: unknown): RpcClient => client as RpcClient;
 const storageClient = (client: unknown): UploadAdminClient =>
   client as UploadAdminClient;
 
-function rpcFailureCode(error: unknown): string | null {
-  if (!error || typeof error !== "object") return null;
-  const message = "message" in error ? String(error.message) : "";
-  return message.match(/site_[a-z0-9_]+/)?.[0] ?? null;
+/*
+ * These are the symbolic exceptions raised by the upload RPCs (and by the
+ * Form action resolver they call). Keep this allow-list finite: a PostgREST
+ * message is diagnostic input, not an authority to choose a public error.
+ */
+const siteUploadRpcFailureCodes = [
+  "site_form_action_unavailable",
+  "site_upload_action_context_mismatch",
+  "site_upload_action_context_unavailable",
+  "site_upload_action_unavailable",
+  "site_upload_application_expired",
+  "site_upload_attempt_binding_invalid",
+  "site_upload_attempt_closed",
+  "site_upload_attachment_duplicate",
+  "site_upload_attachment_id_invalid",
+  "site_upload_attachment_immutable",
+  "site_upload_attachment_unavailable",
+  "site_upload_attachment_value_invalid",
+  "site_upload_claim_busy",
+  "site_upload_claim_lost",
+  "site_upload_committed_quota_exceeded",
+  "site_upload_content_type_invalid",
+  "site_upload_field_unavailable",
+  "site_upload_finalization_invalid",
+  "site_upload_grant_unavailable",
+  "site_upload_issue_window_closed",
+  "site_upload_not_found",
+  "site_upload_question_file_limit",
+  "site_upload_question_ordinal_duplicate",
+  "site_upload_question_request_invalid",
+  "site_upload_question_unavailable",
+  "site_upload_quota_exceeded",
+  "site_upload_rate_limited",
+  "site_upload_record_data_invalid",
+  "site_upload_reject_invalid_state",
+  "site_upload_request_invalid",
+  "site_upload_submission_attempt_expired",
+  "site_upload_submission_file_limit",
+  "site_upload_submit_invalid",
+  "site_upload_verified_key_invalid",
+] as const;
+
+type SiteUploadRpcFailureCode = (typeof siteUploadRpcFailureCodes)[number];
+
+function rpcFailureCode(error: unknown): SiteUploadRpcFailureCode | null {
+  const values: unknown[] = [];
+  if (typeof error === "string") values.push(error);
+  if (error && typeof error === "object") {
+    const fields = error as Record<string, unknown>;
+    for (const key of ["message", "details", "hint"] as const) {
+      if (key in fields) values.push(fields[key]);
+    }
+  }
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const code = siteUploadRpcFailureCodes.find((candidate) =>
+      value.includes(candidate),
+    );
+    if (code) return code;
+  }
+  return null;
+}
+
+function mapRpcFailureCode(
+  code: SiteUploadRpcFailureCode | null,
+): SiteUploadServiceError["code"] {
+  switch (code) {
+    case "site_upload_rate_limited":
+      return "rate_limited";
+    case "site_upload_submission_attempt_expired":
+    case "site_upload_application_expired":
+    case "site_upload_issue_window_closed":
+      return "expired";
+    case "site_upload_quota_exceeded":
+    case "site_upload_committed_quota_exceeded":
+      return "quota_exceeded";
+    case "site_upload_request_invalid":
+    case "site_upload_question_request_invalid":
+    case "site_upload_submission_file_limit":
+    case "site_upload_question_file_limit":
+    case "site_upload_submit_invalid":
+    case "site_upload_question_ordinal_duplicate":
+    case "site_upload_attachment_id_invalid":
+    case "site_upload_attachment_duplicate":
+    case "site_upload_attachment_value_invalid":
+      return "invalid_request";
+    case "site_upload_finalization_invalid":
+    case "site_upload_content_type_invalid":
+    case "site_upload_verified_key_invalid":
+    case "site_upload_attachment_immutable":
+    case "site_upload_record_data_invalid":
+      return "integrity_failed";
+    case "site_upload_claim_lost":
+      return "claim_lost";
+    case "site_form_action_unavailable":
+    case "site_upload_action_context_mismatch":
+    case "site_upload_action_context_unavailable":
+    case "site_upload_action_unavailable":
+    case "site_upload_attempt_binding_invalid":
+    case "site_upload_attempt_closed":
+    case "site_upload_attachment_unavailable":
+    case "site_upload_field_unavailable":
+    case "site_upload_grant_unavailable":
+    case "site_upload_not_found":
+    case "site_upload_question_unavailable":
+    case "site_upload_reject_invalid_state":
+      return "unavailable";
+    case "site_upload_claim_busy":
+    case null:
+      return "provider_failed";
+  }
 }
 
 async function callRpc<T>(
@@ -96,16 +203,14 @@ async function callRpc<T>(
   const result = await rpcClient(client).rpc<T>(functionName, parameters);
   if (result.error || result.data === null) {
     const code = rpcFailureCode(result.error);
-    const mappedCode =
-      code === "site_upload_rate_limited"
-        ? "rate_limited"
-        : code === "site_upload_submission_attempt_expired" ||
-            code === "site_upload_application_expired"
-          ? "expired"
-          : "unavailable";
+    const mappedCode = mapRpcFailureCode(code);
     throw new SiteUploadServiceError(
       mappedCode,
-      "The upload session is unavailable.",
+      mappedCode === "provider_failed"
+        ? "The upload service could not complete this request. Try again."
+        : mappedCode === "quota_exceeded"
+          ? "The upload storage limit has been reached."
+          : "The upload session is unavailable.",
       { cause: result.error },
     );
   }

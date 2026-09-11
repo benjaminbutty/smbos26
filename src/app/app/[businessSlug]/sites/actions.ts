@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -646,6 +647,7 @@ export async function publishSiteReleaseAction(
     }
     siteNotice(parsedSlug.data, siteErrorNotice(error));
   }
+  revalidatePath(`/app/${parsedSlug.data}`, "layout");
   siteNotice(parsedSlug.data, "published");
 }
 
