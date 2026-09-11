@@ -368,6 +368,18 @@ test("published Site keeps source Record changes private until republish", async
   await recordNameEditor.press("Enter");
   await expect(page.locator(".editor-save-state")).toContainText("Saved");
   await recordPanel.getByRole("button", { name: "Close record panel" }).click();
+  await expect(recordPanel).toHaveCount(0);
+  const updatedRecordRow = page.locator('[role="row"]').filter({
+    has: page.getByRole("button", {
+      name: `Open record ${updatedRecordName}`,
+      exact: true,
+    }),
+  });
+  const updatedRecordNameCell = updatedRecordRow.locator(
+    '[role="gridcell"][aria-colindex="2"]',
+  );
+  await expect(updatedRecordRow).toHaveCount(1);
+  await expect(updatedRecordNameCell).toBeFocused();
 
   await page.goto(`/app/${business.slug}/sites`);
   const updatedHome = await selectSitePage(page, "Home");
