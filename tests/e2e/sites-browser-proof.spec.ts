@@ -311,6 +311,20 @@ test("owner can review the compact Site editor", async ({
     page.getByText("Saved automatically", { exact: true }),
   ).toBeVisible();
 
+  const addBlockButton = page.getByRole("button", {
+    name: "Add block",
+    exact: true,
+  });
+  await addBlockButton.click();
+  const addBlockMenu = page.locator(".site-composer-add-menu");
+  await expect(addBlockMenu).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(addBlockMenu).toBeHidden();
+  await expect(addBlockButton).toBeFocused();
+  await addBlockButton.click();
+  await headingInput.click();
+  await expect(addBlockMenu).toBeHidden();
+
   for (const state of [
     { name: "first-draft-editor-1440x900.png", width: 1440, height: 900 },
     { name: "first-draft-editor-1024x768.png", width: 1024, height: 768 },
