@@ -193,6 +193,8 @@ interface ActiveCell {
   columnKey: string;
 }
 
+type RestoreIntent = "background" | "explicit";
+
 interface GridPoint {
   rowIndex: number;
   columnIndex: number;
@@ -412,6 +414,21 @@ function readOnlyTable(table: EditorTable): EditorTable {
 function isPrintableKey(event: React.KeyboardEvent): boolean {
   return (
     event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey
+  );
+}
+
+function hasForegroundFocus(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  const activeElement = document.activeElement;
+  return (
+    activeElement instanceof HTMLElement &&
+    Boolean(
+      activeElement.closest(
+        "a[href], button, input, textarea, select, [contenteditable='true'], [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox'], [role='combobox'], [role='option']",
+      ),
+    )
   );
 }
 
@@ -1485,6 +1502,21 @@ export function EditorKernel({
   const operationVersions = useRef(new Map<string, number>());
   const pendingSaves = useRef(new Set<string>());
   const rangeSelectionRef = useRef(false);
+  const restoreIntentRef = useRef<RestoreIntent | null>(null);
+  const requestRestoreCell = useCallback(
+    (cell: ActiveCell, intent: RestoreIntent): void => {
+      if (intent === "background" && restoreIntentRef.current === "explicit") {
+        return;
+      }
+      restoreIntentRef.current = intent;
+      setRestoreCell(cell);
+    },
+    [],
+  );
+  const clearRestoreCell = useCallback((): void => {
+    restoreIntentRef.current = null;
+    setRestoreCell(null);
+  }, []);
 
   useUnsavedNavigationWarning(
     Object.keys(failedCells).length > 0 ||
@@ -1532,10 +1564,30 @@ export function EditorKernel({
     setTable(readOnly ? readOnlyTable(retained) : retained);
     setSelectedRecordIds(new Set());
     setSelectionNotice(null);
-    if (activeCell) {
-      setRestoreCell(activeCell);
+    if (
+      activeCell &&
+      !panelRowId &&
+      !connectedPanel &&
+      !contextualCreate &&
+      !draftInputActive &&
+      !focusColumnKey &&
+      !shortcutOpen &&
+      !hasForegroundFocus()
+    ) {
+      requestRestoreCell(activeCell, "background");
     }
-  }, [activeCell, adapter, readOnly]);
+  }, [
+    activeCell,
+    adapter,
+    connectedPanel,
+    contextualCreate,
+    draftInputActive,
+    focusColumnKey,
+    panelRowId,
+    readOnly,
+    requestRestoreCell,
+    shortcutOpen,
+  ]);
 
   useEffect(() => {
     setSelectedRecordIds(new Set());
@@ -1672,8 +1724,8 @@ export function EditorKernel({
     if (!origin) {
       return;
     }
-    setRestoreCell(origin);
-  }, [panelOrigin]);
+    requestRestoreCell(origin, "explicit");
+  }, [panelOrigin, requestRestoreCell]);
 
   useEffect(() => {
     setSelectionAnchor(null);
@@ -2939,13 +2991,29 @@ export function EditorKernel({
 
   useEffect(() => {
     if (!restoreCell) return;
+    const explicitRestore = restoreIntentRef.current === "explicit";
+    const shouldPreserveFocus = (): boolean =>
+      !explicitRestore &&
+      Boolean(
+        panelRowId ||
+        connectedPanel ||
+        contextualCreate ||
+        draftInputActive ||
+        focusColumnKey ||
+        shortcutOpen ||
+        hasForegroundFocus(),
+      );
+    if (shouldPreserveFocus()) {
+      clearRestoreCell();
+      return;
+    }
     const target = gridCoordinatesForCell(
       gridRows,
       visibleGridColumns,
       restoreCell,
     );
     if (!target) {
-      setRestoreCell(null);
+      clearRestoreCell();
       return;
     }
     const rowIdx = tableVisualRowIndex(
@@ -2955,28 +3023,49 @@ export function EditorKernel({
       collapsedGroups,
     );
     if (rowIdx < 0) {
-      setRestoreCell(null);
+      clearRestoreCell();
       return;
     }
+    let innerFrame: number | null = null;
     const frame = window.requestAnimationFrame(() => {
+      if (shouldPreserveFocus()) {
+        clearRestoreCell();
+        return;
+      }
       gridRef.current?.selectCell(
         { ...target, rowIdx, idx: target.idx + gridColumnOffset },
         { shouldFocusCell: true },
       );
-      window.requestAnimationFrame(() => {
+      innerFrame = window.requestAnimationFrame(() => {
+        if (shouldPreserveFocus()) {
+          clearRestoreCell();
+          return;
+        }
         gridRef.current?.element
           ?.querySelector<HTMLElement>(
             '[role="gridcell"][aria-selected="true"]',
           )
           ?.focus({ preventScroll: true });
+        clearRestoreCell();
       });
-      setRestoreCell(null);
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (innerFrame !== null) {
+        window.cancelAnimationFrame(innerFrame);
+      }
+    };
   }, [
+    clearRestoreCell,
+    connectedPanel,
+    contextualCreate,
+    draftInputActive,
+    focusColumnKey,
     gridColumnOffset,
     gridRows,
+    panelRowId,
     restoreCell,
+    shortcutOpen,
     visibleGridColumns,
     previewTable,
     table,
@@ -3004,6 +3093,10 @@ export function EditorKernel({
     if (!focusColumnKey) {
       return;
     }
+    if (restoreIntentRef.current === "background") {
+      clearRestoreCell();
+    }
+    let innerFrame: number | null = null;
     const frame = window.requestAnimationFrame(() => {
       const columnIndex = visibleGridColumns.findIndex(
         (column) => column.key === focusColumnKey,
@@ -3019,20 +3112,32 @@ export function EditorKernel({
           { shouldFocusCell: true },
         );
         setActiveCell({ rowId: row.id, columnKey: focusColumnKey });
-        window.requestAnimationFrame(() => {
+        innerFrame = window.requestAnimationFrame(() => {
           const selectedCell =
             gridRef.current?.element?.querySelector<HTMLElement>(
               '[role="gridcell"][aria-selected="true"]',
             );
           selectedCell?.focus({ preventScroll: true });
+          setFocusColumnKey(null);
         });
       } else {
         addColumnButtonRef.current?.focus({ preventScroll: true });
+        setFocusColumnKey(null);
       }
-      setFocusColumnKey(null);
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [focusColumnKey, gridColumnOffset, gridRows, visibleGridColumns]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (innerFrame !== null) {
+        window.cancelAnimationFrame(innerFrame);
+      }
+    };
+  }, [
+    clearRestoreCell,
+    focusColumnKey,
+    gridColumnOffset,
+    gridRows,
+    visibleGridColumns,
+  ]);
 
   const activateDraft = useCallback(() => {
     setPendingEdit(null);
@@ -3337,10 +3442,13 @@ export function EditorKernel({
                     setTable((current) => cancelFailedSave(current, retry));
                     setRetry(null);
                     setSaveState({ status: "saved" });
-                    setRestoreCell({
-                      rowId: retry.rowId,
-                      columnKey: retry.columnKey,
-                    });
+                    requestRestoreCell(
+                      {
+                        rowId: retry.rowId,
+                        columnKey: retry.columnKey,
+                      },
+                      "explicit",
+                    );
                   }}
                   type="button"
                 >
@@ -3404,10 +3512,13 @@ export function EditorKernel({
                 return next;
               });
               setTable((current) => cancelFailedSave(current, failure));
-              setRestoreCell({
-                rowId: failure.rowId,
-                columnKey: failure.columnKey,
-              });
+              requestRestoreCell(
+                {
+                  rowId: failure.rowId,
+                  columnKey: failure.columnKey,
+                },
+                "explicit",
+              );
               setSaveState({ status: "saved" });
             }}
           >
