@@ -393,6 +393,29 @@ describe("Sites C3 Form SQL boundary", () => {
     expect(action.action_key).toMatch(/^a_[a-f0-9]{64}$/);
     expect(action.release_token).toMatch(/^s_[a-f0-9]{64}$/);
 
+    const [destinationView] = await sql<
+      {
+        audience: string;
+        object_definition_id: string;
+        config_json: Record<string, unknown>;
+      }[]
+    >`
+      select audience, object_definition_id, config_json
+      from public.views
+      where business_id = ${business.id} and id = ${action.view_id}
+    `;
+    expect(destinationView).toMatchObject({
+      audience: "internal",
+      object_definition_id: action.object_definition_id,
+      config_json: {
+        fields: ["name"],
+        title_field: "name",
+        include_archived: false,
+      },
+    });
+    expect(destinationView?.config_json).not.toHaveProperty("create_form_key");
+    expect(destinationView?.config_json).not.toHaveProperty("edit_form_key");
+
     const resolvedPage = await callRpc<Record<string, unknown>>(
       anonymous,
       "resolve_public_page",

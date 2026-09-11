@@ -1617,7 +1617,10 @@ begin
         'object_key', object_key_value,
         'config_json', jsonb_build_object(
           'fields', question_keys,
-          'create_form_key', btrim(form_value ->> 'key'),
+          -- The destination is the ordinary internal Table for submitted
+          -- Records.  Public Forms are a separate audience boundary and
+          -- cannot be used as an internal View's create Form.
+          'title_field', question_keys -> 0,
           'include_archived', false
         ),
         'audience', 'internal',
