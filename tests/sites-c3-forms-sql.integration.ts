@@ -1486,9 +1486,11 @@ describe("Sites C3 Form SQL boundary", () => {
       action_key: action.action_key,
       release_token: action.release_token,
       catalogue: {
-        products: expect.arrayContaining([
-          expect.objectContaining({ id: product.id, price: 12 }),
-        ]),
+        preorder: {
+          products: expect.arrayContaining([
+            expect.objectContaining({ id: product.id, price: 12 }),
+          ]),
+        },
       },
     });
 

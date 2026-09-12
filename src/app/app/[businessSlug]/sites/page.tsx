@@ -848,6 +848,19 @@ export default async function SitesPage({
             </section>
           ) : null}
 
+          {state.migration_state === "adopted" &&
+          operationalOptions.some((option) => option.type === "booking") ? (
+            <p className="muted site-booking-settings-link">
+              Booking schedule edits apply to this private Site draft.{" "}
+              <Link
+                href={`/app/${encodeURIComponent(businessSlug)}/setup/booking`}
+              >
+                Edit booking settings
+              </Link>{" "}
+              before reviewing and publishing the next release.
+            </p>
+          ) : null}
+
           <SiteComposer
             businessSlug={businessSlug}
             draft={state.draft_json}
@@ -858,7 +871,8 @@ export default async function SitesPage({
             operationalOptions={operationalOptions}
             previewAction={prepareSiteReleaseAction.bind(null, businessSlug)}
             publishAction={publishSiteReleaseAction.bind(null, businessSlug)}
-            {...(operationalOptions.some((option) => option.type === "booking")
+            {...(state.migration_state !== "adopted" &&
+            operationalOptions.some((option) => option.type === "booking")
               ? {
                   bookingRefreshAction: refreshSiteBookingSetupAction.bind(
                     null,

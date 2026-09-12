@@ -147,26 +147,43 @@ async function captureResponsiveEvidence(
 async function configureCustomerForm(page: Page): Promise<void> {
   const form = formCard(page);
   await expect(form).toHaveCount(1);
-  await form.getByLabel("Form name", { exact: true }).fill(formName);
-  await form
-    .getByLabel("Save responses in", { exact: true })
-    .selectOption("existing");
+  await expect(form).toBeVisible();
+  const formNameInput = form.getByLabel("Form name", { exact: true });
+  await expect(formNameInput).toBeVisible();
+  await formNameInput.fill(formName);
+  const saveResponsesIn = form.getByRole("combobox", {
+    name: "Save responses in",
+    exact: true,
+  });
+  await expect(saveResponsesIn).toBeVisible();
+  await saveResponsesIn.selectOption({ label: "An existing Table" });
 
-  const table = form.getByLabel("Table", { exact: true });
+  const table = form.getByRole("combobox", { name: "Table", exact: true });
+  await expect(table).toBeVisible();
   await selectOptionContaining(table, "Appointments");
-  await form.getByLabel("Table View", { exact: true }).selectOption("existing");
-  await selectOptionContaining(
-    form.getByLabel("Existing Table View", { exact: true }),
-    "Appointments",
-  );
-  await form.getByLabel("Button label", { exact: true }).fill(submitLabel);
+  const tableView = form.getByRole("combobox", {
+    name: "Table View",
+    exact: true,
+  });
+  await expect(tableView).toBeVisible();
+  await tableView.selectOption({ label: "Use an existing Table View" });
+  const existingTableView = form.getByRole("combobox", {
+    name: "Existing Table View",
+    exact: true,
+  });
+  await expect(existingTableView).toBeVisible();
+  await selectOptionContaining(existingTableView, "Appointments");
+  const buttonLabel = form.getByLabel("Button label", { exact: true });
+  await expect(buttonLabel).toBeVisible();
+  await buttonLabel.fill(submitLabel);
 
   const customerNameQuestion = formQuestion(form, 0);
+  await expect(customerNameQuestion).toBeVisible();
   await customerNameQuestion
     .getByLabel("Question", { exact: true })
     .fill("Customer name");
   await customerNameQuestion
-    .getByLabel("Property source", { exact: true })
+    .getByRole("combobox", { name: "Property source", exact: true })
     .selectOption("new");
   await customerNameQuestion
     .getByRole("combobox", { name: "Answer type", exact: true })
@@ -176,11 +193,12 @@ async function configureCustomerForm(page: Page): Promise<void> {
   await form.getByRole("button", { name: "Add question", exact: true }).click();
   await expect(form.locator(".site-form-question")).toHaveCount(2);
   const customerEmailQuestion = formQuestion(form, 1);
+  await expect(customerEmailQuestion).toBeVisible();
   await customerEmailQuestion
     .getByLabel("Question", { exact: true })
     .fill("Customer email");
   await customerEmailQuestion
-    .getByLabel("Property source", { exact: true })
+    .getByRole("combobox", { name: "Property source", exact: true })
     .selectOption("new");
   await customerEmailQuestion
     .getByRole("combobox", { name: "Answer type", exact: true })
@@ -190,44 +208,58 @@ async function configureCustomerForm(page: Page): Promise<void> {
   await form.getByRole("button", { name: "Add question", exact: true }).click();
   await expect(form.locator(".site-form-question")).toHaveCount(3);
   const dateQuestion = formQuestion(form, 2);
+  await expect(dateQuestion).toBeVisible();
   await dateQuestion.getByLabel("Question", { exact: true }).fill("Date");
   await dateQuestion
-    .getByLabel("Property source", { exact: true })
+    .getByRole("combobox", { name: "Property source", exact: true })
     .selectOption("existing");
   await selectOptionContaining(
-    dateQuestion.getByLabel("Existing property", { exact: true }),
+    dateQuestion.getByRole("combobox", {
+      name: "Existing property",
+      exact: true,
+    }),
     "Date",
   );
 
   await form.getByRole("button", { name: "Add question", exact: true }).click();
   await expect(form.locator(".site-form-question")).toHaveCount(4);
   const startsQuestion = formQuestion(form, 3);
+  await expect(startsQuestion).toBeVisible();
   await startsQuestion
     .getByLabel("Question", { exact: true })
     .fill("Starts at");
   await startsQuestion
-    .getByLabel("Property source", { exact: true })
+    .getByRole("combobox", { name: "Property source", exact: true })
     .selectOption("existing");
   await selectOptionContaining(
-    startsQuestion.getByLabel("Existing property", { exact: true }),
+    startsQuestion.getByRole("combobox", {
+      name: "Existing property",
+      exact: true,
+    }),
     "Starts at",
   );
 
   await form.getByRole("button", { name: "Add question", exact: true }).click();
   await expect(form.locator(".site-form-question")).toHaveCount(5);
   const statusQuestion = formQuestion(form, 4);
+  await expect(statusQuestion).toBeVisible();
   await statusQuestion.getByLabel("Question", { exact: true }).fill("Status");
   await statusQuestion
-    .getByLabel("Property source", { exact: true })
+    .getByRole("combobox", { name: "Property source", exact: true })
     .selectOption("existing");
   await selectOptionContaining(
-    statusQuestion.getByLabel("Existing property", { exact: true }),
+    statusQuestion.getByRole("combobox", {
+      name: "Existing property",
+      exact: true,
+    }),
     "Status",
   );
 
-  const customerConnection = form.getByLabel("Customer connection", {
+  const customerConnection = form.getByRole("combobox", {
+    name: "Customer connection",
     exact: true,
   });
+  await expect(customerConnection).toBeVisible();
   await selectOptionContaining(customerConnection, "Customers");
   const mappings = form.locator(".site-form-customer-mappings");
   await expect(mappings).toBeVisible();
@@ -240,6 +272,8 @@ async function configureCustomerForm(page: Page): Promise<void> {
     .locator("label")
     .filter({ hasText: /^Email/ })
     .getByRole("combobox");
+  await expect(nameMapping).toBeVisible();
+  await expect(emailMapping).toBeVisible();
   await nameMapping.selectOption({ label: "Customer name" });
   await emailMapping.selectOption({ label: "Customer email" });
   await expect(nameMapping.locator("option:checked")).toHaveText(
@@ -255,7 +289,10 @@ async function configureCustomerForm(page: Page): Promise<void> {
   await expect(customerConnection).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(
-    form.getByLabel("Customer email property", { exact: true }),
+    form.getByRole("combobox", {
+      name: "Customer email property",
+      exact: true,
+    }),
   ).toBeFocused();
 
   await expect(
@@ -264,7 +301,12 @@ async function configureCustomerForm(page: Page): Promise<void> {
   await captureResponsiveEvidence(page, "owner-customer-form-connection");
 
   await form.getByRole("button", { name: "Add to Home", exact: true }).click();
-  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  const saveDraft = page.getByRole("button", {
+    name: "Save draft",
+    exact: true,
+  });
+  await expect(saveDraft).toBeVisible();
+  await saveDraft.click();
   await expect(page.getByText("Draft saved.", { exact: true })).toBeVisible();
 }
 
@@ -288,28 +330,41 @@ async function submitCustomerForm(
       new URL("/p/" + businessSlug + "/home", page.url()).toString(),
     );
     const publicForm = visitor.locator("section.site-public-form");
+    await expect(publicForm).toBeVisible();
     await expect(
       publicForm.getByRole("heading", { name: formName, exact: true }),
     ).toBeVisible();
     if (evidencePrefix) {
       await captureResponsiveEvidence(visitor, evidencePrefix);
     }
-    await publicForm
-      .getByLabel("Customer name", { exact: true })
-      .fill(input.name);
-    await publicForm
-      .getByLabel("Customer email", { exact: true })
-      .fill(input.email);
-    await publicForm.getByLabel("Date", { exact: true }).fill(input.date);
-    await publicForm
-      .getByLabel("Starts at", { exact: true })
-      .fill(input.startsAt);
-    await publicForm
-      .getByRole("combobox", { name: "Status", exact: true })
-      .selectOption({ label: "Booked" });
-    await publicForm
-      .getByRole("button", { name: submitLabel, exact: true })
-      .click();
+    const customerName = publicForm.getByLabel("Customer name", {
+      exact: true,
+    });
+    const customerEmail = publicForm.getByLabel("Customer email", {
+      exact: true,
+    });
+    const date = publicForm.getByLabel("Date", { exact: true });
+    const startsAt = publicForm.getByLabel("Starts at", { exact: true });
+    const status = publicForm.getByRole("combobox", {
+      name: "Status",
+      exact: true,
+    });
+    const submit = publicForm.getByRole("button", {
+      name: submitLabel,
+      exact: true,
+    });
+    await expect(customerName).toBeVisible();
+    await expect(customerEmail).toBeVisible();
+    await expect(date).toBeVisible();
+    await expect(startsAt).toBeVisible();
+    await expect(status).toBeVisible();
+    await expect(submit).toBeVisible();
+    await customerName.fill(input.name);
+    await customerEmail.fill(input.email);
+    await date.fill(input.date);
+    await startsAt.fill(input.startsAt);
+    await status.selectOption({ label: "Booked" });
+    await submit.click();
     await expect(publicForm.getByRole("status")).toContainText(
       "Thanks. Your reference is",
     );
@@ -324,7 +379,9 @@ async function openWorkspaceDestination(
   label: string,
 ): Promise<void> {
   await page.goto("/app/" + businessSlug);
-  await page.getByRole("link", { name: label, exact: true }).click();
+  const destination = page.getByRole("link", { name: label, exact: true });
+  await expect(destination).toBeVisible();
+  await destination.click();
   await page.waitForURL(
     new RegExp("/app/" + businessSlug + "/workspace/[^/?#]+(?:\\?.*)?$"),
   );
@@ -361,19 +418,26 @@ async function createDuplicateCustomer(
   await openRecord.click();
   const recordPanel = page.locator(".editor-record-panel");
   await expect(recordPanel).toBeVisible();
-  await recordPanel
-    .getByRole("button", { name: "Edit Email", exact: true })
-    .click();
+  const editEmail = recordPanel.getByRole("button", {
+    name: "Edit Email",
+    exact: true,
+  });
+  await expect(editEmail).toBeVisible();
+  await editEmail.click();
   const emailInput = recordPanel.getByRole("textbox", {
     name: "Edit Email",
     exact: true,
   });
+  await expect(emailInput).toBeVisible();
   await emailInput.fill(sharedEmail);
   await emailInput.press("Enter");
   await expect(page.locator(".editor-save-state")).toContainText("Saved");
-  await recordPanel
-    .getByRole("button", { name: "Close record panel", exact: true })
-    .click();
+  const closeRecord = recordPanel.getByRole("button", {
+    name: "Close record panel",
+    exact: true,
+  });
+  await expect(closeRecord).toBeVisible();
+  await closeRecord.click();
   await expect(recordPanel).toHaveCount(0);
   await page.setViewportSize({ width: 1440, height: 900 });
 }
@@ -392,14 +456,20 @@ test("owner connects a public Form to Customers and preserves review relinks", a
     .click();
   await configureCustomerForm(page);
 
-  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  const preview = page.getByRole("button", { name: "Preview", exact: true });
+  await expect(preview).toBeVisible();
+  await preview.click();
   await page.waitForURL(
     new RegExp("/app/" + business.slug + "/sites\\?candidate=[^&]+$"),
   );
-  await expect(
-    page.getByRole("region", { name: "Site preview", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  const sitePreview = page.getByRole("region", {
+    name: "Site preview",
+    exact: true,
+  });
+  await expect(sitePreview).toBeVisible();
+  const publish = page.getByRole("button", { name: "Publish", exact: true });
+  await expect(publish).toBeVisible();
+  await publish.click();
   await page.waitForURL(
     new RegExp("/app/" + business.slug + "/sites\\?notice=published$"),
   );
@@ -469,9 +539,11 @@ test("owner connects a public Form to Customers and preserves review relinks", a
   ).toBeVisible();
   await captureResponsiveEvidence(page, "owner-customer-review");
 
-  const customerChoice = review.getByLabel("Existing Customer", {
+  const customerChoice = review.getByRole("combobox", {
+    name: "Existing Customer",
     exact: true,
   });
+  await expect(customerChoice).toBeVisible();
   const reviewCustomerValue = await optionValueContaining(
     customerChoice,
     reviewCustomerName,
@@ -481,9 +553,12 @@ test("owner connects a public Form to Customers and preserves review relinks", a
   await page.keyboard.press("Escape");
   await expect(customerChoice).toBeFocused();
   await customerChoice.selectOption(reviewCustomerValue);
-  await review
-    .getByRole("button", { name: "Save Customer choice", exact: true })
-    .click();
+  const saveCustomerChoice = review.getByRole("button", {
+    name: "Save Customer choice",
+    exact: true,
+  });
+  await expect(saveCustomerChoice).toBeVisible();
+  await saveCustomerChoice.click();
   await page.waitForURL(
     new RegExp("/app/" + business.slug + "/sites\\?notice=customer_reviewed$"),
   );
@@ -498,6 +573,9 @@ test("owner connects a public Form to Customers and preserves review relinks", a
   });
   await expect(reviewAfterReload).toBeVisible();
   await expect(
-    reviewAfterReload.getByLabel("Existing Customer", { exact: true }),
+    reviewAfterReload.getByRole("combobox", {
+      name: "Existing Customer",
+      exact: true,
+    }),
   ).toHaveValue(reviewCustomerValue);
 });

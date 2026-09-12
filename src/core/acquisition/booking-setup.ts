@@ -11,11 +11,13 @@ import {
   configurationSnapshotV1Schema,
   type ConfigurationSnapshotV1,
 } from "../configuration/definition-source";
+import { bookingScheduleSchema } from "../booking/schemas";
 import {
   pageLayoutSchema,
   type PageBlock,
   type PageLayout,
 } from "../experience/schemas";
+import { siteDraftV1Schema, type SiteDraftV1 } from "../sites/schemas";
 import { enhanceAcquisitionPayload } from "./capabilities";
 import { composeStarterComposition } from "./composer";
 
@@ -132,6 +134,38 @@ export function findPublicBookingPage(
   );
 }
 
+export function findPublicBookingSchedule(
+  snapshotInput: ConfigurationSnapshotV1,
+): z.infer<typeof bookingScheduleSchema> | null {
+  const page = findPublicBookingPage(snapshotInput);
+  if (!page) return null;
+  let result: z.infer<typeof bookingScheduleSchema> | null = null;
+  const visit = (value: unknown): void => {
+    if (result) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const item = value as Record<string, unknown>;
+    if (
+      item.type === "booking" &&
+      item.booking_key === "booking" &&
+      item.config &&
+      typeof item.config === "object" &&
+      !Array.isArray(item.config)
+    ) {
+      const schedule = bookingScheduleSchema.safeParse(
+        (item.config as Record<string, unknown>).schedule,
+      );
+      if (schedule.success) result = schedule.data;
+    }
+    Object.values(item).forEach(visit);
+  };
+  visit(page.layout_json);
+  return result;
+}
+
 function currentTargetSet(snapshot: ConfigurationSnapshotV1): Set<string> {
   return new Set([
     ...snapshot.object_definitions.map((row) => `object:${row.key}`),
@@ -238,6 +272,86 @@ function updateBookingBlocks(
   schedule: ReturnType<typeof bookingScheduleForRequest>,
 ): PageLayout["blocks"] {
   return blocks.map((block) => updateBookingBlock(block, schedule));
+}
+
+/**
+ * Once a Site has an active release, its public Page source is immutable. An
+ * owner schedule amendment therefore edits the Site draft through the normal
+ * draft CAS path. Matching the retained source Page and booking key updates
+ * repeated placements together while preserving every block identity.
+ */
+export function updateSiteBookingScheduleDraft(
+  draftInput: SiteDraftV1,
+  sourcePageId: string,
+  bookingKey: string,
+  requestInput: BookingSetupRequest,
+): SiteDraftV1 {
+  const draft = siteDraftV1Schema.parse(draftInput);
+  const request = bookingSetupRequestSchema.parse(requestInput);
+  const schedule = bookingScheduleForRequest(request);
+  let matched = 0;
+
+  const visit = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(visit);
+    if (!value || typeof value !== "object") return value;
+    const item = value as Record<string, unknown>;
+    const next = Object.fromEntries(
+      Object.entries(item).map(([key, child]) => [key, visit(child)]),
+    );
+    if (
+      next.type === "booking" &&
+      next.booking_key === bookingKey &&
+      next.stable_source_page_id === sourcePageId
+    ) {
+      const config = next.config;
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        throw new BookingSetupError("booking_existing_setup");
+      }
+      next.config = { ...(config as Record<string, unknown>), schedule };
+      matched += 1;
+    }
+    return next;
+  };
+
+  const updated = siteDraftV1Schema.parse(visit(draft));
+  if (matched === 0) {
+    throw new BookingSetupError("booking_existing_setup");
+  }
+  return updated;
+}
+
+export function findSiteBookingSchedule(
+  draftInput: SiteDraftV1,
+  sourcePageId: string,
+  bookingKey: string,
+): z.infer<typeof bookingScheduleSchema> | null {
+  const draft = siteDraftV1Schema.parse(draftInput);
+  let result: z.infer<typeof bookingScheduleSchema> | null = null;
+  const visit = (value: unknown): void => {
+    if (result) return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const item = value as Record<string, unknown>;
+    if (
+      item.type === "booking" &&
+      item.booking_key === bookingKey &&
+      item.stable_source_page_id === sourcePageId &&
+      item.config &&
+      typeof item.config === "object" &&
+      !Array.isArray(item.config)
+    ) {
+      const schedule = bookingScheduleSchema.safeParse(
+        (item.config as Record<string, unknown>).schedule,
+      );
+      if (schedule.success) result = schedule.data;
+    }
+    Object.values(item).forEach(visit);
+  };
+  visit(draft);
+  return result;
 }
 
 export function composeBookingScheduleAmendmentOperations(

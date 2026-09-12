@@ -78,6 +78,16 @@ function proofSettings(): ProofSettings {
   };
 }
 
+function isExpectedPreorderRetentionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return (
+    record.code === "42501" &&
+    typeof record.message === "string" &&
+    /permission denied for table preorder_experiences\b/i.test(record.message)
+  );
+}
+
 async function removeFixture(
   admin: ReturnType<typeof createClient<Database>>,
   databaseUrl: string,
@@ -121,12 +131,18 @@ async function removeFixture(
         .from("businesses")
         .delete()
         .eq("id", businessId);
-      if (error)
-        failures.push(`business cleanup failed (${error.code ?? "unknown"})`);
+      if (error) {
+        if (isExpectedPreorderRetentionError(error)) {
+          retainProtectedBusiness = true;
+        } else {
+          failures.push(`business cleanup failed (${error.code ?? "unknown"})`);
+        }
+      }
     }
     // Published C3 actions are immutable by design. The isolated browser
     // runner disposes its database after the proof, so retain that protected
-    // business rather than bypassing the release-authority trigger.
+    // business rather than bypassing the release-authority trigger. The
+    // preorder retention error above is also expected for this fixture.
   }
 
   if (!retainProtectedBusiness) {

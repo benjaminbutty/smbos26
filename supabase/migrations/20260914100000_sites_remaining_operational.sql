@@ -373,6 +373,55 @@ revoke all on function private.site_public_operational_action_key_v4(
   uuid, text, uuid, text, uuid
 ) from public, anon, authenticated, service_role;
 
+-- A first Site placement may retain an existing canonical Booking Page as its
+-- source.  Validate the complete source atomically from the trusted snapshot;
+-- later amendments compare the immutable action's non-schedule definition so
+-- an owner can change hours without borrowing another Page's identity.
+create or replace function private.site_page_contains_booking_source_v4(
+  value jsonb,
+  requested_booking_key text,
+  requested_config jsonb
+)
+returns boolean
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  child jsonb;
+begin
+  if jsonb_typeof(value) = 'object' then
+    if value ->> 'type' = 'booking'
+      and value ->> 'booking_key' = requested_booking_key
+      and coalesce(value -> 'config', '{}'::jsonb)
+          = coalesce(requested_config, '{}'::jsonb)
+    then
+      return true;
+    end if;
+    for child in select item.value from jsonb_each(value) as item(key, value) loop
+      if private.site_page_contains_booking_source_v4(
+        child, requested_booking_key, requested_config
+      ) then
+        return true;
+      end if;
+    end loop;
+  elsif jsonb_typeof(value) = 'array' then
+    for child in select item.value from jsonb_array_elements(value) as item(value) loop
+      if private.site_page_contains_booking_source_v4(
+        child, requested_booking_key, requested_config
+      ) then
+        return true;
+      end if;
+    end loop;
+  end if;
+  return false;
+end;
+$$;
+
+revoke all on function private.site_page_contains_booking_source_v4(
+  jsonb, text, jsonb
+) from public, anon, authenticated, service_role;
+
 -- C3's public projector deliberately drops operational blocks.  v4 keeps a
 -- small public atom (the friendly source key plus an opaque action address)
 -- while all configuration and relationship details stay in the private row.
@@ -1732,7 +1781,15 @@ begin
       else jsonb_build_object('submit_label', submit_label_value)
     end,
     'bindings', field_bindings,
-    'customer_binding', coalesce(form_value -> 'config_json' -> 'customer_binding', '{}'::jsonb)
+    -- Prepare receives the durable Site draft shape (`customer_connection`),
+    -- while a re-prepared canonical form may already carry the same value
+    -- under `config_json.customer_binding`.  Freeze either source here so
+    -- both v3 and v4 publishers retain the binding in their action row.
+    'customer_binding', coalesce(
+      form_value -> 'config_json' -> 'customer_binding',
+      form_value -> 'customer_connection',
+      '{}'::jsonb
+    )
   );
 end;
 $$;
@@ -3003,6 +3060,7 @@ declare
   operational_block record;
   operational_action_key text;
   operational_source_page_id uuid;
+  canonical_source_page_id uuid;
   prior_source_page_id uuid;
   operational_frozen_offer jsonb;
   operational_definition_hash text;
@@ -3243,6 +3301,7 @@ begin
       )
   loop
     operational_source_page_id := null;
+    canonical_source_page_id := null;
     prior_source_page_id := null;
     if operational_block.block ->> 'type' = 'booking'
       and operational_block.block ->> 'stable_source_page_id' is not null
@@ -3255,6 +3314,24 @@ begin
         raise exception 'site_operational_source_unavailable'
           using errcode = '23514';
       end;
+      if operational_source_page_id = operational_block.page_id then
+        select (source_page.value ->> 'id')::uuid
+        into canonical_source_page_id
+        from jsonb_array_elements(candidate_snapshot -> 'pages')
+          as source_page(value)
+        where source_page.value ->> 'key' = private.site_page_key_v1(
+          requested_site_id, operational_block.page_id
+        )
+          and private.site_page_contains_booking_source_v4(
+            source_page.value -> 'layout_json',
+            operational_block.block ->> 'booking_key',
+            operational_block.block -> 'config'
+          )
+        limit 1;
+        operational_source_page_id := coalesce(
+          canonical_source_page_id, operational_source_page_id
+        );
+      end if;
       -- A Site draft may retain a source identity only when it is already
       -- anchored by this Site's immutable action/binding, or when the source
       -- is the current draft Page on its first publication.  A browser-sent
@@ -3272,9 +3349,25 @@ begin
             and retained_action.action_kind = 'booking'
             and retained_action.source_page_id = operational_source_page_id
             and retained_action.booking_key = operational_block.block ->> 'booking_key'
-            and retained_action.action_json -> 'config'
+            and (retained_action.action_json -> 'config')
+              - 'schedule'
               = coalesce(operational_block.block -> 'config', '{}'::jsonb)
+                - 'schedule'
             and retained_release.status = 'published'
+        )
+        or exists (
+          select 1
+          from jsonb_array_elements(candidate_snapshot -> 'pages')
+            as source_page(value)
+          where (source_page.value ->> 'id')::uuid
+              = operational_source_page_id
+            and source_page.value ->> 'audience' = 'public'
+            and coalesce((source_page.value ->> 'is_active')::boolean, false)
+            and private.site_page_contains_booking_source_v4(
+              source_page.value -> 'layout_json',
+              operational_block.block ->> 'booking_key',
+              operational_block.block -> 'config'
+            )
         )
         or exists (
           select 1
@@ -3354,8 +3447,10 @@ begin
         and action.site_id = requested_site_id
         and action.action_kind = 'booking'
         and action.booking_key = operational_block.block ->> 'booking_key'
-        and action.action_json -> 'config'
+        and (action.action_json -> 'config')
+          - 'schedule'
           = coalesce(operational_block.block -> 'config', '{}'::jsonb)
+            - 'schedule'
         and prior_release.status = 'published'
       order by prior_release.published_at asc nulls last,
         prior_release.prepared_at asc, action.source_page_id
@@ -3370,9 +3465,44 @@ begin
         and binding.site_id = requested_site_id
         and binding.draft_page_id = operational_block.page_id;
     end if;
-    operational_source_page_id := coalesce(
-      operational_source_page_id, operational_block.page_id
-    );
+    if operational_source_page_id is null
+      and operational_block.block ->> 'type' = 'booking'
+    then
+      -- On first publication a Site-owned Booking has no retained action or
+      -- binding yet.  The canonical Page operation was materialised above;
+      -- use that actual Page UUID rather than the private draft UUID.
+      select (source_page.value ->> 'id')::uuid
+      into operational_source_page_id
+      from jsonb_array_elements(candidate_snapshot -> 'pages')
+        as source_page(value)
+      where source_page.value ->> 'key' = private.site_page_key_v1(
+        requested_site_id, operational_block.page_id
+      )
+        and source_page.value ->> 'audience' = 'public'
+        and coalesce((source_page.value ->> 'is_active')::boolean, false)
+        and private.site_page_contains_booking_source_v4(
+          source_page.value -> 'layout_json',
+          operational_block.block ->> 'booking_key',
+          operational_block.block -> 'config'
+        )
+      limit 1;
+    end if;
+    if operational_source_page_id is null
+      and operational_block.block ->> 'type' = 'booking'
+    then
+      raise exception 'site_operational_source_unavailable'
+        using errcode = '23514';
+    end if;
+    if operational_block.block ->> 'type' = 'booking'
+      and not exists (
+      select 1
+      from jsonb_array_elements(candidate_snapshot -> 'pages')
+        as source_page(value)
+      where (source_page.value ->> 'id')::uuid = operational_source_page_id
+      ) then
+      raise exception 'site_operational_source_unavailable'
+        using errcode = '23514';
+    end if;
     operational_action_key := case
       when operational_block.block ->> 'type' = 'booking' then
         private.site_public_operational_action_key_v4(
@@ -7870,3 +8000,256 @@ revoke all on function public.submit_public_preorder(
 grant execute on function public.submit_public_preorder(
   text, text, text, jsonb, text
 ) to service_role;
+
+-- The historical v3 publisher predates the immutable Customer binding column.
+-- Replace it additively so Form-only releases retain the same binding as v4
+-- releases without editing the already-applied C3 migration.
+create or replace function public.publish_site_release_v3(
+  expected_business_id uuid,
+  expected_actor_id uuid,
+  requested_site_id uuid,
+  requested_candidate_id uuid,
+  expected_draft_revision bigint,
+  expected_base_version_id uuid,
+  expected_head_revision bigint
+)
+returns public.site_releases
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_head public.business_configuration_heads;
+  selected_change public.configuration_change_sets;
+  selected_state public.site_states;
+  selected_release public.site_releases;
+  applied_change public.configuration_change_sets;
+  action_bundle jsonb;
+  normalized_draft jsonb;
+  configuration_already_applied boolean := false;
+begin
+  if expected_business_id is null or expected_actor_id is null
+    or requested_site_id is null or requested_candidate_id is null
+    or expected_draft_revision is null or expected_draft_revision <= 0
+    or expected_base_version_id is null or expected_head_revision is null
+    or expected_head_revision <= 0
+  then
+    raise exception 'site_request_invalid' using errcode = '22023';
+  end if;
+  perform private.site_assert_actor_v1(expected_business_id, expected_actor_id);
+  select * into current_head
+  from public.business_configuration_heads
+  where business_id = expected_business_id
+  for update;
+  if not found then
+    raise exception 'configuration_head_not_found' using errcode = 'P0002';
+  end if;
+  select * into selected_release
+  from public.site_releases
+  where business_id = expected_business_id
+    and site_id = requested_site_id
+    and id = requested_candidate_id
+  for update;
+  if not found then
+    raise exception 'site_release_not_found' using errcode = 'P0002';
+  end if;
+  if selected_release.projection_schema_version <> 3 then
+    raise exception 'site_release_schema_unsupported' using errcode = '55000';
+  end if;
+  if selected_release.status in ('published', 'expired') then
+    return selected_release;
+  end if;
+  if selected_release.status = 'prepared'
+    and selected_release.expires_at <= timezone('utc', now())
+  then
+    update public.site_releases
+    set status = 'expired'
+    where business_id = expected_business_id
+      and id = requested_candidate_id
+    returning * into selected_release;
+    return selected_release;
+  end if;
+  if selected_release.status <> 'prepared' then
+    raise exception 'site_release_not_publishable' using errcode = '55000';
+  end if;
+
+  if selected_release.configuration_change_set_id is not null then
+    select * into selected_change
+    from public.configuration_change_sets
+    where business_id = expected_business_id
+      and id = selected_release.configuration_change_set_id
+    for update;
+    if not found
+      or selected_change.base_version_id <> selected_release.source_base_version_id
+      or selected_change.base_head_revision <> selected_release.source_head_revision
+    then
+      raise exception 'site_configuration_incompatible' using errcode = '23514';
+    end if;
+    if selected_change.status = 'applied' then
+      if selected_change.applied_version_id <> current_head.active_version_id then
+        raise exception 'site_configuration_stale' using errcode = 'P0001';
+      end if;
+      configuration_already_applied := true;
+    elsif selected_change.status <> 'validated' then
+      raise exception 'site_configuration_incompatible' using errcode = '23514';
+    end if;
+  end if;
+
+  select * into selected_state
+  from public.site_states
+  where business_id = expected_business_id
+    and id = requested_site_id
+  for update;
+  if not found then
+    raise exception 'site_not_found' using errcode = 'P0002';
+  end if;
+  if selected_state.draft_revision <> expected_draft_revision
+    or selected_release.source_draft_revision <> expected_draft_revision
+  then
+    raise exception 'site_draft_stale' using errcode = 'P0001';
+  end if;
+  if selected_state.active_release_revision
+      <> selected_release.expected_active_release_revision
+  then
+    raise exception 'site_release_stale' using errcode = 'P0001';
+  end if;
+  if selected_state.draft_base_version_id <> selected_release.source_base_version_id
+    or selected_state.draft_base_head_revision <> selected_release.source_head_revision
+  then
+    raise exception 'site_configuration_rebase_required' using errcode = 'P0001';
+  end if;
+  if (not configuration_already_applied and (
+      current_head.active_version_id <> expected_base_version_id
+      or current_head.head_revision <> expected_head_revision
+    ))
+    or selected_release.source_base_version_id <> expected_base_version_id
+    or selected_release.source_head_revision <> expected_head_revision
+  then
+    raise exception 'site_configuration_stale' using errcode = 'P0001';
+  end if;
+  if selected_state.migration_state = 'new' and exists (
+    select 1 from public.pages as page_value
+    where page_value.business_id = expected_business_id
+      and page_value.audience = 'public'
+      and page_value.status = 'published'
+      and page_value.is_active
+  ) then
+    raise exception 'site_adoption_required' using errcode = 'P0001';
+  end if;
+  if selected_state.migration_state = 'legacy_pending' then
+    perform private.site_assert_adoption_source_v2(
+      expected_business_id, requested_site_id,
+      selected_state.legacy_source_checksum
+    );
+  end if;
+
+  if selected_release.configuration_change_set_id is not null
+    and not configuration_already_applied
+  then
+    perform pg_catalog.set_config('smbos.site_release_write', 'on', true);
+    applied_change := public.apply_configuration_change_c1_v1(
+      expected_business_id, expected_actor_id,
+      selected_release.configuration_change_set_id
+    );
+    perform pg_catalog.set_config('smbos.site_release_write', 'off', true);
+    if applied_change.status <> 'applied' then
+      raise exception 'site_configuration_incompatible' using errcode = '23514';
+    end if;
+    selected_release.applied_version_id := applied_change.applied_version_id;
+    select * into current_head
+    from public.business_configuration_heads
+    where business_id = expected_business_id;
+  elsif configuration_already_applied then
+    selected_release.applied_version_id := selected_change.applied_version_id;
+  end if;
+
+  -- Action rows have immediate canonical foreign keys by design.  They are
+  -- inserted only after the candidate application above, never at Prepare.
+  if jsonb_typeof(selected_release.review_json -> '_c3_form_actions')
+      is distinct from 'array'
+  then
+    raise exception 'site_form_action_index_invalid' using errcode = '23514';
+  end if;
+  for action_bundle in select value from jsonb_array_elements(
+    selected_release.review_json -> '_c3_form_actions'
+  ) loop
+    if action_bundle ->> 'release_token' <> selected_release.release_token
+      or action_bundle ->> 'view_key' is null
+      or action_bundle ->> 'view_id' is null
+    then
+      raise exception 'site_form_action_index_invalid' using errcode = '23514';
+    end if;
+    insert into public.site_release_actions_v3 (
+      business_id, release_id, site_id, form_id, object_definition_id,
+      form_key, view_id, view_key, action_key, release_token,
+      action_json, field_bindings_json, customer_binding_json
+    ) values (
+      expected_business_id, selected_release.id, requested_site_id,
+      (action_bundle ->> 'form_id')::uuid,
+      (action_bundle ->> 'object_definition_id')::uuid,
+      action_bundle ->> 'form_key', (action_bundle ->> 'view_id')::uuid,
+      action_bundle ->> 'view_key', action_bundle ->> 'action_key',
+      action_bundle ->> 'release_token', action_bundle -> 'action',
+      action_bundle -> 'bindings',
+      coalesce(action_bundle -> 'customer_binding', '{}'::jsonb)
+    );
+  end loop;
+
+  perform private.site_bind_canonical_pages_v1(
+    expected_business_id, requested_site_id, selected_state.draft_json
+  );
+  update public.site_releases
+  set status = 'published',
+    applied_version_id = selected_release.applied_version_id,
+    published_by = expected_actor_id,
+    published_at = timezone('utc', now())
+  where business_id = expected_business_id
+    and id = requested_candidate_id
+  returning * into selected_release;
+
+  normalized_draft := private.site_normalize_published_form_intents_v3(
+    selected_state.draft_json,
+    selected_release.review_json -> '_c3_form_actions'
+  );
+  -- Publication normalizes successful Form/Object/Field intents so the next
+  -- owner edit continues the same canonical identities. Treat that
+  -- normalization as a real draft mutation: an in-flight autosave carrying
+  -- the pre-publication revision must fail its existing CAS check instead of
+  -- restoring the old `new` intents over the published destination.
+  if normalized_draft is distinct from selected_state.draft_json then
+    perform private.site_sync_draft_asset_references_v1(
+      expected_business_id,
+      requested_site_id,
+      selected_state.draft_revision + 1,
+      normalized_draft
+    );
+  end if;
+  perform pg_catalog.set_config('smbos.site_release_write', 'on', true);
+  update public.site_states
+  set active_release_id = selected_release.id,
+    active_release_revision = active_release_revision + 1,
+    migration_state = 'adopted',
+    draft_revision = selected_state.draft_revision + case
+      when normalized_draft is distinct from selected_state.draft_json then 1
+      else 0
+    end,
+    draft_json = normalized_draft,
+    draft_base_version_id = coalesce(
+      selected_release.applied_version_id, current_head.active_version_id
+    ),
+    draft_base_head_revision = current_head.head_revision,
+    updated_at = timezone('utc', now())
+  where business_id = expected_business_id
+    and id = requested_site_id
+    and draft_revision = selected_state.draft_revision
+    and draft_base_version_id = selected_release.source_base_version_id
+    and draft_base_head_revision = selected_release.source_head_revision
+    and active_release_revision = selected_release.expected_active_release_revision
+  returning * into selected_state;
+  if not found then
+    raise exception 'site_draft_stale' using errcode = 'P0001';
+  end if;
+  perform pg_catalog.set_config('smbos.site_release_write', 'off', true);
+  return selected_release;
+end;
+$$;

@@ -140,7 +140,9 @@ async function createProduct(page: Page, businessSlug: string): Promise<void> {
     new RegExp(`/app/${businessSlug}/workspace/products\\?.*message=`),
   );
   await expect(
-    page.getByText("Morning studio box", { exact: true }),
+    page
+      .locator(".editor-desktop-grid")
+      .getByText("Morning studio box", { exact: true }),
   ).toBeVisible();
 
   await page
@@ -191,6 +193,52 @@ async function setupBooking(
     .click();
   await page.waitForURL(new RegExp(`/app/${businessSlug}/changes/[^/?#]+$`));
   await applyProposal(page, businessSlug);
+}
+
+async function amendPublishedBooking(
+  page: Page,
+  businessSlug: string,
+  lastTime: string,
+): Promise<void> {
+  await page.goto(`/app/${businessSlug}/setup/booking`);
+  await expect(
+    page.getByRole("heading", {
+      name: "Update appointment booking hours",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Last booking", { exact: true }).fill(lastTime);
+  await page
+    .getByRole("button", { name: "Save booking settings", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${businessSlug}/sites\\?notice=saved$`),
+  );
+  await expect(
+    page.getByRole("link", { name: "Edit booking settings", exact: true }),
+  ).toBeVisible();
+}
+
+async function expectPublishedBookingLastTime(
+  page: Page,
+  publicUrl: string,
+  expectedTime: string,
+  absentTime?: string,
+): Promise<void> {
+  await page.goto(publicUrl);
+  const booking = page.locator(".booking-experience");
+  await expect(
+    booking.getByRole("heading", { name: "Request a booking" }),
+  ).toBeVisible();
+  await booking.getByLabel("Date", { exact: true }).selectOption({ index: 1 });
+  await expect(
+    booking.getByLabel(`${expectedTime}, Available`, { exact: true }),
+  ).toBeVisible();
+  if (absentTime) {
+    await expect(
+      booking.getByLabel(`${absentTime}, Available`, { exact: true }),
+    ).toHaveCount(0);
+  }
 }
 
 async function addOperationalBlock(page: Page, name: RegExp): Promise<void> {
@@ -277,10 +325,41 @@ test("owner configures booking and preorder journeys through the Site", async ({
 
   const browser = page.context().browser();
   if (!browser) throw new Error("The owner journey needs a browser context.");
+  await amendPublishedBooking(page, business.slug, "19:00");
+  const beforeRepublishContext = await browser.newContext();
+  const beforeRepublishVisitor = await beforeRepublishContext.newPage();
+  await beforeRepublishVisitor.route("https://jamp.io/**", (route) =>
+    route.abort(),
+  );
+  try {
+    await expectPublishedBookingLastTime(
+      beforeRepublishVisitor,
+      new URL(`/p/${business.slug}/home`, page.url()).toString(),
+      "17:00",
+      "18:00",
+    );
+  } finally {
+    await beforeRepublishContext.close();
+  }
+
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
+  );
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
+  );
+
   const visitorContext = await browser.newContext();
   const visitor = await visitorContext.newPage();
   await visitor.route("https://jamp.io/**", (route) => route.abort());
   try {
+    await expectPublishedBookingLastTime(
+      visitor,
+      new URL(`/p/${business.slug}/home`, page.url()).toString(),
+      "18:00",
+    );
     await visitor.goto(
       new URL(`/p/${business.slug}/home`, page.url()).toString(),
     );
@@ -361,7 +440,9 @@ test("owner configures booking and preorder journeys through the Site", async ({
     page.getByText(/Shared\.Customer@example\.test/i).first(),
   ).toBeVisible();
   await expect(
-    page.getByText("Morning studio box", { exact: true }),
+    page
+      .locator(".editor-desktop-grid")
+      .getByText("Morning studio box", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".table-workbench-toolbar-status")).toContainText(
     /1 of 1/,

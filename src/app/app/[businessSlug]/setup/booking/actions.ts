@@ -13,6 +13,7 @@ import {
   composeBookingScheduleAmendmentOperations,
   composeBookingSetupOperations,
   findPublicBookingPage,
+  updateSiteBookingScheduleDraft,
 } from "../../../../../core/acquisition/booking-setup";
 import { loadActiveManualAmendmentSnapshot } from "../../../../../core/configuration/manual-amendments/service";
 import {
@@ -20,6 +21,10 @@ import {
   ConfigurationChangeServiceError,
 } from "../../../../../core/configuration/service";
 import { createServerClient } from "../../../../../db/supabase/server";
+import {
+  saveSiteDraft,
+  siteStateSchema,
+} from "../../../../../core/sites/service";
 
 const routeSlugSchema = z
   .string()
@@ -37,6 +42,28 @@ function integer(formData: FormData, name: string): number {
   return candidate !== null && /^\d+$/.test(candidate)
     ? Number.parseInt(candidate, 10)
     : Number.NaN;
+}
+
+async function readSiteState(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+): Promise<z.infer<typeof siteStateSchema> | null> {
+  type SiteStateQuery = {
+    eq(column: string, value: string): SiteStateQuery;
+    maybeSingle(): PromiseLike<{ data: unknown; error: unknown | null }>;
+  };
+  const reader = supabase as unknown as {
+    from(table: string): {
+      select(columns: string): SiteStateQuery;
+    };
+  };
+  const result = await reader
+    .from("site_states")
+    .select("*")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  return result.data ? siteStateSchema.parse(result.data) : null;
 }
 
 function redirectWithNotice(
@@ -82,6 +109,12 @@ export async function prepareBookingSetupProposalAction(
   if (!parsed.success) {
     redirectWithNotice(parsedSlug.data, "input_invalid");
   }
+  const renderedSiteId = z.uuid().safeParse(value(formData, "siteId"));
+  const renderedDraftRevision = z.coerce
+    .number()
+    .int()
+    .positive()
+    .safeParse(value(formData, "expectedDraftRevision"));
 
   try {
     const active = await loadActiveManualAmendmentSnapshot(configuration);
@@ -91,7 +124,37 @@ export async function prepareBookingSetupProposalAction(
     ) {
       redirectWithNotice(parsedSlug.data, "stale");
     }
-    const operations = findPublicBookingPage(active.snapshot)
+    const installedPage = findPublicBookingPage(active.snapshot);
+    const siteState = await readSiteState(supabase, tenant.business.id);
+    if (installedPage && siteState?.migration_state === "adopted") {
+      if (
+        !renderedSiteId.success ||
+        !renderedDraftRevision.success ||
+        renderedSiteId.data !== siteState.id ||
+        renderedDraftRevision.data !== siteState.draft_revision
+      ) {
+        redirectWithNotice(parsedSlug.data, "stale");
+      }
+      const updatedDraft = updateSiteBookingScheduleDraft(
+        siteState.draft_json,
+        installedPage.id,
+        "booking",
+        parsed.data,
+      );
+      await saveSiteDraft(
+        supabase,
+        { businessId: tenant.business.id, actorId: tenant.user.id },
+        {
+          siteId: siteState.id,
+          expectedDraftRevision: siteState.draft_revision,
+          draft: updatedDraft,
+        },
+      );
+      redirect(
+        `/app/${encodeURIComponent(parsedSlug.data)}/sites?${new URLSearchParams({ notice: "saved" }).toString()}`,
+      );
+    }
+    const operations = installedPage
       ? composeBookingScheduleAmendmentOperations(active.snapshot, parsed.data)
       : composeBookingSetupOperations(active.snapshot, parsed.data);
     const proposal = await configuration.proposeChangeSet({
