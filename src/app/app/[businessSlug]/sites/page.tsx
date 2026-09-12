@@ -7,6 +7,7 @@ import {
   createSiteAction,
   prepareSiteReleaseAction,
   publishSiteReleaseAction,
+  refreshSiteBookingSetupAction,
   resolveSiteDraftConflictAction,
   rebaseSiteDraftAction,
   stageSiteAdoptionAction,
@@ -300,7 +301,6 @@ export default async function SitesPage({
       .select("id,title,layout_json")
       .eq("business_id", tenant.business.id)
       .eq("audience", "public")
-      .eq("status", "published")
       .eq("is_active", true),
   );
   if (operationalPageResult.error) throw operationalPageResult.error;
@@ -840,9 +840,9 @@ export default async function SitesPage({
                 </Link>
                 <Link
                   className="button button-secondary"
-                  href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+                  href={`/app/${encodeURIComponent(businessSlug)}/setup/booking`}
                 >
-                  Build an appointments workspace
+                  Set up appointments and public booking
                 </Link>
               </div>
             </section>
@@ -858,6 +858,14 @@ export default async function SitesPage({
             operationalOptions={operationalOptions}
             previewAction={prepareSiteReleaseAction.bind(null, businessSlug)}
             publishAction={publishSiteReleaseAction.bind(null, businessSlug)}
+            {...(operationalOptions.some((option) => option.type === "booking")
+              ? {
+                  bookingRefreshAction: refreshSiteBookingSetupAction.bind(
+                    null,
+                    businessSlug,
+                  ),
+                }
+              : {})}
             candidateId={candidate?.id}
             siteId={state.id}
           />

@@ -31,6 +31,7 @@ import {
   publishSiteReleaseV2,
   rebaseSiteDraft,
   resolveSiteDraftConflict,
+  saveSiteDraft,
   stageSiteAdoption,
   unpublishSite,
   withdrawSiteField,
@@ -46,6 +47,7 @@ import {
   siteReleasePreparationSchema,
   siteReleasePublishSchema,
 } from "../../../../core/sites/schemas";
+import { loadActiveManualAmendmentSnapshot } from "../../../../core/configuration/manual-amendments/service";
 import { createServerClient } from "../../../../db/supabase/server";
 
 const routeSlugSchema = z
@@ -415,6 +417,67 @@ async function siteDraftHasOperationalActions(
   return visit(draftValue);
 }
 
+function bookingConfigBySourcePage(
+  snapshot: Awaited<
+    ReturnType<typeof loadActiveManualAmendmentSnapshot>
+  >["snapshot"],
+): Map<string, Record<string, unknown>> {
+  const configs = new Map<string, Record<string, unknown>>();
+  const visit = (value: unknown, pageId: string): void => {
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, pageId));
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+    const item = value as Record<string, unknown>;
+    if (
+      item.type === "booking" &&
+      typeof item.booking_key === "string" &&
+      item.config &&
+      typeof item.config === "object" &&
+      !Array.isArray(item.config)
+    ) {
+      configs.set(
+        `${pageId}:${item.booking_key}`,
+        item.config as Record<string, unknown>,
+      );
+    }
+    Object.values(item).forEach((child) => visit(child, pageId));
+  };
+  for (const page of snapshot.pages) visit(page.layout_json, page.id);
+  return configs;
+}
+
+function refreshBookingConfigs(
+  draft: z.infer<typeof siteDraftV1Schema>,
+  configs: Map<string, Record<string, unknown>>,
+): { draft: z.infer<typeof siteDraftV1Schema>; changed: boolean } {
+  let changed = false;
+  const visit = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(visit);
+    if (!value || typeof value !== "object") return value;
+    const item = value as Record<string, unknown>;
+    const next = Object.fromEntries(
+      Object.entries(item).map(([key, child]) => [key, visit(child)]),
+    );
+    if (
+      next.type === "booking" &&
+      typeof next.booking_key === "string" &&
+      typeof next.stable_source_page_id === "string"
+    ) {
+      const config = configs.get(
+        `${next.stable_source_page_id}:${next.booking_key}`,
+      );
+      if (config && JSON.stringify(next.config) !== JSON.stringify(config)) {
+        next.config = structuredClone(config);
+        changed = true;
+      }
+    }
+    return next;
+  };
+  return { draft: siteDraftV1Schema.parse(visit(draft)), changed };
+}
+
 function redirectWithNotice(
   path: string,
   notice:
@@ -595,6 +658,72 @@ export async function createSiteAction(
     siteNotice(parsedSlug.data, "failed");
   }
   siteNotice(parsedSlug.data, "created");
+}
+
+export async function refreshSiteBookingSetupAction(
+  businessSlugInput: string,
+  formData: FormData,
+): Promise<never> {
+  const parsedSlug = routeSlugSchema.safeParse(businessSlugInput);
+  if (!parsedSlug.success) notFound();
+  const siteId = z.uuid().safeParse(stringValue(formData, "siteId"));
+  const revision = z.coerce
+    .number()
+    .int()
+    .positive()
+    .safeParse(stringValue(formData, "expectedDraftRevision"));
+  if (!siteId.success || !revision.success) {
+    siteNotice(parsedSlug.data, "input_invalid");
+  }
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(parsedSlug.data, supabase);
+  if (!hasCapability(tenant.membership.role, "manage_configuration"))
+    notFound();
+  const configuration = new ConfigurationChangeService(supabase, {
+    businessId: tenant.business.id,
+    actorId: tenant.user.id,
+  });
+  try {
+    const active = await loadActiveManualAmendmentSnapshot(configuration);
+    type SiteStateQuery = {
+      eq(column: string, value: string): SiteStateQuery;
+      maybeSingle(): PromiseLike<{ data: unknown; error: unknown | null }>;
+    };
+    const reader = supabase as unknown as {
+      from(table: string): {
+        select(columns: string): SiteStateQuery;
+      };
+    };
+    const result = await reader
+      .from("site_states")
+      .select("draft_json")
+      .eq("business_id", tenant.business.id)
+      .eq("id", siteId.data)
+      .maybeSingle();
+    if (result.error || !result.data)
+      throw result.error ?? new Error("Site not found.");
+    const draft = siteDraftV1Schema.parse(
+      (result.data as { draft_json: unknown }).draft_json,
+    );
+    const refreshed = refreshBookingConfigs(
+      draft,
+      bookingConfigBySourcePage(active.snapshot),
+    );
+    if (refreshed.changed) {
+      await saveSiteDraft(
+        supabase,
+        { businessId: tenant.business.id, actorId: tenant.user.id },
+        {
+          siteId: siteId.data,
+          expectedDraftRevision: revision.data,
+          draft: refreshed.draft,
+        },
+      );
+    }
+  } catch (error) {
+    siteNotice(parsedSlug.data, siteErrorNotice(error));
+  }
+  siteNotice(parsedSlug.data, "saved");
 }
 
 export async function rebaseSiteDraftAction(

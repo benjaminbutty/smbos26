@@ -635,6 +635,104 @@ revoke all on function private.site_project_operational_block_v4(jsonb, jsonb, t
   private.site_project_operational_projection_v4(jsonb, jsonb, text)
   from public, anon, authenticated, service_role;
 
+-- Legacy C2 validators intentionally reject operational blocks.  v4 keeps
+-- that fail-closed boundary intact and removes only those blocks from the
+-- private validation input; the original draft continues into Page/source
+-- compilation and the immutable operational action rows below.
+create or replace function private.site_strip_operational_block_for_legacy_checks_v4(
+  block jsonb
+)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  child jsonb;
+  column_value jsonb;
+  child_blocks jsonb;
+  columns_value jsonb := '[]'::jsonb;
+  blocks_value jsonb := '[]'::jsonb;
+begin
+  if block is null or block ->> 'type' in ('booking', 'preorder') then
+    return null;
+  end if;
+  if block ->> 'type' = 'collapsible' then
+    for child in select value from jsonb_array_elements(
+      coalesce(block -> 'blocks', '[]'::jsonb)
+    ) loop
+      child := private.site_strip_operational_block_for_legacy_checks_v4(child);
+      if child is not null then
+        blocks_value := blocks_value || jsonb_build_array(child);
+      end if;
+    end loop;
+    return (block - 'blocks') || jsonb_build_object('blocks', blocks_value);
+  end if;
+  if block ->> 'type' = 'section' then
+    for column_value in select value from jsonb_array_elements(
+      coalesce(block -> 'columns', '[]'::jsonb)
+    ) loop
+      child_blocks := '[]'::jsonb;
+      for child in select value from jsonb_array_elements(
+        coalesce(column_value -> 'blocks', '[]'::jsonb)
+      ) loop
+        child := private.site_strip_operational_block_for_legacy_checks_v4(child);
+        if child is not null then
+          child_blocks := child_blocks || jsonb_build_array(child);
+        end if;
+      end loop;
+      columns_value := columns_value || jsonb_build_array(
+        (column_value - 'blocks') || jsonb_build_object('blocks', child_blocks)
+      );
+    end loop;
+    return (block - 'columns') || jsonb_build_object('columns', columns_value);
+  end if;
+  return block;
+end;
+$$;
+
+create or replace function private.site_strip_operational_blocks_for_legacy_checks_v4(
+  draft jsonb
+)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  page_value jsonb;
+  block jsonb;
+  blocks_value jsonb;
+  pages_value jsonb := '[]'::jsonb;
+begin
+  for page_value in select value from jsonb_array_elements(
+    coalesce(draft -> 'pages', '[]'::jsonb)
+  ) loop
+    blocks_value := '[]'::jsonb;
+    for block in select value from jsonb_array_elements(
+      coalesce(page_value -> 'layout' -> 'blocks', '[]'::jsonb)
+    ) loop
+      block := private.site_strip_operational_block_for_legacy_checks_v4(block);
+      if block is not null then
+        blocks_value := blocks_value || jsonb_build_array(block);
+      end if;
+    end loop;
+    pages_value := pages_value || jsonb_build_array(
+      page_value || jsonb_build_object(
+        'layout', (page_value -> 'layout') || jsonb_build_object(
+          'blocks', blocks_value
+        )
+      )
+    );
+  end loop;
+  return draft || jsonb_build_object('pages', pages_value);
+end;
+$$;
+
+revoke all on function private.site_strip_operational_block_for_legacy_checks_v4(jsonb),
+  private.site_strip_operational_blocks_for_legacy_checks_v4(jsonb)
+  from public, anon, authenticated, service_role;
+
 create or replace function private.site_assert_operational_customer_cardinality_v4(
   target_business_id uuid,
   draft jsonb
@@ -1053,6 +1151,7 @@ declare
   effective_existing_object boolean;
   existing_view_field text;
   view_field_property text;
+  view_columns jsonb := '[]'::jsonb;
 begin
   for form_value in select value from jsonb_array_elements(
     coalesce(draft -> 'forms', '[]'::jsonb)
@@ -1249,6 +1348,10 @@ begin
         view_value -> 'config_json' -> view_field_property,
         '[]'::jsonb
       );
+      view_columns := coalesce(
+        view_value -> 'config_json' -> 'columns',
+        '[]'::jsonb
+      );
       for existing_view_field in
         select value #>> '{}'
         from jsonb_array_elements(question_keys) as item(value)
@@ -1259,12 +1362,33 @@ begin
         ) then
           view_fields := view_fields || to_jsonb(existing_view_field);
         end if;
+        if jsonb_typeof(view_value -> 'config_json' -> 'columns') = 'array'
+          and not exists (
+            select 1
+            from jsonb_array_elements(view_columns) as item(value)
+            where value ->> 'kind' = 'field'
+              and value ->> 'field_key' = existing_view_field
+          )
+        then
+          view_columns := view_columns || jsonb_build_array(jsonb_build_object(
+            'kind', 'field',
+            'field_key', existing_view_field
+          ));
+        end if;
       end loop;
       if view_fields <> coalesce(
         view_value -> 'config_json' -> view_field_property, '[]'::jsonb
+      ) or (
+        jsonb_typeof(view_value -> 'config_json' -> 'columns') = 'array'
+        and view_columns <> view_value -> 'config_json' -> 'columns'
       ) then
         config_value := coalesce(view_value -> 'config_json', '{}'::jsonb)
           || jsonb_build_object(view_field_property, view_fields);
+        if jsonb_typeof(view_value -> 'config_json' -> 'columns') = 'array' then
+          config_value := config_value || jsonb_build_object(
+            'columns', view_columns
+          );
+        end if;
         operations := operations || jsonb_build_array(jsonb_build_object(
           'op', 'set_view',
           'key', view_value ->> 'key',
@@ -2866,6 +2990,7 @@ declare
   derived_operations jsonb;
   form_operations jsonb;
   form_stripped_draft jsonb;
+  legacy_validation_draft jsonb;
   projection jsonb;
   review_metadata jsonb;
   action_bundles jsonb := '[]'::jsonb;
@@ -2941,7 +3066,10 @@ begin
   );
 
   perform private.site_assert_site_forms_publication_ready_for_site_v3(
-    expected_business_id, requested_site_id, selected_state.draft_json,
+    expected_business_id, requested_site_id,
+    private.site_strip_operational_blocks_for_legacy_checks_v4(
+      selected_state.draft_json
+    ),
     active_version.snapshot_json
   );
   -- Operational Customer connections must be able to accept repeated
@@ -3012,11 +3140,15 @@ begin
   form_stripped_draft := private.site_strip_public_forms_from_draft_v3(
     selected_state.draft_json
   );
+  legacy_validation_draft :=
+    private.site_strip_operational_blocks_for_legacy_checks_v4(
+      form_stripped_draft
+    );
   perform private.site_assert_publication_draft_c2(
-    expected_business_id, form_stripped_draft
+    expected_business_id, legacy_validation_draft
   );
   perform private.site_assert_publication_ready_v1(
-    private.site_strip_filter_draft_v2(form_stripped_draft)
+    private.site_strip_filter_draft_v2(legacy_validation_draft)
   );
   canonical_draft := private.site_strip_draft_metadata_draft_v2(
     private.site_strip_filter_draft_v2(form_stripped_draft)

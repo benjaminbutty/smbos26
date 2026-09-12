@@ -149,6 +149,16 @@ async function createFixtureBusiness(label: string): Promise<Business> {
   return created;
 }
 
+function isExpectedFixtureRetentionError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  return (
+    record.code === "42501" &&
+    typeof record.message === "string" &&
+    /permission denied for table preorder_experiences\b/i.test(record.message)
+  );
+}
+
 async function createFixtureLocation(): Promise<Location> {
   const states = await callRpc<
     Array<{
@@ -800,7 +810,13 @@ afterAll(async () => {
           .from("businesses")
           .delete()
           .in("id", createdBusinessIds);
-        if (deleted.error) throw deleted.error;
+        if (deleted.error) {
+          if (isExpectedFixtureRetentionError(deleted.error)) {
+            retainProtectedFixture = true;
+          } else {
+            throw deleted.error;
+          }
+        }
       }
     }
     if (!retainProtectedFixture) {

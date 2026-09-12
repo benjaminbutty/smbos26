@@ -824,6 +824,7 @@ export function SiteComposer({
   operationalOptions,
   previewAction,
   publishAction,
+  bookingRefreshAction,
   candidateId,
   siteId,
 }: Readonly<{
@@ -836,6 +837,7 @@ export function SiteComposer({
   operationalOptions: OperationalBlockOption[];
   previewAction?: SiteAction;
   publishAction?: SiteAction;
+  bookingRefreshAction?: SiteAction;
   candidateId: string | undefined;
   siteId: string;
 }>): ReactNode {
@@ -862,6 +864,7 @@ export function SiteComposer({
   const [autosaveStatus, setAutosaveStatus] = useState<
     "saved" | "saving" | "error"
   >("saved");
+  const [bookingRefreshPending, setBookingRefreshPending] = useState(false);
   const initialDraftRef = useRef(copyDraft(initialDraft));
   const serverDraftRef = useRef(copyDraft(initialDraft));
   const serverRevisionRef = useRef(draftRevision);
@@ -876,6 +879,7 @@ export function SiteComposer({
   const navigationPendingRef = useRef(false);
   const navigationBypassRef = useRef(false);
   const manualSavePendingRef = useRef(false);
+  const bookingRefreshPendingRef = useRef(false);
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const home = initialDraft.pages.find((page) => page.is_home);
     return home?.id ?? initialDraft.pages[0]?.id ?? "";
@@ -2080,6 +2084,58 @@ export function SiteComposer({
               Save draft
             </button>
           </form>
+          {bookingRefreshAction ? (
+            <form
+              onSubmit={(event) => {
+                if (bookingRefreshPendingRef.current) {
+                  event.preventDefault();
+                  return;
+                }
+                event.preventDefault();
+                const form = event.currentTarget;
+                const formData = new FormData(form);
+                bookingRefreshPendingRef.current = true;
+                setBookingRefreshPending(true);
+                void saveDraftNow()
+                  .then((saved) => {
+                    if (!saved) {
+                      setMessage(
+                        "Your latest Site edits are still here. Save them before refreshing booking settings.",
+                      );
+                      return;
+                    }
+                    formData.set(
+                      "expectedDraftRevision",
+                      String(revisionRef.current),
+                    );
+                    return bookingRefreshAction(formData);
+                  })
+                  .catch(() => {
+                    setMessage(
+                      "The booking settings could not be refreshed. Try again.",
+                    );
+                  })
+                  .finally(() => {
+                    bookingRefreshPendingRef.current = false;
+                    setBookingRefreshPending(false);
+                  });
+              }}
+            >
+              <input name="siteId" type="hidden" value={siteId} />
+              <input
+                name="expectedDraftRevision"
+                type="hidden"
+                value={revision}
+              />
+              <button
+                className="button-secondary site-composer-refresh-booking-action"
+                disabled={bookingRefreshPending}
+                type="submit"
+              >
+                Refresh booking settings
+              </button>
+            </form>
+          ) : null}
           {previewAction ? (
             <form action={previewAction}>
               <input name="siteId" type="hidden" value={siteId} />
