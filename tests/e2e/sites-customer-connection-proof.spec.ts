@@ -510,9 +510,11 @@ async function createDuplicateCustomer(
   await createRecord
     .getByRole("button", { name: "Add record", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText(
-    "Added " + reviewCustomerName,
-  );
+  const createdNotice = page.locator(".editor-selection-notice").filter({
+    hasText: "Added " + reviewCustomerName,
+  });
+  await expect(createdNotice).toBeVisible();
+  await expect(createdNotice).toContainText("Added " + reviewCustomerName);
   const openRecord = page.getByRole("button", {
     name: "Open record " + reviewCustomerName,
     exact: true,
@@ -534,7 +536,9 @@ async function createDuplicateCustomer(
   await expect(emailInput).toBeVisible();
   await emailInput.fill(sharedEmail);
   await emailInput.press("Enter");
-  await expect(page.locator(".editor-save-state")).toContainText("Saved");
+  await expect(
+    page.locator(".editor-save-state.editor-save-saved"),
+  ).toContainText("Saved");
   const closeRecord = recordPanel.getByRole("button", {
     name: "Close record panel",
     exact: true,

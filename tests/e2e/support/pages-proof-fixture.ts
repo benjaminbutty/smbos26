@@ -103,10 +103,17 @@ async function removeFixture(
       const [protectedRelease] = await fixtureSql.unsafe<
         { protected_release: boolean }[]
       >(
-        `select exists (
-           select 1
-           from public.site_release_actions_v3
-           where business_id = $1::uuid
+        `select (
+           exists (
+             select 1
+             from public.site_release_actions_v3
+             where business_id = $1::uuid
+           )
+           or exists (
+             select 1
+             from public.site_release_actions_v4
+             where business_id = $1::uuid
+           )
          ) as protected_release`,
         [businessId],
       );
@@ -139,7 +146,7 @@ async function removeFixture(
         }
       }
     }
-    // Published C3 actions are immutable by design. The isolated browser
+    // Published C3/v4 actions are immutable by design. The isolated browser
     // runner disposes its database after the proof, so retain that protected
     // business rather than bypassing the release-authority trigger. The
     // preorder retention error above is also expected for this fixture.
