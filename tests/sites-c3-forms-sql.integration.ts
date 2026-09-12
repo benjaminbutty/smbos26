@@ -4,7 +4,9 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import postgres, { type Sql } from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
 
 import { composeStarterComposition } from "../src/core/acquisition/composer";
 import { composeInitialPreorderOperations } from "../src/core/configuration/initial-preorder/service";
