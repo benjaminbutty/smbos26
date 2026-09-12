@@ -625,12 +625,18 @@ test("owner connects a public Form to Customers and preserves review relinks", a
   await captureResponsiveEvidence(page, "owner-appointment-activity");
 
   await openWorkspaceDestination(page, business.slug, "Customers");
+  const customerGrid = page.locator(".editor-desktop-grid");
+  await expect(customerGrid).toBeVisible();
+  const originalCustomerRow = customerGrid
+    .getByRole("row")
+    .filter({ hasText: originalCustomerName });
+  await expect(originalCustomerRow).toBeVisible();
   await expect(
-    page.getByText(originalCustomerName, { exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText(sharedEmail, { exact: true })).toBeVisible();
+    originalCustomerRow.getByText(originalCustomerName, { exact: true }),
+  ).toHaveCount(1);
+  await expect(originalCustomerRow).toContainText(sharedEmail);
   await expect(
-    page.getByText(changedCustomerName, { exact: true }),
+    customerGrid.getByText(changedCustomerName, { exact: true }),
   ).toHaveCount(0);
   await captureResponsiveEvidence(page, "owner-customer-records");
 

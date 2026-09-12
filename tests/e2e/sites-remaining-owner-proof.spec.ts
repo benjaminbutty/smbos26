@@ -339,10 +339,18 @@ test("owner configures booking and preorder journeys through the Site", async ({
   await expect(
     preview.getByRole("region", { name: "Booking preview", exact: true }),
   ).toContainText("Booking for visitors");
+  await captureResponsiveEvidence(page, "owner-booking-preview");
+
+  const collectionPage = preview
+    .getByRole("navigation", { name: "Preview Pages", exact: true })
+    .getByRole("button", { name: "Collection", exact: true });
+  await expect(collectionPage).toBeVisible();
+  await collectionPage.click();
+  await expect(collectionPage).toHaveAttribute("aria-current", "page");
   await expect(
     preview.getByRole("region", { name: "Preorder preview", exact: true }),
   ).toContainText("Preorder for visitors");
-  await captureResponsiveEvidence(page, "owner-booking-preorder-preview");
+  await captureResponsiveEvidence(page, "owner-preorder-preview");
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
