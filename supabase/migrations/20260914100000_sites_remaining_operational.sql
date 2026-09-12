@@ -3254,7 +3254,7 @@ begin
          from public.preorder_experiences as experience
          where experience.business_id = expected_business_id
            and experience.key = operational_block.block ->> 'preorder_key'
-         limit 1)
+         limit 1))
       end;
     operational_frozen_offer := null;
     if operational_block.block ->> 'type' = 'preorder' then
