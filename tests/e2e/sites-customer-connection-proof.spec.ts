@@ -17,6 +17,7 @@ const proofViewports = [
   { name: "tablet", width: 834, height: 1112 },
   { name: "mobile", width: 390, height: 844 },
 ] as const;
+type ProofViewport = (typeof proofViewports)[number];
 
 async function applyProposal(page: Page, businessSlug: string): Promise<void> {
   await expect(
@@ -119,13 +120,18 @@ async function selectOptionContaining(
 async function captureResponsiveEvidence(
   page: Page,
   prefix: string,
+  options?: Readonly<{
+    fullPage?: boolean;
+    beforeScreenshot?: (viewport: ProofViewport) => Promise<void>;
+  }>,
 ): Promise<void> {
   const originalViewport = page.viewportSize() ?? proofViewports[0];
   try {
     for (const viewport of proofViewports) {
       await page.setViewportSize(viewport);
+      await options?.beforeScreenshot?.(viewport);
       await page.screenshot({
-        fullPage: true,
+        fullPage: options?.fullPage ?? true,
         path: test
           .info()
           .outputPath(
@@ -398,6 +404,7 @@ async function inspectAppointmentRecord(
     dateLabel: string;
     name: string;
     email: string;
+    panelEvidencePrefix?: string;
   }>,
 ): Promise<void> {
   const row = page.getByRole("row").filter({
@@ -436,12 +443,50 @@ async function inspectAppointmentRecord(
   await expectProperty("Customer email", input.email);
   await expectProperty("Date", input.dateLabel);
   await expectProperty("Status", "Booked");
-  await expect(
-    panel.getByRole("button", { name: "Close record panel", exact: true }),
-  ).toBeVisible();
-  await panel
-    .getByRole("button", { name: "Close record panel", exact: true })
-    .click();
+  const close = panel.getByRole("button", {
+    name: "Close record panel",
+    exact: true,
+  });
+  await expect(close).toBeVisible();
+  await expect(close).toBeFocused();
+
+  if (input.panelEvidencePrefix) {
+    await captureResponsiveEvidence(page, input.panelEvidencePrefix, {
+      fullPage: false,
+      beforeScreenshot: async (viewport) => {
+        await expect(panel).toBeVisible();
+        await expect(close).toBeVisible();
+        const closeBox = await close.boundingBox();
+        if (!closeBox) {
+          throw new Error("The open record panel close control has no bounds.");
+        }
+        expect(closeBox.x).toBeGreaterThanOrEqual(0);
+        expect(closeBox.y).toBeGreaterThanOrEqual(0);
+        expect(closeBox.x + closeBox.width).toBeLessThanOrEqual(viewport.width);
+        expect(closeBox.y + closeBox.height).toBeLessThanOrEqual(
+          viewport.height,
+        );
+      },
+    });
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(
+      page.locator('[role="gridcell"][aria-selected="true"]'),
+    ).toBeFocused();
+
+    await openRecord.click();
+    await expect(panel).toBeVisible();
+    const scrim = page.locator(".editor-record-panel-scrim");
+    await expect(scrim).toBeVisible();
+    await scrim.click({ position: { x: 8, y: 8 } });
+    await expect(panel).toHaveCount(0);
+
+    await openRecord.click();
+    await expect(panel).toBeVisible();
+    await expect(close).toBeFocused();
+  }
+
+  await close.click();
   await expect(panel).toHaveCount(0);
 }
 
@@ -570,6 +615,7 @@ test("owner connects a public Form to Customers and preserves review relinks", a
     dateLabel: "15 Oct 2026",
     name: originalCustomerName,
     email: sharedEmail,
+    panelEvidencePrefix: "owner-appointment-record-panel",
   });
   await inspectAppointmentRecord(page, {
     dateLabel: "16 Oct 2026",

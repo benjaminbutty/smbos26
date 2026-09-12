@@ -51,6 +51,7 @@ type PreparedRelease = {
   id: string;
   status: string;
   projection_schema_version: number;
+  projection_json: { schema_version?: unknown };
 };
 type ActionRow = {
   release_id: string;
@@ -622,6 +623,7 @@ async function publishCurrentSite(state: SiteState): Promise<PreparedRelease> {
     status: "prepared",
     projection_schema_version: 4,
   });
+  expect(prepared.projection_json).toMatchObject({ schema_version: 4 });
   return callRpc<PreparedRelease>(owner.client, "publish_site_release_v4", {
     expected_business_id: business.id,
     expected_actor_id: owner.user.id,

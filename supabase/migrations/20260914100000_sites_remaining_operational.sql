@@ -830,7 +830,13 @@ begin
       )
     );
   end loop;
-  return projection || jsonb_build_object('pages', pages);
+  -- The shared C3 builder emits a v3 projection.  v4 keeps that page
+  -- grammar, but the release projection itself must carry the v4 marker so
+  -- strict owner and public readers select the operational schema.
+  return (projection - 'schema_version') || jsonb_build_object(
+    'schema_version', 4,
+    'pages', pages
+  );
 end;
 $$;
 
