@@ -941,7 +941,15 @@ describe("Sites remaining operational SQL boundaries", () => {
     ) as ActionRow;
     expect(firstPreorderAction).toBeDefined();
     expect(firstBookingAction).toBeDefined();
-    expect(firstBookingAction.source_page_id).toBeTruthy();
+    const bookingSourcePageId = firstBookingAction.source_page_id;
+    expect(bookingSourcePageId).toBeTruthy();
+    const bookingSourcePages = await sql<{ status: string }[]>`
+      select status
+      from public.pages
+      where business_id = ${business.id}
+        and id = ${bookingSourcePageId}
+    `;
+    expect(bookingSourcePages[0]?.status).toBe("draft");
     expect(firstPreorderAction.offer_json).toMatchObject({
       products: [expect.objectContaining({ price: 12 })],
     });

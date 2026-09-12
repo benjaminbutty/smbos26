@@ -97,6 +97,160 @@ begin
 end;
 $$;
 
+-- Stable Booking source identities belong to the durable Site draft, while
+-- the historical Page grammar intentionally rejects Site-only keys.  Keep
+-- the identity through autosave/CAS and strip only this validated metadata
+-- before the C1 structural check; editor lifecycle metadata remains intact.
+create or replace function private.site_strip_booking_source_metadata_block_v4(
+  block jsonb
+)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  child jsonb;
+  child_blocks jsonb := '[]'::jsonb;
+  column_value jsonb;
+  columns_value jsonb := '[]'::jsonb;
+begin
+  if block ->> 'type' = 'booking' then
+    if block ? 'stable_source_page_id'
+      and not private.site_valid_uuid_v1(block -> 'stable_source_page_id')
+    then
+      raise exception 'site_draft_invalid' using errcode = '22023';
+    end if;
+    return block - 'stable_source_page_id';
+  end if;
+  if block ->> 'type' = 'collapsible' then
+    if jsonb_typeof(block -> 'blocks') is distinct from 'array' then
+      return block;
+    end if;
+    for child in select value from jsonb_array_elements(block -> 'blocks') loop
+      child_blocks := child_blocks || jsonb_build_array(
+        private.site_strip_booking_source_metadata_block_v4(child)
+      );
+    end loop;
+    return (block - 'blocks') || jsonb_build_object('blocks', child_blocks);
+  end if;
+  if block ->> 'type' = 'section' then
+    if jsonb_typeof(block -> 'columns') is distinct from 'array' then
+      return block;
+    end if;
+    for column_value in select value from jsonb_array_elements(block -> 'columns') loop
+      if jsonb_typeof(column_value -> 'blocks') is distinct from 'array' then
+        return block;
+      end if;
+      child_blocks := '[]'::jsonb;
+      for child in select value from jsonb_array_elements(column_value -> 'blocks') loop
+        child_blocks := child_blocks || jsonb_build_array(
+          private.site_strip_booking_source_metadata_block_v4(child)
+        );
+      end loop;
+      columns_value := columns_value || jsonb_build_array(
+        (column_value - 'blocks') || jsonb_build_object('blocks', child_blocks)
+      );
+    end loop;
+    return (block - 'columns') || jsonb_build_object('columns', columns_value);
+  end if;
+  return block;
+end;
+$$;
+
+revoke all on function private.site_strip_booking_source_metadata_block_v4(jsonb)
+  from public, anon, authenticated, service_role;
+
+create or replace function private.site_strip_booking_source_metadata_draft_v4(
+  draft jsonb
+)
+returns jsonb
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  page_value jsonb;
+  block_value jsonb;
+  blocks_value jsonb;
+  pages_value jsonb := '[]'::jsonb;
+begin
+  if jsonb_typeof(draft -> 'pages') is distinct from 'array' then
+    return draft;
+  end if;
+  for page_value in select value from jsonb_array_elements(draft -> 'pages') loop
+    if jsonb_typeof(page_value -> 'layout') is distinct from 'object'
+      or jsonb_typeof(page_value -> 'layout' -> 'blocks') is distinct from 'array'
+    then
+      return draft;
+    end if;
+    blocks_value := '[]'::jsonb;
+    for block_value in select value from jsonb_array_elements(page_value -> 'layout' -> 'blocks') loop
+      blocks_value := blocks_value || jsonb_build_array(
+        private.site_strip_booking_source_metadata_block_v4(block_value)
+      );
+    end loop;
+    pages_value := pages_value || jsonb_build_array(
+      (page_value - 'layout') || jsonb_build_object(
+        'layout', (page_value -> 'layout') || jsonb_build_object(
+          'blocks', blocks_value
+        )
+      )
+    );
+  end loop;
+  return (draft - 'pages') || jsonb_build_object('pages', pages_value);
+end;
+$$;
+
+revoke all on function private.site_strip_booking_source_metadata_draft_v4(jsonb)
+  from public, anon, authenticated, service_role;
+
+-- Keep the C3 draft boundary and Form shape checks unchanged, but make the
+-- C1 structural input use the bounded Site-only metadata adapter above.
+create or replace function private.site_assert_site_draft_c2(
+  target_business_id uuid,
+  draft jsonb
+)
+returns void
+language plpgsql
+stable
+set search_path = ''
+as $$
+declare
+  site_block record;
+  form_value jsonb;
+  structural_draft jsonb;
+begin
+  structural_draft := private.site_strip_booking_source_metadata_draft_v4(
+    private.site_strip_forms_v3(
+      private.site_strip_filter_draft_v2(
+        private.site_strip_incomplete_detail_bindings_v2(draft)
+      )
+    )
+  );
+  perform private.assert_site_draft_v1(structural_draft);
+  for site_block in select * from private.site_draft_blocks_v1(draft) loop
+    if site_block.block ->> 'type' = 'collection' then
+      perform private.site_assert_collection_filter_v2(
+        target_business_id, site_block.block
+      );
+    end if;
+  end loop;
+  if draft ? 'forms' then
+    if jsonb_typeof(draft -> 'forms') is distinct from 'array'
+      or jsonb_array_length(draft -> 'forms') > 20
+    then
+      raise exception 'site_form_draft_invalid' using errcode = '22023';
+    end if;
+    for form_value in select value from jsonb_array_elements(draft -> 'forms') loop
+      perform private.site_assert_form_draft_shape_v3(form_value);
+    end loop;
+  end if;
+exception when invalid_text_representation then
+  raise exception 'site_draft_invalid' using errcode = '22023';
+end;
+$$;
+
 drop trigger if exists site_release_actions_v4_immutable
   on public.site_release_actions_v4;
 create trigger site_release_actions_v4_immutable

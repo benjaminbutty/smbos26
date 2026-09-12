@@ -340,14 +340,16 @@ async function submitCustomerForm(
     if (evidencePrefix) {
       await captureResponsiveEvidence(visitor, evidencePrefix);
     }
-    const customerName = publicForm.getByLabel("Customer name", {
+    const customerName = publicForm.getByRole("textbox", {
+      name: "Customer name",
       exact: true,
     });
-    const customerEmail = publicForm.getByLabel("Customer email", {
+    const customerEmail = publicForm.getByRole("textbox", {
+      name: "Customer email",
       exact: true,
     });
-    const date = publicForm.getByLabel("Date", { exact: true });
-    const startsAt = publicForm.getByLabel("Starts at", { exact: true });
+    const date = publicForm.getByLabel(/^Date\s*\*?$/);
+    const startsAt = publicForm.getByLabel(/^Starts at\s*\*?$/);
     const status = publicForm.getByRole("combobox", {
       name: "Status",
       exact: true,
