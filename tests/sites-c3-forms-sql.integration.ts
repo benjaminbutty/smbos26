@@ -188,7 +188,7 @@ function releaseCurrentness(state: SiteState) {
   return {
     expected_draft_revision: state.draft_revision,
     expected_base_version_id: state.draft_base_version_id,
-    expected_base_head_revision: state.draft_base_head_revision,
+    expected_head_revision: state.draft_base_head_revision,
   };
 }
 
