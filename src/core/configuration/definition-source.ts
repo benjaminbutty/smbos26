@@ -11,6 +11,7 @@ import {
   experienceViewTypeSchema,
   formConfigSchema,
   pageLayoutSchema,
+  sitePageLayoutSchema,
 } from "../experience/schemas";
 import {
   graphFieldTypeSchema,
@@ -120,11 +121,24 @@ const snapshotPageSchema = z
     title: z.string(),
     slug: z.string(),
     audience: experienceAudienceSchema,
-    layout_json: pageLayoutSchema,
+    layout_json: z.union([pageLayoutSchema, sitePageLayoutSchema]),
     status: experiencePageStatusSchema,
     is_active: z.boolean(),
   })
-  .strict();
+  .strict()
+  .superRefine((page, context) => {
+    if (
+      (page.audience === "internal" || page.status === "published") &&
+      !pageLayoutSchema.safeParse(page.layout_json).success
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Site layout atoms are only valid on public draft Pages until the Site release reader is adopted.",
+        path: ["layout_json"],
+      });
+    }
+  });
 
 const snapshotPreorderSchema = z
   .object({

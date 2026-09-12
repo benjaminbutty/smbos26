@@ -58,7 +58,7 @@ function isTablePath(pathname: string): boolean {
 }
 
 function isPagePath(pathname: string): boolean {
-  return pathname.includes("/pages/") || pathname.includes("/sites/");
+  return pathname.includes("/pages/") || pathname.includes("/sites");
 }
 
 function closeOnNavigation(
@@ -333,30 +333,36 @@ export function WorkspaceMobileNav({
                 </div>
               </section>
 
-              {sites.length > 0 ? (
-                <section aria-labelledby="mobile-sites-heading">
-                  <h3 id="mobile-sites-heading">Sites</h3>
-                  <div className="workspace-mobile-sheet-links">
-                    {sites.map((site) => (
-                      <Link
-                        aria-current={
-                          pathname === `${rootPath}/sites/${site.slug}`
-                            ? "page"
-                            : undefined
-                        }
-                        href={`${rootPath}/sites/${site.slug}`}
-                        key={site.slug}
-                        onClick={(event) =>
-                          closeOnNavigation(event, closeSheet)
-                        }
-                      >
-                        <span aria-hidden="true">▣</span>
-                        {site.title}
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
+              <section aria-labelledby="mobile-sites-heading">
+                <h3 id="mobile-sites-heading">Sites</h3>
+                <div className="workspace-mobile-sheet-links">
+                  <Link
+                    aria-current={
+                      pathname === `${rootPath}/sites` ? "page" : undefined
+                    }
+                    href={`${rootPath}/sites`}
+                    onClick={(event) => closeOnNavigation(event, closeSheet)}
+                  >
+                    <span aria-hidden="true">▣</span>
+                    Site builder
+                  </Link>
+                  {sites.map((site) => (
+                    <Link
+                      aria-current={
+                        pathname === `${rootPath}/sites/${site.slug}`
+                          ? "page"
+                          : undefined
+                      }
+                      href={`${rootPath}/sites/${site.slug}`}
+                      key={site.slug}
+                      onClick={(event) => closeOnNavigation(event, closeSheet)}
+                    >
+                      <span aria-hidden="true">▣</span>
+                      {site.title}
+                    </Link>
+                  ))}
+                </div>
+              </section>
               {canManageConfiguration && restoreAction && currentness ? (
                 <details className="workspace-mobile-archived-pages">
                   <summary>Archived Pages</summary>

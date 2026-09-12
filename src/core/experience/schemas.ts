@@ -827,6 +827,18 @@ export const formFieldConfigSchema = z
     label: labelSchema.optional(),
     help_text: z.string().trim().min(1).max(500).optional(),
     hidden: z.boolean().default(false),
+    /** Form requiredness is allowed to be stricter than the canonical Field. */
+    required: z.boolean().optional(),
+    visible_when: z
+      .object({
+        field: graphKeySchema,
+        operator: z.enum(["equals", "not_equals", "includes"]),
+        value: z.union([z.string(), z.number(), z.boolean()]),
+      })
+      .strict()
+      .optional(),
+    upload_kind: z.enum(["image", "pdf"]).optional(),
+    upload_count: z.number().int().min(1).max(5).optional(),
     default_value: jsonValueSchema.optional(),
   })
   .strict()
@@ -843,6 +855,70 @@ export const formFieldConfigSchema = z
         path: ["default_value"],
       });
     }
+    if (field.upload_count !== undefined && !field.upload_kind) {
+      context.addIssue({
+        code: "custom",
+        message: "An upload count needs an upload kind.",
+        path: ["upload_kind"],
+      });
+    }
+    if (field.upload_kind && field.hidden) {
+      context.addIssue({
+        code: "custom",
+        message: "Upload questions cannot be hidden.",
+        path: ["hidden"],
+      });
+    }
+  });
+
+/**
+ * A finite, immutable Customer connection retained in a published Form
+ * configuration.  Site drafts use their own more permissive authoring shape;
+ * this schema describes the canonical value emitted into a Form snapshot.
+ */
+const formCustomerBindingKeySchema = z.union([graphKeySchema, z.literal("")]);
+
+const formCustomerMappingSchema = z
+  .object({
+    customer_field_key: formCustomerBindingKeySchema,
+    question_key: formCustomerBindingKeySchema,
+    default_value: jsonValueSchema.optional(),
+  })
+  .strict();
+
+export const formCustomerBindingSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    customer_object_key: formCustomerBindingKeySchema,
+    relationship_key: formCustomerBindingKeySchema,
+    email_field_key: formCustomerBindingKeySchema,
+    mappings: z.array(formCustomerMappingSchema).max(50).optional(),
+  })
+  .strict()
+  .superRefine((binding, context) => {
+    if (!binding.enabled) return;
+    for (const key of [
+      "customer_object_key",
+      "relationship_key",
+      "email_field_key",
+    ] as const) {
+      if (binding[key] === "") {
+        context.addIssue({
+          code: "custom",
+          message: "Enabled Customer bindings require configured keys.",
+          path: [key],
+        });
+      }
+    }
+    binding.mappings?.forEach((mapping, index) => {
+      if (mapping.customer_field_key === "") {
+        context.addIssue({
+          code: "custom",
+          message: "Enabled Customer mappings require a Customer property.",
+          path: ["mappings", index, "customer_field_key"],
+        });
+      }
+    });
   });
 
 export const formConfigSchema = z
@@ -861,8 +937,37 @@ export const formConfigSchema = z
         }
       }),
     submit_label: labelSchema.optional(),
+    customer_binding: formCustomerBindingSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((config, context) => {
+    const positions = new Map(
+      config.fields.map((field, index) => [field.field, index]),
+    );
+    const hiddenFields = new Set(
+      config.fields.filter((field) => field.hidden).map((field) => field.field),
+    );
+    config.fields.forEach((field, index) => {
+      if (
+        field.visible_when &&
+        (!positions.has(field.visible_when.field) ||
+          (positions.get(field.visible_when.field) ?? -1) >= index)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "A conditional Form field must reference an earlier field.",
+          path: ["fields", index, "visible_when", "field"],
+        });
+      }
+      if (field.visible_when && hiddenFields.has(field.visible_when.field)) {
+        context.addIssue({
+          code: "custom",
+          message: "A condition cannot reference a hidden Form field.",
+          path: ["fields", index, "visible_when", "field"],
+        });
+      }
+    });
+  });
 
 export const safePageHrefSchema = z
   .string()
@@ -966,6 +1071,14 @@ const preorderBlockSchema = z
   })
   .strict();
 
+// Sites retain this bounded source identity in their private draft so a
+// copied or moved Booking block keeps the same operational namespace. The
+// ordinary Page grammar remains unchanged; publication strips this metadata
+// before emitting canonical Page operations.
+const siteBookingBlockSchema = bookingBlockSchema.extend({
+  stable_source_page_id: z.uuid().optional(),
+});
+
 const dividerBlockSchema = z
   .object({ type: z.literal("divider"), id: pageBlockIdSchema.optional() })
   .strict();
@@ -1016,7 +1129,7 @@ const pageRichTextContentSchema = z
     }
   });
 
-const pageRichTextNodeSchema = z.discriminatedUnion("type", [
+export const pageRichTextNodeSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("paragraph"),
@@ -1150,6 +1263,496 @@ export const pageLayoutSchema = z
       });
     }
   });
+
+/**
+ * Site composition keeps the existing Page atoms as its base grammar. These
+ * additions are intentionally finite and live beside the shared experience
+ * schemas so a later public renderer extends the Page renderer rather than
+ * introducing a second, Site-only document format.
+ *
+ * C1 supports explicit Record selection only. A later selection schema may
+ * add bounded filters while preserving this versioned representation.
+ */
+export const siteGalleryImageSchema = z
+  .object({
+    asset_id: z.uuid().optional(),
+    alt: z.string().trim().max(300).default(""),
+    caption: z.string().trim().min(1).max(500).optional(),
+    /**
+     * C1 persists a small finite incomplete state while an owner is choosing
+     * media or writing its description. Releases require `complete` entries.
+     */
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+  })
+  .strict()
+  .superRefine((image, context) => {
+    if (image.draft_state === "complete" && !image.asset_id) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery image needs a managed asset.",
+        path: ["asset_id"],
+      });
+    }
+    if (image.draft_state === "complete" && image.alt.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery image needs a description.",
+        path: ["alt"],
+      });
+    }
+  });
+
+export const siteGalleryBlockSchema = z
+  .object({
+    type: z.literal("gallery"),
+    images: z.array(siteGalleryImageSchema).max(12),
+    presentation: z.enum(["grid", "carousel"]).default("grid"),
+    id: pageBlockIdSchema.optional(),
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+  })
+  .strict()
+  .superRefine((block, context) => {
+    if (block.draft_state === "complete" && block.images.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery needs at least one image.",
+        path: ["images"],
+      });
+    }
+    if (
+      block.draft_state === "complete" &&
+      block.images.some((image) => image.draft_state !== "complete")
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete gallery cannot contain an incomplete image.",
+        path: ["images"],
+      });
+    }
+    const ids = block.images.flatMap((image) =>
+      image.asset_id ? [image.asset_id] : [],
+    );
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        message: "A gallery cannot contain the same image more than once.",
+        path: ["images"],
+      });
+    }
+  });
+
+export const siteCollectionBlockSchema = z
+  .object({
+    type: z.literal("collection"),
+    object_key: graphKeySchema.optional(),
+    selection: z
+      .object({
+        schema_version: z.literal(1),
+        record_ids: z.array(z.uuid()).max(500),
+      })
+      .strict()
+      .superRefine((selection, context) => {
+        if (
+          new Set(selection.record_ids).size !== selection.record_ids.length
+        ) {
+          context.addIssue({
+            code: "custom",
+            message:
+              "A collection cannot select the same Record more than once.",
+            path: ["record_ids"],
+          });
+        }
+      }),
+    public_field_keys: z.array(graphKeySchema).max(50),
+    /** C2 keeps filtering finite and stores it beside the explicit selection. */
+    filter: z
+      .object({
+        schema_version: z.literal(1),
+        filters: z
+          .array(
+            z
+              .object({
+                field_key: graphKeySchema,
+                operator: z.enum([
+                  "is",
+                  "is_not",
+                  "contains",
+                  "does_not_contain",
+                  "greater_than",
+                  "greater_than_or_equal",
+                  "less_than",
+                  "less_than_or_equal",
+                  "is_any_of",
+                  "is_empty",
+                  "is_not_empty",
+                ]),
+                value: z.json().optional(),
+                values: z.array(z.json()).max(20).optional(),
+              })
+              .strict()
+              .superRefine((item, context) => {
+                const noValue =
+                  item.operator === "is_empty" ||
+                  item.operator === "is_not_empty";
+                if (noValue && (item.value !== undefined || item.values)) {
+                  context.addIssue({
+                    code: "custom",
+                    message: "This filter does not accept a value.",
+                    path: ["value"],
+                  });
+                }
+                if (item.operator === "is_any_of") {
+                  if (
+                    (!item.values || item.values.length === 0) &&
+                    item.value === undefined
+                  ) {
+                    context.addIssue({
+                      code: "custom",
+                      message: "This filter needs a list of values.",
+                      path: ["values"],
+                    });
+                  }
+                  if (item.value !== undefined) {
+                    context.addIssue({
+                      code: "custom",
+                      message: "This filter needs a list of values.",
+                      path: ["values"],
+                    });
+                  }
+                } else if (!noValue && item.value === undefined) {
+                  context.addIssue({
+                    code: "custom",
+                    message: "This filter needs a value.",
+                    path: ["value"],
+                  });
+                }
+              }),
+          )
+          .max(10),
+        filter_match: z.enum(["all", "any"]),
+        sorts: z
+          .array(
+            z
+              .object({
+                field_key: graphKeySchema,
+                direction: z.enum(["ascending", "descending"]),
+              })
+              .strict(),
+          )
+          .max(3),
+      })
+      .strict()
+      .optional(),
+    presentation: z.enum(["cards", "list", "table"]).default("cards"),
+    detail_page_id: z.uuid().optional(),
+    id: pageBlockIdSchema.optional(),
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+  })
+  .strict()
+  .superRefine((block, context) => {
+    if (!block.id) {
+      context.addIssue({
+        code: "custom",
+        message: "Collection blocks require a stable identity.",
+        path: ["id"],
+      });
+    }
+    if (block.draft_state === "complete" && !block.object_key) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete collection needs a Record type.",
+        path: ["object_key"],
+      });
+    }
+    if (
+      block.draft_state === "complete" &&
+      block.public_field_keys.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete collection needs at least one public Property.",
+        path: ["public_field_keys"],
+      });
+    }
+    if (
+      new Set(block.public_field_keys).size !== block.public_field_keys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A collection's public Properties must be unique.",
+        path: ["public_field_keys"],
+      });
+    }
+  });
+
+/** Site drafts forbid URL images and can persist an unfinished managed image. */
+export const siteDraftImageBlockSchema = z
+  .object({
+    type: z.literal("image"),
+    asset_id: z.uuid().optional(),
+    alt: z.string().trim().max(300).default(""),
+    caption: z.string().trim().min(1).max(500).optional(),
+    presentation: z.enum(["content", "wide"]).optional(),
+    id: pageBlockIdSchema.optional(),
+    draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+  })
+  .strict()
+  .superRefine((image, context) => {
+    if (image.draft_state === "complete" && !image.asset_id) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete Site image needs a managed asset.",
+        path: ["asset_id"],
+      });
+    }
+    if (image.draft_state === "complete" && image.alt.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "A complete Site image needs a description.",
+        path: ["alt"],
+      });
+    }
+  });
+
+/**
+ * These shared atoms have finite empty states for editor autosave. A release
+ * never includes them: `siteDraftPublicationReadyV1Schema` rejects every
+ * `draft_state: incomplete` block on an included Page.
+ */
+const siteIncompleteAtomicBlockSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("heading"),
+      text: z.string().trim().max(200),
+      level: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("text"),
+      text: z.string().trim().max(5000),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("button"),
+      label: z.string().trim().max(120),
+      href: z.string().trim().max(2048),
+      style: z.enum(["primary", "secondary"]).default("primary"),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("callout"),
+      text: z.string().trim().max(1000),
+      tone: z.enum(["neutral", "info", "success", "warning"]).default("info"),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.literal("incomplete"),
+    })
+    .strict(),
+]);
+
+export const siteRecordDetailBlockSchema = z
+  .object({
+    type: z.literal("record_detail"),
+    collection_block_id: z.uuid(),
+    public_field_keys: z.array(graphKeySchema).min(1).max(50),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict()
+  .superRefine((block, context) => {
+    if (!block.id) {
+      context.addIssue({
+        code: "custom",
+        message: "Shared detail blocks require a stable identity.",
+        path: ["id"],
+      });
+    }
+    if (
+      new Set(block.public_field_keys).size !== block.public_field_keys.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "A detail layout's public Properties must be unique.",
+        path: ["public_field_keys"],
+      });
+    }
+  });
+
+type SiteCollapsibleBlock = {
+  type: "collapsible";
+  summary: string;
+  blocks: SiteNestedBlock[];
+  open: boolean;
+  id?: string | undefined;
+  draft_state: "complete" | "incomplete";
+};
+
+type SiteNestedBlock =
+  | z.output<typeof headingBlockSchema>
+  | z.output<typeof textBlockSchema>
+  | z.output<typeof siteDraftImageBlockSchema>
+  | z.output<typeof buttonBlockSchema>
+  | z.output<typeof publicFormBlockSchema>
+  | z.output<typeof siteBookingBlockSchema>
+  | z.output<typeof preorderBlockSchema>
+  | z.output<typeof dividerBlockSchema>
+  | z.output<typeof calloutBlockSchema>
+  | z.output<typeof richTextBlockSchema>
+  | z.output<typeof siteGalleryBlockSchema>
+  | z.output<typeof siteCollectionBlockSchema>
+  | z.output<typeof siteRecordDetailBlockSchema>
+  | z.output<typeof siteIncompleteAtomicBlockSchema>
+  | SiteCollapsibleBlock;
+
+export const siteSharedAtomicBlockSchema = z.union([
+  headingBlockSchema,
+  textBlockSchema,
+  buttonBlockSchema,
+  publicFormBlockSchema,
+  siteBookingBlockSchema,
+  preorderBlockSchema,
+  dividerBlockSchema,
+  calloutBlockSchema,
+  richTextBlockSchema,
+]);
+
+const siteLeafBlockSchema = z.union([
+  siteSharedAtomicBlockSchema,
+  siteDraftImageBlockSchema,
+  siteGalleryBlockSchema,
+  siteCollectionBlockSchema,
+  siteRecordDetailBlockSchema,
+  siteIncompleteAtomicBlockSchema,
+]);
+
+function siteNestedBlockSchemaAtDepth(
+  nesting: number,
+): z.ZodType<SiteNestedBlock> {
+  return z.lazy(() =>
+    nesting > 1
+      ? siteLeafBlockSchema
+      : z.union([
+          siteLeafBlockSchema,
+          siteCollapsibleBlockSchemaAtDepth(nesting),
+        ]),
+  );
+}
+
+/**
+ * Sites use their own bounded recursive section grammar. Reusing the normal
+ * Page collapsible schema here would allow historical URL images to tunnel
+ * through a nested child and would make an owner unable to autosave a cleared
+ * child field.
+ */
+function siteCollapsibleBlockSchemaAtDepth(
+  nesting: number,
+): z.ZodType<SiteCollapsibleBlock> {
+  return z
+    .object({
+      type: z.literal("collapsible"),
+      summary: z.string().trim().max(200),
+      blocks: z.array(siteNestedBlockSchemaAtDepth(nesting + 1)).max(50),
+      open: z.boolean().default(true),
+      id: pageBlockIdSchema.optional(),
+      draft_state: z.enum(["complete", "incomplete"]).default("complete"),
+    })
+    .strict()
+    .superRefine((block, context) => {
+      if (block.draft_state === "complete" && block.summary.length === 0) {
+        context.addIssue({
+          code: "custom",
+          message: "A complete section needs a summary.",
+          path: ["summary"],
+        });
+      }
+    });
+}
+
+const siteNestedBlockSchema: z.ZodType<SiteNestedBlock> =
+  siteNestedBlockSchemaAtDepth(0);
+
+export const siteSectionWidthSchema = z.enum(["content", "wide"]);
+export const siteSectionSpacingSchema = z.enum([
+  "compact",
+  "comfortable",
+  "spacious",
+]);
+export const siteSectionAlignmentSchema = z.enum(["start", "center", "end"]);
+export const siteSectionBackgroundSchema = z.enum(["plain", "tint"]);
+
+const siteSectionBlockSchema = z
+  .object({
+    type: z.literal("section"),
+    width: siteSectionWidthSchema.default("content"),
+    spacing: siteSectionSpacingSchema.default("comfortable"),
+    alignment: siteSectionAlignmentSchema.default("start"),
+    background: siteSectionBackgroundSchema.default("plain"),
+    columns: z
+      .array(
+        z
+          .object({
+            blocks: z.array(siteNestedBlockSchemaAtDepth(1)).max(100),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(3),
+    id: pageBlockIdSchema.optional(),
+  })
+  .strict();
+
+export const sitePageBlockSchema = z.union([
+  siteNestedBlockSchema,
+  siteSectionBlockSchema,
+]);
+
+export const sitePageLayoutSchema = z
+  .object({ blocks: z.array(sitePageBlockSchema).max(100) })
+  .strict()
+  .superRefine((layout, context) => {
+    const ids: string[] = [];
+    let blockCount = 0;
+    const visit = (blocks: readonly z.infer<typeof sitePageBlockSchema>[]) => {
+      for (const block of blocks) {
+        blockCount += 1;
+        if ("id" in block && block.id) ids.push(block.id);
+        if (block.type === "collapsible") {
+          visit(block.blocks);
+        }
+        if (block.type === "section") {
+          for (const column of block.columns) {
+            visit(column.blocks);
+          }
+        }
+      }
+    };
+    visit(layout.blocks);
+    if (blockCount > 100) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "A Site Page can contain at most 100 blocks, including sections.",
+        path: ["blocks"],
+      });
+    }
+    if (new Set(ids).size !== ids.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Site Page blocks must use unique IDs.",
+        path: ["blocks"],
+      });
+    }
+  });
+
+export type SitePageLayout = z.infer<typeof sitePageLayoutSchema>;
+export type SitePageBlock = z.infer<typeof sitePageBlockSchema>;
 
 export const createViewDefinitionSchema = z
   .object({

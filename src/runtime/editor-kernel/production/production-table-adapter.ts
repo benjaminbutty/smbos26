@@ -184,6 +184,8 @@ function directColumnType(kind: EditorColumnKind): ProductionColumnType {
       return "phone";
     case "url":
       return "url";
+    case "file":
+      return "file";
     case "select":
       return "select";
     case "status":

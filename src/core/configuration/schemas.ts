@@ -7,6 +7,7 @@ import {
   experienceViewTypeSchema,
   formConfigSchema,
   pageLayoutSchema,
+  sitePageLayoutSchema,
   parseViewConfig,
 } from "../experience/schemas";
 import {
@@ -115,11 +116,24 @@ export const setPageOperationSchema = z
       .max(80)
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
     audience: experienceAudienceSchema,
-    layout_json: pageLayoutSchema,
+    layout_json: z.union([pageLayoutSchema, sitePageLayoutSchema]),
     status: experiencePageStatusSchema,
     is_active: z.boolean(),
   })
-  .strict();
+  .strict()
+  .superRefine((operation, context) => {
+    if (
+      (operation.audience === "internal" || operation.status === "published") &&
+      !pageLayoutSchema.safeParse(operation.layout_json).success
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Site layout atoms are only valid on public draft Pages until the Site release reader is adopted.",
+        path: ["layout_json"],
+      });
+    }
+  });
 
 export const setPreorderExperienceOperationSchema = z
   .object({

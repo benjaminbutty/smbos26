@@ -753,7 +753,8 @@ export function InternalPageEditor({
         currentness.expectedHeadRevision;
     const hasLocalDraft =
       bodyDirtyRef.current ||
-      titleDraftRef.current.trim() !== titleRef.current.trim();
+      titleDraftRef.current.trim() !== titleRef.current.trim() ||
+      pendingUploads > 0;
     const hasInFlightSave = saveCoordinatorRef.current?.inFlight ?? false;
     const latestLayout = withEditorBlockIds(layout);
     let cancelled = false;
@@ -865,6 +866,7 @@ export function InternalPageEditor({
     initialTitle,
     layout,
     loadedCurrentness,
+    pendingUploads,
   ]);
 
   const performPageSave = useCallback(

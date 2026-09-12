@@ -76,6 +76,19 @@ export interface PageAssetCleanupResult {
   retainedAssetIds: readonly string[];
 }
 
+type CleanupRpcClient = {
+  rpc<T>(
+    functionName: string,
+    parameters: Record<string, string>,
+  ): Promise<{ data: T | null; error: unknown | null }>;
+};
+
+function cleanupRpc(client: SupabaseClient<Database>): CleanupRpcClient {
+  // C1 deliberately keeps this narrow adapter local until generated database
+  // types include the additive retention RPCs.
+  return client as unknown as CleanupRpcClient;
+}
+
 export async function cleanupUnreferencedPageAssets(
   client: SupabaseClient<Database>,
   input: {
@@ -100,29 +113,49 @@ export async function cleanupUnreferencedPageAssets(
       retainedAssetIds: retained,
     };
   }
-  const removed = await client.storage
-    .from(PAGE_ASSET_BUCKET)
-    .remove(candidates.map((asset) => asset.storage_key));
-  if (removed.error) {
-    throw new Error("Could not remove unreferenced Page asset objects.", {
-      cause: removed.error,
+  const rpc = cleanupRpc(client);
+  const deletedAssetIds: string[] = [];
+  for (const asset of candidates) {
+    const claim = await rpc.rpc<string>("claim_site_media_asset_for_cleanup", {
+      expected_business_id: input.businessId,
+      requested_asset_id: asset.id,
     });
-  }
-  const deleted = await client
-    .from("media_assets")
-    .delete()
-    .eq("business_id", input.businessId)
-    .in(
-      "id",
-      candidates.map((asset) => asset.id),
-    );
-  if (deleted.error) {
-    throw new Error("Could not remove unreferenced Page asset metadata.", {
-      cause: deleted.error,
+    if (claim.error) {
+      throw new Error("Could not claim a Page asset for cleanup.", {
+        cause: claim.error,
+      });
+    }
+    if (!claim.data) {
+      retained.push(asset.id);
+      continue;
+    }
+    const removed = await client.storage
+      .from(PAGE_ASSET_BUCKET)
+      .remove([asset.storage_key]);
+    if (removed.error) {
+      // A network failure can arrive after object deletion. Keep the exclusive
+      // claim so no draft or Page can attach potentially missing bytes; retry
+      // remove/finalize with this token rather than releasing it speculatively.
+      throw new Error("Could not remove an unreferenced Page asset object.", {
+        cause: removed.error,
+      });
+    }
+    const finalized = await rpc.rpc<boolean>("finalize_site_media_cleanup", {
+      expected_business_id: input.businessId,
+      requested_asset_id: asset.id,
+      requested_claim_token: claim.data,
     });
+    if (finalized.error || !finalized.data) {
+      // Storage may already be gone. Retain the claim to prevent an attachment
+      // to missing bytes; the worker can retry finalization with this token.
+      throw new Error("Could not finalize Page asset cleanup safely.", {
+        cause: finalized.error,
+      });
+    }
+    deletedAssetIds.push(asset.id);
   }
   return {
-    deletedAssetIds: candidates.map((asset) => asset.id),
+    deletedAssetIds,
     inspectedAssets: assets.length,
     retainedAssetIds: retained,
   };

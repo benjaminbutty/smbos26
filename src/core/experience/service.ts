@@ -139,6 +139,22 @@ type NavigationView = Pick<
   "key" | "name" | "view_type" | "audience" | "is_active"
 >;
 
+type SiteStateNavigationReader = {
+  from(table: "site_states"): {
+    select(columns: "migration_state"): {
+      eq(
+        column: "business_id",
+        value: string,
+      ): {
+        maybeSingle(): Promise<{
+          data: { migration_state: string } | null;
+          error: PostgrestError | null;
+        }>;
+      };
+    };
+  };
+};
+
 function normalizedTableViewsForObject(
   candidates: readonly SourcedViewDefinition[],
 ): Array<{ view: SourcedViewDefinition; config: TableViewConfigV2 }> {
@@ -517,10 +533,26 @@ export function createExperienceService(
     },
 
     async listNavigation() {
-      const [sourcedViews, pages] = await Promise.all([
+      const [sourcedViews, pages, siteStateResult] = await Promise.all([
         source.listViews(),
         source.listPages(true),
+        source.kind === "live"
+          ? (client as unknown as SiteStateNavigationReader)
+              .from("site_states")
+              .select("migration_state")
+              .eq("business_id", businessId)
+              .maybeSingle()
+          : Promise.resolve({ data: null, error: null }),
       ]);
+      if (siteStateResult.error) {
+        throw new ExperienceServiceError(
+          "Could not load the customer-facing Site state.",
+          siteStateResult.error,
+        );
+      }
+      const siteOwnsPublicPages =
+        source.kind === "live" &&
+        String(siteStateResult.data?.migration_state) === "adopted";
 
       const internalViews = sourcedViews.filter(
         (view) => view.audience === "internal" && view.view_type !== "detail",
@@ -564,9 +596,11 @@ export function createExperienceService(
             page.is_active &&
             !wrapperPageKeys.has(page.key),
         ),
-        publicPages: pages.filter(
-          (page) => page.audience === "public" && page.is_active,
-        ),
+        publicPages: siteOwnsPublicPages
+          ? []
+          : pages.filter(
+              (page) => page.audience === "public" && page.is_active,
+            ),
       };
     },
 

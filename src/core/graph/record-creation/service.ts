@@ -97,6 +97,7 @@ const recordResponseSchema = z
     id: z.uuid(),
     business_id: z.uuid(),
     object_definition_id: z.uuid(),
+    record_revision: z.number().int().positive(),
     record_status: z.enum(["active", "archived"]),
     data_json: z.unknown(),
     created_by: z.uuid().nullable(),

@@ -137,6 +137,7 @@ export type ProductionColumnType =
   | "email"
   | "phone"
   | "url"
+  | "file"
   | "select"
   | "status";
 

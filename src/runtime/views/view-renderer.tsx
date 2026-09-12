@@ -90,6 +90,7 @@ function EmptyView({
 
 export function TableView({
   bundle,
+  businessSlug,
   fieldsByKey,
   inlineEditAction,
   recordBasePath,
@@ -140,6 +141,7 @@ export function TableView({
     return (
       <InlineTable
         action={inlineEditAction}
+        businessSlug={businessSlug}
         editableFieldKeys={bundle.inlineEdit.fieldKeys}
         fields={fields}
         recordBasePath={recordBasePath}
@@ -196,12 +198,15 @@ export function TableView({
                         href={`${recordBasePath}/${record.id}`}
                       >
                         <FieldValue
+                          businessSlug={businessSlug}
                           field={column.field}
+                          linkFiles={false}
                           value={data[column.field.key]}
                         />
                       </a>
                     ) : (
                       <FieldValue
+                        businessSlug={businessSlug}
                         field={column.field}
                         value={data[column.field.key]}
                       />
@@ -224,6 +229,7 @@ export function TableView({
 
 export function ListView({
   bundle,
+  businessSlug,
   fieldsByKey,
   recordBasePath,
   preview = false,
@@ -248,14 +254,24 @@ export function ListView({
         const content = (
           <>
             <strong>
-              <FieldValue field={primaryField} value={data[primaryField.key]} />
+              <FieldValue
+                businessSlug={businessSlug}
+                field={primaryField}
+                linkFiles={locked}
+                value={data[primaryField.key]}
+              />
             </strong>
             {secondaryFields.length > 0 ? (
               <span className="list-supporting">
                 {secondaryFields.map((field) => (
                   <span key={field.key}>
                     <span className="supporting-label">{field.label}</span>
-                    <FieldValue field={field} value={data[field.key]} />
+                    <FieldValue
+                      businessSlug={businessSlug}
+                      field={field}
+                      linkFiles={locked}
+                      value={data[field.key]}
+                    />
                   </span>
                 ))}
               </span>
@@ -287,6 +303,7 @@ export function ListView({
 
 export function CardsView({
   bundle,
+  businessSlug,
   fieldsByKey,
   recordBasePath,
   preview = false,
@@ -333,6 +350,7 @@ export function CardsView({
                 {locked ? (
                   <span>
                     <FieldValue
+                      businessSlug={businessSlug}
                       field={titleField}
                       value={data[titleField.key]}
                     />
@@ -340,7 +358,9 @@ export function CardsView({
                 ) : (
                   <a href={`${recordBasePath}/${record.id}`}>
                     <FieldValue
+                      businessSlug={businessSlug}
                       field={titleField}
+                      linkFiles={false}
                       value={data[titleField.key]}
                     />
                   </a>
@@ -349,6 +369,7 @@ export function CardsView({
               {subtitleField ? (
                 <p className="card-subtitle">
                   <FieldValue
+                    businessSlug={businessSlug}
                     field={subtitleField}
                     value={data[subtitleField.key]}
                   />
@@ -360,7 +381,11 @@ export function CardsView({
                     <div key={field.key}>
                       <dt>{field.label}</dt>
                       <dd>
-                        <FieldValue field={field} value={data[field.key]} />
+                        <FieldValue
+                          businessSlug={businessSlug}
+                          field={field}
+                          value={data[field.key]}
+                        />
                       </dd>
                     </div>
                   ))}
@@ -414,7 +439,11 @@ export function DetailView({
               <p className="eyebrow">Record</p>
               <h1 className="runtime-title">
                 {titleField ? (
-                  <FieldValue field={titleField} value={data[titleField.key]} />
+                  <FieldValue
+                    businessSlug={businessSlug}
+                    field={titleField}
+                    value={data[titleField.key]}
+                  />
                 ) : (
                   bundle.object.singular_label
                 )}
@@ -455,7 +484,11 @@ export function DetailView({
                 <div key={field.key}>
                   <dt>{field.label}</dt>
                   <dd>
-                    <FieldValue field={field} value={data[field.key]} />
+                    <FieldValue
+                      businessSlug={businessSlug}
+                      field={field}
+                      value={data[field.key]}
+                    />
                   </dd>
                 </div>
               ))}

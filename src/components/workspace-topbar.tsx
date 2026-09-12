@@ -53,6 +53,10 @@ function breadcrumbsForPath(
     ];
   }
 
+  if (pathname === `${root}/sites` || pathname === `${root}/sites/`) {
+    return [{ label: "Sites" }];
+  }
+
   const site = sites.find((candidate) =>
     pathname.includes(`/sites/${encodeURIComponent(candidate.slug)}`),
   );

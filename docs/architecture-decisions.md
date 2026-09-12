@@ -3510,6 +3510,17 @@ immutable Version. Failed or stale publication leaves the previous public Page
 unchanged. No durable draft, new Page, store, renderer or public runtime is
 introduced. See [ADR-045](./ADR-045.md).
 
+**C1 amendment (9 September 2026):** Lenni Sites now has a private, durable
+multi-Page composition and immutable release coordination foundation. It uses a
+strict shared Page grammar with bounded Site extensions, server-derived backing
+Page identities and configuration operations, exact draft/configuration/release
+currentness checks, and claim-protected media references. Backing Pages are
+public drafts only; C1 adds no anonymous release reader, public-route adoption
+or change to existing J3 published Pages. A source-only release creates no
+synthetic configuration Change or Version, but still asserts configuration
+projection/head consistency. See the C1 amendment and compatibility plan in
+[ADR-045](./ADR-045.md).
+
 ## ADR-046: Internal Pages use one bounded Tiptap candidate and explicit save
 
 Accepted for the Interaction Quality Reset. Internal Owner/Admin Pages now
