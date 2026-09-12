@@ -299,6 +299,21 @@ test("owner configures booking and preorder journeys through the Site", async ({
 
   await setupBooking(page, business.slug, "18:00");
   await page.goto(`/app/${business.slug}/sites`);
+  const draftRecovery = page.getByRole("region", {
+    name: "Draft recovery",
+    exact: true,
+  });
+  await expect(draftRecovery).toBeVisible();
+  await draftRecovery
+    .getByRole("button", {
+      name: "Keep Site draft and continue",
+      exact: true,
+    })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=rebased$`),
+  );
+
   await page
     .getByLabel("Site name", { exact: true })
     .fill("Configured customer site");

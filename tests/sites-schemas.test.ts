@@ -863,6 +863,93 @@ describe("Lenni Sites C1 composition schema", () => {
     ).toBe(true);
   });
 
+  it("parses the finite Customer binding emitted into a canonical Form snapshot", () => {
+    const customerBinding = {
+      enabled: true,
+      customer_object_key: "customer",
+      relationship_key: "customer_has_enquiry",
+      email_field_key: "email",
+      mappings: [
+        { customer_field_key: "name", question_key: "name" },
+        {
+          customer_field_key: "email",
+          question_key: "email",
+          default_value: "unknown@example.test",
+        },
+        {
+          customer_field_key: "phone",
+          question_key: "",
+          default_value: "020 7000 0000",
+        },
+      ],
+    };
+    const objectDefinitionId = crypto.randomUUID();
+    const disabledBinding = {
+      enabled: false,
+      customer_object_key: "",
+      relationship_key: "",
+      email_field_key: "",
+      mappings: [
+        {
+          customer_field_key: "",
+          question_key: "",
+          default_value: "Retained while disconnected",
+        },
+      ],
+    };
+    const parsed = configurationSnapshotV1Schema.parse({
+      schema_version: 1,
+      object_definitions: [],
+      field_definitions: [],
+      relationship_definitions: [],
+      views: [],
+      forms: [
+        {
+          id: crypto.randomUUID(),
+          key: "customer_enquiry",
+          name: "Customer enquiry",
+          object_definition_id: objectDefinitionId,
+          object_key: "enquiry",
+          mode: "create",
+          config_json: {
+            fields: [
+              { field: "name", label: "Name", required: true },
+              { field: "email", label: "Email", required: true },
+            ],
+            submit_label: "Send enquiry",
+            customer_binding: customerBinding,
+          },
+          audience: "public",
+          is_active: true,
+        },
+        {
+          id: crypto.randomUUID(),
+          key: "disconnected_enquiry",
+          name: "Disconnected enquiry",
+          object_definition_id: objectDefinitionId,
+          object_key: "enquiry",
+          mode: "create",
+          config_json: {
+            fields: [{ field: "subject", label: "Subject" }],
+            customer_binding: disabledBinding,
+          },
+          audience: "public",
+          is_active: true,
+        },
+      ],
+      pages: [],
+      preorder_experiences: [],
+      preorder_experience_locations: [],
+    });
+
+    expect(parsed.forms[0]?.config_json.customer_binding).toEqual(
+      customerBinding,
+    );
+    expect(parsed.forms[1]?.config_json.customer_binding).toEqual(
+      disabledBinding,
+    );
+  });
+
   it("rejects private identities and storage metadata in anonymous projections", () => {
     const publicId = `r_${"a".repeat(64)}`;
     const publicKey = `b_${"b".repeat(64)}`;

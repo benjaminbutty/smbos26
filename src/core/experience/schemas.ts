@@ -871,6 +871,56 @@ export const formFieldConfigSchema = z
     }
   });
 
+/**
+ * A finite, immutable Customer connection retained in a published Form
+ * configuration.  Site drafts use their own more permissive authoring shape;
+ * this schema describes the canonical value emitted into a Form snapshot.
+ */
+const formCustomerBindingKeySchema = z.union([graphKeySchema, z.literal("")]);
+
+const formCustomerMappingSchema = z
+  .object({
+    customer_field_key: formCustomerBindingKeySchema,
+    question_key: formCustomerBindingKeySchema,
+    default_value: jsonValueSchema.optional(),
+  })
+  .strict();
+
+export const formCustomerBindingSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    customer_object_key: formCustomerBindingKeySchema,
+    relationship_key: formCustomerBindingKeySchema,
+    email_field_key: formCustomerBindingKeySchema,
+    mappings: z.array(formCustomerMappingSchema).max(50).optional(),
+  })
+  .strict()
+  .superRefine((binding, context) => {
+    if (!binding.enabled) return;
+    for (const key of [
+      "customer_object_key",
+      "relationship_key",
+      "email_field_key",
+    ] as const) {
+      if (binding[key] === "") {
+        context.addIssue({
+          code: "custom",
+          message: "Enabled Customer bindings require configured keys.",
+          path: [key],
+        });
+      }
+    }
+    binding.mappings?.forEach((mapping, index) => {
+      if (mapping.customer_field_key === "") {
+        context.addIssue({
+          code: "custom",
+          message: "Enabled Customer mappings require a Customer property.",
+          path: ["mappings", index, "customer_field_key"],
+        });
+      }
+    });
+  });
+
 export const formConfigSchema = z
   .object({
     fields: z
@@ -887,6 +937,7 @@ export const formConfigSchema = z
         }
       }),
     submit_label: labelSchema.optional(),
+    customer_binding: formCustomerBindingSchema.optional(),
   })
   .strict()
   .superRefine((config, context) => {
