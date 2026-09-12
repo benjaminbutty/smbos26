@@ -299,6 +299,92 @@ describe("Sites C3 Form SQL boundary", () => {
     });
   });
 
+  it("keeps v4 operational writes service-only and rejects an unavailable action before any write", async () => {
+    const [privileges] = await sql<
+      {
+        booking_anon_execute: boolean;
+        booking_authenticated_execute: boolean;
+        booking_service_execute: boolean;
+        preorder_anon_execute: boolean;
+        preorder_authenticated_execute: boolean;
+        preorder_service_execute: boolean;
+      }[]
+    >`
+      select
+        has_function_privilege(
+          'anon',
+          'public.submit_public_site_booking_v4(text,text,text,text,uuid,jsonb,text)',
+          'execute'
+        ) as booking_anon_execute,
+        has_function_privilege(
+          'authenticated',
+          'public.submit_public_site_booking_v4(text,text,text,text,uuid,jsonb,text)',
+          'execute'
+        ) as booking_authenticated_execute,
+        has_function_privilege(
+          'service_role',
+          'public.submit_public_site_booking_v4(text,text,text,text,uuid,jsonb,text)',
+          'execute'
+        ) as booking_service_execute,
+        has_function_privilege(
+          'anon',
+          'public.submit_public_site_preorder_v4(text,text,text,text,uuid,jsonb,text)',
+          'execute'
+        ) as preorder_anon_execute,
+        has_function_privilege(
+          'authenticated',
+          'public.submit_public_site_preorder_v4(text,text,text,text,uuid,jsonb,text)',
+          'execute'
+        ) as preorder_authenticated_execute,
+        has_function_privilege(
+          'service_role',
+          'public.submit_public_site_preorder_v4(text,text,text,text,uuid,jsonb,text)',
+          'execute'
+        ) as preorder_service_execute
+    `;
+    expect(privileges).toEqual({
+      booking_anon_execute: false,
+      booking_authenticated_execute: false,
+      booking_service_execute: true,
+      preorder_anon_execute: false,
+      preorder_authenticated_execute: false,
+      preorder_service_execute: true,
+    });
+
+    const [before] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${business.id}
+    `;
+    const unavailable = await callRpc<{ ok: boolean; code: string }>(
+      admin,
+      "submit_public_site_preorder_v4",
+      {
+        requested_business_slug: business.slug,
+        requested_page_slug: "contact",
+        requested_action_key: "o_" + "f".repeat(64),
+        requested_release_token: "s_" + "e".repeat(64),
+        requested_idempotency_token: crypto.randomUUID(),
+        submission: {
+          idempotency_token: crypto.randomUUID(),
+          location_id: crypto.randomUUID(),
+          collection_at: "2026-10-20T10:00:00.000Z",
+          items: [],
+          fields: { customer: {}, order: {} },
+          website: "",
+        },
+        requested_request_hash: "d".repeat(64),
+      },
+    );
+    expect(unavailable).toEqual({ ok: false, code: "action_unavailable" });
+    const [after] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${business.id}
+    `;
+    expect(after?.count).toBe(before?.count);
+  });
+
   it("canonicalizes hidden defaults without making them condition answers", async () => {
     const [result] = await sql<{ answers: unknown }[]>`
       select private.site_canonicalize_submission_answers_v3(

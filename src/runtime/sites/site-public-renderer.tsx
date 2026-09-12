@@ -7,6 +7,10 @@ import {
 import Image from "next/image";
 
 import { sitePublicFormActionSchema } from "../../core/sites/schemas";
+import type { PublicBookingCatalogue } from "../../core/booking/schemas";
+import type { PublicPreorderCatalogue } from "../../core/preorder/schemas";
+import { BookingExperience } from "../booking/booking-experience";
+import { PreorderExperience } from "../preorder/preorder-experience";
 import { SitePublicForm } from "./site-public-form";
 
 export interface SitePublicLayout {
@@ -24,6 +28,7 @@ export type SitePublicRecordSelect = (
 ) => void;
 
 export type SitePublicPageSelect = (pageSlug: string) => boolean;
+export type SiteOperationalPreviewAction = Record<string, unknown>;
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -213,6 +218,60 @@ function recordLink(
   );
 }
 
+function OperationalPreviewBlock({
+  action,
+  kind,
+}: Readonly<{
+  action: SiteOperationalPreviewAction | undefined;
+  kind: "booking" | "preorder";
+}>): ReactNode {
+  const label = kind === "booking" ? "Booking" : "Preorder";
+  const frozenOffer = objectValue(action?.frozen_offer);
+  const products = Array.isArray(frozenOffer?.products)
+    ? frozenOffer.products
+        .map((value) => objectValue(value))
+        .filter((value): value is Record<string, unknown> => value !== null)
+    : [];
+  const config = objectValue(action?.config);
+  const schedule = objectValue(config?.schedule);
+  return (
+    <section
+      aria-label={`${label} preview`}
+      className="site-operational-preview"
+    >
+      <p className="eyebrow">{label}</p>
+      <h3>{label} for visitors</h3>
+      {products.length ? (
+        <ul>
+          {products.slice(0, 20).map((product, index) => (
+            <li key={String(product.id ?? index)}>
+              <strong>
+                {typeof product.name === "string"
+                  ? product.name
+                  : "Available item"}
+              </strong>
+              {typeof product.price === "number" ? ` · ${product.price}` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {schedule ? (
+        <p className="muted">
+          {typeof schedule.timezone === "string"
+            ? `Appointments use ${schedule.timezone}. `
+            : "Appointment times load from the published schedule. "}
+          Visitor responses are saved to your workspace after publication.
+        </p>
+      ) : (
+        <p className="muted">
+          This is a read-only preview. Visitor availability and submission are
+          enabled after publication.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function renderBlock(
   blockInput: unknown,
   businessSlug: string,
@@ -221,6 +280,13 @@ function renderBlock(
   record?: SitePublicRecord,
   onRecordSelect?: SitePublicRecordSelect,
   onPageSelect?: SitePublicPageSelect,
+  bookings?: Readonly<
+    Record<string, { catalogue: PublicBookingCatalogue; endpoint: string }>
+  >,
+  preorders?: Readonly<
+    Record<string, { catalogue: PublicPreorderCatalogue; endpoint: string }>
+  >,
+  operationalPreviewActions?: readonly SiteOperationalPreviewAction[],
   preview = false,
 ): ReactNode {
   const block = objectValue(blockInput);
@@ -311,6 +377,9 @@ function renderBlock(
               record,
               onRecordSelect,
               onPageSelect,
+              bookings,
+              preorders,
+              operationalPreviewActions,
               preview,
             ),
           )}
@@ -374,6 +443,9 @@ function renderBlock(
               record,
               onRecordSelect,
               onPageSelect,
+              bookings,
+              preorders,
+              operationalPreviewActions,
               preview,
             )}
           </div>
@@ -418,6 +490,9 @@ function renderBlock(
                   record,
                   onRecordSelect,
                   onPageSelect,
+                  bookings,
+                  preorders,
+                  operationalPreviewActions,
                   preview,
                 )}
               </div>
@@ -584,6 +659,57 @@ function renderBlock(
         </section>
       );
     }
+    case "booking": {
+      const bookingKey =
+        typeof block.booking_key === "string" ? block.booking_key : null;
+      const actionKey =
+        typeof block.action_key === "string" ? block.action_key : null;
+      const resolved = bookingKey ? bookings?.[bookingKey] : undefined;
+      return resolved ? (
+        <BookingExperience
+          catalogue={resolved.catalogue}
+          endpoint={resolved.endpoint}
+          key={`${bookingKey}:${String(block.action_key ?? "")}`}
+          mode="live"
+        />
+      ) : preview ? (
+        <OperationalPreviewBlock
+          action={operationalPreviewActions?.find(
+            (candidate) =>
+              candidate.kind === "booking" &&
+              candidate.booking_key === bookingKey &&
+              (actionKey === null || candidate.action_key === actionKey),
+          )}
+          kind="booking"
+          key={`${bookingKey}:${String(block.action_key ?? "")}`}
+        />
+      ) : null;
+    }
+    case "preorder": {
+      const preorderKey =
+        typeof block.preorder_key === "string" ? block.preorder_key : null;
+      const actionKey =
+        typeof block.action_key === "string" ? block.action_key : null;
+      const resolved = preorderKey ? preorders?.[preorderKey] : undefined;
+      return resolved ? (
+        <PreorderExperience
+          catalogue={resolved.catalogue}
+          endpoint={resolved.endpoint}
+          key={`${preorderKey}:${String(block.action_key ?? "")}`}
+        />
+      ) : preview ? (
+        <OperationalPreviewBlock
+          action={operationalPreviewActions?.find(
+            (candidate) =>
+              candidate.kind === "preorder" &&
+              candidate.preorder_key === preorderKey &&
+              (actionKey === null || candidate.action_key === actionKey),
+          )}
+          kind="preorder"
+          key={`${preorderKey}:${String(block.action_key ?? "")}`}
+        />
+      ) : null;
+    }
     default:
       return null;
   }
@@ -597,6 +723,13 @@ function renderBlocks(
   record?: SitePublicRecord,
   onRecordSelect?: SitePublicRecordSelect,
   onPageSelect?: SitePublicPageSelect,
+  bookings?: Readonly<
+    Record<string, { catalogue: PublicBookingCatalogue; endpoint: string }>
+  >,
+  preorders?: Readonly<
+    Record<string, { catalogue: PublicPreorderCatalogue; endpoint: string }>
+  >,
+  operationalPreviewActions?: readonly SiteOperationalPreviewAction[],
   preview = false,
 ): ReactNode {
   const blocks = Array.isArray(blocksInput) ? blocksInput : [];
@@ -610,6 +743,9 @@ function renderBlocks(
         record,
         onRecordSelect,
         onPageSelect,
+        bookings,
+        preorders,
+        operationalPreviewActions,
         preview,
       )}
     </div>
@@ -624,6 +760,9 @@ export function SitePublicRenderer({
   record,
   onRecordSelect,
   onPageSelect,
+  bookings,
+  preorders,
+  operationalPreviewActions,
   preview,
 }: Readonly<{
   businessSlug: string;
@@ -633,6 +772,14 @@ export function SitePublicRenderer({
   record?: SitePublicRecord | undefined;
   onRecordSelect?: SitePublicRecordSelect;
   onPageSelect?: SitePublicPageSelect;
+  bookings?: Readonly<
+    Record<string, { catalogue: PublicBookingCatalogue; endpoint: string }>
+  >;
+  preorders?: Readonly<
+    Record<string, { catalogue: PublicPreorderCatalogue; endpoint: string }>
+  >;
+  operationalPreviewActions?:
+    readonly SiteOperationalPreviewAction[] | undefined;
   preview?: boolean;
 }>): ReactNode {
   return (
@@ -645,6 +792,9 @@ export function SitePublicRenderer({
         record,
         onRecordSelect,
         onPageSelect,
+        bookings,
+        preorders,
+        operationalPreviewActions,
         preview,
       )}
     </div>

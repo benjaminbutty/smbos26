@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import type { Json } from "../../../../../../../db/supabase/database.types";
 import { createAdminClient } from "../../../../../../../db/supabase/admin";
 import {
   submitPublicSiteForm,
   type PublicSiteFormResult,
 } from "../../../../../../../core/public/site-form";
+import { callPublicRpc } from "../../../../../../../core/public/rpc";
+import {
+  bookingSubmissionSchema,
+  publicBookingResultSchema,
+} from "../../../../../../../core/booking/schemas";
+import {
+  publicPreorderResultSchema,
+  publicPreorderSubmissionSchema,
+} from "../../../../../../../core/preorder/schemas";
 import { jsonObjectSchema } from "../../../../../../../core/graph/schemas";
 import {
   SiteUploadRateLimitError,
@@ -75,6 +85,16 @@ const publicSiteFormBodySchema = z
     }
   });
 
+const opaqueReleaseTokenSchema = z.string().regex(/^s_[a-f0-9]{64}$/);
+
+const operationalResolverSchema = z.object({
+  kind: z.enum(["booking", "preorder"]),
+  action_key: z.string().regex(/^o_[a-f0-9]{64}$/),
+  release_token: opaqueReleaseTokenSchema,
+  action: z.record(z.string(), z.unknown()),
+  catalogue: z.unknown(),
+});
+
 function responseForResult(result: PublicSiteFormResult): NextResponse {
   if (!result.ok) {
     const status =
@@ -127,27 +147,160 @@ export async function POST(
         { status: 413 },
       );
     }
-    const parsed = publicSiteFormBodySchema.safeParse(JSON.parse(raw));
-    if (!parsed.success || parsed.data.website.trim() !== "") {
+    const rawBody: unknown = JSON.parse(raw);
+    const parsed = publicSiteFormBodySchema.safeParse(rawBody);
+    const looksLikeForm =
+      typeof rawBody === "object" && rawBody !== null && "answers" in rawBody;
+    if (
+      looksLikeForm &&
+      (!parsed.success || parsed.data.website.trim() !== "")
+    ) {
       return NextResponse.json(
         { ok: false, code: "invalid_submission" },
         { status: 400 },
       );
     }
     const requestHash = await trustedSiteUploadSubjectHash();
-    const result = await submitPublicSiteForm(createAdminClient(), {
-      businessSlug,
-      pageSlug,
-      actionKey,
-      releaseToken: parsed.data.releaseToken,
-      idempotencyToken: parsed.data.idempotencyToken,
-      submissionAttemptId:
-        parsed.data.submissionAttemptId ?? parsed.data.idempotencyToken,
-      answers: parsed.data.answers,
-      grantIds: parsed.data.grantIds,
-      requestHash,
+    const client = createAdminClient();
+    if (parsed.success) {
+      const result = await submitPublicSiteForm(client, {
+        businessSlug,
+        pageSlug,
+        actionKey,
+        releaseToken: parsed.data.releaseToken,
+        idempotencyToken: parsed.data.idempotencyToken,
+        submissionAttemptId:
+          parsed.data.submissionAttemptId ?? parsed.data.idempotencyToken,
+        answers: parsed.data.answers,
+        grantIds: parsed.data.grantIds,
+        requestHash,
+      });
+      return responseForResult(result);
+    }
+
+    const releaseToken = opaqueReleaseTokenSchema.safeParse(
+      new URL(request.url).searchParams.get("releaseToken"),
+    );
+    if (!releaseToken.success) {
+      return NextResponse.json(
+        { ok: false, code: "invalid_submission" },
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    // Operational submitters perform the receipt lookup before resolving the
+    // currently published action.  Do not resolve the live action here: a
+    // retry may deliberately carry a token from a release that has since been
+    // republished or withdrawn, and the immutable receipt is the authority for
+    // that retry.  The finite submission grammar provides the only kind
+    // discriminator needed at this boundary.
+    const rawRecord =
+      typeof rawBody === "object" && rawBody !== null && !Array.isArray(rawBody)
+        ? (rawBody as Record<string, unknown>)
+        : null;
+    const looksLikeBooking =
+      rawRecord !== null &&
+      ["start_at", "customer", "subject", "booking"].some(
+        (key) => key in rawRecord,
+      );
+    const looksLikePreorder =
+      rawRecord !== null &&
+      ["location_id", "collection_at", "items", "fields"].some(
+        (key) => key in rawRecord,
+      );
+    if (looksLikeBooking) {
+      const submission = bookingSubmissionSchema.safeParse(rawBody);
+      if (!submission.success || submission.data.website.trim() !== "") {
+        return NextResponse.json(
+          { ok: false, code: "invalid_submission" },
+          { status: 400, headers: { "cache-control": "no-store" } },
+        );
+      }
+      const result = await callPublicRpc<Json>(
+        client,
+        "submit_public_site_booking_v4",
+        {
+          requested_business_slug: businessSlug,
+          requested_page_slug: pageSlug,
+          requested_action_key: actionKey,
+          requested_release_token: releaseToken.data,
+          requested_idempotency_token: submission.data.idempotency_token,
+          requested_submission: submission.data as unknown as Json,
+          requested_request_hash: requestHash,
+        },
+      );
+      if (result.error || result.data === null) {
+        return NextResponse.json(
+          { ok: false, code: "retry" },
+          { status: 503, headers: { "cache-control": "no-store" } },
+        );
+      }
+      const parsedResult = publicBookingResultSchema.safeParse(result.data);
+      if (!parsedResult.success) {
+        return NextResponse.json(
+          { ok: false, code: "retry" },
+          { status: 503, headers: { "cache-control": "no-store" } },
+        );
+      }
+      return NextResponse.json(parsedResult.data, {
+        status: parsedResult.data.ok
+          ? 200
+          : parsedResult.data.code === "rate_limited"
+            ? 429
+            : parsedResult.data.code === "not_found"
+              ? 404
+              : 400,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    if (!looksLikePreorder) {
+      return NextResponse.json(
+        { ok: false, code: "invalid_submission" },
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    const submission = publicPreorderSubmissionSchema.safeParse(rawBody);
+    if (!submission.success || submission.data.website.trim() !== "") {
+      return NextResponse.json(
+        { ok: false, code: "invalid_submission" },
+        { status: 400, headers: { "cache-control": "no-store" } },
+      );
+    }
+    const result = await callPublicRpc<Json>(
+      client,
+      "submit_public_site_preorder_v4",
+      {
+        requested_business_slug: businessSlug,
+        requested_page_slug: pageSlug,
+        requested_action_key: actionKey,
+        requested_release_token: releaseToken.data,
+        requested_idempotency_token: submission.data.idempotency_token,
+        submission: submission.data as unknown as Json,
+        requested_request_hash: requestHash,
+      },
+    );
+    if (result.error || result.data === null) {
+      return NextResponse.json(
+        { ok: false, code: "retry" },
+        { status: 503, headers: { "cache-control": "no-store" } },
+      );
+    }
+    const parsedResult = publicPreorderResultSchema.safeParse(result.data);
+    if (!parsedResult.success) {
+      return NextResponse.json(
+        { ok: false, code: "retry" },
+        { status: 503, headers: { "cache-control": "no-store" } },
+      );
+    }
+    return NextResponse.json(parsedResult.data, {
+      status: parsedResult.data.ok
+        ? 200
+        : parsedResult.data.code === "rate_limited"
+          ? 429
+          : parsedResult.data.code === "not_found"
+            ? 404
+            : 400,
+      headers: { "cache-control": "no-store" },
     });
-    return responseForResult(result);
   } catch (error) {
     if (error instanceof SiteUploadRateLimitError) {
       return NextResponse.json(
@@ -159,5 +312,38 @@ export async function POST(
       { ok: false, code: "invalid_submission" },
       { status: 400, headers: { "cache-control": "no-store" } },
     );
+  }
+}
+
+export async function GET(
+  request: Request,
+  context: RouteContext,
+): Promise<NextResponse> {
+  const { businessSlug, pageSlug, actionKey } = await context.params;
+  const releaseToken = opaqueReleaseTokenSchema.safeParse(
+    new URL(request.url).searchParams.get("releaseToken"),
+  );
+  if (!releaseToken.success) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
+  try {
+    const resolved = await callPublicRpc<Json>(
+      createAdminClient(),
+      "resolve_public_site_operational_action_v4",
+      {
+        requested_business_slug: businessSlug,
+        requested_page_slug: pageSlug,
+        requested_action_key: actionKey,
+        requested_release_token: releaseToken.data,
+      },
+    );
+    const parsed = operationalResolverSchema.safeParse(resolved.data);
+    return parsed.success
+      ? NextResponse.json(parsed.data.catalogue, {
+          headers: { "cache-control": "no-store" },
+        })
+      : NextResponse.json({ error: "Not found." }, { status: 404 });
+  } catch {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 }

@@ -118,6 +118,13 @@ export const siteReleaseV3Schema = siteReleaseSchema.extend({
   release_token: z.string().regex(/^s_[a-f0-9]{64}$/),
 });
 
+export const siteReleaseV4Schema = siteReleaseSchema.extend({
+  projection_schema_version: z.literal(4),
+  projection_json: z.unknown(),
+  review_json: z.unknown(),
+  release_token: z.string().regex(/^s_[a-f0-9]{64}$/),
+});
+
 type SiteRpcClient = {
   rpc<T>(
     functionName: string,
@@ -402,6 +409,51 @@ export async function publishSiteReleaseV3(
       expected_head_revision: request.expectedHeadRevision,
     },
     siteReleaseV3Schema,
+  );
+}
+
+export async function prepareSiteReleaseV4(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePreparationSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "prepare_site_release_v4",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteReleaseV4Schema,
+  );
+}
+
+export async function publishSiteReleaseV4(
+  client: SupabaseClient<Database>,
+  contextInput: unknown,
+  input: unknown,
+) {
+  const context = siteContextSchema.parse(contextInput);
+  const request = siteReleasePublishSchema.parse(input);
+  return callSiteRpc(
+    client,
+    "publish_site_release_v4",
+    {
+      expected_business_id: context.businessId,
+      expected_actor_id: context.actorId,
+      requested_site_id: request.siteId,
+      requested_candidate_id: request.candidateId,
+      expected_draft_revision: request.expectedDraftRevision,
+      expected_base_version_id: request.expectedBaseVersionId,
+      expected_head_revision: request.expectedHeadRevision,
+    },
+    siteReleaseV4Schema,
   );
 }
 

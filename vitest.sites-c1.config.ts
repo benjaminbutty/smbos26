@@ -8,6 +8,7 @@ export default defineConfig({
       "tests/sites-c2-functional.integration.ts",
       "tests/sites-c3-forms-sql.integration.ts",
       "tests/sites-c3-uploads-sql.integration.ts",
+      "tests/sites-operational-route.test.ts",
     ],
     fileParallelism: false,
     sequence: { concurrent: false },

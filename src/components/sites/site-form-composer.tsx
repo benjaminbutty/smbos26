@@ -10,7 +10,7 @@ import {
   type SiteDraftV1,
   type SiteFormDraft,
 } from "../../core/sites/schemas";
-import type { ObjectOption } from "./site-composer";
+import type { ObjectOption, SiteRelationshipOption } from "./site-composer";
 
 type FormQuestion = SiteFormDraft["questions"][number];
 type FormQuestionType = FormQuestion["field_type"];
@@ -145,6 +145,37 @@ function objectLabel(object: ObjectOption): string {
   return plural || singular || "Existing Table";
 }
 
+function customerObjects(
+  objectOptions: readonly ObjectOption[],
+): ObjectOption[] {
+  return objectOptions.filter((object) => object.semanticType === "customer");
+}
+
+function customerRelationshipOptions(
+  destination: ObjectOption | undefined,
+  objectOptions: readonly ObjectOption[],
+): SiteRelationshipOption[] {
+  if (!destination) return [];
+  const customerIds = new Set(
+    customerObjects(objectOptions).map((object) => object.id),
+  );
+  return (destination.relationshipOptions ?? []).filter((relationship) => {
+    const destinationIsSource = relationship.sourceObjectId === destination.id;
+    const destinationIsTarget = relationship.targetObjectId === destination.id;
+    const customerIsTarget = customerIds.has(relationship.targetObjectId);
+    const customerIsSource = customerIds.has(relationship.sourceObjectId);
+    return (
+      (destinationIsTarget &&
+        customerIsSource &&
+        (relationship.cardinality === "one_to_many" ||
+          relationship.cardinality === "many_to_many")) ||
+      (destinationIsSource &&
+        customerIsTarget &&
+        relationship.cardinality === "many_to_many")
+    );
+  });
+}
+
 function questionFieldMode(
   question: FormQuestion,
   objectMode: SiteFormDraft["object_mode"],
@@ -202,7 +233,7 @@ function conditionValueIsValid(
   if (typeof condition.value !== "string" || !condition.value.trim())
     return false;
   return siteFormChoiceOptionsForPublication(source.options).includes(
-    condition.value,
+    condition.value.trim(),
   );
 }
 
@@ -235,6 +266,69 @@ export function siteFormDraftBlockers(
     blockers.push("Choose an existing Table View.");
   }
   if (form.questions.length === 0) blockers.push("Add at least one question.");
+
+  const connection = form.customer_connection;
+  if (connection?.enabled !== false && connection) {
+    const connectionCustomer = objectOptions.find(
+      (object) =>
+        object.key === connection.customer_object_key &&
+        object.semanticType === "customer",
+    );
+    const connectionRelationship = customerRelationshipOptions(
+      destination,
+      objectOptions,
+    ).find((relationship) => relationship.key === connection.relationship_key);
+    if (!destination) {
+      blockers.push("Choose a Table before connecting responses to Customers.");
+    } else if (!connectionCustomer || !connectionRelationship) {
+      blockers.push("Choose a valid Customer connection.");
+    } else {
+      const emailField = connectionCustomer.fieldOptions.find(
+        (field) => field.key === connection.email_field_key,
+      );
+      if (!emailField || emailField.fieldType !== "email") {
+        blockers.push("Choose the Customer email property.");
+      }
+      const mappings = new Map(
+        (connection.mappings ?? []).map((mapping) => [
+          mapping.customer_field_key,
+          mapping,
+        ]),
+      );
+      for (const mapping of connection.mappings ?? []) {
+        const customerField = connectionCustomer.fieldOptions.find(
+          (field) => field.key === mapping.customer_field_key,
+        );
+        const question = form.questions.find(
+          (candidate) => candidate.key === mapping.question_key,
+        );
+        if (!customerField || !question) {
+          blockers.push("Review the Customer response mappings.");
+        } else if (
+          fieldTypeAsQuestionType(customerField.fieldType) !==
+          question.field_type
+        ) {
+          blockers.push(
+            `Match the answer type for Customer property ${customerField.label || "field"}.`,
+          );
+        }
+      }
+      for (const field of connectionCustomer.fieldOptions) {
+        if (!field.required) continue;
+        const mapping = mappings.get(field.key);
+        if (
+          !mapping ||
+          (!mapping.question_key &&
+            (mapping.default_value === undefined ||
+              mapping.default_value === null))
+        ) {
+          blockers.push(
+            `Map the required Customer property ${field.label || "field"}.`,
+          );
+        }
+      }
+    }
+  }
 
   const keys = new Set<string>();
   form.questions.forEach((question, index) => {
@@ -354,6 +448,28 @@ function conditionDefault(source: FormQuestion): Condition {
     operator: source.field_type === "multi_select" ? "includes" : "equals",
     value: siteFormChoiceOptionsForPublication(source.options)[0] ?? "",
   };
+}
+
+type CustomerConnection = NonNullable<SiteFormDraft["customer_connection"]>;
+
+function automaticCustomerMappings(
+  form: SiteFormDraft,
+  customer: ObjectOption,
+): CustomerConnection["mappings"] {
+  return customer.fieldOptions
+    .filter((field) => field.required || field.fieldType === "email")
+    .map((field) => {
+      const expectedType = fieldTypeAsQuestionType(field.fieldType);
+      const question = form.questions.find(
+        (candidate) =>
+          candidate.field_type === expectedType ||
+          (field.fieldType === "text" && candidate.field_type === "short_text"),
+      );
+      return {
+        customer_field_key: field.key,
+        question_key: question?.key ?? "",
+      };
+    });
 }
 
 export function SiteFormComposer({
@@ -488,6 +604,19 @@ export function SiteFormComposer({
           const placed = formBlockCount(draft, form.key);
           const destination = objectOptions.find(
             (object) => object.key === form.object_key,
+          );
+          const customerOptions = customerObjects(objectOptions);
+          const connectionRelationships = customerRelationshipOptions(
+            destination,
+            objectOptions,
+          );
+          const selectedCustomer = customerOptions.find(
+            (object) =>
+              object.key === form.customer_connection?.customer_object_key,
+          );
+          const selectedConnection = connectionRelationships.find(
+            (relationship) =>
+              relationship.key === form.customer_connection?.relationship_key,
           );
           const isExpanded = expandedFormIds.has(form.id);
           return (
@@ -751,6 +880,160 @@ export function SiteFormComposer({
                     </div>
                   ) : null}
                 </div>
+
+                <fieldset className="site-form-customer-connection">
+                  <legend>Connect responses to Customers</legend>
+                  <p className="muted">
+                    Reuse an existing Customer when the visitor's email matches.
+                    SMBOS keeps the existing profile unchanged.
+                  </p>
+                  {form.object_mode !== "existing" ? (
+                    <p className="site-form-field-note">
+                      Publish this new Table first, then add a Customer
+                      connection once its relationship is available.
+                    </p>
+                  ) : (
+                    <>
+                      <label>
+                        Customer connection
+                        <select
+                          onChange={(event) => {
+                            const relationship = connectionRelationships.find(
+                              (candidate) =>
+                                candidate.key === event.target.value,
+                            );
+                            updateForm(form.id, (value) => {
+                              if (!relationship) {
+                                value.customer_connection = undefined;
+                                return;
+                              }
+                              const customerId =
+                                relationship.sourceObjectId === destination?.id
+                                  ? relationship.targetObjectId
+                                  : relationship.sourceObjectId;
+                              const customer = customerOptions.find(
+                                (candidate) => candidate.id === customerId,
+                              );
+                              const emailField = customer?.fieldOptions.find(
+                                (field) => field.fieldType === "email",
+                              );
+                              if (!customer || !emailField) {
+                                value.customer_connection = undefined;
+                                return;
+                              }
+                              value.customer_connection = {
+                                enabled: true,
+                                customer_object_key: customer.key,
+                                relationship_key: relationship.key,
+                                email_field_key: emailField.key,
+                                mappings: automaticCustomerMappings(
+                                  value,
+                                  customer,
+                                ),
+                              };
+                            });
+                          }}
+                          value={selectedConnection?.key ?? ""}
+                        >
+                          <option value="">Leave responses unconnected</option>
+                          {connectionRelationships.map((relationship) => (
+                            <option
+                              key={relationship.key}
+                              value={relationship.key}
+                            >
+                              {relationship.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {form.customer_connection && selectedCustomer ? (
+                        <div className="site-form-customer-mappings">
+                          <label>
+                            Customer email property
+                            <select
+                              onChange={(event) =>
+                                updateForm(form.id, (value) => {
+                                  if (value.customer_connection) {
+                                    value.customer_connection.email_field_key =
+                                      event.target.value;
+                                  }
+                                })
+                              }
+                              value={form.customer_connection.email_field_key}
+                            >
+                              {selectedCustomer.fieldOptions
+                                .filter((field) => field.fieldType === "email")
+                                .map((field) => (
+                                  <option key={field.key} value={field.key}>
+                                    {field.label || "Email"}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          <p className="eyebrow">Customer properties</p>
+                          {selectedCustomer.fieldOptions
+                            .filter(
+                              (field) =>
+                                field.required || field.fieldType === "email",
+                            )
+                            .map((field) => {
+                              const mapping =
+                                form.customer_connection?.mappings?.find(
+                                  (candidate) =>
+                                    candidate.customer_field_key === field.key,
+                                );
+                              return (
+                                <label key={field.key}>
+                                  {field.label || "Customer property"}
+                                  {field.required ? " (required)" : ""}
+                                  <select
+                                    onChange={(event) =>
+                                      updateForm(form.id, (value) => {
+                                        if (!value.customer_connection) return;
+                                        const mappings = [
+                                          ...(value.customer_connection
+                                            .mappings ?? []),
+                                        ];
+                                        const existing = mappings.find(
+                                          (candidate) =>
+                                            candidate.customer_field_key ===
+                                            field.key,
+                                        );
+                                        const nextQuestionKey =
+                                          event.target.value;
+                                        if (existing) {
+                                          existing.question_key =
+                                            nextQuestionKey;
+                                        } else {
+                                          mappings.push({
+                                            customer_field_key: field.key,
+                                            question_key: nextQuestionKey,
+                                          });
+                                        }
+                                        value.customer_connection.mappings =
+                                          mappings;
+                                      })
+                                    }
+                                    value={mapping?.question_key ?? ""}
+                                  >
+                                    <option value="">Choose an answer</option>
+                                    {form.questions.map((question) => (
+                                      <option
+                                        key={question.id}
+                                        value={question.key}
+                                      >
+                                        {question.label || "Untitled question"}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      ) : null}
+                    </>
+                  )}
+                </fieldset>
 
                 <div className="site-form-questions">
                   <div className="site-form-subheading">

@@ -7,6 +7,7 @@ import { createServerClient } from "../../db/supabase/server";
 import {
   bookingConfigSchema,
   type PublicBookingCatalogue,
+  publicBookingCatalogueSchema,
 } from "../booking/schemas";
 import { resolvePublicBooking } from "../booking/service";
 import {
@@ -21,9 +22,14 @@ import type { ExperienceFormBundle } from "../experience/service";
 import {
   sitePublicProjectionBrandingSchema,
   sitePublicProjectionPageSchema,
+  sitePublicProjectionV4Schema,
   sitePublicProjectionV3Schema,
 } from "../sites/schemas";
 import { callPublicRpc } from "./rpc";
+import {
+  publicPreorderCatalogueSchema,
+  type PublicPreorderCatalogue,
+} from "../preorder/schemas";
 
 const publicPageResolverSchema = z.object({
   business: z.object({
@@ -41,7 +47,7 @@ const publicPageResolverSchema = z.object({
 const publicSiteResolverSchema = z.object({
   business: z.object({ name: z.string(), slug: z.string() }),
   site: z.object({
-    schema_version: z.union([z.literal(2), z.literal(3)]),
+    schema_version: z.union([z.literal(2), z.literal(3), z.literal(4)]),
     branding: z.unknown(),
     navigation: z.array(
       z.object({
@@ -125,6 +131,16 @@ const publicFormResolverSchema = z.object({
   ),
 });
 
+const publicSiteOperationalResolverSchema = z
+  .object({
+    kind: z.enum(["booking", "preorder"]),
+    action_key: z.string().regex(/^o_[a-f0-9]{64}$/),
+    release_token: z.string().regex(/^s_[a-f0-9]{64}$/),
+    action: z.record(z.string(), z.unknown()),
+    catalogue: z.unknown(),
+  })
+  .strict();
+
 function publicFormBundle(input: unknown): ExperienceFormBundle {
   const resolved = publicFormResolverSchema.parse(input);
   return {
@@ -172,7 +188,12 @@ export interface PublicSiteRuntime {
       | z.infer<typeof sitePublicProjectionV3Schema>["pages"][number]["layout"];
   };
   forms: Readonly<Record<string, never>>;
-  bookings: Readonly<Record<string, never>>;
+  bookings: Readonly<
+    Record<string, { catalogue: PublicBookingCatalogue; endpoint: string }>
+  >;
+  preorders: Readonly<
+    Record<string, { catalogue: PublicPreorderCatalogue; endpoint: string }>
+  >;
 }
 
 export interface PublicSiteRecordRuntime extends PublicSiteRuntime {
@@ -212,9 +233,11 @@ export async function loadPublicPageRuntime(
       resolvedSite.site.branding,
     );
     const projectionPageSchema =
-      resolvedSite.site.schema_version === 3
-        ? sitePublicProjectionV3Schema.shape.pages.element
-        : sitePublicProjectionPageSchema;
+      resolvedSite.site.schema_version === 4
+        ? sitePublicProjectionV4Schema.shape.pages.element
+        : resolvedSite.site.schema_version === 3
+          ? sitePublicProjectionV3Schema.shape.pages.element
+          : sitePublicProjectionPageSchema;
     const projectionPage = projectionPageSchema.parse({
       public_key: resolvedSite.page.key,
       title: resolvedSite.page.title,
@@ -224,6 +247,86 @@ export async function loadPublicPageRuntime(
       is_in_navigation: resolvedSite.page.is_in_navigation,
       layout: resolvedSite.page.layout,
     });
+    const operationalBlocks: Array<{
+      actionKey: string;
+      releaseToken: string;
+    }> = [];
+    const collectOperationalBlocks = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(collectOperationalBlocks);
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      const item = value as Record<string, unknown>;
+      if (
+        (item.type === "booking" || item.type === "preorder") &&
+        typeof item.action_key === "string" &&
+        typeof item.release_token === "string"
+      ) {
+        operationalBlocks.push({
+          actionKey: item.action_key,
+          releaseToken: item.release_token,
+        });
+      }
+      Object.values(item).forEach(collectOperationalBlocks);
+    };
+    collectOperationalBlocks(projectionPage.layout);
+    const operationalResults = await Promise.all(
+      operationalBlocks.map(async ({ actionKey, releaseToken }) => {
+        const result = await callPublicRpc<Json>(
+          supabase,
+          "resolve_public_site_operational_action_v4",
+          {
+            requested_business_slug: businessSlug,
+            requested_page_slug: pageSlug,
+            requested_action_key: actionKey,
+            requested_release_token: releaseToken,
+          },
+        );
+        if (result.error || result.data === null) {
+          throw new Error("The operational action is not available.", {
+            cause: result.error,
+          });
+        }
+        return publicSiteOperationalResolverSchema.parse(result.data);
+      }),
+    );
+    const bookings: Record<
+      string,
+      { catalogue: PublicBookingCatalogue; endpoint: string }
+    > = {};
+    const preorders: Record<
+      string,
+      { catalogue: PublicPreorderCatalogue; endpoint: string }
+    > = {};
+    for (const operational of operationalResults) {
+      const action = operational.action;
+      if (operational.kind === "booking") {
+        const key = action.booking_key;
+        if (typeof key !== "string")
+          throw new Error("Booking action is invalid.");
+        bookings[key] = {
+          catalogue: publicBookingCatalogueSchema.parse(operational.catalogue),
+          endpoint: `/api/public/sites/${encodeURIComponent(
+            businessSlug,
+          )}/${encodeURIComponent(pageSlug)}/${encodeURIComponent(
+            operational.action_key,
+          )}?releaseToken=${encodeURIComponent(operational.release_token)}`,
+        };
+      } else {
+        const key = action.preorder_key;
+        if (typeof key !== "string")
+          throw new Error("Preorder action is invalid.");
+        preorders[key] = {
+          catalogue: publicPreorderCatalogueSchema.parse(operational.catalogue),
+          endpoint: `/api/public/sites/${encodeURIComponent(
+            businessSlug,
+          )}/${encodeURIComponent(pageSlug)}/${encodeURIComponent(
+            operational.action_key,
+          )}?releaseToken=${encodeURIComponent(operational.release_token)}`,
+        };
+      }
+    }
     return {
       kind: "site",
       business: resolvedSite.business,
@@ -241,7 +344,8 @@ export async function loadPublicPageRuntime(
         layout: projectionPage.layout,
       },
       forms: {},
-      bookings: {},
+      bookings,
+      preorders,
     };
   }
 

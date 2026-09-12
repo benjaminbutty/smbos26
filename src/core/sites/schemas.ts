@@ -156,6 +156,29 @@ const siteFormQuestionSchema = z
     }
   });
 
+/**
+ * A Form may connect its resulting activity Record to the existing Customer
+ * Table.  This is a finite owner intent; canonical Object, Field and
+ * Relationship identities are resolved during Prepare.
+ */
+const siteFormCustomerMappingSchema = z
+  .object({
+    customer_field_key: siteDraftFormKeySchema,
+    question_key: siteDraftFormKeySchema,
+    default_value: jsonValueSchema.optional(),
+  })
+  .strict();
+
+const siteFormCustomerConnectionSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    customer_object_key: siteDraftFormKeySchema,
+    relationship_key: siteDraftFormKeySchema,
+    email_field_key: siteDraftFormKeySchema,
+    mappings: z.array(siteFormCustomerMappingSchema).max(50).optional(),
+  })
+  .strict();
+
 export const siteFormDraftSchema = z
   .object({
     id: z.uuid(),
@@ -169,6 +192,7 @@ export const siteFormDraftSchema = z
     view_key: siteDraftFormKeySchema.optional(),
     view_name: siteDraftFormTextSchema.optional(),
     submit_label: siteDraftFormTextSchema.optional(),
+    customer_connection: siteFormCustomerConnectionSchema.optional(),
     questions: z.array(siteFormQuestionSchema).max(50),
   })
   .strict()
@@ -1026,6 +1050,7 @@ const privatePublicProjectionKeys = new Set([
   "draft_state",
   "legacy_source_page_id",
   "legacy_source_checksum",
+  "stable_source_page_id",
 ]);
 
 function findPrivateProjectionKey(
@@ -1040,8 +1065,16 @@ function findPrivateProjectionKey(
     return null;
   }
   if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const operationalType =
+    record.type === "booking" || record.type === "preorder"
+      ? record.type
+      : null;
   for (const [key, nested] of Object.entries(value)) {
-    if (privatePublicProjectionKeys.has(key)) {
+    const publicOperationalKey =
+      (operationalType === "booking" && key === "booking_key") ||
+      (operationalType === "preorder" && key === "preorder_key");
+    if (privatePublicProjectionKeys.has(key) && !publicOperationalKey) {
       return [...path, key].join(".");
     }
     // Record values are user-defined public field keys. They may legitimately
@@ -1328,6 +1361,8 @@ const sitePublicBlockSchemaV3: z.ZodType<unknown> = z.lazy(() =>
         "collection",
         "record_detail",
         "form",
+        "booking",
+        "preorder",
       ]),
       public_key: z
         .string()
@@ -1351,6 +1386,14 @@ const sitePublicBlockSchemaV3: z.ZodType<unknown> = z.lazy(() =>
         .max(3)
         .optional(),
       action: sitePublicFormActionSchema.optional(),
+      action_key: z
+        .string()
+        .regex(/^o_[a-f0-9]{64}$/)
+        .optional(),
+      release_token: z
+        .string()
+        .regex(/^s_[a-f0-9]{64}$/)
+        .optional(),
     })
     .passthrough()
     .superRefine((block, context) => {
@@ -1430,6 +1473,44 @@ export const sitePublicProjectionV3Schema = z
 
 export type SitePublicProjectionV3 = z.infer<
   typeof sitePublicProjectionV3Schema
+>;
+
+/** v4 retains the v3 Form projection and adds opaque operational action
+ * addresses.  Operational config remains frozen server-side; these fields
+ * carry no canonical UUIDs or Customer data. */
+export const sitePublicProjectionV4Schema = z
+  .object({
+    schema_version: z.literal(4),
+    branding: sitePublicProjectionBrandingSchema,
+    pages: z.array(sitePublicProjectionPageSchemaV3).min(1).max(20),
+  })
+  .superRefine((projection, context) => {
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      if (!value || typeof value !== "object") return;
+      const item = value as Record<string, unknown>;
+      if (item.type === "booking" || item.type === "preorder") {
+        if (
+          typeof item.action_key !== "string" ||
+          typeof item.release_token !== "string"
+        ) {
+          context.addIssue({
+            code: "custom",
+            message: "Published operational actions need an opaque address.",
+            path: ["pages"],
+          });
+        }
+      }
+      Object.values(item).forEach(visit);
+    };
+    visit(projection.pages);
+  });
+
+export type SitePublicProjectionV4 = z.infer<
+  typeof sitePublicProjectionV4Schema
 >;
 
 export const siteDraftCreateSchema = z

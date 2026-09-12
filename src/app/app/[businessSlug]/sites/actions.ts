@@ -25,6 +25,8 @@ import {
   reenableSiteRecord,
   prepareSiteReleaseV3,
   publishSiteReleaseV3,
+  prepareSiteReleaseV4,
+  publishSiteReleaseV4,
   prepareSiteReleaseV2,
   publishSiteReleaseV2,
   rebaseSiteDraft,
@@ -69,6 +71,7 @@ function siteNotice(
     | "input_invalid"
     | "stale"
     | "link_not_ready"
+    | "customer_reviewed"
     | "failed",
 ): never {
   redirect(
@@ -272,6 +275,59 @@ export async function reenableSiteMediaAction(
   );
 }
 
+export async function resolveSiteCustomerResolutionCaseAction(
+  businessSlugInput: string,
+  formData: FormData,
+): Promise<never> {
+  const parsedSlug = routeSlugSchema.safeParse(businessSlugInput);
+  if (!parsedSlug.success) notFound();
+  const input = z
+    .object({
+      kind: z.enum(["form", "booking", "preorder"]),
+      receiptId: z.uuid(),
+      expectedResolutionRevision: z.coerce.number().int().nonnegative(),
+      customerRecordId: z.uuid(),
+    })
+    .safeParse({
+      kind: stringValue(formData, "kind"),
+      receiptId: stringValue(formData, "receiptId"),
+      expectedResolutionRevision: stringValue(
+        formData,
+        "expectedResolutionRevision",
+      ),
+      customerRecordId: stringValue(formData, "customerRecordId"),
+    });
+  if (!input.success) siteNotice(parsedSlug.data, "input_invalid");
+  const supabase = await createServerClient();
+  const tenant = await resolveTenant(parsedSlug.data, supabase);
+  if (!hasCapability(tenant.membership.role, "manage_configuration"))
+    notFound();
+  const rpcClient = supabase as unknown as {
+    rpc(
+      name: string,
+      args: Record<string, unknown>,
+    ): PromiseLike<{ data: unknown; error: unknown | null }>;
+  };
+  const result = await rpcClient.rpc("resolve_site_customer_resolution_case", {
+    expected_business_id: tenant.business.id,
+    receipt_kind: input.data.kind,
+    receipt_id: input.data.receiptId,
+    expected_resolution_revision: input.data.expectedResolutionRevision,
+    requested_customer_record_id: input.data.customerRecordId,
+  });
+  if (result.error) {
+    const message =
+      typeof result.error === "object" && result.error !== null
+        ? JSON.stringify(result.error)
+        : String(result.error);
+    siteNotice(
+      parsedSlug.data,
+      /stale|review_stale/.test(message) ? "stale" : "failed",
+    );
+  }
+  siteNotice(parsedSlug.data, "customer_reviewed");
+}
+
 function siteErrorNotice(
   error: unknown,
 ): "stale" | "link_not_ready" | "failed" {
@@ -321,6 +377,42 @@ async function siteDraftHasForms(
     (result.data as { draft_json: unknown }).draft_json,
   );
   return Boolean(draft.forms?.length);
+}
+
+async function siteDraftHasOperationalActions(
+  supabase: Awaited<ReturnType<typeof createServerClient>>,
+  businessId: string,
+): Promise<boolean> {
+  const reader = supabase as unknown as {
+    from(table: string): {
+      select(columns: string): {
+        eq(
+          column: string,
+          value: string,
+        ): {
+          maybeSingle(): PromiseLike<{ data: unknown; error: unknown | null }>;
+        };
+      };
+    };
+  };
+  const result = await reader
+    .from("site_states")
+    .select("draft_json")
+    .eq("business_id", businessId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  const draftValue =
+    result.data && typeof result.data === "object"
+      ? (result.data as { draft_json?: unknown }).draft_json
+      : null;
+  const visit = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(visit);
+    if (!value || typeof value !== "object") return false;
+    const item = value as Record<string, unknown>;
+    if (item.type === "booking" || item.type === "preorder") return true;
+    return Object.values(item).some(visit);
+  };
+  return visit(draftValue);
 }
 
 function redirectWithNotice(
@@ -589,17 +681,27 @@ export async function prepareSiteReleaseAction(
   let candidate;
   try {
     const hasForms = await siteDraftHasForms(supabase, tenant.business.id);
-    candidate = hasForms
-      ? await prepareSiteReleaseV3(
+    const hasOperationalActions = await siteDraftHasOperationalActions(
+      supabase,
+      tenant.business.id,
+    );
+    candidate = hasOperationalActions
+      ? await prepareSiteReleaseV4(
           supabase,
           { businessId: tenant.business.id, actorId: tenant.user.id },
           input.data,
         )
-      : await prepareSiteReleaseV2(
-          supabase,
-          { businessId: tenant.business.id, actorId: tenant.user.id },
-          input.data,
-        );
+      : hasForms
+        ? await prepareSiteReleaseV3(
+            supabase,
+            { businessId: tenant.business.id, actorId: tenant.user.id },
+            input.data,
+          )
+        : await prepareSiteReleaseV2(
+            supabase,
+            { businessId: tenant.business.id, actorId: tenant.user.id },
+            input.data,
+          );
   } catch (error) {
     siteNotice(parsedSlug.data, siteErrorNotice(error));
   }
@@ -628,7 +730,17 @@ export async function publishSiteReleaseAction(
     notFound();
   try {
     const hasForms = await siteDraftHasForms(supabase, tenant.business.id);
-    if (hasForms) {
+    const hasOperationalActions = await siteDraftHasOperationalActions(
+      supabase,
+      tenant.business.id,
+    );
+    if (hasOperationalActions) {
+      await publishSiteReleaseV4(
+        supabase,
+        { businessId: tenant.business.id, actorId: tenant.user.id },
+        input.data,
+      );
+    } else if (hasForms) {
       await publishSiteReleaseV3(
         supabase,
         { businessId: tenant.business.id, actorId: tenant.user.id },

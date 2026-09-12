@@ -7,10 +7,13 @@ import Image from "next/image";
 import {
   type SitePublicProjection,
   type SitePublicProjectionV3,
+  type SitePublicProjectionV4,
+  sitePublicProjectionV4Schema,
   sitePublicProjectionSchema,
   sitePublicProjectionV3Schema,
 } from "../../core/sites/schemas";
 import {
+  type SiteOperationalPreviewAction,
   type SitePublicRecord,
   SitePublicRenderer,
 } from "../../runtime/sites/site-public-renderer";
@@ -65,7 +68,8 @@ function collectRecords(
 }
 
 function recordsInProjection(
-  projection: SitePublicProjection | SitePublicProjectionV3,
+  projection:
+    SitePublicProjection | SitePublicProjectionV3 | SitePublicProjectionV4,
 ): Map<string, CandidateRecord> {
   const records = new Map<string, CandidateRecord>();
   projection.pages.forEach((page) =>
@@ -104,16 +108,21 @@ export function SiteCandidatePreview({
   businessSlug,
   candidateId,
   projection,
+  operationalPreviewActions,
 }: Readonly<{
   businessSlug: string;
   candidateId: string;
-  projection: SitePublicProjection | SitePublicProjectionV3;
+  projection:
+    SitePublicProjection | SitePublicProjectionV3 | SitePublicProjectionV4;
+  operationalPreviewActions?: readonly SiteOperationalPreviewAction[];
 }>): ReactNode {
   const safeProjection = useMemo(
     () =>
-      projection.schema_version === 3
-        ? sitePublicProjectionV3Schema.parse(projection)
-        : sitePublicProjectionSchema.parse(projection),
+      projection.schema_version === 4
+        ? sitePublicProjectionV4Schema.parse(projection)
+        : projection.schema_version === 3
+          ? sitePublicProjectionV3Schema.parse(projection)
+          : sitePublicProjectionSchema.parse(projection),
     [projection],
   );
   const homePage =
@@ -252,6 +261,7 @@ export function SiteCandidatePreview({
           }}
           pageSlug={selectedPage.slug}
           record={selectedRecord}
+          operationalPreviewActions={operationalPreviewActions}
         />
       </article>
     </section>

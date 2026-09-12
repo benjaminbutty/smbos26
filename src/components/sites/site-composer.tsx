@@ -38,17 +38,39 @@ type RecordOption = {
   recordRevision: number;
   attachments: Record<string, number>;
 };
+export type SiteRelationshipOption = {
+  key: string;
+  label: string;
+  sourceObjectId: string;
+  targetObjectId: string;
+  cardinality: string;
+};
 export type ObjectOption = {
   id: string;
   key: string;
   singularLabel?: string;
   pluralLabel?: string;
+  semanticType?: string | null;
   fieldOptions: FieldOption[];
   viewOptions: ViewOption[];
   fields: string[];
   fileFields: FileFieldOption[];
   records: RecordOption[];
+  relationshipOptions?: SiteRelationshipOption[];
 };
+export type OperationalBlockOption =
+  | {
+      type: "booking";
+      key: string;
+      label: string;
+      config: Record<string, unknown>;
+      stableSourcePageId: string;
+    }
+  | {
+      type: "preorder";
+      key: string;
+      label: string;
+    };
 
 type UnknownRecord = Record<string, unknown>;
 type SiteFilterOperator =
@@ -720,6 +742,23 @@ function newBlock(
   return { type, id } as SiteBlock;
 }
 
+function newOperationalBlock(option: OperationalBlockOption): SiteBlock {
+  if (option.type === "booking") {
+    return {
+      type: "booking",
+      id: crypto.randomUUID(),
+      booking_key: option.key,
+      config: structuredClone(option.config),
+      stable_source_page_id: option.stableSourcePageId,
+    } as SiteBlock;
+  }
+  return {
+    type: "preorder",
+    id: crypto.randomUUID(),
+    preorder_key: option.key,
+  } as SiteBlock;
+}
+
 function newRichTextBlock(): SiteBlock {
   return {
     type: "rich_text",
@@ -782,6 +821,7 @@ export function SiteComposer({
   draftBaseVersionId,
   draftBaseHeadRevision,
   objectOptions,
+  operationalOptions,
   previewAction,
   publishAction,
   candidateId,
@@ -793,6 +833,7 @@ export function SiteComposer({
   draftBaseVersionId: string;
   draftBaseHeadRevision: number;
   objectOptions: ObjectOption[];
+  operationalOptions: OperationalBlockOption[];
   previewAction?: SiteAction;
   publishAction?: SiteAction;
   candidateId: string | undefined;
@@ -1255,6 +1296,21 @@ export function SiteComposer({
     commit(next);
     setMessage(
       "Form added to the Page. It will be available when you publish.",
+    );
+  }
+
+  function addOperationalToPage(
+    pageId: string,
+    option: OperationalBlockOption,
+  ): void {
+    const next = copyDraft(draft);
+    const page = next.pages.find((candidate) => candidate.id === pageId);
+    if (!page) return;
+    page.layout.blocks.unshift(newOperationalBlock(option));
+    commit(next);
+    setAddBlockMenuOpen(false);
+    setMessage(
+      `${option.label} added to the Page. It will be available when you publish.`,
     );
   }
 
@@ -3213,6 +3269,7 @@ export function SiteComposer({
                                     }
                                     pageId={page.id}
                                     pages={draft.pages}
+                                    operationalOptions={operationalOptions}
                                     removeBlock={removeBlock}
                                     sectionTargets={sectionTargets}
                                     sectionIds={page.layout.blocks
@@ -3403,6 +3460,9 @@ export function SiteComposer({
                                           }
                                           pageId={page.id}
                                           pages={draft.pages}
+                                          operationalOptions={
+                                            operationalOptions
+                                          }
                                           removeBlock={removeBlock}
                                           sectionTargets={sectionTargets}
                                           sectionIds={page.layout.blocks
@@ -3575,6 +3635,18 @@ export function SiteComposer({
                           >
                             Add shared Record detail
                           </button>
+                          {operationalOptions.slice(0, 20).map((option) => (
+                            <button
+                              key={`${option.type}:${option.key}`}
+                              onClick={() =>
+                                addOperationalToPage(page.id, option)
+                              }
+                              role="menuitem"
+                              type="button"
+                            >
+                              Add {option.label}
+                            </button>
+                          ))}
                         </div>
                       ) : null}
                     </div>
@@ -3964,6 +4036,7 @@ function NestedSiteBlocks({
   onUploadImage,
   pageId,
   pages,
+  operationalOptions,
   removeBlock,
   sectionTargets,
   sectionIds,
@@ -3992,6 +4065,7 @@ function NestedSiteBlocks({
   onUploadImage: SiteBlockUpload;
   pageId: string;
   pages: readonly SitePage[];
+  operationalOptions: readonly OperationalBlockOption[];
   removeBlock: SiteBlockMove;
   sectionTargets: readonly SiteSectionTarget[];
   sectionIds: readonly string[];
@@ -4335,6 +4409,7 @@ function NestedSiteBlocks({
                   onBlockFocused={onBlockFocused}
                   pageId={pageId}
                   pages={pages}
+                  operationalOptions={operationalOptions}
                   removeBlock={removeBlock}
                   sectionTargets={sectionTargets}
                   sectionIds={sectionIds}
@@ -4482,6 +4557,7 @@ function NestedSiteBlocks({
                           onBlockFocused={onBlockFocused}
                           pageId={pageId}
                           pages={pages}
+                          operationalOptions={operationalOptions}
                           removeBlock={removeBlock}
                           sectionTargets={sectionTargets}
                           sectionIds={sectionIds}
@@ -4547,6 +4623,22 @@ function NestedSiteBlocks({
         >
           Add divider
         </button>
+        {operationalOptions.slice(0, 20).map((option) => (
+          <button
+            key={`${option.type}:${option.key}`}
+            onClick={() =>
+              appendBlock(
+                pageId,
+                containerId,
+                newOperationalBlock(option),
+                columnIndex,
+              )
+            }
+            type="button"
+          >
+            Add {option.label}
+          </button>
+        ))}
       </div>
     </div>
   );

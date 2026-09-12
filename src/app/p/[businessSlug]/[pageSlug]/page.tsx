@@ -86,8 +86,10 @@ export default async function PublicPage({
         </header>
         <SitePublicRenderer
           businessSlug={businessSlug}
+          bookings={runtime.bookings}
           layout={runtime.page.layout}
           pageSlug={pageSlug}
+          preorders={runtime.preorders}
         />
       </main>
     );

@@ -1020,6 +1020,14 @@ const preorderBlockSchema = z
   })
   .strict();
 
+// Sites retain this bounded source identity in their private draft so a
+// copied or moved Booking block keeps the same operational namespace. The
+// ordinary Page grammar remains unchanged; publication strips this metadata
+// before emitting canonical Page operations.
+const siteBookingBlockSchema = bookingBlockSchema.extend({
+  stable_source_page_id: z.uuid().optional(),
+});
+
 const dividerBlockSchema = z
   .object({ type: z.literal("divider"), id: pageBlockIdSchema.optional() })
   .strict();
@@ -1541,7 +1549,7 @@ type SiteNestedBlock =
   | z.output<typeof siteDraftImageBlockSchema>
   | z.output<typeof buttonBlockSchema>
   | z.output<typeof publicFormBlockSchema>
-  | z.output<typeof bookingBlockSchema>
+  | z.output<typeof siteBookingBlockSchema>
   | z.output<typeof preorderBlockSchema>
   | z.output<typeof dividerBlockSchema>
   | z.output<typeof calloutBlockSchema>
@@ -1557,7 +1565,7 @@ export const siteSharedAtomicBlockSchema = z.union([
   textBlockSchema,
   buttonBlockSchema,
   publicFormBlockSchema,
-  bookingBlockSchema,
+  siteBookingBlockSchema,
   preorderBlockSchema,
   dividerBlockSchema,
   calloutBlockSchema,

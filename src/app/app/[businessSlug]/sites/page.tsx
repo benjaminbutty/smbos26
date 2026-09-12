@@ -19,18 +19,28 @@ import {
   withdrawSiteMediaAction,
   withdrawSiteObjectAction,
   withdrawSiteRecordAction,
+  resolveSiteCustomerResolutionCaseAction,
 } from "./actions";
-import { SiteComposer } from "../../../../components/sites/site-composer";
+import {
+  SiteComposer,
+  type OperationalBlockOption,
+} from "../../../../components/sites/site-composer";
 import { SiteCandidatePreview } from "../../../../components/sites/site-candidate-preview";
 import { SiteAvailabilityControls } from "../../../../components/sites/site-availability-controls";
+import {
+  SiteCustomerReview,
+  type CustomerResolutionCase,
+} from "../../../../components/sites/site-customer-review";
 import { ConfigurationChangeService } from "../../../../core/configuration/service";
 import {
   siteReleaseV2Schema,
   siteReleaseV3Schema,
+  siteReleaseV4Schema,
   siteStateSchema,
 } from "../../../../core/sites/service";
 import {
   sitePublicProjectionSchema,
+  sitePublicProjectionV4Schema,
   sitePublicProjectionV3Schema,
 } from "../../../../core/sites/schemas";
 import { createServerClient } from "../../../../db/supabase/server";
@@ -48,12 +58,29 @@ type ReadQuery<T> = QueryResult<T> & {
 type SiteReader = {
   from(table: string): { select(columns: string): ReadQuery<unknown> };
 };
+type SiteRpcReader = {
+  rpc(
+    name: string,
+    args: Record<string, unknown>,
+  ): PromiseLike<{ data: unknown; error: unknown | null }>;
+};
 
 type ObjectRow = {
   id: string;
   key: string;
   singular_label: string;
   plural_label: string;
+  semantic_type: string | null;
+  is_active: boolean;
+};
+type RelationshipRow = {
+  id: string;
+  key: string;
+  source_object_definition_id: string;
+  target_object_definition_id: string;
+  source_label: string;
+  target_label: string;
+  cardinality: string;
   is_active: boolean;
 };
 type FieldRow = {
@@ -96,6 +123,16 @@ type FieldAvailabilityRow = AvailabilityRow & {
 };
 type MediaAvailabilityRow = AvailabilityRow & { asset_id: string };
 type DraftAssetReferenceRow = { asset_id: string };
+type OperationalPageRow = {
+  id: string;
+  title: string;
+  layout_json: unknown;
+};
+type PreorderExperienceRow = {
+  key: string;
+  config_json: unknown;
+  is_active: boolean;
+};
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -143,6 +180,45 @@ function siteDraftReferences(draft: unknown): {
   return { objectKeys, fieldKeys, recordIds };
 }
 
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function operationalPreviewActions(
+  review: unknown,
+): Array<Record<string, unknown>> {
+  const reviewValue = objectValue(review);
+  const actions = reviewValue?._c4_operational_actions;
+  if (!Array.isArray(actions)) return [];
+  return actions.flatMap((value) => {
+    const action = objectValue(value);
+    return action?.kind === "booking" || action?.kind === "preorder"
+      ? [action]
+      : [];
+  });
+}
+
+function operationalBlocks(value: unknown): Array<Record<string, unknown>> {
+  const result: Array<Record<string, unknown>> = [];
+  const visit = (candidate: unknown): void => {
+    const block = objectValue(candidate);
+    if (!block) return;
+    if (
+      (block.type === "booking" && typeof block.booking_key === "string") ||
+      (block.type === "preorder" && typeof block.preorder_key === "string")
+    ) {
+      result.push(block);
+    }
+    if (Array.isArray(block.blocks)) block.blocks.forEach(visit);
+    if (Array.isArray(block.columns)) block.columns.forEach(visit);
+    Object.values(block.layout ?? {}).forEach(visit);
+  };
+  visit(value);
+  return result;
+}
+
 export default async function SitesPage({
   params,
   searchParams,
@@ -187,12 +263,96 @@ export default async function SitesPage({
   const objectResult = await readQuery<ObjectRow[]>(
     reader
       .from("object_definitions")
-      .select("id,key,singular_label,plural_label,is_active")
+      .select("id,key,singular_label,plural_label,semantic_type,is_active")
       .eq("business_id", tenant.business.id)
       .eq("is_active", true),
   );
   if (objectResult.error) throw objectResult.error;
   const objectRows = objectResult.data ?? [];
+  const relationshipResult = await readQuery<RelationshipRow[]>(
+    reader
+      .from("relationship_definitions")
+      .select(
+        "id,key,source_object_definition_id,target_object_definition_id,source_label,target_label,cardinality,is_active",
+      )
+      .eq("business_id", tenant.business.id)
+      .eq("is_active", true),
+  );
+  if (relationshipResult.error) throw relationshipResult.error;
+  const objectLabels = new Map(
+    objectRows.map((objectValue) => [
+      objectValue.id,
+      objectValue.plural_label || objectValue.singular_label || "Table",
+    ]),
+  );
+  const relationshipOptions = (relationshipResult.data ?? []).map(
+    (relationship) => ({
+      key: relationship.key,
+      label: `${objectLabels.get(relationship.source_object_definition_id) ?? relationship.source_label} → ${objectLabels.get(relationship.target_object_definition_id) ?? relationship.target_label}`,
+      sourceObjectId: relationship.source_object_definition_id,
+      targetObjectId: relationship.target_object_definition_id,
+      cardinality: relationship.cardinality,
+    }),
+  );
+  const operationalPageResult = await readQuery<OperationalPageRow[]>(
+    reader
+      .from("pages")
+      .select("id,title,layout_json")
+      .eq("business_id", tenant.business.id)
+      .eq("audience", "public")
+      .eq("status", "published")
+      .eq("is_active", true),
+  );
+  if (operationalPageResult.error) throw operationalPageResult.error;
+  const operationalOptions: OperationalBlockOption[] = [];
+  const operationalKeys = new Set<string>();
+  const preorderPageTitles = new Map<string, string>();
+  for (const page of operationalPageResult.data ?? []) {
+    for (const block of operationalBlocks(page.layout_json)) {
+      if (
+        block.type === "preorder" &&
+        typeof block.preorder_key === "string" &&
+        page.title.trim()
+      ) {
+        preorderPageTitles.set(block.preorder_key, page.title.trim());
+        continue;
+      }
+      const config = objectValue(block.config);
+      if (!config) continue;
+      const bookingKey = block.booking_key;
+      const sourcePageId = page.id;
+      const optionKey = `booking:${sourcePageId}:${String(bookingKey)}`;
+      if (operationalKeys.has(optionKey)) continue;
+      operationalKeys.add(optionKey);
+      operationalOptions.push({
+        type: "booking",
+        key: String(bookingKey),
+        label: page.title.trim() ? `Booking · ${page.title.trim()}` : "Booking",
+        config,
+        stableSourcePageId: sourcePageId,
+      });
+    }
+  }
+  const preorderResult = await readQuery<PreorderExperienceRow[]>(
+    reader
+      .from("preorder_experiences")
+      .select("key,config_json,is_active")
+      .eq("business_id", tenant.business.id)
+      .eq("is_active", true),
+  );
+  if (preorderResult.error) throw preorderResult.error;
+  for (const experience of preorderResult.data ?? []) {
+    const optionKey = `preorder:${experience.key}`;
+    if (operationalKeys.has(optionKey)) continue;
+    operationalKeys.add(optionKey);
+    operationalOptions.push({
+      type: "preorder",
+      key: experience.key,
+      label: preorderPageTitles.get(experience.key)
+        ? `Preorder · ${preorderPageTitles.get(experience.key)}`
+        : "Preorder collection",
+    });
+  }
   let attachmentRows: AttachmentRow[] = [];
   let draftAssetIds: string[] = [];
   let objectAvailabilityRows: ObjectAvailabilityRow[] = [];
@@ -291,6 +451,8 @@ export default async function SitesPage({
         key: objectValue.key,
         singularLabel: objectValue.singular_label,
         pluralLabel: objectValue.plural_label,
+        semanticType: objectValue.semantic_type,
+        relationshipOptions,
         fieldOptions: (fieldsResult.data ?? [])
           .map((field) => {
             const settings =
@@ -347,6 +509,91 @@ export default async function SitesPage({
     }),
   );
 
+  let customerResolutionCases: CustomerResolutionCase[] = [];
+  if (state && canManageConfiguration) {
+    const rpcReader = supabase as unknown as SiteRpcReader;
+    const resolutionResult = await rpcReader.rpc(
+      "list_site_customer_resolution_cases",
+      { expected_business_id: tenant.business.id },
+    );
+    if (!resolutionResult.error && Array.isArray(resolutionResult.data)) {
+      customerResolutionCases = resolutionResult.data.flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const item = value as Record<string, unknown>;
+        const kind = item.kind;
+        const candidateIds = Array.isArray(item.candidate_ids)
+          ? item.candidate_ids.filter(
+              (candidate): candidate is string => typeof candidate === "string",
+            )
+          : [];
+        const candidateProfiles = Array.isArray(item.candidate_profiles)
+          ? item.candidate_profiles.flatMap((candidate) => {
+              if (!candidate || typeof candidate !== "object") return [];
+              const profile = candidate as Record<string, unknown>;
+              if (
+                typeof profile.id !== "string" ||
+                typeof profile.label !== "string" ||
+                !profile.profile ||
+                typeof profile.profile !== "object" ||
+                Array.isArray(profile.profile)
+              ) {
+                return [];
+              }
+              return [
+                {
+                  id: profile.id,
+                  label: profile.label,
+                  profile: profile.profile as Record<string, unknown>,
+                },
+              ];
+            })
+          : [];
+        const submittedDetails =
+          item.submitted_details &&
+          typeof item.submitted_details === "object" &&
+          !Array.isArray(item.submitted_details)
+            ? (item.submitted_details as Record<string, unknown>)
+            : {};
+        if (
+          (kind !== "form" && kind !== "booking" && kind !== "preorder") ||
+          typeof item.receipt_id !== "string" ||
+          typeof item.resolution_revision !== "number" ||
+          candidateIds.length < 2
+        ) {
+          return [];
+        }
+        return [
+          {
+            kind,
+            receipt_id: item.receipt_id,
+            public_reference:
+              typeof item.public_reference === "string"
+                ? item.public_reference
+                : null,
+            match_count:
+              typeof item.match_count === "number" ? item.match_count : 0,
+            candidate_ids: candidateIds.slice(0, 8),
+            candidate_profiles: candidateProfiles.slice(0, 8),
+            submitted_details: submittedDetails,
+            original_customer_record_id:
+              typeof item.original_customer_record_id === "string"
+                ? item.original_customer_record_id
+                : null,
+            customer_record_id:
+              typeof item.customer_record_id === "string"
+                ? item.customer_record_id
+                : null,
+            resolution_state:
+              typeof item.resolution_state === "string"
+                ? item.resolution_state
+                : null,
+            resolution_revision: item.resolution_revision,
+          },
+        ];
+      });
+    }
+  }
+
   let candidate = null;
   if (candidateId && z.uuid().safeParse(candidateId).success) {
     const candidateResult = await readQuery<unknown>(
@@ -362,16 +609,23 @@ export default async function SitesPage({
         projection_schema_version?: unknown;
       };
       candidate =
-        parsedRelease.projection_schema_version === 3
-          ? siteReleaseV3Schema.parse(candidateResult.data)
-          : siteReleaseV2Schema.parse(candidateResult.data);
+        parsedRelease.projection_schema_version === 4
+          ? siteReleaseV4Schema.parse(candidateResult.data)
+          : parsedRelease.projection_schema_version === 3
+            ? siteReleaseV3Schema.parse(candidateResult.data)
+            : siteReleaseV2Schema.parse(candidateResult.data);
     }
   }
   const candidateProjection = candidate
-    ? candidate.projection_schema_version === 3
-      ? sitePublicProjectionV3Schema.parse(candidate.projection_json)
-      : sitePublicProjectionSchema.parse(candidate.projection_json)
+    ? candidate.projection_schema_version === 4
+      ? sitePublicProjectionV4Schema.parse(candidate.projection_json)
+      : candidate.projection_schema_version === 3
+        ? sitePublicProjectionV3Schema.parse(candidate.projection_json)
+        : sitePublicProjectionSchema.parse(candidate.projection_json)
     : null;
+  const candidateOperationalPreviewActions = candidate
+    ? operationalPreviewActions(candidate.review_json)
+    : [];
 
   const objectAvailabilityById = new Map(
     objectAvailabilityRows.map((row) => [row.object_definition_id, row]),
@@ -479,6 +733,7 @@ export default async function SitesPage({
       "A Site link points to a missing or hidden Page. Include that Page or change or remove the link, then preview again.",
     input_invalid: "Review the highlighted Site details and try again.",
     failed: "The Site change could not be completed.",
+    customer_reviewed: "Customer choice saved.",
   };
 
   return (
@@ -570,10 +825,19 @@ export default async function SitesPage({
             draftBaseVersionId={state.draft_base_version_id}
             draftBaseHeadRevision={state.draft_base_head_revision}
             objectOptions={objectOptions}
+            operationalOptions={operationalOptions}
             previewAction={prepareSiteReleaseAction.bind(null, businessSlug)}
             publishAction={publishSiteReleaseAction.bind(null, businessSlug)}
             candidateId={candidate?.id}
             siteId={state.id}
+          />
+
+          <SiteCustomerReview
+            cases={customerResolutionCases}
+            resolveAction={resolveSiteCustomerResolutionCaseAction.bind(
+              null,
+              businessSlug,
+            )}
           />
 
           {availabilityItems ? (
@@ -697,6 +961,7 @@ export default async function SitesPage({
             <SiteCandidatePreview
               businessSlug={businessSlug}
               candidateId={candidate.id}
+              operationalPreviewActions={candidateOperationalPreviewActions}
               projection={candidateProjection}
             />
           ) : null}

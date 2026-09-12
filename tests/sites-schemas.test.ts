@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { configurationSnapshotV1Schema } from "../src/core/configuration/definition-source";
-import { pageLayoutSchema } from "../src/core/experience/schemas";
+import {
+  pageLayoutSchema,
+  sitePageLayoutSchema,
+} from "../src/core/experience/schemas";
+import { bookingConfigSchema } from "../src/core/booking/schemas";
 import { setPageOperationSchema } from "../src/core/configuration/schemas";
 import {
   siteDraftPublicationReadyV1Schema,
@@ -84,6 +88,58 @@ function validDraft() {
 }
 
 describe("Lenni Sites C1 composition schema", () => {
+  it("keeps Booking source identity Site-private while preserving the ordinary Page grammar", () => {
+    const config = bookingConfigSchema.parse({
+      booking_object_key: "booking",
+      customer_object_key: "customer",
+      subject_object_key: null,
+      service_object_key: null,
+      relationships: {
+        customer_booking: "customer_booking",
+        customer_subject: null,
+        subject_booking: null,
+        service_booking: null,
+      },
+      field_mappings: {
+        customer: { name: "name", email: "email", phone: null },
+        booking: {
+          start_at: "start_at",
+          status: "status",
+          default_status: "new",
+          date: null,
+          time: null,
+        },
+        subject: null,
+        service: null,
+      },
+      public_fields: [],
+      schedule: {
+        timezone_source: "business",
+        location_id: null,
+        days_of_week: [1],
+        first_time: "09:00",
+        last_time: "10:00",
+        slot_interval_minutes: 30,
+        capacity_per_slot: 1,
+        minimum_notice_minutes: 0,
+        booking_horizon_days: 1,
+      },
+    });
+    const layout = {
+      blocks: [
+        {
+          type: "booking" as const,
+          id: ids.collection,
+          booking_key: "appointments",
+          config,
+          stable_source_page_id: ids.homePage,
+        },
+      ],
+    };
+    expect(sitePageLayoutSchema.safeParse(layout).success).toBe(true);
+    expect(pageLayoutSchema.safeParse(layout).success).toBe(false);
+  });
+
   it("persists finite incomplete author input regardless of Page inclusion, then rejects it at preparation", () => {
     const incompletePage = {
       id: "00000000-0000-4000-8000-000000000020",
