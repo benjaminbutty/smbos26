@@ -3653,7 +3653,7 @@ begin
       from public.relationship_definitions as relationship
       where relationship.business_id = expected_business_id
         and relationship.key in (
-          select value #>> '{}'
+          select value
           from jsonb_each_text(
             coalesce(site_block.block -> 'config' -> 'relationships', '{}'::jsonb)
           )
@@ -4181,9 +4181,7 @@ declare
   service_record_id uuid;
   submitted_key text;
   configured_field jsonb;
-  customer_result jsonb;
-  customer_email_key text;
-  customer_relationship_ids uuid[];
+  relationship_ids uuid[];
 begin
   if requested_submission is null
     or jsonb_typeof(requested_submission) <> 'object'
@@ -4400,38 +4398,22 @@ begin
   end if;
   perform private.assert_valid_graph_record_data(business_id_value, booking_object_id, booking_data);
 
-  select coalesce(array_agg(relationship.id order by relationship.id), '{}'::uuid[])
-  into customer_relationship_ids
+  -- Serialize the finite Relationship definitions before the legacy
+  -- capacity/Record writes. The helper validates tenant ownership and locks
+  -- the UUIDs in sorted order.
+  select coalesce(array_agg(relationship.id order by relationship.id), '{}')
+  into relationship_ids
   from public.relationship_definitions as relationship
   where relationship.business_id = business_id_value
     and relationship.key in (
-      select value #>> '{}'
+      select value
       from jsonb_each_text(coalesce(block_config -> 'relationships', '{}'::jsonb))
-      where value #>> '{}' is not null and value #>> '{}' <> ''
+      where value is not null and btrim(value) <> ''
     )
     and relationship.is_active;
   perform private.lock_relationship_definitions_v1(
-    business_id_value, customer_relationship_ids
+    business_id_value, relationship_ids
   );
-
-  customer_email_key := block_config -> 'field_mappings' -> 'customer' ->> 'email';
-  if customer_email_key is not null
-    and customer_data ->> customer_email_key is not null
-  then
-    customer_result := private.resolve_site_customer_v1(
-      business_id_value, customer_object_id, customer_email_key,
-      customer_data ->> customer_email_key, customer_data
-    );
-    select * into customer_record
-    from public.records as record_value
-    where record_value.business_id = business_id_value
-      and record_value.id = (customer_result ->> 'record_id')::uuid
-    for update;
-  else
-    insert into public.records (business_id, object_definition_id, data_json)
-    values (business_id_value, customer_object_id, customer_data)
-    returning * into customer_record;
-  end if;
 
   insert into public.booking_slot_counters (
     business_id, page_id, booking_key, starts_at
@@ -4456,6 +4438,9 @@ begin
     and booking_key = requested_booking_key
     and starts_at = start_at;
 
+  insert into public.records (business_id, object_definition_id, data_json)
+  values (business_id_value, customer_object_id, customer_data)
+  returning * into customer_record;
   if subject_object_id is not null then
     insert into public.records (business_id, object_definition_id, data_json)
     values (business_id_value, subject_object_id, subject_data)
@@ -4492,9 +4477,7 @@ begin
 
   insert into public.booking_submissions (
     business_id, page_id, booking_key, idempotency_token, booking_record_id,
-    confirmation_json, customer_match_identity, customer_match_count,
-    customer_candidate_ids, original_customer_record_id, customer_record_id,
-    customer_resolution_state
+    confirmation_json
   ) values (
     business_id_value, page_id_value, requested_booking_key,
     requested_idempotency_token, booking_record.id,
@@ -4502,21 +4485,7 @@ begin
       'public_reference', 'BK-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
       'start_at', start_at,
       'timezone', timezone_value
-    ),
-    customer_result ->> 'normalized_email',
-    nullif(customer_result ->> 'match_count', '')::integer,
-    case when customer_result ? 'candidate_ids' then array(
-      select value::text::uuid from jsonb_array_elements_text(
-        customer_result -> 'candidate_ids'
-      ) as candidate(value)
-    ) else null end,
-    case when customer_result is null then null
-      else (customer_result ->> 'record_id')::uuid end,
-    case when customer_result is null then customer_record.id
-      else (customer_result ->> 'record_id')::uuid end,
-    case when customer_result is null then null
-      when coalesce((customer_result ->> 'created')::boolean, false)
-        then 'matched_or_created' else 'matched' end
+    )
   ) returning * into created_submission;
 
   return jsonb_build_object(
@@ -4821,9 +4790,9 @@ begin
   from public.relationship_definitions as relationship
   where relationship.business_id = business_id_value
     and relationship.key in (
-      select value #>> '{}'
+      select value
       from jsonb_each_text(coalesce(block_config -> 'relationships', '{}'::jsonb))
-      where value #>> '{}' is not null and value #>> '{}' <> ''
+      where value is not null and btrim(value) <> ''
     )
     and relationship.is_active;
   perform private.lock_relationship_definitions_v1(
@@ -5308,7 +5277,7 @@ set search_path = ''
 as $$
 declare
   business_value public.businesses;
-  page_value public.pages;
+  page_projection jsonb;
   experience public.preorder_experiences;
   location_value public.locations;
   product_value public.records;
@@ -5347,14 +5316,28 @@ begin
   into business_value
   from public.businesses as business
   where business.slug = requested_business_slug;
-  select page.*
-  into page_value
-  from public.pages as page
-  where page.business_id = business_value.id
-    and page.slug = requested_page_slug
-    and page.audience = 'public'
-    and page.status = 'published'
-    and page.is_active;
+  -- The public URL is the immutable Site projection address.  A Site's
+  -- canonical Page has an opaque internal slug, so consulting mutable legacy
+  -- Page rows here would reject a valid preorder release (and would make an
+  -- old Page edit affect the published action).  The action resolver has
+  -- already checked the same active release and Page/action membership; use
+  -- that release projection for the bounded display metadata.
+  select projected_page.value
+  into page_projection
+  from public.site_states as state
+  join public.site_releases as release
+    on release.business_id = state.business_id
+    and release.site_id = state.id
+    and release.id = state.active_release_id
+    and release.status = 'published'
+    and release.projection_schema_version = 4
+  cross join lateral jsonb_array_elements(
+    coalesce(release.projection_json -> 'pages', '[]'::jsonb)
+  ) as projected_page(value)
+  where state.business_id = business_value.id
+    and state.migration_state = 'adopted'
+    and projected_page.value ->> 'slug' = requested_page_slug
+  limit 1;
   select configured_experience.*
   into experience
   from public.preorder_experiences as configured_experience
@@ -5362,7 +5345,7 @@ begin
     and configured_experience.id = requested_experience_id
     and configured_experience.key = requested_preorder_key
     and configured_experience.is_active;
-  if business_value.id is null or page_value.id is null
+  if business_value.id is null or page_projection is null
     or experience.id is null
   then
     return null;
@@ -5592,7 +5575,8 @@ begin
       'name', business_value.name, 'slug', business_value.slug
     ),
     'page', jsonb_build_object(
-      'title', page_value.title, 'slug', page_value.slug
+      'title', coalesce(page_projection ->> 'title', requested_page_slug),
+      'slug', requested_page_slug
     ),
     'preorder', jsonb_build_object(
       'key', experience.key,
@@ -7613,8 +7597,16 @@ set search_path = ''
 as $$
 declare
   requested_business_id uuid;
-  selected_state public.site_states;
+  selected_experience public.preorder_experiences;
+  relationship_ids uuid[];
+  legacy_allowed boolean;
 begin
+  legacy_allowed := private.site_lock_legacy_authority_v2(
+    requested_business_slug
+  );
+  if not legacy_allowed then
+    return false;
+  end if;
   select business.id
   into requested_business_id
   from public.businesses as business
@@ -7622,30 +7614,40 @@ begin
   if requested_business_id is null then
     return true;
   end if;
+  -- M4 writes three graph edges after it reserves capacity.  Resolve and
+  -- lock those definitions before the legacy body can write any of them;
+  -- the helper orders the UUIDs so adopted writers cannot deadlock with
+  -- this compatibility path.  A malformed active Experience fails closed
+  -- instead of allowing an unprotected legacy edge write.
+  select experience.*
+  into selected_experience
+  from public.preorder_experiences as experience
+  where experience.business_id = requested_business_id
+    and experience.key = requested_preorder_key
+    and experience.is_active
+  for share;
 
-  perform pg_catalog.pg_advisory_xact_lock(
-    pg_catalog.hashtextextended(
-      requested_business_id::text || ':legacy-preorder:'
-        || coalesce(requested_preorder_key, ''),
-      0
-    )
-  );
-  perform 1
-  from public.business_configuration_heads as head
-  where head.business_id = requested_business_id
-  for update;
-  perform 1
-  from public.businesses as business
-  where business.id = requested_business_id
-  for update;
-  select state.*
-  into selected_state
-  from public.site_states as state
-  where state.business_id = requested_business_id
-  for update;
+  if found then
+    if selected_experience.customer_places_order_relationship_definition_id
+        is null
+      or selected_experience.order_contains_item_relationship_definition_id
+        is null
+      or selected_experience.product_appears_in_item_relationship_definition_id
+        is null then
+      raise exception 'legacy_preorder_relationships_missing'
+        using errcode = 'P0001';
+    end if;
+    relationship_ids := array[
+      selected_experience.customer_places_order_relationship_definition_id,
+      selected_experience.order_contains_item_relationship_definition_id,
+      selected_experience.product_appears_in_item_relationship_definition_id
+    ];
+    perform private.lock_relationship_definitions_v1(
+      requested_business_id, relationship_ids
+    );
+  end if;
 
-  return selected_state.id is null
-    or selected_state.migration_state <> 'adopted';
+  return true;
 end;
 $$;
 

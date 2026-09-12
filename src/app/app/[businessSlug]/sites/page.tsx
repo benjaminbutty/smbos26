@@ -818,6 +818,36 @@ export default async function SitesPage({
             </section>
           ) : null}
 
+          {operationalOptions.length === 0 ? (
+            <section
+              aria-labelledby="site-operational-setup-heading"
+              className="panel site-operational-setup"
+            >
+              <h2 id="site-operational-setup-heading">
+                Add a customer journey
+              </h2>
+              <p className="muted">
+                Set up a collection experience or an appointments workspace,
+                then return here to place it on this Site. The setup stays
+                private until you review and publish it.
+              </p>
+              <div className="configuration-action-links">
+                <Link
+                  className="button button-secondary"
+                  href={`/app/${encodeURIComponent(businessSlug)}/setup`}
+                >
+                  Set up a collection experience
+                </Link>
+                <Link
+                  className="button button-secondary"
+                  href={`/app/${encodeURIComponent(businessSlug)}/builder`}
+                >
+                  Build an appointments workspace
+                </Link>
+              </div>
+            </section>
+          ) : null}
+
           <SiteComposer
             businessSlug={businessSlug}
             draft={state.draft_json}

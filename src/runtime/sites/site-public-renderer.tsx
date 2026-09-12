@@ -234,6 +234,11 @@ function OperationalPreviewBlock({
     : [];
   const config = objectValue(action?.config);
   const schedule = objectValue(config?.schedule);
+  const publicFields = Array.isArray(config?.public_fields)
+    ? config.public_fields
+        .map((value) => objectValue(value))
+        .filter((value): value is Record<string, unknown> => value !== null)
+    : [];
   return (
     <section
       aria-label={`${label} preview`}
@@ -241,6 +246,28 @@ function OperationalPreviewBlock({
     >
       <p className="eyebrow">{label}</p>
       <h3>{label} for visitors</h3>
+      <p className="muted">
+        Prepared from the setup you are reviewing. This preview is read-only;
+        visitor availability and submission are enabled after publication.
+      </p>
+      {publicFields.length ? (
+        <div>
+          <h4>Visitor questions</h4>
+          <ul>
+            {publicFields.slice(0, 32).map((field, index) => (
+              <li key={String(field.field ?? index)}>
+                {typeof field.label === "string" && field.label.trim()
+                  ? field.label
+                  : "Visitor detail"}
+                {field.required === true ? " (required)" : ""}
+                {typeof field.help_text === "string" && field.help_text.trim()
+                  ? ` — ${field.help_text.trim()}`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {products.length ? (
         <ul>
           {products.slice(0, 20).map((product, index) => (
@@ -262,12 +289,7 @@ function OperationalPreviewBlock({
             : "Appointment times load from the published schedule. "}
           Visitor responses are saved to your workspace after publication.
         </p>
-      ) : (
-        <p className="muted">
-          This is a read-only preview. Visitor availability and submission are
-          enabled after publication.
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }

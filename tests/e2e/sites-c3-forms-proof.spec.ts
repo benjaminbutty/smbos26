@@ -216,6 +216,22 @@ test("owner publishes a Forms Site and receives a protected visitor upload", asy
   await page.route("https://jamp.io/**", (route) => route.abort());
   const business = await pagesProof.createBusinessThroughOwnerUi(page);
 
+  await page.goto(`/app/${business.slug}/sites`);
+  const setupLink = page.getByRole("link", {
+    name: "Set up a collection experience",
+    exact: true,
+  });
+  await expect(setupLink).toBeVisible();
+  await expect(setupLink).toHaveAttribute(
+    "href",
+    `/app/${business.slug}/setup`,
+  );
+  await setupLink.click();
+  await page.waitForURL(new RegExp(`/app/${business.slug}/setup$`));
+  await expect(
+    page.getByRole("heading", { name: "Preorder setup", exact: true }),
+  ).toBeVisible();
+
   await createSiteDraft(page, business.slug);
   await page
     .getByRole("button", { name: "Start with a Form", exact: true })

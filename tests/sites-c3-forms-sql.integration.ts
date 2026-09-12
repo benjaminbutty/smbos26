@@ -6,6 +6,9 @@ import {
 import postgres, { type Sql } from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { composeStarterComposition } from "../src/core/acquisition/composer";
+import { composeInitialPreorderOperations } from "../src/core/configuration/initial-preorder/service";
+import { ConfigurationChangeService } from "../src/core/configuration/service";
 import { siteDraftV1Schema } from "../src/core/sites/schemas";
 import type { Database, Tables } from "../src/db/supabase/database.types";
 import {
@@ -15,6 +18,7 @@ import {
 
 type Client = SupabaseClient<Database>;
 type Business = Tables<"businesses">;
+type Location = Tables<"locations">;
 type Identity = { client: Client; user: User };
 type SiteState = {
   id: string;
@@ -50,6 +54,9 @@ type RpcClient = {
     error: { code?: string; message?: string } | null;
   }>;
 };
+type ConfigurationOperations = Parameters<
+  ConfigurationChangeService["proposeChangeSet"]
+>[0]["operations"];
 
 let settings: C1LocalSupabaseSettings;
 let sql: Sql;
@@ -99,12 +106,15 @@ async function createOwner(): Promise<Identity> {
   return { client, user: signedIn.data.user };
 }
 
-async function readSiteState(): Promise<SiteState> {
+async function readSiteStateFor(
+  targetBusinessId: string,
+  targetSiteId: string,
+): Promise<SiteState> {
   const rows = await sql<SqlSiteState[]>`
     select id, draft_json, draft_revision, draft_base_version_id,
       draft_base_head_revision
     from public.site_states
-    where business_id = ${business.id} and id = ${siteId}
+    where business_id = ${targetBusinessId} and id = ${targetSiteId}
   `;
   const state = rows[0];
   if (!state) throw new Error("Forms fixture Site state was not found.");
@@ -113,6 +123,10 @@ async function readSiteState(): Promise<SiteState> {
     draft_revision: Number(state.draft_revision),
     draft_base_head_revision: Number(state.draft_base_head_revision),
   };
+}
+
+async function readSiteState(): Promise<SiteState> {
+  return readSiteStateFor(business.id, siteId);
 }
 
 async function callRpc<T>(
@@ -125,6 +139,55 @@ async function callRpc<T>(
     throw new Error(`${name} failed: ${result.error?.message ?? "no data"}`);
   }
   return result.data;
+}
+
+async function createFixtureBusiness(label: string): Promise<Business> {
+  const created = await callRpc<Business>(owner.client, "create_business", {
+    business_name: `${label} ${crypto.randomUUID()}`,
+    requested_business_type: "test",
+    requested_timezone: "Europe/London",
+  });
+  createdBusinessIds.push(created.id);
+  return created;
+}
+
+async function applyFixtureConfiguration(
+  targetBusiness: Business,
+  operations: ConfigurationOperations,
+  title: string,
+): Promise<void> {
+  const configuration = new ConfigurationChangeService(owner.client, {
+    businessId: targetBusiness.id,
+    actorId: owner.user.id,
+  });
+  const proposal = await configuration.proposeChangeSet({
+    ...(await configuration.getProposalCurrentness()),
+    title,
+    description: "Sites C3 operational integration fixture.",
+    operations,
+  });
+  const validated = await configuration.validateChangeSet(proposal.id);
+  expect(validated.status).toBe("validated");
+  await configuration.applyChangeSet(proposal.id);
+}
+
+async function createFixtureSite(
+  targetBusiness: Business,
+  draft: Record<string, unknown>,
+): Promise<SiteState> {
+  return callRpc<SiteState>(owner.client, "create_site_draft_v2", {
+    expected_business_id: targetBusiness.id,
+    expected_actor_id: owner.user.id,
+    requested_draft: draft,
+  });
+}
+
+function releaseCurrentness(state: SiteState) {
+  return {
+    expected_draft_revision: state.draft_revision,
+    expected_base_version_id: state.draft_base_version_id,
+    expected_base_head_revision: state.draft_base_head_revision,
+  };
 }
 
 beforeAll(async () => {
@@ -904,5 +967,628 @@ describe("Sites C3 Form SQL boundary", () => {
     expect(fieldRows[1]?.position).toBeGreaterThan(
       fieldRows[0]?.position ?? -1,
     );
+  });
+
+  it("connects a Form to Customers, preserves duplicates for review, and serializes same-email creation", async () => {
+    const customerBusiness = await createFixtureBusiness("Sites C3 Customer");
+    const starter = composeStarterComposition(
+      "enquiries",
+      "Keep customer enquiries connected for review.",
+    );
+    await applyFixtureConfiguration(
+      customerBusiness,
+      starter.operations,
+      "Create Customer and enquiry fixture",
+    );
+
+    const [customerObject] = await sql<{ id: string; key: string }[]>`
+      select id, key
+      from public.object_definitions
+      where business_id = ${customerBusiness.id} and key = 'customer'
+    `;
+    const [enquiryObject] = await sql<{ id: string; key: string }[]>`
+      select id, key
+      from public.object_definitions
+      where business_id = ${customerBusiness.id} and key = 'enquiry'
+    `;
+    const [relationship] = await sql<{ id: string; key: string }[]>`
+      select id, key
+      from public.relationship_definitions
+      where business_id = ${customerBusiness.id}
+        and key = 'customer_has_enquiry'
+    `;
+    if (!customerObject || !enquiryObject || !relationship) {
+      throw new Error("Customer enquiry fixture configuration is incomplete.");
+    }
+
+    const draft = siteDraftV1Schema.parse({
+      schema_version: 1,
+      branding: { name: "Customer enquiry Site", accent: "forest" },
+      pages: [
+        {
+          id: crypto.randomUUID(),
+          title: "Contact",
+          slug: "contact",
+          navigation_label: "Contact",
+          is_home: true,
+          is_in_navigation: true,
+          is_included: true,
+          layout: {
+            blocks: [
+              {
+                type: "heading",
+                id: crypto.randomUUID(),
+                text: "Tell us what you need",
+                level: 1,
+              },
+              {
+                type: "public_form",
+                id: crypto.randomUUID(),
+                form_key: "customer_enquiry",
+              },
+            ],
+          },
+        },
+      ],
+      forms: [
+        {
+          id: crypto.randomUUID(),
+          key: "customer_enquiry",
+          name: "Customer enquiry",
+          object_mode: "existing",
+          object_key: "enquiry",
+          view_mode: "existing",
+          view_key: "enquiry_view",
+          submit_label: "Send enquiry",
+          customer_connection: {
+            enabled: true,
+            customer_object_key: "customer",
+            relationship_key: "customer_has_enquiry",
+            email_field_key: "email",
+            mappings: [
+              { customer_field_key: "name", question_key: "name" },
+              { customer_field_key: "email", question_key: "email" },
+            ],
+          },
+          questions: [
+            {
+              id: crypto.randomUUID(),
+              key: "subject",
+              field_mode: "existing",
+              label: "Subject",
+              field_type: "short_text",
+              required: true,
+            },
+            {
+              id: crypto.randomUUID(),
+              key: "name",
+              field_mode: "new",
+              label: "Name",
+              field_type: "short_text",
+              required: true,
+            },
+            {
+              id: crypto.randomUUID(),
+              key: "email",
+              field_mode: "new",
+              label: "Email",
+              field_type: "email",
+              required: true,
+            },
+          ],
+        },
+      ],
+    });
+    const site = await createFixtureSite(customerBusiness, draft);
+    const prepare = await callRpc<PreparedRelease>(
+      owner.client,
+      "prepare_site_release_v3",
+      {
+        expected_business_id: customerBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: site.id,
+        ...releaseCurrentness(site),
+      },
+    );
+    const published = await callRpc<PreparedRelease>(
+      owner.client,
+      "publish_site_release_v3",
+      {
+        expected_business_id: customerBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: site.id,
+        requested_candidate_id: prepare.id,
+        ...releaseCurrentness(site),
+      },
+    );
+    const [action] = await sql<
+      {
+        action_key: string;
+        release_token: string;
+        object_definition_id: string;
+      }[]
+    >`
+      select action_key, release_token, object_definition_id
+      from public.site_release_actions_v3
+      where business_id = ${customerBusiness.id}
+        and release_id = ${published.id}
+        and form_key = 'customer_enquiry'
+    `;
+    if (!action) throw new Error("Customer Form action was not indexed.");
+    expect(action.object_definition_id).toBe(enquiryObject.id);
+
+    const [customerCountBeforeMissing] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${customerBusiness.id}
+        and object_definition_id = ${customerObject.id}
+    `;
+    const missingEmailToken = crypto.randomUUID();
+    const missingEmail = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_form_v3",
+      {
+        requested_business_slug: customerBusiness.slug,
+        requested_page_slug: "contact",
+        requested_action_key: action.action_key,
+        requested_release_token: action.release_token,
+        requested_idempotency_token: missingEmailToken,
+        requested_submission_attempt_id: missingEmailToken,
+        requested_answers: { subject: "Need help", name: "No email" },
+        requested_grant_ids: [],
+        requested_request_hash: "1".repeat(64),
+      },
+    );
+    expect(missingEmail).toMatchObject({
+      ok: false,
+      code: "invalid_submission",
+    });
+    const [customerCountAfterMissing] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${customerBusiness.id}
+        and object_definition_id = ${customerObject.id}
+    `;
+    expect(customerCountAfterMissing?.count).toBe(
+      customerCountBeforeMissing?.count,
+    );
+
+    const existingCustomerIds: string[] = [];
+    for (const name of ["First match", "Second match"]) {
+      const created = await callRpc<{ id: string }>(
+        owner.client,
+        "create_graph_record",
+        {
+          expected_business_id: customerBusiness.id,
+          target_object_definition_id: customerObject.id,
+          requested_data: { name, email: "shared@example.test" },
+        },
+      );
+      existingCustomerIds.push(created.id);
+    }
+    expect(existingCustomerIds).toHaveLength(2);
+
+    const sharedAttempt = crypto.randomUUID();
+    const sharedSubmission = {
+      requested_business_slug: customerBusiness.slug,
+      requested_page_slug: "contact",
+      requested_action_key: action.action_key,
+      requested_release_token: action.release_token,
+      requested_idempotency_token: sharedAttempt,
+      requested_submission_attempt_id: sharedAttempt,
+      requested_answers: {
+        subject: "Shared request",
+        name: "Visitor name",
+        email: "shared@example.test",
+      },
+      requested_grant_ids: [],
+      requested_request_hash: "2".repeat(64),
+    };
+    const sharedResult = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_form_v3",
+      sharedSubmission,
+    );
+    expect(sharedResult).toMatchObject({ ok: true, idempotent: false });
+
+    const [sharedReceipt] = await sql<
+      {
+        id: string;
+        record_id: string;
+        original_customer_record_id: string;
+        customer_record_id: string;
+        customer_candidate_ids: string[];
+        customer_match_count: number;
+        customer_resolution_revision: number;
+      }[]
+    >`
+      select id, record_id, original_customer_record_id, customer_record_id,
+        customer_candidate_ids, customer_match_count,
+        customer_resolution_revision
+      from public.public_form_submissions
+      where business_id = ${customerBusiness.id}
+        and idempotency_token = ${sharedAttempt}
+    `;
+    if (!sharedReceipt) throw new Error("Shared Customer receipt is missing.");
+    expect(sharedReceipt.customer_match_count).toBe(2);
+    expect(sharedReceipt.customer_candidate_ids).toEqual(
+      expect.arrayContaining(existingCustomerIds),
+    );
+    expect(sharedReceipt.original_customer_record_id).toBe(
+      existingCustomerIds[0],
+    );
+    expect(sharedReceipt.customer_record_id).toBe(existingCustomerIds[0]);
+
+    const reviewCases = await callRpc<Array<Record<string, unknown>>>(
+      owner.client,
+      "list_site_customer_resolution_cases",
+      { expected_business_id: customerBusiness.id },
+    );
+    expect(reviewCases).toHaveLength(1);
+    expect(reviewCases[0]).toMatchObject({
+      kind: "form",
+      receipt_id: sharedReceipt.id,
+      submitted_details: {
+        subject: "Shared request",
+        name: "Visitor name",
+        email: "shared@example.test",
+      },
+    });
+
+    const relinked = await callRpc<Record<string, unknown>>(
+      owner.client,
+      "resolve_site_customer_resolution_case",
+      {
+        expected_business_id: customerBusiness.id,
+        receipt_kind: "form",
+        receipt_id: sharedReceipt.id,
+        expected_resolution_revision:
+          sharedReceipt.customer_resolution_revision,
+        requested_customer_record_id: existingCustomerIds[1],
+      },
+    );
+    expect(relinked).toMatchObject({
+      ok: true,
+      customer_record_id: existingCustomerIds[1],
+    });
+    const [relinkedEdge] = await sql<
+      { source_record_id: string; target_record_id: string }[]
+    >`
+      select source_record_id, target_record_id
+      from public.record_relationships
+      where business_id = ${customerBusiness.id}
+        and relationship_definition_id = ${relationship.id}
+        and (source_record_id = ${sharedReceipt.record_id}
+          or target_record_id = ${sharedReceipt.record_id})
+    `;
+    expect(relinkedEdge).toEqual(
+      expect.objectContaining({
+        source_record_id: existingCustomerIds[1],
+        target_record_id: sharedReceipt.record_id,
+      }),
+    );
+    const retryAfterRelink = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_form_v3",
+      sharedSubmission,
+    );
+    expect(retryAfterRelink).toMatchObject({ ok: true, idempotent: true });
+    const [receiptAfterRetry] = await sql<
+      { customer_record_id: string; customer_resolution_state: string }[]
+    >`
+      select customer_record_id, customer_resolution_state
+      from public.public_form_submissions
+      where business_id = ${customerBusiness.id} and id = ${sharedReceipt.id}
+    `;
+    expect(receiptAfterRetry).toEqual({
+      customer_record_id: existingCustomerIds[1],
+      customer_resolution_state: "owner_relinked",
+    });
+
+    const concurrentEmail = "concurrent@example.test";
+    const concurrent = await Promise.all(
+      ["First concurrent", "Second concurrent"].map((name, index) => {
+        const concurrentAttempt = crypto.randomUUID();
+        return rpc(admin).rpc<SubmissionResult>("submit_public_site_form_v3", {
+          ...sharedSubmission,
+          requested_idempotency_token: concurrentAttempt,
+          requested_submission_attempt_id: concurrentAttempt,
+          requested_answers: {
+            subject: name,
+            name,
+            email: concurrentEmail,
+          },
+          requested_request_hash: `${index + 3}`.repeat(64),
+        });
+      }),
+    );
+    expect(
+      concurrent.every((result) => result.error === null && result.data?.ok),
+    ).toBe(true);
+    const [concurrentCustomers] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${customerBusiness.id}
+        and object_definition_id = ${customerObject.id}
+        and lower(data_json ->> 'email') = ${concurrentEmail}
+    `;
+    expect(concurrentCustomers?.count).toBe(1);
+  });
+
+  it("publishes a frozen preorder offer, validates required Customer fields, and enforces capacity", async () => {
+    const preorderBusiness = await createFixtureBusiness("Sites C3 preorder");
+    const locationState = await callRpc<
+      Array<{
+        business_timezone: string;
+        location_state_digest: string;
+      }>
+    >(owner.client, "get_location_creation_state", {
+      expected_business_id: preorderBusiness.id,
+      expected_actor_id: owner.user.id,
+    });
+    const currentLocationState = locationState[0];
+    if (!currentLocationState) {
+      throw new Error("Preorder Location creation state is empty.");
+    }
+    const location = await callRpc<Location>(owner.client, "create_location", {
+      expected_business_id: preorderBusiness.id,
+      expected_actor_id: owner.user.id,
+      expected_business_timezone: currentLocationState.business_timezone,
+      expected_location_state_digest:
+        currentLocationState.location_state_digest,
+      location_name: "C3 Collection",
+      requested_timezone: "Europe/London",
+    });
+
+    const configuration = new ConfigurationChangeService(owner.client, {
+      businessId: preorderBusiness.id,
+      actorId: owner.user.id,
+    });
+    const currentness = await configuration.getProposalCurrentness();
+    await applyFixtureConfiguration(
+      preorderBusiness,
+      composeInitialPreorderOperations({
+        ...currentness,
+        locationIds: [location.id],
+        schedule: {
+          days_of_week: [1, 2, 3, 4, 5, 6, 7],
+          start_time: "09:00",
+          end_time: "17:00",
+          slot_interval_minutes: 60,
+          slot_capacity: 1,
+          cutoff_hours: 0,
+          booking_horizon_days: 30,
+        },
+      }),
+      "Create C3 preorder fixture",
+    );
+
+    const [productObject] = await sql<{ id: string }[]>`
+      select id
+      from public.object_definitions
+      where business_id = ${preorderBusiness.id} and key = 'product'
+    `;
+    if (!productObject) throw new Error("Preorder Product Object is missing.");
+    const product = await callRpc<{ id: string }>(
+      owner.client,
+      "create_graph_record",
+      {
+        expected_business_id: preorderBusiness.id,
+        target_object_definition_id: productObject.id,
+        requested_data: {
+          name: "C3 Lunch Box",
+          description: "Frozen for this Site release.",
+          price: 12,
+          status: "Active",
+        },
+      },
+    );
+    await callRpc(owner.client, "create_record_location_link", {
+      expected_business_id: preorderBusiness.id,
+      target_record_id: product.id,
+      target_location_id: location.id,
+    });
+
+    const draft = siteDraftV1Schema.parse({
+      schema_version: 1,
+      branding: { name: "C3 preorder Site", accent: "ocean" },
+      pages: [
+        {
+          id: crypto.randomUUID(),
+          title: "Order ahead",
+          slug: "preorder",
+          navigation_label: "Order ahead",
+          is_home: true,
+          is_in_navigation: true,
+          is_included: true,
+          layout: {
+            blocks: [
+              {
+                type: "heading",
+                id: crypto.randomUUID(),
+                text: "Order ahead",
+                level: 1,
+              },
+              {
+                type: "preorder",
+                id: crypto.randomUUID(),
+                preorder_key: "preorder",
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const site = await createFixtureSite(preorderBusiness, draft);
+    const prepare = await callRpc<PreparedRelease>(
+      owner.client,
+      "prepare_site_release_v4",
+      {
+        expected_business_id: preorderBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: site.id,
+        ...releaseCurrentness(site),
+      },
+    );
+    expect(prepare).toMatchObject({
+      status: "prepared",
+      projection_schema_version: 4,
+    });
+    const published = await callRpc<PreparedRelease>(
+      owner.client,
+      "publish_site_release_v4",
+      {
+        expected_business_id: preorderBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: site.id,
+        requested_candidate_id: prepare.id,
+        ...releaseCurrentness(site),
+      },
+    );
+    const [action] = await sql<
+      {
+        action_key: string;
+        release_token: string;
+        offer_json: { products: Array<Record<string, unknown>> };
+      }[]
+    >`
+      select action_key, release_token, offer_json
+      from public.site_release_actions_v4
+      where business_id = ${preorderBusiness.id}
+        and release_id = ${published.id}
+        and action_kind = 'preorder'
+    `;
+    if (!action) throw new Error("Preorder action was not indexed.");
+    expect(action.offer_json.products).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: product.id,
+          name: "C3 Lunch Box",
+          price: 12,
+        }),
+      ]),
+    );
+
+    const resolved = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_site_operational_action_v4",
+      {
+        requested_business_slug: preorderBusiness.slug,
+        requested_page_slug: "preorder",
+        requested_action_key: action.action_key,
+        requested_release_token: action.release_token,
+      },
+    );
+    expect(resolved).toMatchObject({
+      kind: "preorder",
+      action_key: action.action_key,
+      release_token: action.release_token,
+      catalogue: {
+        products: expect.arrayContaining([
+          expect.objectContaining({ id: product.id, price: 12 }),
+        ]),
+      },
+    });
+
+    const slotDate = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    slotDate.setUTCHours(11, 0, 0, 0);
+    const slot = slotDate.toISOString();
+    const missingCustomerToken = crypto.randomUUID();
+    const missingCustomer = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_preorder_v4",
+      {
+        requested_business_slug: preorderBusiness.slug,
+        requested_page_slug: "preorder",
+        requested_action_key: action.action_key,
+        requested_release_token: action.release_token,
+        requested_idempotency_token: missingCustomerToken,
+        submission: {
+          idempotency_token: missingCustomerToken,
+          location_id: location.id,
+          collection_at: slot,
+          items: [{ product_id: product.id, quantity: 1 }],
+          fields: {
+            customer: { email: "missing-name@example.test" },
+            order: {},
+          },
+          website: "",
+        },
+        requested_request_hash: "4".repeat(64),
+      },
+    );
+    expect(missingCustomer).toMatchObject({
+      ok: false,
+      code: "required_field",
+    });
+
+    const idempotencyToken = crypto.randomUUID();
+    const submission = {
+      idempotency_token: idempotencyToken,
+      location_id: location.id,
+      collection_at: slot,
+      items: [{ product_id: product.id, quantity: 1 }],
+      fields: {
+        customer: { name: "C3 visitor", email: "c3@example.test" },
+        order: {},
+      },
+      website: "",
+    };
+    const productUpdate = await owner.client.rpc("update_graph_record", {
+      expected_business_id: preorderBusiness.id,
+      target_record_id: product.id,
+      data_patch: { name: "Renamed live product", price: 99 },
+    });
+    expect(productUpdate.error).toBeNull();
+    const submitted = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_preorder_v4",
+      {
+        requested_business_slug: preorderBusiness.slug,
+        requested_page_slug: "preorder",
+        requested_action_key: action.action_key,
+        requested_release_token: action.release_token,
+        requested_idempotency_token: idempotencyToken,
+        submission,
+        requested_request_hash: "5".repeat(64),
+      },
+    );
+    expect(submitted).toMatchObject({ ok: true, idempotent: false });
+    expect(submitted.confirmation).toMatchObject({ total: 12 });
+
+    const [orderCount] = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from public.records
+      where business_id = ${preorderBusiness.id}
+        and object_definition_id = (
+          select order_object_definition_id
+          from public.preorder_experiences
+          where business_id = ${preorderBusiness.id} and key = 'preorder'
+        )
+    `;
+    expect(orderCount?.count).toBe(1);
+
+    const secondSubmission = {
+      ...submission,
+      idempotency_token: crypto.randomUUID(),
+      fields: {
+        customer: { name: "Second visitor", email: "second@example.test" },
+        order: {},
+      },
+    };
+    const soldOut = await callRpc<SubmissionResult>(
+      admin,
+      "submit_public_site_preorder_v4",
+      {
+        requested_business_slug: preorderBusiness.slug,
+        requested_page_slug: "preorder",
+        requested_action_key: action.action_key,
+        requested_release_token: action.release_token,
+        requested_idempotency_token: secondSubmission.idempotency_token,
+        submission: secondSubmission,
+        requested_request_hash: "6".repeat(64),
+      },
+    );
+    expect(soldOut).toMatchObject({ ok: false, code: "sold_out" });
   });
 });
