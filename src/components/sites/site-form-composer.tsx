@@ -148,7 +148,14 @@ function objectLabel(object: ObjectOption): string {
 function customerObjects(
   objectOptions: readonly ObjectOption[],
 ): ObjectOption[] {
-  return objectOptions.filter((object) => object.semanticType === "customer");
+  // Customer is a reusable role expressed by the existing graph: an active
+  // Table with a typed Email Property can participate when a compatible
+  // repeated-activity Relationship exists. Starter configuration predates
+  // semantic_type metadata, so labels or that nullable hint cannot be the
+  // eligibility boundary used by the canonical publication validator.
+  return objectOptions.filter((object) =>
+    object.fieldOptions.some((field) => field.fieldType === "email"),
+  );
 }
 
 function customerRelationshipOptions(
@@ -269,10 +276,8 @@ export function siteFormDraftBlockers(
 
   const connection = form.customer_connection;
   if (connection?.enabled !== false && connection) {
-    const connectionCustomer = objectOptions.find(
-      (object) =>
-        object.key === connection.customer_object_key &&
-        object.semanticType === "customer",
+    const connectionCustomer = customerObjects(objectOptions).find(
+      (object) => object.key === connection.customer_object_key,
     );
     const connectionRelationship = customerRelationshipOptions(
       destination,

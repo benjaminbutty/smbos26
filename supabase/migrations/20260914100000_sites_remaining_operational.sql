@@ -6567,7 +6567,7 @@ begin
       'customer_record_id', submission.customer_record_id,
       'resolution_state', submission.customer_resolution_state,
       'resolution_revision', submission.customer_resolution_revision,
-      'submitted_details', coalesce(submission.canonical_submission, '{}'::jsonb)
+      'submitted_details', coalesce(submission.canonical_answers, '{}'::jsonb)
       ) as item
       from public.public_form_submissions as submission
       where submission.business_id = expected_business_id

@@ -157,21 +157,30 @@ async function createProduct(page: Page, businessSlug: string): Promise<void> {
   await page.waitForURL(
     new RegExp(`/app/${businessSlug}/workspace/products/[^/?#]+`),
   );
-  const availability = page.getByRole("heading", {
-    name: "Availability by Location",
+  const availabilitySection = page.locator(
+    "section.record-location-availability",
+  );
+  await expect(
+    availabilitySection.getByRole("heading", {
+      name: "Availability by Location",
+      exact: true,
+    }),
+  ).toBeVisible();
+  const makeAvailableAt = availabilitySection.getByRole("combobox", {
+    name: "Make available at",
     exact: true,
   });
-  await expect(availability).toBeVisible();
-  await page
-    .getByLabel("Make available at", { exact: true })
-    .selectOption({ label: "Main studio" });
-  await page
+  await expect(makeAvailableAt).toBeVisible();
+  await makeAvailableAt.selectOption({ label: "Main studio" });
+  await availabilitySection
     .getByRole("button", { name: "Make available", exact: true })
     .click();
   await page.waitForURL(
     new RegExp(`/app/${businessSlug}/workspace/products/[^/?#]+\\?.*message=`),
   );
-  await expect(page.getByText("Main studio", { exact: true })).toBeVisible();
+  await expect(
+    availabilitySection.getByText("Main studio", { exact: true }),
+  ).toBeVisible();
 }
 
 async function setupBooking(
@@ -230,7 +239,9 @@ async function expectPublishedBookingLastTime(
   await expect(
     booking.getByRole("heading", { name: "Request a booking" }),
   ).toBeVisible();
-  await booking.getByLabel("Date", { exact: true }).selectOption({ index: 1 });
+  await booking
+    .getByRole("combobox", { name: "Date", exact: true })
+    .selectOption({ index: 1 });
   await expect(
     booking.getByLabel(`${expectedTime}, Available`, { exact: true }),
   ).toBeVisible();
@@ -252,6 +263,8 @@ test("owner configures booking and preorder journeys through the Site", async ({
   page,
   pagesProof,
 }) => {
+  page.setDefaultTimeout(15_000);
+  page.setDefaultNavigationTimeout(30_000);
   await page.route("https://jamp.io/**", (route) => route.abort());
   const business = await pagesProof.createBusinessThroughOwnerUi(page);
   const sharedEmail = "Shared.Customer@Example.test";
@@ -327,6 +340,8 @@ test("owner configures booking and preorder journeys through the Site", async ({
   if (!browser) throw new Error("The owner journey needs a browser context.");
   await amendPublishedBooking(page, business.slug, "19:00");
   const beforeRepublishContext = await browser.newContext();
+  beforeRepublishContext.setDefaultTimeout(15_000);
+  beforeRepublishContext.setDefaultNavigationTimeout(30_000);
   const beforeRepublishVisitor = await beforeRepublishContext.newPage();
   await beforeRepublishVisitor.route("https://jamp.io/**", (route) =>
     route.abort(),
@@ -352,6 +367,8 @@ test("owner configures booking and preorder journeys through the Site", async ({
   );
 
   const visitorContext = await browser.newContext();
+  visitorContext.setDefaultTimeout(15_000);
+  visitorContext.setDefaultNavigationTimeout(30_000);
   const visitor = await visitorContext.newPage();
   await visitor.route("https://jamp.io/**", (route) => route.abort());
   try {
@@ -367,7 +384,10 @@ test("owner configures booking and preorder journeys through the Site", async ({
     await expect(
       booking.getByRole("heading", { name: "Request a booking" }),
     ).toBeVisible();
-    const service = booking.getByLabel("Service", { exact: true });
+    const service = booking.getByRole("combobox", {
+      name: "Service",
+      exact: true,
+    });
     if ((await service.count()) > 0) {
       const serviceOptions = service.locator("option");
       if ((await serviceOptions.count()) > 1) {
@@ -376,7 +396,7 @@ test("owner configures booking and preorder journeys through the Site", async ({
     }
     await captureResponsiveEvidence(visitor, "visitor-booking");
     await booking
-      .getByLabel("Date", { exact: true })
+      .getByRole("combobox", { name: "Date", exact: true })
       .selectOption({ index: 1 });
     await booking.locator('input[name="booking-slot"]:enabled').first().check();
     await booking
@@ -400,10 +420,10 @@ test("owner configures booking and preorder journeys through the Site", async ({
       .getByRole("button", { name: "Add one Morning studio box", exact: true })
       .click();
     await preorder
-      .getByLabel("Location", { exact: true })
+      .getByRole("combobox", { name: "Location", exact: true })
       .selectOption({ label: "Main studio" });
     await preorder
-      .getByLabel("Date", { exact: true })
+      .getByRole("combobox", { name: "Date", exact: true })
       .selectOption({ index: 1 });
     await preorder
       .locator('input[name="collection-slot"]:enabled')

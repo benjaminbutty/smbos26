@@ -539,6 +539,21 @@ function movedDraft(state: SiteState): SiteDraftV1 {
   return siteDraftV1Schema.parse(draft);
 }
 
+function draftWithBookingSource(
+  state: SiteState,
+  stableSourcePageId: string,
+): SiteDraftV1 {
+  const draft = siteDraftV1Schema.parse(structuredClone(state.draft_json));
+  const bookingBlock = draft.pages
+    .flatMap((page) => page.layout.blocks)
+    .find((block) => block.type === "booking");
+  if (!bookingBlock || bookingBlock.type !== "booking") {
+    throw new Error("Operational Booking block was missing from the draft.");
+  }
+  bookingBlock.stable_source_page_id = stableSourcePageId;
+  return draft;
+}
+
 function futureSlot(hour: number): string {
   const value = new Date();
   value.setUTCDate(value.getUTCDate() + 2);
@@ -674,6 +689,89 @@ async function submissionCounts(): Promise<{
     preorderReceipts: Number(row.preorder_receipts),
     bookingReceipts: Number(row.booking_receipts),
   };
+}
+
+async function publicationCounts(): Promise<{
+  releases: number;
+  actions: number;
+}> {
+  const rows = await sql<{ releases: number; actions: number }[]>`
+    select
+      (select count(*)::int from public.site_releases
+        where business_id = ${business.id}) as releases,
+      (select count(*)::int from public.site_release_actions_v4
+        where business_id = ${business.id}) as actions
+  `;
+  const row = rows[0];
+  if (!row) throw new Error("Could not read operational publication counts.");
+  return { releases: Number(row.releases), actions: Number(row.actions) };
+}
+
+async function assertBookingSourceRejections(): Promise<void> {
+  const baseline = await readSiteState();
+  const baselineSubmissions = await submissionCounts();
+  const baselinePublication = await publicationCounts();
+  const saveDraft = (state: SiteState, draft: SiteDraftV1) =>
+    callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: siteId,
+      expected_draft_revision: state.draft_revision,
+      requested_draft: draft,
+    });
+  const expectSourceRejection = async (state: SiteState) => {
+    await expect(
+      callRpc<PreparedRelease>(owner.client, "prepare_site_release_v4", {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: siteId,
+        ...releaseCurrentness(state),
+      }),
+    ).rejects.toThrow("site_operational_source_unavailable");
+    expect(await submissionCounts()).toEqual(baselineSubmissions);
+    expect(await publicationCounts()).toEqual(baselinePublication);
+  };
+
+  // The foreign Business UUID is intentionally not a Page UUID in this Site.
+  const foreignSourceState = await saveDraft(
+    baseline,
+    draftWithBookingSource(baseline, foreignBusiness.id),
+  );
+  await expectSourceRejection(foreignSourceState);
+
+  const baselineDraft = siteDraftV1Schema.parse(
+    structuredClone(baseline.draft_json),
+  );
+  const bookingPage = baselineDraft.pages.find((page) =>
+    page.layout.blocks.some((block) => block.type === "booking"),
+  );
+  const unrelatedPage = baselineDraft.pages.find(
+    (page) =>
+      page.id !== bookingPage?.id &&
+      !page.layout.blocks.some((block) => block.type === "booking"),
+  );
+  if (!unrelatedPage) {
+    throw new Error("Operational fixture lacks an unrelated canonical Page.");
+  }
+  const canonicalPageRows = await sql<{ canonical_page_id: string | null }[]>`
+    select canonical_page_id
+    from public.site_page_bindings
+    where business_id = ${business.id}
+      and site_id = ${siteId}
+      and draft_page_id = ${unrelatedPage.id}
+  `;
+  const canonicalPageId = canonicalPageRows[0]?.canonical_page_id;
+  if (!canonicalPageId) {
+    throw new Error("Operational fixture lacks the unrelated canonical Page.");
+  }
+  const mismatchedSourceState = await saveDraft(
+    foreignSourceState,
+    draftWithBookingSource(foreignSourceState, canonicalPageId),
+  );
+  await expectSourceRejection(mismatchedSourceState);
+
+  const restored = await saveDraft(mismatchedSourceState, baselineDraft);
+  expect(restored.draft_json).toEqual(baseline.draft_json);
 }
 
 beforeAll(async () => {
@@ -847,6 +945,7 @@ describe("Sites remaining operational SQL boundaries", () => {
     expect(firstPreorderAction.offer_json).toMatchObject({
       products: [expect.objectContaining({ price: 12 })],
     });
+    await assertBookingSourceRejections();
 
     const preorderResolved = await callRpc<Record<string, unknown>>(
       anonymous,

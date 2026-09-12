@@ -3,6 +3,7 @@ import type { Browser, Locator, Page } from "@playwright/test";
 import { expect, test } from "./support/pages-proof-fixture";
 
 test.setTimeout(240_000);
+test.use({ actionTimeout: 15_000, navigationTimeout: 30_000 });
 
 const formName = "Customer appointment enquiry";
 const submitLabel = "Send appointment enquiry";
@@ -260,7 +261,7 @@ async function configureCustomerForm(page: Page): Promise<void> {
     exact: true,
   });
   await expect(customerConnection).toBeVisible();
-  await selectOptionContaining(customerConnection, "Customers");
+  await selectOptionContaining(customerConnection, "Customer");
   const mappings = form.locator(".site-form-customer-mappings");
   await expect(mappings).toBeVisible();
 
@@ -323,6 +324,8 @@ async function submitCustomerForm(
   evidencePrefix?: string,
 ): Promise<void> {
   const context = await browser.newContext();
+  context.setDefaultTimeout(15_000);
+  context.setDefaultNavigationTimeout(30_000);
   const visitor = await context.newPage();
   await visitor.route("https://jamp.io/**", (route) => route.abort());
   try {
