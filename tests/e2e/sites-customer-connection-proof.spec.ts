@@ -392,6 +392,59 @@ async function openWorkspaceDestination(
   );
 }
 
+async function inspectAppointmentRecord(
+  page: Page,
+  input: Readonly<{
+    dateLabel: string;
+    name: string;
+    email: string;
+  }>,
+): Promise<void> {
+  const row = page.getByRole("row").filter({
+    has: page.getByRole("gridcell", { name: input.dateLabel, exact: true }),
+  });
+  await expect(row).toHaveCount(1);
+  const openRecord = row.getByRole("button", {
+    name: "Open record",
+    exact: true,
+  });
+  await expect(openRecord).toBeVisible();
+  await openRecord.click();
+
+  const panel = page.getByRole("dialog", {
+    name: "Appointments record",
+    exact: true,
+  });
+  await expect(panel).toBeVisible();
+
+  const expectProperty = async (
+    label: string,
+    value: string,
+  ): Promise<void> => {
+    const property = panel.locator(".editor-record-property").filter({
+      has: page
+        .locator(".editor-record-property-label")
+        .filter({ hasText: new RegExp("^" + label + "$") }),
+    });
+    await expect(property).toHaveCount(1);
+    await expect(
+      property.locator(".editor-record-property-value"),
+    ).toContainText(value);
+  };
+
+  await expectProperty("Customer name", input.name);
+  await expectProperty("Customer email", input.email);
+  await expectProperty("Date", input.dateLabel);
+  await expectProperty("Status", "Booked");
+  await expect(
+    panel.getByRole("button", { name: "Close record panel", exact: true }),
+  ).toBeVisible();
+  await panel
+    .getByRole("button", { name: "Close record panel", exact: true })
+    .click();
+  await expect(panel).toHaveCount(0);
+}
+
 async function createDuplicateCustomer(
   page: Page,
   businessSlug: string,
@@ -504,12 +557,25 @@ test("owner connects a public Form to Customers and preserves review relinks", a
   });
 
   await openWorkspaceDestination(page, business.slug, "Appointments");
+  const appointmentsGrid = page.getByRole("grid", {
+    name: "Appointments editor",
+    exact: true,
+  });
   await expect(
-    page.getByText(originalCustomerName, { exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(changedCustomerName, { exact: true }),
-  ).toBeVisible();
+    appointmentsGrid
+      .locator(".editor-table-connection-value")
+      .filter({ hasText: originalCustomerName }),
+  ).toHaveCount(2);
+  await inspectAppointmentRecord(page, {
+    dateLabel: "15 Oct 2026",
+    name: originalCustomerName,
+    email: sharedEmail,
+  });
+  await inspectAppointmentRecord(page, {
+    dateLabel: "16 Oct 2026",
+    name: changedCustomerName,
+    email: "SHARED.CUSTOMER@EXAMPLE.TEST",
+  });
   await captureResponsiveEvidence(page, "owner-appointment-activity");
 
   await openWorkspaceDestination(page, business.slug, "Customers");

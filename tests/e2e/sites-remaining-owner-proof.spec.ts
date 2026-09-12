@@ -305,10 +305,7 @@ test("owner configures booking and preorder journeys through the Site", async ({
   });
   await expect(draftRecovery).toBeVisible();
   await draftRecovery
-    .getByRole("button", {
-      name: "Keep Site draft and continue",
-      exact: true,
-    })
+    .getByRole("button", { name: "Update draft", exact: true })
     .click();
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=rebased$`),
