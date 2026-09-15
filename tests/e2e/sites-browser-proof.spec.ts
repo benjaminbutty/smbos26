@@ -492,8 +492,18 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
   await expect(
     siteFormCard(page).getByLabel("Form name", { exact: true }),
   ).toHaveValue("Property viewing enquiry");
+  const reloadedProperty = siteFormQuestion(siteFormCard(page), 2);
   await expect(
-    siteFormCard(page).getByLabel("Choices (one per line)", { exact: true }),
+    reloadedProperty.getByRole("combobox", {
+      name: "Answer type",
+      exact: true,
+    }),
+  ).toHaveValue("select");
+  await expect(
+    reloadedProperty.getByRole("textbox", {
+      name: "Choices (one per line)",
+      exact: true,
+    }),
   ).toHaveValue("Park View\nRiver Cottage");
   const reloadedDetails = await selectSitePage(page, "Listing details");
   await expect(
