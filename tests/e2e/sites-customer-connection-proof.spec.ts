@@ -501,6 +501,19 @@ async function createDuplicateCustomer(
     exact: true,
   });
   await expect(newCustomer).toBeVisible();
+  const mobileControls = page.locator(
+    ".table-view-toolbar-controls, .table-workbench-toolbar > button",
+  );
+  await expect(mobileControls).toHaveCount(2);
+  for (const control of [
+    newCustomer,
+    ...((await mobileControls.all()) as Locator[]),
+  ]) {
+    const box = await control.boundingBox();
+    if (!box) throw new Error("A customer Table action has no bounds.");
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
   await newCustomer.click();
   const createRecord = page.locator("form.editor-mobile-create");
   await expect(createRecord).toBeVisible();
@@ -664,6 +677,12 @@ test("owner connects a public Form to Customers and preserves review relinks", a
       exact: true,
     }),
   ).toBeVisible();
+  await expect(review).toContainText("Customer name");
+  await expect(review).toContainText("Customer email");
+  await expect(review).not.toContainText(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  );
+  await expect(review).not.toContainText(/\{"[^"]+":/);
   await captureResponsiveEvidence(page, "owner-customer-review");
 
   const customerChoice = review.getByRole("combobox", {
@@ -671,6 +690,17 @@ test("owner connects a public Form to Customers and preserves review relinks", a
     exact: true,
   });
   await expect(customerChoice).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const control of [
+    customerChoice,
+    review.getByRole("button", { name: "Save Customer choice", exact: true }),
+  ]) {
+    const box = await control.boundingBox();
+    if (!box) throw new Error("A Customer review control has no bounds.");
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   const reviewCustomerValue = await optionValueContaining(
     customerChoice,
     reviewCustomerName,

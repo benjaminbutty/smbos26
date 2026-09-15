@@ -288,6 +288,348 @@ async function captureSiteStates(
   }
 }
 
+function siteFormCard(page: Page): Locator {
+  return page.locator(".site-form-card").first();
+}
+
+function siteFormQuestion(form: Locator, index: number): Locator {
+  return form.locator(".site-form-question").nth(index);
+}
+
+async function configureViewingEnquiryForm(
+  page: Page,
+  destinationPageTitle: string,
+): Promise<void> {
+  const form = siteFormCard(page);
+  await expect(form).toHaveCount(1);
+  await form
+    .getByLabel("Form name", { exact: true })
+    .fill("Property viewing enquiry");
+  await form
+    .getByLabel("Table name (singular)", { exact: true })
+    .fill("Viewing enquiry");
+  await form
+    .getByLabel("Table name (plural)", { exact: true })
+    .fill("Viewing enquiries");
+  await form.getByLabel("View name", { exact: true }).fill("Viewing enquiries");
+  await form.getByLabel("Button label", { exact: true }).fill("Send enquiry");
+
+  const visitorName = siteFormQuestion(form, 0);
+  await visitorName
+    .getByLabel("Question", { exact: true })
+    .fill("Visitor name");
+  await visitorName
+    .getByRole("combobox", { name: "Answer type", exact: true })
+    .selectOption("short_text");
+  await visitorName.getByRole("checkbox").check();
+
+  await form.getByRole("button", { name: "Add question", exact: true }).click();
+  await expect(form.locator(".site-form-question")).toHaveCount(2);
+  const visitorEmail = siteFormQuestion(form, 1);
+  await visitorEmail
+    .getByLabel("Question", { exact: true })
+    .fill("Visitor email");
+  await visitorEmail
+    .getByRole("combobox", { name: "Answer type", exact: true })
+    .selectOption("email");
+  await visitorEmail.getByRole("checkbox").check();
+
+  await form.getByRole("button", { name: "Add question", exact: true }).click();
+  await expect(form.locator(".site-form-question")).toHaveCount(3);
+  const property = siteFormQuestion(form, 2);
+  await property.getByLabel("Question", { exact: true }).fill("Property");
+  await property
+    .getByRole("combobox", { name: "Answer type", exact: true })
+    .selectOption("select");
+  await property
+    .getByLabel("Choices (one per line)", { exact: true })
+    .fill("Park View\nRiver Cottage");
+  await property.getByRole("checkbox").check();
+
+  await expect(
+    form.getByText("Ready to publish", { exact: true }),
+  ).toBeVisible();
+  await form
+    .getByRole("button", {
+      name: `Add to ${destinationPageTitle}`,
+      exact: true,
+    })
+    .click();
+}
+
+async function captureA9PublicStates(
+  page: Page,
+  testInfo: TestInfo,
+  prefix: string,
+  scrollSelector?: string,
+): Promise<void> {
+  const originalViewport = page.viewportSize() ?? {
+    width: 1440,
+    height: 900,
+  };
+  try {
+    for (const viewport of [
+      { name: "desktop", width: 1440, height: 900 },
+      { name: "tablet", width: 834, height: 1112 },
+      { name: "mobile", width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.locator(scrollSelector ?? "main").scrollIntoViewIfNeeded();
+      await waitForImages(page);
+      await page.screenshot({
+        fullPage: false,
+        path: testInfo.outputPath(
+          `${prefix}-${viewport.name}-${viewport.width}x${viewport.height}.png`,
+        ),
+      });
+    }
+  } finally {
+    await page.setViewportSize(originalViewport);
+  }
+}
+
+test("owner publishes Property listings with a configured viewing enquiry", async ({
+  page,
+  pagesProof,
+}, testInfo) => {
+  await page.route("https://jamp.io/**", (route) => route.abort());
+  const business = await pagesProof.createBusinessThroughOwnerUi(page);
+  const propertiesView = await createWorkspaceTable(
+    page,
+    business.slug,
+    "Properties",
+    ["Park View", "River Cottage"],
+    { fileProperty: "Photo" },
+  );
+
+  await page.goto(`/app/${business.slug}/sites`);
+  await page
+    .getByRole("button", { name: "Create Site draft", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=created$`),
+  );
+  await addSitePage(page, "Listings", "listings");
+  await addSitePage(page, "Listing details", "listing-details", {
+    inNavigation: false,
+  });
+  await addSitePage(page, "Enquiries", "enquiries");
+
+  const listingsPage = await selectSitePage(page, "Listings");
+  await addSiteBlock(page, "Add Record collection");
+  const collection = await configureCollection(
+    listingsPage,
+    propertiesView,
+    "cards",
+    "Listing details",
+  );
+  const recordImages = collection.getByLabel("Record image (Photo)", {
+    exact: true,
+  });
+  await expect(recordImages).toHaveCount(2);
+  const firstImageSave = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes(`/api/app/${business.slug}/sites/record-media`) &&
+      response.status() === 200,
+  );
+  await recordImages.nth(0).setInputFiles({
+    ...proofImage,
+    name: "a9-park-view.png",
+  });
+  await firstImageSave;
+  await expect(
+    page.getByText("Record image is ready for your next Site update.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const secondImageSave = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().includes(`/api/app/${business.slug}/sites/record-media`) &&
+      response.status() === 200,
+  );
+  await recordImages.nth(1).setInputFiles({
+    ...proofImage,
+    name: "a9-river-cottage.png",
+  });
+  await secondImageSave;
+  await expect(
+    page.getByText("Record image is ready for your next Site update.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await selectSitePage(page, "Listing details");
+  await addSiteBlock(page, "Add shared Record detail");
+
+  const homePage = await selectSitePage(page, "Home");
+  await addSiteBlock(page, "Add button");
+  const browseButton = homePage
+    .locator(".site-composer-inspector .site-composer-block")
+    .last();
+  await browseButton
+    .getByLabel("Button label", { exact: true })
+    .fill("Browse listings");
+  await browseButton
+    .getByLabel("Site Page destination", { exact: true })
+    .selectOption({ label: "Listings" });
+
+  await selectSitePage(page, "Enquiries");
+  await page
+    .getByRole("button", { name: "Start with a Form", exact: true })
+    .click();
+  await configureViewingEnquiryForm(page, "Enquiries");
+  await expect(
+    siteFormCard(page).getByText("Placed on 1 Page block.", { exact: true }),
+  ).toBeVisible();
+
+  await saveSiteDraft(page);
+  await page.reload();
+  await expect(page.getByLabel("Site name")).toBeVisible();
+  await expect(
+    siteFormCard(page).getByLabel("Form name", { exact: true }),
+  ).toHaveValue("Property viewing enquiry");
+  await expect(
+    siteFormCard(page).getByLabel("Choices (one per line)", { exact: true }),
+  ).toHaveValue("Park View\nRiver Cottage");
+  const reloadedDetails = await selectSitePage(page, "Listing details");
+  await expect(
+    reloadedDetails
+      .locator(".site-composer-canvas")
+      .getByText("Shared Record detail", { exact: true }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?candidate=[^&]+$`),
+  );
+  const candidatePreview = page.getByRole("region", { name: "Site preview" });
+  await expect(candidatePreview).toBeVisible();
+  await candidatePreview
+    .getByRole("button", { name: "Listings", exact: true })
+    .click();
+  await expect(
+    candidatePreview.getByText("Park View", { exact: true }),
+  ).toBeVisible();
+  await candidatePreview
+    .getByRole("button", { name: "Enquiries", exact: true })
+    .click();
+  await expect(
+    candidatePreview.getByRole("heading", {
+      name: "Property viewing enquiry",
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/sites\\?notice=published$`),
+  );
+
+  const browser = page.context().browser();
+  if (!browser) throw new Error("The Sites proof needs a browser context.");
+  const visitorContext = await browser.newContext();
+  const visitor = await visitorContext.newPage();
+  visitor.setDefaultTimeout(15_000);
+  await visitor.route("https://jamp.io/**", (route) => route.abort());
+  const publicURL = new URL(`/p/${business.slug}/home`, page.url()).toString();
+  try {
+    await visitor.goto(publicURL);
+    await expect(
+      visitor.getByRole("link", { name: "Listings", exact: true }),
+    ).toBeVisible();
+    await visitor.getByRole("link", { name: "Listings", exact: true }).click();
+    await expect(visitor).toHaveURL(
+      new RegExp(`/p/${business.slug}/listings$`),
+    );
+    await expect(visitor.getByText("Park View", { exact: true })).toBeVisible();
+    await expect(
+      visitor.getByText("River Cottage", { exact: true }),
+    ).toBeVisible();
+    await expect(visitor.locator("img.site-public-record-image")).toHaveCount(
+      2,
+    );
+    await captureA9PublicStates(visitor, testInfo, "a9-listings");
+
+    await visitor.getByRole("link", { name: "View details" }).first().click();
+    await expect(visitor).toHaveURL(
+      new RegExp(`/p/${business.slug}/listing-details/record/r_[a-f0-9]{64}$`),
+    );
+    await expect(
+      visitor.getByRole("heading", { name: "Listing details" }),
+    ).toBeVisible();
+    await expect(visitor.getByText("Park View", { exact: true })).toBeVisible();
+    await captureA9PublicStates(visitor, testInfo, "a9-listing-detail");
+    await visitor.getByRole("link", { name: "Enquiries", exact: true }).click();
+    await expect(visitor).toHaveURL(
+      new RegExp(`/p/${business.slug}/enquiries$`),
+    );
+
+    const publicForm = visitor.locator("section.site-public-form");
+    await expect(
+      publicForm.getByRole("heading", {
+        name: "Property viewing enquiry",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await captureA9PublicStates(
+      visitor,
+      testInfo,
+      "a9-viewing-enquiry",
+      "section.site-public-form",
+    );
+    await publicForm
+      .getByRole("textbox", { name: "Visitor name", exact: true })
+      .fill("Morgan Ellis");
+    await publicForm
+      .getByRole("textbox", { name: "Visitor email", exact: true })
+      .fill("morgan@example.test");
+    await publicForm
+      .getByRole("combobox", { name: "Property", exact: true })
+      .selectOption({ label: "Park View" });
+    await publicForm
+      .getByRole("button", { name: "Send enquiry", exact: true })
+      .click();
+    await expect(publicForm.getByRole("status")).toContainText("Thanks. Your");
+  } finally {
+    await visitorContext.close();
+  }
+
+  await page.goto(`/app/${business.slug}`);
+  const enquiriesDestination = page.getByRole("link", {
+    name: "Open Viewing enquiries",
+    exact: true,
+  });
+  await expect(enquiriesDestination).toBeVisible();
+  await enquiriesDestination.click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/workspace/[^/?#]+(?:\\?.*)?$`),
+  );
+  const openRecord = page.locator('button[aria-label^="Open record "]').first();
+  await expect(openRecord).toBeVisible();
+  await openRecord.click();
+  const recordPanel = page.locator(".editor-record-panel");
+  await expect(recordPanel).toBeVisible();
+  await recordPanel
+    .getByRole("link", { name: "Open full record", exact: true })
+    .click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/workspace/[^/?#]+/[^/?#]+(?:\\?.*)?$`),
+  );
+  const detailField = (label: string): Locator =>
+    page.locator(".detail-grid > div").filter({
+      has: page.locator("dt").filter({ hasText: label }),
+    });
+  await expect(detailField("Visitor name").locator("dd")).toContainText(
+    "Morgan Ellis",
+  );
+  await expect(detailField("Visitor email").locator("dd")).toContainText(
+    "morgan@example.test",
+  );
+  await expect(detailField("Property").locator("dd")).toHaveText("Park View");
+});
+
 test("owner can review the compact Site editor", async ({
   page,
   pagesProof,

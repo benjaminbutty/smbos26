@@ -347,9 +347,13 @@ test("owner configures booking and preorder journeys through the Site", async ({
   await expect(collectionPage).toBeVisible();
   await collectionPage.click();
   await expect(collectionPage).toHaveAttribute("aria-current", "page");
-  await expect(
-    preview.getByRole("region", { name: "Preorder preview", exact: true }),
-  ).toContainText("Preorder for visitors");
+  const preorderPreview = preview.getByRole("region", {
+    name: "Preorder preview",
+    exact: true,
+  });
+  await expect(preorderPreview).toContainText("Preorder for visitors");
+  await expect(preorderPreview).toContainText(/Collection slots (?:use|load)/);
+  await expect(preorderPreview).not.toContainText("Appointment times");
   await captureResponsiveEvidence(page, "owner-preorder-preview");
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await page.waitForURL(

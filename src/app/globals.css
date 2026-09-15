@@ -14878,14 +14878,45 @@ textarea {
   .workspace-table-page .editor-lab-meta {
     align-items: center;
     gap: var(--space-2);
+    min-width: 0;
   }
 
   .workspace-table-page .editor-lab-meta-actions {
-    margin-left: auto;
+    width: 100%;
+    margin-left: 0;
   }
 
   .workspace-table-page .editor-new-record-action {
+    width: 100%;
     min-height: 2.15rem;
+  }
+
+  .workspace-table-page .editor-workbench-toolbar-content,
+  .workspace-table-page .table-workbench-toolbar,
+  .workspace-table-page .table-view-controls {
+    min-width: 0;
+  }
+
+  .workspace-table-page .editor-workbench-toolbar-content {
+    flex-basis: 100%;
+  }
+
+  .workspace-table-page .table-view-controls {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .workspace-table-page .table-view-toolbar-controls {
+    flex-wrap: wrap;
+  }
+
+  .workspace-table-page .table-view-query-button {
+    flex: 0 0 auto;
+  }
+
+  .workspace-table-page .table-workbench-toolbar > button {
+    width: 100%;
+    flex: 1 1 100%;
   }
 
   .workspace-table-page .table-view-query-popover {
@@ -19398,6 +19429,38 @@ textarea {
   margin: 0;
 }
 
+.site-customer-review,
+.site-customer-review-list,
+.site-customer-review-card {
+  min-width: 0;
+}
+
+.site-customer-review {
+  overflow: hidden;
+}
+
+.site-customer-review-list {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.site-customer-review-card {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--border-width-thin) solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.site-customer-review-card > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.site-customer-review-card .muted {
+  overflow-wrap: anywhere;
+}
+
 .site-composer,
 .site-composer-pages,
 .site-composer-conflict,
@@ -20435,6 +20498,12 @@ textarea {
     margin-top: var(--space-2);
     font-size: 0.95rem;
     line-height: 1.45;
+  }
+
+  .site-customer-review-card select,
+  .site-customer-review-card button {
+    width: 100%;
+    max-width: 100%;
   }
 
   .site-composer-toolbar {

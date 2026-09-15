@@ -285,8 +285,10 @@ function OperationalPreviewBlock({
       {schedule ? (
         <p className="muted">
           {typeof schedule.timezone === "string"
-            ? `Appointments use ${schedule.timezone}. `
-            : "Appointment times load from the published schedule. "}
+            ? `${kind === "preorder" ? "Collection slots use" : "Appointments use"} ${schedule.timezone}. `
+            : kind === "preorder"
+              ? "Collection slots load from the published schedule. "
+              : "Appointment times load from the published schedule. "}
           Visitor responses are saved to your workspace after publication.
         </p>
       ) : null}

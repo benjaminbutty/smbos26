@@ -554,6 +554,15 @@ export default async function SitesPage({
           !Array.isArray(item.submitted_details)
             ? (item.submitted_details as Record<string, unknown>)
             : {};
+        const submittedDetailRows = Array.isArray(item.submitted_detail_rows)
+          ? item.submitted_detail_rows.flatMap((detail) => {
+              if (!detail || typeof detail !== "object") return [];
+              const row = detail as Record<string, unknown>;
+              return typeof row.label === "string"
+                ? [{ label: row.label, value: row.value }]
+                : [];
+            })
+          : [];
         if (
           (kind !== "form" && kind !== "booking" && kind !== "preorder") ||
           typeof item.receipt_id !== "string" ||
@@ -575,6 +584,7 @@ export default async function SitesPage({
             candidate_ids: candidateIds.slice(0, 8),
             candidate_profiles: candidateProfiles.slice(0, 8),
             submitted_details: submittedDetails,
+            submitted_detail_rows: submittedDetailRows.slice(0, 16),
             original_customer_record_id:
               typeof item.original_customer_record_id === "string"
                 ? item.original_customer_record_id

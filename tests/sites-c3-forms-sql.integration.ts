@@ -512,6 +512,38 @@ describe("Sites C3 Form SQL boundary", () => {
     expect(result?.second).toBe(result?.first);
   });
 
+  it("projects released file answers with the raw receipt value intact", async () => {
+    const attachmentId = "11111111-1111-4111-8111-111111111111";
+    const [projection] = await sql<{ rows: unknown }[]>`
+      select private.site_customer_review_submitted_detail_rows_v1(
+        ${business.id}::uuid,
+        null::uuid,
+        null::text,
+        ${sql.json({
+          action: {
+            questions: [
+              {
+                key: "documents",
+                label: "Documents",
+                field_type: "file",
+              },
+            ],
+          },
+        })}::jsonb,
+        ${sql.json({
+          documents: { attachment_ids: [attachmentId] },
+        })}::jsonb
+      ) as rows
+    `;
+
+    expect(projection?.rows).toEqual([
+      {
+        label: "Documents",
+        value: { attachment_ids: [attachmentId] },
+      },
+    ]);
+  });
+
   it("publishes and submits a new Form, retries it, then appends a Property", async () => {
     let state = await readSiteState();
     const prePublishDraft = structuredClone(state.draft_json);
@@ -1071,6 +1103,14 @@ describe("Sites C3 Form SQL boundary", () => {
             },
             {
               id: crypto.randomUUID(),
+              key: "display_name",
+              field_mode: "new",
+              label: "Name",
+              field_type: "short_text",
+              required: false,
+            },
+            {
+              id: crypto.randomUUID(),
               key: "email",
               field_mode: "new",
               label: "Email",
@@ -1181,6 +1221,7 @@ describe("Sites C3 Form SQL boundary", () => {
       requested_answers: {
         subject: "Shared request",
         name: "Visitor name",
+        display_name: "Visitor alias",
         email: "shared@example.test",
       },
       requested_grant_ids: [],
@@ -1221,6 +1262,32 @@ describe("Sites C3 Form SQL boundary", () => {
     );
     expect(sharedReceipt.customer_record_id).toBe(existingCustomerIds[0]);
 
+    // Change the saved draft after the receipt exists.  Review must continue
+    // to use the immutable labels from the receipt's release.
+    const currentState = await readSiteStateFor(customerBusiness.id, site.id);
+    const relabelDraft = structuredClone(currentState.draft_json) as {
+      forms: Array<{
+        key: string;
+        questions: Array<Record<string, unknown>>;
+      }>;
+    };
+    const relabelForm = relabelDraft.forms.find(
+      (form) => form.key === "customer_enquiry",
+    );
+    if (!relabelForm) throw new Error("Customer Form draft is missing.");
+    const subjectQuestion = relabelForm.questions.find(
+      (question) => question.key === "subject",
+    );
+    if (!subjectQuestion) throw new Error("Subject question is missing.");
+    subjectQuestion.label = "Current draft subject";
+    await callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: customerBusiness.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: site.id,
+      expected_draft_revision: currentState.draft_revision,
+      requested_draft: siteDraftV1Schema.parse(relabelDraft),
+    });
+
     const reviewCases = await callRpc<Array<Record<string, unknown>>>(
       owner.client,
       "list_site_customer_resolution_cases",
@@ -1233,8 +1300,20 @@ describe("Sites C3 Form SQL boundary", () => {
       submitted_details: {
         subject: "Shared request",
         name: "Visitor name",
+        display_name: "Visitor alias",
         email: "shared@example.test",
       },
+      submitted_detail_rows: [
+        { label: "Subject", value: "Shared request" },
+        { label: "Name", value: "Visitor name" },
+        { label: "Name", value: "Visitor alias" },
+        { label: "Email", value: "shared@example.test" },
+      ],
+    });
+    expect(reviewCases[0]).not.toMatchObject({
+      submitted_detail_rows: [
+        expect.objectContaining({ label: "Current draft subject" }),
+      ],
     });
 
     const relinked = await callRpc<Record<string, unknown>>(

@@ -12,6 +12,10 @@ export type CustomerResolutionCase = {
     profile: Record<string, unknown>;
   }>;
   submitted_details: Record<string, unknown>;
+  submitted_detail_rows: Array<{
+    label: string;
+    value: unknown;
+  }>;
   original_customer_record_id: string | null;
   customer_record_id: string | null;
   resolution_state: string | null;
@@ -75,7 +79,11 @@ export function SiteCustomerReview({
               </span>
             </div>
             <p className="muted">
-              Submitted details: {formatDetails(customerCase.submitted_details)}
+              Submitted details:{" "}
+              {formatDetails(
+                customerCase.submitted_detail_rows,
+                customerCase.submitted_details,
+              )}
             </p>
             <label>
               Existing Customer
@@ -109,15 +117,43 @@ export function SiteCustomerReview({
   );
 }
 
-function formatDetails(details: Record<string, unknown>): string {
-  const entries = Object.entries(details).filter(
+function formatDetails(
+  detailRows: ReadonlyArray<{ label: string; value: unknown }>,
+  details: Record<string, unknown>,
+): string {
+  const entries = detailRows.length
+    ? detailRows.map(({ label, value }) => [label, value] as const)
+    : Object.entries(details).map(
+        ([key, value], index) =>
+          [formatDetailLabel(key, index), value] as const,
+      );
+  const presentEntries = entries.filter(
     ([, value]) => value !== null && value !== undefined && value !== "",
   );
-  if (entries.length === 0) return "None recorded";
-  return entries
+  if (presentEntries.length === 0) return "None recorded";
+  return presentEntries
     .slice(0, 8)
-    .map(([key, value]) => `${key}: ${formatDetailValue(value)}`)
+    .map(([label, value]) => `${label}: ${formatDetailValue(value)}`)
     .join(" · ");
+}
+
+function formatDetailLabel(key: string, index: number): string {
+  const raw = key.trim();
+  const normalized = raw
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  if (
+    !normalized ||
+    /^[a-f0-9-]{16,}$/i.test(raw) ||
+    /(?:^|[_-])[a-f0-9]{16,}(?:$|[_-])/i.test(raw) ||
+    /(?:^|[_-])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:$|[_-])/i.test(
+      raw,
+    )
+  ) {
+    return `Submitted answer ${index + 1}`;
+  }
+  return normalized.charAt(0).toLocaleUpperCase("en") + normalized.slice(1);
 }
 
 function formatDetailValue(value: unknown): string {
@@ -125,5 +161,20 @@ function formatDetailValue(value: unknown): string {
     return String(value);
   }
   if (typeof value === "boolean") return value ? "Yes" : "No";
-  return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "None";
+    return value.map(formatDetailValue).join(", ");
+  }
+  if (value && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    if (Array.isArray(object.attachment_ids)) {
+      const count = object.attachment_ids.length;
+      return `${count} file${count === 1 ? "" : "s"}`;
+    }
+    for (const key of ["label", "name", "title", "value"]) {
+      if (typeof object[key] === "string") return object[key] as string;
+    }
+    return "Details recorded";
+  }
+  return "Details recorded";
 }
