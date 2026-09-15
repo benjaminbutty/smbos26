@@ -39,6 +39,18 @@ function formatCollection(value: string, timezone: string): string {
   }).format(new Date(value));
 }
 
+function productInitials(name: string): string {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+  return initials || "—";
+}
+
 function resultMessage(code: string): string {
   switch (code) {
     case "sold_out":
@@ -271,7 +283,9 @@ export function PreorderExperience(
         <p className="email-delivery-note">
           {emailStatus === "failed"
             ? "Your preorder exists, but the confirmation email could not be sent. Keep this reference."
-            : "A confirmation email has been prepared for that address."}
+            : emailStatus === "delivered"
+              ? "A confirmation email was sent to that address."
+              : "Your preorder is saved. Keep this reference."}
         </p>
         <button
           className="button button-secondary"
@@ -348,8 +362,8 @@ export function PreorderExperience(
         <div className="preorder-section-heading">
           <span>1</span>
           <div>
-            <h2 id="products-heading">Choose your boxes</h2>
-            <p>Prepared fresh for your collection.</p>
+            <h2 id="products-heading">Choose products</h2>
+            <p>Ready for collection.</p>
           </div>
         </div>
         <div className="preorder-product-grid">
@@ -365,7 +379,7 @@ export function PreorderExperience(
                   <img alt="" src={product.image_url} />
                 ) : (
                   <div className="preorder-product-placeholder" aria-hidden>
-                    BB
+                    {productInitials(product.name)}
                   </div>
                 )}
                 <div className="preorder-product-copy">
@@ -411,7 +425,7 @@ export function PreorderExperience(
           <span>2</span>
           <div>
             <h2 id="collection-heading">Choose collection</h2>
-            <p>Times are shown in the bakery’s local timezone.</p>
+            <p>Times are shown in the local timezone.</p>
           </div>
         </div>
         <div className="preorder-choice-grid">
@@ -422,7 +436,7 @@ export function PreorderExperience(
               required
               value={locationId}
             >
-              <option value="">Choose a bakery…</option>
+              <option value="">Choose a location…</option>
               {catalogue.preorder.locations.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
                   {candidate.name}

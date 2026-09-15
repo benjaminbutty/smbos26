@@ -1375,6 +1375,7 @@ describe("Sites remaining operational SQL boundaries", () => {
                 and experience.id = ${preorderExperienceId}
             )
         )
+      order by page.id
     `;
     expect(activePreorderPages.length).toBeGreaterThan(0);
     const activePreorderPageIds = activePreorderPages.map(({ id }) => id);
@@ -1390,36 +1391,85 @@ describe("Sites remaining operational SQL boundaries", () => {
       `,
     ).rejects.toMatchObject({ code: "23514" });
 
-    // Archive only the synthetic canonical Pages that reference this
-    // Experience, then perform the valid source withdrawal. The immutable
-    // Site release remains active, so the resolver must fail closed on the
-    // withdrawn source rather than relying on Site unpublication.
-    const archivedPages = await sql<{ id: string }[]>`
-      update public.pages as page
-      set is_active = false
-      where page.business_id = ${business.id}
-        and page.id = any(${sql.array(activePreorderPageIds, 2950)})
-      returning page.id
+    // Adopted public Page lifecycle is owned by the Site release writer. A
+    // direct archive attempt must remain blocked rather than manufacturing a
+    // source-withdrawn state outside that boundary.
+    await expect(
+      sql`
+        update public.pages as page
+        set is_active = false
+        where page.business_id = ${business.id}
+          and page.id = any(${sql.array(activePreorderPageIds, 2950)})
+      `,
+    ).rejects.toMatchObject({ code: "55000" });
+    const stateAfterRejectedMutations = await sql<
+      { active_release_id: string | null }[]
+    >`
+      select active_release_id
+      from public.site_states
+      where business_id = ${business.id}
+        and id = ${siteId}
     `;
-    expect(archivedPages).toHaveLength(activePreorderPageIds.length);
-
-    const disabled = await sql<{ id: string }[]>`
-      update public.preorder_experiences
-      set is_active = false
+    expect(stateAfterRejectedMutations).toEqual([
+      { active_release_id: movedRelease.id },
+    ]);
+    const experienceAfterRejectedMutations = await sql<
+      { is_active: boolean }[]
+    >`
+      select is_active
+      from public.preorder_experiences
       where business_id = ${business.id}
         and id = ${preorderExperienceId}
-      returning id
     `;
-    expect(disabled).toHaveLength(1);
+    expect(experienceAfterRejectedMutations).toEqual([{ is_active: true }]);
+
+    // Unpublishing is the supported owner withdrawal transition. It clears
+    // the active release while retaining the canonical Page and Experience;
+    // public resolution and submission must fail closed at that boundary.
+    const beforeUnpublishCounts = await submissionCounts();
+    const activeStateRows = await sql<
+      { active_release_revision: number | string }[]
+    >`
+      select active_release_revision
+      from public.site_states
+      where business_id = ${business.id}
+        and id = ${siteId}
+    `;
+    const activeState = activeStateRows[0];
+    if (!activeState) throw new Error("Active Site state is missing.");
+    const unpublished = await unpublishSite(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        siteId,
+        expectedActiveReleaseRevision: Number(
+          activeState.active_release_revision,
+        ),
+      },
+    );
+    expect(unpublished.active_release_id).toBeNull();
     const activeReleaseRows = await sql<{ active_release_id: string | null }[]>`
       select active_release_id
       from public.site_states
       where business_id = ${business.id}
         and id = ${siteId}
     `;
-    expect(activeReleaseRows).toEqual([{ active_release_id: movedRelease.id }]);
+    expect(activeReleaseRows).toEqual([{ active_release_id: null }]);
 
-    const withdrawn = await rpc(anonymous).rpc<unknown>(
+    const canonicalPagesAfterUnpublish = await sql<
+      { id: string; is_active: boolean }[]
+    >`
+      select id, is_active
+      from public.pages
+      where business_id = ${business.id}
+        and id = any(${sql.array(activePreorderPageIds, 2950)})
+      order by id
+    `;
+    expect(canonicalPagesAfterUnpublish).toEqual(
+      activePreorderPageIds.map((id) => ({ id, is_active: true })),
+    );
+
+    const unpublishedResolution = await rpc(anonymous).rpc<unknown>(
       "resolve_public_site_operational_action_v4",
       {
         requested_business_slug: business.slug,
@@ -1428,18 +1478,49 @@ describe("Sites remaining operational SQL boundaries", () => {
         requested_release_token: movedPreorderAction.release_token,
       },
     );
-    expect(withdrawn.error).toBeNull();
-    expect(withdrawn.data).toBeNull();
-    const withdrawnAttempt = await submitPreorder(
+    expect(unpublishedResolution.error).toBeNull();
+    expect(unpublishedResolution.data).toBeNull();
+    const unpublishedAttempt = await submitPreorder(
       movedPreorderAction,
       "order-moved",
       crypto.randomUUID(),
       preorderSlot,
     );
-    expect(withdrawnAttempt).toEqual({
+    expect(unpublishedAttempt).toEqual({
       ok: false,
       code: "action_unavailable",
     });
+    const unpublishedBookingResolution = await rpc(anonymous).rpc<unknown>(
+      "resolve_public_site_operational_action_v4",
+      {
+        requested_business_slug: business.slug,
+        requested_page_slug: "book-moved",
+        requested_action_key: movedBookingAction.action_key,
+        requested_release_token: movedBookingAction.release_token,
+      },
+    );
+    expect(unpublishedBookingResolution.error).toBeNull();
+    expect(unpublishedBookingResolution.data).toBeNull();
+    const unpublishedBookingAttempt = await submitBooking(
+      movedBookingAction,
+      "book-moved",
+      crypto.randomUUID(),
+      bookingSlot,
+    );
+    expect(unpublishedBookingAttempt).toEqual({
+      ok: false,
+      code: "action_unavailable",
+    });
+    const replayAfterUnpublish = await submitBooking(
+      movedBookingAction,
+      "book-moved",
+      derivedToken,
+      derivedSlot,
+      "Derived field visitor",
+      forgedBookingFields,
+    );
+    expect(replayAfterUnpublish).toMatchObject({ ok: true, idempotent: true });
+    expect(await submissionCounts()).toEqual(beforeUnpublishCounts);
   });
 
   it("keeps v4 service-only submission and member lock boundaries", async () => {

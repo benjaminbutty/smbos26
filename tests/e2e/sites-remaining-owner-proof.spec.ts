@@ -493,6 +493,7 @@ test("owner configures booking and preorder journeys through the Site", async ({
         name: /Thank you/,
       }),
     ).toBeVisible();
+    await captureResponsiveEvidence(visitor, "visitor-preorder-confirmation");
   } finally {
     await visitorContext.close();
   }
@@ -508,22 +509,46 @@ test("owner configures booking and preorder journeys through the Site", async ({
   const ordersWorkspaceLink = page
     .locator(".workspace-sidebar")
     .getByRole("link", { name: "Orders", exact: true });
-  await expect(ordersWorkspaceLink).toBeVisible();
-  const bookingWorkspaceLink = page
+  const customersWorkspaceLink = page
     .locator(".workspace-sidebar")
-    .getByRole("link", {
-      name: /^(Appointments|Bookings)$/,
-    });
-  await expect(bookingWorkspaceLink).toBeVisible();
+    .getByRole("link", { name: "Customers", exact: true });
+  await expect(ordersWorkspaceLink).toBeVisible();
+  await expect(customersWorkspaceLink).toBeVisible();
+  const appointmentsWorkspaceLink = page
+    .locator(".workspace-sidebar")
+    .getByRole("link", { name: "Appointments", exact: true });
+  await expect(appointmentsWorkspaceLink).toBeVisible();
   await ordersWorkspaceLink.click();
   await page.waitForURL(new RegExp(`/app/${business.slug}/workspace/orders`));
+  const orderRow = page.getByRole("row").filter({
+    hasText: "Morning studio box",
+  });
+  await expect(orderRow).toHaveCount(1);
   await expect(
-    page.getByText(/Shared\.Customer@example\.test/i).first(),
+    orderRow.getByText("Shared Customer", { exact: true }),
   ).toBeVisible();
+  const openOrderRecord = orderRow.getByRole("button", {
+    name: /^Open record/,
+  });
+  await expect(openOrderRecord).toBeVisible();
+  await openOrderRecord.click();
+  const orderRecord = page.getByRole("dialog", {
+    name: "Orders record",
+    exact: true,
+  });
+  await expect(orderRecord).toBeVisible();
   await expect(
-    page
-      .locator(".editor-desktop-grid")
-      .getByText("Morning studio box", { exact: true }),
+    orderRecord.getByText(/Shared\.Customer@example\.test/i),
+  ).toBeVisible();
+  await page.screenshot({
+    fullPage: false,
+    path: test.info().outputPath("owner-order-record.png"),
+  });
+  await orderRecord
+    .getByRole("button", { name: "Close record panel", exact: true })
+    .click();
+  await expect(
+    orderRow.getByText("1 × Morning studio box", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".table-workbench-toolbar-status")).toContainText(
     /1 of 1/,
@@ -533,12 +558,52 @@ test("owner configures booking and preorder journeys through the Site", async ({
     .getByRole("link", { name: "Home", exact: true })
     .click();
   await page.waitForURL(new RegExp(`/app/${business.slug}$`));
-  await bookingWorkspaceLink.click();
+  await customersWorkspaceLink.click();
   await page.waitForURL(
-    new RegExp(`/app/${business.slug}/workspace/(appointments|bookings)`),
+    new RegExp(`/app/${business.slug}/workspace/customer-view$`),
   );
-  await expect(page.getByText(/Appointments|Bookings/i).first()).toBeVisible();
+  const customersGrid = page.getByRole("grid", {
+    name: "Customers editor",
+    exact: true,
+  });
+  const sharedCustomerRow = customersGrid.getByRole("row").filter({
+    hasText: "Shared Customer",
+  });
+  await expect(sharedCustomerRow).toHaveCount(1);
+  await expect(sharedCustomerRow).toContainText(
+    /Shared\.Customer@example\.test/i,
+  );
   await expect(page.locator(".table-workbench-toolbar-status")).toContainText(
     /1 of 1/,
   );
+  await page.screenshot({
+    fullPage: false,
+    path: test.info().outputPath("owner-customers-table.png"),
+  });
+
+  await workspaceNavigation
+    .getByRole("link", { name: "Home", exact: true })
+    .click();
+  await page.waitForURL(new RegExp(`/app/${business.slug}$`));
+  await appointmentsWorkspaceLink.click();
+  await page.waitForURL(
+    new RegExp(`/app/${business.slug}/workspace/appointment-view$`),
+  );
+  const appointmentsGrid = page.getByRole("grid", {
+    name: "Appointments editor",
+    exact: true,
+  });
+  await expect(appointmentsGrid).toBeVisible();
+  await expect(
+    appointmentsGrid
+      .locator(".editor-table-connection-value")
+      .filter({ hasText: "Shared Customer" }),
+  ).toHaveCount(1);
+  await expect(page.locator(".table-workbench-toolbar-status")).toContainText(
+    /1 of 1/,
+  );
+  await page.screenshot({
+    fullPage: false,
+    path: test.info().outputPath("owner-appointments-table.png"),
+  });
 });

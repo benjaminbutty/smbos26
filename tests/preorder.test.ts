@@ -323,8 +323,13 @@ describe("trusted preorder Page block", () => {
       createElement(PageRenderer, { layout }),
     );
 
-    expect(publicHtml).toContain("Choose your boxes");
+    expect(publicHtml).toContain("Choose products");
+    expect(publicHtml).toContain("Times are shown in the local timezone.");
+    expect(publicHtml).toContain("Choose a location…");
     expect(publicHtml).toContain("Afternoon Tea Box");
+    expect(publicHtml).toContain(">AT</div>");
+    expect(publicHtml).not.toContain("bakery’s local timezone");
+    expect(publicHtml).not.toContain(">BB</div>");
     expect(publicHtml).not.toContain("object_definition_id");
     expect(publicHtml).not.toContain("payment");
     expect(internalHtml).toContain(
