@@ -1373,6 +1373,13 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
         }),
       )
       .toBe(true);
+    await expect
+      .poll(() =>
+        page.getByLabel("Site name").evaluate((element) => {
+          return element.getBoundingClientRect().width;
+        }),
+      )
+      .toBeGreaterThanOrEqual(180);
     await page.screenshot({
       path: testInfo.outputPath(
         `site-upload-pending-${viewport.name}-${viewport.width}x${viewport.height}.png`,

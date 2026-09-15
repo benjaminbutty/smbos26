@@ -19446,6 +19446,15 @@ textarea {
   justify-content: space-between;
 }
 
+.site-composer-toolbar {
+  flex-wrap: wrap;
+}
+
+.site-composer-toolbar > div:first-child {
+  flex: 1 1 16rem;
+  min-width: min(100%, 16rem);
+}
+
 .site-owner-heading-compact {
   align-items: center;
   gap: var(--space-3);
@@ -19797,6 +19806,22 @@ textarea {
 
 .site-composer-toolbar-site-name input {
   width: 100%;
+}
+
+.site-composer-toolbar-actions {
+  min-width: 0;
+}
+
+.site-composer-toolbar-actions button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.35);
+  opacity: 0.55;
+}
+
+.site-composer-toolbar-actions .site-composer-publish-action:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-subtle);
+  border-color: var(--border-subtle);
 }
 
 .site-composer-toolbar-actions form {

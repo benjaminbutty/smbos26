@@ -1337,10 +1337,8 @@ export function SiteComposer({
 
   function commit(next: SiteDraftV1): void {
     navigationBypassRef.current = false;
-    setUndoStack((previous) => [
-      ...previous.slice(-19),
-      copyDraft(draftRef.current),
-    ]);
+    const previousDraft = copyDraft(draftRef.current);
+    setUndoStack((previous) => [...previous.slice(-19), previousDraft]);
     draftRef.current = copyDraft(next);
     setDraft(next);
     setMessage(null);
