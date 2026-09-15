@@ -3493,7 +3493,23 @@ A fresh read-only independent review recomputed the evidence and returned
 documentation-only exact-head CI and explicit owner review; PR #61 remains
 draft and no runtime change or further live run is authorised.
 
-## ADR-045: Published Site edits use a memory-only candidate and one atomic publication
+## ADR-045: Adopted Sites use durable drafts and immutable published releases
+
+Current adopted Sites use one tenant-scoped durable autosaved multi-page draft
+and one immutable reviewed published release. Explicit adoption selects Site
+authority; public readers have no mutable Page or draft fallback. Version 3
+releases support configured Forms and private upload grants, while Version 4
+releases freeze operational actions. Ordinary Customer and Record work stays
+on the existing tenant-scoped primitives and boundaries. For v4 Booking, an
+active published Site release authorises its exact immutable action, canonical
+source Page and frozen payload even when that source Page is draft; the source
+must remain same-Business, public and active, and withdrawal fails closed.
+Capacity/relationship locks, receipt-first replay and legacy publication
+guards remain. This owner-approved boundary is implemented in `40068d5`.
+
+The following J3-I4 and C1 entries are retained as historical context; their
+pre-adoption memory-only and no-reader limitations do not describe adopted
+Site authority.
 
 Accepted for J3-I4. Draft public Pages continue to save privately through the
 existing Direct Page boundary and use the existing explicit initial `Publish

@@ -279,6 +279,30 @@ function appointmentOperations(): ConfigurationOperation[] {
     {
       op: "set_field",
       object_key: "appointment",
+      key: "date",
+      label: "Date",
+      field_type: "date",
+      required: true,
+      default_value: null,
+      settings_json: {},
+      position: 4,
+      is_active: true,
+    },
+    {
+      op: "set_field",
+      object_key: "appointment",
+      key: "time",
+      label: "Time",
+      field_type: "short_text",
+      required: true,
+      default_value: null,
+      settings_json: {},
+      position: 5,
+      is_active: true,
+    },
+    {
+      op: "set_field",
+      object_key: "appointment",
       key: "notes",
       label: "Notes",
       field_type: "long_text",
@@ -311,6 +335,8 @@ function appointmentOperations(): ConfigurationOperation[] {
           { field: "starts_at", hidden: false },
           { field: "status", hidden: false },
           { field: "notes", hidden: false },
+          { field: "date", hidden: false },
+          { field: "time", hidden: false },
         ],
         submit_label: "Add appointment",
       },
@@ -329,6 +355,8 @@ function appointmentOperations(): ConfigurationOperation[] {
           { field: "starts_at", hidden: false },
           { field: "status", hidden: false },
           { field: "notes", hidden: false },
+          { field: "date", hidden: false },
+          { field: "time", hidden: false },
         ],
         submit_label: "Save appointment",
       },
@@ -342,7 +370,7 @@ function appointmentOperations(): ConfigurationOperation[] {
       view_type: "table",
       object_key: "appointment",
       config_json: {
-        fields: ["title", "starts_at", "status", "notes"],
+        fields: ["title", "starts_at", "status", "notes", "date", "time"],
         title_field: "title",
         include_archived: false,
       },
@@ -370,8 +398,8 @@ function bookingConfig() {
         start_at: "starts_at",
         status: "status",
         default_status: "Booked",
-        date: null,
-        time: null,
+        date: "date",
+        time: "time",
       },
       subject: null,
       service: null,
@@ -390,6 +418,22 @@ function bookingConfig() {
         label: "Email",
         required: true,
         autocomplete: "email",
+      },
+      {
+        target: "booking",
+        field: "date",
+        label: "Date",
+        required: true,
+        derived: true,
+        autocomplete: "off",
+      },
+      {
+        target: "booking",
+        field: "time",
+        label: "Time",
+        required: true,
+        derived: true,
+        autocomplete: "off",
       },
     ],
     schedule: {
@@ -563,6 +607,30 @@ function futureSlot(hour: number): string {
   return value.toISOString();
 }
 
+function expectedBookingDerivedFields(startAt: string): {
+  date: string;
+  time: string;
+} {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .formatToParts(new Date(startAt))
+    .reduce<Record<string, string>>((result, part) => {
+      if (part.type !== "literal") result[part.type] = part.value;
+      return result;
+    }, {});
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
 function preorderSubmission(
   token: string,
   collectionAt: string,
@@ -585,13 +653,14 @@ function bookingSubmission(
   token: string,
   startAt: string,
   name = "Shared Visitor",
+  booking: Record<string, string> = {},
 ) {
   return {
     idempotency_token: token,
     start_at: startAt,
     customer: { name, email: sharedEmail },
     subject: {},
-    booking: {},
+    booking,
     service_record_id: null,
     website: "",
   };
@@ -659,8 +728,9 @@ async function submitBooking(
   token: string,
   startAt: string,
   name = "Shared Visitor",
+  booking: Record<string, string> = {},
 ): Promise<SubmissionResult> {
-  const submission = bookingSubmission(token, startAt, name);
+  const submission = bookingSubmission(token, startAt, name, booking);
   return callRpc<SubmissionResult>(admin, "submit_public_site_booking_v4", {
     requested_business_slug: business.slug,
     requested_page_slug: pageSlug,
@@ -991,6 +1061,7 @@ describe("Sites remaining operational SQL boundaries", () => {
 
     const preorderSlot = futureSlot(11);
     const bookingSlot = futureSlot(10);
+    const bookingDerivedFields = expectedBookingDerivedFields(bookingSlot);
 
     const productUpdate = await callRpc<{ data_json: Record<string, unknown> }>(
       owner.client,
@@ -1045,6 +1116,8 @@ describe("Sites remaining operational SQL boundaries", () => {
         title: "Staff contextual booking",
         starts_at: bookingSlot,
         status: "Booked",
+        date: bookingDerivedFields.date,
+        time: bookingDerivedFields.time,
         notes: "Created while the adopted Booking writer is active.",
       },
       requested_connections: [],
@@ -1196,6 +1269,40 @@ describe("Sites remaining operational SQL boundaries", () => {
       ),
     ).toHaveLength(1);
 
+    const derivedSlot = futureSlot(12);
+    const derivedToken = crypto.randomUUID();
+    const forgedBookingFields = { date: "1900-01-01", time: "00:00" };
+    const derivedBooking = await submitBooking(
+      movedBookingAction,
+      "book-moved",
+      derivedToken,
+      derivedSlot,
+      "Derived field visitor",
+      forgedBookingFields,
+    );
+    expect(derivedBooking).toMatchObject({ ok: true, idempotent: false });
+    const expectedDerivedFields = expectedBookingDerivedFields(derivedSlot);
+    const derivedRecords = await sql<{ data_json: Record<string, unknown> }[]>`
+      select record_value.data_json
+      from public.booking_submissions as submission
+      join public.records as record_value
+        on record_value.id = submission.booking_record_id
+      where submission.business_id = ${business.id}
+        and submission.idempotency_token = ${derivedToken}
+    `;
+    expect(derivedRecords).toHaveLength(1);
+    expect(derivedRecords[0]?.data_json).toMatchObject(expectedDerivedFields);
+    expect(derivedRecords[0]?.data_json).not.toMatchObject(forgedBookingFields);
+    const derivedReplay = await submitBooking(
+      movedBookingAction,
+      "book-moved",
+      derivedToken,
+      derivedSlot,
+      "Derived field visitor",
+      forgedBookingFields,
+    );
+    expect(derivedReplay).toMatchObject({ ok: true, idempotent: true });
+
     const allCustomers = await sql<{ count: number }[]>`
       select count(*)::int as count
       from public.records
@@ -1210,7 +1317,7 @@ describe("Sites remaining operational SQL boundaries", () => {
       where business_id = ${business.id}
         and booking_key = 'appointments'
     `;
-    expect(bookingReceipts[0]?.count).toBe(3);
+    expect(bookingReceipts[0]?.count).toBe(4);
 
     const foreignBefore = await sql<{ records: number; receipts: number }[]>`
       select
@@ -1287,71 +1394,52 @@ describe("Sites remaining operational SQL boundaries", () => {
     // Experience, then perform the valid source withdrawal. The immutable
     // Site release remains active, so the resolver must fail closed on the
     // withdrawn source rather than relying on Site unpublication.
-    try {
-      const archivedPages = await sql<{ id: string }[]>`
-        update public.pages as page
-        set is_active = false
-        where page.business_id = ${business.id}
-          and page.id = any(${sql.array(activePreorderPageIds, 2950)})
-        returning page.id
-      `;
-      expect(archivedPages).toHaveLength(activePreorderPageIds.length);
+    const archivedPages = await sql<{ id: string }[]>`
+      update public.pages as page
+      set is_active = false
+      where page.business_id = ${business.id}
+        and page.id = any(${sql.array(activePreorderPageIds, 2950)})
+      returning page.id
+    `;
+    expect(archivedPages).toHaveLength(activePreorderPageIds.length);
 
-      const disabled = await sql<{ id: string }[]>`
-        update public.preorder_experiences
-        set is_active = false
-        where business_id = ${business.id}
-          and id = ${preorderExperienceId}
-        returning id
-      `;
-      expect(disabled).toHaveLength(1);
-      const activeReleaseRows = await sql<
-        { active_release_id: string | null }[]
-      >`
-        select active_release_id
-        from public.site_states
-        where business_id = ${business.id}
-          and id = ${siteId}
-      `;
-      expect(activeReleaseRows).toEqual([
-        { active_release_id: movedRelease.id },
-      ]);
+    const disabled = await sql<{ id: string }[]>`
+      update public.preorder_experiences
+      set is_active = false
+      where business_id = ${business.id}
+        and id = ${preorderExperienceId}
+      returning id
+    `;
+    expect(disabled).toHaveLength(1);
+    const activeReleaseRows = await sql<{ active_release_id: string | null }[]>`
+      select active_release_id
+      from public.site_states
+      where business_id = ${business.id}
+        and id = ${siteId}
+    `;
+    expect(activeReleaseRows).toEqual([{ active_release_id: movedRelease.id }]);
 
-      const withdrawn = await rpc(anonymous).rpc<unknown>(
-        "resolve_public_site_operational_action_v4",
-        {
-          requested_business_slug: business.slug,
-          requested_page_slug: "order-moved",
-          requested_action_key: movedPreorderAction.action_key,
-          requested_release_token: movedPreorderAction.release_token,
-        },
-      );
-      expect(withdrawn.error).toBeNull();
-      expect(withdrawn.data).toBeNull();
-      const withdrawnAttempt = await submitPreorder(
-        movedPreorderAction,
-        "order-moved",
-        crypto.randomUUID(),
-        preorderSlot,
-      );
-      expect(withdrawnAttempt).toEqual({
-        ok: false,
-        code: "action_unavailable",
-      });
-    } finally {
-      await sql`
-        update public.preorder_experiences
-        set is_active = true
-        where business_id = ${business.id}
-          and id = ${preorderExperienceId}
-      `;
-      await sql`
-        update public.pages as page
-        set is_active = true
-        where page.business_id = ${business.id}
-          and page.id = any(${sql.array(activePreorderPageIds, 2950)})
-      `;
-    }
+    const withdrawn = await rpc(anonymous).rpc<unknown>(
+      "resolve_public_site_operational_action_v4",
+      {
+        requested_business_slug: business.slug,
+        requested_page_slug: "order-moved",
+        requested_action_key: movedPreorderAction.action_key,
+        requested_release_token: movedPreorderAction.release_token,
+      },
+    );
+    expect(withdrawn.error).toBeNull();
+    expect(withdrawn.data).toBeNull();
+    const withdrawnAttempt = await submitPreorder(
+      movedPreorderAction,
+      "order-moved",
+      crypto.randomUUID(),
+      preorderSlot,
+    );
+    expect(withdrawnAttempt).toEqual({
+      ok: false,
+      code: "action_unavailable",
+    });
   });
 
   it("keeps v4 service-only submission and member lock boundaries", async () => {

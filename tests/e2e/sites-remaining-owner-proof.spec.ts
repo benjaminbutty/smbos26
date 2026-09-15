@@ -427,11 +427,25 @@ test("owner configures booking and preorder journeys through the Site", async ({
       .getByLabel("Customer name *", { exact: true })
       .fill("Shared Customer");
     await booking.getByLabel("Email", { exact: true }).fill(sharedEmail);
+    const bookingResponsePromise = visitor.waitForResponse((response) => {
+      const request = response.request();
+      return (
+        request.method() === "POST" &&
+        new URL(response.url()).pathname.startsWith(
+          `/api/public/sites/${encodeURIComponent(business.slug)}/home/`,
+        )
+      );
+    });
     await booking
       .getByRole("button", { name: "Request booking", exact: true })
       .click();
+    const bookingResponse = await bookingResponsePromise;
+    expect(bookingResponse.ok()).toBeTruthy();
+    await expect(bookingResponse.json()).resolves.toMatchObject({ ok: true });
     await expect(
-      booking.getByRole("heading", { name: "Your time is reserved." }),
+      visitor
+        .locator(".booking-confirmation")
+        .getByRole("heading", { name: "Your time is reserved." }),
     ).toBeVisible();
 
     await visitor
@@ -459,11 +473,25 @@ test("owner configures booking and preorder journeys through the Site", async ({
     await preorder
       .locator('input[name="customer.email"]')
       .fill("shared.customer@example.test");
+    const preorderResponsePromise = visitor.waitForResponse((response) => {
+      const request = response.request();
+      return (
+        request.method() === "POST" &&
+        new URL(response.url()).pathname.startsWith(
+          `/api/public/sites/${encodeURIComponent(business.slug)}/collection/`,
+        )
+      );
+    });
     await preorder
       .getByRole("button", { name: "Place preorder", exact: true })
       .click();
+    const preorderResponse = await preorderResponsePromise;
+    expect(preorderResponse.ok()).toBeTruthy();
+    await expect(preorderResponse.json()).resolves.toMatchObject({ ok: true });
     await expect(
-      preorder.getByRole("heading", { name: /Thank you/ }),
+      visitor.locator(".preorder-confirmation").getByRole("heading", {
+        name: /Thank you/,
+      }),
     ).toBeVisible();
   } finally {
     await visitorContext.close();

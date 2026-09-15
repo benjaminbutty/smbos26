@@ -20,7 +20,7 @@ import postgres from "postgres";
 const baselineSha =
   process.env.SMBOS_UPGRADE_BASELINE_SHA ??
   "65779f40491df9d399cb206fcd4f7fce64813204";
-const expectedMigrationCount = 21;
+const expectedMigrationCount = 22;
 const demoBusinessSlugs = ["bedford-bakery-demo", "lenni-connections-demo"];
 const publicBusinessSlug = "bedford-bakery-demo";
 const publicPageSlug = "preorder";
@@ -619,7 +619,7 @@ async function main() {
   const migrationPaths = migrationList();
   if (migrationPaths.length !== expectedMigrationCount) {
     throw new Error(
-      "The candidate migration delta is not the reviewed 21 files.",
+      "The candidate migration delta is not the reviewed 22 files.",
     );
   }
   const candidateMigrations = resolve(
