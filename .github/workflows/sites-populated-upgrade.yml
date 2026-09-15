@@ -1,0 +1,252 @@
+name: Sites populated upgrade rehearsal
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/sites-populated-upgrade.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/demo-seed.mjs"
+      - "scripts/sites-populated-upgrade-rehearsal.mjs"
+      - "supabase/**"
+
+permissions:
+  contents: read
+
+jobs:
+  sites-populated-upgrade:
+    name: Sites populated upgrade rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      SMBOS_UPGRADE_BASELINE_SHA: 65779f40491df9d399cb206fcd4f7fce64813204
+      SMBOS_UPGRADE_API_PORT: "55521"
+      SMBOS_UPGRADE_DB_PORT: "55522"
+      SMBOS_UPGRADE_SHADOW_PORT: "55520"
+      SMBOS_UPGRADE_PROJECT_ID: smbos-sites-upgrade-${{ github.run_id }}-${{ github.run_attempt }}
+      SMBOS_UPGRADE_EVIDENCE_PATH: ${{ runner.temp }}/sites-populated-upgrade/evidence.json
+
+    steps:
+      - name: Check out the reviewed pull request head
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Use Node.js
+        uses: actions/setup-node@v6
+        with:
+          cache: npm
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create a runner-owned baseline Supabase target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target_dir="${RUNNER_TEMP}/${SMBOS_UPGRADE_PROJECT_ID}"
+          if [[ -e "${target_dir}" ]]; then
+            echo "The populated-upgrade workdir already exists." >&2
+            exit 1
+          fi
+          for port in "${SMBOS_UPGRADE_API_PORT}" "${SMBOS_UPGRADE_DB_PORT}" "${SMBOS_UPGRADE_SHADOW_PORT}"; do
+            if ss -H -ltn "sport = :${port}" | grep -q .; then
+              echo "The populated-upgrade port ${port} is already in use." >&2
+              exit 1
+            fi
+          done
+
+          mkdir -p "${target_dir}"
+          git archive "${SMBOS_UPGRADE_BASELINE_SHA}" supabase | tar -x -C "${target_dir}"
+          TARGET_DIR="${target_dir}" node - <<'NODE'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const { join } = require("node:path");
+
+          const configPath = join(process.env.TARGET_DIR, "supabase", "config.toml");
+          const replacements = [
+            [
+              'project_id = "smbos26"',
+              `project_id = "${process.env.SMBOS_UPGRADE_PROJECT_ID}"`,
+            ],
+            [
+              "port = 55321",
+              `port = ${process.env.SMBOS_UPGRADE_API_PORT}`,
+            ],
+            [
+              "port = 55322",
+              `port = ${process.env.SMBOS_UPGRADE_DB_PORT}`,
+            ],
+            [
+              "shadow_port = 55320",
+              `shadow_port = ${process.env.SMBOS_UPGRADE_SHADOW_PORT}`,
+            ],
+            [
+              'site_url = "http://localhost:3000"',
+              'site_url = "http://127.0.0.1:3200"',
+            ],
+            [
+              'additional_redirect_urls = ["http://127.0.0.1:3000"]',
+              'additional_redirect_urls = ["http://127.0.0.1:3200"]',
+            ],
+          ];
+          let config = readFileSync(configPath, "utf8");
+          for (const [source, target] of replacements) {
+            if (!config.includes(source)) {
+              throw new Error("The baseline Supabase config did not match the reviewed target shape.");
+            }
+            config = config.replace(source, target);
+          }
+          const seedSection = /(^\[db\.seed\]\s*$)([\s\S]*?)(?=^\[|(?![\s\S]))/m;
+          const seedMatch = config.match(seedSection);
+          if (!seedMatch) throw new Error("The baseline Supabase config has no seed section.");
+          const enabledLines = seedMatch[2].match(/^enabled\s*=\s*true\s*$/gm) ?? [];
+          if (enabledLines.length !== 1) throw new Error("The baseline seed section was not in the reviewed shape.");
+          config = config.replace(seedSection, (section) =>
+            section.replace(/^enabled\s*=\s*true\s*$/m, "enabled = false"),
+          );
+          writeFileSync(configPath, config);
+          NODE
+
+          printf 'SMBOS_UPGRADE_WORKDIR=%s\n' "${target_dir}" >> "${GITHUB_ENV}"
+          printf 'SMBOS_UPGRADE_CANDIDATE_SHA=%s\n' "${{ github.event.pull_request.head.sha }}" >> "${GITHUB_ENV}"
+
+      - name: Start and migrate the isolated baseline target
+        env:
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          start_log="${RUNNER_TEMP}/sites-populated-upgrade-start.log"
+          reset_log="${RUNNER_TEMP}/sites-populated-upgrade-reset.log"
+          if ! ./node_modules/.bin/supabase start \
+            --workdir "${SMBOS_UPGRADE_WORKDIR}" \
+            --exclude analytics,vector,studio,meta,realtime,edge-runtime,functions,inbucket \
+            >"${start_log}" 2>&1; then
+            echo "The runner-owned baseline target failed to start." >&2
+            exit 1
+          fi
+          if ! ./node_modules/.bin/supabase db reset \
+            --local --workdir "${SMBOS_UPGRADE_WORKDIR}" \
+            >"${reset_log}" 2>&1; then
+            echo "The runner-owned baseline target failed its clean reset." >&2
+            exit 1
+          fi
+
+      - name: Wait for Auth on the isolated baseline target
+        env:
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          status_file="${RUNNER_TEMP}/sites-populated-upgrade-status.env"
+          if ! ./node_modules/.bin/supabase status \
+            --workdir "${SMBOS_UPGRADE_WORKDIR}" -o env \
+            >"${status_file}" 2>/dev/null; then
+            echo "The isolated baseline target did not report status." >&2
+            exit 1
+          fi
+          STATUS_FILE="${status_file}" node - <<'NODE'
+          const { readFileSync } = require("node:fs");
+
+          async function main() {
+            const values = Object.fromEntries(
+              readFileSync(process.env.STATUS_FILE, "utf8")
+                .split("\n")
+                .map((line) => /^([A-Z0-9_]+)="(.*)"$/.exec(line.trim()))
+                .flatMap((match) =>
+                  match?.[1] ? [[match[1], match[2] ?? ""]] : [],
+                ),
+            );
+            const apiUrl = values.API_URL;
+            const serviceRoleKey = values.SERVICE_ROLE_KEY;
+            if (!apiUrl || !serviceRoleKey) {
+              throw new Error("The isolated baseline target omitted Auth credentials.");
+            }
+            const api = new URL(apiUrl);
+            if (
+              api.protocol !== "http:" ||
+              !["127.0.0.1", "localhost", "::1"].includes(api.hostname) ||
+              api.port !== process.env.SMBOS_UPGRADE_API_PORT
+            ) {
+              throw new Error("The isolated baseline target reported an unexpected Auth URL.");
+            }
+            const deadline = Date.now() + 60_000;
+            let ready = false;
+            while (Date.now() < deadline) {
+              try {
+                const response = await fetch(
+                  `${apiUrl}/auth/v1/admin/users?page=1&per_page=1`,
+                  {
+                    headers: {
+                      apikey: serviceRoleKey,
+                      Authorization: `Bearer ${serviceRoleKey}`,
+                    },
+                  },
+                );
+                if (response.ok) {
+                  ready = true;
+                  break;
+                }
+              } catch {
+                // Auth can still be starting after the clean baseline reset.
+              }
+              await new Promise((resolve) => setTimeout(resolve, 1_000));
+            }
+            if (!ready) throw new Error("Auth did not become ready on the isolated target.");
+          }
+
+          main().catch((error) => {
+            console.error(error instanceof Error ? error.message : "Auth readiness failed.");
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Seed representative legacy data without exposing credentials
+        run: |
+          set -euo pipefail
+          seed_log="${RUNNER_TEMP}/sites-populated-upgrade-seed.log"
+          if ! SMBOS_DEMO_SUPABASE_API_PORT="${SMBOS_UPGRADE_API_PORT}" \
+            SMBOS_DEMO_SUPABASE_DB_PORT="${SMBOS_UPGRADE_DB_PORT}" \
+            SMBOS_DEMO_SUPABASE_WORKDIR="${SMBOS_UPGRADE_WORKDIR}" \
+            SMBOS_DEMO_SUPPRESS_OUTPUT=1 \
+            node scripts/demo-seed.mjs >"${seed_log}" 2>&1; then
+            echo "The representative legacy fixture could not be seeded." >&2
+            exit 1
+          fi
+
+      - name: Apply candidate migrations forward and verify preserved data
+        run: node scripts/sites-populated-upgrade-rehearsal.mjs
+
+      - name: Upload populated-upgrade evidence
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: sites-populated-upgrade-${{ github.event.pull_request.head.sha }}
+          path: ${{ env.SMBOS_UPGRADE_EVIDENCE_PATH }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop only the runner-owned populated-upgrade target
+        if: always()
+        env:
+          SUPABASE_TELEMETRY_DISABLED: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_workdir="${RUNNER_TEMP}/${SMBOS_UPGRADE_PROJECT_ID}"
+          actual_workdir="${SMBOS_UPGRADE_WORKDIR:-}"
+          if [[ -z "${actual_workdir}" ]]; then
+            echo "No runner-owned populated-upgrade target was created."
+            exit 0
+          fi
+          if [[ "${actual_workdir}" != "${expected_workdir}" || ! -f "${actual_workdir}/supabase/config.toml" ]]; then
+            echo "Refusing to stop a target outside this runner-owned workdir." >&2
+            exit 1
+          fi
+          if ! grep -Fqx "project_id = \"${SMBOS_UPGRADE_PROJECT_ID}\"" "${actual_workdir}/supabase/config.toml"; then
+            echo "Refusing to stop a target whose project ID was not created by this job." >&2
+            exit 1
+          fi
+          ./node_modules/.bin/supabase stop --workdir "${actual_workdir}"

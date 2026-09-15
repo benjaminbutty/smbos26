@@ -20569,7 +20569,15 @@ textarea {
   }
 
   .site-composer-toolbar-site-name {
+    flex: 0 1 auto;
     gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .site-composer-toolbar > div:first-child {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: 100%;
   }
 
   .site-composer-toolbar-actions {

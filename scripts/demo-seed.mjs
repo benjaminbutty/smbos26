@@ -46,6 +46,9 @@ function parseEnvironmentOutput(output) {
 }
 
 function loadLocalSupabase() {
+  const workdir = process.env.SMBOS_DEMO_SUPABASE_WORKDIR;
+  const apiPort = process.env.SMBOS_DEMO_SUPABASE_API_PORT ?? "55321";
+  const databasePort = process.env.SMBOS_DEMO_SUPABASE_DB_PORT ?? "55322";
   const executable = join(
     process.cwd(),
     "node_modules",
@@ -53,10 +56,14 @@ function loadLocalSupabase() {
     process.platform === "win32" ? "supabase.exe" : "supabase",
   );
   const values = parseEnvironmentOutput(
-    execFileSync(executable, ["status", "-o", "env"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }),
+    execFileSync(
+      executable,
+      ["status", ...(workdir ? ["--workdir", workdir] : []), "-o", "env"],
+      {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    ),
   );
   const apiUrl = values.API_URL;
   const serviceRoleKey = values.SERVICE_ROLE_KEY;
@@ -74,9 +81,9 @@ function loadLocalSupabase() {
   if (
     api.protocol !== "http:" ||
     !localHosts.has(api.hostname) ||
-    api.port !== "55321" ||
+    api.port !== apiPort ||
     !localHosts.has(database.hostname) ||
-    database.port !== "55322"
+    database.port !== databasePort
   ) {
     throw new Error(
       "Refusing to seed: this command only operates on the SMBOS local Supabase ports.",
@@ -1458,26 +1465,28 @@ try {
   });
   await ensurePhaseTwoAcceptanceFixture(owner, connectionDemoBusiness.id);
 
-  console.log("Local Bedford Bakery preorder demo is ready at Version 2.");
-  console.log(
-    `Public preorder: http://localhost:3000/p/${demoBusinessSlug}/preorder`,
-  );
-  console.log(`Owner email: ${ownerEmail}`);
-  console.log(`Admin email: ${administratorEmail}`);
-  console.log(`Staff email: ${staffEmail}`);
-  console.log(`Password: ${demoPassword}`);
-  console.log(
-    `Staff Orders: http://localhost:3000/app/${demoBusinessSlug}/workspace/orders`,
-  );
-  console.log(
-    `Phase 2 acceptance: http://localhost:3000/app/${demoBusinessSlug}/workspace/phase2_appointments`,
-  );
-  console.log(
-    `Connection creation acceptance: http://localhost:3000/app/${connectionDemoBusiness.slug}/workspace/phase2_appointments`,
-  );
-  console.log(
-    "Confirmation email: the terminal running `npm run dev` (local console email adapter).",
-  );
+  if (process.env.SMBOS_DEMO_SUPPRESS_OUTPUT !== "1") {
+    console.log("Local Bedford Bakery preorder demo is ready at Version 2.");
+    console.log(
+      `Public preorder: http://localhost:3000/p/${demoBusinessSlug}/preorder`,
+    );
+    console.log(`Owner email: ${ownerEmail}`);
+    console.log(`Admin email: ${administratorEmail}`);
+    console.log(`Staff email: ${staffEmail}`);
+    console.log(`Password: ${demoPassword}`);
+    console.log(
+      `Staff Orders: http://localhost:3000/app/${demoBusinessSlug}/workspace/orders`,
+    );
+    console.log(
+      `Phase 2 acceptance: http://localhost:3000/app/${demoBusinessSlug}/workspace/phase2_appointments`,
+    );
+    console.log(
+      `Connection creation acceptance: http://localhost:3000/app/${connectionDemoBusiness.slug}/workspace/phase2_appointments`,
+    );
+    console.log(
+      "Confirmation email: the terminal running `npm run dev` (local console email adapter).",
+    );
+  }
 } finally {
   await sql.end();
 }

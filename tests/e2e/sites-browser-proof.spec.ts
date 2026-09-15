@@ -1380,6 +1380,32 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
         }),
       )
       .toBeGreaterThanOrEqual(180);
+    if (viewport.name === "mobile") {
+      const cancelUpload = page.getByRole("button", {
+        name: "Cancel upload",
+        exact: true,
+      });
+      await expect(cancelUpload).toBeVisible();
+      await expect
+        .poll(() =>
+          cancelUpload.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            if (
+              bounds.bottom > window.innerHeight ||
+              bounds.left < 0 ||
+              bounds.right > window.innerWidth
+            ) {
+              return false;
+            }
+            const target = document.elementFromPoint(
+              bounds.left + bounds.width / 2,
+              bounds.top + bounds.height / 2,
+            );
+            return target === element || element.contains(target);
+          }),
+        )
+        .toBe(true);
+    }
     await page.screenshot({
       path: testInfo.outputPath(
         `site-upload-pending-${viewport.name}-${viewport.width}x${viewport.height}.png`,
