@@ -659,7 +659,7 @@ async function main() {
     const businessRows = await sql`
       select id, slug
       from public.businesses
-      where slug = any(${sql.array(demoBusinessSlugs, 25)})
+      where slug = any(${sql.array(demoBusinessSlugs, 1009)})
       order by slug
     `;
     if (businessRows.length !== demoBusinessSlugs.length) {
