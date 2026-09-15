@@ -14859,6 +14859,10 @@ textarea {
 }
 
 @media (max-width: 48rem) {
+  .workspace-table-page .editor-kernel-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .workspace-table-page .editor-lab-header {
     padding-bottom: var(--space-3);
   }

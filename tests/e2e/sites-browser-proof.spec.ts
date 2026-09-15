@@ -481,7 +481,9 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
     .click();
   await configureViewingEnquiryForm(page, "Enquiries");
   await expect(
-    siteFormCard(page).getByText("Placed on 1 Page block.", { exact: true }),
+    siteFormCard(page)
+      .locator(".site-form-ready")
+      .getByText("Placed on 1 Page block.", { exact: true }),
   ).toBeVisible();
 
   await saveSiteDraft(page);
