@@ -534,6 +534,17 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
       .locator(".site-form-ready")
       .getByText("Placed on 1 Page block.", { exact: true }),
   ).toBeVisible();
+  const brandingPanel = page.locator("details.site-composer-branding");
+  await brandingPanel.getByText("Site identity", { exact: true }).click();
+  await brandingPanel.getByLabel("Site logo", { exact: true }).setInputFiles({
+    ...proofImage,
+    name: "a9-site-logo.png",
+  });
+  await expect(
+    page.getByText("Site logo uploaded. Save the Site draft to keep it.", {
+      exact: true,
+    }),
+  ).toBeVisible();
 
   await saveSiteDraft(page);
   await page.reload();
@@ -608,6 +619,11 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
     await expect(
       visitor.getByText("River Cottage", { exact: true }),
     ).toBeVisible();
+    const publicLogo = visitor.locator("img.site-public-logo").first();
+    await expect(publicLogo).toHaveAttribute(
+      "src",
+      new RegExp(`/api/public/sites/${business.slug}/media/m_[a-f0-9]{64}$`),
+    );
     await expect(visitor.locator("img.site-public-record-image")).toHaveCount(
       2,
     );
@@ -621,6 +637,10 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
       visitor.getByRole("heading", { name: "Listing details" }),
     ).toBeVisible();
     await expect(visitor.getByText("Park View", { exact: true })).toBeVisible();
+    await expect(publicLogo).toHaveAttribute(
+      "src",
+      new RegExp(`/api/public/sites/${business.slug}/media/m_[a-f0-9]{64}$`),
+    );
     await captureA9PublicStates(visitor, testInfo, "a9-listing-detail");
     await visitor.getByRole("link", { name: "Enquiries", exact: true }).click();
     await expect(visitor).toHaveURL(

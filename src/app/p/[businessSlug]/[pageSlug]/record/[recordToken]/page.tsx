@@ -48,6 +48,7 @@ export default async function PublicRecordPage({
               className="site-public-logo"
               height={48}
               src={logoSource}
+              unoptimized
               width={120}
             />
           ) : (
@@ -80,8 +81,10 @@ export default async function PublicRecordPage({
       </header>
       <SitePublicRenderer
         businessSlug={businessSlug}
+        bookings={runtime.bookings}
         layout={runtime.page.layout}
         pageSlug={pageSlug}
+        preorders={runtime.preorders}
         record={runtime.record}
       />
     </main>

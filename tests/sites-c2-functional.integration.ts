@@ -63,6 +63,11 @@ type SiteState = {
   legacy_source_checksum: string | null;
   legacy_source_page_count: number | null;
 };
+type PreparedRelease = {
+  id: string;
+  status: string;
+  projection_schema_version: number;
+};
 
 const password = "Sites-C2-integration-password!";
 const createdBusinessIds: string[] = [];
@@ -1410,6 +1415,150 @@ describe("Lenni Sites C2 functional milestone", () => {
       callNullableRpc(anonymous, "resolve_public_page", {
         requested_business_slug: catalogueBusiness.slug,
         requested_page_slug: "home",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("resolves Record details for v3 and v4 releases with bounded page access", async () => {
+    const initialState = await siteState();
+    const draft = siteDraftV1Schema.parse(initialState.draft_json);
+    const detailPage = draft.pages.find((page) => page.slug === "details");
+    const detailBlock = detailPage?.layout.blocks.find(
+      (block) => block.type === "record_detail",
+    );
+    if (!detailBlock || detailBlock.type !== "record_detail") {
+      throw new Error(
+        "The C2 Record detail fixture is missing its collection.",
+      );
+    }
+
+    const preparedV3 = await callRpc<PreparedRelease>(
+      owner.client,
+      "prepare_site_release_v3",
+      {
+        expected_business_id: catalogueBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: catalogueSiteId,
+        ...currentness(initialState),
+      },
+    );
+    expect(preparedV3.projection_schema_version).toBe(3);
+    const publishedV3 = await callRpc<PreparedRelease>(
+      owner.client,
+      "publish_site_release_v3",
+      {
+        expected_business_id: catalogueBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: catalogueSiteId,
+        requested_candidate_id: preparedV3.id,
+        ...currentness(initialState),
+      },
+    );
+    const [v3RecordToken] = await fixtureSql.unsafe<
+      Array<{ token: string; reference_count: number }>
+    >(
+      `select token,
+         (select count(*)::int
+          from public.site_release_record_references as reference
+          where reference.business_id = $1
+            and reference.release_id = $2
+            and reference.record_id = $4) as reference_count
+       from public.site_public_record_tokens
+       where business_id = $1 and site_id = $3
+         and collection_block_id = $5 and record_id = $4`,
+      [
+        catalogueBusiness.id,
+        publishedV3.id,
+        catalogueSiteId,
+        firstRecordId,
+        detailBlock.collection_block_id,
+      ],
+    );
+    expect(v3RecordToken).toMatchObject({
+      token: expect.stringMatching(/^r_[a-f0-9]{64}$/),
+      reference_count: 1,
+    });
+    const detailV3 = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_site_record",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "details",
+        requested_record_token: v3RecordToken!.token,
+      },
+    );
+    expect(detailV3).toMatchObject({
+      record: {
+        public_id: v3RecordToken!.token,
+        values: { name: "Alpha item", price: 2 },
+      },
+    });
+    await expect(
+      callNullableRpc(anonymous, "resolve_public_site_record", {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "missing",
+        requested_record_token: v3RecordToken!.token,
+      }),
+    ).resolves.toBeNull();
+
+    const currentV3State = await siteState();
+    const preparedV4 = await callRpc<PreparedRelease>(
+      owner.client,
+      "prepare_site_release_v4",
+      {
+        expected_business_id: catalogueBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: catalogueSiteId,
+        ...currentness(currentV3State),
+      },
+    );
+    expect(preparedV4.projection_schema_version).toBe(4);
+    const publishedV4 = await callRpc<PreparedRelease>(
+      owner.client,
+      "publish_site_release_v4",
+      {
+        expected_business_id: catalogueBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: catalogueSiteId,
+        requested_candidate_id: preparedV4.id,
+        ...currentness(currentV3State),
+      },
+    );
+    const [v4References] = await fixtureSql.unsafe<
+      Array<{ reference_count: number }>
+    >(
+      `select count(*)::int as reference_count
+       from public.site_release_record_references
+       where business_id = $1 and release_id = $2 and record_id = $3`,
+      [catalogueBusiness.id, publishedV4.id, firstRecordId],
+    );
+    expect(v4References?.reference_count).toBe(1);
+    const detailV4 = await callRpc<Record<string, unknown>>(
+      anonymous,
+      "resolve_public_site_record",
+      {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "details",
+        requested_record_token: v3RecordToken!.token,
+      },
+    );
+    expect(detailV4).toMatchObject({
+      record: {
+        public_id: v3RecordToken!.token,
+        values: { name: "Alpha item", price: 2 },
+      },
+    });
+
+    const activeV4State = await siteState();
+    await unpublishSite(owner.client, context(), {
+      siteId: catalogueSiteId,
+      expectedActiveReleaseRevision: activeV4State.active_release_revision,
+    });
+    await expect(
+      callNullableRpc(anonymous, "resolve_public_site_record", {
+        requested_business_slug: catalogueBusiness.slug,
+        requested_page_slug: "details",
+        requested_record_token: v3RecordToken!.token,
       }),
     ).resolves.toBeNull();
   });

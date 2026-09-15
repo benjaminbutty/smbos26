@@ -54,6 +54,7 @@ export default async function PublicPage({
                 className="site-public-logo"
                 height={48}
                 src={logoSource}
+                unoptimized
                 width={120}
               />
             ) : (
