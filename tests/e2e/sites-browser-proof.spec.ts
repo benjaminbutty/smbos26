@@ -509,7 +509,7 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
   await expect(
     reloadedDetails
       .locator(".site-composer-canvas")
-      .getByText("Shared Record detail", { exact: true }),
+      .getByText("Shared details for each item", { exact: true }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Preview", exact: true }).click();
