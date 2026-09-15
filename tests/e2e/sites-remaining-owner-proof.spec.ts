@@ -424,7 +424,7 @@ test("owner configures booking and preorder journeys through the Site", async ({
       .selectOption({ index: 1 });
     await booking.locator('input[name="booking-slot"]:enabled').first().check();
     await booking
-      .getByLabel("Customer name", { exact: true })
+      .getByLabel("Customer name *", { exact: true })
       .fill("Shared Customer");
     await booking.getByLabel("Email", { exact: true }).fill(sharedEmail);
     await booking
@@ -469,16 +469,25 @@ test("owner configures booking and preorder journeys through the Site", async ({
     await visitorContext.close();
   }
 
-  await page.getByRole("link", { name: "Back to Home", exact: true }).click();
-  await page.waitForURL(new RegExp(`/app/${business.slug}$`));
-  await expect(
-    page.getByRole("link", { name: "Orders", exact: true }),
-  ).toBeVisible();
-  const bookingWorkspaceLink = page.getByRole("link", {
-    name: /^(Appointments|Bookings)$/,
+  const workspaceNavigation = page.getByRole("navigation", {
+    name: "Business workspace",
+    exact: true,
   });
+  await workspaceNavigation
+    .getByRole("link", { name: "Home", exact: true })
+    .click();
+  await page.waitForURL(new RegExp(`/app/${business.slug}$`));
+  const ordersWorkspaceLink = page
+    .locator(".workspace-sidebar")
+    .getByRole("link", { name: "Orders", exact: true });
+  await expect(ordersWorkspaceLink).toBeVisible();
+  const bookingWorkspaceLink = page
+    .locator(".workspace-sidebar")
+    .getByRole("link", {
+      name: /^(Appointments|Bookings)$/,
+    });
   await expect(bookingWorkspaceLink).toBeVisible();
-  await page.getByRole("link", { name: "Orders", exact: true }).first().click();
+  await ordersWorkspaceLink.click();
   await page.waitForURL(new RegExp(`/app/${business.slug}/workspace/orders`));
   await expect(
     page.getByText(/Shared\.Customer@example\.test/i).first(),
@@ -492,7 +501,9 @@ test("owner configures booking and preorder journeys through the Site", async ({
     /1 of 1/,
   );
 
-  await page.getByRole("link", { name: "Back to Home", exact: true }).click();
+  await workspaceNavigation
+    .getByRole("link", { name: "Home", exact: true })
+    .click();
   await page.waitForURL(new RegExp(`/app/${business.slug}$`));
   await bookingWorkspaceLink.click();
   await page.waitForURL(

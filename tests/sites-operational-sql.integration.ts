@@ -1247,34 +1247,111 @@ describe("Sites remaining operational SQL boundaries", () => {
     `;
     expect(foreignAfter).toEqual(foreignBefore);
 
-    const disabled = await sql`
-      update public.preorder_experiences
-      set is_active = false
-      where business_id = ${business.id}
-        and id = ${firstPreorderAction.preorder_experience_id}
+    const preorderExperienceId = movedPreorderAction.preorder_experience_id;
+    expect(preorderExperienceId).toBeTruthy();
+    if (!preorderExperienceId) {
+      throw new Error("Moved preorder action lost its Experience reference.");
+    }
+    const activePreorderPages = await sql<{ id: string }[]>`
+      select page.id
+      from public.pages as page
+      where page.business_id = ${business.id}
+        and page.is_active
+        and exists (
+          select 1
+          from private.page_blocks_v2(page.layout_json) as configured_block
+          where configured_block ->> 'type' = 'preorder'
+            and configured_block ->> 'preorder_key' = (
+              select experience.key
+              from public.preorder_experiences as experience
+              where experience.business_id = ${business.id}
+                and experience.id = ${preorderExperienceId}
+            )
+        )
     `;
-    expect(disabled.count).toBe(1);
-    const withdrawn = await rpc(anonymous).rpc<unknown>(
-      "resolve_public_site_operational_action_v4",
-      {
-        requested_business_slug: business.slug,
-        requested_page_slug: "order-moved",
-        requested_action_key: movedPreorderAction.action_key,
-        requested_release_token: movedPreorderAction.release_token,
-      },
-    );
-    expect(withdrawn.error).toBeNull();
-    expect(withdrawn.data).toBeNull();
-    const withdrawnAttempt = await submitPreorder(
-      movedPreorderAction,
-      "order-moved",
-      crypto.randomUUID(),
-      preorderSlot,
-    );
-    expect(withdrawnAttempt).toEqual({
-      ok: false,
-      code: "action_unavailable",
-    });
+    expect(activePreorderPages.length).toBeGreaterThan(0);
+    const activePreorderPageIds = activePreorderPages.map(({ id }) => id);
+
+    // The Page validity trigger must reject withdrawal while an active
+    // canonical Page still references the Experience.
+    await expect(
+      sql`
+        update public.preorder_experiences
+        set is_active = false
+        where business_id = ${business.id}
+          and id = ${preorderExperienceId}
+      `,
+    ).rejects.toMatchObject({ code: "23514" });
+
+    // Archive only the synthetic canonical Pages that reference this
+    // Experience, then perform the valid source withdrawal. The immutable
+    // Site release remains active, so the resolver must fail closed on the
+    // withdrawn source rather than relying on Site unpublication.
+    try {
+      const archivedPages = await sql<{ id: string }[]>`
+        update public.pages as page
+        set is_active = false
+        where page.business_id = ${business.id}
+          and page.id = any(${sql.array(activePreorderPageIds, 2950)})
+        returning page.id
+      `;
+      expect(archivedPages).toHaveLength(activePreorderPageIds.length);
+
+      const disabled = await sql<{ id: string }[]>`
+        update public.preorder_experiences
+        set is_active = false
+        where business_id = ${business.id}
+          and id = ${preorderExperienceId}
+        returning id
+      `;
+      expect(disabled).toHaveLength(1);
+      const activeReleaseRows = await sql<
+        { active_release_id: string | null }[]
+      >`
+        select active_release_id
+        from public.site_states
+        where business_id = ${business.id}
+          and id = ${siteId}
+      `;
+      expect(activeReleaseRows).toEqual([
+        { active_release_id: movedRelease.id },
+      ]);
+
+      const withdrawn = await rpc(anonymous).rpc<unknown>(
+        "resolve_public_site_operational_action_v4",
+        {
+          requested_business_slug: business.slug,
+          requested_page_slug: "order-moved",
+          requested_action_key: movedPreorderAction.action_key,
+          requested_release_token: movedPreorderAction.release_token,
+        },
+      );
+      expect(withdrawn.error).toBeNull();
+      expect(withdrawn.data).toBeNull();
+      const withdrawnAttempt = await submitPreorder(
+        movedPreorderAction,
+        "order-moved",
+        crypto.randomUUID(),
+        preorderSlot,
+      );
+      expect(withdrawnAttempt).toEqual({
+        ok: false,
+        code: "action_unavailable",
+      });
+    } finally {
+      await sql`
+        update public.preorder_experiences
+        set is_active = true
+        where business_id = ${business.id}
+          and id = ${preorderExperienceId}
+      `;
+      await sql`
+        update public.pages as page
+        set is_active = true
+        where page.business_id = ${business.id}
+          and page.id = any(${sql.array(activePreorderPageIds, 2950)})
+      `;
+    }
   });
 
   it("keeps v4 service-only submission and member lock boundaries", async () => {
