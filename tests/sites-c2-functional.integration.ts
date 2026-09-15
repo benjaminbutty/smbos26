@@ -1439,7 +1439,9 @@ describe("Lenni Sites C2 functional milestone", () => {
         expected_business_id: catalogueBusiness.id,
         expected_actor_id: owner.user.id,
         requested_site_id: catalogueSiteId,
-        ...currentness(initialState),
+        expected_draft_revision: initialState.draft_revision,
+        expected_base_version_id: initialState.draft_base_version_id,
+        expected_head_revision: initialState.draft_base_head_revision,
       },
     );
     expect(preparedV3.projection_schema_version).toBe(3);
@@ -1451,7 +1453,9 @@ describe("Lenni Sites C2 functional milestone", () => {
         expected_actor_id: owner.user.id,
         requested_site_id: catalogueSiteId,
         requested_candidate_id: preparedV3.id,
-        ...currentness(initialState),
+        expected_draft_revision: initialState.draft_revision,
+        expected_base_version_id: initialState.draft_base_version_id,
+        expected_head_revision: initialState.draft_base_head_revision,
       },
     );
     const [v3RecordToken] = await fixtureSql.unsafe<
@@ -1509,7 +1513,9 @@ describe("Lenni Sites C2 functional milestone", () => {
         expected_business_id: catalogueBusiness.id,
         expected_actor_id: owner.user.id,
         requested_site_id: catalogueSiteId,
-        ...currentness(currentV3State),
+        expected_draft_revision: currentV3State.draft_revision,
+        expected_base_version_id: currentV3State.draft_base_version_id,
+        expected_head_revision: currentV3State.draft_base_head_revision,
       },
     );
     expect(preparedV4.projection_schema_version).toBe(4);
@@ -1521,7 +1527,9 @@ describe("Lenni Sites C2 functional milestone", () => {
         expected_actor_id: owner.user.id,
         requested_site_id: catalogueSiteId,
         requested_candidate_id: preparedV4.id,
-        ...currentness(currentV3State),
+        expected_draft_revision: currentV3State.draft_revision,
+        expected_base_version_id: currentV3State.draft_base_version_id,
+        expected_head_revision: currentV3State.draft_base_head_revision,
       },
     );
     const [v4References] = await fixtureSql.unsafe<
