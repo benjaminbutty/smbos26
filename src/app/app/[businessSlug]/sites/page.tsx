@@ -220,6 +220,36 @@ function operationalBlocks(value: unknown): Array<Record<string, unknown>> {
   return result;
 }
 
+function activeReleaseHomeSlug(value: unknown): string | null {
+  const releaseValue = objectValue(value);
+  if (!releaseValue) return null;
+  const version = releaseValue.projection_schema_version;
+  try {
+    const release =
+      version === 4
+        ? siteReleaseV4Schema.parse(value)
+        : version === 3
+          ? siteReleaseV3Schema.parse(value)
+          : version === 2
+            ? siteReleaseV2Schema.parse(value)
+            : null;
+    if (!release) return null;
+    const projection =
+      version === 4
+        ? sitePublicProjectionV4Schema.parse(release.projection_json)
+        : version === 3
+          ? sitePublicProjectionV3Schema.parse(release.projection_json)
+          : sitePublicProjectionSchema.parse(release.projection_json);
+    return projection.pages.find((page) => page.is_home)?.slug ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function publicSitePath(businessSlug: string, pageSlug: string): string {
+  return `/p/${encodeURIComponent(businessSlug)}/${encodeURIComponent(pageSlug)}`;
+}
+
 export default async function SitesPage({
   params,
   searchParams,
@@ -246,6 +276,21 @@ export default async function SitesPage({
   const state = stateResult.data
     ? siteStateSchema.parse(stateResult.data)
     : null;
+  let activePublicHomeSlug: string | null = null;
+  if (state?.active_release_id) {
+    const activeReleaseResult = await readQuery<unknown>(
+      reader
+        .from("site_releases")
+        .select("*")
+        .eq("business_id", tenant.business.id)
+        .eq("site_id", state.id)
+        .eq("id", state.active_release_id)
+        .eq("status", "published")
+        .maybeSingle(),
+    );
+    if (activeReleaseResult.error) throw activeReleaseResult.error;
+    activePublicHomeSlug = activeReleaseHomeSlug(activeReleaseResult.data);
+  }
   let workspaceCurrentness: {
     expectedBaseVersionId: string;
     expectedHeadRevision: number;
@@ -765,6 +810,22 @@ export default async function SitesPage({
           ) : null}
         </div>
         <div className="site-owner-actions">
+          {activePublicHomeSlug ? (
+            <>
+              <a
+                className="button button-secondary"
+                href={publicSitePath(businessSlug, activePublicHomeSlug)}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Open live Site ↗
+              </a>
+              <p className="site-owner-live-address">
+                Live address:{" "}
+                {publicSitePath(businessSlug, activePublicHomeSlug)}
+              </p>
+            </>
+          ) : null}
           <Link
             className="button-link"
             href={`/app/${encodeURIComponent(businessSlug)}`}
@@ -1045,53 +1106,6 @@ export default async function SitesPage({
               </p>
             </div>
             <div className="site-release-actions">
-              <form action={prepareSiteReleaseAction.bind(null, businessSlug)}>
-                <input name="siteId" type="hidden" value={state.id} />
-                <input
-                  name="expectedDraftRevision"
-                  type="hidden"
-                  value={state.draft_revision}
-                />
-                <input
-                  name="expectedBaseVersionId"
-                  type="hidden"
-                  value={state.draft_base_version_id}
-                />
-                <input
-                  name="expectedHeadRevision"
-                  type="hidden"
-                  value={state.draft_base_head_revision}
-                />
-                <button type="submit">Preview Site update</button>
-              </form>
-              {candidate ? (
-                <form
-                  action={publishSiteReleaseAction.bind(null, businessSlug)}
-                >
-                  <input name="siteId" type="hidden" value={state.id} />
-                  <input
-                    name="candidateId"
-                    type="hidden"
-                    value={candidate.id}
-                  />
-                  <input
-                    name="expectedDraftRevision"
-                    type="hidden"
-                    value={state.draft_revision}
-                  />
-                  <input
-                    name="expectedBaseVersionId"
-                    type="hidden"
-                    value={state.draft_base_version_id}
-                  />
-                  <input
-                    name="expectedHeadRevision"
-                    type="hidden"
-                    value={state.draft_base_head_revision}
-                  />
-                  <button type="submit">Publish Site update</button>
-                </form>
-              ) : null}
               {state.active_release_id ? (
                 <form action={unpublishSiteAction.bind(null, businessSlug)}>
                   <input name="siteId" type="hidden" value={state.id} />

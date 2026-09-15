@@ -38,6 +38,34 @@ type RecordOption = {
   recordRevision: number;
   attachments: Record<string, number>;
 };
+type AssetUploadOutcome = "success" | "failed" | "canceled" | "superseded";
+type AssetUploadResult = {
+  operationId: number;
+  assetId: string | null;
+  outcome: AssetUploadOutcome;
+};
+type ActiveAssetUpload = {
+  operationId: number;
+  selectionId: number;
+  target: string;
+  controller: AbortController | null;
+  attachmentDispatched: boolean;
+};
+type AssetUploadOperation = {
+  operationId: number;
+  label: string;
+  status:
+    | "preparing"
+    | "uploading"
+    | "failed"
+    | "canceled"
+    | "attaching"
+    | "uncertain";
+  retry?: () => void;
+};
+
+const siteImageUploadLimitText =
+  "JPEG, PNG or WebP. Images must be 3 MiB or smaller and under 20 megapixels.";
 export type SiteRelationshipOption = {
   key: string;
   label: string;
@@ -861,11 +889,14 @@ export function SiteComposer({
   const [recordRevisions, setRecordRevisions] = useState<
     Record<string, number>
   >({});
+  const [assetUploadOperation, setAssetUploadOperation] =
+    useState<AssetUploadOperation | null>(null);
   const [autosaveStatus, setAutosaveStatus] = useState<
     "saved" | "saving" | "error"
   >("saved");
   const [bookingRefreshPending, setBookingRefreshPending] = useState(false);
   const initialDraftRef = useRef(copyDraft(initialDraft));
+  const draftRef = useRef(copyDraft(initialDraft));
   const serverDraftRef = useRef(copyDraft(initialDraft));
   const serverRevisionRef = useRef(draftRevision);
   const observedPropsDraftRef = useRef(copyDraft(initialDraft));
@@ -880,6 +911,10 @@ export function SiteComposer({
   const navigationBypassRef = useRef(false);
   const manualSavePendingRef = useRef(false);
   const bookingRefreshPendingRef = useRef(false);
+  const uploadOperationSequenceRef = useRef(0);
+  const uploadSelectionSequenceRef = useRef(0);
+  const activeUploadRef = useRef<ActiveAssetUpload | null>(null);
+  const canceledUploadIdsRef = useRef(new Set<number>());
   const [selectedPageId, setSelectedPageId] = useState(() => {
     const home = initialDraft.pages.find((page) => page.is_home);
     return home?.id ?? initialDraft.pages[0]?.id ?? "";
@@ -925,8 +960,17 @@ export function SiteComposer({
 
   useEffect(() => {
     mountedRef.current = true;
+    const canceledUploadIds = canceledUploadIdsRef.current;
     return () => {
       mountedRef.current = false;
+      const active = activeUploadRef.current;
+      if (active && !active.attachmentDispatched) {
+        if (active.controller) {
+          canceledUploadIds.add(active.operationId);
+          active.controller.abort();
+        }
+        activeUploadRef.current = null;
+      }
     };
   }, []);
 
@@ -1099,6 +1143,7 @@ export function SiteComposer({
     initialDraftRef.current = nextServerDraft;
     revisionRef.current = draftRevision;
     coordinator.acknowledge(nextServerDraft);
+    draftRef.current = copyDraft(nextServerDraft);
     setDraft(nextServerDraft);
     setRevision(draftRevision);
     setUndoStack([]);
@@ -1138,6 +1183,7 @@ export function SiteComposer({
     serverRevisionRef.current = conflict.revision;
     revisionRef.current = conflict.revision;
     saveCoordinatorRef.current?.acknowledge(copyDraft(canonical));
+    draftRef.current = copyDraft(canonical);
     setDraft(canonical);
     setRevision(conflict.revision);
     setUndoStack([]);
@@ -1175,6 +1221,7 @@ export function SiteComposer({
     revisionRef.current = conflict.revision;
     coordinator.acknowledge(copyDraft(canonical));
     coordinator.update(localCandidate);
+    draftRef.current = copyDraft(localCandidate);
     setDraft(localCandidate);
     setRevision(conflict.revision);
     setUndoStack([]);
@@ -1206,8 +1253,16 @@ export function SiteComposer({
   const formsReady = (draft.forms ?? [])
     .filter((form) => reachableFormKeys.has(form.key))
     .every((form) => siteFormDraftBlockers(form, objectOptions).length === 0);
+  const assetUploadBlocksRelease =
+    assetUploadOperation !== null &&
+    ["preparing", "uploading", "attaching", "uncertain"].includes(
+      assetUploadOperation.status,
+    );
   const releaseReady =
-    autosaveStatus === "saved" && serverConflict === null && formsReady;
+    autosaveStatus === "saved" &&
+    serverConflict === null &&
+    formsReady &&
+    !assetUploadBlocksRelease;
 
   const saveDraftNow = useCallback(async (): Promise<boolean> => {
     const coordinator = saveCoordinatorRef.current;
@@ -1282,7 +1337,11 @@ export function SiteComposer({
 
   function commit(next: SiteDraftV1): void {
     navigationBypassRef.current = false;
-    setUndoStack((previous) => [...previous.slice(-19), copyDraft(draft)]);
+    setUndoStack((previous) => [
+      ...previous.slice(-19),
+      copyDraft(draftRef.current),
+    ]);
+    draftRef.current = copyDraft(next);
     setDraft(next);
     setMessage(null);
     setAutosaveStatus("saving");
@@ -1331,7 +1390,7 @@ export function SiteComposer({
     blockId: string,
     update: (block: UnknownRecord) => void,
   ): void {
-    const next = copyDraft(draft);
+    const next = copyDraft(draftRef.current);
     const page = next.pages.find((candidate) => candidate.id === pageId);
     const blocks = page ? findBlockList(page.layout.blocks, blockId) : null;
     const block = blocks?.find(
@@ -1884,18 +1943,228 @@ export function SiteComposer({
     } as SiteBlock);
   }
 
-  async function uploadManagedAsset(file: File): Promise<string | null> {
+  function nextUploadSelection(): number {
+    uploadSelectionSequenceRef.current += 1;
+    return uploadSelectionSequenceRef.current;
+  }
+
+  function canStartAssetUpload(): boolean {
+    return activeUploadRef.current === null;
+  }
+
+  function startAssetUploadOperation(
+    selectionId: number,
+    target: string,
+    label: string,
+    retry: () => void,
+    controller: AbortController | null,
+    status: AssetUploadOperation["status"] = "uploading",
+  ): number {
+    const previous = activeUploadRef.current;
+    if (previous && !previous.attachmentDispatched) {
+      previous.controller?.abort();
+    }
+    const operationId = ++uploadOperationSequenceRef.current;
+    activeUploadRef.current = {
+      operationId,
+      selectionId,
+      target,
+      controller,
+      attachmentDispatched: false,
+    };
+    setAssetUploadOperation({ operationId, label, retry, status });
+    return operationId;
+  }
+
+  function uploadOperationIsCurrent(
+    operationId: number,
+    selectionId: number,
+    target: string,
+  ): boolean {
+    const active = activeUploadRef.current;
+    return Boolean(
+      mountedRef.current &&
+      uploadSelectionSequenceRef.current === selectionId &&
+      active &&
+      active.operationId === operationId &&
+      active.selectionId === selectionId &&
+      active.target === target,
+    );
+  }
+
+  function finishAssetUpload(operationId: number): void {
+    if (activeUploadRef.current?.operationId === operationId) {
+      activeUploadRef.current = null;
+    }
+    setAssetUploadOperation((current) =>
+      current?.operationId === operationId ? null : current,
+    );
+  }
+
+  function markAttachmentDispatch(
+    operationId: number,
+    selectionId: number,
+    target: string,
+    label: string,
+  ): boolean {
+    if (!uploadOperationIsCurrent(operationId, selectionId, target)) {
+      return false;
+    }
+    const active = activeUploadRef.current;
+    if (!active) return false;
+    active.attachmentDispatched = true;
+    active.controller = null;
+    setAssetUploadOperation({ operationId, label, status: "attaching" });
+    return true;
+  }
+
+  function markUncertainAttachment(operationId: number, label: string): void {
+    const active = activeUploadRef.current;
+    if (active?.operationId === operationId) {
+      active.attachmentDispatched = true;
+      active.controller = null;
+    }
+    setAssetUploadOperation((current) =>
+      current?.operationId === operationId
+        ? { operationId, label, status: "uncertain" }
+        : current,
+    );
+  }
+
+  function cancelAssetUpload(): void {
+    const active = activeUploadRef.current;
+    const operation = assetUploadOperation;
+    if (
+      !active ||
+      !operation ||
+      operation.operationId !== active.operationId ||
+      active.attachmentDispatched
+    ) {
+      return;
+    }
+    canceledUploadIdsRef.current.add(active.operationId);
+    uploadSelectionSequenceRef.current += 1;
+    active.controller?.abort();
+    activeUploadRef.current = null;
+    setAssetUploadOperation((current) =>
+      current?.operationId === active.operationId
+        ? { ...current, status: "canceled" }
+        : current,
+    );
+    setMessage(`${operation.label} upload canceled. Retry when ready.`);
+  }
+
+  async function uploadManagedAsset(
+    file: File,
+    target: string,
+    label: string,
+    retry: () => void,
+    selectionId: number,
+  ): Promise<AssetUploadResult> {
+    if (
+      !mountedRef.current ||
+      uploadSelectionSequenceRef.current !== selectionId
+    ) {
+      return { operationId: 0, assetId: null, outcome: "superseded" };
+    }
+    const controller = new AbortController();
+    const operationId = startAssetUploadOperation(
+      selectionId,
+      target,
+      label,
+      retry,
+      controller,
+    );
     const body = new FormData();
     body.append("file", file);
-    const response = await fetch(
-      `/api/app/${encodeURIComponent(businessSlug)}/pages/assets`,
-      { method: "POST", body },
+    try {
+      const response = await fetch(
+        `/api/app/${encodeURIComponent(businessSlug)}/pages/assets`,
+        { method: "POST", body, signal: controller.signal },
+      );
+      const result: unknown = await response.json().catch(() => null);
+      const value = asRecord(result);
+      if (!uploadOperationIsCurrent(operationId, selectionId, target)) {
+        return { operationId, assetId: null, outcome: "superseded" };
+      }
+      if (!response.ok || typeof value.assetId !== "string") {
+        activeUploadRef.current = null;
+        setAssetUploadOperation((current) =>
+          current?.operationId === operationId
+            ? { ...current, status: "failed" }
+            : current,
+        );
+        return { operationId, assetId: null, outcome: "failed" };
+      }
+      if (activeUploadRef.current?.operationId === operationId) {
+        activeUploadRef.current.controller = null;
+      }
+      return { operationId, assetId: value.assetId, outcome: "success" };
+    } catch {
+      const canceled = canceledUploadIdsRef.current.delete(operationId);
+      if (canceled) {
+        if (mountedRef.current) {
+          setAssetUploadOperation((current) =>
+            current?.operationId === operationId
+              ? { ...current, status: "canceled" }
+              : current,
+          );
+        }
+        return { operationId, assetId: null, outcome: "canceled" };
+      }
+      if (!uploadOperationIsCurrent(operationId, selectionId, target)) {
+        return { operationId, assetId: null, outcome: "superseded" };
+      }
+      activeUploadRef.current = null;
+      setAssetUploadOperation((current) =>
+        current?.operationId === operationId
+          ? { ...current, status: "failed" }
+          : current,
+      );
+      return { operationId, assetId: null, outcome: "failed" };
+    }
+  }
+
+  async function uploadImageFile(
+    file: File,
+    pageId: string,
+    blockId: string,
+  ): Promise<void> {
+    if (!canStartAssetUpload()) return;
+    const selectionId = nextUploadSelection();
+    const target = `image:${pageId}:${blockId}`;
+    setMessage("Uploading image…");
+    const result = await uploadManagedAsset(
+      file,
+      target,
+      "Image",
+      () => {
+        void uploadImageFile(file, pageId, blockId);
+      },
+      selectionId,
     );
-    const result: unknown = await response.json().catch(() => null);
-    const value = asRecord(result);
-    return response.ok && typeof value.assetId === "string"
-      ? value.assetId
-      : null;
+    if (result.outcome === "canceled" || result.outcome === "superseded") {
+      return;
+    }
+    if (result.outcome !== "success" || !result.assetId) {
+      setMessage(
+        "The image could not be uploaded. Retry or choose another file.",
+      );
+      return;
+    }
+    if (!uploadOperationIsCurrent(result.operationId, selectionId, target)) {
+      return;
+    }
+    updateBlock(pageId, blockId, (block) => {
+      block.asset_id = result.assetId;
+      block.alt =
+        typeof block.alt === "string" && block.alt.trim()
+          ? block.alt
+          : file.name;
+      block.draft_state = "complete";
+    });
+    finishAssetUpload(result.operationId);
+    setMessage("Image uploaded. Save the Site draft to keep it.");
   }
 
   async function uploadImage(
@@ -1904,22 +2173,49 @@ export function SiteComposer({
     blockId: string,
   ): Promise<void> {
     const file = event.currentTarget.files?.[0];
-    if (!file) return;
-    setMessage("Uploading image…");
-    const assetId = await uploadManagedAsset(file);
-    if (!assetId) {
-      setMessage("The image could not be uploaded.");
+    if (file) await uploadImageFile(file, pageId, blockId);
+  }
+
+  async function uploadGalleryImageFile(
+    file: File,
+    pageId: string,
+    blockId: string,
+  ): Promise<void> {
+    if (!canStartAssetUpload()) return;
+    const selectionId = nextUploadSelection();
+    const target = `gallery:${pageId}:${blockId}`;
+    setMessage("Uploading gallery image…");
+    const result = await uploadManagedAsset(
+      file,
+      target,
+      "Gallery image",
+      () => {
+        void uploadGalleryImageFile(file, pageId, blockId);
+      },
+      selectionId,
+    );
+    if (result.outcome === "canceled" || result.outcome === "superseded") {
+      return;
+    }
+    if (result.outcome !== "success" || !result.assetId) {
+      setMessage(
+        "The gallery image could not be uploaded. Retry or choose another file.",
+      );
+      return;
+    }
+    if (!uploadOperationIsCurrent(result.operationId, selectionId, target)) {
       return;
     }
     updateBlock(pageId, blockId, (block) => {
-      block.asset_id = assetId;
-      block.alt =
-        typeof block.alt === "string" && block.alt.trim()
-          ? block.alt
-          : file.name;
+      const images = Array.isArray(block.images) ? block.images : [];
+      block.images = [
+        ...images,
+        { asset_id: result.assetId, alt: file.name, draft_state: "complete" },
+      ];
       block.draft_state = "complete";
     });
-    setMessage("Image uploaded. Save the Site draft to keep it.");
+    finishAssetUpload(result.operationId);
+    setMessage("Gallery image uploaded. Save the Site draft to keep it.");
   }
 
   async function uploadGalleryImage(
@@ -1928,22 +2224,149 @@ export function SiteComposer({
     blockId: string,
   ): Promise<void> {
     const file = event.currentTarget.files?.[0];
-    if (!file) return;
-    setMessage("Uploading gallery image…");
-    const assetId = await uploadManagedAsset(file);
-    if (!assetId) {
-      setMessage("The gallery image could not be uploaded.");
+    if (file) await uploadGalleryImageFile(file, pageId, blockId);
+  }
+
+  async function uploadRecordImageFile(
+    file: File,
+    record: RecordOption,
+    field: FileFieldOption,
+    siteIdValue: string,
+  ): Promise<void> {
+    if (!canStartAssetUpload()) return;
+    const selectionId = nextUploadSelection();
+    const target = `record:${record.id}:${field.id}`;
+    const label = `${displayKey(field.key)} for ${record.label}`;
+    const retry = () => {
+      void uploadRecordImageFile(file, record, field, siteIdValue);
+    };
+    const intentOperationId = startAssetUploadOperation(
+      selectionId,
+      target,
+      label,
+      retry,
+      null,
+      "preparing",
+    );
+    setMessage("Saving the Site draft before attaching the Record image…");
+    if (!(await saveDraftNow())) {
+      if (!uploadOperationIsCurrent(intentOperationId, selectionId, target)) {
+        return;
+      }
+      activeUploadRef.current = null;
+      setAssetUploadOperation((current) =>
+        current?.operationId === intentOperationId
+          ? { ...current, status: "failed" }
+          : current,
+      );
+      setMessage(
+        "The Site draft could not be saved before attaching the Record image. Retry when ready.",
+      );
       return;
     }
-    updateBlock(pageId, blockId, (block) => {
-      const images = Array.isArray(block.images) ? block.images : [];
-      block.images = [
-        ...images,
-        { asset_id: assetId, alt: file.name, draft_state: "complete" },
-      ];
-      block.draft_state = "complete";
-    });
-    setMessage("Gallery image uploaded. Save the Site draft to keep it.");
+    if (!uploadOperationIsCurrent(intentOperationId, selectionId, target)) {
+      return;
+    }
+    setMessage(`Uploading ${label}…`);
+    const result = await uploadManagedAsset(
+      file,
+      target,
+      label,
+      retry,
+      selectionId,
+    );
+    if (result.outcome === "canceled" || result.outcome === "superseded") {
+      return;
+    }
+    if (result.outcome !== "success" || !result.assetId) {
+      setMessage(
+        "The Record image could not be uploaded. Retry or choose another file.",
+      );
+      return;
+    }
+    if (!uploadOperationIsCurrent(result.operationId, selectionId, target)) {
+      return;
+    }
+    const attachmentKey = `${record.id}:${field.id}`;
+    const expectedAttachmentRevision =
+      attachmentRevisions[attachmentKey] ?? record.attachments[field.id] ?? 0;
+    if (
+      !markAttachmentDispatch(result.operationId, selectionId, target, label)
+    ) {
+      return;
+    }
+    let response: Response;
+    try {
+      response = await fetch(
+        `/api/app/${encodeURIComponent(businessSlug)}/sites/record-media`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            siteId: siteIdValue,
+            recordId: record.id,
+            objectDefinitionId: record.objectDefinitionId,
+            fieldDefinitionId: field.id,
+            assetId: result.assetId,
+            expectedRecordRevision:
+              recordRevisions[record.id] ?? record.recordRevision,
+            expectedAttachmentRevision,
+          }),
+        },
+      );
+    } catch {
+      if (uploadOperationIsCurrent(result.operationId, selectionId, target)) {
+        markUncertainAttachment(result.operationId, label);
+        setMessage(
+          "The Record image attachment could not be confirmed. Reload before trying again.",
+        );
+      }
+      return;
+    }
+    if (!uploadOperationIsCurrent(result.operationId, selectionId, target)) {
+      return;
+    }
+    if (!response.ok) {
+      finishAssetUpload(result.operationId);
+      setMessage(
+        response.status === 409
+          ? "That Record changed elsewhere. Reload before adding its image."
+          : "The Record image could not be attached.",
+      );
+      return;
+    }
+    const responseResult: unknown = await response.json().catch(() => null);
+    if (!uploadOperationIsCurrent(result.operationId, selectionId, target)) {
+      return;
+    }
+    const responseValue = asRecord(responseResult);
+    const nextAttachmentRevision = responseValue.attachmentRevision;
+    const nextRecordRevision = responseValue.recordRevision;
+    const validResponse =
+      responseValue.ok === true &&
+      typeof nextAttachmentRevision === "number" &&
+      Number.isInteger(nextAttachmentRevision) &&
+      nextAttachmentRevision > 0 &&
+      typeof nextRecordRevision === "number" &&
+      Number.isInteger(nextRecordRevision) &&
+      nextRecordRevision > 0;
+    if (!validResponse) {
+      markUncertainAttachment(result.operationId, label);
+      setMessage(
+        "The Record image attachment could not be confirmed. Reload before trying again.",
+      );
+      return;
+    }
+    setAttachmentRevisions((previous) => ({
+      ...previous,
+      [attachmentKey]: nextAttachmentRevision,
+    }));
+    setRecordRevisions((previous) => ({
+      ...previous,
+      [record.id]: nextRecordRevision,
+    }));
+    finishAssetUpload(result.operationId);
+    setMessage("Record image is ready for your next Site update.");
   }
 
   async function uploadRecordImage(
@@ -1953,64 +2376,40 @@ export function SiteComposer({
     siteIdValue: string,
   ): Promise<void> {
     const file = event.currentTarget.files?.[0];
-    if (!file) return;
-    setMessage("Saving the Site draft before attaching the Record image…");
-    if (!(await saveDraftNow())) {
-      setMessage(
-        "The Site draft could not be saved before attaching the Record image.",
-      );
-      return;
-    }
-    setMessage(`Uploading ${displayKey(field.key)} for ${record.label}…`);
-    const assetId = await uploadManagedAsset(file);
-    if (!assetId) {
-      setMessage("The Record image could not be uploaded.");
-      return;
-    }
-    const attachmentKey = `${record.id}:${field.id}`;
-    const expectedAttachmentRevision =
-      attachmentRevisions[attachmentKey] ?? record.attachments[field.id] ?? 0;
-    const response = await fetch(
-      `/api/app/${encodeURIComponent(businessSlug)}/sites/record-media`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          siteId: siteIdValue,
-          recordId: record.id,
-          objectDefinitionId: record.objectDefinitionId,
-          fieldDefinitionId: field.id,
-          assetId,
-          expectedRecordRevision:
-            recordRevisions[record.id] ?? record.recordRevision,
-          expectedAttachmentRevision,
-        }),
+    if (file) await uploadRecordImageFile(file, record, field, siteIdValue);
+  }
+
+  async function uploadSiteLogo(file: File): Promise<void> {
+    if (!canStartAssetUpload()) return;
+    const selectionId = nextUploadSelection();
+    const target = "branding:logo";
+    setMessage("Uploading Site logo…");
+    const result = await uploadManagedAsset(
+      file,
+      target,
+      "Site logo",
+      () => {
+        void uploadSiteLogo(file);
       },
+      selectionId,
     );
-    if (!response.ok) {
+    if (result.outcome === "canceled" || result.outcome === "superseded") {
+      return;
+    }
+    if (result.outcome !== "success" || !result.assetId) {
       setMessage(
-        response.status === 409
-          ? "That Record changed elsewhere. Reload before adding its image."
-          : "The Record image could not be attached.",
+        "The Site logo could not be uploaded. Retry or choose another file.",
       );
       return;
     }
-    const result: unknown = await response.json().catch(() => null);
-    const nextAttachmentRevision = asRecord(result).attachmentRevision;
-    if (typeof nextAttachmentRevision === "number") {
-      setAttachmentRevisions((previous) => ({
-        ...previous,
-        [attachmentKey]: nextAttachmentRevision,
-      }));
+    if (!uploadOperationIsCurrent(result.operationId, selectionId, target)) {
+      return;
     }
-    const nextRecordRevision = asRecord(result).recordRevision;
-    if (typeof nextRecordRevision === "number") {
-      setRecordRevisions((previous) => ({
-        ...previous,
-        [record.id]: nextRecordRevision,
-      }));
-    }
-    setMessage("Record image is ready for your next Site update.");
+    const next = copyDraft(draftRef.current);
+    next.branding.logo_asset_id = result.assetId;
+    commit(next);
+    finishAssetUpload(result.operationId);
+    setMessage("Site logo uploaded. Save the Site draft to keep it.");
   }
 
   function undo(): void {
@@ -2018,6 +2417,7 @@ export function SiteComposer({
     if (!previous) return;
     navigationBypassRef.current = false;
     setUndoStack((stack) => stack.slice(0, -1));
+    draftRef.current = copyDraft(previous);
     setDraft(previous);
     setMessage(null);
     setAutosaveStatus("saving");
@@ -2039,6 +2439,50 @@ export function SiteComposer({
             />
           </label>
         </div>
+        {assetUploadOperation ? (
+          <div
+            aria-busy={
+              assetUploadOperation.status === "preparing" ||
+              assetUploadOperation.status === "uploading" ||
+              assetUploadOperation.status === "attaching"
+            }
+            className="site-composer-upload-status"
+            role="status"
+          >
+            <span>
+              {assetUploadOperation.status === "preparing"
+                ? `Preparing ${assetUploadOperation.label}…`
+                : assetUploadOperation.status === "uploading"
+                  ? `Uploading ${assetUploadOperation.label}…`
+                  : assetUploadOperation.status === "attaching"
+                    ? `Saving ${assetUploadOperation.label}…`
+                    : assetUploadOperation.status === "uncertain"
+                      ? `${assetUploadOperation.label} needs a reload to confirm its result.`
+                      : assetUploadOperation.status === "canceled"
+                        ? `${assetUploadOperation.label} upload canceled.`
+                        : `${assetUploadOperation.label} upload failed.`}
+            </span>
+            {assetUploadOperation.status === "preparing" ||
+            assetUploadOperation.status === "uploading" ? (
+              <progress
+                aria-label={`${assetUploadOperation.label} upload progress`}
+              />
+            ) : null}
+            {assetUploadOperation.status === "preparing" ||
+            assetUploadOperation.status === "uploading" ? (
+              <button onClick={cancelAssetUpload} type="button">
+                Cancel upload
+              </button>
+            ) : null}
+            {(assetUploadOperation.status === "failed" ||
+              assetUploadOperation.status === "canceled") &&
+            assetUploadOperation.retry ? (
+              <button onClick={assetUploadOperation.retry} type="button">
+                Retry upload
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="site-composer-toolbar-actions">
           <p
             className={`site-composer-autosave-status is-${autosaveStatus}`}
@@ -2308,22 +2752,11 @@ export function SiteComposer({
             Site logo
             <input
               accept="image/jpeg,image/png,image/webp"
+              aria-describedby="site-logo-upload-limit"
+              disabled={assetUploadBlocksRelease}
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
-                if (!file) return;
-                setMessage("Uploading Site logo…");
-                void uploadManagedAsset(file).then((assetId) => {
-                  if (!assetId) {
-                    setMessage("The Site logo could not be uploaded.");
-                    return;
-                  }
-                  const next = copyDraft(draft);
-                  next.branding.logo_asset_id = assetId;
-                  commit(next);
-                  setMessage(
-                    "Site logo uploaded. Save the Site draft to keep it.",
-                  );
-                });
+                if (file) void uploadSiteLogo(file);
               }}
               type="file"
             />
@@ -2340,6 +2773,9 @@ export function SiteComposer({
               </button>
             ) : null}
           </label>
+          <small className="muted" id="site-logo-upload-limit">
+            {siteImageUploadLimitText}
+          </small>
         </div>
       </details>
 
@@ -2880,12 +3316,20 @@ export function SiteComposer({
                                     Choose managed image
                                     <input
                                       accept="image/jpeg,image/png,image/webp"
+                                      aria-describedby={`site-image-upload-limit-${id}`}
+                                      disabled={assetUploadBlocksRelease}
                                       onChange={(event) => {
                                         void uploadImage(event, page.id, id);
                                       }}
                                       type="file"
                                     />
                                   </label>
+                                  <small
+                                    className="muted"
+                                    id={`site-image-upload-limit-${id}`}
+                                  >
+                                    {siteImageUploadLimitText}
+                                  </small>
                                 </div>
                               ) : null}
                               {block.type === "gallery" ? (
@@ -2894,6 +3338,8 @@ export function SiteComposer({
                                     Add managed gallery image
                                     <input
                                       accept="image/jpeg,image/png,image/webp"
+                                      aria-describedby={`site-gallery-upload-limit-${id}`}
+                                      disabled={assetUploadBlocksRelease}
                                       onChange={(event) => {
                                         void uploadGalleryImage(
                                           event,
@@ -2904,6 +3350,12 @@ export function SiteComposer({
                                       type="file"
                                     />
                                   </label>
+                                  <small
+                                    className="muted"
+                                    id={`site-gallery-upload-limit-${id}`}
+                                  >
+                                    {siteImageUploadLimitText}
+                                  </small>
                                   <span className="muted">
                                     {Array.isArray(value.images)
                                       ? `${value.images.length} image${value.images.length === 1 ? "" : "s"}`
@@ -3230,22 +3682,34 @@ export function SiteComposer({
                                             <div className="site-composer-record-media">
                                               {collectionFileFields.map(
                                                 (field) => (
-                                                  <label key={field.id}>
-                                                    Record image (
-                                                    {displayKey(field.key)})
-                                                    <input
-                                                      accept="image/jpeg,image/png,image/webp"
-                                                      onChange={(event) => {
-                                                        void uploadRecordImage(
-                                                          event,
-                                                          record,
-                                                          field,
-                                                          siteId,
-                                                        );
-                                                      }}
-                                                      type="file"
-                                                    />
-                                                  </label>
+                                                  <div key={field.id}>
+                                                    <label>
+                                                      Record image (
+                                                      {displayKey(field.key)})
+                                                      <input
+                                                        accept="image/jpeg,image/png,image/webp"
+                                                        aria-describedby={`site-record-image-upload-limit-${record.id}-${field.id}`}
+                                                        disabled={
+                                                          assetUploadBlocksRelease
+                                                        }
+                                                        onChange={(event) => {
+                                                          void uploadRecordImage(
+                                                            event,
+                                                            record,
+                                                            field,
+                                                            siteId,
+                                                          );
+                                                        }}
+                                                        type="file"
+                                                      />
+                                                    </label>
+                                                    <small
+                                                      className="muted"
+                                                      id={`site-record-image-upload-limit-${record.id}-${field.id}`}
+                                                    >
+                                                      {siteImageUploadLimitText}
+                                                    </small>
+                                                  </div>
                                                 ),
                                               )}
                                             </div>
@@ -3298,6 +3762,9 @@ export function SiteComposer({
                                     Open by default
                                   </label>
                                   <NestedSiteBlocks
+                                    assetUploadBlocksRelease={
+                                      assetUploadBlocksRelease
+                                    }
                                     businessSlug={businessSlug}
                                     blocks={
                                       Array.isArray(value.blocks)
@@ -3484,6 +3951,9 @@ export function SiteComposer({
                                           Column {columnIndex + 1}
                                         </strong>
                                         <NestedSiteBlocks
+                                          assetUploadBlocksRelease={
+                                            assetUploadBlocksRelease
+                                          }
                                           businessSlug={businessSlug}
                                           blocks={
                                             Array.isArray(columnValue.blocks)
@@ -4076,6 +4546,7 @@ function RichTextEditor({
 }
 
 function NestedSiteBlocks({
+  assetUploadBlocksRelease,
   businessSlug,
   blocks,
   appendBlock,
@@ -4100,6 +4571,7 @@ function NestedSiteBlocks({
   setSectionPresentation,
   updateBlock,
 }: Readonly<{
+  assetUploadBlocksRelease: boolean;
   businessSlug: string;
   blocks: SiteBlock[];
   appendBlock: (
@@ -4386,12 +4858,17 @@ function NestedSiteBlocks({
                   Choose managed image
                   <input
                     accept="image/jpeg,image/png,image/webp"
+                    aria-describedby={`site-image-upload-limit-${id}`}
+                    disabled={assetUploadBlocksRelease}
                     onChange={(event) => {
                       void onUploadImage(event, pageId, id);
                     }}
                     type="file"
                   />
                 </label>
+                <small className="muted" id={`site-image-upload-limit-${id}`}>
+                  {siteImageUploadLimitText}
+                </small>
               </div>
             ) : null}
             {block.type === "gallery" ? (
@@ -4400,12 +4877,17 @@ function NestedSiteBlocks({
                   Add managed gallery image
                   <input
                     accept="image/jpeg,image/png,image/webp"
+                    aria-describedby={`site-gallery-upload-limit-${id}`}
+                    disabled={assetUploadBlocksRelease}
                     onChange={(event) => {
                       void onUploadGalleryImage(event, pageId, id);
                     }}
                     type="file"
                   />
                 </label>
+                <small className="muted" id={`site-gallery-upload-limit-${id}`}>
+                  {siteImageUploadLimitText}
+                </small>
                 <span className="muted">
                   {Array.isArray(value.images)
                     ? value.images.length +
@@ -4446,6 +4928,7 @@ function NestedSiteBlocks({
                   Open by default
                 </label>
                 <NestedSiteBlocks
+                  assetUploadBlocksRelease={assetUploadBlocksRelease}
                   businessSlug={businessSlug}
                   blocks={
                     Array.isArray(value.blocks)
@@ -4593,6 +5076,7 @@ function NestedSiteBlocks({
                       >
                         <strong>Column {columnIndex + 1}</strong>
                         <NestedSiteBlocks
+                          assetUploadBlocksRelease={assetUploadBlocksRelease}
                           businessSlug={businessSlug}
                           blocks={
                             Array.isArray(columnValue.blocks)

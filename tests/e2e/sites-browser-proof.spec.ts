@@ -2,7 +2,8 @@ import type { Locator, Page, TestInfo } from "@playwright/test";
 
 import { expect, test } from "./support/pages-proof-fixture";
 
-const siteName = "Browser proof customer Site";
+const siteName =
+  "Browser proof customer Site with a long public name for responsive branding";
 const secondPageTitle = "Services";
 const secondPageSlug = "services";
 const imageAlt = "Browser proof Site image";
@@ -678,10 +679,12 @@ test("owner publishes Property listings with a configured viewing enquiry", asyn
   }
 
   await page.goto(`/app/${business.slug}`);
-  const enquiriesDestination = page.getByRole("link", {
-    name: "Open Viewing enquiries",
-    exact: true,
-  });
+  const enquiriesDestination = page
+    .locator(".workspace-sidebar")
+    .getByRole("link", {
+      name: "Viewing enquiries",
+      exact: true,
+    });
   await expect(enquiriesDestination).toBeVisible();
   await enquiriesDestination.click();
   await page.waitForURL(
@@ -729,6 +732,27 @@ test("owner can review the compact Site editor", async ({
   await expect(
     page.getByRole("navigation", { name: "Choose a Page" }).getByRole("button"),
   ).toHaveCount(2);
+  const addedPage = page.locator(".site-composer-page");
+  await addedPage.getByLabel("Title", { exact: true }).fill("FAQ");
+  await addedPage.getByLabel("Address", { exact: true }).fill("faq");
+  await addedPage.getByLabel("Navigation label", { exact: true }).fill("FAQ");
+  const pageNavigation = page.getByRole("navigation", {
+    name: "Choose a Page",
+  });
+  await addedPage
+    .getByRole("button", { name: "Move Page earlier", exact: true })
+    .click();
+  await expect(pageNavigation.getByRole("button").first()).toHaveAttribute(
+    "aria-label",
+    "FAQ",
+  );
+  await addedPage
+    .getByRole("button", { name: "Move Page later", exact: true })
+    .click();
+  await expect(pageNavigation.getByRole("button").nth(1)).toHaveAttribute(
+    "aria-label",
+    "FAQ",
+  );
   await selectSitePage(page, "Home");
 
   const headingBlock = home.locator(".site-composer-canvas-block").first();
@@ -752,6 +776,70 @@ test("owner can review the compact Site editor", async ({
   await expect(
     page.getByText("Saved automatically", { exact: true }),
   ).toBeVisible();
+
+  const faq = await selectSitePage(page, "FAQ");
+  await addSiteBlock(page, "Add 2-column section");
+  const faqSection = faq
+    .locator(".site-composer-canvas-block")
+    .filter({ hasText: "Section" })
+    .last();
+  await faqSection.click();
+  const faqSectionInspector = faq.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
+  await faqSectionInspector
+    .getByLabel("Columns", { exact: true })
+    .selectOption("3");
+  await expect(
+    faqSectionInspector.locator(".site-composer-column-editor"),
+  ).toHaveCount(3);
+  await faqSectionInspector
+    .locator(".site-composer-column-editor")
+    .nth(0)
+    .locator(".site-composer-nested-block input")
+    .first()
+    .fill("Questions");
+  await faqSectionInspector
+    .locator(".site-composer-column-editor")
+    .nth(1)
+    .locator(".site-composer-nested-block textarea")
+    .first()
+    .fill("Answers for visitors");
+
+  await addSiteBlock(page, "Add collapsible section");
+  const faqCollapsibleInspector = faq.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
+  await faqCollapsibleInspector
+    .getByLabel("Summary", { exact: true })
+    .fill("Frequently asked questions");
+  await faqCollapsibleInspector
+    .getByRole("checkbox", { name: "Open by default", exact: true })
+    .check();
+  await faqCollapsibleInspector
+    .locator(".site-composer-nested-block textarea")
+    .first()
+    .fill("We answer common questions here.");
+  await saveSiteDraft(page);
+  await page.reload();
+  await expect(pageNavigation.getByRole("button").nth(1)).toHaveAttribute(
+    "aria-label",
+    "FAQ",
+  );
+  const reloadedFaq = await selectSitePage(page, "FAQ");
+  await reloadedFaq
+    .locator(".site-composer-canvas-block")
+    .filter({ hasText: "Collapsible" })
+    .last()
+    .click();
+  await expect(
+    reloadedFaq
+      .locator(".site-composer-inspector .site-composer-block")
+      .getByLabel("Summary", { exact: true }),
+  ).toHaveValue("Frequently asked questions");
+  await selectSitePage(page, "Home");
+  await home.locator(".site-composer-canvas-block").first().click();
+  await expect(headingInput).toBeVisible();
 
   const addBlockButton = page.getByRole("button", {
     name: "Add block",
@@ -792,6 +880,59 @@ test("owner can review the compact Site editor", async ({
   const preview = page.getByRole("region", { name: "Site preview" });
   await preview.scrollIntoViewIfNeeded();
   await waitForImages(page);
+  await preview.getByRole("button", { name: "FAQ", exact: true }).click();
+  await expect(
+    preview.getByRole("heading", { name: "FAQ", exact: true }),
+  ).toBeVisible();
+  const previewFaq = preview
+    .locator("details")
+    .filter({ hasText: "Frequently asked questions" });
+  await expect(previewFaq).toHaveAttribute("open", "");
+  await expect(
+    previewFaq.getByText("We answer common questions here.", { exact: true }),
+  ).toBeVisible();
+  const previewFaqSummary = previewFaq.locator("summary");
+  await previewFaqSummary.focus();
+  await expect(previewFaqSummary).toBeFocused();
+  await previewFaqSummary.press("Enter");
+  await expect(previewFaq).not.toHaveAttribute("open", "");
+  await previewFaqSummary.press("Enter");
+  await expect(previewFaq).toHaveAttribute("open", "");
+  const previewSection = preview.locator(".site-public-section").first();
+  await expect(previewSection).toHaveAttribute(
+    "style",
+    /--site-public-column-count:\s*3/,
+  );
+  const previewStates = [
+    { name: "faq-preview-1440x900.png", width: 1440, height: 900 },
+    { name: "faq-preview-834x1112.png", width: 834, height: 1112 },
+    { name: "faq-preview-390x844.png", width: 390, height: 844 },
+  ];
+  for (const state of previewStates) {
+    await page.setViewportSize({ width: state.width, height: state.height });
+    await preview.scrollIntoViewIfNeeded();
+    await expect
+      .poll(() =>
+        previewSection.evaluate((element) => {
+          const columns = getComputedStyle(element).gridTemplateColumns;
+          return columns.trim().split(/\s+/).filter(Boolean).length;
+        }),
+      )
+      .toBe(state.width <= 768 ? 1 : 3);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(state.name),
+      fullPage: false,
+    });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await preview.scrollIntoViewIfNeeded();
   await preview.screenshot({
     path: testInfo.outputPath("first-draft-preview-1440x900.png"),
   });
@@ -1070,6 +1211,26 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     }),
   ).toBeVisible();
   await addSiteBlock(page, "Add Record collection");
+  const emptyCollection = await configureCollection(
+    homePage,
+    catalogueView,
+    "list",
+  );
+  const emptyFilterField = emptyCollection.getByLabel(
+    "Filter to Records with",
+    { exact: true },
+  );
+  const nameFilterValue = await emptyFilterField
+    .locator("option")
+    .filter({ hasText: "Name is not empty" })
+    .getAttribute("value");
+  if (!nameFilterValue)
+    throw new Error("The empty Site collection needs Name.");
+  await emptyFilterField.selectOption(nameFilterValue);
+  await emptyCollection
+    .getByLabel("Filter operator", { exact: true })
+    .selectOption("is_empty");
+  await addSiteBlock(page, "Add Record collection");
   await configureCollection(homePage, servicesView, "table");
   await addSiteBlock(page, "Add button");
   const sitePageButton = homePage
@@ -1114,6 +1275,129 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   );
   await selectSitePage(page, "Home");
   await uploadSiteImage(page);
+  const retryableSiteImage = homePage.locator(
+    ".site-composer-inspector .site-composer-block",
+  );
+  await expect(
+    retryableSiteImage.getByText(
+      "JPEG, PNG or WebP. Images must be 3 MiB or smaller and under 20 megapixels.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  const retryableSiteImageInput = retryableSiteImage.getByLabel(
+    "Choose managed image",
+  );
+  const assetUploadRoute = `**/api/app/${business.slug}/pages/assets`;
+  await saveSiteDraft(page);
+  await expect(
+    page.getByRole("button", { name: "Preview", exact: true }),
+  ).toBeEnabled();
+  let assetUploadRequestCount = 0;
+  let releaseLateAssetUpload = (): void => {};
+  let lateAssetUploadSettled = false;
+  await page.route(assetUploadRoute, async (route) => {
+    assetUploadRequestCount += 1;
+    if (assetUploadRequestCount === 1) {
+      await new Promise<void>((resolve) => {
+        releaseLateAssetUpload = resolve;
+      });
+      try {
+        await route.fulfill({
+          body: JSON.stringify({ assetId: "asset-late-response" }),
+          contentType: "application/json",
+          status: 200,
+        });
+      } catch {
+        // The canceled request may already be gone from the browser.
+      } finally {
+        lateAssetUploadSettled = true;
+      }
+      return;
+    }
+    await route.continue();
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await retryableSiteImageInput.setInputFiles({
+    ...proofImage,
+    name: "browser-proof-site-canceled.png",
+  });
+  await expect.poll(() => assetUploadRequestCount, { timeout: 5_000 }).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Cancel upload", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Preview", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Publish", exact: true }),
+  ).toBeDisabled();
+  const uploadStatus = page.locator(".site-composer-upload-status");
+  await expect(uploadStatus).toBeVisible();
+  for (const viewport of [
+    { name: "desktop", width: 1440, height: 900 },
+    { name: "tablet", width: 834, height: 1112 },
+    { name: "mobile", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await uploadStatus.scrollIntoViewIfNeeded();
+    await expect
+      .poll(() =>
+        uploadStatus.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return (
+            bounds.left >= 0 &&
+            bounds.right <= window.innerWidth &&
+            bounds.top >= 0 &&
+            bounds.bottom <= window.innerHeight
+          );
+        }),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(
+        `site-upload-pending-${viewport.name}-${viewport.width}x${viewport.height}.png`,
+      ),
+      fullPage: false,
+    });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await uploadStatus.scrollIntoViewIfNeeded();
+  const cancelUpload = page.getByRole("button", {
+    name: "Cancel upload",
+    exact: true,
+  });
+  await cancelUpload.focus();
+  await cancelUpload.press("Enter");
+  await expect(
+    page.getByRole("button", { name: "Retry upload", exact: true }),
+  ).toBeVisible();
+  await expect(uploadStatus).toContainText("upload canceled.");
+  await uploadStatus.scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: testInfo.outputPath("site-upload-canceled-390x844.png"),
+    fullPage: false,
+  });
+  const retryUpload = page.getByRole("button", {
+    name: "Retry upload",
+    exact: true,
+  });
+  await retryUpload.focus();
+  await retryUpload.press("Enter");
+  await expect(page.getByText(/Image uploaded\./)).toBeVisible();
+  await retryableSiteImage.getByLabel("Image description").fill(imageAlt);
+  releaseLateAssetUpload();
+  await expect
+    .poll(() => lateAssetUploadSettled, { timeout: 5_000 })
+    .toBe(true);
+  await page.unroute(assetUploadRoute);
+  await expect(retryableSiteImage.getByLabel("Image description")).toHaveValue(
+    imageAlt,
+  );
+  await expect(page.getByLabel("Site name")).toHaveValue(siteName);
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   const portfolio = await selectSitePage(page, "Portfolio");
   const portfolioBlocks = portfolio.locator(".site-composer-canvas-block");
@@ -1229,10 +1513,42 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expectSatoshi(page);
   await captureSiteStates(page, testInfo);
 
+  await page.goto(`/app/${business.slug}/sites`);
+  await expect(
+    page.getByRole("heading", { name: "Your Site", exact: true }),
+  ).toBeVisible();
+  const openLiveSite = page.getByRole("link", {
+    name: "Open live Site ↗",
+    exact: true,
+  });
+  await expect(openLiveSite).toHaveAttribute(
+    "href",
+    `/p/${business.slug}/home`,
+  );
+  await expect(openLiveSite).toHaveAttribute("target", "_blank");
+  const liveAddress = page.locator(".site-owner-live-address");
+  await expect(liveAddress).toHaveText(
+    `Live address: /p/${business.slug}/home`,
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      liveAddress.evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return bounds.left >= 0 && bounds.right <= window.innerWidth;
+      }),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: testInfo.outputPath("owner-live-site-mobile-390x844.png"),
+    fullPage: false,
+  });
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/p/${business.slug}/home`);
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect(page.getByText(siteName, { exact: true })).toBeVisible();
+  await expect(page.locator("img.site-public-logo")).toHaveCount(0);
   await waitForImages(page);
   await page.locator("main").scrollIntoViewIfNeeded();
   await page.screenshot({
@@ -1250,6 +1566,9 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await expect(page.locator("img.site-public-record-image")).toBeVisible();
   await expect(page.getByText("Heritage cake", { exact: true })).toBeVisible();
   await expect(page.getByText("Lemon tart", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("No items to show right now.", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("table")).toBeVisible();
   await expect(
     page.getByRole("table").getByText("Wedding catering", { exact: true }),
@@ -1265,6 +1584,30 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
       ),
     )
     .toBeGreaterThan(0);
+
+  for (const state of [
+    { name: "long-branding-public-1440x900.png", width: 1440, height: 900 },
+    { name: "long-branding-public-834x1112.png", width: 834, height: 1112 },
+    { name: "long-branding-public-390x844.png", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: state.width, height: state.height });
+    await page.goto(`/p/${business.slug}/home`);
+    await expect(page.getByText(siteName, { exact: true })).toBeVisible();
+    await expect(page.locator("img.site-public-logo")).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      )
+      .toBe(true);
+    await page.screenshot({
+      path: testInfo.outputPath(state.name),
+      fullPage: false,
+    });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/p/${business.slug}/home`);
 
   await page.getByRole("link", { name: "View details" }).first().click();
   await expect(page).toHaveURL(
@@ -1371,6 +1714,10 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
   await page.waitForURL(
     new RegExp(`/app/${business.slug}/sites\\?notice=unpublished$`),
   );
+  await expect(
+    page.getByRole("link", { name: "Open live Site ↗", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".site-owner-live-address")).toHaveCount(0);
   const unpublished = await page.request.get(`/p/${business.slug}/home`);
   expect(unpublished.status()).toBe(404);
 

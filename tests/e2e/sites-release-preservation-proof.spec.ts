@@ -275,6 +275,7 @@ async function selectCollectionRecordType(
 async function configureCollection(
   page: Locator,
   objectKey: string,
+  detailPageTitle?: string,
 ): Promise<Locator> {
   const collection = page
     .locator(
@@ -288,6 +289,11 @@ async function configureCollection(
   await expect(recordOptions).toHaveCount(1);
   await recordOptions.first().check();
   await collection.getByLabel("Presentation").selectOption("cards");
+  if (detailPageTitle) {
+    await collection
+      .getByLabel("Detail Page", { exact: true })
+      .selectOption({ label: detailPageTitle });
+  }
   return collection;
 }
 
@@ -316,9 +322,33 @@ test("published Site keeps source Record changes private until republish", async
   );
 
   await page.getByLabel("Site name").fill("Release preservation proof");
+  await page.getByRole("button", { name: "Add Page", exact: true }).click();
+  const detailsPage = page.locator(".site-composer-page");
+  await detailsPage
+    .getByLabel("Title", { exact: true })
+    .fill("Catalogue details");
+  await detailsPage
+    .getByLabel("Address", { exact: true })
+    .fill("catalogue-details");
+  await detailsPage
+    .getByLabel("Navigation label", { exact: true })
+    .fill("Catalogue details");
+  await detailsPage.getByLabel("Show in navigation", { exact: true }).uncheck();
   const home = await selectSitePage(page, "Home");
   await addSiteBlock(page, "Add Record collection");
-  const collection = await configureCollection(home, catalogueView);
+  const collection = await configureCollection(
+    home,
+    catalogueView,
+    "Catalogue details",
+  );
+  await selectSitePage(page, "Catalogue details");
+  await addSiteBlock(page, "Add shared Record detail");
+  await selectSitePage(page, "Home");
+  const initialCollectionCanvas = home
+    .locator(".site-composer-canvas-block-type")
+    .filter({ hasText: /^Collection$/ })
+    .locator("..");
+  await initialCollectionCanvas.click();
   await collection
     .getByLabel("Record image (Photo)", { exact: true })
     .setInputFiles({
@@ -348,6 +378,25 @@ test("published Site keeps source Record changes private until republish", async
   const releasedImage = page.locator("img.site-public-record-image");
   await expect(releasedImage).toHaveCount(1);
   const initialServedImage = await readServedImage(page, releasedImage);
+  const initialDetailLink = page
+    .getByRole("link", { name: "View details", exact: true })
+    .first();
+  await expect(initialDetailLink).toBeVisible();
+  const stableDetailPath = await initialDetailLink.getAttribute("href");
+  expect(stableDetailPath).toMatch(
+    new RegExp(`/p/${business.slug}/catalogue-details/record/r_[a-f0-9]{64}$`),
+  );
+  await initialDetailLink.click();
+  await expect(page).toHaveURL(
+    new RegExp(`/p/${business.slug}/catalogue-details/record/r_[a-f0-9]{64}$`),
+  );
+  await expect(
+    page.getByRole("heading", { name: "Catalogue details", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(initialRecordName, { exact: true }),
+  ).toBeVisible();
+  await page.goto(`/p/${business.slug}/home`);
 
   await page.goto(`/app/${business.slug}/workspace/${catalogueView}`);
   await page
@@ -394,6 +443,18 @@ test("published Site keeps source Record changes private until republish", async
       ".site-composer-inspector .site-composer-block:has(> .site-composer-collection-fields select)",
     )
     .first();
+  const recordMediaRoute = `**/api/app/${business.slug}/sites/record-media`;
+  let recordMediaCommitted = false;
+  await page.route(recordMediaRoute, async (route) => {
+    const response = await route.fetch();
+    await response.body();
+    recordMediaCommitted = true;
+    try {
+      await route.abort("failed");
+    } catch {
+      // The browser may have closed the intercepted response already.
+    }
+  });
   await updatedCollection
     .getByLabel("Record image (Photo)", { exact: true })
     .setInputFiles({
@@ -401,10 +462,29 @@ test("published Site keeps source Record changes private until republish", async
       name: "release-preservation-updated.png",
     });
   await expect(
-    page.getByText("Record image is ready for your next Site update.", {
-      exact: true,
-    }),
+    page.getByText(
+      "The Record image attachment could not be confirmed. Reload before trying again.",
+      { exact: true },
+    ),
   ).toBeVisible();
+  expect(recordMediaCommitted).toBe(true);
+  await expect(
+    page.getByRole("button", { name: "Retry upload", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Preview", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Publish", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    updatedCollection.getByLabel("Record image (Photo)", { exact: true }),
+  ).toBeDisabled();
+  await page.unroute(recordMediaRoute);
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Preview", exact: true }),
+  ).toBeEnabled();
   await saveSiteDraft(page);
 
   await page.goto(`/p/${business.slug}/home`);
@@ -442,6 +522,19 @@ test("published Site keeps source Record changes private until republish", async
   const republishedServedImage = await readServedImage(page, republishedImage);
   expect(republishedServedImage.source).not.toBe(initialServedImage.source);
   expect(republishedServedImage.bytes).not.toEqual(initialServedImage.bytes);
+  if (!stableDetailPath) {
+    throw new Error("The release proof did not capture a stable detail path.");
+  }
+  await page.goto(stableDetailPath);
+  await expect(
+    page.getByRole("heading", { name: "Catalogue details", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(updatedRecordName, { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(initialRecordName, { exact: true })).toHaveCount(
+    0,
+  );
 });
 
 test("legacy public content keeps its address through Site adoption", async ({

@@ -531,6 +531,13 @@ function renderBlock(
         block.presentation === "list" || block.presentation === "table"
           ? block.presentation
           : "cards";
+      if (records.length === 0) {
+        return (
+          <p key={key} className="site-public-collection-empty" role="status">
+            No items to show right now.
+          </p>
+        );
+      }
       const fieldKeys = [
         ...new Set(
           records.flatMap((record) => {
