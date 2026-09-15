@@ -24,7 +24,6 @@ jobs:
       SMBOS_UPGRADE_DB_PORT: "55522"
       SMBOS_UPGRADE_SHADOW_PORT: "55520"
       SMBOS_UPGRADE_PROJECT_ID: smbos-sites-upgrade-${{ github.run_id }}-${{ github.run_attempt }}
-      SMBOS_UPGRADE_EVIDENCE_PATH: ${{ runner.temp }}/sites-populated-upgrade/evidence.json
 
     steps:
       - name: Check out the reviewed pull request head
@@ -41,6 +40,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Initialize safe evidence path
+        shell: bash
+        run: |
+          printf 'SMBOS_UPGRADE_EVIDENCE_PATH=%s\n' \
+            "${RUNNER_TEMP}/sites-populated-upgrade/evidence.json" >> "${GITHUB_ENV}"
 
       - name: Create a runner-owned baseline Supabase target
         shell: bash
@@ -224,7 +229,7 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: sites-populated-upgrade-${{ github.event.pull_request.head.sha }}
-          path: ${{ env.SMBOS_UPGRADE_EVIDENCE_PATH }}
+          path: ${{ runner.temp }}/sites-populated-upgrade/evidence.json
           if-no-files-found: warn
           retention-days: 14
 
