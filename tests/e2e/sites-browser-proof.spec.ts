@@ -212,19 +212,68 @@ async function expectSatoshi(page: Page): Promise<void> {
 
 async function waitForImages(page: Page): Promise<void> {
   await page.locator("img").evaluateAll(async (images) => {
-    await Promise.all(
-      images.map(async (image) => {
-        if (!(image instanceof HTMLImageElement)) return;
-        if (image.complete && image.naturalWidth > 0) {
+    const originalScrollX = window.scrollX;
+    const originalScrollY = window.scrollY;
+    try {
+      for (const image of images) {
+        if (!(image instanceof HTMLImageElement)) continue;
+        // Trigger native/Next lazy loading for images below the current
+        // viewport before asserting their final load state.
+        image.scrollIntoView({ block: "center", inline: "nearest" });
+        await new Promise<void>((resolve) =>
+          window.requestAnimationFrame(() => resolve()),
+        );
+        const source = () =>
+          image.currentSrc || image.src || "(unknown source)";
+        if (image.complete) {
+          if (image.naturalWidth === 0) {
+            throw new Error(`Image failed to load: ${source()}`);
+          }
           await image.decode().catch(() => undefined);
-          return;
+          continue;
         }
-        await new Promise<void>((resolve) => {
-          image.addEventListener("load", () => resolve(), { once: true });
-          image.addEventListener("error", () => resolve(), { once: true });
+        await new Promise<void>((resolve, reject) => {
+          let settled = false;
+          const timeoutId = window.setTimeout(() => {
+            fail(`Timed out waiting for image: ${source()}`);
+          }, 5_000);
+          const cleanup = () => {
+            window.clearTimeout(timeoutId);
+            image.removeEventListener("load", handleLoad);
+            image.removeEventListener("error", handleError);
+          };
+          const succeed = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            resolve();
+          };
+          const fail = (message: string) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error(message));
+          };
+          const handleLoad = () => {
+            if (image.naturalWidth === 0) {
+              fail(`Image failed to load: ${source()}`);
+              return;
+            }
+            succeed();
+          };
+          const handleError = () => {
+            fail(`Image failed to load: ${source()}`);
+          };
+          image.addEventListener("load", handleLoad, { once: true });
+          image.addEventListener("error", handleError, { once: true });
+          // A lazy image can finish between the initial check and listener
+          // registration, so re-check its terminal state after subscribing.
+          if (image.complete) handleLoad();
         });
-      }),
-    );
+      }
+    } finally {
+      window.scrollTo(originalScrollX, originalScrollY);
+    }
   });
 }
 

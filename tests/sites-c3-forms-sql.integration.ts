@@ -12,6 +12,7 @@ import { composeStarterComposition } from "../src/core/acquisition/composer";
 import { composeInitialPreorderOperations } from "../src/core/configuration/initial-preorder/service";
 import { ConfigurationChangeService } from "../src/core/configuration/service";
 import { siteDraftV1Schema } from "../src/core/sites/schemas";
+import { unpublishSite } from "../src/core/sites/service";
 import type { Database, Tables } from "../src/db/supabase/database.types";
 import {
   getC1LocalSupabaseSettings,
@@ -1673,5 +1674,127 @@ describe("Sites C3 Form SQL boundary", () => {
       },
     );
     expect(soldOut).toMatchObject({ ok: false, code: "sold_out" });
+  });
+
+  it("resolves media for an active v3 release and rejects stale public access", async () => {
+    const assetId = crypto.randomUUID();
+    const inserted = await admin
+      .from("media_assets")
+      .insert({
+        id: assetId,
+        business_id: business.id,
+        storage_key: `${business.id}/${assetId}.png`,
+        mime_type: "image/png",
+        byte_size: 128,
+        width: 1,
+        height: 1,
+        created_by: owner.user.id,
+      })
+      .select("id")
+      .single();
+    if (inserted.error || !inserted.data) throw inserted.error;
+
+    const state = await readSiteState();
+    const draft = siteDraftV1Schema.parse(structuredClone(state.draft_json));
+    draft.branding.logo_asset_id = assetId;
+    const saved = await callRpc<SiteState>(owner.client, "save_site_draft_v2", {
+      expected_business_id: business.id,
+      expected_actor_id: owner.user.id,
+      requested_site_id: siteId,
+      expected_draft_revision: state.draft_revision,
+      requested_draft: draft,
+    });
+    const prepared = await callRpc<PreparedRelease>(
+      owner.client,
+      "prepare_site_release_v3",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: siteId,
+        ...releaseCurrentness(saved),
+      },
+    );
+    expect(prepared.projection_schema_version).toBe(3);
+    const published = await callRpc<PreparedRelease>(
+      owner.client,
+      "publish_site_release_v3",
+      {
+        expected_business_id: business.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: siteId,
+        requested_candidate_id: prepared.id,
+        ...releaseCurrentness(saved),
+      },
+    );
+    const [media] = await sql<{ token: string; reference_count: number }[]>`
+      select token,
+        (
+          select count(*)::int
+          from public.site_release_asset_references as reference
+          where reference.business_id = ${business.id}
+            and reference.release_id = ${published.id}
+            and reference.asset_id = ${assetId}
+        ) as reference_count
+      from public.site_public_media_tokens
+      where business_id = ${business.id}
+        and site_id = ${siteId}
+        and asset_id = ${assetId}
+    `;
+    expect(media).toMatchObject({
+      token: expect.stringMatching(/^m_[a-f0-9]{64}$/),
+      reference_count: 1,
+    });
+
+    const resolved = await callRpc<Record<string, unknown>>(
+      admin,
+      "resolve_public_site_media",
+      {
+        requested_business_slug: business.slug,
+        requested_media_token: media!.token,
+      },
+    );
+    expect(resolved).toMatchObject({
+      storage_key: `${business.id}/${assetId}.png`,
+      mime_type: "image/png",
+      byte_size: 128,
+    });
+
+    const wrongBusiness = await rpc(admin).rpc<Record<string, unknown>>(
+      "resolve_public_site_media",
+      {
+        requested_business_slug: "not-the-published-business",
+        requested_media_token: media!.token,
+      },
+    );
+    expect(wrongBusiness.error).toBeNull();
+    expect(wrongBusiness.data).toBeNull();
+
+    const [activeState] = await sql<{ active_release_revision: number }[]>`
+      select active_release_revision
+      from public.site_states
+      where business_id = ${business.id} and id = ${siteId}
+    `;
+    if (!activeState)
+      throw new Error("The active v3 release state is missing.");
+    const unpublished = await unpublishSite(
+      owner.client,
+      { businessId: business.id, actorId: owner.user.id },
+      {
+        siteId,
+        expectedActiveReleaseRevision: Number(
+          activeState.active_release_revision,
+        ),
+      },
+    );
+    expect(unpublished.active_release_id).toBeNull();
+    const afterUnpublish = await rpc(admin).rpc<Record<string, unknown>>(
+      "resolve_public_site_media",
+      {
+        requested_business_slug: business.slug,
+        requested_media_token: media!.token,
+      },
+    );
+    expect(afterUnpublish.error).toBeNull();
+    expect(afterUnpublish.data).toBeNull();
   });
 });

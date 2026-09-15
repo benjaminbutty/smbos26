@@ -16,6 +16,7 @@ import {
 } from "../src/core/configuration/schemas";
 import { bookingConfigSchema } from "../src/core/booking/schemas";
 import { siteDraftV1Schema, type SiteDraftV1 } from "../src/core/sites/schemas";
+import { unpublishSite } from "../src/core/sites/service";
 import type { Database, Tables } from "../src/db/supabase/database.types";
 import {
   getC1LocalSupabaseSettings,
@@ -1334,5 +1335,157 @@ describe("Sites remaining operational SQL boundaries", () => {
       preorder_service_execute: true,
       member_lock_authenticated_execute: true,
     });
+  });
+
+  it("resolves media for an active v4 release and rejects stale public access", async () => {
+    const assetId = crypto.randomUUID();
+    const inserted = await admin
+      .from("media_assets")
+      .insert({
+        id: assetId,
+        business_id: foreignBusiness.id,
+        storage_key: `${foreignBusiness.id}/${assetId}.png`,
+        mime_type: "image/png",
+        byte_size: 128,
+        width: 1,
+        height: 1,
+        created_by: owner.user.id,
+      })
+      .select("id")
+      .single();
+    if (inserted.error || !inserted.data) throw inserted.error;
+
+    const draft = siteDraftV1Schema.parse({
+      schema_version: 1,
+      branding: {
+        name: "V4 media compatibility fixture",
+        accent: "forest",
+        logo_asset_id: assetId,
+      },
+      pages: [
+        {
+          id: crypto.randomUUID(),
+          title: "Media",
+          slug: "media",
+          navigation_label: "Media",
+          is_home: true,
+          is_in_navigation: true,
+          is_included: true,
+          layout: {
+            blocks: [
+              {
+                type: "heading",
+                id: crypto.randomUUID(),
+                text: "Media",
+                level: 1,
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const created = await callRpc<SiteState>(
+      owner.client,
+      "create_site_draft_v2",
+      {
+        expected_business_id: foreignBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_draft: draft,
+      },
+    );
+    const prepared = await callRpc<PreparedRelease>(
+      owner.client,
+      "prepare_site_release_v4",
+      {
+        expected_business_id: foreignBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: created.id,
+        ...releaseCurrentness(created),
+      },
+    );
+    expect(prepared.projection_schema_version).toBe(4);
+    const published = await callRpc<PreparedRelease>(
+      owner.client,
+      "publish_site_release_v4",
+      {
+        expected_business_id: foreignBusiness.id,
+        expected_actor_id: owner.user.id,
+        requested_site_id: created.id,
+        requested_candidate_id: prepared.id,
+        ...releaseCurrentness(created),
+      },
+    );
+    const mediaSiteId = created.id;
+
+    const [media] = await sql<{ token: string; reference_count: number }[]>`
+      select token,
+        (
+          select count(*)::int
+          from public.site_release_asset_references as reference
+          where reference.business_id = ${foreignBusiness.id}
+            and reference.release_id = ${published.id}
+            and reference.asset_id = ${assetId}
+        ) as reference_count
+      from public.site_public_media_tokens
+      where business_id = ${foreignBusiness.id}
+        and site_id = ${mediaSiteId}
+        and asset_id = ${assetId}
+    `;
+    expect(media).toMatchObject({
+      token: expect.stringMatching(/^m_[a-f0-9]{64}$/),
+      reference_count: 1,
+    });
+
+    const resolved = await callRpc<Record<string, unknown>>(
+      admin,
+      "resolve_public_site_media",
+      {
+        requested_business_slug: foreignBusiness.slug,
+        requested_media_token: media!.token,
+      },
+    );
+    expect(resolved).toMatchObject({
+      storage_key: `${foreignBusiness.id}/${assetId}.png`,
+      mime_type: "image/png",
+      byte_size: 128,
+    });
+
+    const wrongBusiness = await rpc(admin).rpc<Record<string, unknown>>(
+      "resolve_public_site_media",
+      {
+        requested_business_slug: business.slug,
+        requested_media_token: media!.token,
+      },
+    );
+    expect(wrongBusiness.error).toBeNull();
+    expect(wrongBusiness.data).toBeNull();
+
+    const [activeState] = await sql<{ active_release_revision: number }[]>`
+      select active_release_revision
+      from public.site_states
+      where business_id = ${foreignBusiness.id} and id = ${mediaSiteId}
+    `;
+    if (!activeState)
+      throw new Error("The active v4 release state is missing.");
+    const unpublished = await unpublishSite(
+      owner.client,
+      { businessId: foreignBusiness.id, actorId: owner.user.id },
+      {
+        siteId: mediaSiteId,
+        expectedActiveReleaseRevision: Number(
+          activeState.active_release_revision,
+        ),
+      },
+    );
+    expect(unpublished.active_release_id).toBeNull();
+    const afterUnpublish = await rpc(admin).rpc<Record<string, unknown>>(
+      "resolve_public_site_media",
+      {
+        requested_business_slug: foreignBusiness.slug,
+        requested_media_token: media!.token,
+      },
+    );
+    expect(afterUnpublish.error).toBeNull();
+    expect(afterUnpublish.data).toBeNull();
   });
 });
