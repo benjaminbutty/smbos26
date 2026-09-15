@@ -128,7 +128,10 @@ async function selectCollectionRecordType(
   collection: Locator,
   preferredObjectKey?: string,
 ): Promise<void> {
-  const recordType = collection.getByLabel("Record type");
+  const recordType = collection.getByRole("combobox", {
+    name: "Record type",
+    exact: true,
+  });
   const optionValue = await recordType
     .locator("option")
     .evaluateAll((options, preferred) => {
@@ -164,13 +167,18 @@ async function configureCollection(
     throw new Error("The Site proof has no Records to select.");
   await recordOptions.first().check();
   if (optionCount > 1) await recordOptions.nth(1).check();
-  await collection.getByLabel("Presentation").selectOption(presentation);
+  await collection
+    .getByRole("combobox", { name: "Presentation", exact: true })
+    .selectOption(presentation);
   if (detailPageTitle) {
     await collection
-      .getByLabel("Detail Page")
+      .getByRole("combobox", { name: "Detail Page", exact: true })
       .selectOption({ label: detailPageTitle });
   }
-  const filter = collection.getByLabel("Filter to Records with");
+  const filter = collection.getByRole("combobox", {
+    name: "Filter to Records with",
+    exact: true,
+  });
   const filterValue = await filter
     .locator("option")
     .evaluateAll(
@@ -180,7 +188,10 @@ async function configureCollection(
           .find(Boolean) ?? "",
     );
   if (filterValue) await filter.selectOption(filterValue);
-  const sort = collection.getByLabel("Order Records by");
+  const sort = collection.getByRole("combobox", {
+    name: "Order Records by",
+    exact: true,
+  });
   const sortValue = await sort
     .locator("option")
     .evaluateAll(
@@ -191,7 +202,9 @@ async function configureCollection(
     );
   if (sortValue) {
     await sort.selectOption(sortValue);
-    await collection.getByLabel("Direction").selectOption("ascending");
+    await collection
+      .getByRole("combobox", { name: "Direction", exact: true })
+      .selectOption("ascending");
   }
   return collection;
 }
@@ -788,7 +801,7 @@ test("owner can review the compact Site editor", async ({
     ".site-composer-inspector .site-composer-block",
   );
   await faqSectionInspector
-    .getByLabel("Columns", { exact: true })
+    .getByRole("combobox", { name: "Columns", exact: true })
     .selectOption("3");
   await expect(
     faqSectionInspector.locator(".site-composer-column-editor"),
@@ -964,7 +977,8 @@ test("owner can move content between Page and Section containers", async ({
   await expect(section).toContainText("Section");
 
   await rootHeading.click();
-  const moveToSection = rootInspector.getByLabel("Move block to", {
+  const moveToSection = rootInspector.getByRole("combobox", {
+    name: "Move block to",
     exact: true,
   });
   const secondColumnTarget = await moveToSection
@@ -997,9 +1011,15 @@ test("owner can move content between Page and Section containers", async ({
     .filter({ hasText: "Move this heading" });
   await expect(movedBlock).toHaveCount(1);
   await expect(
-    movedBlock.getByLabel("Move block to", { exact: true }),
+    movedBlock.getByRole("combobox", {
+      name: "Move block to",
+      exact: true,
+    }),
   ).toBeFocused();
-  const moveToRoot = movedBlock.getByLabel("Move block to", { exact: true });
+  const moveToRoot = movedBlock.getByRole("combobox", {
+    name: "Move block to",
+    exact: true,
+  });
   await moveToRoot.focus();
   await moveToRoot.selectOption("root");
 
@@ -1010,7 +1030,10 @@ test("owner can move content between Page and Section containers", async ({
     "Move this heading",
   );
   await expect(
-    restoredInspector.getByLabel("Move block to", { exact: true }),
+    restoredInspector.getByRole("combobox", {
+      name: "Move block to",
+      exact: true,
+    }),
   ).toBeFocused();
   await saveSiteDraft(page);
   await page.reload();
@@ -1216,19 +1239,13 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     catalogueView,
     "list",
   );
-  const emptyFilterField = emptyCollection.getByLabel(
-    "Filter to Records with",
-    { exact: true },
-  );
-  const nameFilterValue = await emptyFilterField
-    .locator("option")
-    .filter({ hasText: "Name is not empty" })
-    .getAttribute("value");
-  if (!nameFilterValue)
-    throw new Error("The empty Site collection needs Name.");
-  await emptyFilterField.selectOption(nameFilterValue);
+  const emptyFilterField = emptyCollection.getByRole("combobox", {
+    name: "Filter to Records with",
+    exact: true,
+  });
+  await emptyFilterField.selectOption({ label: "Name is not empty" });
   await emptyCollection
-    .getByLabel("Filter operator", { exact: true })
+    .getByRole("combobox", { name: "Filter operator", exact: true })
     .selectOption("is_empty");
   await addSiteBlock(page, "Add Record collection");
   await configureCollection(homePage, servicesView, "table");
@@ -1240,7 +1257,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     .getByLabel("Button label", { exact: true })
     .fill("View services");
   await sitePageButton
-    .getByLabel("Site Page destination", { exact: true })
+    .getByRole("combobox", { name: "Site Page destination", exact: true })
     .selectOption({ label: secondPageTitle });
   await addSiteBlock(page, "Add formatted text");
   const sitePageRichText = homePage
@@ -1250,7 +1267,7 @@ test("owner builds and publishes a multi-page Site in Chromium", async ({
     .getByLabel("Formatted text content", { exact: true })
     .fill("Explore services");
   await sitePageRichText
-    .getByLabel("Site Page destination", { exact: true })
+    .getByRole("combobox", { name: "Site Page destination", exact: true })
     .selectOption({ label: secondPageTitle });
 
   await selectSitePage(page, "Catalogue");

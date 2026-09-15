@@ -257,7 +257,10 @@ async function selectCollectionRecordType(
   collection: Locator,
   preferredObjectKey: string,
 ): Promise<void> {
-  const recordType = collection.getByLabel("Record type");
+  const recordType = collection.getByRole("combobox", {
+    name: "Record type",
+    exact: true,
+  });
   const optionValue = await recordType
     .locator("option")
     .evaluateAll((options, preferred) => {
@@ -288,10 +291,12 @@ async function configureCollection(
   );
   await expect(recordOptions).toHaveCount(1);
   await recordOptions.first().check();
-  await collection.getByLabel("Presentation").selectOption("cards");
+  await collection
+    .getByRole("combobox", { name: "Presentation", exact: true })
+    .selectOption("cards");
   if (detailPageTitle) {
     await collection
-      .getByLabel("Detail Page", { exact: true })
+      .getByRole("combobox", { name: "Detail Page", exact: true })
       .selectOption({ label: detailPageTitle });
   }
   return collection;

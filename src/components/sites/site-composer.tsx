@@ -2327,6 +2327,13 @@ export function SiteComposer({
       return;
     }
     if (!response.ok) {
+      if (response.status >= 500) {
+        markUncertainAttachment(result.operationId, label);
+        setMessage(
+          "The Record image attachment could not be confirmed. Reload before trying again.",
+        );
+        return;
+      }
       finishAssetUpload(result.operationId);
       setMessage(
         response.status === 409
@@ -2760,19 +2767,20 @@ export function SiteComposer({
               }}
               type="file"
             />
-            {draft.branding.logo_asset_id ? (
-              <button
-                onClick={() => {
-                  const next = copyDraft(draft);
-                  delete next.branding.logo_asset_id;
-                  commit(next);
-                }}
-                type="button"
-              >
-                Remove logo
-              </button>
-            ) : null}
           </label>
+          {draft.branding.logo_asset_id ? (
+            <button
+              disabled={assetUploadBlocksRelease}
+              onClick={() => {
+                const next = copyDraft(draft);
+                delete next.branding.logo_asset_id;
+                commit(next);
+              }}
+              type="button"
+            >
+              Remove logo
+            </button>
+          ) : null}
           <small className="muted" id="site-logo-upload-limit">
             {siteImageUploadLimitText}
           </small>
