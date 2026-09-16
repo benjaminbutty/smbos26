@@ -71,6 +71,25 @@ function referencedAssetIds(versions) {
         }
         ids.add(block.asset_id);
       }
+      if (block?.type === "gallery") {
+        if (!Array.isArray(block.images)) {
+          throw new Error(
+            "A historical Page has an invalid gallery reference; cleanup stopped.",
+          );
+        }
+        for (const image of block.images) {
+          if (
+            !image ||
+            typeof image.asset_id !== "string" ||
+            !uuidPattern.test(image.asset_id)
+          ) {
+            throw new Error(
+              "A historical Page has an invalid gallery reference; cleanup stopped.",
+            );
+          }
+          ids.add(image.asset_id);
+        }
+      }
       if (
         block?.type === "image" &&
         block.asset_id !== undefined &&
@@ -81,6 +100,14 @@ function referencedAssetIds(versions) {
         );
       }
       if (block?.type === "collapsible") visit(block.blocks);
+      if (block?.type === "section") {
+        if (!Array.isArray(block.columns)) {
+          throw new Error(
+            "A historical Page has an invalid section; cleanup stopped.",
+          );
+        }
+        for (const column of block.columns) visit(column?.blocks);
+      }
     }
   };
   for (const version of versions) {
@@ -143,13 +170,29 @@ if (assets.length === 0) {
   process.exit(0);
 }
 
-const storage = await client.storage
-  .from(bucket)
-  .remove(assets.map((asset) => asset.storage_key));
-if (storage.error) throw storage.error;
-const ids = assets.map((asset) => asset.id);
-let query = client.from("media_assets").delete().in("id", ids);
-if (businessId) query = query.eq("business_id", businessId);
-const deleted = await query;
-if (deleted.error) throw deleted.error;
-console.log(`Removed ${assets.length} unreferenced Page asset(s).`);
+let removedCount = 0;
+for (const asset of assets) {
+  const claim = await client.rpc("claim_site_media_asset_for_cleanup", {
+    expected_business_id: asset.business_id,
+    requested_asset_id: asset.id,
+  });
+  if (claim.error) throw claim.error;
+  if (!claim.data) continue;
+  const storage = await client.storage.from(bucket).remove([asset.storage_key]);
+  if (storage.error) {
+    // The error may have followed a successful removal. Retain the exclusive
+    // claim and retry remove/finalize later instead of reopening the asset.
+    throw storage.error;
+  }
+  const finalized = await client.rpc("finalize_site_media_cleanup", {
+    expected_business_id: asset.business_id,
+    requested_asset_id: asset.id,
+    requested_claim_token: claim.data,
+  });
+  if (finalized.error) throw finalized.error;
+  if (!finalized.data) {
+    throw new Error("Cleanup finalization was rejected after storage removal.");
+  }
+  removedCount += 1;
+}
+console.log(`Removed ${removedCount} unreferenced Page asset(s).`);

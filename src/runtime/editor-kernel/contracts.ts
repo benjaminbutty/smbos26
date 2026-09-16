@@ -1,3 +1,5 @@
+import { sitePublicFileValueSchema } from "../../core/sites/upload-protocol";
+
 export type EditorColumnKind =
   | "text"
   | "long_text"
@@ -289,6 +291,20 @@ export function editorValueForColumn(
   }
 }
 
+function attachmentSummary(value: EditorValue): string | null {
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    return null;
+  }
+
+  const parsed = sitePublicFileValueSchema.safeParse(value);
+  if (!parsed.success) {
+    return null;
+  }
+
+  const count = parsed.data.attachment_ids.length;
+  return `${count} attachment${count === 1 ? "" : "s"}`;
+}
+
 export function editorInputValue(value: EditorValue): string {
   if (value === null || value === undefined) {
     return "";
@@ -297,6 +313,10 @@ export function editorInputValue(value: EditorValue): string {
     return value.join(", ");
   }
   if (!Array.isArray(value) && typeof value === "object") {
+    const attachments = attachmentSummary(value);
+    if (attachments) {
+      return attachments;
+    }
     const objectValue = value as EditorObjectValue;
     const name = objectValue.name;
     if (typeof name === "string" && name.trim()) {

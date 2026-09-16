@@ -20,6 +20,7 @@ export const directTableColumnTypeSchema = z.enum([
   "email",
   "phone",
   "url",
+  "file",
   "select",
   "status",
 ]);

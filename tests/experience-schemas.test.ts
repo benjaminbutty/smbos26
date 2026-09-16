@@ -79,6 +79,26 @@ describe("experience configuration grammar", () => {
     ).toMatchObject({
       fields: [{ field: "status", default_value: "New", hidden: true }],
     });
+
+    expect(() =>
+      formConfigSchema.parse({
+        fields: [
+          {
+            field: "status",
+            hidden: true,
+            default_value: "New",
+          },
+          {
+            field: "reason",
+            visible_when: {
+              field: "status",
+              operator: "equals",
+              value: "New",
+            },
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it("accepts every supported Page block and rejects executable links", () => {

@@ -8,6 +8,7 @@ import {
 } from "../booking/schemas";
 import {
   normalizeTableViewConfig,
+  pageLayoutSchema,
   type FormConfig,
   type PageLayout,
 } from "../experience/schemas";
@@ -351,7 +352,9 @@ function fakePageDefinition(page: PageOperation): CandidatePreviewPage {
     slug: page.slug,
     audience: page.audience,
     status: page.status,
-    layout: page.layout_json,
+    // Acquisition previews remain bounded to the ordinary Page grammar. C1
+    // backing Pages are private coordination definitions, not AI preview input.
+    layout: pageLayoutSchema.parse(page.layout_json),
   };
 }
 

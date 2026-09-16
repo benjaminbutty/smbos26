@@ -3493,7 +3493,23 @@ A fresh read-only independent review recomputed the evidence and returned
 documentation-only exact-head CI and explicit owner review; PR #61 remains
 draft and no runtime change or further live run is authorised.
 
-## ADR-045: Published Site edits use a memory-only candidate and one atomic publication
+## ADR-045: Adopted Sites use durable drafts and immutable published releases
+
+Current adopted Sites use one tenant-scoped durable autosaved multi-page draft
+and one immutable reviewed published release. Explicit adoption selects Site
+authority; public readers have no mutable Page or draft fallback. Version 3
+releases support configured Forms and private upload grants, while Version 4
+releases freeze operational actions. Ordinary Customer and Record work stays
+on the existing tenant-scoped primitives and boundaries. For v4 Booking, an
+active published Site release authorises its exact immutable action, canonical
+source Page and frozen payload even when that source Page is draft; the source
+must remain same-Business, public and active, and withdrawal fails closed.
+Capacity/relationship locks, receipt-first replay and legacy publication
+guards remain. This owner-approved boundary is implemented in `40068d5`.
+
+The following J3-I4 and C1 entries are retained as historical context; their
+pre-adoption memory-only and no-reader limitations do not describe adopted
+Site authority.
 
 Accepted for J3-I4. Draft public Pages continue to save privately through the
 existing Direct Page boundary and use the existing explicit initial `Publish
@@ -3509,6 +3525,17 @@ keeps capability/historical blocks unchanged apart from order; and applies one
 immutable Version. Failed or stale publication leaves the previous public Page
 unchanged. No durable draft, new Page, store, renderer or public runtime is
 introduced. See [ADR-045](./ADR-045.md).
+
+**C1 amendment (9 September 2026):** Lenni Sites now has a private, durable
+multi-Page composition and immutable release coordination foundation. It uses a
+strict shared Page grammar with bounded Site extensions, server-derived backing
+Page identities and configuration operations, exact draft/configuration/release
+currentness checks, and claim-protected media references. Backing Pages are
+public drafts only; C1 adds no anonymous release reader, public-route adoption
+or change to existing J3 published Pages. A source-only release creates no
+synthetic configuration Change or Version, but still asserts configuration
+projection/head consistency. See the C1 amendment and compatibility plan in
+[ADR-045](./ADR-045.md).
 
 ## ADR-046: Internal Pages use one bounded Tiptap candidate and explicit save
 

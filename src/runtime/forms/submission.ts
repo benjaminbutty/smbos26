@@ -60,6 +60,25 @@ function valueIsPresent(value: Json | undefined): boolean {
   return true;
 }
 
+function conditionSatisfied(
+  condition: FormFieldConfig["visible_when"],
+  values: Record<string, Json | undefined>,
+): boolean {
+  if (!condition) return true;
+  const source = values[condition.field];
+  if (source === undefined || source === null) return false;
+  if (source === "" || (Array.isArray(source) && source.length === 0)) {
+    return false;
+  }
+  if (condition.operator === "includes") {
+    return (
+      Array.isArray(source) && source.some((item) => item === condition.value)
+    );
+  }
+  const equal = source === condition.value;
+  return condition.operator === "equals" ? equal : !equal;
+}
+
 function coerceString(
   field: Tables<"field_definitions">,
   config: FormFieldConfig,
@@ -185,11 +204,19 @@ export function buildConfiguredSubmission(
 ): Record<string, Json> {
   const fieldsByKey = new Map(fields.map((field) => [field.key, field]));
   const submission: Record<string, Json> = {};
+  const effectiveValues: Record<string, Json | undefined> = {};
 
   for (const configuredField of config.fields) {
     const field = fieldsByKey.get(configuredField.field);
     if (!field) {
       throw new ExperienceSubmissionError("This form is no longer available.");
+    }
+
+    if (!conditionSatisfied(configuredField.visible_when, effectiveValues)) {
+      // A conditional hidden answer is deliberately omitted. This also means
+      // a canonical required Field is never accidentally filled by a branch
+      // that the visitor could not see.
+      continue;
     }
 
     let value = parseConfiguredFieldValue(field, configuredField, formData);
@@ -209,10 +236,11 @@ export function buildConfiguredSubmission(
     const effectiveValue = preservesExistingFile
       ? existingValues[field.key]
       : value;
+    effectiveValues[field.key] = effectiveValue;
 
     if (
       options.enforceRequired !== false &&
-      field.required &&
+      (field.required || configuredField.required) &&
       !valueIsPresent(effectiveValue)
     ) {
       throw new ExperienceSubmissionError(
@@ -240,7 +268,7 @@ export function buildConfiguredFieldPatch(
 
   if (
     options.enforceRequired !== false &&
-    field.required &&
+    (field.required || config.required) &&
     !valueIsPresent(value)
   ) {
     throw new ExperienceSubmissionError(

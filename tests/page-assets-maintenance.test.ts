@@ -77,7 +77,17 @@ describe("historical Page asset references", () => {
       ],
     });
     const calls: string[] = [];
+    const claimToken = "00000000-0000-4000-8000-000000000004";
     const remove = vi.fn().mockResolvedValue({ error: null });
+    const rpc = vi.fn((name: string) => {
+      if (name === "claim_site_media_asset_for_cleanup") {
+        return Promise.resolve({ data: claimToken, error: null });
+      }
+      if (name === "finalize_site_media_cleanup") {
+        return Promise.resolve({ data: true, error: null });
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    });
     const client = {
       from: vi.fn((table: string) => {
         calls.push(table);
@@ -94,9 +104,7 @@ describe("historical Page asset references", () => {
         }
         if (table === "media_assets") {
           const query = {
-            delete: vi.fn(() => query),
             eq: vi.fn(() => query),
-            in: vi.fn().mockResolvedValue({ error: null }),
             lt: vi.fn(() => query),
             range: vi.fn().mockResolvedValue({
               data: [
@@ -119,6 +127,7 @@ describe("historical Page asset references", () => {
         }
         throw new Error(`Unexpected table ${table}`);
       }),
+      rpc,
       storage: { from: vi.fn(() => ({ remove })) },
     };
 
@@ -132,11 +141,64 @@ describe("historical Page asset references", () => {
       inspectedAssets: 2,
       retainedAssetIds: [retainedId],
     });
-    expect(calls).toEqual([
-      "configuration_versions",
-      "media_assets",
-      "media_assets",
-    ]);
+    expect(calls).toEqual(["configuration_versions", "media_assets"]);
     expect(remove).toHaveBeenCalledWith([`${businessId}/${orphanId}.png`]);
+    expect(rpc).toHaveBeenNthCalledWith(
+      1,
+      "claim_site_media_asset_for_cleanup",
+      {
+        expected_business_id: businessId,
+        requested_asset_id: orphanId,
+      },
+    );
+    expect(rpc).toHaveBeenNthCalledWith(2, "finalize_site_media_cleanup", {
+      expected_business_id: businessId,
+      requested_asset_id: orphanId,
+      requested_claim_token: claimToken,
+    });
+  });
+
+  it("retains its exclusive claim when storage times out after a possible delete", async () => {
+    const orphanId = "00000000-0000-4000-8000-000000000003";
+    const claimToken = "00000000-0000-4000-8000-000000000004";
+    const remove = vi.fn().mockResolvedValue({ error: new Error("timeout") });
+    const rpc = vi.fn(() => Promise.resolve({ data: claimToken, error: null }));
+    const client = {
+      from: vi.fn((table: string) => {
+        const query = {
+          eq: vi.fn(() => query),
+          lt: vi.fn(() => query),
+          range: vi.fn().mockResolvedValue({
+            data:
+              table === "configuration_versions"
+                ? [{ snapshot_json: snapshot({ blocks: [] }) }]
+                : [
+                    {
+                      created_at: "2026-09-01T00:00:00.000Z",
+                      id: orphanId,
+                      storage_key: `${businessId}/${orphanId}.png`,
+                    },
+                  ],
+            error: null,
+          }),
+          select: vi.fn(() => query),
+        };
+        return query;
+      }),
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    };
+
+    await expect(
+      cleanupUnreferencedPageAssets(client as never, {
+        businessId,
+        olderThan: new Date("2026-09-02T00:00:00.000Z"),
+      }),
+    ).rejects.toThrow("Could not remove an unreferenced Page asset object.");
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("claim_site_media_asset_for_cleanup", {
+      expected_business_id: businessId,
+      requested_asset_id: orphanId,
+    });
   });
 });

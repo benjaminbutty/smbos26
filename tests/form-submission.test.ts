@@ -205,4 +205,66 @@ describe("configured Form submission", () => {
       attachment: "https://example.test/replacement.jpg",
     });
   });
+
+  it("does not reveal a conditional branch when its source is unanswered", () => {
+    const choice = field("choice", "Choice", "select");
+    choice.settings_json = { options: ["yes", "no"] };
+    const details = field("details", "Details", "short_text", true);
+    const formData = new FormData();
+    formData.set("details", "stale branch value");
+
+    expect(
+      buildConfiguredSubmission(
+        [choice, details],
+        {
+          fields: [
+            { field: "choice", hidden: false },
+            {
+              field: "details",
+              hidden: false,
+              required: true,
+              visible_when: {
+                field: "choice",
+                operator: "not_equals",
+                value: "yes",
+              },
+            },
+          ],
+        },
+        "create",
+        formData,
+      ),
+    ).toEqual({});
+  });
+
+  it("only applies includes to multi-select arrays", () => {
+    const choice = field("choice", "Choice", "select");
+    choice.settings_json = { options: ["vip", "standard"] };
+    const details = field("details", "Details", "short_text");
+    const formData = new FormData();
+    formData.set("choice", "vip");
+    formData.set("details", "should stay hidden");
+
+    expect(
+      buildConfiguredSubmission(
+        [choice, details],
+        {
+          fields: [
+            { field: "choice", hidden: false },
+            {
+              field: "details",
+              hidden: false,
+              visible_when: {
+                field: "choice",
+                operator: "includes",
+                value: "vip",
+              },
+            },
+          ],
+        },
+        "create",
+        formData,
+      ),
+    ).toEqual({ choice: "vip" });
+  });
 });

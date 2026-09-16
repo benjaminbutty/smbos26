@@ -351,7 +351,8 @@ function removeExplicitOperations(
       }
     }
     if (operation.op === "set_page") {
-      const layout = mapPageBlocks(operation.layout_json, (block) => {
+      const legacyLayout = pageLayoutSchema.parse(operation.layout_json);
+      const layout = mapPageBlocks(legacyLayout, (block) => {
         if (block.type === "view" && removedViewKeys.has(block.view_key)) {
           return null;
         }
@@ -700,7 +701,8 @@ function removeRelationshipScalarDuplicates(
 
   return firstPass.flatMap<ConfigurationOperation>((operation) => {
     if (operation.op !== "set_page") return [operation];
-    const layout = mapPageBlocks(operation.layout_json, (block) => {
+    const legacyLayout = pageLayoutSchema.parse(operation.layout_json);
+    const layout = mapPageBlocks(legacyLayout, (block) => {
       if (block.type === "view" && removedViewKeys.has(block.view_key)) {
         return null;
       }

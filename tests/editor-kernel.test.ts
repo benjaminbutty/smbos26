@@ -7,6 +7,7 @@ import {
   columnKeyFromLabel,
   draftRowIndex,
   displayEditorValue,
+  editorInputValue,
   editorValueForColumn,
   editorSelectionValue,
   editorDraftRowId,
@@ -57,6 +58,44 @@ describe("editor kernel contracts", () => {
         },
       ),
     ).toBe("Milo");
+  });
+
+  it("summarizes canonical file attachments and fails closed for invalid values", () => {
+    const fileColumn = { kind: "file" } as const;
+    const firstId = "10000000-0000-4000-8000-000000000001";
+    const secondId = "10000000-0000-4000-8000-000000000002";
+    const attachments = { attachment_ids: [firstId, secondId] } as const;
+
+    expect(displayEditorValue(fileColumn, { attachment_ids: [firstId] })).toBe(
+      "1 attachment",
+    );
+    expect(displayEditorValue(fileColumn, attachments)).toBe("2 attachments");
+    expect(editorInputValue(attachments)).toBe("2 attachments");
+
+    expect(
+      displayEditorValue(fileColumn, { attachment_ids: ["not-an-id"] }),
+    ).toBe("Unavailable");
+    expect(
+      displayEditorValue(fileColumn, { attachment_ids: [firstId, firstId] }),
+    ).toBe("Unavailable");
+    expect(
+      displayEditorValue(fileColumn, {
+        attachment_ids: [firstId],
+        extra: "unsupported",
+      }),
+    ).toBe("Unavailable");
+    expect(displayEditorValue(fileColumn, { attachment_ids: [] })).toBe(
+      "Unavailable",
+    );
+    expect(
+      displayEditorValue(fileColumn, {
+        attachment_ids: Array.from(
+          { length: 6 },
+          (_, index) =>
+            `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        ),
+      }),
+    ).toBe("Unavailable");
   });
 
   it("moves only the requested column", () => {

@@ -8,6 +8,8 @@
 
 # Test and tooling output
 /coverage
+/playwright-report/pages-proof/
+/test-results/pages-proof/
 *.tsbuildinfo
 
 # Local environment files

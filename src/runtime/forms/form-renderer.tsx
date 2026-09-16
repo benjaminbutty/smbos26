@@ -115,7 +115,7 @@ export function FormRenderer(props: Readonly<FormRendererProps>): ReactNode {
                 <label htmlFor={`field-${field.key}`}>
                   <span>
                     {label}
-                    {field.required ? (
+                    {field.required || configuredField.required ? (
                       <span aria-label="required" className="required-mark">
                         *
                       </span>

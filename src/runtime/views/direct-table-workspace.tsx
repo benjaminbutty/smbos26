@@ -356,6 +356,7 @@ function AddColumnControl({
 
 function CellEditor({
   action,
+  businessSlug,
   field,
   onCancel,
   onKeyDown,
@@ -364,6 +365,7 @@ function CellEditor({
   viewKey,
 }: Readonly<{
   action: (formData: FormData) => void;
+  businessSlug: string;
   field: Tables<"field_definitions">;
   onCancel: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLFormElement>) => void;
@@ -393,6 +395,7 @@ function CellEditor({
       <FieldInputControl
         ariaLabel={`Edit ${field.label}`}
         autoFocus
+        businessSlug={businessSlug}
         field={field}
         value={value}
       />
@@ -489,6 +492,7 @@ function ColumnResizeHandle({
 
 function DirectTableGrid({
   action,
+  businessSlug,
   currentness,
   createRowAction,
   draftOpen,
@@ -508,6 +512,7 @@ function DirectTableGrid({
   viewKey,
 }: Readonly<{
   action: CellAction;
+  businessSlug: string;
   currentness: Currentness | null;
   createRowAction?: RowAction | undefined;
   draftOpen: boolean;
@@ -681,6 +686,7 @@ function DirectTableGrid({
                       <FieldInputControl
                         ariaLabel={`New ${field.label}`}
                         autoFocus
+                        businessSlug={businessSlug}
                         field={field}
                         value={field.default_value ?? undefined}
                       />
@@ -713,6 +719,7 @@ function DirectTableGrid({
                       {editing ? (
                         <CellEditor
                           action={formAction}
+                          businessSlug={businessSlug}
                           field={field}
                           onCancel={() => setEditingCell(null)}
                           onKeyDown={(event) => {
@@ -778,7 +785,12 @@ function DirectTableGrid({
                               : undefined
                           }
                         >
-                          <FieldValue field={field} value={data[field.key]} />
+                          <FieldValue
+                            businessSlug={businessSlug}
+                            field={field}
+                            linkFiles={false}
+                            value={data[field.key]}
+                          />
                         </a>
                       ) : canEdit ? (
                         <button
@@ -811,7 +823,11 @@ function DirectTableGrid({
                           }}
                           type="button"
                         >
-                          <FieldValue field={field} value={data[field.key]} />
+                          <FieldValue
+                            businessSlug={businessSlug}
+                            field={field}
+                            value={data[field.key]}
+                          />
                         </button>
                       ) : (
                         <span
@@ -826,7 +842,11 @@ function DirectTableGrid({
                           }}
                           tabIndex={0}
                         >
-                          <FieldValue field={field} value={data[field.key]} />
+                          <FieldValue
+                            businessSlug={businessSlug}
+                            field={field}
+                            value={data[field.key]}
+                          />
                         </span>
                       )}
                     </td>
@@ -916,6 +936,7 @@ function AddRowControl({
 
 function RecordPanel({
   action,
+  businessSlug,
   editableFieldKeys,
   fields,
   fullRecordHref,
@@ -927,6 +948,7 @@ function RecordPanel({
   closeHref,
 }: Readonly<{
   action: CellAction;
+  businessSlug: string;
   closeHref: string;
   editableFieldKeys: ReadonlySet<string>;
   fields: Tables<"field_definitions">[];
@@ -976,6 +998,7 @@ function RecordPanel({
             editableFieldKeys={editableFieldKeys}
             field={field}
             key={field.key}
+            businessSlug={businessSlug}
             onRecordUpdated={onRecordUpdated}
             record={record}
             viewKey={viewKey}
@@ -988,6 +1011,7 @@ function RecordPanel({
 
 function PanelField({
   action,
+  businessSlug,
   editableFieldKeys,
   field,
   onRecordUpdated,
@@ -995,6 +1019,7 @@ function PanelField({
   viewKey,
 }: Readonly<{
   action: CellAction;
+  businessSlug: string;
   editableFieldKeys: ReadonlySet<string>;
   field: Tables<"field_definitions">;
   onRecordUpdated: (record: Tables<"records">) => void;
@@ -1036,6 +1061,7 @@ function PanelField({
           <input name="fieldKey" type="hidden" value={field.key} />
           <FieldInputControl
             ariaLabel={`Edit ${field.label}`}
+            businessSlug={businessSlug}
             field={field}
             value={data[field.key]}
           />
@@ -1049,7 +1075,11 @@ function PanelField({
           ) : null}
         </form>
       ) : (
-        <FieldValue field={field} value={data[field.key]} />
+        <FieldValue
+          businessSlug={businessSlug}
+          field={field}
+          value={data[field.key]}
+        />
       )}
     </div>
   );
@@ -1164,6 +1194,7 @@ export function DirectTableWorkspace({
         <div className="direct-table-main">
           <DirectTableGrid
             action={updateCellAction}
+            businessSlug={businessSlug}
             currentness={currentness}
             createRowAction={
               rowCreation.kind === "direct" ? createRowAction : undefined
@@ -1203,6 +1234,7 @@ export function DirectTableWorkspace({
         {selected && recordId ? (
           <RecordPanel
             action={updateCellAction}
+            businessSlug={businessSlug}
             editableFieldKeys={editableFieldKeys}
             closeHref={recordBasePath}
             fields={panelFields}

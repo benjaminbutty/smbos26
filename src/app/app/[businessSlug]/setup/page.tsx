@@ -396,6 +396,23 @@ export default async function SetupPage({
         applies the proposal.
       </p>
 
+      <section
+        className="panel compact-panel"
+        aria-labelledby="booking-setup-link-heading"
+      >
+        <h2 id="booking-setup-link-heading">Appointments and public booking</h2>
+        <p className="muted">
+          Prepare booking hours and capacity through the same review and Apply
+          flow.
+        </p>
+        <Link
+          className="button button-secondary"
+          href={`/app/${encodeURIComponent(businessSlug)}/setup/booking`}
+        >
+          Set up appointments and public booking
+        </Link>
+      </section>
+
       <StarterNotice notice={notice} />
 
       <section className="change-section" aria-labelledby="preorder-heading">

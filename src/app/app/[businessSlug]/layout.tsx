@@ -133,12 +133,22 @@ export default async function TenantLayout({
                 : undefined
             }
           />
-          {navigation.publicPages.length > 0 ? (
-            <section aria-label="Sites" className="workspace-sites-group">
+          <section aria-label="Sites" className="workspace-sites-group">
+            <WorkspaceNavLink
+              className="workspace-sites-root-link"
+              exact
+              href={`/app/${businessSlug}/sites`}
+            >
+              <span aria-hidden="true" className="workspace-nav-icon">
+                ▣
+              </span>
+              Sites
+            </WorkspaceNavLink>
+            {navigation.publicPages.length > 0 ? (
               <PagesSidebar
                 businessSlug={businessSlug}
                 currentness={null}
-                heading="Sites"
+                heading="Published Pages"
                 pages={navigation.publicPages.map((page) => ({
                   id: page.id,
                   slug: page.slug,
@@ -146,8 +156,8 @@ export default async function TenantLayout({
                 }))}
                 routeSegment="sites"
               />
-            </section>
-          ) : null}
+            ) : null}
+          </section>
         </nav>
 
         <div className="workspace-sidebar-footer">

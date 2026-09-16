@@ -24,6 +24,8 @@
     "test:graph": "vitest run --config vitest.integration.config.ts tests/integration/graph.test.ts",
     "test:preorder": "vitest run --config vitest.integration.config.ts tests/integration/preorder.test.ts",
     "test:configuration": "vitest run --config vitest.integration.config.ts tests/integration/configuration-versions.test.ts",
+    "test:sites-c1": "vitest run --config vitest.sites-c1.config.ts",
+    "test:pages-browser": "playwright test --config playwright.pages-proof.config.ts",
     "test:ai-context": "vitest run --config vitest.ai-context.config.ts",
     "test:ai-accounting": "vitest run --config vitest.ai-accounting.config.ts",
     "test:openai-provider": "vitest run --config vitest.openai-provider.config.ts",
@@ -111,6 +113,7 @@
     "check:migration-immutability": "node scripts/check-migration-immutability.mjs",
     "demo:seed": "node scripts/demo-seed.mjs",
     "media:cleanup": "node scripts/cleanup-page-assets.mjs",
+    "sites:cleanup-uploads": "vite-node --script scripts/cleanup-site-public-upload-grants.ts",
     "workspace:proof:seed": "node scripts/internal-workspace-proof-seed.mjs",
     "check": "npm run format:check && npm run typecheck && npm run lint && npm test"
   },
@@ -123,23 +126,25 @@
     "@tiptap/pm": "3.30.5",
     "@tiptap/react": "3.30.5",
     "@tiptap/starter-kit": "3.30.5",
-    "next": "16.3.3",
+    "next": "16.3.4",
     "openai": "7.2.0",
+    "pdfjs-dist": "6.3.289",
     "react": "19.2.8",
     "react-data-grid": "7.0.0-beta.59",
     "react-dom": "19.2.8",
     "zod": "4.4.3"
   },
   "overrides": {
+    "@tiptap/extension-bubble-menu": "3.30.5",
+    "@tiptap/extension-floating-menu": "3.30.5",
     "nanoid": "3.3.18",
     "postcss": "8.5.23",
-    "sharp": "0.35.4",
-    "@tiptap/extension-bubble-menu": "3.30.5",
-    "@tiptap/extension-floating-menu": "3.30.5"
+    "sharp": "0.35.4"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@next/eslint-plugin-next": "16.3.3",
+    "@next/eslint-plugin-next": "16.3.4",
+    "@playwright/test": "1.63.0",
     "@types/node": "24.10.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",

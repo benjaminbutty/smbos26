@@ -819,10 +819,12 @@ function NewRecordCell({
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === "Tab") {
             event.preventDefault();
+            event.stopPropagation();
             const name = value.trim();
             if (name) onCommit(name);
           } else if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
             onCancel();
           }
         }}

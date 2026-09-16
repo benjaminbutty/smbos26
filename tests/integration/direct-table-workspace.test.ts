@@ -1383,6 +1383,7 @@ describe("Milestone 15 Phase 15A direct Table Workspace", () => {
       { label: "Budget", columnType: "number" as const },
       { label: "Due date", columnType: "date" as const },
       { label: "Website", columnType: "url" as const },
+      { label: "Photo", columnType: "file" as const },
       {
         label: "Status",
         columnType: "status" as const,

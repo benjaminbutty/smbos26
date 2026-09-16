@@ -400,10 +400,11 @@ function removeSeparateService(
 
   return remaining.map((operation) => {
     if (operation.op === "set_page") {
+      const legacyLayout = pageLayoutSchema.parse(operation.layout_json);
       return setPageOperationSchema.parse({
         ...operation,
         layout_json: pageLayoutSchema.parse(
-          mapPageBlocks(operation.layout_json, (block) => {
+          mapPageBlocks(legacyLayout, (block) => {
             if (block.type === "view" && removedViewKeys.has(block.view_key)) {
               return null;
             }

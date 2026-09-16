@@ -39,6 +39,12 @@ export default async function TenantHomePage({
       label: page.title,
       description: "Open this workspace Page",
     })),
+    {
+      href: `/app/${businessSlug}/sites`,
+      kind: "site" as const,
+      label: "Customer-facing Site",
+      description: "Build and review your customer-facing Site",
+    },
     ...navigation.publicPages.map((page) => ({
       href: `/app/${businessSlug}/sites/${page.slug}`,
       kind: "site" as const,

@@ -158,8 +158,9 @@ function projectPageBlock(
     case "text":
       return { type: block.type, text: block.text };
     case "image": {
-      if (block.src) {
-        if (classifyAiPageDestination(block.src) !== "external_web") {
+      const source = "src" in block ? block.src : undefined;
+      if (source) {
+        if (classifyAiPageDestination(source) !== "external_web") {
           throw new AiBusinessContextError("ai_context_inconsistent");
         }
       } else if (!block.asset_id) {
@@ -169,7 +170,7 @@ function projectPageBlock(
         type: block.type,
         alt: block.alt,
         ...(block.caption ? { caption: block.caption } : {}),
-        source_kind: block.src
+        source_kind: source
           ? ("external_web" as const)
           : ("private_asset" as const),
       };

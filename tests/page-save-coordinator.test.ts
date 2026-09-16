@@ -133,6 +133,37 @@ describe("SerialSaveCoordinator", () => {
     expect(coordinator.state.status).toBe("saved");
   });
 
+  it("drains a delayed acknowledgement before immediate navigation", async () => {
+    const first = deferred<{
+      canonical: number;
+      status: "success";
+    }>();
+    const requests: number[] = [];
+    const coordinator = new SerialSaveCoordinator<number>({
+      initialValue: 0,
+      save: async ({ candidate }) => {
+        requests.push(candidate);
+        if (candidate === 1) return first.promise;
+        return { canonical: candidate, status: "success" };
+      },
+    });
+
+    coordinator.update(1);
+    const navigationFlush = coordinator.flush();
+    await Promise.resolve();
+    expect(coordinator.inFlight).toBe(true);
+
+    // An owner can edit again while the navigation save is waiting. The
+    // flush must persist that newest candidate before it permits navigation.
+    coordinator.update(2);
+    first.resolve({ canonical: 1, status: "success" });
+    await navigationFlush;
+
+    expect(requests).toEqual([1, 2]);
+    expect(coordinator.hasUnacknowledgedWork).toBe(false);
+    expect(coordinator.state.status).toBe("saved");
+  });
+
   it("starts a new quiet window after a slow acknowledgement", async () => {
     const clock = new Clock();
     const first = deferred<{

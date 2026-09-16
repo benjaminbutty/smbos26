@@ -29,10 +29,12 @@ export function useUnsavedNavigationWarning(
   active: boolean,
   message = defaultMessage,
   onInternalNavigation?: (href: string) => void,
+  navigationBypassRef?: { current: boolean },
 ): void {
   useEffect(() => {
     if (!active) return;
     const beforeUnload = (event: BeforeUnloadEvent): void => {
+      if (navigationBypassRef?.current) return;
       event.preventDefault();
       event.returnValue = true;
     };
@@ -61,5 +63,5 @@ export function useUnsavedNavigationWarning(
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("click", beforeLinkNavigation, true);
     };
-  }, [active, message, onInternalNavigation]);
+  }, [active, message, navigationBypassRef, onInternalNavigation]);
 }
